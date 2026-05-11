@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+*.egg
+.eggs/
+
+# PyInstaller（只忽略 build/dist，保留 spec）
+build/
+dist/
+
+# 打包 / 输出
+output/
+temp/
+发布包/
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# 编辑器
+.vscode/
+.idea/
+
+# 日志
+*.log
+
+# 本地配置
+config/local_settings.py
+*.local
+
+# 大文件（图片/图标/可执行文件不进仓库）
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.ico
+*.icon
+*.exe
+*.dll
