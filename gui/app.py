@@ -88,7 +88,12 @@ class ModeSelector:
     def __init__(self):
         self.root = tk.Tk()
         # 从统一配置读取版本
-        with open('config/version.json', 'r', encoding='utf-8') as f:
+        # 兼容 exe 打包后的路径
+        if getattr(sys, 'frozen', False):
+            config_path = os.path.join(sys._MEIPASS, 'config', 'version.json')
+        else:
+            config_path = 'config/version.json'
+        with open(config_path, 'r', encoding='utf-8') as f:
             cfg = json.load(f)
         self.root.title(f"{cfg['app_name']}_{cfg['version']}")
         self.root.geometry("400x300")
@@ -161,7 +166,14 @@ class ModeSelector:
 class ZPP011Beautiful(EventsMixIn):
     def __init__(self, root):
         self.root = root
-        self.root.title("云南达利ZPP011生产偏差分析器 — 多条件智能筛选 v36")
+        # 从统一配置读取版本
+        if getattr(sys, 'frozen', False):
+            config_path = os.path.join(sys._MEIPASS, 'config', 'version.json')
+        else:
+            config_path = 'config/version.json'
+        with open(config_path, 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+        self.root.title(f"{cfg['app_name']}_{cfg['version']}")
         self.root.geometry("1200x820")
         self.root.minsize(1000, 700)
         self.root.configure(bg=C['bg'])

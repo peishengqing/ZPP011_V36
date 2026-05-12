@@ -2949,7 +2949,12 @@ def run_app():
         
         # ── 启动模式选择 ──
         # 读取默认模式配置
-        config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.zpp011_audit')
+        # 兼容 exe 打包后的路径
+        if getattr(sys, 'frozen', False):
+            config_base = sys._MEIPASS
+        else:
+            config_base = os.path.dirname(os.path.dirname(__file__))
+        config_dir = os.path.join(config_base, '.zpp011_audit')
         config_path = os.path.join(config_dir, 'mode.json')
         default_mode = None
         if os.path.exists(config_path):
