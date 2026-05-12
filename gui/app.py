@@ -83,6 +83,81 @@ def calc_dynamic_threshold(df, method='robust'):
 
 
 
+class ModeSelector:
+    """启动模式选择窗口"""
+    def __init__(self):
+        self.root = tk.Tk()
+        # 从统一配置读取版本
+        with open('config/version.json', 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+        self.root.title(f"{cfg['app_name']}_{cfg['version']}")
+        self.root.geometry("400x300")
+        self.root.resizable(False, False)
+        # 居中窗口
+        self.root.eval('tk::PlaceWindow . center')
+
+        # 标题
+        tk.Label(self.root, text="请选择启动模式", font=("Microsoft YaHei", 12, "bold")).pack(pady=20)
+
+        # 模式按钮
+        tk.Button(self.root, text="📊 生产偏差分析", width=30, height=2,
+                  command=lambda: self._start("analysis")).pack(pady=5)
+        tk.Button(self.root, text="📦 库存流水管理", width=30, height=2,
+                  command=lambda: self._start("inventory")).pack(pady=5)
+
+        # 记住选择
+        self.remember_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(self.root, text="记住我的选择，下次不再询问",
+                       variable=self.remember_var).pack(pady=15)
+
+        # 底部按钮
+        bottom = tk.Frame(self.root)
+        bottom.pack(side="bottom", fill="x", padx=10, pady=10)
+        tk.Button(bottom, text="设置默认模式", command=self._set_default).pack(side="left")
+        tk.Button(bottom, text="关闭", command=self.root.destroy).pack(side="right")
+
+        self.selected_mode = None
+        self.root.mainloop()
+
+    def _start(self, mode):
+        if self.remember_var.get():
+            # 保存默认模式
+            self._save_default(mode)
+        self.selected_mode = mode
+        self.root.destroy()
+
+    def _save_default(self, mode):
+        # 后面实现：保存到 config.json
+        pass
+
+    def _save_default(self, mode):
+        """保存默认模式到配置文件"""
+        config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.zpp011_audit')
+        os.makedirs(config_dir, exist_ok=True)
+        config_path = os.path.join(config_dir, 'mode.json')
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump({"default_mode": mode}, f, ensure_ascii=False, indent=2)
+
+    def _set_default(self):
+        """点击"设置默认模式"按钮时弹出菜单"""
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label="🔄 清除默认设置", command=self._clear_default)
+        menu.add_separator()
+        menu.add_command(label="❌ 取消", command=lambda: None)
+        try:
+            menu.tk_popup(self.root.winfo_pointerx(), self.root.winfo_pointery())
+        finally:
+            menu.grab_release()
+
+    def _clear_default(self):
+        config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.zpp011_audit')
+        config_path = os.path.join(config_dir, 'mode.json')
+        if os.path.exists(config_path):
+            os.remove(config_path)
+        # 提示用户已清除
+        messagebox.showinfo("已清除", "默认模式已清除，下次启动将重新询问。")
+
+
 class ZPP011Beautiful(EventsMixIn):
     def __init__(self, root):
         self.root = root
@@ -122,6 +197,7 @@ class ZPP011Beautiful(EventsMixIn):
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ── 审核数据库相关 ─────────────────────────────
+    def _get_changelog_path(self) -> str:
         """获取 changelog.json 的正确路径（兼容开发和 exe 环境）"""
         if getattr(sys, 'frozen', False):
             # EXE环境：先找EXE同目录，再找sys._MEIPASS
@@ -144,6 +220,7 @@ class ZPP011Beautiful(EventsMixIn):
         return None
 
     # ── 版本信息（从 changelog.json 动态读取） ──────────
+    def _generate_excel_thread(self, output_path: str):
         """后台线程生成完整Excel，带详细错误日志"""
         import traceback
         try:
@@ -215,14 +292,17 @@ class ZPP011Beautiful(EventsMixIn):
             self.root.after(0, lambda: self.excel_btn.configure(state="normal", text="📋 生成表格"))
             self.root.after(0, lambda: self.status_lbl.configure(text="就绪", fg=C['text_dim']))
 
-        # 从Excel加载物料列表
+    # 从Excel加载物料列表
+    def _load_material_list(self):
         excel_path = self.input_file.get()
-        material_list = []
+        self.material_list = []
+        self.code_to_info = {}  # {code: (factory, code, name)}
         if excel_path and os.path.exists(excel_path):
             try:
                 df = pd.read_excel(excel_path, sheet_name='Data')
                 code_cols = [c for c in df.columns if any(k in str(c).lower() for k in ['组件物料号', '组件编码', '物料编码', 'code', '编码'])]
                 name_cols = [c for c in df.columns if any(k in str(c).lower() for k in ['组件描述', '物料描述', '名称', 'name', '描述'])]
+                factory_cols = [c for c in df.columns if any(k in str(k).lower() for k in ['工厂名称', '工厂', 'factory'])]
                 if code_cols:
                     seen = set()
                     for _, row in df.iterrows():
@@ -230,13 +310,20 @@ class ZPP011Beautiful(EventsMixIn):
                         if code and code != 'nan' and code not in seen:
                             seen.add(code)
                             name = str(row[name_cols[0]]) if name_cols else ''
-                            display = f"{code} | {name}" if name and name != 'nan' else code
-                            material_list.append(display)
-                    material_list.sort()
+                            factory = str(row[factory_cols[0]]) if factory_cols else ''
+                            name = name if name and name != 'nan' else ''
+                            factory = factory if factory and factory != 'nan' else ''
+                            self.code_to_info[code] = (factory, code, name)
+                            # 下拉框显示: 工厂名称 | 物料编码 | 物料描述
+                            display = f"{factory} | {code} | {name}" if factory else f"{code} | {name}"
+                            self.material_list.append(display)
+                    self.material_list.sort()
             except Exception as e:
-                print(f"加载物料列表失败: {e}")
+                print(f'加载物料列表失败: {e}')
 
 
+    def _load_audit_database(self):
+        """加载已审核的偏差数据（从JSON文件读取）"""
         import time as _t
 
         now = _t.strftime("%H:%M:%S")
@@ -279,25 +366,6 @@ class ZPP011Beautiful(EventsMixIn):
                 _f.write(
                     f"{__import__('datetime').datetime.now()} do_analysis_v2 正常返回\n")
 
-            self.root.after(0, self._on_done)
-
-        except KeyboardInterrupt:
-            with open(_log, 'a', encoding='utf-8') as _f:
-                _f.write(
-                    f"{__import__('datetime').datetime.now()} KeyboardInterrupt\n")
-
-            self.root.after(0, self._on_cancel)
-
-        except Exception as e:
-            with open(_log, 'a', encoding='utf-8') as _f:
-                _f.write(
-                    f"{__import__('datetime').datetime.now()} Exception: {e}\n")
-
-                _f.write(traceback.format_exc() + "\n")
-
-            self.root.after(0, lambda e=e: self._on_error(str(e)))
-
-        except BaseException as e:
             with open(_log, 'a', encoding='utf-8') as _f:
                 _f.write(
                     f"{__import__('datetime').datetime.now()} BaseException: {e}\n")
@@ -306,8 +374,71 @@ class ZPP011Beautiful(EventsMixIn):
 
             self.root.after(0, lambda e=e: self._on_error(f"BaseException: {e}"))
 
+        except Exception as e:
+            self.log(f"⚠ 分析过程出错：{e}", "error")
+
+    # ── P1#14：趋势分析 ──
+    def _analyze_trend(self):
+        """分析审核数据的阶段性趋势"""
+        df = self.audit_data.copy()
+        if df is None or len(df) == 0:
+            return None
+        df['订单开始日期'] = pd.to_datetime(df['订单开始日期'], errors='coerce')
+        df = df.sort_values('订单开始日期')
+        dates = df['订单开始日期'].dropna()
+        if len(dates) < 3:
+            return None
+        split1 = dates.quantile(0.33)
+        split2 = dates.quantile(0.66)
+        early = df[df['订单开始日期'] <= split1]
+        mid = df[(df['订单开始日期'] > split1) & (df['订单开始日期'] <= split2)]
+        recent = df[df['订单开始日期'] > split2]
+        def calc_metrics(data):
+            if len(data) == 0:
+                return {"偏差率均值": 0, "偏差金额合计": 0, "通过率": 0}
+            dev_rate = data['偏差率(%)'].apply(lambda x: float(str(x).replace('%','')) if isinstance(x, str) else x)
+            dev_rate_mean = dev_rate.mean()
+            dev_amount_sum = data.get('偏差金额', pd.Series([0])).sum()
+            if '审核状态' in data.columns:
+                pass_rate = len(data[data['审核状态'] == '通过']) / len(data) * 100
+            else:
+                pass_rate = 0
+            return {"偏差率均值": round(dev_rate_mean,1), "偏差金额合计": round(dev_amount_sum,2), "通过率": round(pass_rate,1)}
+        return {
+            "早期": {"日期范围": f"{early['订单开始日期'].min().date()}~{early['订单开始日期'].max().date()}", **calc_metrics(early)},
+            "中期": {"日期范围": f"{mid['订单开始日期'].min().date()}~{mid['订单开始日期'].max().date()}", **calc_metrics(mid)},
+            "近期": {"日期范围": f"{recent['订单开始日期'].min().date()}~{recent['订单开始日期'].max().date()}", **calc_metrics(recent)},
+        }
+
+    # ── P1#14：更新趋势显示 ──
+    def _update_trend_display(self):
+        """调用分析趋势并更新UI标签"""
+        try:
+            trend = self._analyze_trend()
+            if not trend:
+                for period in ["早期", "中期", "近期"]:
+                    self.trend_labels[period]["range"].configure(text="数据不足")
+                    self.trend_labels[period]["dev_rate"].configure(text="--")
+                    self.trend_labels[period]["dev_amount"].configure(text="--")
+                    self.trend_labels[period]["pass_rate"].configure(text="--")
+                return
+            for period in ["早期", "中期", "近期"]:
+                p = trend.get(period, {})
+                range_txt = p.get("日期范围", "--")
+                dev_rate_txt = f"偏差率: {p.get('偏差率均值', 0)}%"
+                dev_amount_txt = f"偏差金额: ¥{p.get('偏差金额合计', 0):,.0f}"
+                pass_rate_txt = f"通过率: {p.get('通过率', 0)}%"
+                self.trend_labels[period]["range"].configure(text=range_txt)
+                self.trend_labels[period]["dev_rate"].configure(text=dev_rate_txt)
+                self.trend_labels[period]["dev_amount"].configure(text=dev_amount_txt)
+                self.trend_labels[period]["pass_rate"].configure(text=pass_rate_txt)
+        except Exception as e:
+            self.log(f"趋势显示更新失败: {e}", "warn")
+
+    def _run_pre_check_from_excel(self, output_path=None):
         """从分析结果 Excel 读取数据，生成预检报告并弹窗"""
-        if not self.output_path or not os.path.exists(self.output_path):
+        if not output_path or not os.path.exists(output_path):
+            messagebox.showwarning("文件缺失", "请先生成分析结果 Excel。")
             return
         try:
             # 读取完整偏差明细和汇总统计
@@ -363,6 +494,25 @@ class ZPP011Beautiful(EventsMixIn):
             else:
                 results.append(('通过', '同一订单中物料无重复'))
 
+        # ── 黄金模板列位自检 ─────────────────────────────
+        try:
+            gold_cols = self._load_golden_columns()
+            if gold_cols:
+                actual_cols = set(dev_df.columns)
+                template_cols = set(gold_cols)
+                missing = template_cols - actual_cols
+                extra = actual_cols - template_cols
+                if missing:
+                    results.append(('严重', f'❌ 黄金模板缺失列: {list(missing)}'))
+                if extra:
+                    results.append(('警告', f'⚠️ 黄金模板多余列: {list(extra)}'))
+                if not missing and not extra:
+                    results.append(('通过', '✅ 列结构完全匹配黄金模板'))
+            else:
+                results.append(('警告', '⚠️ 尚未设置黄金模板，跳过列结构检查'))
+        except Exception as e:
+            results.append(('警告', f'⚠️ 列结构检查失败: {e}'))
+
         # 输出到日志
         self.log("📋 数据预检报告：", "info")
         for severity, msg in results:
@@ -381,7 +531,7 @@ class ZPP011Beautiful(EventsMixIn):
             for w in inner.winfo_children():
                 w.destroy()
 
-            # 建立编码->名称映射
+            # 建立编码->名称映射（兼容旧格式）
             excel_path = self.input_file.get()
             code_to_name = {}
             if excel_path and os.path.exists(excel_path):
@@ -402,18 +552,42 @@ class ZPP011Beautiful(EventsMixIn):
                 fr = tk.Frame(inner, bg=C['surface2'])
                 fr.pack(fill="x", pady=1)
 
-                # 物料A：编码 + 名称
-                a_name = code_to_name.get(str(a), '')
-                a_disp = alt_manager.get_display_name(a, a_name) if a_name else alt_manager.get_display_name(a, a)
+                # 解析物料A：支持新格式 (factory, code, name) 和旧格式 (code, name)
+                if isinstance(a, tuple):
+                    if len(a) == 3:
+                        _, a_code, a_name = a
+                    elif len(a) == 2:
+                        a_code, a_name = a
+                    else:
+                        a_code = str(a)
+                        a_name = ''
+                else:
+                    a_code = str(a)
+                    a_name = code_to_name.get(a_code, '')
+                
+                # 解析物料B：支持新格式 (factory, code, name) 和旧格式 (code, name)
+                if isinstance(b, tuple):
+                    if len(b) == 3:
+                        _, b_code, b_name = b
+                    elif len(b) == 2:
+                        b_code, b_name = b
+                    else:
+                        b_code = str(b)
+                        b_name = ''
+                else:
+                    b_code = str(b)
+                    b_name = code_to_name.get(b_code, '')
+
+                # 显示: 编码 + 名称（不显示工厂名称）
+                a_disp = f"{a_code} {a_name}" if a_name else a_code
+                b_disp = f"{b_code} {b_name}" if b_name else b_code
+
                 tk.Label(fr, text=f"↔ {a_disp}", font=("Consolas", 8), fg=C['text'],
                          bg=C['surface2'], anchor="w").pack(side="left", padx=4)
 
                 tk.Label(fr, text="|", font=("Consolas", 8), fg=C['text_dim'],
                          bg=C['surface2']).pack(side="left")
 
-                # 物料B：编码 + 名称
-                b_name = code_to_name.get(str(b), '')
-                b_disp = alt_manager.get_display_name(b, b_name) if b_name else alt_manager.get_display_name(b, b)
                 tk.Label(fr, text=f"{b_disp}", font=("Consolas", 8), fg=C['purple'],
                          bg=C['surface2'], anchor="w").pack(side="left", padx=4)
 
@@ -511,6 +685,16 @@ class ZPP011Beautiful(EventsMixIn):
         except Exception as e:
             self.log(f"❌ 导出重复记录失败：{e}", "error")
             messagebox.showerror("导出失败", str(e))
+
+    def _load_golden_columns(self):
+        """从黄金模板JSON文件中读取列名列表"""
+        config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.zpp011_audit')
+        config_path = os.path.join(config_dir, 'golden_template.json')
+        if os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data.get("columns", [])
+        return None
 
     def _show_pre_check_report(self, results):
         """显示数据预检报告窗口"""
@@ -1442,6 +1626,20 @@ class ZPP011Beautiful(EventsMixIn):
         except Exception as e:
             self.log(f"生成故事线失败：{e}", "error")
             return f"生成故事线时出错：{e}"
+
+    def _apply_row_colors(self):
+        """重新为所有行应用交替行色标签（行色随 audit_tree 内容变化时调用）"""
+        try:
+            tree = self.audit_tree
+            items = tree.get_children()
+            for i, item in enumerate(items):
+                existing_tags = list(tree.item(item, "tags") or [])
+                existing_tags = [t for t in existing_tags if t not in ("row_even", "row_odd")]
+                row_tag = "row_even" if i % 2 == 0 else "row_odd"
+                existing_tags.append(row_tag)
+                tree.item(item, tags=existing_tags)
+        except Exception:
+            pass
 
 
 # ── 导出 run_app（入口函数在 events.py）─────
