@@ -1,51 +1,40 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import collect_all
+
+block_cipher = None
+
+# 自动收集你的业务模块
+datas = []
+hiddenimports = []
+
+for pkg in ['gui', 'domain', 'storage', 'utils']:
+    d, b, h = collect_all(pkg)
+    datas += d
+    hiddenimports += h
 
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        ('changelog.json', '.'),
-    ],
-    hiddenimports=[
-        'openpyxl', 'pandas', 'numpy',
-        'tkinter', 'tkinter.ttk', 'tkinter.filedialog',
-        'tkinter.messagebox', 'tkinter.scrolledtext',
-        'domain.alt_material.alt_manager',
-        'storage.storage',
-        'config.settings',
-        'config.paths',
-        'utils.helpers',
-        'logger',
-        'exceptions',
-        'analysis.analyzer',
-        'analysis.sheets.sheet1_summary',
-        'analysis.sheets.sheet2_alt',
-        'analysis.sheets.sheet3_no_note',
-        'analysis.sheets.sheet4_middle',
-        'analysis.sheets.sheet5_full',
-        'analysis.sheets.sheet6_anomaly',
-        'analysis.sheets.sheet7_amount',
-        'analysis.sheets.sheet8_reason_summary',
-        'analysis.sheets.sheet9_reason_detail',
-        'analysis.sheets.sheet10_trend',
-        'analysis.sheets.write_sheet_util',
-        'export.ppt.ppt_generator',
-    ],
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
-    hooksconfig={},
     runtime_hooks=[],
     excludes=[],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
     noarchive=False,
-    optimize=0,
 )
-pyz = PYZ(a.pure)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
+    a.zipfiles,
     a.datas,
     [],
     name='ZPP011_偏差分析器_v36',
@@ -55,11 +44,9 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,
+    console=False,      # False = 不弹黑窗口（GUI 程序）
     disable_windowed_traceback=False,
-    argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['ZPP011偏差分析器.ico'],
 )

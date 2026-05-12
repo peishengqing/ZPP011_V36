@@ -2,11 +2,11 @@
 
 
 a = Analysis(
-    ['main.py'],
+    ['gui\\events.py'],
     pathex=[],
     binaries=[],
-    datas=[],
-    hiddenimports=['openpyxl', 'pandas', 'numpy', 'tkinter', 'tkinter.ttk', 'tkinter.filedialog', 'tkinter.messagebox', 'tkinter.scrolledtext'],
+    datas=[('config', 'config'), ('inventory_loader.py', '.'), ('build_log.md', '.')],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='ZPP011_偏差分析器_v35.4',
+    name='偏差分析+库存流水智能助手_v36.1',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -35,5 +35,4 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['ZPP011偏差分析器.ico'],
 )

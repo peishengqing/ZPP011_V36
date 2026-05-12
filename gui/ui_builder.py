@@ -253,10 +253,18 @@ def _build_ui(self):
             ('is_alt', '替代料'),
             ('remark', '备注'),
             ('ai_result', 'AI审核'),
+            ('_color', '颜色'),
         ]
+        # ── P1#12：筛选栏宽度映射 ──
+        filter_width = {
+            '工厂': 8, '订单日期': 8, '状态': 8,
+            '车间': 6, '替代料': 6, 'AI审核': 6, '颜色': 7,
+        }
 
         self.filter_widgets = {}
-        for c in range(5):
+        # P1#14：趋势显示标签容器
+        self.trend_labels = {"早期": {}, "中期": {}, "近期": {}}
+        for c in range(6):  # P1#12: 改为6列，容纳分隔线
             filter_bar.columnconfigure(c, weight=1)
         row_idx = 0
         col_idx = 0
@@ -296,13 +304,30 @@ def _build_ui(self):
                 self.date_end_entry.bind("<Return>", lambda e: self._on_filter_changed('order_date'))
                 self.filter_widgets[col_key] = (self.date_start_entry, self.date_end_entry)
             else:
-                cb = ttk.Combobox(col_frame, state="readonly", font=("Microsoft YaHei", 8), width=10)
-                cb.pack(fill="x")
-                cb.bind("<<ComboboxSelected>>", lambda e, k=col_key: self._on_filter_changed(k))
-                self.filter_widgets[col_key] = cb
+                col_width = filter_width.get(col_label, 10)
+                # ── P1#13：颜色筛选下拉框 ──
+                if col_key == '_color':
+                    color_options = ["全部", "🔴 红", "🟠 橙", "🟡 黄", "🟢 绿"]
+                    cb = ttk.Combobox(col_frame, state="readonly", font=("Microsoft YaHei", 8), 
+                                  width=col_width, values=color_options)
+                    cb.current(0)
+                    cb.pack(fill="x")
+                    cb.bind("<<ComboboxSelected>>", lambda e, k=col_key: self._on_filter_changed(k))
+                    self.filter_vars[col_key] = tk.StringVar(value="全部")
+                    self.filter_widgets[col_key] = cb
+                else:
+                    cb = ttk.Combobox(col_frame, state="readonly", font=("Microsoft YaHei", 8), width=col_width)
+                    cb.pack(fill="x")
+                    cb.bind("<<ComboboxSelected>>", lambda e, k=col_key: self._on_filter_changed(k))
+                    self.filter_widgets[col_key] = cb
+                # ── P1#12：常用组 后加分隔线 ──
+                if col_key == 'status':
+                    sep = tk.Frame(filter_bar, bg=C['surface'], width=2, height=20)
+                    sep.configure(bg='#cccccc')  # 分隔线颜色
+                    sep.grid(row=row_idx, column=col_idx+1, padx=(8, 0), pady=2, sticky='ns')
 
             col_idx += 1
-            if col_idx >= 5:
+            if col_idx >= 6:
                 col_idx = 0
                 row_idx += 1
 
@@ -333,7 +358,7 @@ def _build_ui(self):
         audit_hscroll.pack(side="bottom", fill="x")
         cols = ("idx", "excel_row", "factory", "admin", "code", "name", "order_date",
         "quota", "actual", "dev_rate", "is_alt", "status", "remark", "batch_remark",
-        "audit_result", "AI建议")
+        "audit_result", "AI建议", "deviation_amount")
         self.audit_tree = ttk.Treeview(tree_container, columns=cols, show="headings",
                                height=15, style="Custom.Treeview",
                                selectmode="extended",
@@ -353,6 +378,9 @@ def _build_ui(self):
         self.audit_tree.heading("status", text="状态")
         self.audit_tree.heading("remark", text="备注")
         self.audit_tree.heading("batch_remark", text="批量备注")
+        self.audit_tree.heading("audit_result", text="审核结果")
+        self.audit_tree.heading("AI建议", text="AI建议")
+        self.audit_tree.heading("deviation_amount", text="偏差金额")
         self.audit_tree.column("idx", width=35, anchor="center")
         self.audit_tree.column("excel_row", width=60, anchor="center")
         self.audit_tree.column("code", width=70, anchor="center")
@@ -365,10 +393,11 @@ def _build_ui(self):
         self.audit_tree.column("dev_rate", width=55, anchor="center")
         self.audit_tree.column("is_alt", width=50, anchor="center")
         self.audit_tree.column("status", width=55, anchor="center")
+        self.audit_tree.column("remark", width=80, anchor="w")
         self.audit_tree.column("batch_remark", width=90, anchor="w")
         self.audit_tree.column("audit_result", width=80, anchor="center")
         self.audit_tree.column("AI建议", width=120, anchor="w")
-        self.audit_tree.column("remark", width=80, anchor="w")
+        self.audit_tree.column("deviation_amount", width=90, anchor="e")
         self.audit_tree.pack(side="left", fill="both", expand=True)
         # 应用初始列宽锁定状态
         self.root.after(100, self._apply_column_lock)
@@ -452,6 +481,32 @@ def _build_ui(self):
                                     font=("Microsoft YaHei", 9),
                                     fg=C['text_dim'], bg=C['surface'])
         self.status_filter_label.pack(side="left", padx=(0, 8))
+
+# ── P1#14：趋势分析显示区域 ──
+        trend_row = tk.Frame(right_inner, bg=C['surface'])
+        trend_row.pack(fill="x", padx=12, pady=(8, 8))
+        # 初始化趋势数据
+        self.trend_data = None
+        # 三列布局
+        for period in ["早期", "中期", "近期"]:
+            col_frame = tk.Frame(trend_row, bg=C['surface2'], relief="flat", bd=1)
+            col_frame.pack(side="left", fill="both", expand=True, padx=4)
+            tk.Label(col_frame, text=period, font=("Microsoft YaHei", 10, "bold"),
+                    bg=C['surface2'], fg=C['text']).pack(pady=(6, 2))
+            self.trend_labels[period] = {
+                "range": tk.Label(col_frame, text="--", font=("Microsoft YaHei", 8),
+                                   bg=C['surface2'], fg=C['text_dim']),
+                "dev_rate": tk.Label(col_frame, text="--", font=("Microsoft YaHei", 9),
+                                     bg=C['surface2'], fg=C['text']),
+                "dev_amount": tk.Label(col_frame, text="--", font=("Microsoft YaHei", 9),
+                                       bg=C['surface2'], fg=C['text']),
+                "pass_rate": tk.Label(col_frame, text="--", font=("Microsoft YaHei", 9),
+                                       bg=C['surface2'], fg=C['text']),
+            }
+            self.trend_labels[period]["range"].pack()
+            self.trend_labels[period]["dev_rate"].pack()
+            self.trend_labels[period]["dev_amount"].pack()
+            self.trend_labels[period]["pass_rate"].pack()
 
 # 批量操作行
         batch_btn_row = tk.Frame(right_inner, bg=C['surface'])

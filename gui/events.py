@@ -529,8 +529,8 @@ class EventsMixIn:
                  fg=C['text'], bg=C['bg']).pack(pady=(10, 3), anchor="w", padx=20)
 
         var_a = tk.StringVar()
-        if material_list:
-            cb_a = ttk.Combobox(d, textvariable=var_a, values=material_list,
+        if hasattr(self, 'material_list') and self.material_list:
+            cb_a = ttk.Combobox(d, textvariable=var_a, values=self.material_list,
                                   font=("Consolas", 9), state="normal", width=65)
             cb_a.pack(padx=20, fill="x")
             cb_a.set("输入关键字或点击下拉选择...")
@@ -549,8 +549,8 @@ class EventsMixIn:
                  fg=C['text'], bg=C['bg']).pack(pady=(10, 3), anchor="w", padx=20)
 
         var_b = tk.StringVar()
-        if material_list:
-            cb_b = ttk.Combobox(d, textvariable=var_b, values=material_list,
+        if hasattr(self, 'material_list') and self.material_list:
+            cb_b = ttk.Combobox(d, textvariable=var_b, values=self.material_list,
                                   font=("Consolas", 9), state="normal", width=65)
             cb_b.pack(padx=20, fill="x")
             cb_b.set("输入关键字或点击下拉选择...")
@@ -596,17 +596,46 @@ class EventsMixIn:
                 if '|' in x:
                     return x.split('|')[1].strip()
                 return code_to_name.get(x, x)
-            a_code = to_code(a)
-            b_code = to_code(b)
-            a_name = to_name(a)
-            b_name = to_name(b)
+            # 解析下拉框选择: "工厂 | 编码 | 名称" 格式
+            def parse_selection(x):
+                if '|' in x:
+                    parts = [p.strip() for p in x.split('|')]
+                    if len(parts) >= 3:
+                        return parts[0], parts[1], parts[2]  # factory, code, name
+                    elif len(parts) == 2:
+                        return '', parts[0], parts[1]  # code, name
+                    else:
+                        return '', parts[0], ''
+                return '', to_code(x), to_name(x)
+            
+            factory_a, a_code, a_name = parse_selection(a)
+            factory_b, b_code, b_name = parse_selection(b)
             exact_match = []
             partial_match = []
             for idx, (ea, eb) in enumerate(self.alt_pairs):
-                ea_code = to_code(ea)
-                eb_code = to_code(eb)
-                ea_name = to_name(ea)
-                eb_name = to_name(eb)
+                # 支持新旧格式: 新格式 (factory, code, name), 旧格式 (code, name), 或旧格式 code
+                if isinstance(ea, tuple):
+                    if len(ea) == 3:
+                        _, ea_code, ea_name = ea
+                    elif len(ea) == 2:
+                        ea_code, ea_name = ea
+                    else:
+                        ea_code = to_code(str(ea))
+                        ea_name = to_name(str(ea))
+                else:
+                    ea_code = to_code(ea)
+                    ea_name = to_name(ea)
+                if isinstance(eb, tuple):
+                    if len(eb) == 3:
+                        _, eb_code, eb_name = eb
+                    elif len(eb) == 2:
+                        eb_code, eb_name = eb
+                    else:
+                        eb_code = to_code(str(eb))
+                        eb_name = to_name(str(eb))
+                else:
+                    eb_code = to_code(eb)
+                    eb_name = to_name(eb)
                 a_set = {a_code.lower(), a_name.lower()}
                 b_set = {b_code.lower(), b_name.lower()}
                 ea_set = {ea_code.lower(), ea_name.lower()}
@@ -619,21 +648,32 @@ class EventsMixIn:
                         partial_match.append((idx, ea, eb))
             if exact_match:
                 pair = self.alt_pairs[exact_match[0]]
-                msg = "已存在完全相同的配对：\n物料A: " + str(pair[0]) + "\n物料B: " + str(pair[1]) + "\n\n是否仍要添加？"
+                # pair 是 ((factory_a, code_a, name_a), (factory_b, code_b, name_b))
+                p0 = pair[0] if isinstance(pair[0], tuple) else ('', pair[0], '')
+                p1 = pair[1] if isinstance(pair[1], tuple) else ('', pair[1], '')
+                msg = "已存在完全相同的配对：\n物料A: " + f"{p0[0]} {p0[1]} {p0[2]}" + "\n物料B: " + f"{p1[0]} {p1[1]} {p1[2]}" + "\n\n是否仍要添加？"
                 resp = messagebox.askyesno("发现重复配对", msg)
                 if not resp:
                     return
             if partial_match:
                 warn_msg = "⚠ 警告：以下物料已在其他配对中存在：\n\n"
                 for idx, ea, eb in partial_match:
-                    warn_msg += "  " + str(ea) + " ↔ " + str(eb) + "\n"
+                    # ea, eb 可能是 tuple 或 string
+                    if isinstance(ea, tuple):
+                        warn_msg += "  " + f"{ea[0]} {ea[1]} {ea[2]}" + " ↔ "
+                    else:
+                        warn_msg += "  " + str(ea) + " ↔ "
+                    if isinstance(eb, tuple):
+                        warn_msg += f"{eb[0]} {eb[1]} {eb[2]}" + "\n"
+                    else:
+                        warn_msg += str(eb) + "\n"
                 warn_msg += "\n一个物料不应出现在多个替代关系中！\n是否仍要添加？"
                 resp = messagebox.askyesno("物料冲突警告", warn_msg)
                 if not resp:
                     return
-            # alt_pairs 在分析引擎中按「组件物料描述」(纯名称) 匹配，所以只存名称
-            save_a = a_name if a_name and a_name != a_code else a_code
-            save_b = b_name if b_name and b_name != b_code else b_code
+            # alt_pairs 存储 (factory, code, name) 三元组
+            save_a = (factory_a, a_code, a_name)
+            save_b = (factory_b, b_code, b_name)
             self.alt_pairs.append((save_a, save_b))
             save_alt_pairs(self.alt_pairs, log_cb=self.log)
             self._refresh_alt_view(self._alt_inner)
@@ -662,7 +702,34 @@ class EventsMixIn:
             lst = tk.Listbox(d, font=("Consolas", 9), height=4, selectmode='single')
             lst.pack(fill="x", padx=20)
             for a, b in self.alt_pairs:
-                lst.insert('end', a + " ⇄ " + b)
+                # a, b 可能是 (factory, code, name) 或 (code, name) 或 code
+                if isinstance(a, tuple):
+                    if len(a) == 3:
+                        factory_a, code_a, name_a = a
+                    elif len(a) == 2:
+                        code_a, name_a = a
+                        factory_a = ''
+                    else:
+                        code_a, name_a = str(a), ''
+                        factory_a = ''
+                else:
+                    code_a, name_a = str(a), ''
+                    factory_a = ''
+                if isinstance(b, tuple):
+                    if len(b) == 3:
+                        factory_b, code_b, name_b = b
+                    elif len(b) == 2:
+                        code_b, name_b = b
+                        factory_b = ''
+                    else:
+                        code_b, name_b = str(b), ''
+                        factory_b = ''
+                else:
+                    code_b, name_b = str(b), ''
+                    factory_b = ''
+                left = f"{factory_a} {code_a} {name_a}"
+                right = f"{factory_b} {code_b} {name_b}"
+                lst.insert('end', left + " ⇄ " + right)
             tk.Button(d, text="删除选中配对", command=do_del, bg=C['danger'], fg="white",
                       font=("Microsoft YaHei", 9), relief="flat").pack(pady=5)
 
@@ -682,7 +749,12 @@ class EventsMixIn:
         lst = tk.Listbox(d, font=("Consolas", 10), selectmode='single')
         lst.pack(fill="both", expand=True, padx=10)
         for a, b in self.alt_pairs:
-            lst.insert('end', a + " ⇄ " + b)
+            # a, b 都是 (factory, code, name) 元组
+            factory_a, code_a, name_a = a if isinstance(a, tuple) else ('', a, '')
+            factory_b, code_b, name_b = b if isinstance(b, tuple) else ('', b, '')
+            left = f"{factory_a} {code_a} {name_a}"
+            right = f"{factory_b} {code_b} {name_b}"
+            lst.insert('end', left + " ⇄ " + right)
         if self.alt_pairs:
             lst.select_set(0)
         btn_frame = tk.Frame(d)
@@ -1356,6 +1428,19 @@ class EventsMixIn:
             need_note = high_dev[high_dev['备注原因'].isna()]
             ok_note = high_dev[high_dev['备注原因'].notna()]
             
+            # ── P1#11：计算偏差金额 ─────────────────────────────
+            df['数量-定额'] = pd.to_numeric(df['数量-定额'], errors='coerce').fillna(0)
+            df['数量-实际'] = pd.to_numeric(df['数量-实际'], errors='coerce').fillna(0)
+            df['金额-实际(含税)'] = pd.to_numeric(df['金额-实际(含税)'], errors='coerce').fillna(0)
+            # 计算含税单价（避开除以0）
+            df['_unit_price'] = 0.0
+            mask = df['数量-实际'] != 0
+            df.loc[mask, '_unit_price'] = df.loc[mask, '金额-实际(含税)'] / df.loc[mask, '数量-实际']
+            # 偏差金额 = (实际 - 定额) × 含税单价
+            df['偏差金额'] = ((df['数量-实际'] - df['数量-定额']) * df['_unit_price']).round(2)
+            # 删除临时列
+            df.drop(columns=['_unit_price'], inplace=True)
+            
             # 更新统计卡片
             self.audit_stat_labels['total'].configure(text=str(total))
             self.audit_stat_labels['high_dev'].configure(text=str(len(high_dev)))
@@ -1383,6 +1468,8 @@ class EventsMixIn:
                 self.unified_export_btn.configure(state="normal")
             if hasattr(self, 'cleanup_btn'):
                 self.cleanup_btn.configure(state="normal")
+            if hasattr(self, 'save_audit_btn'):
+                self.save_audit_btn.configure(state="normal")
             self._apply_row_colors()
             # P0-B4：恢复审核记录（从数据库）
             storage.restore_audit_from_db(self.audit_data, log_cb=self.log)
@@ -1441,20 +1528,29 @@ class EventsMixIn:
                 dev_qty = row.get('偏差数量', 0)
                 dev_dir = "↑" if (pd.notna(dev_qty) and dev_qty > 0) else ("↓" if (pd.notna(dev_qty) and dev_qty < 0) else "-")
                 note = str(row.get('备注', '')) if pd.notna(row.get('备注')) else ''
+                note_src = str(row.get('备注来源', ''))
+                is_alt = '是' if note_src == '替代料' else '否'
+                batch_remark = ''
+                audit_result = note_src
 
                 self.audit_tree.insert('', 'end', values=(
-                    idx,
-                    int(row['原表行号']) if pd.notna(row.get('原表行号')) else '',
-                    str(row.get('物料编码', ''))[:15],
-                    str(row.get('物料名称', ''))[:25],
-                    str(row.get('工厂', ''))[:10],
-                    str(row.get('订单日期', ''))[:12] if pd.notna(row.get('订单日期')) else '',
-                    str(row.get('车间', ''))[:12],
-                    f"{row.get('定额', 0):.2f}" if pd.notna(row.get('定额')) else '-',
-                    f"{row.get('实际', 0):.2f}" if pd.notna(row.get('实际')) else '-',
-                    str(row.get('偏差率', '-')),
-                    f"{status}{dev_dir}",
-                    note,
+                    idx,  # idx
+                    int(row['原表行号']) if pd.notna(row.get('原表行号')) else '',  # excel_row
+                    str(row.get('工厂', '')),  # factory
+                    '',  # admin (生产管理员)
+                    str(row.get('物料编码', ''))[:15],  # code
+                    str(row.get('物料名称', ''))[:25],  # name
+                    str(row.get('订单日期', ''))[:12] if pd.notna(row.get('订单日期')) else '',  # order_date
+                    f"{row.get('定额', 0):.2f}" if pd.notna(row.get('定额')) else '-',  # quota
+                    f"{row.get('实际', 0):.2f}" if pd.notna(row.get('实际')) else '-',  # actual
+                    str(row.get('偏差率', '-')),  # dev_rate
+                    is_alt,  # is_alt
+                    f"{status}{dev_dir}",  # status
+                    note,  # remark
+                    batch_remark,  # batch_remark
+                    audit_result,  # audit_result
+                    str(row.get('AI建议', ''))[:50],  # AI建议
+                    f"{row.get('偏差金额', 0):,.2f}",  # deviation_amount
                 ))
 
             # 6. 更新统计卡片和标签
@@ -1503,6 +1599,8 @@ class EventsMixIn:
             self.audit_data = audit_df
             self._update_filter_options()
             self._apply_row_colors()
+            # ── P1#14：更新趋势显示 ──
+            self._update_trend_display()
 
             # 8. 启用相关按钮
             for btn_name in ['audit_ai_btn', 'audit_export_btn', 'unified_ai_btn', 'unified_export_btn']:
@@ -1720,11 +1818,6 @@ class EventsMixIn:
         tk.Button(btn_frame, text="确定", width=10, command=apply_remark).pack(side="left", padx=10)
         tk.Button(btn_frame, text="取消", width=10, command=dialog.destroy).pack(side="left", padx=10)
 
-
-    def _run_ai_audit(self, event=None):
-        """AI审核备注功能（开发中）"""
-        from tkinter import messagebox
-        messagebox.showinfo("功能开发中", "AI审核备注功能正在开发中，敬请期待！")
 
     def _add_custom_status(self, event=None):
         """添加自定义状态标签"""
@@ -2306,6 +2399,15 @@ class EventsMixIn:
             filtered_data = self.audit_data[self.audit_data['备注原因'].isna()]
         elif filter_type == 'ok_note':
             filtered_data = self.audit_data[self.audit_data['备注原因'].notna()]
+        # ── P1#13：颜色筛选 ──
+        elif filter_type == '_color':
+            color_val = self.filter_vars.get('_color', tk.StringVar(value='全部')).get()
+            if color_val and color_val != '全部':
+                color_map = {'🔴 红': '红', '🟠 橙': '橙', '🟡 黄': '黄', '🟢 绿': '绿'}
+                target_color = color_map.get(color_val, color_val)
+                filtered_data = self.audit_data[self.audit_data['_priority_label'] == target_color]
+            else:
+                filtered_data = self.audit_data
         else:
             filtered_data = self.audit_data
         # 联动更新顶部统计卡片
@@ -2335,6 +2437,7 @@ class EventsMixIn:
                 batch_remark,  # batch_remark
                 str(row.get('原备注', ''))[:30],  # orig_remark
                 str(row.get('AI建议', ''))[:50],  # ai_suggest
+                f"{row.get('偏差金额', 0):,.2f}",  # deviation_amount
             ))
             priority_label = row.get('_priority_label', '绿')
             priority_tag = 'priority_red' if priority_label == '红' else ('priority_yellow' if priority_label == '黄' else 'priority_green')
@@ -2763,6 +2866,7 @@ class EventsMixIn:
                 batch_remark[:30],
                 str(row.get('audit_result', '')),
                 str(row.get('AI建议', '')),
+                f"{row.get('偏差金额', 0):,.2f}",
             ))
             # 颜色标签
             if note_src == '自动结案':
@@ -2842,8 +2946,55 @@ def run_app():
                     pass
         except Exception:
             pass
+        
+        # ── 启动模式选择 ──
+        # 读取默认模式配置
+        config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.zpp011_audit')
+        config_path = os.path.join(config_dir, 'mode.json')
+        default_mode = None
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    default_mode = data.get("default_mode", None)
+            except Exception:
+                pass  # 配置读取失败时选择窗口照常弹出
+
+        selected_mode = None
+        if default_mode:
+            selected_mode = default_mode
+        else:
+            from gui.app import ModeSelector
+            selector = ModeSelector()
+            selector.root.mainloop()
+            selected_mode = selector.selected_mode
+            if selected_mode is None:
+                # 用户关闭了选择窗口，退出程序
+                return
+        if selected_mode != "analysis":
+            # 库存流水模式，创建库存界面
+            from gui.inventory_view import InventoryView
+            inv_view = InventoryView(root)
+            inv_view.pack(fill='both', expand=True)
+            root.deiconify()
+            root.mainloop()
+            return
+        
         from gui.app import ZPP011Beautiful
         app = ZPP011Beautiful(root)
+        
+        # 设置审核表格列排序功能
+        from gui.tree_utils import setup_column_sorting
+        audit_cols = {
+            "idx": "序号", "excel_row": "原表行号", "factory": "工厂名称",
+            "admin": "生产管理员", "code": "物料号", "name": "物料描述",
+            "order_date": "订单日期", "quota": "定额", "actual": "实际",
+            "dev_rate": "偏差率", "is_alt": "替代料", "status": "状态",
+            "remark": "备注", "batch_remark": "批量备注",
+            "audit_result": "审核结果", "AI建议": "AI建议"
+        }
+        app._audit_sort_states = setup_column_sorting(app.audit_tree, audit_cols)
+        
         style = ttk.Style()
         style.theme_use('clam')
         from widgets import C as _C

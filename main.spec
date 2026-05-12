@@ -1,17 +1,36 @@
 # -*- mode: python ; coding: utf-8 -*-
-
-
 a = Analysis(
     ['E:\\zpp011_dev\\模块化脚本\\main.py'],
     pathex=[],
     binaries=[],
     datas=[
         ('E:\\zpp011_dev\\模块化脚本\\changelog.json', '.'),
-        ('E:\\zpp011_dev\\模块化脚本\\ZPP011偏差分析器.icon.ico', '.'),
-        ('E:\\zpp011_dev\\模块化脚本\\ZPP011偏差分析器.icon.png', '.'),
+        ('E:\\zpp011_dev\\模块化脚本\\ZPP011偏差分析器.ico', '.'),
+        ('E:\\zpp011_dev\\模块化脚本\\ZPP011.png', '.'),
+        ('E:\\zpp011_dev\\模块化脚本\\gui', 'gui'),
+        ('E:\\zpp011_dev\\模块化脚本\\storage', 'storage'),
+        ('E:\\zpp011_dev\\模块化脚本\\analysis', 'analysis'),
+        ('E:\\zpp011_dev\\模块化脚本\\domain', 'domain'),
+        ('E:\\zpp011_dev\\模块化脚本\\export', 'export'),
+        ('E:\\zpp011_dev\\模块化脚本\\utils', 'utils'),
+        ('E:\\zpp011_dev\\模块化脚本\\config', 'config'),
     ],
-    hiddenimports=['storage', 'widgets', 'ppt_generator', 'alt_manager', 'PIL', 'PIL.Image', 'PIL.ImageTk', 'PIL.ImageFilter'],
-    hookspath=['C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\hooks'],
+    hiddenimports=[
+        'storage.storage', 'storage',
+        'gui.app', 'gui.events', 'gui.ui_builder', 'gui',
+        'analysis.analyzer', 'analysis',
+        'domain.alt_material.alt_manager', 'domain',
+        'export', 'export.ppt_generator',
+        'utils.helpers', 'utils',
+        'config.constants', 'config',
+        'widgets', 'ppt_generator',
+        'PIL', 'PIL.Image', 'PIL.ImageTk', 'PIL.ImageFilter',
+        'openpyxl', 'openpyxl.styles', 'openpyxl.utils',
+        'tkinter', 'tkinter.ttk', 'tkinter.filedialog', 'tkinter.messagebox',
+        'os', 'sys', 'glob', 'json', 'datetime', 'sqlite3',
+        'configparser', 'threading', 'subprocess',
+    ],
+    hookspath=['C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\Python311\Lib\site-packages\\_pyinstaller_hooks_contrib\hooks'],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
@@ -19,14 +38,13 @@ a = Analysis(
     optimize=0,
 )
 pyz = PYZ(a.pure)
-
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
     a.datas,
     [],
-    name='ZPP011生产偏差分析器_v35.0',
+    name='ZPP011_v36_build001.exe',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -39,5 +57,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='E:\\zpp011_dev\\模块化脚本\\ZPP011偏差分析器.icon.ico',
+    icon='E:\\zpp011_dev\\模块化脚本\\ZPP011偏差分析器.ico',
 )
