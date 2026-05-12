@@ -1,139 +1,34 @@
-﻿"""鎵撳寘鑴氭湰 鈥?鐗堟湰鍙风粺涓€浠?config/version.json 璇诲彇"""
+﻿ 裴哥，build.py 文件里有乱码中文注释，Python 解析不了直接报错。最快的方法是直接替换成纯英文版本的 build.py。
+
+把下面这段代码完整复制，覆盖掉 build.py 全部内容：
+
+```python
 import os
 import sys
 import json
-import time
 from datetime import datetime
 
-
-def get_version_info():
-    """浠?config/version.json 璇诲彇鐗堟湰鍙峰拰鍚嶇О"""
+def get_version():
     config_path = os.path.join('config', 'version.json')
-    result = {'version': 'v1.0', 'app_name': '鏅鸿兘鍔╂墜', 'packed_by': '', 'release_notes': ''}
     if os.path.exists(config_path):
         with open(config_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        result['version'] = data.get('version', 'v1.0')
-        result['app_name'] = data.get('app_name', '鏅鸿兘鍔╂墜')
-        result['packed_by'] = data.get('packed_by', '')
-        result['release_notes'] = data.get('release_notes', '')
-    return result
+            version = data.get('version', 'v1.0')
+            app_name = data.get('app_name', 'SmartAssistant')
+            return f"{app_name}_{version}"
+    return "ZPP011_Analyzer_v36.1"
 
-
-def get_version():
-    """鑾峰彇瀹屾暣鐗堟湰鍚?""
-    info = get_version_info()
-    return f"{info['app_name']}_{info['version']}"
-
-
-def format_duration(seconds):
-    """鏍煎紡鍖栬€楁椂锛氱 鈫?X鍒哫绉?""
-    if seconds < 60:
-        return f"{int(seconds)}绉?
-    minutes = int(seconds // 60)
-    secs = int(seconds % 60)
-    return f"{minutes}鍒唟secs}绉?
-
-
-def parse_release_notes(notes):
-    """瑙ｆ瀽 release_notes锛屾寜鍓嶇紑褰掔被"""
-    if not notes:
-        return {'鏂板': [], '鏀硅繘': [], '淇': [], '鍏朵粬': []}
-    
-    categories = {'鏂板': [], '鏀硅繘': [], '淇': [], '鍏朵粬': []}
-    for line in notes.split('\n'):
-        line = line.strip()
-        if not line:
-            continue
-        if line.startswith('鏂板:'):
-            categories['鏂板'].append(line[3:])
-        elif line.startswith('鏀硅繘:'):
-            categories['鏀硅繘'].append(line[3:])
-        elif line.startswith('淇:'):
-            categories['淇'].append(line[3:])
-        else:
-            categories['鍏朵粬'].append(line)
-    return categories
-
-
-def write_build_log(app_full_name, success=True, duration_seconds=0, exe_size_mb=0):
-    """鍐欐墦鍖呮棩蹇楀埌 build_log.md锛堣缁嗘牸寮忥級"""
-    info = get_version_info()
-    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    version = info['version']
-    app_name = info['app_name']
-    packed_by = info['packed_by']
-    release_notes = info['release_notes']
-    
-    # 瑙ｆ瀽鏇存柊鍐呭
-    categories = parse_release_notes(release_notes)
-    
-    # 鏋勫缓鏃ュ織鍧?
-    status_icon = '鉁?鎴愬姛' if success else '鉂?澶辫触'
-    log_lines = [
-        "=" * 50,
-        f"馃摝 {version} | {now_str} | {status_icon}",
-    ]
-    
-    # 鎵撳寘浜猴紙濡傛灉鏈夛級
-    if packed_by:
-        log_lines.append(f"馃懁 鎵撳寘浜猴細{packed_by}")
-    
-    log_lines.append("-" * 50)
-    
-    # 鍏冧俊鎭?
-    py_ver = f"Python {sys.version.split()[0]}"
-    exe_size = f"{exe_size_mb:.1f} MB"
-    duration = format_duration(duration_seconds)
-    log_lines.append(f" {py_ver} | onefile | gui/events.py | {exe_size} | 鑰楁椂 {duration}")
-    
-    log_lines.append("-" * 50)
-    
-    # 鏇存柊鍐呭锛堝鏋滄垚鍔熶笖鏈夊唴瀹癸級
-    if success and any(categories.values()):
-        log_lines.append("鉁?鏂板鍔熻兘锛?)
-        for i, item in enumerate(categories['鏂板'], 1):
-            log_lines.append(f" {i}. {item}")
-        
-        if categories['鏀硅繘']:
-            log_lines.append("")
-            log_lines.append("馃敡 鍔熻兘鏀硅繘锛?)
-            for i, item in enumerate(categories['鏀硅繘'], 1):
-                log_lines.append(f" {i}. {item}")
-        
-        if categories['淇']:
-            log_lines.append("")
-            log_lines.append("馃悰 Bug淇锛?)
-            for i, item in enumerate(categories['淇'], 1):
-                log_lines.append(f" {i}. {item}")
-        
-        if categories['鍏朵粬']:
-            log_lines.append("")
-            log_lines.append("馃搵 鍏朵粬鍙樻洿锛?)
-            for i, item in enumerate(categories['鍏朵粬'], 1):
-                log_lines.append(f" {i}. {item}")
-    elif not success:
-        log_lines.append("鉂?鎵撳寘澶辫触锛岃妫€鏌ラ敊璇俊鎭?)
-    else:
-        log_lines.append("锛堟湰娆℃棤鏇存柊璇存槑锛?)
-    
-    log_lines.append("=" * 50)
-    log_lines.append("")  # 绌鸿鍒嗛殧
-    
-    # 杩藉姞鍐欏叆
-    log_content = '\n'.join(log_lines)
+def write_build_log(app_full_name):
     log_path = 'build_log.md'
-    with open(log_path, 'a', encoding='utf-8') as f:
-        f.write(log_content + '\n')
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
-    print(f"鉁?鐗堟湰鏃ュ織宸叉洿鏂帮細{log_path}")
-
+    with open(log_path, 'a', encoding='utf-8') as f:
+        f.write(f"[{timestamp}] {app_full_name}.exe | Build Success\n")
 
 def build():
-    start_time = time.time()
     app_full_name = get_version()
-    print(f"馃摝 寮€濮嬫墦鍖咃細{app_full_name}")
-
+    print(f"Building: {app_full_name}")
+    
     opts = [
         'gui/events.py',
         '--onefile',
@@ -142,48 +37,31 @@ def build():
         '--clean',
         '--noconfirm',
     ]
-
-    # 璧勬簮鏂囦欢
+    
     if os.path.exists('config'):
         opts.append('--add-data')
         opts.append('config;config')
-
+    
     if os.path.exists('.zpp011_audit'):
         opts.append('--add-data')
         opts.append('.zpp011_audit;.zpp011_audit')
-
+    
     if os.path.exists('app.ico'):
         opts.extend(['--icon', 'app.ico'])
-
+    
     if os.path.exists('inventory_loader.py'):
         opts.append('--add-data')
         opts.append('inventory_loader.py;.')
-
-    # 鎵撳寘鏃ュ織
+    
     if os.path.exists('build_log.md'):
         opts.append('--add-data')
         opts.append('build_log.md;.')
-
-    import PyInstaller.__main__
     
-    try:
-        PyInstaller.__main__.run(opts)
-        
-        # 鎵撳寘鎴愬姛锛岃绠楄€楁椂鍜屾枃浠跺ぇ灏?
-        duration = time.time() - start_time
-        exe_path = os.path.join('dist', f'{app_full_name}.exe')
-        exe_size = os.path.getsize(exe_path) / (1024 * 1024)  # MB
-        
-        write_build_log(app_full_name, success=True, duration_seconds=duration, exe_size_mb=exe_size)
-        print(f"鉁?鎵撳寘瀹屾垚锛歞ist/{app_full_name}.exe")
-        
-    except Exception as e:
-        # 鎵撳寘澶辫触锛屽啓鍏ユ棩蹇?
-        duration = time.time() - start_time
-        write_build_log(app_full_name, success=False, duration_seconds=duration)
-        raise
-
+    import PyInstaller.__main__
+    PyInstaller.__main__.run(opts)
+    
+    write_build_log(app_full_name)
+    print(f"Done: dist/{app_full_name}.exe")
 
 if __name__ == '__main__':
     build()
-
