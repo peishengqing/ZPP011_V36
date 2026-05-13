@@ -65,8 +65,8 @@ class InventoryView(tk.Frame):
         self.check_all_btn.pack(side='left', padx=5)
 
         # ── 汇总卡片区域 ───────────────────────────────
-        self.summary_frame = tk.Frame(self, bg='#f5f5f5', pady=(0, 5))
-        self.summary_frame.pack(fill='x', padx=10)
+        self.summary_frame = tk.Frame(self, bg='#f5f5f5')
+        self.summary_frame.pack(fill='x', padx=10, pady=(0, 5))
 
         # 四个卡片配置: (标题, 背景色, 数字颜色, 单位)
         cards = [
