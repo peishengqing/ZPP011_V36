@@ -515,6 +515,162 @@ class EventsMixIn:
     # 注：上面这些方法的完整代码请从 v30.py 中全选复制，插入到此处。
     # 复制时注意保持缩进（全部与 _show_tree_view 对齐，class 内部缩进 4 空格）。
 
+    # ── 以下方法从 v30.py 完整移植 ──
+
+    def _refresh_alt_view(self, inner):
+        for w in inner.winfo_children():
+            w.destroy()
+        code_to_name = {}
+        excel_path = self.input_file.get()
+        if excel_path and os.path.exists(excel_path):
+            try:
+                df = pd.read_excel(excel_path, sheet_name='Data')
+                code_cols = [c for c in df.columns if any(k in str(c).lower() for k in ['组件物料号', '组件编码', '物料编码', 'code', '编码'])]
+                name_cols = [c for c in df.columns if any(k in str(c).lower() for k in ['组件描述', '物料描述', '名称', 'name', '描述'])]
+                if code_cols and name_cols:
+                    for _, row in df.iterrows():
+                        code = str(row[code_cols[0]])
+                        name = str(row[name_cols[0]])
+                        if code and code != 'nan':
+                            code_to_name[code] = name if name != 'nan' else ''
+            except Exception:
+                pass
+        for a, b in self.alt_pairs:
+            fr = tk.Frame(inner, bg=C['surface2'])
+            fr.pack(fill="x", pady=1)
+            a_name = code_to_name.get(str(a), '')
+            a_disp = f"{a}（{a_name}）" if a_name else str(a)
+            tk.Label(fr, text=f"↔ {a_disp}", font=("Consolas", 8), fg=C['text'],
+                     bg=C['surface2'], anchor="w").pack(side="left", padx=4)
+            tk.Label(fr, text="|", font=("Consolas", 8), fg=C['text_dim'],
+                     bg=C['surface2']).pack(side="left")
+            b_name = code_to_name.get(str(b), '')
+            b_disp = f"{b}（{b_name}）" if b_name else str(b)
+            tk.Label(fr, text=f"{b_disp}", font=("Consolas", 8), fg=C['purple'],
+                     bg=C['surface2'], anchor="w").pack(side="left", padx=4)
+
+    def _run_ai_audit(self):
+        if self.audit_data is None or len(self.audit_data) == 0:
+            messagebox.showwarning("提示", "请先加载数据")
+            return
+        with_remark = self.audit_data[self.audit_data['备注原因'].notna()].copy()
+        if len(with_remark) == 0:
+            messagebox.showwarning("提示", "没有已填备注的记录需要审核")
+            return
+        results = []
+        invalid_keywords = ['无', '--', '待查', '暂无', '未填', '空白']
+        weak_keywords = ['正常', '合理', '没问题']
+        no_quota_keywords = ['系统无定额', '系统无额定', '未添加额定', '系统未维护', '无定额', '未维护定额']
+        alt_keywords = ['替代料', '被替代', '替代', '部分替代']
+        for _, row in with_remark.iterrows():
+            remark = str(row['备注原因']).strip()
+            issues = []
+            status = ""
+            if any(k in remark for k in no_quota_keywords):
+                status = "合格（系统无定额）"
+            elif any(k in remark for k in alt_keywords):
+                if len(remark) < 5: issues.append("替代料备注过短")
+                if any(k in remark for k in invalid_keywords): issues.append("含无效占位符")
+                if any(k in remark for k in weak_keywords) and len(remark) < 10: issues.append("过于简单")
+                status = f"需改进: {'/'.join(issues)}" if issues else "合格（替代料）"
+            else:
+                if len(remark) < 5: issues.append("备注过短")
+                if any(k in remark for k in invalid_keywords): issues.append("无效占位符")
+                if any(k in remark for k in weak_keywords) and len(remark) < 10: issues.append("过于简单")
+                status = f"需改进: {'/'.join(issues)}" if issues else "合格"
+            results.append({
+                '物料': str(row.get('组件物料描述', ''))[:25],
+                '偏差率': f"{row.get('偏差率(%)', 0):.2f}%",
+                '备注': remark[:50],
+                '审核结果': status
+            })
+        result_win = tk.Toplevel(self.root)
+        result_win.title("AI审核结果")
+        result_win.geometry("850x450")
+        result_win.transient(self.root)
+        cols_res = ("物料", "偏差率", "备注", "审核结果")
+        tree_res = ttk.Treeview(result_win, columns=cols_res, show="headings", height=15)
+        for col in cols_res:
+            tree_res.heading(col, text=col)
+            tree_res.column(col, width=180 if col not in ("备注", "审核结果") else 300 if col == "备注" else 180,
+                           anchor="w" if col in ("备注", "审核结果") else "center")
+        scroll_res = ttk.Scrollbar(result_win, command=tree_res.yview)
+        tree_res.configure(yscrollcommand=scroll_res.set)
+        tree_res.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+        scroll_res.pack(side="right", fill="y", pady=10)
+        tree_res.tag_configure('warn', background='#fff8e1')
+        tree_res.tag_configure('no_quota', background='#e8f5e9')
+        tree_res.tag_configure('alt_mat', background='#e3f2fd')
+        tree_res.tag_configure('normal_ok', background='#f0fff4')
+        for r in results:
+            if "系统无定额" in r['审核结果']: tags = ('no_quota',)
+            elif "替代料" in r['审核结果']: tags = ('alt_mat',)
+            elif "合格" in r['审核结果']: tags = ('normal_ok',)
+            else: tags = ('warn',)
+            tree_res.insert('', 'end', values=(r['物料'], r['偏差率'], r['备注'], r['审核结果']), tags=tags)
+        no_quota_count = sum(1 for r in results if "系统无定额" in r['审核结果'])
+        alt_mat_count = sum(1 for r in results if "替代料" in r['审核结果'] and "系统无定额" not in r['审核结果'])
+        normal_ok_count = sum(1 for r in results if "合格" in r['审核结果'] and "系统无定额" not in r['审核结果'] and "替代料" not in r['审核结果'])
+        warn_count = sum(1 for r in results if "需改进" in r['审核结果'])
+        total_ok = no_quota_count + alt_mat_count + normal_ok_count
+        self.audit_result_lbl.configure(text=f"审核完成：{total_ok}合格 / {warn_count}需改进")
+        legend_frame = tk.Frame(result_win, bg=C['surface'])
+        legend_frame.pack(fill="x", padx=10, pady=(0, 5))
+        tk.Label(legend_frame, text="图例：", font=("Microsoft YaHei", 8), bg=C['surface'], fg=C['text_dim']).pack(side="left", padx=(0, 10))
+        tk.Label(legend_frame, text="■ 系统无定额合格", font=("Microsoft YaHei", 8), bg='#e8f5e9', fg='#2e7d32').pack(side="left", padx=5)
+        tk.Label(legend_frame, text=f"({no_quota_count})", font=("Microsoft YaHei", 8), bg=C['surface'], fg=C['text_dim']).pack(side="left", padx=(0, 10))
+        tk.Label(legend_frame, text="■ 替代料合格", font=("Microsoft YaHei", 8), bg='#e3f2fd', fg='#1565c0').pack(side="left", padx=5)
+        tk.Label(legend_frame, text=f"({alt_mat_count})", font=("Microsoft YaHei", 8), bg=C['surface'], fg=C['text_dim']).pack(side="left", padx=(0, 10))
+        tk.Label(legend_frame, text="■ 普通合格", font=("Microsoft YaHei", 8), bg='#f0fff4', fg='#2e7d32').pack(side="left", padx=5)
+        tk.Label(legend_frame, text=f"({normal_ok_count})", font=("Microsoft YaHei", 8), bg=C['surface'], fg=C['text_dim']).pack(side="left", padx=(0, 10))
+        tk.Label(legend_frame, text="■ 需改进", font=("Microsoft YaHei", 8), bg='#fff8e1', fg='#f57c00').pack(side="left", padx=5)
+        tk.Label(legend_frame, text=f"({warn_count})", font=("Microsoft YaHei", 8), bg=C['surface'], fg=C['text_dim']).pack(side="left")
+        self.log(f"AI审核完成：系统无定额{no_quota_count}条 | 替代料{alt_mat_count}条 | 普通{normal_ok_count}条 | 需改进{warn_count}条", "success")
+
+    def _export_audit_excel(self):
+        if self.audit_data is None or len(self.audit_data) == 0:
+            messagebox.showwarning("提示", "没有可导出的数据")
+            return
+        out_path = self.output_dir.get() or os.path.dirname(self.input_file.get()) or os.getcwd()
+        file_path = filedialog.asksaveasfilename(
+            initialdir=out_path, initialfile="ZPP011_审核结果.xlsx",
+            defaultextension=".xlsx", filetypes=[("Excel文件", "*.xlsx")]
+        )
+        if not file_path:
+            return
+        try:
+            export_df = self.audit_data.copy()
+            today = datetime.now().strftime('%Y-%m-%d')
+            export_df['导出日期'] = today
+            export_cols = ['excel_row', '订单日期', '备注原因', '组件物料号', '组件物料描述',
+                           '工厂名称', '生产管理员描述',
+                           '数量-定额', '数量-实际', '偏差率(%)']
+            available_cols = [c for c in export_cols if c in export_df.columns]
+            export_df = export_df[available_cols].copy()
+            export_df['状态'] = export_df['备注原因'].apply(
+                lambda x: '已备注' if pd.notna(x) and str(x).strip() else '需补备注'
+            )
+            col_rename = {
+                'excel_row': '原表行号', '订单日期': '订单日期', '备注原因': '备注原因',
+                '组件物料号': '物料号', '组件物料描述': '物料描述',
+                '工厂名称': '工厂名称', '生产管理员描述': '生产管理员',
+                '数量-定额': '定额', '数量-实际': '实际', '偏差率(%)': '偏差率%'
+            }
+            export_df.rename(columns=col_rename, inplace=True)
+            export_df['导出日期'] = today
+            export_df.to_excel(file_path, index=False, sheet_name='审核结果')
+            messagebox.showinfo("成功", "已导出到：\n" + file_path)
+            self.log(f"审核结果已导出（包含导出日期）：{file_path}", "success")
+        except Exception as e:
+            messagebox.showerror("错误", f"导出失败：{e}")
+            self.log(f"导出失败：{e}", "error")
+
+    def _show_step_log(self, idx):
+        pass
+
+    def _load_lock_state(self):
+        return {}
+
     def _add_alt(self):
 
         d = tk.Toplevel(self.root)
@@ -2949,12 +3105,9 @@ def run_app():
         
         # ── 启动模式选择 ──
         # 读取默认模式配置
-        # 兼容 exe 打包后的路径
-        if getattr(sys, 'frozen', False):
-            config_base = sys._MEIPASS
-        else:
-            config_base = os.path.dirname(os.path.dirname(__file__))
-        config_dir = os.path.join(config_base, '.zpp011_audit')
+        # 兼容 exe 打包后的路径：运行时配置应存在用户目录而非 _MEIPASS（临时解压目录）
+        from gui.app import _get_mode_config_dir
+        config_dir = _get_mode_config_dir()
         config_path = os.path.join(config_dir, 'mode.json')
         default_mode = None
         if os.path.exists(config_path):
@@ -2970,11 +3123,11 @@ def run_app():
             selected_mode = default_mode
         else:
             from gui.app import ModeSelector
-            selector = ModeSelector()
-            selector.root.mainloop()
+            selector = ModeSelector(root)  # 传入已有的 root，使用 Toplevel 而非新建 tk.Tk()
             selected_mode = selector.selected_mode
             if selected_mode is None:
                 # 用户关闭了选择窗口，退出程序
+                root.destroy()
                 return
         if selected_mode != "analysis":
             # 库存流水模式，创建库存界面

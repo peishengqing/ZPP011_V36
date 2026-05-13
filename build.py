@@ -1,12 +1,8 @@
-﻿ 裴哥，build.py 文件里有乱码中文注释，Python 解析不了直接报错。最快的方法是直接替换成纯英文版本的 build.py。
-
-把下面这段代码完整复制，覆盖掉 build.py 全部内容：
-
-```python
 import os
 import sys
 import json
 from datetime import datetime
+
 
 def get_version():
     config_path = os.path.join('config', 'version.json')
@@ -18,17 +14,18 @@ def get_version():
             return f"{app_name}_{version}"
     return "ZPP011_Analyzer_v36.1"
 
+
 def write_build_log(app_full_name):
     log_path = 'build_log.md'
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    
     with open(log_path, 'a', encoding='utf-8') as f:
         f.write(f"[{timestamp}] {app_full_name}.exe | Build Success\n")
+
 
 def build():
     app_full_name = get_version()
     print(f"Building: {app_full_name}")
-    
+
     opts = [
         'gui/events.py',
         '--onefile',
@@ -37,31 +34,32 @@ def build():
         '--clean',
         '--noconfirm',
     ]
-    
+
     if os.path.exists('config'):
         opts.append('--add-data')
         opts.append('config;config')
-    
+
     if os.path.exists('.zpp011_audit'):
         opts.append('--add-data')
         opts.append('.zpp011_audit;.zpp011_audit')
-    
+
     if os.path.exists('app.ico'):
         opts.extend(['--icon', 'app.ico'])
-    
+
     if os.path.exists('inventory_loader.py'):
         opts.append('--add-data')
         opts.append('inventory_loader.py;.')
-    
+
     if os.path.exists('build_log.md'):
         opts.append('--add-data')
         opts.append('build_log.md;.')
-    
+
     import PyInstaller.__main__
     PyInstaller.__main__.run(opts)
-    
+
     write_build_log(app_full_name)
     print(f"Done: dist/{app_full_name}.exe")
+
 
 if __name__ == '__main__':
     build()

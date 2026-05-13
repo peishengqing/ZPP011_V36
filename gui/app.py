@@ -83,83 +83,112 @@ def calc_dynamic_threshold(df, method='robust'):
 
 
 
+def _get_mode_config_dir():
+    """获取 mode.json 配置目录（兼容开发和 EXE 环境）"""
+    if getattr(sys, 'frozen', False):
+        # EXE 模式：使用用户目录下的 .zpp011_audit（运行时可写）
+        config_dir = os.path.join(os.path.expanduser('~'), '.zpp011_audit')
+    else:
+        # 开发模式：项目根目录下的 .zpp011_audit
+        config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.zpp011_audit')
+    os.makedirs(config_dir, exist_ok=True)
+    return config_dir
+
+
 class ModeSelector:
-    """启动模式选择窗口"""
-    def __init__(self):
-        self.root = tk.Tk()
+    """启动模式选择窗口（使用 Toplevel，避免创建多个 tk.Tk 实例）"""
+    def __init__(self, parent):
+        self.selected_mode = None
+        self.parent = parent
+
         # 从统一配置读取版本
-        # 兼容 exe 打包后的路径
         if getattr(sys, 'frozen', False):
             config_path = os.path.join(sys._MEIPASS, 'config', 'version.json')
         else:
-            config_path = 'config/version.json'
+            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'version.json')
         with open(config_path, 'r', encoding='utf-8') as f:
             cfg = json.load(f)
-        self.root.title(f"{cfg['app_name']}_{cfg['version']}")
-        self.root.geometry("400x300")
-        self.root.resizable(False, False)
+
+        # 使用 Toplevel 而非 tk.Tk()，避免多个 Tk 实例导致状态混乱
+        self.win = tk.Toplevel(parent)
+        self.win.title(f"{cfg['app_name']}_{cfg['version']}")
+        self.win.geometry("400x300")
+        self.win.resizable(False, False)
+        self.win.grab_set()  # 模态
+        self.win.focus_force()
+
         # 居中窗口
-        self.root.eval('tk::PlaceWindow . center')
+        self.win.update_idletasks()
+        sw = self.win.winfo_screenwidth()
+        sh = self.win.winfo_screenheight()
+        x = (sw - 400) // 2
+        y = (sh - 300) // 2
+        self.win.geometry(f"+{x}+{y}")
 
         # 标题
-        tk.Label(self.root, text="请选择启动模式", font=("Microsoft YaHei", 12, "bold")).pack(pady=20)
+        tk.Label(self.win, text="请选择启动模式", font=("Microsoft YaHei", 12, "bold")).pack(pady=20)
 
         # 模式按钮
-        tk.Button(self.root, text="📊 生产偏差分析", width=30, height=2,
+        tk.Button(self.win, text="📊 生产偏差分析", width=30, height=2,
                   command=lambda: self._start("analysis")).pack(pady=5)
-        tk.Button(self.root, text="📦 库存流水管理", width=30, height=2,
+        tk.Button(self.win, text="📦 库存流水管理", width=30, height=2,
                   command=lambda: self._start("inventory")).pack(pady=5)
 
         # 记住选择
         self.remember_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(self.root, text="记住我的选择，下次不再询问",
+        tk.Checkbutton(self.win, text="记住我的选择，下次不再询问",
                        variable=self.remember_var).pack(pady=15)
 
         # 底部按钮
-        bottom = tk.Frame(self.root)
+        bottom = tk.Frame(self.win)
         bottom.pack(side="bottom", fill="x", padx=10, pady=10)
         tk.Button(bottom, text="设置默认模式", command=self._set_default).pack(side="left")
-        tk.Button(bottom, text="关闭", command=self.root.destroy).pack(side="right")
+        tk.Button(bottom, text="关闭", command=self._close).pack(side="right")
 
-        self.selected_mode = None
-        self.root.mainloop()
+        # 关闭窗口时退出
+        self.win.protocol("WM_DELETE_WINDOW", self._close)
+
+        # 隐藏父窗口（模式选择期间）
+        parent.withdraw()
+
+        # 等待窗口关闭（模拟模态对话框）
+        self.win.wait_window(self.win)
 
     def _start(self, mode):
         if self.remember_var.get():
-            # 保存默认模式
             self._save_default(mode)
         self.selected_mode = mode
-        self.root.destroy()
+        self.parent.deiconify()  # 恢复父窗口
+        self.win.destroy()
 
-    def _save_default(self, mode):
-        # 后面实现：保存到 config.json
-        pass
+    def _close(self):
+        self.selected_mode = None
+        self.parent.deiconify()  # 恢复父窗口
+        self.win.destroy()
 
     def _save_default(self, mode):
         """保存默认模式到配置文件"""
-        config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.zpp011_audit')
-        os.makedirs(config_dir, exist_ok=True)
+        config_dir = _get_mode_config_dir()
         config_path = os.path.join(config_dir, 'mode.json')
         with open(config_path, 'w', encoding='utf-8') as f:
             json.dump({"default_mode": mode}, f, ensure_ascii=False, indent=2)
 
     def _set_default(self):
         """点击"设置默认模式"按钮时弹出菜单"""
-        menu = tk.Menu(self.root, tearoff=0)
+        menu = tk.Menu(self.win, tearoff=0)
         menu.add_command(label="🔄 清除默认设置", command=self._clear_default)
         menu.add_separator()
         menu.add_command(label="❌ 取消", command=lambda: None)
         try:
-            menu.tk_popup(self.root.winfo_pointerx(), self.root.winfo_pointery())
+            menu.tk_popup(self.win.winfo_pointerx(), self.win.winfo_pointery())
         finally:
             menu.grab_release()
 
     def _clear_default(self):
-        config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.zpp011_audit')
+        config_dir = _get_mode_config_dir()
         config_path = os.path.join(config_dir, 'mode.json')
         if os.path.exists(config_path):
             os.remove(config_path)
-        # 提示用户已清除
         messagebox.showinfo("已清除", "默认模式已清除，下次启动将重新询问。")
 
 
@@ -170,7 +199,7 @@ class ZPP011Beautiful(EventsMixIn):
         if getattr(sys, 'frozen', False):
             config_path = os.path.join(sys._MEIPASS, 'config', 'version.json')
         else:
-            config_path = 'config/version.json'
+            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'version.json')
         with open(config_path, 'r', encoding='utf-8') as f:
             cfg = json.load(f)
         self.root.title(f"{cfg['app_name']}_{cfg['version']}")
@@ -700,7 +729,7 @@ class ZPP011Beautiful(EventsMixIn):
 
     def _load_golden_columns(self):
         """从黄金模板JSON文件中读取列名列表"""
-        config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.zpp011_audit')
+        config_dir = _get_mode_config_dir()
         config_path = os.path.join(config_dir, 'golden_template.json')
         if os.path.exists(config_path):
             with open(config_path, 'r', encoding='utf-8') as f:
