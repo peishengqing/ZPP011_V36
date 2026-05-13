@@ -12,6 +12,7 @@ import sys
 # 导入数据处理模块
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from inventory_loader import load_inventory_snapshot, merge_inventory_records, calc_expiry_warning
+import storage
 
 
 class InventoryView(tk.Frame):
@@ -44,10 +45,60 @@ class InventoryView(tk.Frame):
         self._setup_inventory_sorting()
 
     def _build_ui(self):
-        """构建界面布局"""
+        """构建界面布局（含全局滚动条）"""
+        # ── 顶部标题栏（固定不滚） ───────────────────
+        header = tk.Frame(self, bg='#1a365d', height=56)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+
+        tk.Label(header, text="📦", font=("Segoe UI Emoji", 22),
+                 bg='#1a365d').pack(side="left", padx=(16, 8))
+        title_frame = tk.Frame(header, bg='#1a365d')
+        title_frame.pack(side="left")
+        tk.Label(title_frame, text="云南路居基地库存流水管理系统",
+                 font=("Microsoft YaHei", 13, "bold"), fg='#ffffff',
+                 bg='#1a365d').pack(anchor="w")
+        tk.Label(title_frame, text="制作人：裴盛清|v1.0",
+                 font=("Microsoft YaHei", 8), fg='#cae8ff',
+                 bg='#1a365d').pack(anchor="w")
+
+        # ── 全局滚动区域（Canvas + Scrollbar） ──────
+        canvas_container = tk.Frame(self, bg='#f5f5f5')
+        canvas_container.pack(fill='both', expand=True)
+
+        self._global_canvas = tk.Canvas(canvas_container, bg='#f5f5f5',
+                                         highlightthickness=0)
+        global_vsb = ttk.Scrollbar(canvas_container, orient="vertical",
+                                   command=self._global_canvas.yview)
+        self._global_canvas.configure(yscrollcommand=global_vsb.set)
+
+        global_vsb.pack(side='right', fill='y')
+        self._global_canvas.pack(side='left', fill='both', expand=True)
+
+        # 内部可滚动容器
+        scroll_frame = tk.Frame(self._global_canvas, bg='#f5f5f5')
+        self._canvas_window = self._global_canvas.create_window(
+            (0, 0), window=scroll_frame, anchor='nw')
+
+        def _configure_scroll_region(event):
+            self._global_canvas.configure(scrollregion=self._global_canvas.bbox('all'))
+            # 让内部框架宽度跟随 Canvas 宽度
+            self._global_canvas.itemconfig(self._canvas_window, width=event.width)
+
+        self._global_canvas.bind('<Configure>', _configure_scroll_region)
+        scroll_frame.bind('<Configure>', lambda e: self._global_canvas.configure(
+            scrollregion=self._global_canvas.bbox('all')))
+
+        # 鼠标滚轮绑定到全局 Canvas
+        def _on_mousewheel(event):
+            self._global_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        self._global_canvas.bind_all('<MouseWheel>', _on_mousewheel)
+
+        # ── 以下控件全部放入 scroll_frame ────────────
+
         # ── 顶部操作栏 ───────────────────────────────
-        top_frame = tk.Frame(self, bg='#f5f5f5', pady=10)
-        top_frame.pack(fill='x', padx=10)
+        top_frame = tk.Frame(scroll_frame, bg='#f5f5f5')
+        top_frame.pack(fill='x', padx=10, pady=(8, 0))
 
         tk.Button(top_frame, text="📥 导入库存表", command=self._import_inventory,
                   bg='#3498db', fg='white', font=('Microsoft YaHei', 10),
@@ -65,7 +116,7 @@ class InventoryView(tk.Frame):
         self.check_all_btn.pack(side='left', padx=5)
 
         # ── 汇总卡片区域 ───────────────────────────────
-        self.summary_frame = tk.Frame(self, bg='#f5f5f5')
+        self.summary_frame = tk.Frame(scroll_frame, bg='#f5f5f5')
         self.summary_frame.pack(fill='x', padx=10, pady=(0, 5))
 
         # 四个卡片配置: (标题, 背景色, 数字颜色, 单位)
@@ -100,14 +151,14 @@ class InventoryView(tk.Frame):
 
         # ── 库存快照区域（含搜索栏） ──────────────────
         self.inventory_tree = self._create_section(
-            top_frame, "📦 库存快照", self._build_inventory_table,
+            scroll_frame, "📦 库存快照", self._build_inventory_table,
             before_tree=self._build_search_bar)
 
         # ── 入库流水区域 ───────────────────────────────
-        self.inflow_tree = self._create_section(top_frame, "📋 入库流水", self._build_inflow_table)
+        self.inflow_tree = self._create_section(scroll_frame, "📋 入库流水", self._build_inflow_table)
 
         # ── 过期预警区域 ───────────────────────────────
-        self.warning_tree = self._create_section(top_frame, "⚠️ 过期预警", self._build_warning_table)
+        self.warning_tree = self._create_section(scroll_frame, "⚠️ 过期预警", self._build_warning_table)
 
         # ── 全局快捷键 ───────────────────────────────
         self.bind_all('<Control-f>', lambda e: self.search_entry.focus_set())
@@ -123,14 +174,15 @@ class InventoryView(tk.Frame):
             before_tree(frame)
 
         # 创建 Treeview
-        tree = ttk.Treeview(frame, show='headings', height=8)
+        tree = ttk.Treeview(frame, show='headings')
 
-        # 添加滚动条
+        # 垂直滚动条
         vsb = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=vsb.set)
 
-        tree.pack(side='left', fill='both', expand=True)
+        # 用 pack：tree 先填充剩余空间，滚动条贴右侧
         vsb.pack(side='right', fill='y')
+        tree.pack(side='left', fill='both', expand=True)
 
         # 调用特定区域的构建函数
         build_func(tree)
@@ -240,40 +292,55 @@ class InventoryView(tk.Frame):
             return
 
         try:
-            self.parent.log("📥 正在加载库存数据...", "info")
-
             # 读取库存快照
             self.inventory_df = load_inventory_snapshot(filepath)
-            self.parent.log(f"✅ 库存快照加载完成: {len(self.inventory_df)} 条记录", "info")
 
             # 读取入库流水
             self.inflow_df = merge_inventory_records(filepath)
-            self.parent.log(f"✅ 入库流水加载完成: {len(self.inflow_df)} 条记录", "info")
 
             # 计算过期预警
             self.warning_df = calc_expiry_warning(self.inventory_df.copy())
-            self.parent.log(f"✅ 过期预警计算完成", "info")
 
             # 刷新表格显示
             self._refresh_data()
             self._update_summary()
 
-            # 显示预警统计
-            expired = (self.warning_df['过期状态'] == '已过期').sum()
-            expiring = (self.warning_df['过期状态'] == '即将过期(30天内)').sum()
-            self.parent.log(f"⚠️ 过期预警: 已过期 {expired} 项, 即将过期 {expiring} 项", "warn")
-
             messagebox.showinfo("导入成功", f"库存数据导入完成！\n库存记录: {len(self.inventory_df)} 条\n入库记录: {len(self.inflow_df)} 条")
 
         except Exception as e:
-            self.parent.log(f"❌ 导入失败: {e}", "error")
             messagebox.showerror("导入失败", str(e))
 
     def _refresh_data(self):
         """刷新表格显示"""
-        if self.inventory_df is not None:
-            # TODO: 刷新库存快照表格
-            pass
+        # 刷新库存快照表格
+        if self.inventory_df is not None and self.inventory_tree is not None:
+            self.inventory_tree.delete(*self.inventory_tree.get_children())
+            for _, row in self.inventory_df.iterrows():
+                values = []
+                for col in ['物料编码', '物料名称', '现存量', '生产日期', '保质期']:
+                    val = row.get(col, '')
+                    values.append(str(val) if val is not None else '')
+                self.inventory_tree.insert('', 'end', values=values)
+
+        # 刷新入库流水表格
+        if self.inflow_df is not None and self.inflow_tree is not None:
+            self.inflow_tree.delete(*self.inflow_tree.get_children())
+            for _, row in self.inflow_df.iterrows():
+                values = []
+                for col in ['入库日期', '物料编码', '物料名称', '入库类型', '数量', '单位', '金额']:
+                    val = row.get(col, '')
+                    values.append(str(val) if val is not None else '')
+                self.inflow_tree.insert('', 'end', values=values)
+
+        # 刷新过期预警表格
+        if self.warning_df is not None and self.warning_tree is not None:
+            self.warning_tree.delete(*self.warning_tree.get_children())
+            for _, row in self.warning_df.iterrows():
+                values = []
+                for col in ['物料编码', '物料名称', '剩余天数', '过期状态', '保质期']:
+                    val = row.get(col, '')
+                    values.append(str(val) if val is not None else '')
+                self.warning_tree.insert('', 'end', values=values)
 
     def _update_summary(self):
         """更新汇总卡片数据"""
@@ -320,12 +387,7 @@ class InventoryView(tk.Frame):
         else:
             self.summary_inflow_lbl.configure(text='--')
 
-        if self.inflow_df is not None:
-            # TODO: 刷新入库流水表格
-            pass
-        if self.warning_df is not None:
-            # TODO: 刷新过期预警表格
-            pass
+        # 入库流水和过期预警表格由 _refresh_data() 统一处理
 
     def _setup_inventory_sorting(self):
         """为库存表格设置点击排序功能"""

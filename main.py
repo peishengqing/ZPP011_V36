@@ -4,11 +4,20 @@
 ZPP011 偏差分析器（v36 模块化入口）
 """
 
-from gui.app import run_app
-
+import os, sys, traceback
 
 def main():
-    run_app()
+    _dbg = os.path.join(os.path.expanduser('~'), 'Desktop', 'main_entered.txt')
+    try:
+        with open(_dbg, 'w', encoding='utf-8') as f:
+            f.write('main() called\n')
+        from gui.app import run_app
+        with open(_dbg, 'a', encoding='utf-8') as f:
+            f.write('run_app imported\n')
+        run_app()
+    except Exception as e:
+        with open(_dbg, 'a', encoding='utf-8') as f:
+            f.write(f'CRASH: {type(e).__name__}: {e}\n{traceback.format_exc()}')
 
 
 if __name__ == "__main__":

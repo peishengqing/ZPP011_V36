@@ -3,10 +3,10 @@
 
 a = Analysis(
     ['main.py'],
-    pathex=['.'],
+    pathex=[],
     binaries=[],
-    datas=[('config', 'config'), ('inventory_loader.py', '.')],
-    hiddenimports=['widgets', 'storage', 'analysis', 'domain', 'utils', 'ppt_generator', 'inventory_loader', 'config', 'matplotlib'],
+    datas=[],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='ZPP011_v37_release',
+    name='ZPP011_v36.2',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -35,4 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='NONE',
 )

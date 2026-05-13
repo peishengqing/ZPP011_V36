@@ -5,7 +5,7 @@ a = Analysis(
     ['gui\\events.py'],
     pathex=[],
     binaries=[],
-    datas=[('config', 'config'), ('inventory_loader.py', '.'), ('build_log.md', '.')],
+    datas=[('config', 'config'), ('config/version.json', 'config'), ('.zpp011_audit', '.zpp011_audit'), ('inventory_loader.py', '.'), ('build_log.md', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

@@ -38,6 +38,10 @@ def build():
     if os.path.exists('config'):
         opts.append('--add-data')
         opts.append('config;config')
+        # 明确打包 config/version.json（防止遗漏）
+        if os.path.exists('config/version.json'):
+            opts.append('--add-data')
+            opts.append('config/version.json;config')
 
     if os.path.exists('.zpp011_audit'):
         opts.append('--add-data')

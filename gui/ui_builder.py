@@ -471,7 +471,7 @@ def _build_ui(self):
                                   bg="#f59e0b", fg="white", width=12, state="normal")
         self.quarantine_btn.pack(side="left", padx=(8, 0))
         self.auto_close_btn = btn(unified_btn_row, "✅ 自动结案", self._auto_close_cases,
-                                   bg="#2a9d8f", fg="white", width=12, state="disabled")
+                                   bg="#2a9d8f", fg="white", width=16, state="disabled")
         self.auto_close_btn.pack(side="left", padx=(8, 0))
         self.unified_result_lbl = tk.Label(unified_btn_row, text="",
                                     font=("Microsoft YaHei", 9),
@@ -571,42 +571,3 @@ def _build_ui(self):
                                    bg=C['header_bg'], anchor="w")
         self.status_lbl.pack(side="left", padx=12)
 
-def _refresh_alt_view(self, inner):
-        for w in inner.winfo_children():
-            w.destroy()
-
-        # 建立编码->名称映射
-        excel_path = self.input_file.get()
-        code_to_name = {}
-        if excel_path and os.path.exists(excel_path):
-            try:
-                df = pd.read_excel(excel_path, sheet_name='Data')
-                code_cols = [c for c in df.columns if any(k in str(c).lower() for k in ['组件物料号', '组件编码', '物料编码', 'code', '编码'])]
-                name_cols = [c for c in df.columns if any(k in str(c).lower() for k in ['组件描述', '物料描述', '名称', 'name', '描述'])]
-                if code_cols and name_cols:
-                    for _, row in df.iterrows():
-                        code = str(row[code_cols[0]])
-                        name = str(row[name_cols[0]])
-                        if code and code != 'nan':
-                            code_to_name[code] = name if name != 'nan' else ''
-            except Exception:
-                pass
-
-        for a, b in self.alt_pairs:
-            fr = tk.Frame(inner, bg=C['surface2'])
-            fr.pack(fill="x", pady=1)
-
-            # 物料A：编码 + 名称
-            a_name = code_to_name.get(str(a), '')
-            a_disp = alt_manager.get_display_name(a, a_name) if a_name else alt_manager.get_display_name(a, a)
-            tk.Label(fr, text=f"↔ {a_disp}", font=("Consolas", 8), fg=C['text'],
-                     bg=C['surface2'], anchor="w").pack(side="left", padx=4)
-
-            tk.Label(fr, text="|", font=("Consolas", 8), fg=C['text_dim'],
-                     bg=C['surface2']).pack(side="left")
-
-            # 物料B：编码 + 名称
-            b_name = code_to_name.get(str(b), '')
-            b_disp = alt_manager.get_display_name(b, b_name) if b_name else alt_manager.get_display_name(b, b)
-            tk.Label(fr, text=f"{b_disp}", font=("Consolas", 8), fg=C['purple'],
-                     bg=C['surface2'], anchor="w").pack(side="left", padx=4)
