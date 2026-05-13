@@ -101,17 +101,27 @@ class ModeSelector:
         self.selected_mode = None
         self.parent = parent
 
-        # 从统一配置读取版本
+        # 从统一配置读取版本（添加异常处理，防止 config/version.json 缺失时崩溃）
+        # 注意：app_name 和 version 必须先初始化，避免 Python 变量作用域问题（见下）
+        app_name = 'ZPP011智能工具'
+        version = 'v1.0'
         if getattr(sys, 'frozen', False):
             config_path = os.path.join(sys._MEIPASS, 'config', 'version.json')
         else:
             config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'version.json')
-        with open(config_path, 'r', encoding='utf-8') as f:
-            cfg = json.load(f)
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+            app_name = cfg.get('app_name', 'ZPP011智能工具')
+            version = cfg.get('version', 'v1.0')
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            # app_name 和 version 已在上方初始化为默认值，此处无需再赋值
 
         # 使用 Toplevel 而非 tk.Tk()，避免多个 Tk 实例导致状态混乱
         self.win = tk.Toplevel(parent)
-        self.win.title(f"{cfg['app_name']}_{cfg['version']}")
+        self.win.title(f"{app_name}_{version}")
         self.win.geometry("400x300")
         self.win.resizable(False, False)
         self.win.grab_set()  # 模态
@@ -195,14 +205,24 @@ class ModeSelector:
 class ZPP011Beautiful(EventsMixIn):
     def __init__(self, root):
         self.root = root
-        # 从统一配置读取版本
+        # 从统一配置读取版本（添加异常处理，防止 config/version.json 缺失时崩溃）
+        # 注意：app_name 和 version 必须先初始化，避免 Python 变量作用域问题（见下）
+        app_name = 'ZPP011智能工具'
+        version = 'v1.0'
         if getattr(sys, 'frozen', False):
             config_path = os.path.join(sys._MEIPASS, 'config', 'version.json')
         else:
             config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'version.json')
-        with open(config_path, 'r', encoding='utf-8') as f:
-            cfg = json.load(f)
-        self.root.title(f"{cfg['app_name']}_{cfg['version']}")
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+            app_name = cfg.get('app_name', 'ZPP011智能工具')
+            version = cfg.get('version', 'v1.0')
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            # app_name 和 version 已在上方初始化为默认值，此处无需再赋值
+        self.root.title(f"{app_name}_{version}")
         self.root.geometry("1200x820")
         self.root.minsize(1000, 700)
         self.root.configure(bg=C['bg'])
@@ -232,6 +252,7 @@ class ZPP011Beautiful(EventsMixIn):
 
         storage.init_audit_db()
         build_ui(self)
+        self.log("✅ UI 初始化完成，日志系统测试", "success")
         self.alt_pairs = load_alt_pairs(log_cb=self.log)
         self._refresh_alt_view(self._alt_inner)
         self._auto_find()

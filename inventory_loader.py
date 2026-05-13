@@ -17,7 +17,7 @@ def load_inventory_snapshot(filepath: str, sheet_name: str = "过期提醒") -> 
 
     # 目标列映射（标准名 → 实际可能出现的列名列表）
     column_aliases = {
-        "物料编码": ["物料编码", "物料号", "料号", "产品编码"],
+        "物料编码": ["物料编码", "物料号", "料号", "产品编码", "物料"],
         "物料名称": ["物料名称", "品名", "产品名称", "物料描述"],
         "现存量": ["现存量", "库存数量", "库存", "结存数量"],
         "生产日期": ["生产日期", "生产日", "制造日期"],
@@ -113,21 +113,39 @@ def calc_expiry_warning(df: pd.DataFrame) -> pd.DataFrame:
     返回的DataFrame会增加两列：
     - 剩余天数：距离保质期的天数（过期时为负数）
     - 过期状态：'已过期' / '即将过期(30天内)' / '正常'
+
+    如果表格已有"过期提醒"列（数值=剩余天数），直接使用；
+    否则根据"保质期"列自动计算。
     """
-    today = datetime.now().date()
-    # 去掉时间部分，仅保留日期
-    df["保质期_date"] = pd.to_datetime(df["保质期"]).dt.date
-    df["剩余天数"] = (df["保质期_date"] - today).apply(lambda x: x.days)
+    # 检查是否已有现成的过期提醒列
+    expiry_col = None
+    for col in df.columns:
+        if col.strip() in ("过期提醒", "剩余天数", "过期预警", "有效期提醒"):
+            expiry_col = col.strip()
+            break
+
+    if expiry_col is not None and expiry_col in df.columns:
+        # 直接使用表格中的天数数据
+        df["剩余天数"] = pd.to_numeric(df[expiry_col], errors="coerce")
+    else:
+        # 根据保质期计算
+        today = datetime.now().date()
+        _dates = pd.to_datetime(df["保质期"])
+        # Use .sub() on Timestamp series to get Timedelta, then extract days
+        _delta = (_dates.dt.date - today)  # object Series of timedelta or NaT
+        df["剩余天数"] = _delta.apply(lambda x: x.days if hasattr(x, 'days') else None)
+        del _dates, _delta
 
     def label(days):
-        if days <= 0:
+        if pd.isna(days):
+            return "未知"
+        days_val = float(days)
+        if days_val <= 0:
             return "已过期"
-        elif days <= 30:
+        elif days_val <= 30:
             return "即将过期(30天内)"
         else:
             return "正常"
 
     df["过期状态"] = df["剩余天数"].apply(label)
-    # 删除辅助列
-    df = df.drop(columns=["保质期_date"])
     return df

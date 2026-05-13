@@ -11,6 +11,7 @@ import sys as _sys
 import glob as _glob
 import pandas as pd
 from widgets import C, STEPS
+from storage import storage
 from analysis.analyzer import do_analysis_v2
 import time
 import datetime
@@ -578,6 +579,12 @@ class EventsMixIn:
                 if any(k in remark for k in invalid_keywords): issues.append("无效占位符")
                 if any(k in remark for k in weak_keywords) and len(remark) < 10: issues.append("过于简单")
                 status = f"需改进: {'/'.join(issues)}" if issues else "合格"
+            # 写回 audit_data（同步到表格状态和颜色）
+            self.audit_data.at[idx, '备注来源'] = note_src
+            self.audit_data.at[idx, '原备注'] = remark
+            self.audit_data.at[idx, 'AI建议'] = status
+            self.audit_data.at[idx, 'audit_result'] = status
+            self.audit_data.at[idx, '备注原因'] = status  # ← 五段式：写回状态列
             results.append({
                 '物料': str(row.get('组件物料描述', ''))[:25],
                 '偏差率': f"{row.get('偏差率(%)', 0):.2f}%",
@@ -625,6 +632,10 @@ class EventsMixIn:
         tk.Label(legend_frame, text=f"({normal_ok_count})", font=("Microsoft YaHei", 8), bg=C['surface'], fg=C['text_dim']).pack(side="left", padx=(0, 10))
         tk.Label(legend_frame, text="■ 需改进", font=("Microsoft YaHei", 8), bg='#fff8e1', fg='#f57c00').pack(side="left", padx=5)
         tk.Label(legend_frame, text=f"({warn_count})", font=("Microsoft YaHei", 8), bg=C['surface'], fg=C['text_dim']).pack(side="left")
+        # 刷新主审核表格（AI结论写回后更新状态列和颜色）
+        self._refresh_audit_tree(self.audit_data)
+        self._apply_row_colors()
+        self._update_audit_stats()
         self.log(f"AI审核完成：系统无定额{no_quota_count}条 | 替代料{alt_mat_count}条 | 普通{normal_ok_count}条 | 需改进{warn_count}条", "success")
 
     def _export_audit_excel(self):
@@ -1693,7 +1704,7 @@ class EventsMixIn:
                     idx,  # idx
                     int(row['原表行号']) if pd.notna(row.get('原表行号')) else '',  # excel_row
                     str(row.get('工厂', '')),  # factory
-                    '',  # admin (生产管理员)
+                    str(row.get('车间', '')),  # admin (生产管理员)
                     str(row.get('物料编码', ''))[:15],  # code
                     str(row.get('物料名称', ''))[:25],  # name
                     str(row.get('订单日期', ''))[:12] if pd.notna(row.get('订单日期')) else '',  # order_date
@@ -1736,6 +1747,7 @@ class EventsMixIn:
             audit_df['偏差率(%)'] = audit_df['偏差率数值'] * 100
             audit_df['备注原因'] = audit_df['备注']
             audit_df['订单日期'] = audit_df['订单日期']
+            audit_df['偏差金额'] = audit_df['偏差金额']
             # ── 稳定性加固：生成唯一ID，供卡片/批量操作精确定位 ──
             audit_df['_uid'] = (
                 audit_df['订单日期'].astype(str).str[:10] + '_' +
@@ -1758,8 +1770,12 @@ class EventsMixIn:
             # ── P1#14：更新趋势显示 ──
             self._update_trend_display()
 
-            # 8. 启用相关按钮
-            for btn_name in ['audit_ai_btn', 'audit_export_btn', 'unified_ai_btn', 'unified_export_btn']:
+            # 8. 启用相关按钮（与 _load_audit_data 保持一致）
+            for btn_name in [
+                'load_audit_btn', 'unified_ai_btn', 'unified_export_btn',
+                'save_audit_btn', 'tree_view_btn', 'cleanup_btn',
+                'export_db_btn', 'import_db_btn', 'quarantine_btn', 'bom_btn',
+            ]:
                 btn = getattr(self, btn_name, None)
                 if btn:
                     btn.configure(state='normal')
@@ -2056,6 +2072,46 @@ class EventsMixIn:
         except Exception as e:
             self.log(f"⚠ 断点保存失败：{e}", "warn")
         self.root.destroy()
+
+
+    def _get_resume_state_path(self):
+        """获取断点状态文件路径"""
+        app_dir = os.path.join(os.path.expanduser('~'), '.zpp011_audit')
+        return os.path.join(app_dir, 'resume_state.json')
+
+    def _load_resume_state(self):
+        """加载断点状态"""
+        path = self._get_resume_state_path()
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return None
+
+    def _save_resume_state(self):
+        """保存断点状态"""
+        app_dir = os.path.join(os.path.expanduser('~'), '.zpp011_audit')
+        os.makedirs(app_dir, exist_ok=True)
+        path = self._get_resume_state_path()
+        
+        state = {}
+        # 保存选择的行
+        if hasattr(self, 'current_row_idx'):
+            state['selected_row'] = self.current_row_idx
+        # 保存搜索文字
+        if hasattr(self, 'search_var'):
+            state['search_text'] = self.search_var.get()
+        # 保存筛选条件
+        if hasattr(self, 'filter_widgets'):
+            state['filter_values'] = {}
+        
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(state, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            self.log(f"保存断点失败：{e}", "warn")
 
 
     def _do_resume_state(self):
@@ -2591,8 +2647,8 @@ class EventsMixIn:
                 status,  # status
                 remark,  # remark
                 batch_remark,  # batch_remark
-                str(row.get('原备注', ''))[:30],  # orig_remark
-                str(row.get('AI建议', ''))[:50],  # ai_suggest
+                str(row.get('audit_result', ''))[:30],  # audit_result
+                str(row.get('AI建议', ''))[:50],  # AI建议
                 f"{row.get('偏差金额', 0):,.2f}",  # deviation_amount
             ))
             priority_label = row.get('_priority_label', '绿')
@@ -3020,8 +3076,8 @@ class EventsMixIn:
                 status,
                 remark,
                 batch_remark[:30],
-                str(row.get('audit_result', '')),
                 str(row.get('AI建议', '')),
+                str(row.get('audit_result', '')),
                 f"{row.get('偏差金额', 0):,.2f}",
             ))
             # 颜色标签
@@ -3177,3 +3233,7 @@ def run_app():
         with open(err_file, "w", encoding="utf-8") as f:
             f.write(traceback.format_exc())
         raise
+
+
+if __name__ == "__main__":
+    run_app()

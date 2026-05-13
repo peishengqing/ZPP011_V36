@@ -2,11 +2,11 @@
 
 
 a = Analysis(
-    ['gui\\events.py'],
-    pathex=[],
+    ['main.py'],
+    pathex=['.'],
     binaries=[],
-    datas=[('config', 'config'), ('config/version.json', 'config'), ('.zpp011_audit', '.zpp011_audit'), ('inventory_loader.py', '.'), ('build_log.md', '.')],
-    hiddenimports=[],
+    datas=[('config', 'config')],
+    hiddenimports=['widgets', 'storage', 'analysis', 'domain', 'utils', 'ppt_generator', 'inventory_loader', 'config', 'matplotlib'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='偏差分析+库存流水智能助手_v36.1',
+    name='ZPP011_v36.1',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
