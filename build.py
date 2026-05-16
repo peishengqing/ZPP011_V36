@@ -29,10 +29,16 @@ def build():
     opts = [
         'gui/events.py',
         '--onefile',
-        '--windowed',
         '--name', app_full_name,
         '--clean',
         '--noconfirm',
+        '--hidden-import', 'pptx',
+        '--hidden-import', 'pptx.util',
+        '--hidden-import', 'pptx.dml.color',
+        '--hidden-import', 'pptx.enum.text',
+        '--hidden-import', 'ppt_generator',
+        '--hidden-import', 'widgets',
+        '--paths', os.path.dirname(os.path.abspath(__file__)),
     ]
 
     if os.path.exists('config'):

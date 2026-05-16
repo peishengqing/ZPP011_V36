@@ -19,20 +19,16 @@ DEFAULT_ALT_PAIRS = [
 
 
 def _get_config_dir():
-    """返回用户配置目录（优先 E:\zpp011_dev\.zpp011_audit，兼容旧版 ~/.zpp011_audit）"""
-    new_dir = r"E:\zpp011_dev\.zpp011_audit"
-    old_dir = os.path.join(os.path.expanduser("~"), ".zpp011_audit")
-    os.makedirs(new_dir, exist_ok=True)
-    # 一次性迁移：旧目录存在且新目录配置文件不存在时，复制过去
-    old_cfg = os.path.join(old_dir, "alt_pairs.json")
-    new_cfg = os.path.join(new_dir, "alt_pairs.json")
-    if os.path.exists(old_cfg) and not os.path.exists(new_cfg):
-        try:
-            import shutil
-            shutil.copy2(old_cfg, new_cfg)
-        except Exception:
-            pass
-    return new_dir
+    """返回用户配置目录（符合PO-5：AppData\\Roaming\\ZPP011\\config）"""
+    # 优先使用 APPDATA 环境变量（Windows标准用户目录）
+    appdata = os.environ.get('APPDATA')
+    if appdata:
+        base_dir = os.path.join(appdata, 'ZPP011', 'config')
+    else:
+        # 兜底：使用用户主目录
+        base_dir = os.path.join(os.path.expanduser("~"), ".zpp011_audit")
+    os.makedirs(base_dir, exist_ok=True)
+    return base_dir
 
 
 def _get_config_path():
@@ -87,7 +83,7 @@ def load_alt_pairs(log_cb=None):
                 # 自动保存到新位置
                 save_alt_pairs(result)
                 if log_cb:
-                    log_cb(f"✅ 已将 {len(result)} 对替代料配置从旧位置迁移到 {new_path}", "success")
+                    log_cb(f"✅ 已将 {len(result)} 对替代料配置迁移到新位置", "success")
                 return result
         except Exception as e:
             if log_cb:

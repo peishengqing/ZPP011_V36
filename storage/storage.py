@@ -36,22 +36,51 @@ def init_audit_db():
     conn.close()
 
 
+_DATE_COLS = ["订单日期", "订单开始日期", "工单日期", "日期"]
+_ORDER_COLS = ["流程订单", "订单号", "订单编号", "订单号码", "订单No", "Order No"]
+_MAT_COLS = ["组件物料号", "物料编码", "物料号", "零件号", "组件号"]
+_REMARK_COLS = ["备注原因", "备注", "审核备注", "偏差备注"]
+_BATCH_REMARK_COLS = ["批量备注原因", "批量备注", "备注"]
+
+
+def _safe_col(df, candidates):
+    """从候选列名列表中找到第一个存在于 DataFrame 的列，返回 Series 或全空 Series"""
+    for c in candidates:
+        if c in df.columns:
+            return df[c]
+    return pd.Series("", index=df.index)
+
+
+def _safe_col_name(columns, candidates):
+    """从候选列名列表中找到第一个存在于列名列表中的，返回列名或 None"""
+    cols_set = set(columns)
+    for c in candidates:
+        if c in cols_set:
+            return c
+    return None
+
+
 def save_audit_to_db(audit_data, auditor=None, log_cb=None):
     if audit_data is None or audit_data.empty:
         return
     if auditor is None:
         auditor = os.getlogin()
+    date_col = _safe_col_name(audit_data.columns, _DATE_COLS) or "订单日期"
+    order_col = _safe_col_name(audit_data.columns, _ORDER_COLS) or "订单号"
+    mat_col = _safe_col_name(audit_data.columns, _MAT_COLS) or "组件物料号"
+    remark_col = _safe_col_name(audit_data.columns, _REMARK_COLS)
+    batch_remark_col = _safe_col_name(audit_data.columns, _BATCH_REMARK_COLS)
     conn = sqlite3.connect(get_audit_db_path())
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     for _, row in audit_data.iterrows():
-        work_date = str(row.get("订单日期", ""))[:10]
-        order_no  = str(row.get("订单号", ""))
-        mat_code  = str(row.get("组件物料号", ""))
+        work_date = str(row.get(date_col, ""))[:10]
+        order_no  = str(row.get(order_col, ""))
+        mat_code  = str(row.get(mat_col, ""))
         if not work_date or not order_no or not mat_code:
             continue
-        remark = str(row.get("备注原因", "")).strip()
-        if not remark:
-            remark = str(row.get("批量备注原因", "")).strip()
+        remark = str(row.get(remark_col, "")).strip() if remark_col else ""
+        if not remark and batch_remark_col:
+            remark = str(row.get(batch_remark_col, "")).strip()
         status = "已备注" if remark else "未审核"
         conn.execute("INSERT OR REPLACE INTO audit_log (work_date, order_no, mat_code, status, remark, auditor, saved_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                      (work_date, order_no, mat_code, status, remark, auditor, now))
@@ -71,14 +100,18 @@ def restore_audit_from_db(audit_data, log_cb=None):
         conn.close()
     if db_records.empty:
         return
-    audit_data["_work_date"] = audit_data["订单日期"].astype(str).str[:10]
-    audit_data["_order_no"]  = audit_data["订单号"].astype(str)
-    audit_data["_mat_code"]  = audit_data["组件物料号"].astype(str)
+    date_col = _safe_col_name(audit_data.columns, _DATE_COLS) or "订单日期"
+    order_col = _safe_col_name(audit_data.columns, _ORDER_COLS) or "订单号"
+    mat_col = _safe_col_name(audit_data.columns, _MAT_COLS) or "组件物料号"
+    remark_col = _safe_col_name(audit_data.columns, _REMARK_COLS) or "备注"
+    audit_data["_work_date"] = audit_data[date_col].astype(str).str[:10]
+    audit_data["_order_no"]  = audit_data[order_col].astype(str)
+    audit_data["_mat_code"]  = audit_data[mat_col].astype(str)
     merged = audit_data.merge(db_records, left_on=["_work_date", "_order_no", "_mat_code"],
                               right_on=["work_date", "order_no", "mat_code"], how="left")
-    current_remark = audit_data["备注原因"].fillna("")
+    current_remark = audit_data[remark_col].fillna("")
     db_remark      = merged["remark"].fillna("")
-    audit_data["备注原因"] = current_remark.where(current_remark != "", db_remark)
+    audit_data[remark_col] = current_remark.where(current_remark != "", db_remark)
     audit_data["_audit_status"] = merged["status"].fillna("未审核")
     audit_data.drop(["_work_date", "_order_no", "_mat_code"], axis=1, inplace=True)
     if log_cb:

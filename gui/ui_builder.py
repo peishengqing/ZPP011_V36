@@ -2,6 +2,20 @@ import tkinter as tk
 from tkinter import scrolledtext, messagebox, filedialog, ttk
 from widgets import C, STEPS, card, btn, label, entry
 from domain.alt_material import alt_manager
+import os
+import json
+import sys
+
+# 默认列宽配置
+DEFAULT_COL_WIDTHS = {
+    'idx': 35, 'excel_row': 60, 'code': 70, 'name': 100, 'factory': 70,
+    'order_date': 70, 'admin': 70, 'quota': 50, 'actual': 50, 'dev_rate': 55,
+    'is_alt': 50, 'status': 55, 'remark': 80, 'batch_remark': 90,
+    'audit_result': 80, 'AI建议': 120, 'audit_status': 60, 'audit_source': 70,
+    'deviation_amount': 90, 'order_no': 100
+}
+# 列宽配置文件路径
+COLUMN_WIDTHS_FILE = os.path.join(os.path.expanduser('~'), '.zpp011_audit', 'column_widths.json')
 
 
 def build_ui(app_instance):
@@ -19,10 +33,22 @@ def _build_ui(self):
                  bg=C['header_bg']).pack(side="left", padx=(16, 8))
         title_frame = tk.Frame(header, bg=C['header_bg'])
         title_frame.pack(side="left")
-        tk.Label(title_frame, text="云南达利ZPP011生产偏差分析器 v36",
+        # 从 version.json 读取版本号
+        _ver = "v36"
+        if getattr(sys, 'frozen', False):
+            _version_path = os.path.join(sys._MEIPASS, 'config', 'version.json')
+        else:
+            _version_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'version.json')
+        try:
+            with open(_version_path, 'r', encoding='utf-8') as _f:
+                _cfg = json.load(_f)
+            _ver = _cfg.get('version', _ver)
+        except:
+            pass
+        tk.Label(title_frame, text=f"云南达利ZPP011生产偏差分析器 {_ver}",
                  font=("Microsoft YaHei", 14, "bold"), fg='#ffffff',
                  bg=C['header_bg']).pack(anchor="w")
-        tk.Label(title_frame, text="制作人：裴盛清  |  v36",
+        tk.Label(title_frame, text=f"制作人：裴盛清  |  {_ver}",
                  font=("Microsoft YaHei", 8), fg='#cae8ff',
                  bg=C['header_bg']).pack(anchor="w")
 
@@ -122,7 +148,8 @@ def _build_ui(self):
         btn_row.pack(fill="x", padx=12, pady=(6, 10))
         btn(btn_row, "➕ 添加", self._add_alt, "#d0d7de", C['text'], ("Microsoft YaHei", 9)).pack(side="left", padx=(0, 4))
         btn(btn_row, "🗑 删除", self._del_alt, "#d0d7de", C['danger'], ("Microsoft YaHei", 9)).pack(side="left", padx=(0, 4))
-        btn(btn_row, "🔄 重置", self._reset_alt, "#d0d7de", C['text_dim'], ("Microsoft YaHei", 9)).pack(side="left")
+        btn(btn_row, "🔄 重置", self._reset_alt, "#d0d7de", C['text_dim'], ("Microsoft YaHei", 9)).pack(side="left", padx=(0, 4))
+        btn(btn_row, "📸 JSON快照", self._show_alt_snapshot, "#d0d7de", C['text'], ("Microsoft YaHei", 9)).pack(side="left")
 
         # 右侧区域（进度、操作、审核、日志）
         right = tk.Frame(main, bg=C['bg'])
@@ -347,6 +374,11 @@ def _build_ui(self):
                                   fg="#333333", relief="flat", cursor="hand2",
                                   activebackground="#e0e0e0", width=10)
         self.lock_btn.pack(side="left", padx=(4, 0))
+        # 重置列宽按钮
+        tk.Button(reset_btn_frame, text="↩重置列宽", command=self._reset_default_widths,
+                  font=("Microsoft YaHei", 8), bg="#fff3e0", fg="#333333",
+                  relief="flat", cursor="hand2", activebackground="#ffe0b2",
+                  width=8).pack(side="left", padx=(4, 0))
         self.filter_status_lbl = tk.Label(audit, text="", font=("Microsoft YaHei", 8),
                                    bg=C['surface'], fg=C['text_dim'], anchor="w")
         self.filter_status_lbl.pack(fill="x", padx=12, pady=(0, 4))# Treeview 表格
@@ -356,9 +388,10 @@ def _build_ui(self):
         audit_vscroll.pack(side="right", fill="y")
         audit_hscroll = ttk.Scrollbar(tree_container, orient="horizontal")
         audit_hscroll.pack(side="bottom", fill="x")
-        cols = ("idx", "excel_row", "factory", "admin", "code", "name", "order_date",
-        "quota", "actual", "dev_rate", "is_alt", "status", "remark", "batch_remark",
-        "audit_result", "AI建议", "deviation_amount")
+        cols = ("idx", "excel_row", "factory", "admin", "order_date", "order_no",
+                "code", "name", "quota", "actual", "dev_rate", "is_alt", "status",
+                "remark", "batch_remark", "audit_result", "AI建议", "audit_status",
+                "audit_source", "deviation_amount")
         self.audit_tree = ttk.Treeview(tree_container, columns=cols, show="headings",
                                height=15, style="Custom.Treeview",
                                selectmode="extended",
@@ -368,9 +401,10 @@ def _build_ui(self):
         self.audit_tree.heading("excel_row", text="原表行号")
         self.audit_tree.heading("factory", text="工厂名称")
         self.audit_tree.heading("admin", text="生产管理员")
+        self.audit_tree.heading("order_date", text="订单日期")
+        self.audit_tree.heading("order_no", text="流程订单")
         self.audit_tree.heading("code", text="物料号")
         self.audit_tree.heading("name", text="物料描述")
-        self.audit_tree.heading("order_date", text="订单日期")
         self.audit_tree.heading("quota", text="定额")
         self.audit_tree.heading("actual", text="实际")
         self.audit_tree.heading("dev_rate", text="偏差率%")
@@ -380,6 +414,8 @@ def _build_ui(self):
         self.audit_tree.heading("batch_remark", text="批量备注")
         self.audit_tree.heading("audit_result", text="审核结果")
         self.audit_tree.heading("AI建议", text="AI建议")
+        self.audit_tree.heading("audit_status", text="审核状态")
+        self.audit_tree.heading("audit_source", text="审核来源")
         self.audit_tree.heading("deviation_amount", text="偏差金额")
         self.audit_tree.column("idx", width=35, anchor="center")
         self.audit_tree.column("excel_row", width=60, anchor="center")
@@ -397,15 +433,18 @@ def _build_ui(self):
         self.audit_tree.column("batch_remark", width=90, anchor="w")
         self.audit_tree.column("audit_result", width=80, anchor="center")
         self.audit_tree.column("AI建议", width=120, anchor="w")
+        self.audit_tree.column("audit_status", width=60, anchor="center")
+        self.audit_tree.column("audit_source", width=70, anchor="center")
         self.audit_tree.column("deviation_amount", width=90, anchor="e")
+        self.audit_tree.column("order_no", width=100, anchor="center")
         self.audit_tree.pack(side="left", fill="both", expand=True)
         # 应用初始列宽锁定状态
-        self.root.after(100, self._apply_column_lock)
+        self.root.after(100, self._toggle_column_lock)
         audit_vscroll.config(command=self.audit_tree.yview)
         audit_hscroll.config(command=self.audit_tree.xview)
         self.audit_context_menu = tk.Menu(self.root, tearoff=0, font=("Microsoft YaHei", 9))
         self.audit_context_menu.add_command(label="📝 批量改状态", command=self._batch_change_status)
-        self.audit_context_menu.add_command(label="📋 批量填备注", command=self._batch_fill_remark)
+        self.audit_context_menu.add_command(label="📋 批量填备注", command=self._batch_remark)
         self.audit_context_menu.add_command(label="📤 批量导出", command=self._batch_export)
         self.audit_context_menu.add_separator()
         self.audit_context_menu.add_command(label="➕ 添加状态标签", command=self._add_custom_status)
@@ -513,7 +552,7 @@ def _build_ui(self):
         batch_btn_row.pack(fill="x", padx=12, pady=(8, 0))
         btn(batch_btn_row, "📝 批量改状态", self._batch_change_status,
           "#3b82f6", "#ffffff", ("Microsoft YaHei", 9), width=10).pack(side="left", padx=(0, 6))
-        btn(batch_btn_row, "📋 批量填备注", self._batch_fill_remark,
+        btn(batch_btn_row, "📋 批量填备注", self._batch_remark,
           "#10b981", "#ffffff", ("Microsoft YaHei", 9), width=10).pack(side="left", padx=(0, 6))
         btn(batch_btn_row, "📤 批量导出", self._batch_export,
           "#f59e0b", "#ffffff", ("Microsoft YaHei", 9), width=10).pack(side="left", padx=(0, 6))

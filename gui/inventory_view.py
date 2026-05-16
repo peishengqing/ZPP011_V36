@@ -390,23 +390,33 @@ class InventoryView(tk.Frame):
         # 入库流水和过期预警表格由 _refresh_data() 统一处理
 
     def _setup_inventory_sorting(self):
-        """为库存表格设置点击排序功能"""
-        from gui.tree_utils import setup_column_sorting
-        
+        """
+        为库存表格设置多列排序功能。
+        普通点击：切换该列升降序
+        Ctrl+点击：追加/移除该列的排序条件
+        """
+        from gui.tree_utils import bind_multi_sort
+
+        # 初始化排序状态存储
+        self._sort_states = {}
+
         # 库存快照
-        inv_cols = {"物料编码": "物料编码", "物料名称": "物料名称", 
-                    "现存量": "现存量", "生产日期": "生产日期", "保质期": "保质期"}
-        self.inventory_sort_states = setup_column_sorting(self.inventory_tree, inv_cols)
-        
+        inv_cols = ["物料编码", "物料名称", "现存量", "生产日期", "保质期"]
+        inv_key = "inventory"
+        self._sort_states[inv_key] = {}
+        bind_multi_sort(self.inventory_tree, lambda: self._sort_states[inv_key], inv_cols)
+
         # 入库流水
-        inflow_cols = {"入库日期": "入库日期", "物料编码": "物料编码", "物料名称": "物料名称",
-                       "入库类型": "入库类型", "数量": "数量", "单位": "单位", "金额": "金额"}
-        self.inflow_sort_states = setup_column_sorting(self.inflow_tree, inflow_cols)
-        
+        inflow_cols = ["入库日期", "物料编码", "物料名称", "入库类型", "数量", "单位", "金额"]
+        inflow_key = "inflow"
+        self._sort_states[inflow_key] = {}
+        bind_multi_sort(self.inflow_tree, lambda: self._sort_states[inflow_key], inflow_cols)
+
         # 过期预警
-        warn_cols = {"物料编码": "物料编码", "物料名称": "物料名称",
-                     "剩余天数": "剩余天数", "过期状态": "过期状态", "保质期": "保质期"}
-        self.warning_sort_states = setup_column_sorting(self.warning_tree, warn_cols)
+        warn_cols = ["物料编码", "物料名称", "剩余天数", "过期状态", "保质期"]
+        warn_key = "warning"
+        self._sort_states[warn_key] = {}
+        bind_multi_sort(self.warning_tree, lambda: self._sort_states[warn_key], warn_cols)
 
     def _on_check_all(self):
         """库存全检 - 弹出健康度报告窗口"""

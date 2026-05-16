@@ -249,14 +249,44 @@ class ZPP011Beautiful(EventsMixIn):
         self.filter_vars = {}
         self.filter_widgets = {}
         self.custom_statuses = []
+        self.material_list = []
+        self.code_to_info = {}
 
         storage.init_audit_db()
         build_ui(self)
+        self._init_sort_columns()  # 初始化多列排序系统
+        self._init_menu()  # 初始化菜单栏
         self.log("✅ UI 初始化完成，日志系统测试", "success")
         self.alt_pairs = load_alt_pairs(log_cb=self.log)
         self._refresh_alt_view(self._alt_inner)
         self._auto_find()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # ── 多列排序系统 ────────────────────────────────
+    def _init_sort_columns(self):
+        """
+        初始化审核表格和库存表格的多列排序功能。
+        普通点击：替换排序条件
+        Ctrl+点击：追加/移除排序条件
+        """
+        from gui.tree_utils import bind_multi_sort
+
+        # 初始化排序状态
+        self._sort_states = {}
+
+        # ── 审核表格 ──────────────────────────────────
+        audit_sort_key = "audit"
+        self._sort_states[audit_sort_key] = {}
+
+        audit_cols = ("idx", "excel_row", "factory", "admin", "order_date",
+                      "order_no", "code", "name", "quota", "actual", "dev_rate",
+                      "is_alt", "status", "remark", "batch_remark", "audit_result",
+                      "AI建议", "audit_status", "audit_source", "deviation_amount")
+
+        def audit_state_ref():
+            return self._sort_states[audit_sort_key]
+
+        bind_multi_sort(self.audit_tree, audit_state_ref, audit_cols)
 
     # ── 审核数据库相关 ─────────────────────────────
     def _get_changelog_path(self) -> str:
@@ -288,8 +318,9 @@ class ZPP011Beautiful(EventsMixIn):
         try:
             self.log(f"[DEBUG] 生成表格线程启动，输出路径：{output_path}", "info")
 
+            input_file = self.input_file.get()
             result = do_analysis_v2(
-                input_file=input_path,
+                input_file=input_file,
                 output_dir=os.path.dirname(output_path),
                 alt_pairs=self.alt_pairs,
                 progress_callback=lambda *a: None,
@@ -445,16 +476,24 @@ class ZPP011Beautiful(EventsMixIn):
         df = self.audit_data.copy()
         if df is None or len(df) == 0:
             return None
-        df['订单开始日期'] = pd.to_datetime(df['订单开始日期'], errors='coerce')
-        df = df.sort_values('订单开始日期')
-        dates = df['订单开始日期'].dropna()
+        date_col = None
+        for c in ['订单开始日期', '订单日期', '日期', '工单日期']:
+            if c in df.columns:
+                date_col = c
+                break
+        if date_col is None:
+            return None
+        df['_trend_date'] = pd.to_datetime(df[date_col], errors='coerce')
+        df = df.sort_values('_trend_date')
+        dates = df['_trend_date'].dropna()
         if len(dates) < 3:
+            df.drop(columns=['_trend_date'], inplace=True, errors='ignore')
             return None
         split1 = dates.quantile(0.33)
         split2 = dates.quantile(0.66)
-        early = df[df['订单开始日期'] <= split1]
-        mid = df[(df['订单开始日期'] > split1) & (df['订单开始日期'] <= split2)]
-        recent = df[df['订单开始日期'] > split2]
+        early = df[df['_trend_date'] <= split1]
+        mid = df[(df['_trend_date'] > split1) & (df['_trend_date'] <= split2)]
+        recent = df[df['_trend_date'] > split2]
         def calc_metrics(data):
             if len(data) == 0:
                 return {"偏差率均值": 0, "偏差金额合计": 0, "通过率": 0}
@@ -467,9 +506,9 @@ class ZPP011Beautiful(EventsMixIn):
                 pass_rate = 0
             return {"偏差率均值": round(dev_rate_mean,1), "偏差金额合计": round(dev_amount_sum,2), "通过率": round(pass_rate,1)}
         return {
-            "早期": {"日期范围": f"{early['订单开始日期'].min().date()}~{early['订单开始日期'].max().date()}", **calc_metrics(early)},
-            "中期": {"日期范围": f"{mid['订单开始日期'].min().date()}~{mid['订单开始日期'].max().date()}", **calc_metrics(mid)},
-            "近期": {"日期范围": f"{recent['订单开始日期'].min().date()}~{recent['订单开始日期'].max().date()}", **calc_metrics(recent)},
+            "早期": {"日期范围": f"{early['_trend_date'].min().date()}~{early['_trend_date'].max().date()}", **calc_metrics(early)},
+            "中期": {"日期范围": f"{mid['_trend_date'].min().date()}~{mid['_trend_date'].max().date()}", **calc_metrics(mid)},
+            "近期": {"日期范围": f"{recent['_trend_date'].min().date()}~{recent['_trend_date'].max().date()}", **calc_metrics(recent)},
         }
 
     # ── P1#14：更新趋势显示 ──
@@ -584,10 +623,14 @@ class ZPP011Beautiful(EventsMixIn):
         self._show_pre_check_report(results)
 
     def log(self, msg, tag="info"):
-        """向日志区写入消息"""
+        """向日志区写入消息（带时间戳，自动处理 state）"""
         if hasattr(self, 'log_text') and self.log_text:
-            self.log_text.insert("end", msg + "\n", tag)
+            import time as _t
+            ts = _t.strftime("%H:%M:%S")
+            self.log_text.configure(state="normal")
+            self.log_text.insert("end", f"[{ts}] {msg}\n", tag)
             self.log_text.see("end")
+            self.log_text.configure(state="disabled")
 
     def _refresh_alt_view(self, inner):
             for w in inner.winfo_children():
@@ -835,7 +878,7 @@ class ZPP011Beautiful(EventsMixIn):
                     text=f"已加载 {total_count} 条 | 偏差>10%: {big_dev_count} | 需补备注: {no_note_count} | 已审核: {approved_count}")
 
             # 清空并填充表格（默认显示全部）
-            self._fill_table(dev_df)
+            self._refresh_audit_tree(self.audit_data)
             self.current_filter = None
             self.status_filter_label.config(text="")
 
@@ -1125,6 +1168,8 @@ class ZPP011Beautiful(EventsMixIn):
 
 
 
+    def _get_remark_freq_path(self):
+        """获取备注频率统计文件路径"""
         dir_path = os.path.join(os.path.expanduser("~"), ".zpp011_audit")
         os.makedirs(dir_path, exist_ok=True)
         return os.path.join(dir_path, "remark_freq.json")
@@ -1400,56 +1445,6 @@ class ZPP011Beautiful(EventsMixIn):
         except Exception as e:
             messagebox.showerror("错误", f"导出失败: {e}")
             self.log(f"导出审核Excel失败: {e}", "error")
-
-        """保存审核断点状态"""
-        state = {
-            'saved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'filter_values': {},
-            'selected_row': None,
-            'search_text': ''
-        }
-        # 保存搜索框文字
-        if hasattr(self, 'search_var'):
-            txt = self.search_var.get().strip()
-            if txt and txt != "输入任意关键词，实时过滤全部列...":
-                state['search_text'] = txt
-        # 保存筛选条件
-        for key, widget in self.filter_widgets.items():
-            if key == 'name':
-                state['filter_values'][key] = widget.get()
-            elif key == 'order_date':
-                if isinstance(widget, tuple) and len(widget) == 2:
-                    state['filter_values'][key] = [widget[0].get(), widget[1].get()]
-            else:
-                state['filter_values'][key] = widget.get()
-        # 保存选中行索引
-        selection = self.audit_tree.selection()
-        if selection:
-            item = selection[0]
-            state['selected_row'] = self.audit_tree.index(item) + 1
-        # 写入文件
-        state_dir = os.path.join(os.path.expanduser("~"), ".zpp011_audit")
-        os.makedirs(state_dir, exist_ok=True)
-        state_path = os.path.join(state_dir, "resume_state.json")
-        try:
-            with open(state_path, 'w', encoding='utf-8') as f:
-                json.dump(state, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
-
-        """加载上次审核断点状态"""
-        state_path = os.path.join(os.path.expanduser("~"), ".zpp011_audit", "resume_state.json")
-        if not os.path.exists(state_path):
-            return None
-        try:
-            with open(state_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception:
-            return None
-
-        dir_path = os.path.join(os.path.expanduser("~"), ".zpp011_audit")
-        os.makedirs(dir_path, exist_ok=True)
-        return os.path.join(dir_path, "quarantine.json")
 
     def _load_quarantine(self):
         path = self._get_quarantine_path()
