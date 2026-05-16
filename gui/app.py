@@ -880,7 +880,12 @@ class ZPP011Beautiful(EventsMixIn):
             # 清空并填充表格（默认显示全部）
             self._refresh_audit_tree(self.audit_data)
             self.current_filter = None
-            self.status_filter_label.config(text="")
+            if not hasattr(self, 'status_filter_label'):
+                from tkinter import ttk
+                self.status_filter_label = ttk.Label(self, text="")
+                self.status_filter_label.pack(side=tk.BOTTOM, fill=tk.X)
+            else:
+                self.status_filter_label.config(text="")
 
             self.log(f"📊 已加载 {total_count} 条偏差记录到表格", "info")
 
