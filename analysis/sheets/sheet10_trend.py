@@ -141,9 +141,9 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
 
             rows.append([
                 code, name, typ, unit,
-                f"{r_early:.2f}%" if r_early is not None else "-",
-                f"{r_mid:.2f}%" if r_mid is not None else "-",
-                f"{r_recent:.2f}%" if r_recent is not None else "-",
+                f"{abs(r_early):.2f}%" if r_early is not None else "-",
+                f"{abs(r_mid):.2f}%" if r_mid is not None else "-",
+                f"{abs(r_recent):.2f}%" if r_recent is not None else "-",
                 arrow
             ])
 
@@ -151,7 +151,7 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
             v = r[6]
             if v == "-":
                 return -999
-            return -float(v.rstrip('%'))
+            return -abs(float(v.rstrip('%')))
 
         rows.sort(key=sort_key)
 

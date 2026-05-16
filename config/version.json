@@ -1,1 +1,9 @@
-{version: v36.3, app_name: 偏差分析+库存流水智能助手, packed_by: 裴盛清, release_notes: 修复:分析完成后操作按钮全灰(cleanup_btn等5个按钮未启用)\n修复:按钮启用列表与_load_audit_data保持一致}
+{
+  "version": "v36.32.0",
+  "app_name": "云南达利ZPP011生产偏差分析器",
+  "packed_by": "裴盛清",
+  "last_build": "2026-05-16 18:49:21",
+  "version_schema": "major.minor.patch",
+  "changelog_required": true,
+  "release_notes": "PO-5: 替代料配置迁移到标准用户目录(AppData\\Roaming\\ZPP011\\config)"
+}

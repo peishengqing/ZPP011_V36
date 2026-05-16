@@ -81,5 +81,93 @@ def setup_column_sorting(tree, column_ids):
     # 为每个列绑定点击事件
     for col in column_ids:
         tree.heading(col, command=lambda c=col: on_header_click(c))
-    
+
     return sort_states
+
+
+def apply_multi_sort(tree, sort_state):
+    """
+    对 Treeview 应用多列排序。
+    依次按 sort_state 中存储的列顺序进行稳定排序。
+
+    参数:
+        tree: Treeview 控件
+        sort_state: dict，格式为 {column_id: bool}
+                    True = 降序, False = 升序
+                    只对 is_active=True 的列进行排序
+    """
+    if not sort_state:
+        return
+
+    # 收集所有行数据
+    rows = [(item, [tree.set(item, col) for col in sort_state.keys()])
+            for item in tree.get_children('')]
+
+    # 从后往前依次排序（保持稳定性）
+    cols = list(sort_state.keys())
+    for col in reversed(cols):
+        reverse = sort_state[col]
+        # 转换函数（与 sort_treeview_column 一致）
+        def convert(val, _reverse=reverse):
+            try:
+                clean = str(val).replace('%', '').replace(',', '').strip()
+                return float(clean)
+            except (ValueError, AttributeError):
+                return str(val).lower() if isinstance(val, str) else val
+
+        rows.sort(key=lambda x: convert(tree.set(x[0], col)), reverse=reverse)
+
+    # 重新排列
+    for index, (item, _) in enumerate(rows):
+        tree.move(item, '', index)
+
+
+def bind_multi_sort(tree, sort_state_ref, cols=None):
+    """
+    为 Treeview 的列头绑定多列排序事件。
+    普通点击：替换排序条件
+    Ctrl+点击：追加/移除排序条件
+
+    参数:
+        tree: Treeview 控件
+        sort_state_ref: callable，返回当前 sort_state dict 的引用
+                        例如: lambda: self._sort_states["audit"]
+        cols: list，可选，指定要绑定的列。默认取 tree['columns']
+    """
+    if cols is None:
+        cols = list(tree['columns'])
+
+    def on_tree_click(event):
+        """处理整棵树的点击事件，区分行点击和列头点击"""
+        sort_state = sort_state_ref()
+
+        # 获取点击位置的 region
+        region = tree.identify_region(event.x, event.y)
+        if region != 'heading':
+            return  # 非列头点击，不处理
+
+        # 获取列名
+        col = tree.identify_column(event.x)
+        # 列名格式为 #1, #2 等，转为实际列名
+        col_index = int(col.replace('#', '')) - 1
+        if col_index < 0 or col_index >= len(cols):
+            return
+        col = cols[col_index]
+
+        # Ctrl+点击：追加/移除该列
+        ctrl = (event.state & 0x4) != 0
+        if ctrl:
+            if col in sort_state:
+                del sort_state[col]
+            else:
+                sort_state[col] = False
+        else:
+            # 普通点击：切换该列排序方向，或设置升序
+            if col in sort_state:
+                sort_state[col] = not sort_state[col]
+            else:
+                sort_state[col] = False
+
+        apply_multi_sort(tree, sort_state)
+
+    tree.bind('<Button-1>', on_tree_click)

@@ -4,6 +4,7 @@
 sheet5_full.py — Sheet5 完整偏差明细（v36 抽取，未修改逻辑）
 """
 import pandas as pd
+import numpy as np
 
 
 def build_sheet5(df, report_progress, progress_idx=5):
@@ -21,8 +22,14 @@ def build_sheet5(df, report_progress, progress_idx=5):
     col_p = '偏差率(%)'
     has_real_dev = df[(df[col_p] < -1) | (df[col_p] > 1)].copy()
 
-    if '单价' in has_real_dev.columns:
+    # 计算偏差金额（含税）
+    if '单价' in has_real_dev.columns and has_real_dev['单价'].notna().any():
         has_real_dev['_偏差金额'] = has_real_dev['材料偏差'] * has_real_dev['单价'] * 1.13
+    elif '金额-实际(含税)' in has_real_dev.columns and '数量-实际' in has_real_dev.columns:
+        # 反算单价：金额-实际(含税) / 数量-实际
+        unit_price = has_real_dev['金额-实际(含税)'] / has_real_dev['数量-实际'].replace(0, np.nan)
+        unit_price = unit_price.fillna(0)
+        has_real_dev['_偏差金额'] = has_real_dev['材料偏差'] * unit_price
     else:
         has_real_dev['_偏差金额'] = 0.0
 

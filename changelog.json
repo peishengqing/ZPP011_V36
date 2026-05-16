@@ -1,0 +1,484 @@
+{
+  "app_name": "云南达利ZPP011生产偏差分析器",
+  "author": "裴盛清",
+  "versions": [
+    {
+      "version": "v36.27.0",
+      "date": "2026-05-16",
+      "features": [
+        "PO-5: 替代料配置文件迁移到标准用户目录（AppData\\Roaming\\ZPP011\\config\\alt_pairs.json）",
+        "优先使用 APPDATA 环境变量，兜底使用用户主目录",
+        "自动迁移旧配置文件到新位置"
+      ],
+      "fixes": [
+        "修复替代料添加成功后无反馈问题，增加成功/失败提示弹窗"
+      ]
+    },
+    {
+      "version": "v36.17.0",
+      "date": "2026-05-16",
+      "changes": [
+        "【功能】多列联动排序：点击列头排序，点击同列升降序切换，多列追加排序（无上限）",
+        "【优化】移除ui_builder.py中order_no列标题重复定义",
+        "【修复】排序方法移入EventsMixIn类内部（修复AttributeError）"
+      ]
+    },
+    {
+      "version": "v36.12",
+      "date": "2026-05-16",
+      "features": [],
+      "fixes": [
+        "修复加载审核数据时订单列查找失败的问题（增加更多候选列名，处理列名不存在的情况）",
+        "修复AI审核按钮无法使用（重写 _run_ai_audit 方法，修正未定义变量和循环逻辑）",
+        "修复隔离区相关功能（统一隔离区辅助方法，避免重复定义）",
+        "修复列宽锁定无效（绑定正确的事件处理函数）",
+        "修复自动结案按钮无效（增加异常捕获和日志）",
+        "修复隔离区弹窗列名显示英文（改为中文表头）",
+        "修复预检报告弹窗（完整实现 _run_pre_check 生成 results 并调用弹窗）",
+        "修复偏差金额合计为0（读取分析结果中的偏差金额列，若无则从单价计算）",
+        "修复成本换算器（在审核卡片中正确显示）"
+      ],
+      "optimizations": [],
+      "lessons": []
+    },
+    {
+      "version": "v36.3",
+      "date": "2026-05-13",
+      "features": [],
+      "fixes": [
+        "🔧 修复分析完成后操作按钮全灰：_load_audit_data_from_output 按钮启用列表不完整",
+        "补全5个遗漏按钮：cleanup_btn、export_db_btn、import_db_btn、quarantine_btn、bom_btn",
+        "🔧 修复加载审核数据失败：列名不匹配（'偏差金额(含税)' → '偏差金额'）",
+        "完整偏差明细表输出的是'偏差金额'，但读取时用了'偏差金额(含税)'导致KeyError"
+      ],
+      "optimizations": [],
+      "lessons": [
+        "两个入口方法（_load_audit_data / _load_audit_data_from_output）的按钮启用列表必须同步维护"
+      ]
+    },
+    {
+      "version": "v35.1",
+      "date": "2026-05-10",
+      "features": [
+        "🎉 打包成独立EXE文件（44MB，无需Python即可运行）",
+        "🚀 新增启动脚本（启动.bat）和桌面快捷方式创建工具",
+        "✨ 生成Excel后弹出询问框，可选择是否立即打开文件",
+        "📝 添加14处DEBUG日志，方便追踪程序运行问题",
+        "🔧 修改默认输入路径为 E:\\zpp011_dev\\ZPP011导出文件原数据"
+      ],
+      "fixes": [
+        "🔧 修复 do_analysis_v2 返回 None 的问题（write_trend_sheet 缩进错误）",
+        "🔧 优化文件占用错误提示，显示清晰的中文说明和解决方法",
+        "🔧 修复版本日志空白问题，确保EXE能正确读取 changelog.json"
+      ],
+      "optimizations": [
+        "⚡ 改进用户体验：文件被Excel占用时，提示关闭Excel后重试",
+        "⚡ 启动脚本自动检查Python环境，出错时暂停显示错误信息"
+      ]
+    },
+    {
+      "version": "v35.0",
+      "date": "2026-05-10",
+      "features": [
+        "🎉 P1 审核工作台全部功能完成！",
+        "P2-1: 新增数据预检报告，导入时检查列结构和数据质量",
+        "P2-2: 新增黄金模板对比，自动检测缺列/多列并标记严重/警告",
+        "P2-3: 新增重复订单检测，按订单号+物料编码检测重复记录",
+        "P2-4: 新增数据变更报告，对比本次与上次分析的备注变更",
+        "P2-5: 新增BOM自动关联（路径获取+过期检查+过期提醒弹窗+完整导入对比）",
+        "P2-6: 新增微信草稿一键复制，右键菜单生成料控指令并复制到剪贴板",
+        "P2-7: 新增故事线速览，一键生成偏差简报并可复制用于汇报",
+        "P2-8: 新增备注清洗标准化，自动检测口语化备注并一键标准化",
+        "关键列缺失/全空/空值过多时弹出彩色报告（严重/警告/通过）",
+        "预检结果同步输出到日志窗口",
+        "v34.8: 断点续审增加日志反馈，关闭时提示保存状态",
+        "v34.7: 修复保存审核结果无反应，补全列名映射",
+        "v34.6: 修复AI审核状态列显示问题，AI建议列正确显示",
+        "v34.5: 修复统计卡片联动更新，四个卡片全部实时响应",
+        "v34.4: 审核卡片备注改为多键匹配（excel_row+订单日期+物料号）",
+        "v34.3: 修复AI审核下拉框选项键名（audit_result→ai_result）",
+        "v34.2: 金额排名着色计算移至排序后，确保索引对齐",
+        "v34.1: 常用备注按频率自动排序，高频备注按钮加大"
+      ]
+    },
+    {
+      "version": "v34.7",
+      "date": "2026-05-10",
+      "fixes": [
+        "🔧 修复保存审核结果无反应问题",
+        "在 _save_audit_back 中补全列名映射（订单号/订单日期）",
+        "防止列名缺失导致 storage.save_audit_to_db 静默跳过",
+        "增加保存结果反馈：日志显示实际保存行数",
+        "保存后日志显示：审核记录已同步到本地数据库，共 X 条"
+      ]
+    },
+    {
+      "version": "v34.6",
+      "date": "2026-05-10",
+      "fixes": [
+        "🔧 修复 AI 审核后状态列显示问题",
+        "状态列不再统一显示“已审核”，改为按备注内容显示“已备注”或“需补备注”",
+        "AI 审核结论独立显示在 audit_result 列",
+        "🔧 修复 AI 建议列为空问题",
+        "将 _refresh_audit_tree 中读取列名从 'ai_suggest' 改为 'AI建议'",
+        "与 _run_ai_audit 中写入的列名完全对齐"
+      ]
+    },
+    {
+      "version": "v34.5",
+      "date": "2026-05-10",
+      "fixes": [
+        "🔧 修复统计卡片联动更新",
+        "在 _update_audit_stats 中补全对 total 和 high_dev 卡片的更新",
+        "high_dev 计算改为取绝对值：data['偏差率(%)'].abs() > 10",
+        "need_note 和 ok_note 计算增加对空白字符串的处理，更准确",
+        "修复后四个统计卡片（总记录/偏差>10%/需补备注/已审核）全部实时联动"
+      ]
+    },
+    {
+      "version": "v34.4",
+      "date": "2026-05-10",
+      "fixes": [
+        "🔧 修复审核卡片备注更新可能找错行问题",
+        "将 excel_row 单键匹配改为 excel_row + 订单日期 + 组件物料号 组合匹配",
+        "确保在多订单数据中精准定位唯一行",
+        "若 订单日期 或 组件物料号 列缺失，自动回退为仅用 excel_row 定位"
+      ]
+    },
+    {
+      "version": "v34.3",
+      "date": "2026-05-10",
+      "fixes": [
+        "🔧 修复 AI 审核下拉框选项无法更新问题",
+        "将 _build_ui 中筛选列表的键名从 'audit_result' 改为 'ai_result'",
+        "与 _update_filter_options 和 _on_filter_changed 中的键名完全对齐",
+        "修复后 AI 审核下拉框可正常显示“合格/需改进/AI建议/未处理”等选项"
+      ]
+    },
+    {
+      "version": "v34.2",
+      "date": "2026-05-10",
+      "fixes": [
+        "🔧 修复金额排名着色失效问题",
+        "将排名计算逻辑从 _on_filter_changed 移至 _refresh_audit_tree 内部",
+        "确保排序后 DataFrame 索引与 rank_dict 一致",
+        "修复后同类物料金额前3名深红、第4-10名浅红正常显示"
+      ]
+    },
+    {
+      "version": "v34.1",
+      "date": "2026-05-10",
+      "features": [
+        "🎉 P1 审核工作台全部功能落地完成！",
+        "新增常用备注自动排序功能",
+        "系统自动记录备注使用频率，高频备注排在前面",
+        "审核卡片快捷按钮：前3名按钮加大加粗，更醒目",
+        "批量备注弹窗：下拉列表按频率排序",
+        "频率数据保存在 ~/.zpp011_audit/remark_freq.json"
+      ]
+    },
+    {
+      "version": "v34.0",
+      "date": "2026-05-10",
+      "fixes": [
+        "🎉 P0 六步清理完成！main.py 与 storage.py 冗余代码已彻底清零",
+        "P0-B3: _save_to_audit_db 已调用 storage.save_audit_to_db",
+        "P0-B4: 加载审核数据时自动调用 storage.restore_audit_from_db",
+        "P0-B5: _export_audit_backup 添加 FileNotFoundError 处理",
+        "P0-B6: _import_audit_backup 已调用 storage.import_audit_backup",
+        "P0-B7(v33.7): 修复 mutation_materials NameError",
+        "P0-B8(v33.8): 修复加载数据后审核备注丢失问题"
+      ]
+    },
+    {
+      "version": "v33.9",
+      "date": "2026-05-10",
+      "fixes": [
+        "P0-B5完成：为 _export_audit_backup 方法添加 FileNotFoundError 专门处理",
+        "导出备份时，如果审核数据库不存在，显示明确的错误提示",
+        "避免因数据库不存在导致的未知异常"
+      ]
+    },
+    {
+      "version": "v33.8",
+      "date": "2026-05-10",
+      "fixes": [
+        "P0-B4完成：在 _load_audit_data 和 _load_audit_data_from_output 方法中添加 storage.restore_audit_from_db 调用",
+        "加载审核数据后自动从数据库恢复历史审核记录",
+        "确保审核备注在重新加载后能够正确恢复"
+      ]
+    },
+    {
+      "version": "v33.7",
+      "date": "2026-05-10",
+      "fixes": [
+        "修复 NameError: name 'mutation_materials' is not defined 错误",
+        "将 mutation_materials 改为实例变量 self.mutation_materials，确保所有方法都能访问",
+        "_on_filter_changed 和 _refresh_audit_tree 现在共享变异物料检测结果"
+      ]
+    },
+    {
+      "version": "v33.6",
+      "date": "2026-05-10",
+      "fixes": [
+        "修复AI审核「备注过短」误判问题：阈值从5字符提高到10字符",
+        "修复替代料备注过短阈值：从5字符提高到8字符"
+      ]
+    },
+    {
+      "version": "v33.5",
+      "date": "2026-05-10",
+      "fixes": [
+        "修复分析完成后 output_path 为 None 的问题，现在会自动查找最新的输出文件",
+        "修复恢复进度显示「第 None 行」的问题，现在只在有保存的行号时才显示恢复提示"
+      ]
+    },
+    {
+      "version": "v33.4",
+      "date": "2026-05-10",
+      "features": [
+        "添加「📂 加载审核数据」按钮，分析完成后可手动加载审核数据",
+        "取消分析完成后的自动加载审核数据，改为用户手动控制",
+        "分析完成后自动启用「加载审核数据」按钮，按钮状态更清晰"
+      ]
+    },
+    {
+      "version": "v33.2",
+      "date": "2026-05-10",
+      "fixes": [
+        "修复筛选功能失效：_on_filter_changed 函数中 df 变量未定义，改为 df_filtered",
+        "修复 _refresh_audit_tree 修改传入 DataFrame 的问题，改为操作副本",
+        "异常突变检测和金额排名着色现在正确基于筛选后的数据"
+      ]
+    },
+    {
+      "version": "v33.1",
+      "date": "2026-05-10",
+      "fixes": [
+        "AI建议列显示修复：当有备注时，AI建议列不再为空，显示审核意见（合格原因或改进建议）",
+        "AI审核结果逻辑优化：AI建议列现在正确显示AI的审核意见或建议内容"
+      ]
+    },
+    {
+      "version": "v33.0",
+      "date": "2026-05-10",
+      "features": [
+        "版本号统一升级至 v33.0",
+        "exe 文件名改为 ZPP011生产偏差分析器_v33.0.exe",
+        "窗口标题统一为：云南达利ZPP011生产偏差分析器 — 多条件智能筛选 v33.0",
+        "关于对话框版本信息同步更新"
+      ]
+    },
+    {
+      "version": "v32.8",
+      "date": "2026-05-10",
+      "features": [
+        "P0 地基修复完成：main.py 与 storage.py 完全解耦，所有数据库操作统一通过 storage 模块",
+        "审核数据库初始化改为 storage.init_audit_db()",
+        "审核记录保存改为 storage.save_audit_to_db()",
+        "审核记录恢复改为 storage.restore_audit_from_db()",
+        "审核备份导出改为 storage.export_audit_backup()",
+        "审核备份导入改为 storage.import_audit_backup()"
+      ],
+      "fixes": [
+        "删除 main.py 中的 _get_audit_db_path 方法（改用 storage.get_audit_db_path()）",
+        "删除 main.py 中的 _init_audit_db 方法（改用 storage.init_audit_db()）",
+        "删除 main.py 中的 _save_to_audit_db 方法（内联调用 storage.save_audit_to_db()）",
+        "删除 main.py 中的 _restore_audit_from_db 方法（改用 storage.restore_audit_from_db()）",
+        "修复 _export_audit_backup 方法：添加文件对话框和错误处理",
+        "修复 _import_audit_backup 方法：添加文件对话框和错误处理"
+      ],
+      "optimizations": [
+        "main.py 代码更简洁，删除冗余的数据库操作方法",
+        "所有存储操作统一通过 storage 模块，便于维护和测试",
+        "语法检查通过，模块导入测试通过"
+      ]
+    },
+    {
+      "version": "v32.7",
+      "date": "2026-05-10",
+      "features": [
+        "AI审核功能完整恢复：进度条 + 质量审核 + AI建议生成 + 彩色结果弹窗",
+        "版本日志（changelog.json）追加写入：每次AI审核自动记录操作历史",
+        "完整功能蓝图确立（最终版）：P0地基修复 → P1审核驾驶舱 → P2效率工具 → P3分发跟进 → P4洞察归档 → P5自动化引擎 → P6体验陪伴",
+        "changelog.json 打入 exe 打包文件"
+      ],
+      "fixes": [
+        "main.py 文件末尾截断：_refresh_audit_tree 缺失填充循环，if __name__==__main__ 入口缺失",
+        "_run_ai_audit 为空壳占位函数（非完整实现），导致AI审核按钮无效",
+        "pyinstaller main.spec 打包后 exe 启动立即退出（退出码0）：原因 main.py 无启动入口"
+      ],
+      "lessons": [
+        "模块化脚本 main.py 与源文件 v31_ai_plus_31.1.py 行为一致时，需补全截断代码而非重新打包",
+        "PyInstaller 打包模块化脚本前必须确认 main.py 包含 __main__ 入口，否则 exe 静默退出"
+      ]
+    },
+    {
+      "version": "v32.6",
+      "date": "2026-05-10",
+      "features": [
+        "修复 GUI 启动崩溃：补全 _run_ai_audit/_export_audit_excel/_batch_change_status/_batch_export 等缺失方法",
+        "P1 审核工作台：万能搜索框（跨列关键词实时过滤审核树）",
+        "P1 审核工作台：智能优先级排序（无备注+高偏差率排最前）",
+        "P1 审核工作台：优先级颜色标签（红/黄/绿三色）",
+        "P1 审核工作台：审核卡片弹窗（双击行弹出全列明细）",
+        "P1 审核工作台：快捷备注按钮（系统无定额/替代料一键填写）",
+        "批量导出：支持 Excel 和 CSV 格式导出选中行",
+        "Excel 导出：新增导出审核结果为 Excel 功能"
+      ],
+      "fixes": [
+        "AttributeError: 'ZPP011Beautiful' object has no attribute '_run_ai_audit' — GUI启动崩溃",
+        "AttributeError: 'ZPP011Beautiful' object has no attribute '_export_audit_excel' — GUI启动崩溃",
+        "AttributeError: 'ZPP011Beautiful' object has no attribute '_batch_change_status' — GUI启动崩溃",
+        "AttributeError: 'ZPP011Beautiful' object has no attribute '_batch_export' — GUI启动崩溃",
+        "_edit_audit_remark 缺失导致双击绑定报错，改为调用 _on_tree_double_click"
+      ],
+      "lessons": [
+        "Tkinter Menu.add_command 在 _build_ui 执行时就评估 command=self.method，找不到即崩溃",
+        "多次编辑后方法体残留在文件但方法签名丢失，下次重构优先用 AST 扫描缺失方法"
+      ]
+    },
+    {
+      "version": "v32.5",
+      "date": "2026-05-10",
+      "features": [
+        "替代料配置迁移到用户目录 ~/.zpp011_audit/alt_pairs.json，支持旧配置自动迁移",
+        "替代料配对存储编码+名称，界面显示'编码（名称）'格式",
+        "PPT生成函数提取为独立模块 ppt_generator.py（main.py -372行）",
+        "审核表格新增 audit_result 列（AI生成↑/✓合格/⚠需改进）",
+        "状态列简化为二元：已备注 / 需补备注",
+        "批量备注增加'清空备注'选项",
+        "修复 _on_filter_changed order_date tuple 导致的 AttributeError",
+        "修复 main.py 缺少 import alt_manager 导致的 NameError"
+      ],
+      "fixes": [
+        "NameError: name 'alt_manager' is not defined — 添加 import 语句",
+        "AttributeError: 'tuple' object has no attribute 'get' — order_date filter_widgets 是 tuple 需特殊处理"
+      ]
+    },
+    {
+      "version": "v32.4",
+      "date": "2026-05-10",
+      "features": [
+        "批量备注下拉框增加'(清空备注)'选项",
+        "选清空时自动清除 batch_remark/audit_result/note_src，状态恢复为'需补备注'"
+      ],
+      "fixes": []
+    },
+    {
+      "version": "v32.3",
+      "date": "2026-05-10",
+      "features": [
+        "删除审核表格 orig_remark（车间备注）列，17列→16列"
+      ],
+      "fixes": []
+    },
+    {
+      "version": "v32.2",
+      "date": "2026-05-10",
+      "features": [
+        "remark 列头改为'备注'，orig_remark 列头改为'车间备注'（去重）",
+        "新增第17列 audit_result（审核结果），显示 AI判断结果",
+        "状态列简化为二元状态：有备注→'已备注'，无备注→'需补备注'",
+        "AI建议列改为纯建议文字，不再混合状态信息"
+      ],
+      "fixes": [],
+      "lessons": [
+        "状态=人工操作状态，审核结果=AI判断结果，必须分开展示"
+      ]
+    },
+    {
+      "version": "v32.1",
+      "date": "2026-05-10",
+      "features": [
+        "_refresh_audit_tree 函数改用 field_map 字典映射确保列严格对齐",
+        "新增 orig_remark（车间原始备注）和 ai_suggest（AI建议）字段"
+      ],
+      "fixes": [
+        "审核表格数据列错位问题"
+      ],
+      "lessons": [
+        "Treeview 多列数据必须用字典映射，避免手动排列 tuple 导致错位"
+      ]
+    },
+    {
+      "version": "v32.0",
+      "date": "2026-05-10",
+      "features": [
+        "PyInstaller spec 文件添加 alt_manager 隐藏导入"
+      ],
+      "fixes": [
+        "v31.9 exe 静默退出 — hiddenimports 缺少 alt_manager"
+      ],
+      "lessons": [
+        "每次新增模块文件后，必须同步更新 spec 文件的 hiddenimports 列表"
+      ]
+    },
+    {
+      "version": "v31.1",
+      "date": "2026-05-09",
+      "features": [
+        "用户可自定义工作空间目录（默认 E:\\ZPP011_Data，支持任意盘符）",
+        "新增'成长轨迹'页面，记录软件发展里程碑",
+        "审核表格新增'原备注'列和'AI建议'列",
+        "AI 审核改为'建议'模式，不覆盖原有备注"
+      ],
+      "fixes": [
+        "修复审核表格数据加载失败问题",
+        "修复审核表格列映射错误（增加 orig_remark、ai_suggest 列）",
+        "修复 PPT 调用独立模块问题",
+        "修复替代料配置保存调用函数缺失问题"
+      ],
+      "optimizations": [
+        "模块化拆分（提取 widgets、storage、ppt_generator 等独立模块）",
+        "审核表格列宽锁定功能（拖动列宽不再互相挤压）",
+        "筛选框布局改为两行五列",
+        "审核过程增加进度条",
+        "AI 审核源代码注释优化"
+      ]
+    },
+    {
+      "version": "v31",
+      "date": "2026-05-08",
+      "features": [
+        "审核结果回写 Excel（日期+订单号+物料编码定位）",
+        "SQLite 本地审核记录库",
+        "导出/导入审核备份（ZIP 格式）",
+        "PPT 日期提取修复，不再显示'见报告'"
+      ]
+    },
+    {
+      "version": "v30",
+      "date": "2026-05-07",
+      "features": [
+        "替代料筛选功能",
+        "批量操作功能（改状态/填备注/导出）",
+        "审核表格基础功能"
+      ]
+    }
+  ],
+  "run_logs": [
+    {
+      "date": "2026-05-10 23:29:31",
+      "type": "ai_audit",
+      "result": "合格1210条 | 需改进318条 | 建议0条",
+      "details": {
+        "total": 2250,
+        "qualified": 1210,
+        "need_improve": 318,
+        "suggested": 0
+      }
+    },
+    {
+      "date": "2026-05-10 22:53:39",
+      "type": "ai_audit",
+      "result": "合格1210条 | 需改进318条 | 建议0条",
+      "details": {
+        "total": 2250,
+        "qualified": 1210,
+        "need_improve": 318,
+        "suggested": 0
+      }
+    }
+  ]
+}
