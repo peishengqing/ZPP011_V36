@@ -17,6 +17,22 @@ else:
 if base_dir not in sys.path:
     sys.path.insert(0, base_dir)
 
+# 初始化日志系统
+from core.logger import get_logger
+logger = get_logger("Startup")
+logger.info("程序启动")
+
+# 初始化全局状态仓库
+import atexit
+from core.state_store import init_state
+state = init_state()
+atexit.register(lambda: state.save())
+
+# 初始化配置管理器
+from core.config_manager import ConfigManager
+config = ConfigManager()
+atexit.register(lambda: config._save())
+
 # 导入并运行主程序
 try:
     from gui.events import run_app

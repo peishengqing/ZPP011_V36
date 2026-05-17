@@ -254,6 +254,30 @@ def do_analysis_v2(
     check_cancel()
 
     # Sheet2（第五步抽取 → analysis/sheets/sheet2_alt.py）
+    # 彻底清理 alt_pairs，只保留纯物料编码字符串
+    cleaned_pairs = []
+    for pair in alt_pairs:
+        if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+            continue
+        a, b = pair
+        # 提取编码：若为三元组取第2个元素；若为二元组取第1个；否则直接转字符串
+        def get_code(item):
+            if isinstance(item, (list, tuple)):
+                if len(item) >= 2:
+                    code = item[1]   # (factory, code, name) 或 (code, name)
+                else:
+                    code = item[0]
+            else:
+                code = item
+            if code is None or code == 'None':
+                return ''
+            return str(code).strip()
+        a_code = get_code(a)
+        b_code = get_code(b)
+        if a_code and b_code:
+            cleaned_pairs.append((a_code, b_code))
+    # 使用清理后的配对
+    alt_df, alt_order_mat = build_sheet2(df, cleaned_pairs, report_progress)
     alt_df, alt_order_mat = build_sheet2(df, alt_pairs, report_progress)
     check_cancel()
 
@@ -532,3 +556,46 @@ def do_analysis_v2(
     # 返回实际保存的路径
     _dprint(f"[DEBUG do_analysis_v2] 保存完成，返回：{final_output_path}", flush=True)
     return final_output_path
+def _build_deviation_summary(dev_df, orig_df):
+    """
+    构建偏差金额汇总表（Sheet: 偏差金额分析）
+    dev_df: 完整偏差明细 DataFrame
+    orig_df: 原始数据 DataFrame（用于获取单价等额外信息，可选）
+    """
+    # 按物料编码汇总偏差金额
+    if '偏差金额' not in dev_df.columns:
+        # 如果没有偏差金额列，尝试计算
+        if '数量-实际' in dev_df.columns and '数量-定额' in dev_df.columns:
+            # 计算单价（从原始数据获取，这里简单处理）
+            dev_df['偏差金额'] = (dev_df['数量-实际'] - dev_df['数量-定额']) * dev_df.get('单价', 0)
+        else:
+            dev_df['偏差金额'] = 0.0
+    
+    # 按物料编码、物料名称、物料类型分组
+    group_cols = []
+    for col in ['物料编码', '物料名称', '物料类型']:
+        if col in dev_df.columns:
+            group_cols.append(col)
+    if not group_cols:
+        group_cols = ['物料编码']
+    
+    summary = dev_df.groupby(group_cols).agg(
+        正偏差金额=('偏差金额', lambda x: x[x > 0].sum()),
+        负偏差金额=('偏差金额', lambda x: x[x < 0].sum()),
+        总偏差金额=('偏差金额', 'sum'),
+        涉及条数=('偏差金额', 'count')
+    ).reset_index()
+    
+    # 格式化金额（保留两位小数）
+    for col in ['正偏差金额', '负偏差金额', '总偏差金额']:
+        summary[col] = summary[col].round(2)
+    
+    # 添加单位（如果有）
+    if '单位' in dev_df.columns:
+        unit_map = dev_df.groupby('物料编码')['单位'].first().to_dict()
+        summary['单位'] = summary['物料编码'].map(unit_map)
+    
+    # 按总偏差金额绝对值排序（降序）
+    summary = summary.sort_values('总偏差金额', key=abs, ascending=False)
+    
+    return summary

@@ -12,7 +12,15 @@ import shutil
 
 # 应用信息
 APP_NAME = "ZPP011偏差分析器"
-VERSION = "v36.12"
+# 版本号从 utils/version_history.py 动态读取（不再硬编码）
+import sys as _sys
+from pathlib import Path
+_sys.path.insert(0, str(Path(__file__).parent.parent))
+try:
+    from utils.version_history import get_current_version
+    VERSION = get_current_version()
+except ImportError:
+    VERSION = "v0.0.0"
 OUTPUT_NAME = f"{APP_NAME}_{VERSION}"
 
 def clean_build():

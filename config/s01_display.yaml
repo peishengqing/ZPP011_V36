@@ -1,0 +1,13 @@
+# S01 异常高亮配置文件
+# 规则按顺序匹配，命中第一个即停止
+rules:
+  - name: "呆滞预警"
+    condition: "days_in_stock >= 30 and days_in_stock < 60"
+    color: "#FFFF00"  # 黄色
+    tag: "warning"
+  - name: "超限告警"
+    condition: "days_in_stock >= 60"
+    color: "#FF0000"  # 红色
+    tag: "critical"
+  # 可扩展更多规则
+default_color: "#FFFFFF"  # 默认白色（普通行）

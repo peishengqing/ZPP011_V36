@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-""" PPT 生成模块（从 v31.1 中抽取） """
+""" PPT 生成模块（GUI 错误日志版） """
 
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import os
@@ -13,21 +16,33 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
+import io
+from matplotlib.ticker import FuncFormatter
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib")
 
+# 错误日志路径
+_ERROR_LOG = os.path.join(os.path.dirname(__file__), 'ppt_error.log')
 
-def _ppt_log(msg, log_cb=None):
-    if log_cb:
-        log_cb(msg)
-    else:
+def _log_error(msg):
+    try:
+        with open(_ERROR_LOG, 'a', encoding='utf-8') as f:
+            f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {msg}\n")
+    except:
+        pass
+
+def _log(msg):
+    try:
         print(msg)
+    except:
+        pass
 
+plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'DejaVu Sans']
+plt.rcParams['axes.unicode_minus'] = False
 
 def _calc_note_rate(summary_df):
-    """从汇总统计计算加权平均备注覆盖率"""
     try:
-        # 备注覆盖率列可能是 "22%" 这种字符串格式
         rate_col = summary_df['备注覆盖率']
-        # 转换为数值：去掉 % 符号
         rates = rate_col.astype(str).str.replace('%', '').astype(float) / 100.0
         weights = summary_df['总条数'].astype(float)
         if weights.sum() > 0:
@@ -39,21 +54,15 @@ def _calc_note_rate(summary_df):
         except:
             return 0.0
 
-
 def _generate_smart_summary(total_rows, pos_count, neg_count,
                             pos_qty, neg_qty, note_rate,
                             no_note_count, anomaly_count, repeat_count,
                             high_freq_count, factory_stats,
                             date_start, date_end):
-    """根据数据自动生成智能解读文本"""
     lines = []
     lines.append(f"【{date_start} ~ {date_end} 偏差分析报告】")
     lines.append("")
-
-    # 总体概况
     lines.append(f"本期共涉及 {total_rows:,} 条偏差记录，其中正偏差（多耗）{pos_count:,} 条、负偏差（少耗）{neg_count:,} 条。")
-
-    # 金额概况
     if pos_qty > 0 or neg_qty > 0:
         parts = []
         if pos_qty > 0:
@@ -61,8 +70,6 @@ def _generate_smart_summary(total_rows, pos_count, neg_count,
         if neg_qty > 0:
             parts.append(f"少耗金额 ¥{neg_qty:,.0f}")
         lines.append(f"偏差金额方面：{'；'.join(parts)}。")
-
-    # 备注覆盖率
     lines.append(f"整体备注覆盖率为 {note_rate:.1%}，")
     if note_rate < 0.2:
         lines.append("覆盖率偏低，建议各车间加强备注填写。")
@@ -70,8 +77,6 @@ def _generate_smart_summary(total_rows, pos_count, neg_count,
         lines.append("覆盖率有待提升，部分车间需重点关注。")
     else:
         lines.append("整体表现良好。")
-
-    # 预警信息
     alerts = []
     if no_note_count > 0:
         alerts.append(f"{no_note_count} 条高偏差无备注记录需跟进")
@@ -84,22 +89,17 @@ def _generate_smart_summary(total_rows, pos_count, neg_count,
     if alerts:
         lines.append("")
         lines.append("⚠️ 重点预警：" + "；".join(alerts) + "。")
-
-    # 工厂维度亮点
     if factory_stats:
         lines.append("")
         lines.append("📊 各工厂偏差情况：")
-        for fs in factory_stats[:5]:  # 最多显示5个工厂
+        for fs in factory_stats[:5]:
             lines.append(f"  • {fs['工厂']}：{fs['记录数']}条记录，多耗{fs['多耗']:,.0f}，少耗{fs['少耗']:,.0f}")
-
     lines.append("")
     lines.append("建议结合各车间 Top5 原因分析，针对性制定改进措施。")
-
     return "\n".join(lines)
 
-
 def _read_excel_data(excel_path, log_cb=None):
-    log_cb("[PPT] 读取 Excel 数据...")
+    _log("[PPT] 读取 Excel 数据...")
     from openpyxl import load_workbook
     wb = load_workbook(excel_path, data_only=True, read_only=True)
     data = {"file_name": os.path.basename(excel_path), "workshop_summary": [], "no_note_list": [], "total_rows": 0}
@@ -123,7 +123,7 @@ def _read_excel_data(excel_path, log_cb=None):
                 data["total_rows"] += int(row[2]) if row[2] else 0
             except BaseException:
                 pass
-        log_cb(f"  [PPT] 汇总: {len(data['workshop_summary'])} 行")
+        _log(f"  [PPT] 汇总: {len(data['workshop_summary'])} 行")
     tgt2 = next((n for n in wb.sheetnames if "预警" in n or "无备注" in n), None)
     if tgt2:
         ws2 = wb[tgt2]
@@ -139,18 +139,16 @@ def _read_excel_data(excel_path, log_cb=None):
                 "dev_type": str(row[3]).strip() if len(row) > 3 and row[3] else "",
                 "dev_rate": row[4] if len(row) > 4 else None,
             })
-        log_cb(f"  [PPT] 预警: {len(data['no_note_list'])} 条")
+        _log(f"  [PPT] 预警: {len(data['no_note_list'])} 条")
     wb.close()
-    log_cb("[PPT] Excel 读取完成")
+    _log("[PPT] Excel 读取完成")
     return data
-
 
 def _get_blank_layout(prs):
     for lo in prs.slide_layouts:
         if 'blank' in lo.name.lower():
             return lo
     return prs.slide_layouts[-1]
-
 
 def _add_slide_title(prs, text, color, log_cb=None):
     blank = _get_blank_layout(prs)
@@ -166,8 +164,7 @@ def _add_slide_title(prs, text, color, log_cb=None):
     r.font.size = Pt(32)
     r.font.bold = True
     r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
-    log_cb(f"  ▶ {text[:10]} 页完成")
-
+    _log(f"  ▶ {text[:10]} 页完成")
 
 def _add_content_box(slide, lines, font_size=15, color=(0x2A, 0x2A, 0x2A), prs=None):
     if prs is None:
@@ -182,58 +179,92 @@ def _add_content_box(slide, lines, font_size=15, color=(0x2A, 0x2A, 0x2A), prs=N
             r.font.size = Pt(font_size)
             r.font.color.rgb = RGBColor(*color)
 
+def _create_bar_chart_image(df_summary, factory_name, colors):
+    df_f = df_summary[df_summary['工厂名称'] == factory_name].copy()
+    if df_f.empty:
+        return None
+    df_f['abs_dev'] = df_f['总偏差金额(含税)'].abs()
+    df_f = df_f.sort_values('abs_dev', ascending=True)
+    workshops = df_f['车间'].tolist()
+    dev_vals = df_f['总偏差金额(含税)'].tolist()
+    fig, ax = plt.subplots(figsize=(8, 4))
+    bar_colors = [colors['pos'] if v > 0 else colors['neg'] for v in dev_vals]
+    ax.barh(workshops, dev_vals, color=bar_colors)
+    ax.axvline(0, color='black', linewidth=0.8)
+    ax.set_xlabel('偏差金额（元）')
+    ax.set_title(f'{factory_name} 各车间偏差金额分布')
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda x, p: f'{x/1000:.0f}k' if abs(x) >= 1000 else f'{x:.0f}'))
+    plt.tight_layout()
+    img_buf = io.BytesIO()
+    plt.savefig(img_buf, format='png', dpi=100, bbox_inches='tight')
+    plt.close()
+    img_buf.seek(0)
+    return img_buf
+
+def _create_trend_chart_image(trend_df, top_n=5):
+    if trend_df.empty:
+        return None
+    df = trend_df.copy()
+    for col in ['早期偏差率', '中期偏差率', '近期偏差率']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col].astype(str).str.replace('%', ''), errors='coerce')
+    df = df.dropna(subset=['早期偏差率', '中期偏差率', '近期偏差率'])
+    if df.empty:
+        return None
+    df['change'] = (df['近期偏差率'] - df['早期偏差率']).abs()
+    df = df.sort_values('change', ascending=False).head(top_n)
+    if df.empty:
+        return None
+    fig, ax = plt.subplots(figsize=(8, 4))
+    x = ['早期', '中期', '近期']
+    for _, row in df.iterrows():
+        y = [row['早期偏差率'], row['中期偏差率'], row['近期偏差率']]
+        ax.plot(x, y, marker='o', label=row['物料名称'][:12])
+    ax.axhline(0, color='gray', linestyle='--', linewidth=0.5)
+    ax.set_ylabel('偏差率 (%)')
+    ax.set_title('关键物料偏差率趋势')
+    ax.legend(loc='best', fontsize=8)
+    ax.grid(True, linestyle=':', alpha=0.6)
+    plt.tight_layout()
+    img_buf = io.BytesIO()
+    plt.savefig(img_buf, format='png', dpi=100, bbox_inches='tight')
+    plt.close()
+    img_buf.seek(0)
+    return img_buf
 
 def run_ppt_generation(excel_path, output_path, log_cb=None):
-    """
-    从分析结果 Excel 生成详细汇报 PPT
-    包含：封面、总体概况、工厂维度、物料分类、预警分析、
-    高频低额、重复偏差、车间Top5原因、总结
-    """
-    if log_cb is None:
-        def safe_log(msg, *args):
-            try:
-                print(msg, *args)
-            except UnicodeEncodeError:
-                print(msg.encode('gbk', errors='replace').decode('gbk'), *args)
-        log_cb = safe_log
-    log_cb("[PPT] 开始生成详细汇报 PPT...")
-
+    _log_error(f"开始生成 PPT，Excel: {excel_path}, 输出: {output_path}")
     try:
-        # ── 1. 读取 Excel 中的分析结果 ──
         xl = pd.ExcelFile(excel_path)
         sheets = xl.sheet_names
+        _log_error(f"Excel 工作表: {sheets}")
 
         def safe_read(name, default_cols=None):
-            # 先精确匹配，再模糊匹配（处理 emoji 前缀等）
             if name in sheets:
                 return pd.read_excel(excel_path, sheet_name=name)
-            # 模糊匹配：找包含目标名称的 sheet
             for s in sheets:
                 if name in s:
                     return pd.read_excel(excel_path, sheet_name=s)
-            log_cb(f"  [PPT] 未找到 Sheet「{name}」，将跳过相关内容")
+            _log(f"  [PPT] 未找到 Sheet「{name}」，将跳过相关内容")
             return pd.DataFrame(columns=default_cols or [])
 
         summary_df = safe_read('汇总统计')
         no_note_df = safe_read('无备注预警')
         abnormal_df = safe_read('异常预警')
         freq_loss_df = safe_read('原因汇总')
-        # 偏差原因分析：Excel未单独创建，尝试读取，失败则用空DataFrame
         try:
             cause_top5_df = safe_read('偏差原因分析')
         except:
             cause_top5_df = pd.DataFrame()
         dev_detail_df = safe_read('完整偏差明细')
         alt_df = safe_read('替代料明细')
-        # 偏差原因分析（第二次读取，用于后续分析）
         try:
             cause_analysis_df = safe_read('偏差原因分析')
         except:
             cause_analysis_df = pd.DataFrame()
-        # 分析说明：Excel未创建此Sheet，用空DataFrame
-        info_df = pd.DataFrame()
+        info_df = safe_read('分析说明')
+        trend_df = safe_read('趋势分析')
 
-        # 从汇总统计提取整体数据
         if not summary_df.empty:
             total_rows = int(summary_df['总条数'].sum())
             total_pos_count = int(summary_df['正偏差条数'].sum())
@@ -242,12 +273,7 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
             total_neg_qty = summary_df['负偏差数量'].sum()
             total_pos_amount = summary_df['正偏差金额(含税)'].sum()
             total_neg_amount = abs(summary_df['负偏差金额(含税)'].sum())
-            # 备注覆盖率：从列中提取，或计算加权平均
-            if '备注覆盖率' in summary_df.columns:
-                # 取加权平均覆盖率
-                note_rate_avg = _calc_note_rate(summary_df)
-            else:
-                note_rate_avg = 0
+            note_rate_avg = _calc_note_rate(summary_df)
         else:
             total_rows = total_pos_count = total_neg_count = 0
             total_pos_qty = total_neg_qty = 0
@@ -255,8 +281,7 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
             note_rate_avg = 0
 
         no_note_count = len(no_note_df)
-        anomaly_df = safe_read('异常预警')
-        anomaly2_count = len(anomaly_df) if not anomaly_df.empty else 0
+        anomaly2_count = len(abnormal_df) if not abnormal_df.empty else 0
 
         high_freq_count = len(freq_loss_df)
         high_freq_total = freq_loss_df['净偏差'].abs().sum() if not freq_loss_df.empty and '净偏差' in freq_loss_df.columns else 0
@@ -265,7 +290,7 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
         if not dev_detail_df.empty and '是否屡犯' in dev_detail_df.columns:
             repeat_count = dev_detail_df[dev_detail_df['是否屡犯'].str.startswith('屡犯')].shape[0]
 
-        # 工厂统计和车间 top5 移到了日期提取之后（见 # ── 2. 工厂统计）
+        # 日期提取
         date_str_start = 'N/A'
         date_str_end = 'N/A'
         date_extracted = False
@@ -278,7 +303,7 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
                         date_str_start = date_match.group(1).replace('/', '-')
                         date_str_end = date_match.group(2).replace('/', '-')
                         date_extracted = True
-                        log_cb(f"  [PPT] 从分析说明提取日期: {date_str_start} ~ {date_str_end}")
+                        _log(f"  [PPT] 从分析说明提取日期: {date_str_start} ~ {date_str_end}")
                         break
         if not date_extracted and '订单日期' in dev_detail_df.columns and not dev_detail_df.empty:
             dates = pd.to_datetime(dev_detail_df['订单日期'], errors='coerce')
@@ -286,7 +311,7 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
                 date_str_start = dates.min().strftime('%Y-%m-%d')
                 date_str_end = dates.max().strftime('%Y-%m-%d')
                 date_extracted = True
-                log_cb(f"  [PPT] 从订单日期提取日期: {date_str_start} ~ {date_str_end}")
+                _log(f"  [PPT] 从订单日期提取日期: {date_str_start} ~ {date_str_end}")
         if not date_extracted:
             file_date_match = re.search(r'(\d{8})-(\d{8})', os.path.basename(excel_path))
             if file_date_match:
@@ -294,13 +319,13 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
                 date_str_start = f"{d1[:4]}-{d1[4:6]}-{d1[6:8]}"
                 date_str_end = f"{d2[:4]}-{d2[4:6]}-{d2[6:8]}"
                 date_extracted = True
-                log_cb(f"  [PPT] 从文件名提取日期: {date_str_start} ~ {date_str_end}")
+                _log(f"  [PPT] 从文件名提取日期: {date_str_start} ~ {date_str_end}")
         if not date_extracted:
             today_str = datetime.now().strftime('%Y-%m-%d')
             date_str_start = date_str_end = today_str
-            log_cb(f"  [PPT] 使用当前日期: {date_str_start}")
+            _log(f"  [PPT] 使用当前日期: {date_str_start}")
 
-        # ── 2. 工厂统计 ──
+        # 工厂统计
         factory_stats = []
         if not summary_df.empty:
             for factory, grp in summary_df.groupby('工厂名称'):
@@ -315,12 +340,18 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
 
         workshop_top5 = []
         if not cause_analysis_df.empty and '车间' in cause_analysis_df.columns:
+            circled = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩']
             for (factory, workshop), grp in cause_analysis_df.groupby(['工厂', '车间']):
-                top5 = grp.nlargest(5, '涉及物料数')
+                agg_grp = grp.groupby('备注原因').agg({
+                    '涉及物料数': 'sum',
+                    '净偏差': 'sum'
+                }).reset_index()
+                top5 = agg_grp.nlargest(5, '涉及物料数')
                 top5_lines = []
                 for idx, (_, row) in enumerate(top5.iterrows(), 1):
+                    prefix = circled[idx-1] if idx <= len(circled) else f"{idx}."
                     top5_lines.append(
-                        f"①{idx} {row['备注原因']}（{int(row['涉及物料数'])}次，净偏差 {row['净偏差']:,.0f}）"
+                        f"{prefix} {row['备注原因']}（{int(row['涉及物料数'])}次，净偏差 {row['净偏差']:,.0f}）"
                     )
                 workshop_top5.append({
                     '工厂': factory,
@@ -331,7 +362,7 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
                     'top5': top5_lines
                 })
 
-        # ── 3. 生成智能解读（根据实际数据自动生成）──
+        # 智能解读
         summary_text = _generate_smart_summary(
             total_rows, total_pos_count, total_neg_count,
             total_pos_qty, total_neg_qty,
@@ -339,9 +370,9 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
             repeat_count, high_freq_count, factory_stats,
             date_str_start, date_str_end
         )
-        log_cb(f"  [PPT] 智能解读生成完成 ({len(summary_text)} 字符)")
+        _log(f"  [PPT] 智能解读生成完成 ({len(summary_text)} 字符)")
 
-        # ── 2. 创建 PPT ──
+        # 创建 PPT
         prs = Presentation()
         prs.slide_width = Inches(13.333)
         prs.slide_height = Inches(7.5)
@@ -443,7 +474,7 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
                         for p in cell.text_frame.paragraphs:
                             p.font.color.rgb = C_GREEN
 
-        # ── 页面生成 ──
+        # 页面生成
         slide1 = prs.slides.add_slide(_get_blank_layout(prs))
         set_slide_bg(slide1, C_PRIMARY)
         deco = slide1.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(0.4), Inches(7.5))
@@ -457,7 +488,36 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
         txBox3 = slide1.shapes.add_textbox(Inches(1.2), Inches(5.5), Inches(10), Inches(1))
         tf3 = txBox3.text_frame; p3 = tf3.paragraphs[0]
         p3.text = f'数据范围：{total_rows:,} 条记录 | 多个工厂与车间'; p3.font.size = Pt(16); p3.font.color.rgb = RGBColor(150,170,200)
-        log_cb("  [PPT] 封面完成")
+        _log("  [PPT] 封面完成")
+
+        slide_info = prs.slides.add_slide(_get_blank_layout(prs))
+        set_slide_bg(slide_info, C_BG)
+        add_title_bar(slide_info, '分析说明')
+        th_method = "固定阈值（公司规定）：±10%"
+        th_val = "±10.0%"
+        if not info_df.empty and info_df.shape[0] > 1:
+            if info_df.shape[1] > 0:
+                th_method = str(info_df.iloc[1, 0]) if pd.notna(info_df.iloc[1, 0]) else th_method
+            if info_df.shape[1] > 1:
+                th_val = str(info_df.iloc[1, 1]) if pd.notna(info_df.iloc[1, 1]) else th_val
+        sheets_desc = [
+            ("汇总统计", "按车间×物料分类统计偏差条数、数量、金额、备注覆盖率"),
+            ("替代料明细", "识别到的替代料配对及净偏差"),
+            ("无备注预警", "偏差率超过阈值但未填备注的记录"),
+            ("偏差金额分析", "按物料汇总正/负偏差金额"),
+            ("偏差原因分析", "按标准原因类别汇总分析"),
+            ("趋势分析", "按10天周期分析偏差率趋势"),
+        ]
+        info_text = f"分析日期范围：{date_str_start} ～ {date_str_end}\n动态阈值方法：{th_method}\n动态阈值数值：{th_val}\n\n各Sheet功能说明：\n" + "\n".join([f"  • {s[0]}：{s[1]}" for s in sheets_desc])
+        txBox = slide_info.shapes.add_textbox(Inches(0.6), Inches(1.8), Inches(12), Inches(5))
+        tf = txBox.text_frame
+        tf.word_wrap = True
+        for line in info_text.split('\n'):
+            p = tf.add_paragraph()
+            p.text = line
+            p.font.size = Pt(12)
+            p.font.color.rgb = C_TEXT
+        _log("  [PPT] 分析说明页完成")
 
         slide2 = prs.slides.add_slide(_get_blank_layout(prs))
         set_slide_bg(slide2, C_BG)
@@ -466,14 +526,24 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
         add_kpi_card(slide2, Inches(3.6), Inches(1.6), f'{total_pos_count:,}', '正偏差（多耗）', C_RED)
         add_kpi_card(slide2, Inches(6.7), Inches(1.6), f'{total_neg_count:,}', '负偏差（少耗）', C_GREEN)
         add_kpi_card(slide2, Inches(9.8), Inches(1.6), f'{note_rate_avg:.1%}' if total_rows else 'N/A', '备注覆盖率', C_ACCENT)
-        # 第二行：金额指标
         add_kpi_card(slide2, Inches(0.5), Inches(3.4), f'¥{total_pos_qty:,.0f}', '正偏差金额', C_RED)
         add_kpi_card(slide2, Inches(3.6), Inches(3.4), f'¥{total_neg_qty:,.0f}', '负偏差金额', C_GREEN)
         if summary_text:
             txBox = slide2.shapes.add_textbox(Inches(0.6), Inches(5.2), Inches(12), Inches(2))
             tf = txBox.text_frame; tf.word_wrap = True
             p = tf.paragraphs[0]; p.text = summary_text; p.font.size = Pt(12); p.font.color.rgb = C_TEXT
-        log_cb("  [PPT] 概况页完成")
+        _log("  [PPT] 概况页完成")
+
+        slide_chart = prs.slides.add_slide(_get_blank_layout(prs))
+        set_slide_bg(slide_chart, C_BG)
+        add_title_bar(slide_chart, '各车间偏差金额分布')
+        food_img = _create_bar_chart_image(summary_df, '云南达利-食品厂', {'pos': '#dc3545', 'neg': '#28a745'})
+        if food_img:
+            slide_chart.shapes.add_picture(food_img, Inches(0.5), Inches(1.6), width=Inches(5.5))
+        bev_img = _create_bar_chart_image(summary_df, '云南达利-饮料厂', {'pos': '#dc3545', 'neg': '#28a745'})
+        if bev_img:
+            slide_chart.shapes.add_picture(bev_img, Inches(6.3), Inches(1.6), width=Inches(5.5))
+        _log("  [PPT] 条形图页完成")
 
         slide3 = prs.slides.add_slide(_get_blank_layout(prs))
         set_slide_bg(slide3, C_BG)
@@ -483,7 +553,7 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
             rows_fac = [[s['工厂'], s['记录数'], s['多耗'], s['少耗'], s['净偏差'], s['备注率']] for s in factory_stats]
             add_table(slide3, Inches(0.8), Inches(1.8), Inches(9.7), headers_fac, rows_fac,
                       [Inches(2.5), Inches(1.2), Inches(1.5), Inches(1.5), Inches(1.5), Inches(1.5)])
-        log_cb("  [PPT] 工厂维度完成")
+        _log("  [PPT] 工厂维度完成")
 
         slide4 = prs.slides.add_slide(_get_blank_layout(prs))
         set_slide_bg(slide4, C_BG)
@@ -502,7 +572,42 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
         txBox = slide4.shapes.add_textbox(Inches(7.8), Inches(3.6), Inches(5), Inches(1))
         tf = txBox.text_frame; tf.word_wrap = True
         p = tf.paragraphs[0]; p.text = f'累计损失金额：{high_freq_total:,.0f} 元'; p.font.size = Pt(14); p.font.color.rgb = C_TEXT
-        log_cb("  [PPT] 物料分类完成")
+        _log("  [PPT] 物料分类完成")
+
+        if not dev_detail_df.empty and '物料名称' in dev_detail_df.columns and '偏差金额' in dev_detail_df.columns:
+            slide_mat = prs.slides.add_slide(_get_blank_layout(prs))
+            set_slide_bg(slide_mat, C_BG)
+            add_title_bar(slide_mat, '物料偏差金额分析', 'Top5 正偏差 / Top5 负偏差')
+            dev_mat = dev_detail_df.groupby('物料名称').agg({'偏差金额': 'sum'}).reset_index()
+            dev_mat = dev_mat.sort_values('偏差金额', ascending=False)
+            top5_pos = dev_mat.head(5)
+            top5_neg = dev_mat.tail(5).sort_values('偏差金额')
+            headers = ['物料名称', '偏差金额(元)']
+            rows_pos = [[r['物料名称'][:20], f"{r['偏差金额']:,.2f}"] for _, r in top5_pos.iterrows()]
+            rows_neg = [[r['物料名称'][:20], f"{r['偏差金额']:,.2f}"] for _, r in top5_neg.iterrows()]
+            add_table(slide_mat, Inches(0.6), Inches(1.8), Inches(5.5), headers, rows_pos, [Inches(3.5), Inches(2.0)])
+            add_table(slide_mat, Inches(6.8), Inches(1.8), Inches(5.5), headers, rows_neg, [Inches(3.5), Inches(2.0)])
+            _log("  [PPT] 物料金额Top5完成")
+
+        if not trend_df.empty:
+            slide_trend = prs.slides.add_slide(_get_blank_layout(prs))
+            set_slide_bg(slide_trend, C_BG)
+            add_title_bar(slide_trend, '偏差趋势分析')
+            trend_img = _create_trend_chart_image(trend_df)
+            if trend_img:
+                slide_trend.shapes.add_picture(trend_img, Inches(0.8), Inches(1.8), width=Inches(11))
+            classification = ""
+            if '趋势' in trend_df.columns:
+                trend_counts = trend_df['趋势'].value_counts().head(5).items()
+                classification = "\n".join([f"{k}: {v}" for k, v in trend_counts])
+            if classification:
+                txBox = slide_trend.shapes.add_textbox(Inches(0.8), Inches(5.6), Inches(11), Inches(1.2))
+                tf = txBox.text_frame
+                p = tf.paragraphs[0]
+                p.text = "趋势分类：\n" + classification
+                p.font.size = Pt(10)
+                p.font.color.rgb = C_TEXT
+            _log("  [PPT] 趋势分析页完成")
 
         slide5 = prs.slides.add_slide(_get_blank_layout(prs))
         set_slide_bg(slide5, C_BG)
@@ -519,7 +624,7 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
         txBox3 = slide5.shapes.add_textbox(Inches(8.8), Inches(3.4), Inches(3.5), Inches(3))
         tf3 = txBox3.text_frame; tf3.word_wrap = True
         p3 = tf3.paragraphs[0]; p3.text = '多次出现偏差的物料'; p3.font.size = Pt(14); p3.font.color.rgb = C_TEXT
-        log_cb("  [PPT] 预警分析完成")
+        _log("  [PPT] 预警分析完成")
 
         for ws in workshop_top5:
             slide = prs.slides.add_slide(_get_blank_layout(prs))
@@ -540,7 +645,7 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
                     tf_l = txBox_l.text_frame; tf_l.word_wrap = True
                     p_l = tf_l.paragraphs[0]; p_l.text = line; p_l.font.size = Pt(16); p_l.font.color.rgb = C_TEXT
                     content_top += Inches(0.55)
-            log_cb(f"  [PPT] 车间页：{ws['车间']}")
+            _log(f"  [PPT] 车间页：{ws['车间']}")
 
         slide_end = prs.slides.add_slide(_get_blank_layout(prs))
         set_slide_bg(slide_end, C_PRIMARY)
@@ -560,9 +665,12 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
             p.text = f'▸ {c}'; p.font.size = Pt(16); p.font.color.rgb = RGBColor(200,215,240); p.space_after = Pt(14)
 
         prs.save(output_path)
-        log_cb(f"[PPT] 详细汇报 PPT 已保存: {output_path} (共{len(prs.slides)}页)")
+        _log(f"[PPT] 详细汇报 PPT 已保存: {output_path} (共{len(prs.slides)}页)")
+        _log_error("PPT 生成成功")
         return True
     except Exception as e:
-        log_cb(f"[PPT] PPT 生成失败: {e}")
-        traceback.print_exc()
+        error_msg = f"PPT生成失败: {str(e)}\n{traceback.format_exc()}"
+        _log_error(error_msg)
+        if log_cb:
+            log_cb(error_msg)
         return False
