@@ -20,6 +20,8 @@ import os, re, glob as _glob, sys as _sys, sys, threading, time, json, tempfile,
 import shutil
 import sqlite3
 import zipfile
+import yaml
+from pathlib import Path
 import tkinter as tk
 from tkinter import scrolledtext, messagebox, filedialog, ttk
 
@@ -32,7 +34,11 @@ from analysis.analyzer import do_analysis_v2
 from gui.ui_builder import build_ui
 import ppt_generator
 from domain.alt_material.alt_manager import DEFAULT_ALT_PAIRS, save_alt_pairs, load_alt_pairs
+from core.config_manager import ConfigManager
+import core.task_manager
+from core.ai_client import AIClient
 from gui.events import EventsMixIn
+from utils.version_history import get_version_display, get_current_version, APP_NAME as _VH_APP_NAME
 
 # ── 备注标准化（已迁移到 utils/helpers.py）───
 from utils.helpers import standardize_remark
@@ -101,27 +107,12 @@ class ModeSelector:
         self.selected_mode = None
         self.parent = parent
 
-        # 从统一配置读取版本（添加异常处理，防止 config/version.json 缺失时崩溃）
-        # 注意：app_name 和 version 必须先初始化，避免 Python 变量作用域问题（见下）
-        app_name = 'ZPP011智能工具'
-        version = 'v1.0'
-        if getattr(sys, 'frozen', False):
-            config_path = os.path.join(sys._MEIPASS, 'config', 'version.json')
-        else:
-            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'version.json')
-        try:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                cfg = json.load(f)
-            app_name = cfg.get('app_name', 'ZPP011智能工具')
-            version = cfg.get('version', 'v1.0')
-        except Exception:
-            import traceback
-            traceback.print_exc()
-            # app_name 和 version 已在上方初始化为默认值，此处无需再赋值
+        # 从 utils.version_history 动态读取版本号
+        _title = get_version_display()
 
         # 使用 Toplevel 而非 tk.Tk()，避免多个 Tk 实例导致状态混乱
         self.win = tk.Toplevel(parent)
-        self.win.title(f"{app_name}_{version}")
+        self.win.title(_title)
         self.win.geometry("400x300")
         self.win.resizable(False, False)
         self.win.grab_set()  # 模态
@@ -205,24 +196,9 @@ class ModeSelector:
 class ZPP011Beautiful(EventsMixIn):
     def __init__(self, root):
         self.root = root
-        # 从统一配置读取版本（添加异常处理，防止 config/version.json 缺失时崩溃）
-        # 注意：app_name 和 version 必须先初始化，避免 Python 变量作用域问题（见下）
-        app_name = 'ZPP011智能工具'
-        version = 'v1.0'
-        if getattr(sys, 'frozen', False):
-            config_path = os.path.join(sys._MEIPASS, 'config', 'version.json')
-        else:
-            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'version.json')
-        try:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                cfg = json.load(f)
-            app_name = cfg.get('app_name', 'ZPP011智能工具')
-            version = cfg.get('version', 'v1.0')
-        except Exception:
-            import traceback
-            traceback.print_exc()
-            # app_name 和 version 已在上方初始化为默认值，此处无需再赋值
-        self.root.title(f"{app_name}_{version}")
+        self.is_exporting = False  # Export lock (Task 4.3)
+        # 从 utils.version_history 动态读取版本号
+        self.root.title(get_version_display())
         self.root.geometry("1200x820")
         self.root.minsize(1000, 700)
         self.root.configure(bg=C['bg'])
@@ -231,8 +207,17 @@ class ZPP011Beautiful(EventsMixIn):
         menubar = tk.Menu(self.root)
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label='帮助', menu=help_menu)
+        help_menu.add_command(label='快捷键说明', command=self._show_shortcuts_help)
+        help_menu.add_separator()
         help_menu.add_command(label='关于', command=self._show_about)
         self.root.config(menu=menubar)
+
+        # ── 快捷键绑定（仅在窗口内生效）──────────────
+        self.root.bind('<Control-s>', lambda e: self._save_audit_back())
+        self.root.bind('<Control-e>', lambda e: self._export_audit_excel())
+        self.root.bind('<Control-a>', lambda e: self._run_ai_audit())
+        self.root.bind('<F1>', lambda e: self._show_shortcuts_help())
+        self.root.bind('<Control-q>', lambda e: self.root.quit())
 
         self.running = False
         self.cancel_req = False
@@ -254,6 +239,9 @@ class ZPP011Beautiful(EventsMixIn):
 
         storage.init_audit_db()
         build_ui(self)
+        self.config = ConfigManager()
+        self.config.apply_window_geometry(self.root)
+        self._restore_column_widths()
         self._init_sort_columns()  # 初始化多列排序系统
         self._init_menu()  # 初始化菜单栏
         self.log("✅ UI 初始化完成，日志系统测试", "success")
@@ -262,31 +250,121 @@ class ZPP011Beautiful(EventsMixIn):
         self._auto_find()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
-    # ── 多列排序系统 ────────────────────────────────
-    def _init_sort_columns(self):
-        """
-        初始化审核表格和库存表格的多列排序功能。
-        普通点击：替换排序条件
-        Ctrl+点击：追加/移除排序条件
-        """
-        from gui.tree_utils import bind_multi_sort
+        # 状态栏
+        self.status_var = tk.StringVar()
+        self.status_var.set("就绪")
+        self.status_bar = tk.Label(self.root, textvariable=self.status_var, bd=1, relief=tk.SUNKEN, anchor=tk.W)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
-        # 初始化排序状态
-        self._sort_states = {}
+        # 任务管理器 + 进度条
+        self.task_manager = core.task_manager.TaskManager(max_workers=2)
+        self.ai_client = AIClient()
+        self.is_auditing = False
+        self.unsaved_ai_results = False
+        self.progress_bar = ttk.Progressbar(self.root, mode='indeterminate', length=200)
+        self.progress_bar.pack(side=tk.RIGHT, padx=5, pady=2)
+        self.progress_bar.pack_forget()  # 初始隐藏
 
-        # ── 审核表格 ──────────────────────────────────
-        audit_sort_key = "audit"
-        self._sort_states[audit_sort_key] = {}
+        # S01 库存检查状态
+        self._is_s01_processing = False
+        self._s01_cancel_flag = None
+        self._s01_thread = None
+        self._tab_data_cache = {}
+        # S01 异常高亮配置（配置化，从 config/s01_display.yaml 加载）
+        self.s01_display_config = self._load_s01_display_config()
+        self._ensure_temp_dir()
+        # 绑定 Tab 切换事件
+        if hasattr(self, 'notebook'):
+            self.notebook.bind('<<NotebookTabChanged>>', self._s01_on_tab_changed)
 
-        audit_cols = ("idx", "excel_row", "factory", "admin", "order_date",
-                      "order_no", "code", "name", "quota", "actual", "dev_rate",
-                      "is_alt", "status", "remark", "batch_remark", "audit_result",
-                      "AI建议", "audit_status", "audit_source", "deviation_amount")
+        # 启动回调轮询
+        self.task_manager.poll(self.root)
 
-        def audit_state_ref():
-            return self._sort_states[audit_sort_key]
+    def set_status(self, msg):
+        self.status_var.set(msg)
+        self.root.update_idletasks()
 
-        bind_multi_sort(self.audit_tree, audit_state_ref, audit_cols)
+    def clear_status(self):
+        self.status_var.set("")
+
+    # ── S01 库存检查相关方法 ─────────────────────────────
+    def _load_s01_display_config(self) -> dict:
+        """加载 S01 异常高亮配置，文件缺失/损坏时使用内置默认规则"""
+        _default = {
+            "rules": [
+                {
+                    "name": "呆滞预警",
+                    "condition": "days_in_stock >= 30 and days_in_stock < 60",
+                    "color": "#FFFF00",
+                    "tag": "warning"
+                },
+                {
+                    "name": "超限告警",
+                    "condition": "days_in_stock >= 60",
+                    "color": "#FF0000",
+                    "tag": "critical"
+                }
+            ],
+            "default_color": "#FFFFFF"
+        }
+        config_path = Path(__file__).parent.parent / "config" / "s01_display.yaml"
+        if not config_path.exists():
+            self.log(f"⚠ S01 高亮配置不存在 {config_path}，使用内置默认规则", "warning") if hasattr(self, 'log') else None
+            return _default
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+            if not isinstance(data, dict) or 'rules' not in data:
+                raise ValueError("配置文件缺少 'rules' 字段")
+            return data
+        except Exception as e:
+            self.log(f"⚠ 加载 S01 高亮配置失败: {e}，使用内置默认规则", "warning") if hasattr(self, 'log') else None
+            return _default
+
+    def _ensure_temp_dir(self):
+        """确保用户目录下存在 temp/ 文件夹（打包后也可写）"""
+        from pathlib import Path
+        # 使用用户目录下的 .zpp011_audit/temp，确保可写
+        temp_dir = Path.home() / ".zpp011_audit" / "temp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        self._temp_dir = temp_dir
+
+    def _s01_on_tab_changed(self, event=None):
+        """切换 Tab 时保存/恢复数据（深拷贝）"""
+        current_tab = self.notebook.index(self.notebook.select())
+        # 保存当前 Tab 数据
+        if hasattr(self, 'audit_data') and self.audit_data is not None:
+            self._tab_data_cache[current_tab] = self.audit_data.copy(deep=True)
+        # 恢复新 Tab 数据
+        self.audit_data = self._tab_data_cache.get(current_tab, pd.DataFrame()).copy(deep=True)
+        self._refresh_audit_tree()
+
+    def _s01_clean_temp_files(self):
+        """清理项目 temp/ 目录下的所有 S01 临时文件"""
+        import glob
+        patterns = ['*.s01.tmp', '*.s01.temp']
+        for pattern in patterns:
+            for f in glob.glob(str(self._temp_dir / pattern)):
+                try:
+                    import os as _os
+                    _os.remove(f)
+                except OSError:
+                    pass
+
+    # ── 排序已由 EventsMixIn._init_sort_columns + _on_tree_sort 接管
+    # bind_multi_sort 已禁用，避免两套排序系统冲突（F1修复）
+    # def _init_sort_columns(self):
+    #     from gui.tree_utils import bind_multi_sort
+    #     self._sort_states = {}
+    #     audit_sort_key = "audit"
+    #     self._sort_states[audit_sort_key] = {}
+    #     audit_cols = ("idx", "excel_row", "factory", "admin", "order_date",
+    #                   "order_no", "code", "name", "quota", "actual", "dev_rate",
+    #                   "is_alt", "status", "remark", "batch_remark", "audit_result",
+    #                   "AI建议", "audit_status", "audit_source", "deviation_amount")
+    #     def audit_state_ref():
+    #         return self._sort_states[audit_sort_key]
+    #     bind_multi_sort(self.audit_tree, audit_state_ref, audit_cols)
 
     # ── 审核数据库相关 ─────────────────────────────
     def _get_changelog_path(self) -> str:
@@ -1702,6 +1780,23 @@ class ZPP011Beautiful(EventsMixIn):
                 tree.item(item, tags=existing_tags)
         except Exception:
             pass
+
+    def _clean_temp_exports(self):
+        """Clean .tmp.xlsx files in temp/ directory (older than 1 hour)"""
+        import time
+        temp_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'temp')
+        if not os.path.exists(temp_dir):
+            return
+        now = time.time()
+        for f in os.listdir(temp_dir):
+            if f.endswith('.tmp.xlsx'):
+                fpath = os.path.join(temp_dir, f)
+                try:
+                    if now - os.path.getmtime(fpath) > 3600:  # Older than 1 hour
+                        os.remove(fpath)
+                        self.log(f"Cleaned temp file: {f}", "debug")
+                except Exception as e:
+                    self.log(f"Failed to clean temp file: {e}", "error")
 
 
 # ── 导出 run_app（入口函数在 events.py）─────

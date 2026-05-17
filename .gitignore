@@ -1,3 +1,4 @@
+﻿
 # Python
 __pycache__/
 *.py[cod]
@@ -6,7 +7,7 @@ __pycache__/
 *.egg
 .eggs/
 
-# PyInstaller（只忽略 build/dist，保留 spec）
+# PyInstaller
 build/
 dist/
 
@@ -31,7 +32,7 @@ env/
 config/local_settings.py
 *.local
 
-# 大文件（图片/图标/可执行文件不进仓库）
+# 大文件
 *.png
 *.jpg
 *.jpeg
@@ -40,3 +41,22 @@ config/local_settings.py
 *.icon
 *.exe
 *.dll
+
+# 临时脚本
+temp_*.py
+_patch_*.py
+
+# Office 临时文件
+~$*
+
+# 数据文件
+*.xlsx
+*.pptx
+*.csv
+
+# 审计数据库
+.zpp011_audit/
+
+# 备份目录
+dist_backup_*/
+backup_pre_*/

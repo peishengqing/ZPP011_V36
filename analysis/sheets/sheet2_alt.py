@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-sheet2_alt.py — Sheet2 替代料明细（v36 抽取，未修改逻辑）
+sheet2_alt.py — Sheet2 替代料明细（v36 抽取，兼容三元组配对）
 返回: (alt_df, alt_order_mat_set)
 """
 import pandas as pd
@@ -12,7 +12,8 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
     构建 Sheet2 替代料明细 DataFrame 及替代料订单-物料集合
     参数:
         df: 主数据 DataFrame
-        alt_pairs: 替代料配对列表 [(物料A描述, 物料B描述), ...]
+        alt_pairs: 替代料配对列表，每个元素为 (物料A, 物料B)
+                  物料可以是字符串、二元组 (code, name) 或三元组 (factory, code, name)
         report_progress: 进度回调函数
         progress_idx: 进度索引（默认2）
     返回:
@@ -23,11 +24,37 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
     report_progress(progress_idx, "Sheet2-替代料明细", 0)
     print("[DEBUG do_analysis_v2] 开始生成Sheet2", flush=True)
 
+    # ---------- 兼容性转换：将配对中的物料提取为描述字符串 ----------
+    # 由于替代料明细表中匹配的是“物料描述”，我们需要将配对中的物料转换为描述字符串。
+    # 原始逻辑中，alt_pairs 中的元素是物料描述字符串（如“核桃仁头二路”）。
+    # 但现在存储的可能是三元组 (factory, code, name)，我们需要提取 name 作为描述。
+    # 同时，为了兼容旧格式，如果已经是字符串则直接使用。
+    converted_pairs = []
+    for a, b in alt_pairs:
+        def get_desc(item):
+            if isinstance(item, (list, tuple)):
+                # 如果是三元组 (factory, code, name)，取 name（最后一个元素）
+                if len(item) == 3:
+                    return str(item[2]) if item[2] else ''
+                # 如果是二元组 (code, name)，取 name
+                elif len(item) == 2:
+                    return str(item[1]) if item[1] else ''
+                else:
+                    return str(item[0]) if item[0] else ''
+            else:
+                return str(item)
+        desc_a = get_desc(a)
+        desc_b = get_desc(b)
+        if desc_a and desc_b:
+            converted_pairs.append((desc_a, desc_b))
+        else:
+            print(f"[警告] 跳过无效替代料配对: {a} ↔ {b}")
+
     col_p = '偏差率(%)'
     alt_rows = []
 
     for order, grp in df.groupby('流程订单'):
-        for mat_a_desc, mat_b_desc in alt_pairs:
+        for mat_a_desc, mat_b_desc in converted_pairs:
             rows_a = grp[grp['组件物料描述'] == mat_a_desc]
             rows_b = grp[grp['组件物料描述'] == mat_b_desc]
             if len(rows_a) > 0 and len(rows_b) > 0:

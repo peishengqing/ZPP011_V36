@@ -1,47 +1,67 @@
 # -*- coding: utf-8 -*-
-import json, datetime
+"""
+版本更新工具 — 修改 utils/version_history.py 中的最新版本号
 
-# Update version.json
-ver_path = r'E:\zpp011_dev\模块化脚本\config\version.json'
-with open(ver_path, 'r', encoding='utf-8') as f:
-    ver = json.load(f)
-ver['version'] = 'v36.1'
-ver['release_notes'] = (
-    "新增:库存流水界面完整实现(导入Excel/三表展示/汇总卡片/搜索过滤/全检报告)\n"
-    "新增:库存流水界面顶部标题栏(与分析模式统一风格)\n"
-    "修复:tkinter Frame构造函数pady元组参数错误导致界面崩溃\n"
-    "修复:导入库存表按钮无反应(self.parent.log属性错误+表格填充未实现)\n"
-    "修复:审核模块storage未定义错误\n"
-    "修复:mode.json UTF-8 BOM编码问题\n"
-    "修复:EXE打包后ModeSelector路径问题(sys._MEIPASS+用户目录)"
-)
-with open(ver_path, 'w', encoding='utf-8') as f:
-    json.dump(ver, f, ensure_ascii=False, indent=2)
+用法：修改下方 NEW_VERSION 后运行此脚本
+"""
+import json, datetime, re, os
 
-# Update build_log.md
-log_path = r'E:\zpp011_dev\模块化脚本\build_log.md'
+# ── 配置 ──
+NEW_VERSION = "v36.32.0"  # ← 修改此处
+RELEASE_NOTES = "版本号管理集中化"
+
+# ── 更新 utils/version_history.py ──
+project_root = os.path.dirname(os.path.abspath(__file__))
+vh_path = os.path.join(project_root, 'utils', 'version_history.py')
+
+if os.path.exists(vh_path):
+    with open(vh_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    # 更新 VERSION_HISTORY 第一条的 version
+    # 找到第一个 "version": "v..." 并替换
+    content = re.sub(
+        r'("version"\s*:\s*)"v[\d.]+"',
+        rf'\1"{NEW_VERSION}"',
+        content,
+        count=1
+    )
+    # 更新日期
+    now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    content = re.sub(
+        r'("date"\s*:\s*)"[^"]+"',
+        rf'\1"{now_str}"',
+        content,
+        count=1
+    )
+
+    with open(vh_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+    print(f"[OK] utils/version_history.py updated to {NEW_VERSION}")
+
+# ── 同步更新 config/version.json ──
+ver_path = os.path.join(project_root, 'config', 'version.json')
+if os.path.exists(ver_path):
+    with open(ver_path, 'r', encoding='utf-8') as f:
+        ver = json.load(f)
+    ver['version'] = NEW_VERSION
+    ver['last_build'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    ver['release_notes'] = RELEASE_NOTES
+    with open(ver_path, 'w', encoding='utf-8') as f:
+        json.dump(ver, f, ensure_ascii=False, indent=2)
+    print(f"[OK] config/version.json updated to {NEW_VERSION}")
+
+# ── 更新 build_log.md ──
+log_path = os.path.join(project_root, 'build_log.md')
 now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 entry = (
-    "\n==================================================\n"
-    + chr(0x1f4e5) + " v36.1 | " + now + " | 成功\n"
-    + chr(0x1f4e4) + " 打包人：裴盛清\n"
-    "--------------------------------------------------\n"
-    " Python 3.11.9 | onefile | gui/events.py + gui/inventory_view.py | 44.8 MB |\n"
-    "--------------------------------------------------\n"
-    + chr(0x2705) + " 新增功能:\n"
-    " 1. 库存流水界面完整实现(导入Excel/三表展示/汇总卡片/搜索过滤/全检报告)\n"
-    " 2. 库存流水顶部标题栏(与分析模式统一风格)\n"
-    + chr(0x1f6d1) + " 功能改进:\n"
-    " 1. 版本号重置为v36.1\n"
-    + chr(0x1f41e) + " Bug修复:\n"
-    " 1. tkinter Frame构造函数pady元组参数错误导致界面崩溃\n"
-    " 2. 导入库存表按钮无反应(self.parent.log属性错误+表格填充未实现)\n"
-    " 3. 审核模块storage未定义错误(import storage缺失)\n"
-    " 4. mode.json UTF-8 BOM编码问题\n"
-    " 5. EXE打包后ModeSelector路径问题(sys._MEIPASS+用户目录)\n"
-    "==================================================\n"
+    f"\n{'='*50}\n"
+    f"📥 {NEW_VERSION} | {now} | 成功\n"
+    f"📤 打包人：裴盛清\n"
+    f"{'-'*50}\n"
+    f" {RELEASE_NOTES}\n"
+    f"{'='*50}\n"
 )
 with open(log_path, 'a', encoding='utf-8') as f:
     f.write(entry)
-
-print("Done! version.json -> v36.1, build_log updated")
+print(f"[OK] build_log.md updated")

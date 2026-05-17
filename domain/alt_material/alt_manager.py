@@ -121,7 +121,7 @@ def load_alt_pairs(log_cb=None, material_df=None):
     
     return pairs
 
-def save_alt_pairs(pairs):
+def save_alt_pairs(pairs, log_cb=None):
     """
     保存替代料配对
     pairs格式：列表，每个元素为 ( (code1, name1), (code2, name2) )
@@ -147,9 +147,15 @@ def save_alt_pairs(pairs):
         else:
             b_list = [None, str(b)]
         serializable.append([a_list, b_list])
-    with open(config_path, 'w', encoding='utf-8') as f:
-        json.dump(serializable, f, ensure_ascii=False, indent=2)
-
+    try:
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(serializable, f, ensure_ascii=False, indent=2)
+        if log_cb:
+            log_cb(f"✓ 替代料已保存，共 {len(pairs)} 组", "info")
+    except Exception as e:
+        if log_cb:
+            log_cb(f"✗ 保存替代料失败: {e}", "error")
+        raise
 def get_display_text(material_tuple):
     """
     根据物料元组 (编码, 名称) 返回显示文本 "编码（名称）"

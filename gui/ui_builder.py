@@ -478,45 +478,55 @@ def _build_ui(self):
         tk.Frame(op_card, bg=C['accent'], height=3).pack(fill="x")
         tk.Label(op_card, text="  ⚡ 操作", font=("Microsoft YaHei", 10, "bold"),
          fg=C['text'], bg=C['surface'], anchor="w").pack(fill="x", padx=12, pady=(10, 6))
-        unified_btn_row = tk.Frame(op_card, bg=C['surface'])
-        unified_btn_row.pack(fill="x", padx=12, pady=(0, 10))
-        # 添加"加载审核数据"按钮（分析完成后可手动加载）
-        self.load_audit_btn = btn(unified_btn_row, "📂 加载审核数据", self._load_audit_data_from_output_click,
+        # 第一行按钮：核心操作
+        row1_frame = tk.Frame(op_card, bg=C['surface'])
+        row1_frame.pack(fill="x", padx=12, pady=(0, 2))
+        self.load_audit_btn = btn(row1_frame, "📂 加载审核数据", self._load_audit_data_from_output_click,
                                   bg="#5c6bc0", fg="white", width=14, state="disabled")
         self.load_audit_btn.pack(side="left", padx=(0, 8))
-        self.unified_ai_btn = btn(unified_btn_row, "🧠 AI审核备注", self._run_ai_audit,
+        self.unified_ai_btn = btn(row1_frame, "🧠 AI审核备注", self._run_ai_audit,
                                 bg="#6f42c1", fg="white", width=14, state="disabled")
         self.unified_ai_btn.pack(side="left", padx=(0, 8))
-        self.unified_export_btn = btn(unified_btn_row, "💾 导出Excel", self._export_audit_excel,
+        # 取消AI审核按钮
+        self.cancel_audit_btn = tk.Button(row1_frame, text="取消审核", command=self._cancel_ai_audit,
+                                bg="#ff9800", fg="white", width=8, state="disabled")
+        self.cancel_audit_btn.pack(side="left", padx=(0, 8))
+        self.unified_export_btn = btn(row1_frame, "💾 导出Excel", self._export_audit_excel,
                                      bg="#2a9d8f", fg="white", width=14, state="disabled")
         self.unified_export_btn.pack(side="left", padx=(0, 8))
-        self.save_audit_btn = btn(unified_btn_row, "💾 保存审核结果", self._save_audit_back,
+        self.save_audit_btn = btn(row1_frame, "💾 保存审核结果", self._save_audit_back,
                                 bg="#e76f51", fg="white", width=14, state="disabled")
         self.save_audit_btn.pack(side="left", padx=(0, 8))
-        self.export_db_btn = btn(unified_btn_row, "📤 导出备份", self._export_audit_backup,
+        self.export_db_btn = btn(row1_frame, "📤 导出备份", self._export_audit_backup,
                                bg="#4a90d9", fg="white", width=12, state="normal")
         self.export_db_btn.pack(side="left", padx=(0, 8))
-        self.import_db_btn = btn(unified_btn_row, "📥 导入备份", self._import_audit_backup,
+        self.import_db_btn = btn(row1_frame, "📥 导入备份", self._import_audit_backup,
                                bg="#4a90d9", fg="white", width=12, state="normal")
         self.import_db_btn.pack(side="left")
-# 树形视图按钮
-        self.tree_view_btn = btn(unified_btn_row, "🌲 树形视图", self._show_tree_view,
+        self.tree_view_btn = btn(row1_frame, "🌲 树形视图", self._show_tree_view,
                                bg="#4a90d9", fg="white", width=12, state="disabled")
         self.tree_view_btn.pack(side="left", padx=(8, 0))
-        self.resume_btn = btn(unified_btn_row, "📌 恢复进度", self._do_resume_state,
+
+        # 第二行按钮：辅助操作
+        row2_frame = tk.Frame(op_card, bg=C['surface'])
+        row2_frame.pack(fill="x", padx=12, pady=(0, 10))
+        self.resume_btn = btn(row2_frame, "📌 恢复进度", self._do_resume_state,
                               bg="#fff3cd", fg="#856404", width=12, state="disabled")
-        self.resume_btn.pack(side="left", padx=(8, 0))
-        self.quarantine_btn = btn(unified_btn_row, "📦 隔离区", self._open_quarantine,
+        self.resume_btn.pack(side="left", padx=(0, 8))
+        self.quarantine_btn = btn(row2_frame, "📦 隔离区", self._move_to_quarantine,
                                   bg="#f59e0b", fg="white", width=12, state="normal")
-        self.quarantine_btn.pack(side="left", padx=(8, 0))
-        self.auto_close_btn = btn(unified_btn_row, "✅ 自动结案", self._auto_close_cases,
+        self.quarantine_btn.pack(side="left", padx=(0, 8))
+        self.auto_close_btn = btn(row2_frame, "✅ 自动结案", self._auto_close,
                                    bg="#2a9d8f", fg="white", width=16, state="disabled")
-        self.auto_close_btn.pack(side="left", padx=(8, 0))
-        self.unified_result_lbl = tk.Label(unified_btn_row, text="",
+        self.auto_close_btn.pack(side="left", padx=(0, 8))
+        self.cancel_auto_close_btn = btn(row2_frame, "⛔ 取消结案", self._cancel_auto_close,
+                                   bg="#ef4444", fg="white", width=10, state="disabled")
+        self.cancel_auto_close_btn.pack(side="left", padx=(0, 8))
+        self.unified_result_lbl = tk.Label(row2_frame, text="",
                                     font=("Microsoft YaHei", 9),
                                     fg=C['text_dim'], bg=C['surface'])
         self.unified_result_lbl.pack(side="right")
-        self.status_filter_label = tk.Label(unified_btn_row, text="",
+        self.status_filter_label = tk.Label(row2_frame, text="",
                                     font=("Microsoft YaHei", 9),
                                     fg=C['text_dim'], bg=C['surface'])
         self.status_filter_label.pack(side="left", padx=(0, 8))

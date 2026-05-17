@@ -1,8 +1,8 @@
 {
-  "version": "v36.32.0",
+  "version": "v36.36.0",
   "app_name": "云南达利ZPP011生产偏差分析器",
   "packed_by": "裴盛清",
-  "last_build": "2026-05-16 18:49:21",
+  "last_build": "2026-05-17 07:54:27",
   "version_schema": "major.minor.patch",
   "changelog_required": true,
   "release_notes": "PO-5: 替代料配置迁移到标准用户目录(AppData\\Roaming\\ZPP011\\config)"
