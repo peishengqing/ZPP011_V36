@@ -1784,7 +1784,7 @@ class ZPP011Beautiful(EventsMixIn):
     def _clean_temp_exports(self):
         """Clean .tmp.xlsx files in temp/ directory (older than 1 hour)"""
         import time
-        temp_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'temp')
+        temp_dir = os.path.join(os.path.expanduser('~'), '.zpp011_audit', 'temp')
         if not os.path.exists(temp_dir):
             return
         now = time.time()

@@ -14,6 +14,20 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v36.40.0",
+        "date": "2026-05-18 07:20:00",
+        "changes": [
+            "🔧【修复】删除analyzer.py重复build_sheet2调用（P0，Lengths must match崩溃）",
+            "🔧【修复】_s01_populate_table改用itertuples提升性能",
+            "🔧【修复】恢复events.py缺失的run_app()函数",
+            "🔧【修复】统一临时目录路径为~/.zpp011_audit/temp",
+            "🔧【修复】exporter.py改用shutil.move替代os.replace",
+            "✨【新增】build_exe.py打包文件名含时间戳",
+            "✨【新增】打包前自动备份源码和exe",
+            "✨【继承】S01异步化+高亮（v36.39.0全部功能）"
+        ]
+    },
+    {
         "version": "v36.39.0",
         "date": "2026-05-18 05:30:00",
         "changes": [
@@ -25,11 +39,7 @@ VERSION_HISTORY = [
             "✨【新增】_s01_on_tab_changed()方法：Tab切换时数据保存/恢复",
             "✨【新增】S01库存异常高亮：支持配置化规则/颜色（_evaluate_condition/_s01_setup_treeview_tags/_s01_populate_table）",
             "🔧【改进】itertuples替代iterrows：提升遍历性能，每50行检查取消标志",
-            "🔧【改进】线程安全UI更新：所有回调通过root.after(0, ...)投送到主线程",
-            "🔧【修复】修复替代料配对空值导致的分析崩溃",
-            "🔧【修复】修复PPT生成闪退（增加全局异常捕获和日志）",
-            "🔧【修复】修复打包后临时目录创建失败",
-            "🔧【统一】统一版本号管理（单一数据源）"
+            "🔧【改进】线程安全UI更新：所有回调通过root.after(0, ...)投送到主线程"
         ]
     },
     {
