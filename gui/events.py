@@ -986,9 +986,14 @@ class EventsMixIn:
             exact_match = False
             conflict = False
             for (ea, eb) in self.alt_pairs:
-                # 提取配对中的编码
-                ea_code = ea[1] if isinstance(ea, (list, tuple)) and len(ea) >= 2 else str(ea)
-                eb_code = eb[1] if isinstance(eb, (list, tuple)) and len(eb) >= 2 else str(eb)
+                def _extract_code(item):
+                    if isinstance(item, (list, tuple)):
+                        if len(item) >= 3: return str(item[1]).strip()
+                        if len(item) == 2: return str(item[0]).strip()
+                        return str(item[0]).strip()
+                    return str(item).strip()
+                ea_code = _extract_code(ea)
+                eb_code = _extract_code(eb)
                 if (ea_code == a_code and eb_code == b_code) or (ea_code == b_code and eb_code == a_code):
                     exact_match = True
                     break
@@ -3530,10 +3535,15 @@ class EventsMixIn:
         # 构建替代料名称集合（用于筛选）
         alt_all_descs = set()
         for a, b in getattr(self, 'alt_pairs', []):
-            if a:
-                alt_all_descs.add(a)
-            if b:
-                alt_all_descs.add(b)
+            def _extract_desc(item):
+                if isinstance(item, (list, tuple)):
+                    if len(item) >= 3: return str(item[2]).strip() if item[2] else ''
+                    if len(item) == 2: return str(item[1]).strip() if item[1] else ''
+                    return str(item[0]).strip() if item[0] else ''
+                return str(item).strip()
+            da, db = _extract_desc(a), _extract_desc(b)
+            if da: alt_all_descs.add(da)
+            if db: alt_all_descs.add(db)
 
         # ── P1：异常突变检测 ──
         self.mutation_materials = set()
@@ -3947,123 +3957,6 @@ class EventsMixIn:
         with open(self._get_quarantine_path(), 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-    # ==================== 隔离区窗口 ====================
-    def _open_quarantine(self):
-        quarantine_list = self._load_quarantine()
-        win = tk.Toplevel(self.root)
-        win.title("异常隔离区")
-        win.geometry("900x500")
-        win.transient(self.root)
-        tree_frame = tk.Frame(win)
-        tree_frame.pack(fill="both", expand=True, padx=10, pady=(10, 5))
-        cols = self.audit_tree['columns']
-        tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=15, selectmode="extended")
-        _QUAR_COL_DISPLAY = getattr(self, '_COL_DISPLAY', {})
-        for col in cols:
-            tree.heading(col, text=_QUAR_COL_DISPLAY.get(col, col))
-            tree.column(col, width=self.audit_tree.column(col, 'width'), anchor="w")
-        scroll_y = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
-        scroll_x = ttk.Scrollbar(tree_frame, orient="horizontal", command=tree.xview)
-        tree.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
-        scroll_y.pack(side="right", fill="y")
-        scroll_x.pack(side="bottom", fill="x")
-        tree.pack(side="left", fill="both", expand=True)
-        for i, rec in enumerate(quarantine_list):
-            vals = [rec.get(col, '') for col in cols]
-            tag = 'row_even' if i % 2 == 0 else 'row_odd'
-            tree.insert('', 'end', values=vals, tags=(tag,))
-        tree.tag_configure('row_even', background='#f5f7fa')
-        tree.tag_configure('row_odd', background='#ffffff')
-        btn_frame = tk.Frame(win, bg=C['bg'])
-        btn_frame.pack(fill="x", padx=10, pady=(5, 10))
-
-        def restore_selected():
-            selected = tree.selection()
-            if not selected:
-                messagebox.showwarning("提示", "请先选择要恢复的行")
-                return
-            restored = []
-            for item in selected:
-                vals = tree.item(item, 'values')
-                rec = dict(zip(cols, vals))
-                if rec in quarantine_list:
-                    quarantine_list.remove(rec)
-                restored.append(rec)
-                if self.audit_data is not None:
-                    try:
-                        new_row = pd.DataFrame([{
-                            'excel_row': int(rec.get('excel_row', 0)),
-                            '物料编码': rec.get('物料编码', ''),
-                            '物料名称': rec.get('物料名称', ''),
-                            '工厂名称': rec.get('工厂名称', ''),
-                            '车间': rec.get('车间', ''),
-                            '订单日期': rec.get('订单日期', ''),
-                            '定额': float(rec.get('定额', 0)) if rec.get('定额') not in ('', '-', None) else 0,
-                            '实际': float(rec.get('实际', 0)) if rec.get('实际') not in ('', '-', None) else 0,
-                            '偏差率(%)': float(str(rec.get('偏差率(%)', '0')).rstrip('%')),
-                            '偏差数量': float(rec.get('偏差数量', 0)) if rec.get('偏差数量') not in ('', '-', None) else 0,
-                            '备注原因': rec.get('备注原因', ''),
-                            '备注来源': rec.get('备注来源', ''),
-                            '组件物料号': rec.get('组件物料号', ''),
-                            '组件物料描述': rec.get('组件物料描述', ''),
-                            '数量-定额': float(rec.get('数量-定额', 0)) if rec.get('数量-定额') not in ('', '-', None) else 0,
-                            '数量-实际': float(rec.get('数量-实际', 0)) if rec.get('数量-实际') not in ('', '-', None) else 0,
-                            '生产管理员描述': rec.get('生产管理员描述', ''),
-                        }])
-                        self.audit_data = pd.concat([self.audit_data, new_row], ignore_index=True)
-                    except Exception:
-                        pass
-                tree.delete(item)
-            self._save_quarantine(quarantine_list)
-            self._refresh_audit_tree(self.audit_data)
-            self._update_audit_stats()
-            self._update_filter_options()
-            self.log(f"已从隔离区恢复 {len(restored)} 条记录", "info")
-            messagebox.showinfo("完成", f"已恢复 {len(restored)} 条记录到审核表格")
-
-        def clear_all():
-            if not quarantine_list:
-                messagebox.showinfo("提示", "隔离区已空")
-                return
-            if messagebox.askyesno("确认", f"确定清空所有 {len(quarantine_list)} 条隔离记录？"):
-                quarantine_list.clear()
-                self._save_quarantine(quarantine_list)
-                for item in tree.get_children():
-                    tree.delete(item)
-                self.log("隔离区已清空", "info")
-
-        def export_quarantine():
-            if not quarantine_list:
-                messagebox.showwarning("提示", "没有可导出的数据")
-                return
-            file_path = filedialog.asksaveasfilename(
-                title="导出隔离区", defaultextension=".xlsx",
-                filetypes=[("Excel 文件", "*.xlsx"), ("CSV 文件", "*.csv")]
-            )
-            if not file_path:
-                return
-            try:
-                export_df = pd.DataFrame(quarantine_list)
-                if file_path.endswith('.csv'):
-                    export_df.to_csv(file_path, index=False, encoding='utf-8-sig')
-                else:
-                    export_df.to_excel(file_path, index=False, engine='openpyxl')
-                self.log(f"隔离区已导出：{file_path}", "success")
-                messagebox.showinfo("导出成功", f"已导出 {len(quarantine_list)} 条记录")
-            except Exception as e:
-                messagebox.showerror("导出失败", str(e))
-
-        tk.Button(btn_frame, text="恢复选中", command=restore_selected,
-                  bg="#10b981", fg="white", font=("Microsoft YaHei", 10), relief="flat",
-                  width=12).pack(side="left", padx=(0, 8))
-        tk.Button(btn_frame, text="清空隔离区", command=clear_all,
-                  bg="#ef4444", fg="white", font=("Microsoft YaHei", 10), relief="flat",
-                  width=12).pack(side="left", padx=(0, 8))
-        tk.Button(btn_frame, text="导出", command=export_quarantine,
-                  bg="#3b82f6", fg="white", font=("Microsoft YaHei", 10), relief="flat",
-                  width=12).pack(side="left")
-
-    # ==================== 防抖搜索方法 ====================
     def _on_search_delayed(self, event):
         if hasattr(self, '_search_timer'):
             self.root.after_cancel(self._search_timer)
