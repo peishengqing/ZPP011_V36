@@ -513,7 +513,7 @@ def _build_ui(self):
         self.resume_btn = btn(row2_frame, "📌 恢复进度", self._do_resume_state,
                               bg="#fff3cd", fg="#856404", width=12, state="disabled")
         self.resume_btn.pack(side="left", padx=(0, 8))
-        self.quarantine_btn = btn(row2_frame, "📦 隔离区", self._move_to_quarantine,
+        self.quarantine_btn = btn(row2_frame, "📦 隔离区", self._open_quarantine,
                                   bg="#f59e0b", fg="white", width=12, state="normal")
         self.quarantine_btn.pack(side="left", padx=(0, 8))
         self.auto_close_btn = btn(row2_frame, "✅ 自动结案", self._auto_close,

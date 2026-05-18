@@ -282,22 +282,27 @@ def do_analysis_v2(
         if not isinstance(pair, (list, tuple)) or len(pair) != 2:
             continue
         a, b = pair
-        # 提取编码：若为三元组取第2个元素；若为二元组取第1个；否则直接转字符串
-        def get_code(item):
+        # 提取编码和描述：兼容三元组、二元组、纯字符串
+        def get_code_and_desc(item):
             if isinstance(item, (list, tuple)):
-                if len(item) >= 2:
-                    code = item[1]   # (factory, code, name) 或 (code, name)
+                if len(item) >= 3:
+                    code, desc = item[1], item[2]
+                elif len(item) == 2:
+                    code, desc = item[0], item[1]
                 else:
-                    code = item[0]
+                    code, desc = item[0], ''
             else:
-                code = item
-            if code is None or code == 'None':
-                return ''
-            return str(code).strip()
-        a_code = get_code(a)
-        b_code = get_code(b)
-        if a_code and b_code:
-            cleaned_pairs.append((a_code, b_code))
+                code, desc = '', str(item)
+            if code is None or code == 'None': code = ''
+            if desc is None or desc == 'None': desc = ''
+            return str(code).strip(), str(desc).strip()
+
+        a_code, a_desc = get_code_and_desc(a)
+        b_code, b_desc = get_code_and_desc(b)
+        a_match = a_code if a_code else a_desc
+        b_match = b_code if b_code else b_desc
+        if a_match and b_match:
+            cleaned_pairs.append((a_match, b_match))
     # 使用清理后的配对
     alt_df, alt_order_mat = build_sheet2(df, cleaned_pairs, report_progress)
     check_cancel()
