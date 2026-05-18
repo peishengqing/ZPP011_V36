@@ -1,3 +1,4 @@
+import shutil
 import os
 import time
 import pandas as pd
@@ -65,7 +66,7 @@ class ExcelExporter:
                 df.to_excel(writer, index=False, sheet_name='Sheet1')
 
             # 原子化重命名临时文件为正式文件
-            os.replace(temp_path, output_path)
+            shutil.move(str(temp_path), str(output_path))
 
         except Exception as e:
             if temp_path.exists():

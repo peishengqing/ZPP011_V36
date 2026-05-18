@@ -22,7 +22,51 @@ try:
     VERSION = get_current_version()
 except ImportError:
     VERSION = "v0.0.0"
-OUTPUT_NAME = f"{APP_NAME}_{VERSION}"
+TIMESTAMP = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+OUTPUT_NAME = f"{APP_NAME}_{VERSION}_{TIMESTAMP}"
+
+
+
+def backup_source_code(version):
+    """Backup source code to user directory"""
+    import shutil as _shutil, datetime as _dt
+    backup_root = os.path.join(os.path.expanduser('~'), '.zpp011_audit', 'source_backups')
+    timestamp = _dt.datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup_name = f"{version}_{timestamp}"
+    backup_path = os.path.join(backup_root, backup_name)
+    items = ['gui', 'analysis', 'storage', 'domain', 'utils', 'core', 'config',
+             'widgets.py', 'main.py', 'build_exe.py', 'requirements.txt']
+    os.makedirs(backup_path, exist_ok=True)
+    for item in items:
+        src = os.path.join(os.path.dirname(__file__), item)
+        if os.path.exists(src):
+            dst = os.path.join(backup_path, item)
+            if os.path.isdir(src):
+                _shutil.copytree(src, dst, ignore_dangling_symlinks=True,
+                                ignore=_shutil.ignore_patterns('__pycache__', '*.pyc', '.git'))
+            else:
+                _shutil.copy2(src, dst)
+    print(f"Source backed up: {backup_path}")
+
+
+def backup_latest_exe():
+    """Backup latest exe from dist/"""
+    dist_dir = os.path.join(os.path.dirname(__file__), 'dist')
+    if not os.path.exists(dist_dir):
+        return
+    exe_files = [f for f in os.listdir(dist_dir) if f.endswith('.exe')]
+    if not exe_files:
+        return
+    latest = max(exe_files, key=lambda f: os.path.getmtime(os.path.join(dist_dir, f)))
+    src = os.path.join(dist_dir, latest)
+    backup_root = os.path.join(os.path.expanduser('~'), '.zpp011_audit', 'exe_backups')
+    os.makedirs(backup_root, exist_ok=True)
+    import datetime as _dt
+    ts = _dt.datetime.now().strftime('%Y%m%d_%H%M%S')
+    dst_name = f"{os.path.splitext(latest)[0]}_{ts}.exe"
+    dst = os.path.join(backup_root, dst_name)
+    shutil.copy2(src, dst)
+    print(f"Exe backed up: {dst}")
 
 def clean_build():
     """清理旧的构建文件（保留 dist 目录）"""
@@ -40,6 +84,8 @@ def main():
     print(f"开始打包: {OUTPUT_NAME}")
     print("=" * 60)
     
+    backup_source_code(VERSION)
+    backup_latest_exe()
     clean_build()
     
     sep = os.pathsep

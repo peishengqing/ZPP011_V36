@@ -242,11 +242,33 @@ def do_analysis_v2(
         print(msg)
         df["金额-实际(含税)"] = 0.0
 
-    # 计算偏差金额(含税)
+    # 计算偏差金额(含税) - 修复：增加兜底逻辑
     df['_unit_price_tax'] = 0.0
-    valid_mask = (df['数量-实际'] > 0) & (df['金额-实际(含税)'] > 0)
-    df.loc[valid_mask, '_unit_price_tax'] = df.loc[valid_mask, '金额-实际(含税)'] / df.loc[valid_mask, '数量-实际']
+    
+    # 尝试从多个来源获取单价
+    # 优先级：1.金额-实际(含税)/数量-实际  2.金额-定额(含税)/数量-定额
+    valid_mask_actual = (df['数量-实际'] > 0) & (df['金额-实际(含税)'] > 0)
+    valid_mask_quota = (df['数量-定额'] > 0) & (df['金额-定额(含税)'] > 0)
+    
+    # 先用实际金额计算
+    df.loc[valid_mask_actual, '_unit_price_tax'] = (
+        df.loc[valid_mask_actual, '金额-实际(含税)'] / 
+        df.loc[valid_mask_actual, '数量-实际']
+    )
+    
+    # 实际金额缺失的，用定额金额计算
+    missing_mask = (~valid_mask_actual) & valid_mask_quota
+    df.loc[missing_mask, '_unit_price_tax'] = (
+        df.loc[missing_mask, '金额-定额(含税)'] / 
+        df.loc[missing_mask, '数量-定额']
+    )
+    
+    # 计算偏差金额
     df['偏差金额(含税)'] = (df['材料偏差'] * df['_unit_price_tax']).round(2)
+    
+    # 调试日志：记录有多少行成功计算了单价
+    calculated_count = (df['_unit_price_tax'] > 0).sum()
+    print(f"[偏差金额计算] 成功计算 {calculated_count}/{len(df)} 行的单价")
 
     check_cancel()
     # Sheet1（第五步抽取 → analysis/sheets/sheet1_summary.py）
@@ -278,7 +300,6 @@ def do_analysis_v2(
             cleaned_pairs.append((a_code, b_code))
     # 使用清理后的配对
     alt_df, alt_order_mat = build_sheet2(df, cleaned_pairs, report_progress)
-    alt_df, alt_order_mat = build_sheet2(df, alt_pairs, report_progress)
     check_cancel()
 
     alt_order_mat = set()
