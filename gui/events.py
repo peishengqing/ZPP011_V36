@@ -960,11 +960,11 @@ class EventsMixIn:
                 if '|' in x:
                     parts = [p.strip() for p in x.split('|')]
                     if len(parts) >= 3:
-                        # 格式: 编码 | 名称 | 工厂
-                        return parts[2], parts[0], parts[1]  # (工厂, 编码, 名称)
+                        # 格式: 工厂 | 编码 | 名称
+                        return parts[0], parts[1], parts[2]  # (工厂, 编码, 名称)
                     elif len(parts) == 2:
-                        # 格式: 编码 | 工厂
-                        return parts[1], parts[0], ''  # (工厂, 编码, 空名称)
+                        # 格式: 编码 | 名称
+                        return '', parts[0], parts[1]  # (空工厂, 编码, 名称)
                     else:
                         return '', parts[0], ''  # (空工厂, 编码, 空名称)
                 else:

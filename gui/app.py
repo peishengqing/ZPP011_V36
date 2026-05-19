@@ -473,7 +473,7 @@ class ZPP011Beautiful(EventsMixIn):
                 df = pd.read_excel(excel_path, sheet_name='Data')
                 code_cols = [c for c in df.columns if any(k in str(c).lower() for k in ['组件物料号', '组件编码', '物料编码', 'code', '编码'])]
                 name_cols = [c for c in df.columns if any(k in str(c).lower() for k in ['组件描述', '物料描述', '名称', 'name', '描述'])]
-                factory_cols = [c for c in df.columns if any(k in str(k).lower() for k in ['工厂名称', '工厂', 'factory'])]
+                factory_cols = [c for c in df.columns if any(k in str(c).lower() for k in ['工厂名称', '工厂', 'factory'])]
                 if code_cols:
                     seen = set()
                     for _, row in df.iterrows():
