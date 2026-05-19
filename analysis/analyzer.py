@@ -301,8 +301,8 @@ def do_analysis_v2(
 
         a_code, a_desc = get_code_and_desc(a)
         b_code, b_desc = get_code_and_desc(b)
-        a_match = a_code if a_code else a_desc
-        b_match = b_code if b_code else b_desc
+        a_match = a_desc if a_desc else a_code
+        b_match = b_desc if b_desc else b_code
         if a_match and b_match:
             cleaned_pairs.append((a_match, b_match))
     # 使用清理后的配对
