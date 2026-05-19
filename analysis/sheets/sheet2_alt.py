@@ -63,10 +63,10 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
                 rows_a = grp[grp['组件物料描述'].str.contains(mat_a_desc, na=False, regex=False)]
             if len(rows_b) == 0 and mat_b_desc:
                 rows_b = grp[grp['组件物料描述'].str.contains(mat_b_desc, na=False, regex=False)]
-            # 第三级：用组件物料编码匹配
-            if len(rows_a) == 0 and mat_a_desc:
+            # 第三级：用组件物料编码匹配（仅在该列存在时使用）
+            if len(rows_a) == 0 and mat_a_desc and '组件物料编码' in grp.columns:
                 rows_a = grp[grp['组件物料编码'].astype(str).str.contains(mat_a_desc, na=False, regex=False)]
-            if len(rows_b) == 0 and mat_b_desc:
+            if len(rows_b) == 0 and mat_b_desc and '组件物料编码' in grp.columns:
                 rows_b = grp[grp['组件物料编码'].astype(str).str.contains(mat_b_desc, na=False, regex=False)]
             if len(rows_a) > 0 and len(rows_b) > 0:
                 a, b = rows_a.iloc[0], rows_b.iloc[0]
