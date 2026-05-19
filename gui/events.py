@@ -591,6 +591,11 @@ class EventsMixIn:
                 b_factory, b_code, b_name = b[0], b[1], b[2]
             else:
                 b_factory, b_code, b_name = '', str(b), ''
+            # 将 None / 'None' 转为空字符串
+            a_code = '' if a_code in (None, 'None') else str(a_code).strip()
+            a_name = '' if a_name in (None, 'None') else str(a_name).strip()
+            b_code = '' if b_code in (None, 'None') else str(b_code).strip()
+            b_name = '' if b_name in (None, 'None') else str(b_name).strip()
             
             # 显示：编码 + 名称（若名称存在）
             a_disp = f"{a_code} {a_name}" if a_name else a_code
@@ -935,22 +940,31 @@ class EventsMixIn:
                 messagebox.showwarning("提示", "物料A和物料B不能是同一个物料！")
                 return
 
-            # 去重检查：是否已存在相同配对
+            # 去重检查：是否已存在相同配对（编码为空时用描述匹配）
             exact_match = False
             conflict = False
             for (ea, eb) in self.alt_pairs:
-                def _extract_code(item):
+                def _extract_code_and_desc(item):
                     if isinstance(item, (list, tuple)):
-                        if len(item) >= 3: return str(item[1]).strip()
-                        if len(item) == 2: return str(item[0]).strip()
-                        return str(item[0]).strip()
-                    return str(item).strip()
-                ea_code = _extract_code(ea)
-                eb_code = _extract_code(eb)
-                if (ea_code == a_code and eb_code == b_code) or (ea_code == b_code and eb_code == a_code):
+                        if len(item) >= 3:
+                            code = str(item[1]).strip() if item[1] else ''
+                            desc = str(item[2]).strip() if item[2] else ''
+                            return code if code else desc  # 编码为空用描述
+                        if len(item) == 2:
+                            code = str(item[0]).strip() if item[0] else ''
+                            desc = str(item[1]).strip() if item[1] else ''
+                            return code if code else desc
+                        return str(item[0]).strip() if item[0] else ''
+                    s = str(item).strip()
+                    return s if s else ''
+                ea_key = _extract_code_and_desc(ea)
+                eb_key = _extract_code_and_desc(eb)
+                a_key = a_code if a_code else a_name
+                b_key = b_code if b_code else b_name
+                if (ea_key == a_key and eb_key == b_key) or (ea_key == b_key and eb_key == a_key):
                     exact_match = True
                     break
-                if a_code in (ea_code, eb_code) or b_code in (ea_code, eb_code):
+                if a_key in (ea_key, eb_key) or b_key in (ea_key, eb_key):
                     conflict = True
 
             if exact_match:

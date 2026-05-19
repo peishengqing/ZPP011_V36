@@ -14,7 +14,7 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
-        "version": "v36.40.0",
+        "version": "v36.40.3",
         "date": "2026-05-18 07:20:00",
         "changes": [
             "🔧【修复】删除analyzer.py重复build_sheet2调用（P0，Lengths must match崩溃）",
