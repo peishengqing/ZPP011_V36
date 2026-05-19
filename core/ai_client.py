@@ -39,6 +39,9 @@ class AIClient:
             else:
                 return {"result": "需补备注", "suggestion": f"少耗{abs(dev_rate)*100:.1f}%，建议核实实际用量"}
         remark_str = str(text).strip()
+        # 跳过 nan/NaN/None 等无效值（之前已在上方处理空文本，此处作为兜底）
+        if remark_str in ('nan', 'NaN', 'None', 'none', ''):
+            return {"result": "需补备注", "suggestion": "未填写备注，建议填写偏差原因（超耗/少耗/替代/变更）"}
         if len(remark_str) < 5:
             return {"result": "需改进", "suggestion": "备注过短，建议补充详细原因"}
         if any(kw in remark_str for kw in ["超耗", "少耗", "损耗", "替代", "变更"]):
