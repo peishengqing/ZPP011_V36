@@ -55,8 +55,14 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
 
     for order, grp in df.groupby('流程订单'):
         for mat_a_desc, mat_b_desc in converted_pairs:
+            # 精确匹配
             rows_a = grp[grp['组件物料描述'] == mat_a_desc]
             rows_b = grp[grp['组件物料描述'] == mat_b_desc]
+            # 模糊匹配（包含关系）
+            if len(rows_a) == 0:
+                rows_a = grp[grp['组件物料描述'].str.contains(mat_a_desc, na=False)]
+            if len(rows_b) == 0:
+                rows_b = grp[grp['组件物料描述'].str.contains(mat_b_desc, na=False)]
             if len(rows_a) > 0 and len(rows_b) > 0:
                 a, b = rows_a.iloc[0], rows_b.iloc[0]
                 alt_rows.append({
@@ -77,6 +83,11 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
 
     alt_df = pd.DataFrame(alt_rows)
     print(f"[DEBUG do_analysis_v2] Sheet2完成，{len(alt_df)} 行", flush=True)
+    if len(alt_df) == 0 and len(converted_pairs) > 0:
+        # 调试：打印前5个配对和df中的描述
+        print(f"[DEBUG] 配对数: {len(converted_pairs)}, 前3个: {converted_pairs[:3]}", flush=True)
+        sample_descs = df['组件物料描述'].dropna().unique()[:5].tolist()
+        print(f"[DEBUG] df物料描述样本: {sample_descs}", flush=True)
     report_progress(progress_idx, "Sheet2-替代料明细", 100)
 
     # 构建替代料订单-物料集合（用于后续标记）

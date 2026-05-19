@@ -4,10 +4,10 @@ GUI 事件与按钮回调（v36 抽取）
 ⚠️ 本文件仅包含 GUI 回调，不修改任何业务逻辑
 """
 
-import shutil
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import os
+import shutil
 import sys as _sys
 import glob as _glob
 import pandas as pd
@@ -17,13 +17,11 @@ from analysis.analyzer import do_analysis_v2
 from core.decorators import with_feedback
 from core.state_store import get_state
 from core.rule_engine import RuleEngine
-from core.auto_closer import AutoCloser
 from core.task_manager import TaskManager
 from core.exporter import ExcelExporter
 from openpyxl import Workbook, load_workbook
 from domain.alt_material.alt_manager import save_alt_pairs, load_alt_pairs
 import time
-import datetime
 from datetime import datetime
 import threading
 import traceback
@@ -854,9 +852,7 @@ class EventsMixIn:
             percent = int(current / total * 100) if total > 0 else 0
             eta_seconds = kwargs.get('eta_seconds', 0)
             eta_str = f"ETA {int(eta_seconds)}s" if eta_seconds > 0 else ""
-            self.progress_bar.configure(
-                text=f"Exporting {current}/{total} ({percent}%) {eta_str}"
-            )
+            self.set_status(f"Exporting {current}/{total} ({percent}%) {eta_str}")
             self.root.update_idletasks()
     
     def _on_export_done(self, result):
@@ -1357,61 +1353,6 @@ class EventsMixIn:
                   relief="flat", width=15).pack(pady=8)
 
 
-    def _scan_remark_cleanup(self):
-        """扫描备注，返回可清洗的建议列表（兼容列名）"""
-        if self.audit_data is None or self.audit_data.empty:
-            return []
-
-        # 确定备注列名
-        remark_col = None
-        for col in ['备注原因', '备注']:
-            if col in self.audit_data.columns:
-                remark_col = col
-                break
-        if remark_col is None:
-            self.log("备注清洗：未找到备注列", "warning")
-            return []
-
-        # 物料描述列
-        mat_col = None
-        for col in ['组件物料描述', '物料名称']:
-            if col in self.audit_data.columns:
-                mat_col = col
-                break
-        if mat_col is None:
-            mat_col = '组件物料描述'
-
-        # 清洗规则
-        cleanup_rules = {
-            '额定不足': '定额偏低', '定额低': '定额偏低',
-            '定额高': '定额偏高', '设高': '定额偏高',
-            '设低': '定额偏低', '没有定额': '系统无定额',
-            '无定额': '系统无定额', '未定额': '系统无定额',
-            '没用过': '未填写', '不知道': '未填写',
-            '待查': '未填写', '测试': '试产',
-            '试机': '试产', '打样': '试产',
-            '样板': '试产', '堵': '堵料',
-            '卡': '卡料', '破': '破损', '烂': '破损',
-        }
-
-        suggestions = []
-        for idx, row in self.audit_data.iterrows():
-            remark = str(row.get(remark_col, '')).strip()
-            if not remark or remark in ('nan', 'NaN', 'None'):
-                continue
-            for keyword, standard in cleanup_rules.items():
-                if keyword in remark and remark != standard:
-                    suggestions.append({
-                        'idx': idx,
-                        '物料': str(row.get(mat_col, ''))[:25],
-                        '当前备注': remark,
-                        '建议标准化为': standard,
-                        'excel_row': int(row.get('excel_row', 0)),
-                        'remark_col': remark_col,
-                    })
-                    break
-        return suggestions
-
     def _show_cleanup_window(self):
         """显示备注清洗标准化窗口"""
         suggestions = self._scan_remark_cleanup()
@@ -1483,16 +1424,10 @@ class EventsMixIn:
             cleaned = 0
             for item_id, (checked, sug) in self._cleanup_checkboxes.items():
                 if checked and self.audit_data is not None:
-                    remark_col = sug.get('remark_col', '备注原因'); self.audit_data.at[sug['idx'], remark_col] = sug['建议标准化为']
+                    self.audit_data.at[sug['idx'], '备注原因'] = sug['建议标准化为']
                     cleaned += 1
             if cleaned > 0:
                 self._refresh_audit_tree(self.audit_data)
-            try:
-                self.audit_tree['displaycolumns'] = '#all'
-                self.root.update_idletasks()
-                self.log("[DEBUG] AI审核完成后强制恢复displaycolumns", "info")
-            except Exception as e:
-                self.log(f"[ERROR] 恢复displaycolumns失败: {e}", "error")
                 self._update_audit_stats()
                 self._update_filter_options()
                 self.log(f"🧹 备注清洗完成：{cleaned} 条已标准化", "success")
@@ -1571,9 +1506,6 @@ class EventsMixIn:
 
 
     def _analysis_thread(self):
-        import tempfile
-        temp_dir = tempfile.mkdtemp(prefix="zpp011_analysis_")
-        self.output_path = temp_dir  # 保存临时目录路径
         import traceback
         import os
 
@@ -1590,7 +1522,7 @@ class EventsMixIn:
 
             self.output_path = do_analysis_v2(
                 input_file=self.input_file.get(),
-                output_dir=temp_dir,
+                output_dir=self.output_dir.get(),
                 alt_pairs=self.alt_pairs,
                 progress_callback=self._on_progress,
                 cancel_check=lambda: self.cancel_req,
@@ -2070,9 +2002,7 @@ class EventsMixIn:
             if hasattr(self, 'progress_bar'):
                 self.progress_bar.stop()
                 self.progress_bar.pack_forget()
-            self.log(f"[ERROR] _on_load_done异常: {e}", "error")
-            import traceback
-            self.log(traceback.format_exc()[-600:], "error")
+            raise
 
     def _load_data_worker(self, file_path=None):
         """纯数据处理：查找文件、读取、清洗、构建audit_df（禁止UI操作）"""
@@ -2177,7 +2107,6 @@ class EventsMixIn:
         try:
             self.audit_data = result_df
             self._full_dev_df = result_df.copy()
-            self.log(f"[DEBUG] _on_load_done: {len(self.audit_data)}行", "info")
 
             # 更新筛选选项和行颜色
             self._update_filter_options()
@@ -2200,9 +2129,15 @@ class EventsMixIn:
                 self.unified_result_lbl.configure(
                     text=f"已加载 {total} 条 | 偏差>10%: {high_dev} | 需补备注: {no_note} | 已审核: {approved_note}")
 
-            # 启用所有按钮
-            enabled = self._enable_audit_buttons()
-            self.log(f"[DEBUG] 已启用{enabled}个按钮", "info")
+            # 启用按钮
+            for btn_name in [
+                'load_audit_btn', 'unified_ai_btn', 'unified_export_btn',
+                'save_audit_btn', 'tree_view_btn', 'cleanup_btn',
+                'export_db_btn', 'import_db_btn', 'quarantine_btn', 'bom_btn',
+            ]:
+                btn = getattr(self, btn_name, None)
+                if btn:
+                    btn.configure(state='normal')
 
             self.log(f"✅ 审核数据加载完成 | 共 {total} 条 | 偏差>10%: {high_dev} 条", "success")
 
@@ -3320,10 +3255,8 @@ class EventsMixIn:
                     audit_source_val = 'AI'
                 elif note_source == '人工填写':
                     audit_source_val = '手动'
-                elif note_source == '替代料':
-                    audit_source_val = '替代料'
                 else:
-                    audit_source_val = ''   # 未经过审核的行，来源应为空
+                    audit_source_val = '系统'   # 默认来源
             # 流程订单
             order_no_val = ''
             for _col in ['流程订单', '订单号', '订单编号']:
@@ -3772,9 +3705,6 @@ class EventsMixIn:
             self.filter_status_lbl.configure(text=f"筛选: {', '.join(active_filters)}" if active_filters else "")
         if hasattr(self, 'status_filter_label'):
             self.status_filter_label.configure(text=filter_text)
-        # 确保按钮不被禁用
-        if hasattr(self, 'audit_data') and self.audit_data is not None and len(self.audit_data) > 0:
-            self._enable_audit_buttons()
 
 
     def _reset_all_filters(self):
@@ -3802,28 +3732,10 @@ class EventsMixIn:
         self.search_entry.delete(0, "end")
         self.search_entry.insert(0, "输入任意关键词，实时过滤全部列...")
         self.log("已重置所有筛选条件", "info")
-        if hasattr(self, 'audit_data') and self.audit_data is not None and len(self.audit_data) > 0:
-            self._enable_audit_buttons()
 
 
     def _refresh_audit_tree(self, df, skip_auto_sort=False):
         """用给定的 DataFrame 刷新智能审核表格"""
-        # 【调试】打印列定义和第一行数据
-        self.log(f"[DEBUG] cols = {self.audit_tree['columns']}")
-        if len(df) > 0:
-            first = df.iloc[0]
-            self.log(f"[DEBUG] 第一行数据样例: idx={first.name}, " + ", ".join([f"{c}={first.get(c, '?')}" for c in ['工厂', '车间', '订单日期', '流程订单', '物料编码', '物料名称', '定额', '实际', '偏差率'] if c in first.index]))
-
-        self.log(f"[DEBUG] _refresh_audit_tree: df={len(df)}行", "info")
-        # AI建议列诊断
-        if 'AI建议' not in df.columns:
-            self.log("[WARN] DataFrame中没有'AI建议'列!", "warn")
-        else:
-            non_empty = df['AI建议'].notna().sum()
-            self.log(f"[DEBUG] AI建议列非空: {non_empty}/{len(df)}", "info")
-            if non_empty > 0:
-                sample = str(df['AI建议'].dropna().iloc[0])[:80]
-                self.log(f"[DEBUG] AI建议示例: {sample}", "info")
         # 确保 audit_result 和 AI建议 列存在（在副本上操作，不影响原始数据）
         df = df.copy()
         for col in ('audit_result', 'AI建议'):
@@ -3836,7 +3748,7 @@ class EventsMixIn:
 
         # ── 性能优化：暂停绘制，批量插入后再恢复 ──
         try:
-            pass  # [FIX] 跳过 displaycolumns=[] 暂停绘制，防止异常时无法恢复
+            self.audit_tree.configure(displaycolumns=[])  # 隐藏所有列以暂停绘制
         except Exception:
             pass
 
@@ -3887,19 +3799,13 @@ class EventsMixIn:
                 for idx in next7:
                     rank_dict[idx] = 'amt_rank_2'
 
-        # 构建替代料名称集合（提取name用于匹配）
+        # 构建替代料名称集合
         alt_all_descs = set()
         for a, b in getattr(self, 'alt_pairs', []):
-            def _extract_desc(item):
-                if isinstance(item, (list, tuple)):
-                    if len(item) >= 3: return str(item[2]).strip() if item[2] else ''
-                    if len(item) == 2: return str(item[1]).strip() if item[1] else ''
-                    return str(item[0]).strip() if item[0] else ''
-                return str(item).strip()
-            da, db = _extract_desc(a), _extract_desc(b)
-            if da: alt_all_descs.add(da)
-            if db: alt_all_descs.add(db)
-        self.log(f"[DEBUG] 替代料描述集合({len(alt_all_descs)}): {list(alt_all_descs)[:5]}...", "info")
+            if a:
+                alt_all_descs.add(a)
+            if b:
+                alt_all_descs.add(b)
 
         # ── 填充 Tree（按优先级排序） ──
         from widgets import C as _C
@@ -3941,36 +3847,34 @@ class EventsMixIn:
                     audit_source_val = 'AI'
                 elif note_source == '人工填写':
                     audit_source_val = '手动'
-                elif note_source == '替代料':
-                    audit_source_val = '替代料'
                 else:
-                    audit_source_val = ''   # 未经过审核的行，来源应为空
+                    audit_source_val = '系统'   # 默认来源
             order_no_val = ''
             for _col in ['流程订单', '订单号', '订单编号']:
                 if _col in row.index and pd.notna(row.get(_col)):
                     order_no_val = str(row.get(_col))
                     break
             item = self.audit_tree.insert('', 'end', values=(
-                i,  # idx
-                int(row.get('原表行号', row.get('excel_row', 0))) if pd.notna(row.get('原表行号', row.get('excel_row'))) else '',  # excel_row
-                str(row.get('工厂', row.get('工厂名称', ''))),  # factory
-                str(row.get('车间', row.get('生产管理员描述', ''))),  # admin
-                str(row.get('订单日期', ''))[:12] if pd.notna(row.get('订单日期')) else '',  # order_date
-                order_no_val,  # order_no
-                str(row.get('物料编码', row.get('组件物料号', ''))),  # code
-                mat_desc[:20],  # name
-                f"{row.get('定额', row.get('数量-定额', 0)):.3f}",  # quota
-                f"{row.get('实际', row.get('数量-实际', 0)):.3f}",  # actual
-                f"{dev_rate:.2f}%",  # dev_rate
-                is_alt,  # is_alt
-                status,  # status
-                remark,  # remark
-                batch_remark[:30],  # batch_remark
-                audit_result_val,  # audit_result
-                str(row.get('AI建议', ''))[:50],  # AI建议
-                audit_status_val,  # audit_status
-                audit_source_val,  # audit_source
-                f"{row.get('偏差金额', 0):,.2f}",  # deviation_amount
+                i,
+                int(row.get('原表行号', row.get('excel_row', 0))) if pd.notna(row.get('原表行号', row.get('excel_row'))) else '',
+                str(row.get('工厂', row.get('工厂名称', ''))),
+                str(row.get('车间', row.get('生产管理员描述', ''))),
+                str(row.get('订单日期', ''))[:12] if pd.notna(row.get('订单日期')) else '',
+                order_no_val,
+                str(row.get('物料编码', row.get('组件物料号', ''))),
+                mat_desc[:20],
+                f"{row.get('定额', row.get('数量-定额', 0)):.3f}",
+                f"{row.get('实际', row.get('数量-实际', 0)):.3f}",
+                f"{dev_rate:.2f}%",
+                is_alt,
+                status,
+                remark,
+                batch_remark[:30],
+                audit_result_val,
+                str(row.get('AI建议', '')),
+                audit_status_val,
+                audit_source_val,
+                f"{row.get('偏差金额', 0):,.2f}",
             ))
             # RuleEngine 偏差率颜色
             color_hex = None
@@ -4016,46 +3920,9 @@ class EventsMixIn:
             self.root.update_idletasks()
         except Exception:
             pass
-        # 确保按钮可用
-        if len(df) > 0:
-            self._enable_audit_buttons()
 
 
 
-
-    def _enable_audit_buttons(self):
-        """统一启用所有审核相关按钮"""
-        btn_names = [
-            'load_audit_btn', 'unified_ai_btn', 'cancel_audit_btn',
-            'unified_export_btn', 'save_audit_btn', 'export_db_btn',
-            'import_db_btn', 'tree_view_btn', 'resume_btn',
-            'quarantine_btn', 'auto_close_btn', 'cancel_auto_close_btn',
-            'bom_btn', 'cleanup_btn', 'audit_ai_btn', 'audit_export_btn',
-        ]
-        enabled = 0
-        for name in btn_names:
-            btn = getattr(self, name, None)
-            if btn and hasattr(btn, 'configure'):
-                try:
-                    btn.configure(state='normal')
-                    enabled += 1
-                except Exception:
-                    pass
-        return enabled
-
-    def _apply_row_colors(self):
-        """为所有行应用交替行色"""
-        try:
-            tree = self.audit_tree
-            items = tree.get_children()
-            for i, item in enumerate(items):
-                existing_tags = list(tree.item(item, "tags") or [])
-                existing_tags = [t for t in existing_tags if t not in ("row_even", "row_odd")]
-                row_tag = "row_even" if i % 2 == 0 else "row_odd"
-                existing_tags.append(row_tag)
-                tree.item(item, tags=existing_tags)
-        except Exception:
-            pass
 
     # ==================== 隔离区辅助方法 ====================
     # ==================== 列显示名映射 ====================
@@ -4107,15 +3974,27 @@ class EventsMixIn:
             results = []
 
             # 1. 列完整性检查（黄金模板）
-            golden_cols = [
-                '流程订单', '订单开始日期', '组件物料号', '组件物料描述',
-                '组件数量', '单位', '工厂名称', '生产管理员描述'
-            ]
-            missing_cols = [col for col in golden_cols if col not in df.columns]
-            if missing_cols:
-                results.append(('严重', f'缺失标准列：{", ".join(missing_cols)}'))
+            # 黄金模板列检查（候选列表灵活匹配）
+            _golden_candidates = {
+                '流程订单': ['流程订单', '订单号', '订单编号'],
+                '订单日期': ['订单开始日期', '订单日期', '生产日期'],
+                '物料编码': ['物料编码', '物料', '组件物料编码', '物料号'],
+                '物料描述': ['物料描述', '物料名称', '组件物料描述', '物料文本'],
+                '定额数量': ['数量-定额', '定额数量', '定额', '标准数量'],
+                '单位': ['单位', '组件单位', '基本单位'],
+                '实际数量': ['组件数量', '数量-实际', '实际数量', '实际'],
+                '定额金额': ['金额-定额(含税)', '金额-定额', '定额金额', '标准金额'],
+            }
+            missing_labels = []
+            for label, candidates in _golden_candidates.items():
+                if not any(c in df.columns for c in candidates):
+                    _cand_str = "/".join(candidates)
+                    missing_labels.append(f"{label}({_cand_str})")
+            has_error = len(missing_labels) > 0
+            if has_error:
+                results.append(('错误', f'缺失标准列: {", ".join(missing_labels)}'))
             else:
-                results.append(('通过', '黄金模板列完整'))
+                results.append(('通过', '黄金模板列检查通过'))
 
             # 2. 重复订单检查（日期 + 流程订单 + 物料编码 联合去重）
             date_col = None
@@ -4614,7 +4493,7 @@ def run_app():
         
         from gui.app import ZPP011Beautiful
         app = ZPP011Beautiful(root)
-        # app._clean_temp_exports()  # [FIX] 该方法已不存在，跳过
+        app._clean_temp_exports()  # Clean temp files on startup (Task 4.3)
         
         # ── 排序功能已由 _init_sort_columns() 接管（无限多列）
         # ── 禁用 tree_utils 中的单列排序系统，避免冲突覆盖

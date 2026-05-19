@@ -26,9 +26,9 @@ try:
     import main
     log("main 导入成功")
     
-    log("正在调用 main.run_app()...")
-    main.run_app()
-    log("run_app() 正常返回")
+    log("正在调用 main.main()...")
+    main.main()
+    log("main() 正常返回")
     
 except Exception as e:
     log(f"CRASH: {type(e).__name__}: {e}")

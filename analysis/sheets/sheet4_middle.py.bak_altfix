@@ -29,7 +29,7 @@ def build_sheet4(df, alt_df, alt_pairs, report_progress, progress_idx=4):
                 & (df[col_p] <= thresh)].copy()
 
     alt_orders = alt_df['订单号'].unique() if len(alt_df) > 0 else []
-    alt_all_descs = [(a[-1] if isinstance(a, (list,tuple)) else a) for a, b in alt_pairs] + [(b[-1] if isinstance(b, (list,tuple)) else b) for a, b in alt_pairs]
+    alt_all_descs = [a for a, b in alt_pairs] + [b for a, b in alt_pairs]
     esc_descs = [re.escape(d) for d in alt_all_descs]
     middle = middle[~(middle['组件物料描述'].str.contains('|'.join(
         esc_descs), na=False, regex=True)) & ~(middle['流程订单'].isin(alt_orders))]
