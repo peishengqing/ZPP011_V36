@@ -14,6 +14,19 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v37.2.0",
+        "date": "2026-05-20 01:30:00",
+        "changes": [
+            "🔧【修复】deepcopy未导入导致自动结案崩溃",
+            "🔧【修复】Font未导入导致保存审核结果崩溃",
+            "🔧【修复】_refresh_audit_tree()缺参数导致TypeError",
+            "🔧【修复】audit_tree.index()不存在导致隔离区崩溃",
+            "🔧【修复】Toplevel缺tk.前缀+center_window未定义",
+            "🔧【修复】storage.py数据库连接泄漏（try/finally）",
+            "🔧【统一】6项P0崩溃Bug全部修复（元宝+豆包审核）"
+        ]
+    },
+    {
         "version": "v36.40.3",
         "date": "2026-05-18 07:20:00",
         "changes": [
