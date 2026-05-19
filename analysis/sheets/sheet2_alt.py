@@ -55,14 +55,19 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
 
     for order, grp in df.groupby('流程订单'):
         for mat_a_desc, mat_b_desc in converted_pairs:
-            # 精确匹配
+            # 三级匹配：精确 → 包含 → 编码
             rows_a = grp[grp['组件物料描述'] == mat_a_desc]
             rows_b = grp[grp['组件物料描述'] == mat_b_desc]
-            # 模糊匹配（包含关系）
-            if len(rows_a) == 0:
-                rows_a = grp[grp['组件物料描述'].str.contains(mat_a_desc, na=False)]
-            if len(rows_b) == 0:
-                rows_b = grp[grp['组件物料描述'].str.contains(mat_b_desc, na=False)]
+            # 第二级：包含匹配
+            if len(rows_a) == 0 and mat_a_desc:
+                rows_a = grp[grp['组件物料描述'].str.contains(mat_a_desc, na=False, regex=False)]
+            if len(rows_b) == 0 and mat_b_desc:
+                rows_b = grp[grp['组件物料描述'].str.contains(mat_b_desc, na=False, regex=False)]
+            # 第三级：用组件物料编码匹配
+            if len(rows_a) == 0 and mat_a_desc:
+                rows_a = grp[grp['组件物料编码'].astype(str).str.contains(mat_a_desc, na=False, regex=False)]
+            if len(rows_b) == 0 and mat_b_desc:
+                rows_b = grp[grp['组件物料编码'].astype(str).str.contains(mat_b_desc, na=False, regex=False)]
             if len(rows_a) > 0 and len(rows_b) > 0:
                 a, b = rows_a.iloc[0], rows_b.iloc[0]
                 alt_rows.append({
