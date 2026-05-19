@@ -71,21 +71,23 @@ def save_audit_to_db(audit_data, auditor=None, log_cb=None):
     remark_col = _safe_col_name(audit_data.columns, _REMARK_COLS)
     batch_remark_col = _safe_col_name(audit_data.columns, _BATCH_REMARK_COLS)
     conn = sqlite3.connect(get_audit_db_path())
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    for _, row in audit_data.iterrows():
-        work_date = str(row.get(date_col, ""))[:10]
-        order_no  = str(row.get(order_col, ""))
-        mat_code  = str(row.get(mat_col, ""))
-        if not work_date or not order_no or not mat_code:
-            continue
-        remark = str(row.get(remark_col, "")).strip() if remark_col else ""
-        if not remark and batch_remark_col:
-            remark = str(row.get(batch_remark_col, "")).strip()
-        status = "已备注" if remark else "未审核"
-        conn.execute("INSERT OR REPLACE INTO audit_log (work_date, order_no, mat_code, status, remark, auditor, saved_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                     (work_date, order_no, mat_code, status, remark, auditor, now))
-    conn.commit()
-    conn.close()
+    try:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for _, row in audit_data.iterrows():
+            work_date = str(row.get(date_col, ""))[:10]
+            order_no  = str(row.get(order_col, ""))
+            mat_code  = str(row.get(mat_col, ""))
+            if not work_date or not order_no or not mat_code:
+                continue
+            remark = str(row.get(remark_col, "")).strip() if remark_col else ""
+            if not remark and batch_remark_col:
+                remark = str(row.get(batch_remark_col, "")).strip()
+            status = "已备注" if remark else "未审核"
+            conn.execute("INSERT OR REPLACE INTO audit_log (work_date, order_no, mat_code, status, remark, auditor, saved_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                         (work_date, order_no, mat_code, status, remark, auditor, now))
+        conn.commit()
+    finally:
+        conn.close()
     if log_cb:
         log_cb("✅ 审核记录已同步到本地数据库", "success")
 

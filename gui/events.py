@@ -21,6 +21,8 @@ from core.auto_closer import AutoCloser
 from core.task_manager import TaskManager
 from core.exporter import ExcelExporter
 from openpyxl import Workbook, load_workbook
+from copy import deepcopy
+from openpyxl.styles import PatternFill, Font
 from domain.alt_material.alt_manager import save_alt_pairs, load_alt_pairs
 import time
 import datetime
@@ -2536,7 +2538,7 @@ class EventsMixIn:
                     count += 1
 
                 self._record_remark_freq(remark)  # P1：记录频率
-                self._refresh_audit_tree()
+                self._refresh_audit_tree(self.audit_data)
                 self._update_audit_stats()
                 self._update_filter_options()
                 label = "清空" if not remark else f"「{remark}」"
@@ -2639,7 +2641,7 @@ class EventsMixIn:
         """成功回调"""
         df, success, fail, fail_rows = result
         self.audit_data = df
-        self._refresh_audit_tree()
+        self._refresh_audit_tree(self.audit_data)
         self._is_auto_closing = False
         self._auto_close_cancel_flag = None
         self.progress_bar.pack_forget()
@@ -2684,7 +2686,8 @@ class EventsMixIn:
 
             count = 0
             for item in selected:
-                idx = self.audit_tree.index(item)
+                values = self.audit_tree.item(item, 'values')
+                idx = int(values[0]) - 1 if values and str(values[0]).isdigit() else 0
                 self.audit_data.at[idx, 'is_quarantined'] = True
                 count += 1
 
@@ -2909,12 +2912,16 @@ class EventsMixIn:
             return
 
         # ── 展示对比报告 ──
-        report_win = Toplevel(self.root)
+        report_win = tk.Toplevel(self.root)
         report_win.title("BOM 导入报告")
         report_win.geometry("600x400")
         report_win.transient(self.root)
         report_win.grab_set()
-        center_window(report_win, 600, 400)
+        report_win.update_idletasks()
+        w, h = 600, 400
+        x = (report_win.winfo_screenwidth() - w) // 2
+        y = (report_win.winfo_screenheight() - h) // 2
+        report_win.geometry(f'{w}x{h}+{x}+{y}')
 
         bg_frame = Frame(report_win, bg='#1e1e1e')
         bg_frame.pack(fill='both', expand=True)
