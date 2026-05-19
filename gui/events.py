@@ -582,35 +582,32 @@ class EventsMixIn:
         for w in inner.winfo_children():
             w.destroy()
         for a, b in self.alt_pairs:
-            fr = tk.Frame(inner, bg=C['surface2'])
-            fr.pack(fill="x", pady=1)
-            # 解析物料A：支持三元组 (factory, code, name)
-            if isinstance(a, (list, tuple)) and len(a) == 3:
-                _, a_code, a_name = a
-            elif isinstance(a, (list, tuple)) and len(a) == 2:
-                a_code, a_name = a
+            # 期望 a, b 都是 (factory, code, name) 格式
+            if isinstance(a, (list, tuple)) and len(a) >= 3:
+                a_factory, a_code, a_name = a[0], a[1], a[2]
             else:
-                a_code, a_name = str(a), ''
-            # 解析物料B
-            if isinstance(b, (list, tuple)) and len(b) == 3:
-                _, b_code, b_name = b
-            elif isinstance(b, (list, tuple)) and len(b) == 2:
-                b_code, b_name = b
+                a_factory, a_code, a_name = '', str(a), ''
+            if isinstance(b, (list, tuple)) and len(b) >= 3:
+                b_factory, b_code, b_name = b[0], b[1], b[2]
             else:
-                b_code, b_name = str(b), ''
+                b_factory, b_code, b_name = '', str(b), ''
+            
             # 显示：编码 + 名称（若名称存在）
             a_disp = f"{a_code} {a_name}" if a_name else a_code
             b_disp = f"{b_code} {b_name}" if b_name else b_code
+            
+            fr = tk.Frame(inner, bg=C['surface2'])
+            fr.pack(fill="x", pady=1)
             tk.Label(fr, text=f"↔ {a_disp}", font=("Consolas", 8), fg=C['text'],
                      bg=C['surface2'], anchor="w").pack(side="left", padx=4)
             tk.Label(fr, text="|", font=("Consolas", 8), fg=C['text_dim'],
                      bg=C['surface2']).pack(side="left")
-            tk.Label(fr, text=f"{b_disp}", font=("Consolas", 8), fg=C['purple'],
+            tk.Label(fr, text=b_disp, font=("Consolas", 8), fg=C['purple'],
                      bg=C['surface2'], anchor="w").pack(side="left", padx=4)
 
+
     def _run_ai_audit(self):
-        """AI审核异步化入口（v4.2）：评估备注质量，支持取消、进度反馈、Mock熔断"""
-        # ── 硬锁：防止重复启动 ──────────────────────────────────────────
+        """AI审核：只处理未审核且非自动填充/替代料的行"""
         if self.is_auditing:
             messagebox.showwarning("提示", "AI审核正在运行，请等待完成或点击取消")
             return
@@ -619,90 +616,81 @@ class EventsMixIn:
             return
 
         # 确保必要列存在
-        for col in ['audit_result', 'AI建议', '审核来源']:
+        for col in ['audit_result', 'AI建议', '备注来源']:
             if col not in self.audit_data.columns:
                 self.audit_data[col] = ''
-            self.audit_data[col] = self.audit_data[col].astype(str)
 
-        # 只审核未审核行
-        to_audit_mask = (
-            self.audit_data['audit_result'].isna() |
-            (self.audit_data['audit_result'] == '') |
-            (self.audit_data['audit_result'] == 'nan')
+        # 构建替代料名称集合（用于自动填充/替代料判断）
+        alt_all_descs = set()
+        for a, b in getattr(self, 'alt_pairs', []):
+            for item in (a, b):
+                if item:
+                    if isinstance(item, (list, tuple)) and len(item) >= 3:
+                        desc = str(item[2]).strip()
+                    elif isinstance(item, (list, tuple)) and len(item) == 2:
+                        desc = str(item[1]).strip() if item[1] else str(item[0]).strip()
+                    else:
+                        desc = str(item).strip()
+                    if desc and desc != 'None':
+                        alt_all_descs.add(desc)
+
+        # 自动填充条件（透明胶、600开头物料）
+        is_auto_fill = (
+            self.audit_data['组件物料描述'].astype(str).str.contains('透明胶', na=False) |
+            self.audit_data['组件物料号'].astype(str).str.startswith('600')
         )
-        if not to_audit_mask.any():
-            messagebox.showinfo("提示", "所有行均已审核")
+        is_alt = self.audit_data['组件物料描述'].astype(str).str.strip().isin(alt_all_descs)
+        exclude_sources = ['人工填写', '自动填充', '替代料', 'AI审核合格', 'AI审核待改进', 'AI生成']
+        is_already_processed = self.audit_data['备注来源'].isin(exclude_sources)
+
+        to_audit_mask = (
+            (self.audit_data['audit_result'].isna() | (self.audit_data['audit_result'] == '')) &
+            (~is_auto_fill) &
+            (~is_alt) &
+            (~is_already_processed)
+        )
+
+        # ⚠️ 关键：提取需要审核的索引列表
+        audit_indices = self.audit_data[to_audit_mask].index.tolist()
+        if not audit_indices:
+            messagebox.showinfo("提示", "没有需要AI审核的行")
             return
 
-        # ── 进度条重置（修复模式冲突）──────────────────────────────────
-        self.progress_bar.stop()
+        # 进度条
         self.progress_bar.configure(mode='determinate', maximum=100)
         self.progress_bar['value'] = 0
         self.progress_bar.pack(side=tk.RIGHT, padx=5, pady=2)
         self.set_status("AI审核中...")
-
-        # ── 取消标志（Worker 直接检查，不经过 task_manager）──────────────
         self._ai_cancel_flag = threading.Event()
         self.is_auditing = True
 
-        # ── 构建 Worker 数据快照（避免线程竞争）──────────────────────────
-        audit_indices = self.audit_data[to_audit_mask].index.tolist()
-        df_snapshot = self.audit_data.loc[audit_indices].copy()
-
-        # 捕获 cancel_flag 到本地变量，Worker 通过闭包直接引用，
-        # 不依赖 task_manager 的自动注入（避免 flag 不匹配的竞态问题）
+        df_to_audit = self.audit_data.loc[audit_indices].copy()
         _my_cancel_flag = self._ai_cancel_flag
 
         def _worker(progress_callback):
-            """在线程池中执行 AI 审核，每行均检查取消标志"""
             total = len(audit_indices)
             popup_rows = []
-
-            # ── 兜底列名查找（修复硬编码崩溃）──────────────────────────
-            remark_col = next(
-                (c for c in ['备注原因', '备注', 'remark'] if c in df_snapshot.columns),
-                None
-            )
-            name_col = next(
-                (c for c in ['组件物料描述', '物料名称', '物料描述'] if c in df_snapshot.columns),
-                None
-            )
-            rate_col = next(
-                (c for c in ['偏差率(%)', '偏差率', 'dev_rate'] if c in df_snapshot.columns),
-                None
-            )
-
+            remark_col = next((c for c in ['备注原因', '备注'] if c in df_to_audit.columns), None)
+            name_col = next((c for c in ['组件物料描述', '物料名称'] if c in df_to_audit.columns), None)
+            rate_col = next((c for c in ['偏差率(%)', '偏差率'] if c in df_to_audit.columns), None)
             for seq, idx in enumerate(audit_indices):
-                # ── 取消检查：直接读闭包捕获的 flag ────────────────────
                 if _my_cancel_flag.is_set():
                     raise InterruptedError("用户取消了AI审核")
-
-                row = df_snapshot.loc[idx]
-
-                # 安全读取字段
+                row = df_to_audit.loc[idx]
                 remark = row[remark_col] if remark_col else ''
                 dev_rate_raw = row[rate_col] if rate_col else 0
                 try:
                     dev_rate = float(dev_rate_raw or 0)
-                except (ValueError, TypeError):
+                except:
                     dev_rate = 0.0
                 material_desc = str(row[name_col]) if name_col else ''
-
                 try:
-                    # ── 调用 ai_client（Mock 或真实接口）──────────────
                     result = self.ai_client.audit(remark, dev_rate)
                     audit_result = result.get('result', '需补备注')
                     ai_suggestion = result.get('suggestion', '')
-                except (TimeoutError, ConnectionError) as ex:
-                    audit_result = '审核失败'
-                    ai_suggestion = str(ex)
                 except Exception as ex:
                     audit_result = '审核失败'
-                    # 完整日志写入文件，UI 只显示简略
-                    import logging
-                    logging.getLogger("AIWorker").exception("单行审核异常")
-                    ai_suggestion = f"异常: {type(ex).__name__}"
-
+                    ai_suggestion = str(ex)
                 popup_rows.append({
                     'idx': idx,
                     '物料': material_desc,
@@ -713,15 +701,11 @@ class EventsMixIn:
                     '_audit_result': audit_result,
                     '_ai_suggestion': ai_suggestion,
                 })
-
-                # 上报进度（0-100）
                 if progress_callback:
                     progress_callback(int((seq + 1) / total * 100))
-
             return popup_rows
 
         def _on_progress(pct):
-            """进度回调——由 task_manager 轮询线程调度，但这里直接 after 保证线程安全"""
             self.root.after(0, lambda p=pct: (
                 self.progress_bar.configure(value=p),
                 self.set_status(f"AI审核中... {p}%")
@@ -734,6 +718,7 @@ class EventsMixIn:
             progress_callback=_on_progress,
         )
 
+
     def _cancel_ai_audit(self):
         """取消当前 AI 审核（直接设置 cancel_flag）"""
         if hasattr(self, '_ai_cancel_flag') and self._ai_cancel_flag is not None:
@@ -741,64 +726,30 @@ class EventsMixIn:
         self.set_status("正在取消AI审核...")
 
     def _on_ai_audit_done(self, popup_rows):
-        """AI审核完成回调（在主线程执行）"""
+        """AI审核完成回调"""
         self.is_auditing = False
-        self.unsaved_ai_results = True  # 标记有未保存的 AI 结果（留给后续子任务处理导出拦截）
-
-        # 进度条归位
+        self.unsaved_ai_results = True
         self.progress_bar.configure(value=100)
-        self.root.after(400, lambda: (
-            self.progress_bar.pack_forget(),
-            self.progress_bar.configure(mode='indeterminate', value=0)
-        ))
+        # 修正：Lambda 不能返回元组，拆成两条语句
+        self.root.after(400, lambda: self.progress_bar.pack_forget())
+        self.root.after(400, lambda: self.progress_bar.configure(mode='indeterminate', value=0))
 
-        # ── 将 Worker 结果写回 audit_data ──────────────────────────────
+        # 写回审核结果
         for row_data in popup_rows:
             idx = row_data['idx']
             if idx in self.audit_data.index:
                 self.audit_data.at[idx, 'audit_result'] = row_data['_audit_result']
                 self.audit_data.at[idx, 'AI建议'] = row_data['_ai_suggestion']
-                self.audit_data.at[idx, '审核来源'] = 'AI审核'
+                self.audit_data.at[idx, '备注来源'] = 'AI审核'
+                self.audit_data.at[idx, '审核来源'] = 'AI'
 
-        # 更新审核状态列
-        self.audit_data['审核状态'] = self.audit_data['audit_result'].apply(
-            lambda x: '已审核' if x and str(x).strip() not in ['', 'nan'] else '未审核'
-        )
-
+        # 刷新表格
         self._refresh_audit_tree(self.audit_data)
         self.set_status(f"AI审核完成，共 {len(popup_rows)} 条")
 
-        # ── 显示结果弹窗 ────────────────────────────────────────────────
-        if not popup_rows:
-            return
-        result_df = pd.DataFrame(popup_rows, columns=['物料', '偏差率', '原备注', 'AI建议', '审核结果'])
-        win = tk.Toplevel(self.root)
-        win.title(f"AI审核结果（共{len(popup_rows)}条）")
-        win.geometry("900x500")
-        win.transient(self.root)
-        win.grab_set()
-        cols = ['物料', '偏差率', '原备注', 'AI建议', '审核结果']
-        tree = ttk.Treeview(win, columns=cols, show='headings')
-        for col in cols:
-            tree.heading(col, text=col)
-            tree.column(col, width=150 if col in ('AI建议', '原备注') else 100)
-        tree.pack(fill='both', expand=True, padx=5, pady=5)
-        for _, r in result_df.iterrows():
-            tree.insert('', 'end', values=[str(v) if pd.notna(v) else '' for v in r])
-        sb = ttk.Scrollbar(win, orient='vertical', command=tree.yview)
-        tree.configure(yscrollcommand=sb.set)
-        sb.pack(side='right', fill='y')
-        btn_fr = tk.Frame(win)
-        btn_fr.pack(pady=5)
-        def _copy():
-            lines = ['\t'.join(cols)]
-            for child in tree.get_children():
-                lines.append('\t'.join(str(v) for v in tree.item(child)['values']))
-            win.clipboard_clear()
-            win.clipboard_append('\n'.join(lines))
-            messagebox.showinfo("已复制", "结果已复制到剪贴板", parent=win)
-        tk.Button(btn_fr, text="复制到剪贴板", command=_copy).pack(side='left', padx=5)
-        tk.Button(btn_fr, text="关闭", command=win.destroy).pack(side='left', padx=5)
+        # 可选：显示结果窗口
+        if popup_rows:
+            messagebox.showinfo("完成", f"AI审核完成，共处理 {len(popup_rows)} 条记录")
 
     def _on_ai_audit_error(self, exc):
         """AI审核错误回调（在主线程执行）"""
@@ -973,7 +924,7 @@ class EventsMixIn:
                         if x in item:
                             parts = [p.strip() for p in item.split('|')]
                             if len(parts) >= 3:
-                                return parts[2], parts[0], parts[1]  # (工厂, 编码, 名称)
+                                return parts[0], parts[1], parts[2]  # (工厂, 编码, 名称)
                     return '', x, x  # 兜底
 
             factory_a, a_code, a_name = parse_selection(a)
@@ -2645,14 +2596,14 @@ class EventsMixIn:
         self.set_status("正在执行自动结案...")
         
         # 双快照：数据和规则引擎（防止规则漂移）
-        df_snapshot = self.audit_data.copy(deep=True)
+        df_to_audit = self.audit_data.copy(deep=True)
         rule_engine_snapshot = deepcopy(self.rule_engine)
         
         # 包装函数，保存 cancel_flag 引用
         def wrapper(cancel_flag, progress_callback):
             self._auto_close_cancel_flag = cancel_flag
             return AutoCloser.process(
-                df_snapshot, rule_engine_snapshot, progress_callback, cancel_flag
+                df_to_audit, rule_engine_snapshot, progress_callback, cancel_flag
             )
         
         self.task_manager.run(
@@ -3905,6 +3856,29 @@ class EventsMixIn:
         # ── 填充 Tree（按优先级排序） ──
         from widgets import C as _C
         for i, (_, row) in enumerate(df.iterrows(), 1):
+            # ===== 计算审核来源（核心逻辑）=====
+            remark = str(row.get('备注原因', '')).strip()
+            code = str(row.get('物料编码', row.get('组件物料号', '')))
+            name = str(row.get('组件物料描述', row.get('物料名称', ''))).strip()
+            stored_source = str(row.get('备注来源', ''))
+
+            if remark:
+                if stored_source in ('人工填写', '自动填充', '替代料', 'AI审核合格', 'AI审核待改进', 'AI生成'):
+                    audit_source = stored_source
+                else:
+                    audit_source = '人工填写'
+            else:
+                if '透明胶' in name:
+                    audit_source = '自动填充'
+                elif str(code).startswith('600'):
+                    audit_source = '自动填充'
+                elif name in alt_all_descs:
+                    audit_source = '替代料'
+                else:
+                    audit_source = 'AI审核'
+
+            if stored_source and stored_source != audit_source:
+                audit_source = stored_source
             dev_rate = row.get('偏差率(%)', 0) or 0
             # 原备注
             orig_remark = str(row.get('备注原因', '')) if pd.notna(row.get('备注原因')) else ''
@@ -3934,7 +3908,7 @@ class EventsMixIn:
             # audit_status, audit_source, order_no
             audit_result_val = str(row.get('audit_result', ''))
             audit_status_val = '已审核' if audit_result_val and audit_result_val.strip() not in ('', 'nan') else '未审核'
-            audit_source_val = str(row.get('审核来源', ''))
+            audit_source_val = audit_source
             if audit_source_val in ('nan', 'NaN', 'None', ''):
                 # 尝试从备注来源推断
                 note_source = str(row.get('备注来源', ''))

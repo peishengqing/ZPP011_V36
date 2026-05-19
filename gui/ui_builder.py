@@ -33,18 +33,9 @@ def _build_ui(self):
                  bg=C['header_bg']).pack(side="left", padx=(16, 8))
         title_frame = tk.Frame(header, bg=C['header_bg'])
         title_frame.pack(side="left")
-        # 从 version.json 读取版本号
-        _ver = "v36"
-        if getattr(sys, 'frozen', False):
-            _version_path = os.path.join(sys._MEIPASS, 'config', 'version.json')
-        else:
-            _version_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'version.json')
-        try:
-            with open(_version_path, 'r', encoding='utf-8') as _f:
-                _cfg = json.load(_f)
-            _ver = _cfg.get('version', _ver)
-        except:
-            pass
+        # 从 utils.version_history 动态读取版本号（统一来源）
+        from utils.version_history import get_version_display, get_current_version
+        _ver = get_current_version()
         tk.Label(title_frame, text=f"云南达利ZPP011生产偏差分析器 {_ver}",
                  font=("Microsoft YaHei", 14, "bold"), fg='#ffffff',
                  bg=C['header_bg']).pack(anchor="w")
