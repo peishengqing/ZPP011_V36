@@ -1361,6 +1361,7 @@ class EventsMixIn:
         """扫描备注，返回可清洗的建议列表（兼容列名）"""
         if self.audit_data is None or self.audit_data.empty:
             return []
+        self.log(f"[DEBUG] 备注清洗：audit_data列名={list(self.audit_data.columns)}", "debug")
 
         # 确定备注列名
         remark_col = None

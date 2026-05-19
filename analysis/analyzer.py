@@ -476,7 +476,7 @@ def do_analysis_v2(
                          f'{pd.Timestamp(date_max).strftime("%Y-%m-%d")}）'))
     tc.font = Font(bold=True, size=12)
     tc.alignment = Alignment(horizontal='center')
-    headers7 = ['序号', '工厂', '车间', '多耗', '少耗', '净偏差', '原因数',
+    headers7 = ['工厂', '车间', '多耗', '少耗', '净偏差', '原因数',
                 '原料主要原因（Top5）', '包材主要原因（Top5）']
     for j, h in enumerate(headers7, 1):
         c = ws7.cell(row=2, column=j, value=h)
@@ -484,18 +484,29 @@ def do_analysis_v2(
         c.fill = header_fill
         c.alignment = center
         c.border = border
+    # 对原因文本内部添加序号
+    def _add_ordinal(text):
+        if pd.isna(text) or not text:
+            return ''
+        lines = str(text).split('\n')
+        circles = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩']
+        numbered = []
+        for i, line in enumerate(lines):
+            if not line.strip():
+                continue
+            prefix = circles[i] if i < 10 else f'{i+1}.'
+            numbered.append(f'{prefix} {line.strip()}')
+        return '\n'.join(numbered)
+
     for i, r in enumerate(reason_summary_df.to_dict('records'), 3):
-        # 带圈数字序号
-        circles = ['', '①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩']
-        seq_num = circles[i-2] if i-2 <= 10 else str(i-2)
-        for j, v in enumerate([seq_num, r['工厂'], r['车间'], r['多耗'], r['少耗'],
+        for j, v in enumerate([r['工厂'], r['车间'], r['多耗'], r['少耗'],
                                r['净偏差'], r['原因数']], 1):
             c = ws7.cell(row=i, column=j, value=v)
             c.border = border
             c.font = Font(size=11)
             c.alignment = Alignment(vertical='top', horizontal='center')
         for col, key in [(7, '原料主要原因（Top5）'), (8, '包材主要原因（Top5）')]:
-            c = ws7.cell(row=i, column=col, value=r[key])
+            c = ws7.cell(row=i, column=col, value=_add_ordinal(r[key]))
             c.border = border
             c.font = Font(size=11)
             c.alignment = Alignment(wrap_text=True, vertical='top', horizontal='left')
@@ -504,18 +515,18 @@ def do_analysis_v2(
         lines = sum(max(1, (len(p.strip()) + 19) // 20) for p in raw_t.split('\n') if p.strip())
         lines += sum(max(1, (len(p.strip()) + 19) // 20) for p in pkg_t.split('\n') if p.strip())
         ws7.row_dimensions[i].height = max(lines * 16, 67)
-    for col, w in zip(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'],
-                      [6, 14, 10, 14, 14, 14, 10, 55, 55]):
+    for col, w in zip(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'],
+                      [14, 10, 14, 14, 14, 10, 55, 55]):
         ws7.column_dimensions[col].width = w
 
     ws8 = wb.create_sheet('偏差原因分析')
-    headers8 = ['序号', '工厂', '车间', '物料分类', '备注原因', '原始备注示例',
+    headers8 = ['工厂', '车间', '物料分类', '备注原因', '原始备注示例',
                 '涉及物料数', '多耗', '少耗', '净偏差', '涉及物料']
-    rows8 = [[i+1, r['工厂'], r['车间'], r['物料分类'], r['备注原因'],
+    rows8 = [[r['工厂'], r['车间'], r['物料分类'], r['备注原因'],
               r['原始备注示例'], r['涉及物料数'], r['多耗'], r['少耗'],
-              r['净偏差'], r['涉及物料']] for i, r in enumerate(reason_analysis_df.to_dict('records'))]
+              r['净偏差'], r['涉及物料']] for r in reason_analysis_df.to_dict('records')]
     write_sheet(ws8, headers8, rows8,
-                [6, 14, 10, 10, 20, 25, 10, 14, 14, 14, 80])
+                [14, 10, 10, 20, 25, 10, 14, 14, 14, 80])
 
     # 如果用户指定了输出路径，直接使用；否则自动生成
     if output_path:
