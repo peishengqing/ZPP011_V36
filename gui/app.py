@@ -238,6 +238,7 @@ class ZPP011Beautiful(EventsMixIn):
         self.code_to_info = {}
 
         storage.init_audit_db()
+        self.audit_model = AuditModel()
         build_ui(self)
         self._check_and_upgrade_db()  # v37.44 启动时检测并升级旧数据库
         self.config = ConfigManager()

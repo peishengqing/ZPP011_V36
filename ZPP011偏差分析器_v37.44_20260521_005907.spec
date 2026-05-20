@@ -35,7 +35,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='ZPP011偏差分析器_v37.44_20260520_235256',
+    name='ZPP011偏差分析器_v37.44_20260521_005907',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

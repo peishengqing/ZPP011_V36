@@ -21,6 +21,7 @@ from core.rule_engine import RuleEngine
 from core.auto_closer import AutoCloser
 from core.task_manager import TaskManager
 from core.exporter import ExcelExporter
+from modules.audit.models.audit_model import AuditModel
 from openpyxl import Workbook, load_workbook
 from copy import deepcopy
 from openpyxl.styles import PatternFill, Font
@@ -237,7 +238,7 @@ class EventsMixIn:
                 save_df['订单号'] = save_df['流程订单']
             if '订单日期' not in save_df.columns:
                 save_df['订单日期'] = save_df.get('订单日期', '')
-            storage.save_audit_to_db(save_df, auditor=auditor, log_cb=self.log)
+            self.audit_model.save_audit_to_db(save_df, auditor=auditor, log_cb=self.log)
             self.log("   数据库同步成功", "info")
         except Exception as e:
             self.log(f"⚠ 审核数据库同步失败（不影响 Excel 保存）：{e}", "warn")
@@ -1583,7 +1584,7 @@ class EventsMixIn:
 
                 _f.write(f"output_dir={self.output_dir.get()}\n")
 
-            self.output_path = do_analysis_v2(
+            self.output_path = self.audit_model.run_analysis(
                 input_file=self.input_file.get(),
                 output_dir=temp_dir,
                 alt_pairs=self.alt_pairs,
@@ -2049,7 +2050,7 @@ class EventsMixIn:
                 self.save_audit_btn.configure(state="normal")
             self._apply_row_colors()
             # P0-B4：恢复审核记录（从数据库）
-            storage.restore_audit_from_db(self.audit_data, log_cb=self.log)
+            self.audit_model.restore_audit_from_db(self.audit_data, log_cb=self.log)
             self.log(f"智能审核：加载完成 | 共{total}条 | 偏差>10%共{len(high_dev)}条 | 需补备注{len(need_note)}条", "success")
         except Exception as e:
             messagebox.showerror("错误", f"加载数据失败：{e}")
@@ -2261,7 +2262,7 @@ class EventsMixIn:
             # BOM 过期提醒（功能待实现，暂注释）
             # self.root.after(500, self._check_and_remind_bom)
             # 恢复审核记录
-            storage.restore_audit_from_db(self.audit_data, log_cb=self.log)
+            self.audit_model.restore_audit_from_db(self.audit_data, log_cb=self.log)
 
             # 断点续审提示
             state = self._load_resume_state()
