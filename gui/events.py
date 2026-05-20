@@ -238,7 +238,7 @@ class EventsMixIn:
                 save_df['订单号'] = save_df['流程订单']
             if '订单日期' not in save_df.columns:
                 save_df['订单日期'] = save_df.get('订单日期', '')
-            self.audit_model.save_audit_to_db(save_df, auditor=auditor, log_cb=self.log)
+            self.audit_presenter.save_audit_back(auditor=auditor)
             self.log("   数据库同步成功", "info")
         except Exception as e:
             self.log(f"⚠ 审核数据库同步失败（不影响 Excel 保存）：{e}", "warn")
@@ -642,7 +642,7 @@ class EventsMixIn:
 
 
     def _run_ai_audit(self):
-        """AI审核：只处理未审核且非自动填充/替代料的行"""
+        """AI审核：委托给 AuditPresenter"""
         if self.is_auditing:
             messagebox.showwarning("提示", "AI审核正在运行，请等待完成或点击取消")
             return
@@ -650,95 +650,29 @@ class EventsMixIn:
             messagebox.showwarning("警告", "没有审核数据，请先加载审核数据")
             return
 
-        # 确保必要列存在
-        for col in ['audit_result', 'AI建议', '备注来源']:
-            if col not in self.audit_data.columns:
-                self.audit_data[col] = ''
-
-        # 构建替代料名称集合（用于自动填充/替代料判断）
-        alt_all_descs = set()
-        for a, b in getattr(self, 'alt_pairs', []):
-            for item in (a, b):
-                if item:
-                    if isinstance(item, (list, tuple)) and len(item) >= 3:
-                        desc = str(item[2]).strip()
-                    elif isinstance(item, (list, tuple)) and len(item) == 2:
-                        desc = str(item[1]).strip() if item[1] else str(item[0]).strip()
-                    else:
-                        desc = str(item).strip()
-                    if desc and desc != 'None':
-                        alt_all_descs.add(desc)
-
-        # 自动填充条件（透明胶、600开头物料）
-        is_auto_fill = (
-            self.audit_data['组件物料描述'].astype(str).str.contains('透明胶', na=False) |
-            self.audit_data['组件物料号'].astype(str).str.startswith('600')
-        )
-        is_alt = self.audit_data['组件物料描述'].astype(str).str.strip().isin(alt_all_descs)
-        exclude_sources = ['人工填写', '自动填充', '替代料', 'AI审核合格', 'AI审核待改进', 'AI生成']
-        is_already_processed = self.audit_data['备注来源'].isin(exclude_sources)
-
-        to_audit_mask = (
-            (self.audit_data['audit_result'].isna() | (self.audit_data['audit_result'] == '')) &
-            (~is_auto_fill) &
-            (~is_alt) &
-            (~is_already_processed)
-        )
-
-        # ⚠️ 关键：提取需要审核的索引列表
-        audit_indices = self.audit_data[to_audit_mask].index.tolist()
+        # 委托 Presenter 准备审核数据
+        audit_indices = self.audit_presenter.run_ai_audit()
         if not audit_indices:
             messagebox.showinfo("提示", "没有需要AI审核的行")
             return
 
-        # 进度条
+        # 设置状态
         self.progress_bar.configure(mode='determinate', maximum=100)
         self.progress_bar['value'] = 0
         self.progress_bar.pack(side=tk.RIGHT, padx=5, pady=2)
         self.set_status("AI审核中...")
-        self._ai_cancel_flag = threading.Event()
+        self.audit_presenter._ai_cancel_flag = threading.Event()
+        self.audit_presenter.is_auditing = True
         self.is_auditing = True
 
         df_to_audit = self.audit_data.loc[audit_indices].copy()
-        _my_cancel_flag = self._ai_cancel_flag
+        _presenter = self.audit_presenter
 
         def _worker(progress_callback):
-            total = len(audit_indices)
-            popup_rows = []
-            remark_col = next((c for c in ['备注原因', '备注'] if c in df_to_audit.columns), None)
-            name_col = next((c for c in ['组件物料描述', '物料名称'] if c in df_to_audit.columns), None)
-            rate_col = next((c for c in ['偏差率(%)', '偏差率'] if c in df_to_audit.columns), None)
-            for seq, idx in enumerate(audit_indices):
-                if _my_cancel_flag.is_set():
-                    raise InterruptedError("用户取消了AI审核")
-                row = df_to_audit.loc[idx]
-                remark = row[remark_col] if remark_col else ''
-                dev_rate_raw = row[rate_col] if rate_col else 0
-                try:
-                    dev_rate = float(dev_rate_raw or 0)
-                except:
-                    dev_rate = 0.0
-                material_desc = str(row[name_col]) if name_col else ''
-                try:
-                    result = self.ai_client.audit(remark, dev_rate)
-                    audit_result = result.get('result', '需补备注')
-                    ai_suggestion = result.get('suggestion', '')
-                except Exception as ex:
-                    audit_result = '审核失败'
-                    ai_suggestion = str(ex)
-                popup_rows.append({
-                    'idx': idx,
-                    '物料': material_desc,
-                    '偏差率': f"{dev_rate:.1f}%",
-                    '原备注': str(remark) if not pd.isna(remark) else '',
-                    'AI建议': ai_suggestion,
-                    '审核结果': audit_result,
-                    '_audit_result': audit_result,
-                    '_ai_suggestion': ai_suggestion,
-                })
-                if progress_callback:
-                    progress_callback(int((seq + 1) / total * 100))
-            return popup_rows
+            return _presenter.ai_audit_worker(
+                audit_indices, df_to_audit, self.ai_client,
+                progress_callback=progress_callback
+            )
 
         def _on_progress(pct):
             self.root.after(0, lambda p=pct: (
@@ -752,7 +686,6 @@ class EventsMixIn:
             error_callback=self._on_ai_audit_error,
             progress_callback=_on_progress,
         )
-
 
     def _cancel_ai_audit(self):
         """取消当前 AI 审核（直接设置 cancel_flag）"""
@@ -1567,66 +1500,24 @@ class EventsMixIn:
 
 
     def _analysis_thread(self):
-        import tempfile
-        temp_dir = tempfile.mkdtemp(prefix="zpp011_analysis_")
-        self.output_path = temp_dir  # 保存临时目录路径
-        import traceback
-        import os
-
-        _log = os.path.join(os.environ.get('TEMP', '.'), 'zpp011_debug.log')
-
+        """分析线程（委托给 Presenter）"""
         try:
-            with open(_log, 'a', encoding='utf-8') as _f:
-                _f.write(
-                    f"\n=== {__import__('datetime').datetime.now()} 线程启动 ===\n")
-
-                _f.write(f"input_file={self.input_file.get()}\n")
-
-                _f.write(f"output_dir={self.output_dir.get()}\n")
-
-            self.output_path = self.audit_model.run_analysis(
+            self.output_path = self.audit_presenter.start_analysis(
                 input_file=self.input_file.get(),
-                output_dir=temp_dir,
                 alt_pairs=self.alt_pairs,
-                progress_callback=self._on_progress,
-                cancel_check=lambda: self.cancel_req,
                 start_date=self.start_date.get() or None,
                 end_date=self.end_date.get() or None,
                 material_search=self.material_search.get() or None,
+                progress_callback=self._on_progress,
+                cancel_check=lambda: self.cancel_req,
             )
-
-            with open(_log, 'a', encoding='utf-8') as _f:
-                _f.write(
-                    f"{__import__('datetime').datetime.now()} do_analysis_v2 正常返回\n")
-
             self.root.after(0, self._on_done)
-
         except KeyboardInterrupt:
-            with open(_log, 'a', encoding='utf-8') as _f:
-                _f.write(
-                    f"{__import__('datetime').datetime.now()} KeyboardInterrupt\n")
-
             self.root.after(0, self._on_cancel)
-
         except Exception as e:
-            with open(_log, 'a', encoding='utf-8') as _f:
-                _f.write(
-                    f"{__import__('datetime').datetime.now()} Exception: {e}\n")
-
-                _f.write(traceback.format_exc() + "\n")
-
             self.root.after(0, lambda e=e: self._on_error(str(e)))
-
         except BaseException as e:
-            with open(_log, 'a', encoding='utf-8') as _f:
-                _f.write(
-                    f"{__import__('datetime').datetime.now()} BaseException: {e}\n")
-
-                _f.write(traceback.format_exc() + "\n")
-
             self.root.after(0, lambda e=e: self._on_error(f"BaseException: {e}"))
-
-
     def _on_progress(self, step_idx, step_name, percent):
         if self.cancel_req:
             return
@@ -2050,7 +1941,7 @@ class EventsMixIn:
                 self.save_audit_btn.configure(state="normal")
             self._apply_row_colors()
             # P0-B4：恢复审核记录（从数据库）
-            self.audit_model.restore_audit_from_db(self.audit_data, log_cb=self.log)
+            self.audit_presenter.load_audit_data(self.audit_data)
             self.log(f"智能审核：加载完成 | 共{total}条 | 偏差>10%共{len(high_dev)}条 | 需补备注{len(need_note)}条", "success")
         except Exception as e:
             messagebox.showerror("错误", f"加载数据失败：{e}")
@@ -2262,7 +2153,7 @@ class EventsMixIn:
             # BOM 过期提醒（功能待实现，暂注释）
             # self.root.after(500, self._check_and_remind_bom)
             # 恢复审核记录
-            self.audit_model.restore_audit_from_db(self.audit_data, log_cb=self.log)
+            self.audit_presenter.load_audit_data(self.audit_data)
 
             # 断点续审提示
             state = self._load_resume_state()
@@ -4608,6 +4499,67 @@ class EventsMixIn:
             values = [row_dict.get(c, '') for c in cols]
             tree.insert('', 'end', values=values, tags=(tag,))
 
+
+    # ---------- View 接口方法（供 AuditPresenter 调用）----------
+    def update_progress(self, percent: int, message: str = ''):
+        """更新进度条（供 Presenter 调用）"""
+        self.root.after(0, lambda: [
+            self.progress_var.set(percent),
+            self.progress_lbl.configure(text=message) if hasattr(self, 'progress_lbl') else None
+        ])
+
+    def refresh_treeview(self, df=None):
+        """刷新 Treeview（供 Presenter 调用）"""
+        if df is not None:
+            self.audit_data = df
+        self.root.after(0, lambda: self._refresh_audit_tree(self.audit_data) if hasattr(self, '_refresh_audit_tree') else None)
+
+    def show_error(self, msg: str, title: str = '错误'):
+        """显示错误对话框（供 Presenter 调用）"""
+        from tkinter import messagebox
+        self.root.after(0, lambda: messagebox.showerror(title, msg))
+
+    def show_info(self, msg: str, title: str = '提示'):
+        """显示信息对话框（供 Presenter 调用）"""
+        from tkinter import messagebox
+        self.root.after(0, lambda: messagebox.showinfo(title, msg))
+
+    def log_message(self, msg: str, level: str = 'info'):
+        """记录日志（供 Presenter 调用）"""
+        if hasattr(self, 'log'):
+            self.log(msg, level)
+
+    def set_buttons_state(self, state: str = 'normal', buttons: list = None):
+        """设置按钮状态（供 Presenter 调用）"""
+        if buttons is None:
+            buttons = ['run_btn', 'save_btn', 'export_btn', 'ai_btn', 'auto_close_btn']
+        for btn_name in buttons:
+            btn = getattr(self, btn_name, None)
+            if btn:
+                try:
+                    btn.configure(state=state)
+                except:
+                    pass
+
+    def enable_buttons(self, buttons: list = None):
+        """启用按钮"""
+        self.set_buttons_state('normal', buttons)
+
+    def disable_buttons(self, buttons: list = None):
+        """禁用按钮"""
+        self.set_buttons_state('disabled', buttons)
+
+    def get_audit_data(self):
+        """返回当前审核数据 DataFrame（供 Presenter 调用）"""
+        return self.audit_data
+
+    def get_output_path(self):
+        """返回当前输出路径（供 Presenter 调用）"""
+        return self.output_dir.get() if hasattr(self, 'output_dir') else ''
+
+    def get_alt_pairs(self):
+        """返回替代料配对列表（供 Presenter 调用）"""
+        return getattr(self, 'alt_pairs', [])
 
 def run_app():
     try:
