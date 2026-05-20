@@ -54,6 +54,10 @@ from utils.helpers import standardize_remark
 
 def _dprint(*args, **kwargs):
     """Safe debug print - avoids GBK Errno 22 on Windows console"""
+    import sys
+    if getattr(sys.stdout, 'closed', False) or sys.stdout is None:
+        return
+    kwargs.pop('flush', None)
     try:
         print(*args, **kwargs)
     except (OSError, UnicodeEncodeError):
@@ -70,7 +74,13 @@ def do_analysis_v2(
         end_date=None,
         material_search=None,
         output_path=None):
-    _dprint("[DEBUG do_analysis_v2] 函数开始执行", flush=True)
+    _dprint("[DEBUG do_analysis_v2] 函数开始执行")
+
+    # ========== 数值列追踪初始化 ==========
+    _trace_log = os.path.join(os.environ.get('TEMP', '.'), 'zpp011_trace.log')
+    _snapshot = {}
+    _dprint(f"[TRACE] 追踪日志将写入: {_trace_log}")
+
     def check_cancel():
         if cancel_check and cancel_check():
             raise KeyboardInterrupt("用户取消")
@@ -78,6 +88,7 @@ def do_analysis_v2(
     def report_progress(step_idx, step_name, percent):
         if progress_callback:
             progress_callback(step_idx, step_name, percent)
+            time.sleep(0.01)
 
     from analysis.sheets.write_sheet_util import get_default_styles
     _styles = get_default_styles()
@@ -96,25 +107,92 @@ def do_analysis_v2(
     check_cancel()
 
     src_file = input_file
-    df = pd.read_excel(src_file, sheet_name='Data')
-    _dprint(f"[DEBUG do_analysis_v2] 读取Data表成功，{len(df)} 行", flush=True)
+    try:
+        df = pd.read_excel(src_file, sheet_name='Data')
+        _dprint(f"[DEBUG do_analysis_v2] 读取Data表成功，{len(df)} 行")
+        # 强制刷新输出
+        import sys
+        sys.stdout.flush()
+    except Exception as e:
+        _dprint(f"❌ 读取Excel失败: {e}")
+        raise
     
-    # DEBUG: Log input DataFrame info
-    import os
-    _debug_log = os.path.join(os.environ.get('TEMP', '.'), 'zpp011_input_debug.log')
-    with open(_debug_log, 'a', encoding='utf-8') as _f:
-        _f.write(f"\n=== Input Debug {__import__('datetime').datetime.now()} ===\n")
-        _f.write(f"Input file: {src_file}\n")
+
+    # ========== 追踪点1: 读取数据后（原始状态） ==========
+    _snapshot['after_read'] = {
+        '数量-实际': df['数量-实际'].describe().to_dict() if '数量-实际' in df.columns else 'NOT_FOUND',
+        '数量-定额': df['数量-定额'].describe().to_dict() if '数量-定额' in df.columns else 'NOT_FOUND',
+        '行数': len(df)
+    }
+    _dprint(f"[TRACE-1] 读取后: 数量-实际 sum={df['数量-实际'].sum() if '数量-实际' in df.columns else 'N/A'}")
+
+    # ========== 诊断：找出哪个数值列被字符串污染 ==========
+    # 使用文件日志（避免输出被吞掉）
+    _diag_log = os.path.join(os.environ.get('TEMP', '.'), 'zpp011_diagnostic.log')
+    with open(_diag_log, 'w', encoding='utf-8') as _f:
+        _f.write(f"=== 诊断开始 {pd.Timestamp.now()} ===\n")
+        _f.write(f"文件: {src_file}\n")
+        _f.write(f"行数: {len(df)}\n")
+        _f.write(f"列名: {list(df.columns)}\n\n")
+    
+    _dprint(f"[诊断] 正在检查数值列，日志写入: {_diag_log}")
+    print("[诊断] 检查数值列中的字符串...")
+    numeric_cols_check = [
+        '数量-定额', '数量-实际', '材料偏差', '偏差率(%)',
+        '金额-定额(含税)', '金额-实际(含税)', '实际成本', '产量', '组件数量'
+    ]
+    for col in numeric_cols_check:
+        if col in df.columns:
+            try:
+                # 找出非数值的行（包括字符串）
+                mask = ~df[col].apply(lambda x: isinstance(x, (int, float)) or pd.isna(x))
+                if mask.any():
+                    bad_vals = df.loc[mask, col].unique()[:5]
+                    print(f"⚠️ 列 [{col}] 包含非数值：{bad_vals}")
+                    # 同时打印对应的物料名称和订单号，便于定位
+                    sample_rows = df.loc[mask].head(3)
+                    if all(c in df.columns for c in ['流程订单', '组件物料描述', col]):
+                        print(f" 示例行：{sample_rows[['流程订单', '组件物料描述', col]].to_dict(orient='records')}")
+            except Exception as e:
+                print(f"⚠️ 检查列 [{col}] 时出错: {e}")
+    print("[诊断] 数值列检查完成")
+    
+    # 同时写入诊断日志文件
+    with open(_diag_log, 'a', encoding='utf-8') as _f:
+        _f.write(f"\n=== 数值列检查完成 ===\n")
         _f.write(f"df.shape: {df.shape}\n")
-        _f.write(f"df.columns: {list(df.columns)}\n")
-        _f.write(f"'组件物料号' in df.columns: {'组件物料号' in df.columns}\n")
-        _f.write(f"'组件物料描述' in df.columns: {'组件物料描述' in df.columns}\n")
-        _f.write(f"'组件物料类型' in df.columns: {'组件物料类型' in df.columns}\n")
-        _f.write(f"'组件物料类型描述' in df.columns: {'组件物料类型描述' in df.columns}\n")
+        _f.write(f"数值列检查: 完成\n\n")
         _f.write(f"'组件单位' in df.columns: {'组件单位' in df.columns}\n")
 
-    # 保留原始 Excel 行号（从1开始计数，对应 Excel 第1行=表头，第2行=数据行1）
-    df.insert(0, '_excel_row', range(2, len(df) + 2))
+    # 保留原始 Excel 行号：用 openpyxl 读取真实行号（避免 pandas read_excel 跳过空行导致偏移）
+    try:
+        from openpyxl import load_workbook
+        _wb = load_workbook(src_file, read_only=True, data_only=True)
+        _ws = _wb['Data']
+        _real_rows = []
+        _rn = 0
+        for _row in _ws:
+            _rn += 1
+            if _rn == 1:
+                continue  # 跳过表头
+            _real_rows.append(_rn)
+        _wb.close()
+        if len(_real_rows) == len(df):
+            df.insert(0, '_excel_row', _real_rows)
+        else:
+            # 行数不匹配时回退到计算方式
+            df.insert(0, '_excel_row', range(2, len(df) + 2))
+    except Exception:
+        df.insert(0, '_excel_row', range(2, len(df) + 2))
+
+    # ========== 强制转换数值列，防止字符串混入 ==========
+    numeric_cols = [
+        '数量-定额', '数量-实际', '材料偏差', '偏差率(%)',
+        '金额-定额(含税)', '金额-实际(含税)', '实际成本', '产量', '组件数量'
+    ]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
     col_p = '偏差率(%)'
 
@@ -193,7 +271,7 @@ def do_analysis_v2(
         date_max = df['订单开始日期'].max()
 
     date_range = f"{pd.Timestamp(date_min).strftime('%Y%m%d')}-{pd.Timestamp(date_max).strftime('%m%d')}"
-    _dprint(f"[DEBUG do_analysis_v2] 日期范围：{date_range}", flush=True)
+    _dprint(f"[DEBUG do_analysis_v2] 日期范围：{date_range}")
     
     report_progress(0, "预处理", 100)
 
@@ -225,6 +303,17 @@ def do_analysis_v2(
     tape_auto_fill = tape_mask & no_note_mask & ~no_auto_mask
     df.loc[tape_auto_fill, '备注原因'] = '系统无定额'
 
+    # ========== 数值列保护（自动填充后） ==========
+    _numeric_cols = ['数量-定额', '数量-实际', '材料偏差', '偏差率(%)',
+                    '金额-定额(含税)', '金额-实际(含税)', '实际成本', '产量', '组件数量']
+    for _col in _numeric_cols:
+        if _col in df.columns:
+            _before = df[_col].dtype
+            df[_col] = pd.to_numeric(df[_col], errors='coerce').fillna(0)
+            _after = df[_col].dtype
+            if _before != _after:
+                print(f"[数值保护] 列 [{_col}] 已转换: {_before} → {_after}")
+    
     df['_note_source'] = '人工填写'
 
     # DeepSeek版：标注标准原因列
@@ -236,41 +325,40 @@ def do_analysis_v2(
 
     df['车间'] = df['生产管理员描述'].apply(lambda x: str(x).strip())
 
-    # 优雅降级：处理缺少含税金额列的情况（旧格式文件）
-    for col in ["金额-实际(含税)", "金额-定额(含税)"]:
-        if col not in df.columns:
-            print(f"⚠️ 当前文件缺少[{col}]列（旧格式），相关计算将按0处理")
-            df[col] = 0.0
-
-    # 计算偏差金额(含税) - 修复：增加兜底逻辑
-    df['_unit_price_tax'] = 0.0
+    # ========== 数值列保护（偏差计算前） ==========
+    for _col in ['金额-实际(含税)', '金额-定额(含税)']:
+        if _col in df.columns:
+            _before = df[_col].dtype
+            df[_col] = pd.to_numeric(df[_col], errors='coerce').fillna(0)
+            _after = df[_col].dtype
+            if _before != _after:
+                print(f"[数值保护-计算前] 列 [{_col}] 已转换: {_before} → {_after}")
     
-    # 尝试从多个来源获取单价
-    # 优先级：1.金额-实际(含税)/数量-实际  2.金额-定额(含税)/数量-定额
-    valid_mask_actual = (df['数量-实际'] > 0) & (df['金额-实际(含税)'] > 0)
-    valid_mask_quota = (df['数量-定额'] > 0) & (df['金额-定额(含税)'] > 0)
-    
-    # 先用实际金额计算
-    df.loc[valid_mask_actual, '_unit_price_tax'] = (
-        df.loc[valid_mask_actual, '金额-实际(含税)'] / 
-        df.loc[valid_mask_actual, '数量-实际']
-    )
-    
-    # 实际金额缺失的，用定额金额计算
-    missing_mask = (~valid_mask_actual) & valid_mask_quota
-    df.loc[missing_mask, '_unit_price_tax'] = (
-        df.loc[missing_mask, '金额-定额(含税)'] / 
-        df.loc[missing_mask, '数量-定额']
-    )
-    
-    # 计算偏差金额
-    df['偏差金额(含税)'] = (df['材料偏差'] * df['_unit_price_tax']).round(2)
-    
-    # 调试日志：记录有多少行成功计算了单价
-    calculated_count = (df['_unit_price_tax'] > 0).sum()
-    zero_amount_count = (df['金额-实际(含税)'] == 0).sum()
-    print(f"[偏差金额计算] 金额-实际(含税)=0的行数: {zero_amount_count}/{len(df)}")
-    print(f"[偏差金额计算] 成功计算 {calculated_count}/{len(df)} 行的单价")
+    # ========== 偏差金额计算（优先使用含税金额直接相减） ==========
+    if '金额-实际(含税)' in df.columns and '金额-定额(含税)' in df.columns:
+        # 方法1：直接相减（推荐，最准确）
+        df['偏差金额(含税)'] = (df['金额-实际(含税)'] - df['金额-定额(含税)']).round(2)
+        print(f"[偏差金额计算] 使用含税金额直接相减，非零偏差行数: {(df['偏差金额(含税)'] != 0).sum()}")
+    else:
+        # 方法2：降级使用材料偏差 × 单价（兼容旧格式）
+        for col in ['金额-实际(含税)', '金额-定额(含税)']:
+            if col not in df.columns:
+                print(f"⚠️ 当前文件缺少[{col}]列，相关计算将按0处理")
+                df[col] = 0.0
+        df['_unit_price_tax'] = 0.0
+        valid_mask_actual = (df['数量-实际'] > 0) & (df['金额-实际(含税)'] > 0)
+        valid_mask_quota = (df['数量-定额'] > 0) & (df['金额-定额(含税)'] > 0)
+        df.loc[valid_mask_actual, '_unit_price_tax'] = (
+            df.loc[valid_mask_actual, '金额-实际(含税)'] /
+            df.loc[valid_mask_actual, '数量-实际']
+        )
+        missing_mask = (~valid_mask_actual) & valid_mask_quota
+        df.loc[missing_mask, '_unit_price_tax'] = (
+            df.loc[missing_mask, '金额-定额(含税)'] /
+            df.loc[missing_mask, '数量-定额']
+        )
+        df['偏差金额(含税)'] = (df['材料偏差'] * df['_unit_price_tax']).round(2)
+        print(f"[偏差金额计算] 使用单价计算，成功计算 {(df['_unit_price_tax'] > 0).sum()}/{len(df)} 行的单价")
 
     check_cancel()
     # Sheet1（第五步抽取 → analysis/sheets/sheet1_summary.py）
@@ -306,6 +394,14 @@ def do_analysis_v2(
         if a_match and b_match:
             cleaned_pairs.append((a_match, b_match))
     # 使用清理后的配对
+
+    # ========== 追踪点2: 预处理后（build_sheet2 前） ==========
+    _snapshot['after_preprocess'] = {
+        '数量-实际': df['数量-实际'].describe().to_dict() if '数量-实际' in df.columns else 'NOT_FOUND',
+        '行数': len(df)
+    }
+    _dprint(f"[TRACE-2] 预处理后: 数量-实际 sum={df['数量-实际'].sum() if '数量-实际' in df.columns else 'N/A'}")
+
     alt_df, alt_order_mat = build_sheet2(df, cleaned_pairs, report_progress)
     check_cancel()
 
@@ -336,6 +432,14 @@ def do_analysis_v2(
 
     # Sheet5（第五步抽取 → analysis/sheets/sheet5_full.py）
     dev_df = build_sheet5(df, report_progress)
+
+    # ========== 追踪点3: build_sheet5 后 ==========
+    _snapshot['after_sheet5'] = {
+        '数量-实际': df['数量-实际'].describe().to_dict() if '数量-实际' in df.columns else 'NOT_FOUND',
+        '行数': len(df)
+    }
+    _dprint(f"[TRACE-3] build_sheet5后: 数量-实际 sum={df['数量-实际'].sum() if '数量-实际' in df.columns else 'N/A'}")
+
     check_cancel()
 
     # Sheet6（第五步抽取 → analysis/sheets/sheet6_anomaly.py）
@@ -580,7 +684,7 @@ def do_analysis_v2(
         ws_info.column_dimensions['A'].width = 28
         ws_info.column_dimensions['B'].width = 62
 
-    _dprint(f"[DEBUG do_analysis_v2] 准备保存到：{final_output_path}", flush=True)
+    _dprint(f"[DEBUG do_analysis_v2] 准备保存到：{final_output_path}")
     try:
         wb.save(final_output_path)
     except PermissionError as e:
@@ -597,7 +701,18 @@ def do_analysis_v2(
         ) from e
     report_progress(11, "生成Excel", 100)
     # 返回实际保存的路径
-    _dprint(f"[DEBUG do_analysis_v2] 保存完成，返回：{final_output_path}", flush=True)
+    _dprint(f"[DEBUG do_analysis_v2] 保存完成，返回：{final_output_path}")
+    # ========== 保存追踪日志 ==========
+    try:
+        with open(_trace_log, 'a', encoding='utf-8') as f:
+            f.write(f"\n=== Trace Log {datetime.now()} ===\n")
+            f.write(f"Input file: {src_file}\n")
+            f.write(json.dumps(_snapshot, indent=2, ensure_ascii=False, default=str))
+            f.write('\n')
+        _dprint(f"[TRACE] 日志已保存到: {_trace_log}")
+    except Exception as e:
+        _dprint(f"[TRACE] 保存日志失败: {e}")
+
     return final_output_path
 def _build_deviation_summary(dev_df, orig_df):
     """

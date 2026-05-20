@@ -14,6 +14,35 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v37.4.3",
+        "date": "2026-05-20 19:19:00",
+        "changes": [
+            "🔧【修复】全局清除 flush=True（analyzer.py + sheet1/2/3/7/10 共15处）",
+            "🔧【修复】删除函数体内重复 import os（Line 127，导致局部变量遮蔽）",
+            "🔧【修复】两层数值列保护（pd.to_numeric errors=coerce + fillna 0）",
+            "📝【追踪】数量-实际值变化追踪日志（zpp011_trace.log）"
+        ]
+    },
+    {
+        "version": "v37.4.0",
+        "date": "2026-05-20 12:25:00",
+        "changes": [
+            "🔧【修复】窗口标题版本号同步（version_history.py新增v37.4.0条目）",
+            "🔧【修复】打包文件名格式（增加YYYYMMDD_HHMM时间戳后缀）",
+            "🔧【修复】原表行号改用openpyxl真实读取（替代pandas range估算）",
+            "✨【优化】进度条流畅（update_idletasks + sleep 0.01 + 节流）"
+        ]
+    },
+    {
+        "version": "v37.3.0",
+        "date": "2026-05-20 11:00:00",
+        "changes": [
+            "🔧【修复】PPT生成列名不匹配导致KeyError（自动检测'工厂名称'/'工厂'、'总偏差金额(含税)'/'总偏差金额'）",
+            "🔧【修复】进度条不更新/界面假死（events.py强制update_idletasks + analyzer.py让出CPU时间片）",
+            "🔧【验证】原表行号_excel_row赋值正确（line 118，过滤前赋值，数据链路完整）"
+        ]
+    },
+    {
         "version": "v37.2.0",
         "date": "2026-05-20 01:30:00",
         "changes": [

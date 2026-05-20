@@ -32,12 +32,12 @@ class AIClient:
 
     def _get_mock_result(self, text, dev_rate):
         if not text or str(text).strip() == "":
-            if abs(dev_rate) < 0.05:
+            if abs(dev_rate) < 5:
                 return {"result": "合格", "suggestion": "小偏差(5%以内)，可接受，无需特别说明"}
             elif dev_rate > 0:
-                return {"result": "需补备注", "suggestion": f"超耗{dev_rate*100:.1f}%，建议检查BOM用量或损耗率"}
+                return {"result": "需补备注", "suggestion": f"超耗{dev_rate:.1f}%，建议检查BOM用量或损耗率"}
             else:
-                return {"result": "需补备注", "suggestion": f"少耗{abs(dev_rate)*100:.1f}%，建议核实实际用量"}
+                return {"result": "需补备注", "suggestion": f"少耗{abs(dev_rate):.1f}%，建议核实实际用量"}
         remark_str = str(text).strip()
         # 跳过 nan/NaN/None 等无效值（之前已在上方处理空文本，此处作为兜底）
         if remark_str in ('nan', 'NaN', 'None', 'none', ''):
