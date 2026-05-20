@@ -60,6 +60,27 @@ class EventsMixIn:
 
     """包含所有 GUI 事件处理方法，供 ZPP011Beautiful 继承"""
 
+    # ── v37.44 数据库升级检测 ──────────────────────────────────────────────
+    def _check_and_upgrade_db(self):
+        """
+        启动时检测旧 audit_log 表是否需要升级到新 audit_records 表。
+        若检测到旧表有数据，弹窗询问用户：清空旧历史 or 保留迁移。
+        """
+        try:
+            if not storage.needs_upgrade():
+                return
+            choice = messagebox.askyesno(
+                "数据库需要升级",
+                "检测到旧版审核数据库（v36及之前），需要进行一次性升级。\n\n"
+                "「是」= 清空旧历史，重新开始（推荐）\n"
+                "「否」= 迁移旧记录到新表（保留历史）\n\n"
+                "此升级仅执行一次。",
+            )
+            storage.upgrade_audit_db(clear_old=(choice == True), log_cb=self.log)
+        except Exception as e:
+            self.log(f"⚠ 升级检测失败：{e}", "warn")
+
+    # ── 保存审核结果到原 Excel + SQLite ────────────────────────────────
     def _save_audit_back(self):
         """保存审核结果到原 Excel，同时同步到本地数据库 """
         # ── 1. 前置检查 ──

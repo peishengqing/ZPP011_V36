@@ -239,6 +239,7 @@ class ZPP011Beautiful(EventsMixIn):
 
         storage.init_audit_db()
         build_ui(self)
+        self._check_and_upgrade_db()  # v37.44 启动时检测并升级旧数据库
         self.config = ConfigManager()
         self.config.apply_window_geometry(self.root)
         self._restore_column_widths()
