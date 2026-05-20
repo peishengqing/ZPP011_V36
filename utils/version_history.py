@@ -14,6 +14,19 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v37.44",
+        "date": "2026-05-20 23:38:00",
+        "changes": [
+            "✨【核心】审核记录存储机制升级：业务主键三元组替换原表行号",
+            "🔧【新增】storage.py: _backup_db/init_audit_db_v2/needs_upgrade/upgrade_audit_db",
+            "🔧【重写】save_audit_to_db: INSERT OR REPLACE + 主键三元组 + 自动备份",
+            "🔧【重写】restore_audit_from_db: SQL LEFT JOIN 回填，替代 Python 循环",
+            "🔧【新增】gui/events.py: _check_and_upgrade_db 启动时检测旧数据库",
+            "🔧【新增】gui/app.py: __init__ 中调用升级检测弹窗",
+            "🔧【升级】兼容旧版 audit_log 表，支持清空/迁移两种升级策略"
+        ]
+    },
+    {
         "version": "v37.4.3",
         "date": "2026-05-20 19:19:00",
         "changes": [
