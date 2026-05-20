@@ -17,6 +17,15 @@ else:
 if base_dir not in sys.path:
     sys.path.insert(0, base_dir)
 
+# PyInstaller --noconsole: sys.stdout/stderr is None, redirect to devnull to avoid flush crash
+if getattr(sys, 'frozen', False) and sys.stdout is None:
+    class _NullWriter:
+        def write(self, *a, **k): pass
+        def flush(self): pass
+        def close(self): pass
+    sys.stdout = _NullWriter()
+    sys.stderr = _NullWriter()
+
 # 初始化日志系统
 from core.logger import get_logger
 logger = get_logger("Startup")

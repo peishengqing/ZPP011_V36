@@ -14,6 +14,7 @@ import pandas as pd
 from widgets import C, STEPS
 from storage import storage
 from analysis.analyzer import do_analysis_v2
+from ppt_generator import run_ppt_generation as _run_ppt
 from core.decorators import with_feedback
 from core.state_store import get_state
 from core.rule_engine import RuleEngine
@@ -120,6 +121,9 @@ class EventsMixIn:
             remark = str(row.get('备注原因', '') or row.get('AI建议', '') or '').strip()
             save_list.append((work_date, order_no, mat_code, remark))
         self.log(f"   待保存记录：{len(save_list)} 条", "info")
+        # 调试：打印 save_list 前3条
+        if len(save_list) > 0:
+            self.log(f"[DEBUG] save_list 前3条: {save_list[:3]}", "debug")
 
         # ── 5. 匹配 Excel 表头列索引 ──
         headers = {}
@@ -171,6 +175,8 @@ class EventsMixIn:
             if match:
                 match_count += 1
                 _, _, _, remark = match
+                # 调试：打印匹配到的行号和匹配键
+                self.log(f"[DEBUG] 匹配到行 {r_idx}: date={r_date}, order={r_order}, mat={r_mat}, 写入备注={remark[:20] if remark else '空'}", "debug")
                 ws.cell(r_idx, audit_cols['审核状态'], '已备注' if remark else '未审核')
                 ws.cell(r_idx, audit_cols['审核备注'], remark)
                 ws.cell(r_idx, audit_cols['审核人'], auditor)
@@ -375,10 +381,10 @@ class EventsMixIn:
 
         def worker():
             try:
-                ppt_generator.run_ppt_generation(excel_path, output_path, log_cb=self.log)
+                _run_ppt(excel_path, output_path, log_cb=self.log)
                 self.root.after(0, lambda: self._on_ppt_done(output_path))
             except Exception as e:
-                self.root.after(0, lambda: self._on_ppt_error(str(e)))
+                self.root.after(0, lambda e=e: self._on_ppt_error(str(e)))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -1609,12 +1615,13 @@ class EventsMixIn:
 
         now = _t.strftime("%H:%M:%S")
 
-        self.root.after(0, lambda step_idx=step_idx, step_name=step_name, percent=percent, now=now: (
-            self.progress_var.set(percent),
-            self.progress_lbl.configure(text=f"{step_name}  {percent:.0f}%", fg=C['accent']),
-            self._set_step(step_idx),
+        def update():
+            self.progress_var.set(percent)
+            self.progress_lbl.configure(text=f"{step_name}  {percent:.0f}%", fg=C['accent'])
+            self._set_step(step_idx)
             self.log(f"[{now}] [{step_idx + 1}/{len(STEPS)}] {step_name} {percent:.0f}%", "step")
-        ))
+            self.root.update_idletasks()
+        self.root.after(0, update)
 
 
     def _update_timer(self):
@@ -1709,7 +1716,7 @@ class EventsMixIn:
         # ✅ 新增：自动加载审核数据，联动统计卡片（从分析结果文件加载）
         self._analysis_output_path = self.output_path  # 保存路径供加载使用
         self.log("🔄 准备加载审核数据...", "info")
-        self.root.after(100, self._load_audit_data_from_output)
+        self.root.after(100, lambda: self._load_audit_data_from_output(self._analysis_output_path))
         self.root.after(200, self._run_pre_check)
 
         # 加载完成后删除自动生成的Excel（用户需要时可手动点击"生成Excel"按钮）
@@ -1930,7 +1937,25 @@ class EventsMixIn:
         try:
             df = pd.read_excel(path, sheet_name='Data')
             df['偏差率(%)'] = pd.to_numeric(df['偏差率(%)'], errors='coerce').fillna(0)
-            df['excel_row'] = df.index + 2
+            # 用 openpyxl 读取真实 Excel 行号（避免 pandas 跳过空行导致偏移）
+            try:
+                from openpyxl import load_workbook
+                _wb2 = load_workbook(path, read_only=True, data_only=True)
+                _ws2 = _wb2['Data']
+                _real_rows2 = []
+                _rn2 = 0
+                for _row2 in _ws2:
+                    _rn2 += 1
+                    if _rn2 == 1:
+                        continue
+                    _real_rows2.append(_rn2)
+                _wb2.close()
+                if len(_real_rows2) == len(df):
+                    df['excel_row'] = _real_rows2
+                else:
+                    df['excel_row'] = df.index + 2
+            except Exception:
+                df['excel_row'] = df.index + 2
             
             # 日期范围过滤（如果用户输入了日期）
             start_date_str = self.start_date.get().strip()
@@ -2082,7 +2107,15 @@ class EventsMixIn:
 
         # 5. 构建 audit_df
         audit_df = dev_df.copy()
-        audit_df['excel_row'] = audit_df['原表行号'].apply(lambda x: int(x) if pd.notna(x) else 0)
+        # 修正原表行号：优先使用 analyzer 计算的 _excel_row（openpyxl真实行号）
+        if '_excel_row' in dev_df.columns:
+            audit_df['excel_row'] = dev_df['_excel_row'].apply(lambda x: int(x) if pd.notna(x) else 0)
+            audit_df['原表行号'] = dev_df['_excel_row']  # 同步修正显示列
+        elif '原表行号' in dev_df.columns:
+            audit_df['excel_row'] = dev_df['原表行号'].apply(lambda x: int(x) if pd.notna(x) else 0)
+        else:
+            audit_df['excel_row'] = range(2, len(audit_df) + 2)
+            audit_df['原表行号'] = audit_df['excel_row']
         audit_df['组件物料号'] = audit_df.get('物料编码', '')
         audit_df['组件物料描述'] = audit_df.get('物料名称', '')
         audit_df['工厂名称'] = audit_df.get('工厂', '')
@@ -2091,6 +2124,21 @@ class EventsMixIn:
         audit_df['数量-实际'] = audit_df.get('实际', 0)
         audit_df['偏差率(%)'] = audit_df['偏差率数值'] * 100
         audit_df['备注原因'] = audit_df.get('备注', '')
+
+        # 调试：对比 订单300354378+物料10000000 的数据
+        mask_debug = (audit_df.get('流程订单', '').astype(str) == '300354378') & (audit_df.get('组件物料号', '').astype(str) == '10000000')
+        if mask_debug.any():
+            d = audit_df[mask_debug].iloc[0]
+            self._debug_row = d
+            debug_info = f"[DEBUG] 订单300354378+物料10000000: "
+            debug_info += f"excel_row={d.get('excel_row')}, "
+            debug_info += f"定额={d.get('定额')}, 实际={d.get('实际')}, "
+            debug_info += f"数量-定额={d.get('数量-定额')}, 数量-实际={d.get('数量-实际')}, "
+            debug_info += f"物料编码={d.get('物料编码')}, 物料名称={d.get('物料名称')}"
+            with open(os.path.join(os.path.expanduser('~'), 'Desktop', 'zpp011_debug.txt'), 'a', encoding='utf-8') as f:
+                f.write(debug_info + '\n')
+        else:
+            self._debug_row = None
 
         # 偏差金额计算
         if '偏差金额' not in audit_df.columns or pd.to_numeric(audit_df['偏差金额'], errors='coerce').abs().max() == 0:
@@ -2146,6 +2194,16 @@ class EventsMixIn:
             self.audit_data = result_df
             self._full_dev_df = result_df.copy()
             self.log(f"[DEBUG] _on_load_done: {len(self.audit_data)}行", "info")
+            # 调试：打印前5行 excel_row 和 原表行号
+            if 'excel_row' in self.audit_data.columns:
+                self.log(f"[DEBUG] excel_row 前5行: {self.audit_data['excel_row'].head().tolist()}", "debug")
+            if '原表行号' in self.audit_data.columns:
+                self.log(f"[DEBUG] 原表行号 前5行: {self.audit_data['原表行号'].head().tolist()}", "debug")
+            # 调试：打印 订单300354378+物料10000000 的数据
+            mask = (self.audit_data.get('流程订单', '').astype(str) == '300354378') & (self.audit_data.get('组件物料号', '').astype(str) == '10000000')
+            if mask.any():
+                debug_row = self.audit_data[mask].iloc[0]
+                self.log(f"[DEBUG] 订单300354378+物料10000000: excel_row={debug_row.get('excel_row')}, 定额={debug_row.get('数量-定额')}, 实际={debug_row.get('数量-实际')}", "debug")
 
             # 更新筛选选项和行颜色
             self._update_filter_options()
@@ -2179,8 +2237,8 @@ class EventsMixIn:
             self.root.after(100, lambda: self._on_filter_changed(None) if self.audit_data is not None else None)
             self._restore_sort_state()
             self.root.after(300, lambda: self._show_precheck_report(self.audit_data))
-            # BOM 过期提醒
-            self.root.after(500, self._check_and_remind_bom)
+            # BOM 过期提醒（功能待实现，暂注释）
+            # self.root.after(500, self._check_and_remind_bom)
             # 恢复审核记录
             storage.restore_audit_from_db(self.audit_data, log_cb=self.log)
 
@@ -3560,6 +3618,15 @@ class EventsMixIn:
         else:
             df_filtered = self.audit_data.copy()
 
+        # 动态确定备注列名（兼容不同数据来源）
+        remark_col = None
+        for col in ['备注原因', '备注', 'remark']:
+            if col in self.audit_data.columns:
+                remark_col = col
+                break
+        if remark_col is None:
+            remark_col = '备注原因'  # 默认
+
         col_map = {
             'factory': '工厂名称',
             'admin': '生产管理员描述',
@@ -3567,7 +3634,7 @@ class EventsMixIn:
             'status': 'status_temp',
             'dev_rate': '偏差率(%)',
             'is_alt': None,  # 特殊处理
-            'remark': '备注原因',
+            'remark': remark_col,
         }
 
         # 构建替代料名称集合（用于筛选）
@@ -3684,34 +3751,34 @@ class EventsMixIn:
             if key == 'dev_rate':
                 # 偏差率预设阈值筛选
                 if selected == '>10%':
-                    df_filtered = df_filtered[df_filtered['偏差率(%)'] > 10]
+                    df_filtered = df_filtered[pd.to_numeric(df_filtered['偏差率(%)'], errors='coerce') > 10]
                 elif selected == '>20%':
-                    df_filtered = df_filtered[df_filtered['偏差率(%)'] > 20]
+                    df_filtered = df_filtered[pd.to_numeric(df_filtered['偏差率(%)'], errors='coerce') > 20]
                 elif selected == '>30%':
-                    df_filtered = df_filtered[df_filtered['偏差率(%)'] > 30]
+                    df_filtered = df_filtered[pd.to_numeric(df_filtered['偏差率(%)'], errors='coerce') > 30]
                 elif selected == '绝对值>10%':
-                    df_filtered = df_filtered[df_filtered['偏差率(%)'].abs() > 10]
+                    df_filtered = df_filtered[pd.to_numeric(df_filtered['偏差率(%)'], errors='coerce').abs() > 10]
                 elif selected == '<-10%':
-                    df_filtered = df_filtered[df_filtered['偏差率(%)'] < -10]
+                    df_filtered = df_filtered[pd.to_numeric(df_filtered['偏差率(%)'], errors='coerce') < -10]
                 elif selected == '<-20%':
-                    df_filtered = df_filtered[df_filtered['偏差率(%)'] < -20]
+                    df_filtered = df_filtered[pd.to_numeric(df_filtered['偏差率(%)'], errors='coerce') < -20]
             elif key == 'status':
                 if selected == '已备注':
-                    df_filtered = df_filtered[df_filtered['备注原因'].notna() &
-                                             df_filtered['备注原因'].apply(lambda x: str(x).strip() != '')]
+                    df_filtered = df_filtered[df_filtered[remark_col].notna() &
+                                             df_filtered[remark_col].apply(lambda x: str(x).strip() != '' and str(x).strip() != 'nan')]
                 elif selected == '需补备注':
-                    df_filtered = df_filtered[df_filtered['备注原因'].isna() |
-                                             df_filtered['备注原因'].apply(lambda x: str(x).strip() == '')]
+                    df_filtered = df_filtered[df_filtered[remark_col].isna() |
+                                             df_filtered[remark_col].apply(lambda x: str(x).strip() == '' or str(x).strip() == 'nan')]
             elif key == 'remark':
                 # 备注筛选："为空" 只显示未填备注的记录，"不为空"只显示已填写的
                 if selected == '为空':
-                    df_filtered = df_filtered[df_filtered['备注原因'].isna() |
-                                             df_filtered['备注原因'].apply(lambda x: str(x).strip() == '')]
+                    df_filtered = df_filtered[df_filtered[remark_col].isna() |
+                                             df_filtered[remark_col].apply(lambda x: str(x).strip() == '' or str(x).strip() == 'nan')]
                 elif selected == '不为空':
-                    df_filtered = df_filtered[df_filtered['备注原因'].notna() &
-                                             df_filtered['备注原因'].apply(lambda x: str(x).strip() != '')]
+                    df_filtered = df_filtered[df_filtered[remark_col].notna() &
+                                             df_filtered[remark_col].apply(lambda x: str(x).strip() != '' and str(x).strip() != 'nan')]
                 elif selected and selected != '全部':
-                    df_filtered = df_filtered[df_filtered['备注原因'].astype(str) == selected]
+                    df_filtered = df_filtered[df_filtered[remark_col].astype(str) == selected]
             elif key == 'name':
                 # 物料描述：模糊搜索（包含关键词）
                 if selected and selected.strip():

@@ -25,7 +25,7 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
         无（直接写入 wb）
     """
     report_progress(progress_idx, "Sheet10-趋势分析", 0)
-    print("[DEBUG do_analysis_v2] 开始生成Sheet10", flush=True)
+    print("[DEBUG do_analysis_v2] 开始生成Sheet10")
 
     header_fill = PatternFill(start_color='1B5E20', end_color='1B5E20', fill_type='solid')
     header_font = Font(bold=True, size=11, color='FFFFFF')
@@ -171,5 +171,5 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
             ws.column_dimensions[get_column_letter(j)].width = w
 
     write_trend_sheet(wb, dev_df, date_min)
-    print("[DEBUG do_analysis_v2] Sheet10完成", flush=True)
+    print("[DEBUG do_analysis_v2] Sheet10完成")
     report_progress(progress_idx, "Sheet10-趋势分析", 100)

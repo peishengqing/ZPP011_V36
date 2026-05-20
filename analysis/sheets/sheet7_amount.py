@@ -24,7 +24,7 @@ def build_sheet7(wb, df, report_progress, progress_idx=7):
         无（直接写入 wb['偏差金额分析']）
     """
     report_progress(progress_idx, "Sheet7-偏差金额分析", 0)
-    print("[DEBUG do_analysis_v2] 开始生成Sheet7", flush=True)
+    print("[DEBUG do_analysis_v2] 开始生成Sheet7")
 
     ws_amt = wb.create_sheet('偏差金额分析', index=6)
 

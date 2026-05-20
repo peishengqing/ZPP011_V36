@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """ PPT 生成模块（GUI 错误日志版） """
 
@@ -180,13 +180,17 @@ def _add_content_box(slide, lines, font_size=15, color=(0x2A, 0x2A, 0x2A), prs=N
             r.font.color.rgb = RGBColor(*color)
 
 def _create_bar_chart_image(df_summary, factory_name, colors):
-    df_f = df_summary[df_summary['工厂名称'] == factory_name].copy()
+    _factory_col = '工厂' if '工厂' in df_summary.columns else ('工厂名称' if '工厂名称' in df_summary.columns else None)
+    if _factory_col is None or _factory_col not in df_summary.columns:
+        return None
+    df_f = df_summary[df_summary[_factory_col].astype(str).str.strip() == str(factory_name).strip()].copy()
     if df_f.empty:
         return None
-    df_f['abs_dev'] = df_f['总偏差金额(含税)'].abs()
+    _dev_col = '总偏差金额(含税)' if '总偏差金额(含税)' in df_summary.columns else '总偏差金额'
+    df_f['abs_dev'] = df_f[_dev_col].abs()
     df_f = df_f.sort_values('abs_dev', ascending=True)
     workshops = df_f['车间'].tolist()
-    dev_vals = df_f['总偏差金额(含税)'].tolist()
+    dev_vals = df_f[_dev_col].tolist()
     fig, ax = plt.subplots(figsize=(8, 4))
     bar_colors = [colors['pos'] if v > 0 else colors['neg'] for v in dev_vals]
     ax.barh(workshops, dev_vals, color=bar_colors)
@@ -237,7 +241,8 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
     try:
         xl = pd.ExcelFile(excel_path)
         sheets = xl.sheet_names
-        _log_error(f"Excel 工作表: {sheets}")
+        _log(f"[PPT] Excel 完整路径: {excel_path}")
+        _log(f"[PPT] Excel 工作表列表: {sheets}")
 
         def safe_read(name, default_cols=None):
             if name in sheets:
@@ -249,6 +254,7 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
             return pd.DataFrame(columns=default_cols or [])
 
         summary_df = safe_read('汇总统计')
+        _log(f"  [PPT] summary_df: {summary_df.shape[0]} rows, columns: {summary_df.columns.tolist()[:5]}")
         no_note_df = safe_read('无备注预警')
         abnormal_df = safe_read('异常预警')
         freq_loss_df = safe_read('原因汇总')
@@ -267,6 +273,7 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
 
         if not summary_df.empty:
             total_rows = int(summary_df['总条数'].sum())
+            _log(f"  [PPT] total_rows={total_rows}")
             total_pos_count = int(summary_df['正偏差条数'].sum())
             total_neg_count = int(summary_df['负偏差条数'].sum())
             total_pos_qty = summary_df['正偏差数量'].sum()
@@ -328,7 +335,8 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
         # 工厂统计
         factory_stats = []
         if not summary_df.empty:
-            for factory, grp in summary_df.groupby('工厂名称'):
+            _grp_factory_col = '工厂' if '工厂' in summary_df.columns else ('工厂名称' if '工厂名称' in summary_df.columns else '工厂')
+            for factory, grp in summary_df.groupby(_grp_factory_col):
                 factory_stats.append({
                     '工厂': factory,
                     '记录数': grp['总条数'].sum(),
@@ -341,7 +349,7 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
         workshop_top5 = []
         if not cause_analysis_df.empty and '车间' in cause_analysis_df.columns:
             circled = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩']
-            for (factory, workshop), grp in cause_analysis_df.groupby(['工厂', '车间']):
+            for (factory, workshop), grp in cause_analysis_df.groupby([_grp_factory_col, '车间']):
                 agg_grp = grp.groupby('备注原因').agg({
                     '涉及物料数': 'sum',
                     '净偏差': 'sum'
@@ -537,12 +545,33 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
         slide_chart = prs.slides.add_slide(_get_blank_layout(prs))
         set_slide_bg(slide_chart, C_BG)
         add_title_bar(slide_chart, '各车间偏差金额分布')
-        food_img = _create_bar_chart_image(summary_df, '云南达利-食品厂', {'pos': '#dc3545', 'neg': '#28a745'})
-        if food_img:
-            slide_chart.shapes.add_picture(food_img, Inches(0.5), Inches(1.6), width=Inches(5.5))
-        bev_img = _create_bar_chart_image(summary_df, '云南达利-饮料厂', {'pos': '#dc3545', 'neg': '#28a745'})
-        if bev_img:
-            slide_chart.shapes.add_picture(bev_img, Inches(6.3), Inches(1.6), width=Inches(5.5))
+        factory_col = '工厂' if '工厂' in summary_df.columns else ('工厂名称' if '工厂名称' in summary_df.columns else None)
+        if factory_col is None:
+            _log(" [PPT] 警告：找不到工厂列，无法生成车间偏差金额分布图")
+        else:
+            factories = summary_df[factory_col].astype(str).str.strip().unique()
+            _log(f" [PPT] 发现工厂: {list(factories)}")
+            preferred = ['云南达利-食品厂', '云南达利-饮料厂']
+            images_added = 0
+            for idx, fac in enumerate(preferred):
+                if fac in factories:
+                    img = _create_bar_chart_image(summary_df, fac, {'pos': '#dc3545', 'neg': '#28a745'})
+                    if img:
+                        slide_chart.shapes.add_picture(img, Inches(0.5 + (idx * 5.8)), Inches(1.6), width=Inches(5.5))
+                        images_added += 1
+            if images_added == 0 and len(factories) >= 1:
+                for idx, fac in enumerate(factories[:2]):
+                    img = _create_bar_chart_image(summary_df, fac, {'pos': '#dc3545', 'neg': '#28a745'})
+                    if img:
+                        slide_chart.shapes.add_picture(img, Inches(0.5 + (idx * 5.8)), Inches(1.6), width=Inches(5.5))
+                        images_added += 1
+            if images_added == 0:
+                txBox = slide_chart.shapes.add_textbox(Inches(1), Inches(3), Inches(11), Inches(1.5))
+                tf = txBox.text_frame
+                p = tf.paragraphs[0]
+                p.text = "未找到有效的车间偏差数据，请检查 Excel 中是否存在相关数据。"
+                p.font.size = Pt(14)
+                p.font.color.rgb = RGBColor(128, 128, 128)
         _log("  [PPT] 条形图页完成")
 
         slide3 = prs.slides.add_slide(_get_blank_layout(prs))

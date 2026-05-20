@@ -17,7 +17,7 @@ def build_sheet1(df, report_progress, progress_idx=1):
         summary_df: 汇总统计 DataFrame
     """
     report_progress(progress_idx, "Sheet1-汇总统计", 0)
-    print("[DEBUG do_analysis_v2] 开始生成Sheet1", flush=True)
+    print("[DEBUG do_analysis_v2] 开始生成Sheet1")
 
     summary_rows = []
     idx = 1
@@ -53,6 +53,6 @@ def build_sheet1(df, report_progress, progress_idx=1):
         idx += 1
 
     summary_df = pd.DataFrame(summary_rows)
-    print(f"[DEBUG do_analysis_v2] Sheet1完成，{len(summary_df)} 行", flush=True)
+    print(f"[DEBUG do_analysis_v2] Sheet1完成，{len(summary_df)} 行")
     report_progress(progress_idx, "Sheet1-汇总统计", 100)
     return summary_df
