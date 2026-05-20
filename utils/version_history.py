@@ -15,15 +15,19 @@ AUTHOR = "裴盛清"
 VERSION_HISTORY = [
     {
         "version": "v37.44",
-        "date": "2026-05-20 23:38:00",
-        "changes": [
-            "✨【核心】审核记录存储机制升级：业务主键三元组替换原表行号",
-            "🔧【新增】storage.py: _backup_db/init_audit_db_v2/needs_upgrade/upgrade_audit_db",
-            "🔧【重写】save_audit_to_db: INSERT OR REPLACE + 主键三元组 + 自动备份",
-            "🔧【重写】restore_audit_from_db: SQL LEFT JOIN 回填，替代 Python 循环",
-            "🔧【新增】gui/events.py: _check_and_upgrade_db 启动时检测旧数据库",
-            "🔧【新增】gui/app.py: __init__ 中调用升级检测弹窗",
-            "🔧【升级】兼容旧版 audit_log 表，支持清空/迁移两种升级策略"
+        "date": "2026-05-20",
+        "build_datetime": "2026-05-20 23:45:50",
+        "features": [
+            "✨【核心】审核记录存储机制升级：业务主键三元组替换原表行号"
+        ],
+        "fixes": [
+            "🐛 修复跨文件行号错位问题：行号在文件间不连续导致备注写入错误行"
+        ],
+        "optimizations": [
+            "⚡ 优化审核回填性能：SQL LEFT JOIN 替代 Python 循环匹配"
+        ],
+        "notes": [
+            "📌 升级用户首次启动弹窗询问是否清空旧数据（点击「是」清空历史，「否」迁移旧记录）"
         ]
     },
     {
@@ -477,6 +481,8 @@ def get_version_history_text():
             lines.append(f"  ⚡ {opt}")
         for les in v.get('lessons', []):
             lines.append(f"  📌 {les}")
+        for note in v.get('notes', []):
+            lines.append(f"  📌 {note}")
 
         # 旧格式兼容：changes 数组（根据前缀符号判断类型）
         for change in v.get('changes', []):
