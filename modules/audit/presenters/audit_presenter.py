@@ -1,4 +1,5 @@
 ﻿# modules/audit/presenters/audit_presenter.py
+import os
 import threading
 from typing import Any, Dict, Optional, List
 
@@ -363,24 +364,57 @@ class AuditPresenter:
             df_to_audit, rule_engine_snapshot, progress_callback, cancel_flag
         )
 
-    def generate_ppt(self, excel_path: str, output_path: str):
-        """生成PPT报告
+    def generate_ppt(self, excel_path: str, output_path: str, log_cb=None):
+        """生成PPT报告（纯逻辑，不含UI交互；由 View 层异步调用）
 
         Args:
             excel_path: 分析结果Excel路径
             output_path: PPT输出路径
+            log_cb: 可选日志回调，缺省时使用 self.view.log
         """
-        self.view.log("正在生成PPT...", "info")
+        _log = log_cb or self.view.log
+        _log("正在生成PPT...", "info")
         try:
-            from ppt_generator import generate_ppt as _gen_ppt
-            _gen_ppt(excel_path, output_path)
-            self.view.log("PPT生成完成", "success")
-            self.view.show_info("完成", f"PPT已生成: {output_path}")
+            from ppt_generator import run_ppt_generation as _run_ppt
+            _run_ppt(excel_path, output_path, log_cb=_log)
+            _log("PPT生成完成", "success")
             return True
         except Exception as e:
-            self.view.log(f"PPT生成失败: {e}", "error")
-            self.view.show_error("错误", f"PPT生成失败: {e}")
-            return False
+            _log(f"PPT生成失败: {e}", "error")
+            raise
+
+    def generate_excel_direct(self, input_file: str, output_path: str,
+                               alt_pairs=None, start_date=None, end_date=None,
+                               material_search=None, log_cb=None):
+        """生成偏差分析 Excel 表格（纯逻辑，不含文件对话框；由 View 层异步调用）
+
+        Args:
+            input_file: 原始输入文件路径
+            output_path: 目标 Excel 路径
+            alt_pairs: 替代料配置字典
+            start_date: 筛选起始日期（可选）
+            end_date: 筛选截止日期（可选）
+            material_search: 物料关键字筛选（可选）
+            log_cb: 日志回调
+        """
+        _log = log_cb or self.view.log
+        _log(f"[DEBUG] 生成表格线程启动，输出路径：{output_path}", "info")
+        from analysis import do_analysis_v2
+        result = do_analysis_v2(
+            input_file=input_file,
+            output_dir=os.path.dirname(output_path),
+            alt_pairs=alt_pairs or {},
+            progress_callback=lambda *a: None,
+            cancel_check=None,
+            start_date=start_date,
+            end_date=end_date,
+            material_search=material_search,
+            output_path=output_path,
+        )
+        if result is None:
+            raise RuntimeError("do_analysis_v2 返回了 None，分析过程可能出错")
+        _log(f"[DEBUG] do_analysis_v2 返回：{result}", "info")
+        return result
 
     def generate_excel(self, output_path: str):
         """生成审核Excel表格
