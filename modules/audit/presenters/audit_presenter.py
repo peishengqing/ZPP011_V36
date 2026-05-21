@@ -1,4 +1,4 @@
-# modules/audit/presenters/audit_presenter.py
+﻿# modules/audit/presenters/audit_presenter.py
 import threading
 from typing import Any, Dict, Optional, List
 
@@ -181,9 +181,40 @@ class AuditPresenter:
                        '绝对值>10%': rv.abs() > 10, '<-10%': rv < -10, '<-20%': rv < -20}
                 if val in ops:
                     df = df[ops[val]]
+            elif key == 'remark':
+                # 备注筛选：动态定位列名，标准化空值后匹配
+                remark_col = next(
+                    (c for c in ['备注原因', '备注', 'remark'] if c in df.columns), None
+                )
+                if remark_col is not None:
+                    temp = df[remark_col].fillna('').astype(str).str.strip().replace('nan', '')
+                    if val == '为空':
+                        df = df[temp == '']
+                    elif val == '不为空':
+                        df = df[temp != '']
+                    else:
+                        # 精确文本匹配
+                        df = df[temp == val]
             else:
                 if col_name in df.columns:
                     df = df[df[col_name].astype(str).str.contains(val, case=False, na=False)]
+
+
+        # 6) AI审核结果筛选（_on_filter_changed 迁移）
+        ai_result = filters.get('ai_result')
+        if ai_result and ai_result != '全部':
+            remark_src_col = next((c for c in ['审核来源', 'audit_source'] if c in df.columns), None)
+            if remark_src_col:
+                if ai_result == '合格':
+                    df = df[df[remark_src_col] == '审核合格']
+                elif ai_result == '需改进':
+                    df = df[df[remark_src_col] == '审核待改进']
+                elif ai_result == 'AI建议':
+                    df = df[df[remark_src_col].str.startswith('AI建议', na=False)]
+                elif ai_result == '未处理':
+                    ai_sources = {'审核合格', '审核待改进', 'AI建议', 'AI建议（小偏差）'}
+                    df = df[~(df[remark_src_col].isin(ai_sources) | df[remark_src_col].isna())]
+
 
         return df
 
@@ -325,34 +356,12 @@ class AuditPresenter:
         except Exception as e:
             self.view.log(f"保存失败: {e}", "error")
             raise
-    def auto_close(self):
-        """启动自动结案（通过View协调异步执行）
-
-        前置检查和业务逻辑在Presenter中，
-        异步执行和UI更新通过View接口协调。
-        """
-        audit_data = self.view.get_audit_data()
-        if audit_data is None or audit_data.empty:
-            self.view.show_warning("警告", "没有数据可操作")
-            return False
-
-        # 检查是否已在运行（通过View查询状态）
-        if hasattr(self.view, '_is_auto_closing') and self.view._is_auto_closing:
-            self.view.show_warning("提示", "自动结案任务进行中，请勿重复操作")
-            return False
-
-        self.view.log("启动自动结案...", "info")
-        self.view.update_progress(0, "正在执行自动结案...")
-
-        # 通知View启动异步任务（View负责创建线程和回调）
-        # View应调用 core/auto_closer.py 的 AutoCloser.process()
-        try:
-            self.view.start_auto_close_task()
-            return True
-        except Exception as e:
-            self.view.log(f"启动自动结案失败: {e}", "error")
-            self.view.show_error("错误", f"启动自动结案失败: {e}")
-            return False
+    def auto_close(self, df_to_audit, rule_engine_snapshot, progress_callback, cancel_flag):
+        """自动结案核心逻辑（委托 AutoCloser.process）"""
+        from core.auto_closer import AutoCloser
+        return AutoCloser.process(
+            df_to_audit, rule_engine_snapshot, progress_callback, cancel_flag
+        )
 
     def generate_ppt(self, excel_path: str, output_path: str):
         """生成PPT报告
