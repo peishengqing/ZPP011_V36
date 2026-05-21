@@ -1,5 +1,6 @@
 ﻿# modules/audit/presenters/audit_presenter.py
 import os
+import pandas as pd
 import threading
 from typing import Any, Dict, Optional, List
 
@@ -364,114 +365,906 @@ class AuditPresenter:
             df_to_audit, rule_engine_snapshot, progress_callback, cancel_flag
         )
 
-    def generate_ppt(self, excel_path: str, output_path: str, log_cb=None):
-        """生成PPT报告（纯逻辑，不含UI交互；由 View 层异步调用）
 
-        Args:
-            excel_path: 分析结果Excel路径
-            output_path: PPT输出路径
-            log_cb: 可选日志回调，缺省时使用 self.view.log
+    # ========== PPT 生成优化 v1.2 实现 ==========
+
+    def _classify_material_type(self, material_code):
+        """物料类型分类（Slide 10 专用）
+        
+        编码前缀 100/400 -> 原材料
+        编码前缀 200/600 -> 包材
+        其他 -> 其他
         """
-        _log = log_cb or self.view.log
-        _log("正在生成PPT...", "info")
-        try:
-            from ppt_generator import run_ppt_generation as _run_ppt
-            _run_ppt(excel_path, output_path, log_cb=_log)
-            _log("PPT生成完成", "success")
-            return True
-        except Exception as e:
-            _log(f"PPT生成失败: {e}", "error")
-            raise
+        if not material_code or not isinstance(material_code, str):
+            return '其他'
+        prefix = str(material_code).strip()[:3]
+        if prefix in ('100', '400'):
+            return '原材料'
+        elif prefix in ('200', '600'):
+            return '包材'
+        return '其他'
 
-    def generate_excel_direct(self, input_file: str, output_path: str,
-                               alt_pairs=None, start_date=None, end_date=None,
-                               material_search=None, log_cb=None):
-        """生成偏差分析 Excel 表格（纯逻辑，不含文件对话框；由 View 层异步调用）
+    def _pre_aggregate_data(self, df):
+        """一次性计算所有聚合结果（避免重复查询 DataFrame）"""
+        import pandas as pd
+        import numpy as np
 
-        Args:
-            input_file: 原始输入文件路径
-            output_path: 目标 Excel 路径
-            alt_pairs: 替代料配置字典
-            start_date: 筛选起始日期（可选）
-            end_date: 筛选截止日期（可选）
-            material_search: 物料关键字筛选（可选）
-            log_cb: 日志回调
-        """
-        _log = log_cb or self.view.log
-        _log(f"[DEBUG] 生成表格线程启动，输出路径：{output_path}", "info")
-        from analysis import do_analysis_v2
-        result = do_analysis_v2(
-            input_file=input_file,
-            output_dir=os.path.dirname(output_path),
-            alt_pairs=alt_pairs or {},
-            progress_callback=lambda *a: None,
-            cancel_check=None,
-            start_date=start_date,
-            end_date=end_date,
-            material_search=material_search,
-            output_path=output_path,
-        )
-        if result is None:
-            raise RuntimeError("do_analysis_v2 返回了 None，分析过程可能出错")
-        _log(f"[DEBUG] do_analysis_v2 返回：{result}", "info")
-        return result
+        pre = {}
 
-    def generate_excel(self, output_path: str):
-        """生成审核Excel表格
+        # ----- 标准化列名 -----
+        COL_MAP = {}
+        for target, candidates in [
+            ('工厂', ['工厂', 'factory']),
+            ('车间', ['车间', 'workshop']),
+            ('偏差金额', ['偏差金额', '金额', 'dev_amount']),
+            ('偏差率', ['偏差率(%)', '偏差率', 'dev_rate']),
+            ('物料编码', ['物料编码', 'material_code']),
+            ('物料名称', ['组件物料描述', '物料名称', 'material_name', '物料描述']),
+            ('备注原因', ['备注原因', '备注', 'remark']),
+            ('偏差类型', ['偏差类型', 'dev_type']),
+            ('定额', ['数量 - 定额', '定额数量', 'quota']),
+            ('实际', ['数量 - 实际', '实际数量', 'actual']),
+        ]:
+            for c in candidates:
+                if c in df.columns:
+                    COL_MAP[target] = c
+                    break
 
-        Args:
-            output_path: 输出路径
-        """
-        self.view.log("正在生成审核Excel...", "info")
-        try:
-            audit_data = self.view.get_audit_data()
-            if audit_data is None or audit_data.empty:
-                self.view.show_warning("警告", "没有审核数据可导出")
-                return False
+        def get_col(name):
+            return COL_MAP.get(name)
 
-            from utils.helpers import standardize_remark
-            import openpyxl
+        def safe(df, col):
+            if col and col in df.columns:
+                return df[col]
+            return pd.Series(dtype=float)
 
-            wb = openpyxl.Workbook()
-            ws = wb.active
-            ws.title = "审核记录"
+        df2 = df.copy()
+        for col in ['工厂', '车间']:
+            if get_col(col) and get_col(col) in df2.columns:
+                df2[col] = df2[get_col(col)].fillna('未知')
+            else:
+                df2[col] = '未知'
+        for col in ['偏差金额', '偏差率', '定额', '实际']:
+            if get_col(col) and get_col(col) in df2.columns:
+                df2[col] = pd.to_numeric(df2[get_col(col)], errors='coerce').fillna(0)
+            else:
+                df2[col] = 0.0
 
-            # 写入表头
-            headers = [c for c in audit_data.columns]
-            ws.append(headers)
+        # ----- 动态检测工厂 -----
+        factory_col = get_col('工厂')
+        if factory_col:
+            factories = sorted(df2[factory_col].dropna().unique().tolist())
+        else:
+            factories = []
+        pre['factories'] = factories
+        pre['factory_col'] = factory_col
 
-            # 写入数据
-            for _, row in audit_data.iterrows():
-                ws.append([row.get(c, '') for c in headers])
+        # ----- 工厂维度 KPI -----
+        factory_kpis = {}
+        for fac in factories:
+            mask = df2[df2[factory_col] == fac] if factory_col else df2
+            sub = df2 if not factory_col else df2[df2[factory_col] == fac]
+            dev_amt_col = get_col('偏差金额')
+            dev_rate_col = get_col('偏差率')
+            remark_col = get_col('备注原因')
+            factory_kpis[fac] = {
+                'total_records': len(sub),
+                'total_amount': float(sub[dev_amt_col].sum()) if dev_amt_col else 0.0,
+                'avg_dev_rate': float(sub[dev_rate_col].mean()) if dev_rate_col else 0.0,
+                'high_dev_count': int((abs(sub[dev_rate_col]) > 10).sum()) if dev_rate_col else 0,
+                'no_remark_count': int(sub[remark_col].isna().sum()) if remark_col else 0,
+            }
+        pre['factory_kpis'] = factory_kpis
 
-            wb.save(output_path)
-            self.view.log(f"审核Excel已保存: {output_path}", "success")
-            self.view.show_info("完成", f"审核Excel已生成: {output_path}")
-            return True
-        except Exception as e:
-            self.view.log(f"Excel生成失败: {e}", "error")
-            self.view.show_error("错误", f"Excel生成失败: {e}")
-            return False
+        # ----- 总体 KPI -----
+        dev_amt_col = get_col('偏差金额')
+        dev_rate_col = get_col('偏差率')
+        pre['total_kpis'] = {
+            'total_records': len(df2),
+            'total_amount': float(df2[dev_amt_col].sum()) if dev_amt_col else 0.0,
+            'avg_dev_rate': float(df2[dev_rate_col].mean()) if dev_rate_col else 0.0,
+            'high_dev_count': int((abs(df2[dev_rate_col]) > 10).sum()) if dev_rate_col else 0,
+            'factories': len(factories),
+        }
 
-    # ... 其他业务逻辑
+        # ----- 物料 Top10（分工厂） -----
+        mat_name_col = get_col('物料名称')
+        mat_top10 = {}
+        for fac in factories:
+            sub = df2[df2[factory_col] == fac] if factory_col else df2
+            if mat_name_col:
+                sub2 = sub.copy()
+                sub2['_abs_amt'] = abs(sub2[dev_amt_col]) if dev_amt_col else 0
+                top = sub2.groupby(mat_name_col)['_abs_amt'].sum().nlargest(10)
+                mat_top10[fac] = top.to_dict()
+            else:
+                mat_top10[fac] = {}
+        pre['material_top10'] = mat_top10
 
-    def load_audit_data(self, audit_data: 'pd.DataFrame'):
-        """从数据库恢复审核数据
+        # ----- 车间统计（分工厂） -----
+        workshop_col = get_col('车间')
+        workshop_stats = {}
+        for fac in factories:
+            sub = df2[df2[factory_col] == fac] if factory_col else df2
+            if workshop_col:
+                top5 = sub.groupby(workshop_col)[dev_amt_col].sum().nlargest(5)
+                workshop_stats[fac] = top5.to_dict()
+            else:
+                workshop_stats[fac] = {}
+        pre['workshop_stats'] = workshop_stats
+
+        # ----- 偏差类型分布（分工厂，饼图用） -----
+        dev_type_col = get_col('偏差类型')
+        dev_type_dist = {}
+        for fac in factories:
+            sub = df2[df2[factory_col] == fac] if factory_col else df2
+            if dev_type_col:
+                dist = sub.groupby(dev_type_col)[dev_amt_col].sum()
+                dev_type_dist[fac] = dist.to_dict()
+            else:
+                dev_type_dist[fac] = {}
+        pre['dev_type_dist'] = dev_type_dist
+
+        # ----- 物料类型净偏差（Slide 10，分工厂柱状图） -----
+        mat_code_col = get_col('物料编码')
+        if mat_code_col:
+            df2['_mat_type'] = df2[mat_code_col].apply(self._classify_material_type)
+            mat_type_col = '_mat_type'
+        else:
+            df2['_mat_type'] = '其他'
+            mat_type_col = '_mat_type'
+
+        mat_type_net = {}
+        for fac in factories:
+            sub = df2[df2[factory_col] == fac] if factory_col else df2
+            net = sub.groupby(mat_type_col)[dev_amt_col].sum()
+            mat_type_net[fac] = net.to_dict()
+        pre['material_type_net'] = mat_type_net
+
+        # ----- 无备注预警（分工厂，≥5万） -----
+        remark_col = get_col('备注原因')
+        no_remark = {}
+        for fac in factories:
+            sub = df2[df2[factory_col] == fac] if factory_col else df2
+            if remark_col:
+                mask = sub[remark_col].isna() | (sub[remark_col].astype(str).str.strip() == '')
+                sub_warn = sub[mask & (abs(sub[dev_amt_col]) >= 50000)] if dev_amt_col else sub[mask]
+                no_remark[fac] = sub_warn.nlargest(10, dev_amt_col) if dev_amt_col else sub_warn.head(10)
+            else:
+                no_remark[fac] = sub.nlargest(10, dev_amt_col) if dev_amt_col else sub.head(10)
+        pre['no_remark_warning'] = no_remark
+
+        # ----- 异常预警（定额>0 且 实际=0） -----
+        quota_col = get_col('定额')
+        actual_col = get_col('实际')
+        if quota_col and actual_col:
+            abnormal = df2[(df2[quota_col] > 0) & (df2[actual_col] == 0)]
+            pre['abnormal_warning'] = abnormal
+        else:
+            pre['abnormal_warning'] = pd.DataFrame()
+
+        # ----- 高频原因（分工厂 Top5） -----
+        reason_col = get_col('备注原因')
+        freq_reasons = {}
+        for fac in factories:
+            sub = df2[df2[factory_col] == fac] if factory_col else df2
+            if reason_col:
+                reasons = sub[reason_col].dropna()
+                reasons = reasons[reasons.astype(str).str.strip() != '']
+                freq = reasons.value_counts().head(5)
+                freq_reasons[fac] = freq.to_dict()
+            else:
+                freq_reasons[fac] = {}
+        pre['freq_reasons'] = freq_reasons
+
+        return pre
+
+    def _set_slide_title(self, slide, title_text, font_size=24):
+        """设置幻灯片标题"""
+        if hasattr(slide.shapes, 'title') and slide.shapes.title:
+            slide.shapes.title.text = title_text
+        else:
+            txBox = slide.shapes.add_textbox(Inches(0.3), Inches(0.1), Inches(9.4), Inches(0.7))
+            tf = txBox.text_frame
+            p = tf.paragraphs[0]
+            p.text = title_text
+            p.font.size = Pt(font_size)
+            p.font.bold = True
+
+    def _add_page_number(self, slide, current, total):
+        """在页面右下角添加页码"""
+        txBox = slide.shapes.add_textbox(Inches(8.5), Inches(7.2), Inches(1.5), Inches(0.4))
+        tf = txBox.text_frame
+        p = tf.paragraphs[0]
+        p.text = f"第 {current} 页 / 共 {total} 页"
+        p.font.size = Pt(10)
+        p.alignment = PP_ALIGN.RIGHT
+
+    def _add_cover(self, prs, pre_data, page_num, total_pages):
+        slide = prs.slides.add_slide(prs.slide_layouts[6])  # 空白布局
+        self._set_slide_title(slide, "ZPP011 生产偏差分析报告", 36)
+
+        # 副标题/信息区
+        txBox = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(8), Inches(3))
+        tf = txBox.text_frame
+        kpis = pre_data['total_kpis']
+        lines = [
+            f"总记录数：{kpis['total_records']:,} 条",
+            f"工厂数量：{kpis['factories']} 个",
+            f"总偏差金额：{kpis['total_amount']:,.2f} 元",
+            f"平均偏差率：{kpis['avg_dev_rate']:.2f}%",
+            f"高偏差记录：{kpis['high_dev_count']} 条",
+            "",
+            f"生成时间：{pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}",
+        ]
+        for i, line in enumerate(lines):
+            p = tf.add_paragraph() if i > 0 else tf.paragraphs[0]
+            p.text = line
+            p.font.size = Pt(16) if i < len(lines) - 1 else Pt(12)
+
+        self._add_page_number(slide, page_num, total_pages)
+        return slide
+
+    def _add_toc(self, prs, pre_data, page_num, total_pages):
+        slide = prs.slides.add_slide(prs.slide_layouts[1])  # 标题+内容
+        self._set_slide_title(slide, "目  录")
+        tf = slide.placeholders[1].text_frame
+        tf.clear()
+
+        factories = pre_data['factories']
+        fac_names = ', '.join(str(f) for f in factories) if factories else ''
+
+        toc = [
+            "1. 核心指标总览",
+            "2. 工厂维度对比",
+        ]
+        # 物料 Top10
+        for fac in factories:
+            toc.append(f"3. 物料偏差 Top10 — {fac}")
+        # 偏差类型
+        toc.append(f"{2 + len(factories) + 1}. 偏差类型分布")
+        # 车间
+        for fac in factories:
+            toc.append(f"{3 + len(factories) + 1 + factories.index(fac)}. 车间详情 — {fac}")
+        base = 3 + len(factories) * 2 + 1
+        toc += [
+            f"{base}. 物料类型净偏差分布",
+        ]
+        # 无备注预警
+        for fac in factories:
+            toc.append(f"{base + 1 + factories.index(fac)}. 无备注预警 — {fac}")
+        base2 = base + 1 + len(factories)
+        toc += [
+            f"{base2 + 1}. 异常预警明细",
+            f"{base2 + 2}. 高频偏差原因",
+            f"{base2 + 3}. 总结与改进建议",
+        ]
+
+        for i, item in enumerate(toc):
+            p = tf.add_paragraph() if i > 0 else tf.paragraphs[0]
+            p.text = item
+            p.font.size = Pt(14)
+
+        self._add_page_number(slide, page_num, total_pages)
+        return slide
+
+    def _add_kpi_overview(self, prs, pre_data, page_num, total_pages):
+        slide = prs.slides.add_slide(prs.slide_layouts[1])
+        self._set_slide_title(slide, "核心指标总览")
+
+        tf = slide.placeholders[1].text_frame
+        tf.clear()
+
+        kpis = pre_data['total_kpis']
+        p = tf.paragraphs[0]
+        p.text = "【总体指标】"
+        p.font.bold = True
+        p.font.size = Pt(16)
+
+        summary_items = [
+            f"  总记录数：{kpis['total_records']:,} 条",
+            f"  总偏差金额：{kpis['total_amount']:,.2f} 元",
+            f"  平均偏差率：{kpis['avg_dev_rate']:.2f}%",
+            f"  高偏差（>10%）记录：{kpis['high_dev_count']} 条",
+            "",
+        ]
+        for item in summary_items:
+            p = tf.add_paragraph()
+            p.text = item
+            p.font.size = Pt(14)
+
+        for fac, fac_kpis in pre_data['factory_kpis'].items():
+            p = tf.add_paragraph()
+            p.text = f"【{fac}】"
+            p.font.bold = True
+            p.font.size = Pt(16)
+            for item in [
+                f"  记录数：{fac_kpis['total_records']:,}",
+                f"  偏差金额：{fac_kpis['total_amount']:,.2f} 元",
+                f"  高偏差记录：{fac_kpis['high_dev_count']}",
+                f"  无备注记录：{fac_kpis['no_remark_count']}",
+                "",
+            ]:
+                p = tf.add_paragraph()
+                p.text = item
+                p.font.size = Pt(14)
+
+        self._add_page_number(slide, page_num, total_pages)
+        return slide
+
+    def _add_factory_comparison(self, prs, pre_data, page_num, total_pages):
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        self._set_slide_title(slide, "工厂维度对比")
+        kpis = pre_data['factory_kpis']
+        factories = pre_data['factories']
+
+        rows = len(factories) + 1
+        cols = 6
+        table = slide.shapes.add_table(
+            rows, cols,
+            Inches(0.3), Inches(1.5),
+            Inches(9.4), Inches(0.4 * rows)
+        ).table
+
+        headers = ['工厂', '记录数', '偏差金额(元)', '平均偏差率(%)', '高偏差数', '无备注数']
+        for j, h in enumerate(headers):
+            cell = table.cell(0, j)
+            cell.text = h
+            cell.text_frame.paragraphs[0].font.bold = True
+
+        for i, fac in enumerate(factories, 1):
+            k = kpis.get(fac, {})
+            table.cell(i, 0).text = str(fac)
+            table.cell(i, 1).text = f"{k.get('total_records', 0):,}"
+            table.cell(i, 2).text = f"{k.get('total_amount', 0):,.2f}"
+            table.cell(i, 3).text = f"{k.get('avg_dev_rate', 0):.2f}"
+            table.cell(i, 4).text = str(k.get('high_dev_count', 0))
+            table.cell(i, 5).text = str(k.get('no_remark_count', 0))
+
+        self._add_page_number(slide, page_num, total_pages)
+        return slide
+
+    def _add_material_top10(self, prs, pre_data, factory, page_num, total_pages):
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        self._set_slide_title(slide, f"物料偏差金额 Top10 — {factory}")
+
+        top10 = pre_data['material_top10'].get(factory, {})
+
+        if not top10:
+            tf = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(8), Inches(1))
+            tf.text_frame.paragraphs[0].text = f"该工厂无有效物料记录"
+            self._add_page_number(slide, page_num, total_pages)
+            return slide
+
+        rows = len(top10) + 1
+        cols = 2
+        table = slide.shapes.add_table(
+            rows, cols,
+            Inches(1.5), Inches(1.5),
+            Inches(7), Inches(0.4 * rows)
+        ).table
+
+        table.cell(0, 0).text = '物料名称'
+        table.cell(0, 1).text = '偏差金额(元)'
+        table.cell(0, 0).text_frame.paragraphs[0].font.bold = True
+        table.cell(0, 1).text_frame.paragraphs[0].font.bold = True
+
+        for i, (name, amt) in enumerate(top10.items(), 1):
+            table.cell(i, 0).text = str(name)
+            table.cell(i, 1).text = f"{amt:,.2f}"
+
+        if len(top10) < 10:
+            note = slide.shapes.add_textbox(Inches(1.5), Inches(6.5), Inches(7), Inches(0.5))
+            note.text_frame.paragraphs[0].text = f"注：该工厂仅有 {len(top10)} 条有效物料记录"
+            note.text_frame.paragraphs[0].font.size = Pt(11)
+
+        self._add_page_number(slide, page_num, total_pages)
+        return slide
+
+    def _add_deviation_type_chart(self, prs, pre_data, page_num, total_pages):
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        self._set_slide_title(slide, "偏差类型分布")
+        factories = pre_data['factories']
+        dev_type_dist = pre_data['dev_type_dist']
+
+        if len(factories) == 2:
+            # 并排两个饼图
+            positions = [Inches(0.3), Inches(5.0)]
+        elif len(factories) == 1:
+            positions = [Inches(3.0)]
+        else:
+            positions = [Inches(0.3)]
+
+        for idx, fac in enumerate(factories):
+            dist = dev_type_dist.get(fac, {})
+            if not dist:
+                # 无数据，显示占位
+                tb = slide.shapes.add_textbox(positions[idx], Inches(1.5), Inches(4.5), Inches(0.5))
+                tb.text_frame.paragraphs[0].text = f"{fac}：无数据"
+                tb.text_frame.paragraphs[0].font.size = Pt(14)
+                continue
+
+            chart_data = CategoryChartData()
+            chart_data.categories = list(dist.keys())
+            chart_data.add_series('偏差金额', list(dist.values()))
+
+            x, y, cx, cy = positions[idx], Inches(1.2), Inches(4.5), Inches(4.0)
+            chart = slide.shapes.add_chart(
+                XL_CHART_TYPE.PIE, x, y, cx, cy, chart_data
+            ).chart
+
+            chart.has_legend = True
+            chart.legend.position = XL_LEGEND_POSITION.BOTTOM
+            chart.legend.include_in_layout = False
+
+            # 添加数据标签
+            plot = chart.plots[0]
+            plot.has_data_labels = True
+            data_labels = plot.data_labels
+            data_labels.show_percentage = True
+            data_labels.show_value = False
+            data_labels.show_category_name = False
+
+            # 标题
+            lbl = slide.shapes.add_textbox(positions[idx], Inches(5.3), Inches(4.5), Inches(0.5))
+            lbl.text_frame.paragraphs[0].text = f"{fac}"
+            lbl.text_frame.paragraphs[0].font.size = Pt(14)
+            lbl.text_frame.paragraphs[0].font.bold = True
+
+        self._add_page_number(slide, page_num, total_pages)
+        return slide
+
+    def _add_workshop_details(self, prs, pre_data, factory, page_num, total_pages):
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        self._set_slide_title(slide, f"车间偏差详情 — {factory}")
+
+        ws_stats = pre_data['workshop_stats'].get(factory, {})
+        dev_type_dist = pre_data['dev_type_dist'].get(factory, {})
+        freq_reasons = pre_data['freq_reasons'].get(factory, {})
+
+        if not ws_stats:
+            tf = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(8), Inches(1))
+            tf.text_frame.paragraphs[0].text = f"该工厂无车间级数据"
+            self._add_page_number(slide, page_num, total_pages)
+            return slide
+
+        rows = len(ws_stats) + 1
+        cols = 2
+        table = slide.shapes.add_table(
+            rows, cols,
+            Inches(0.5), Inches(1.5),
+            Inches(4.5), Inches(0.4 * rows)
+        ).table
+
+        table.cell(0, 0).text = '车间'
+        table.cell(0, 1).text = '偏差金额(元)'
+        table.cell(0, 0).text_frame.paragraphs[0].font.bold = True
+        table.cell(0, 1).text_frame.paragraphs[0].font.bold = True
+
+        for i, (ws, amt) in enumerate(ws_stats.items(), 1):
+            table.cell(i, 0).text = str(ws)
+            table.cell(i, 1).text = f"{amt:,.2f}"
+
+        # 净偏差柱状图（Top5 车间）
+        if ws_stats:
+            chart_data = CategoryChartData()
+            top5 = sorted(ws_stats.items(), key=lambda x: abs(x[1]), reverse=True)[:5]
+            chart_data.categories = [str(k) for k, v in top5]
+            chart_data.add_series('偏差金额', [abs(v) for k, v in top5])
+            chart = slide.shapes.add_chart(
+                XL_CHART_TYPE.COLUMN_CLUSTERED,
+                Inches(5.2), Inches(1.5), Inches(4.2), Inches(3.5),
+                chart_data
+            ).chart
+            chart.has_legend = False
+
+        # 高频原因（右侧下方）
+        if freq_reasons:
+            tb = slide.shapes.add_textbox(Inches(5.2), Inches(5.2), Inches(4.2), Inches(2))
+            tf = tb.text_frame
+            tf.word_wrap = True
+            p = tf.paragraphs[0]
+            p.text = "Top5 偏差原因："
+            p.font.bold = True
+            p.font.size = Pt(11)
+            for reason, count in list(freq_reasons.items())[:5]:
+                p = tf.add_paragraph()
+                p.text = f"  {reason} ({count}次)"
+                p.font.size = Pt(10)
+
+        self._add_page_number(slide, page_num, total_pages)
+        return slide
+
+    def _add_material_type_net(self, prs, pre_data, page_num, total_pages):
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        self._set_slide_title(slide, "物料类型净偏差分布（Slide 10）")
+
+        mat_type_net = pre_data['material_type_net']
+        factories = pre_data['factories']
+
+        # 收集所有物料类型
+        all_types = set()
+        for fac_net in mat_type_net.values():
+            all_types.update(fac_net.keys())
+        all_types = sorted(all_types)
+
+        if not all_types:
+            tf = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(8), Inches(1))
+            tf.text_frame.paragraphs[0].text = "无物料类型数据"
+            self._add_page_number(slide, page_num, total_pages)
+            return slide
+
+        # 柱状图
+        chart_data = CategoryChartData()
+        chart_data.categories = all_types
+        for fac in factories:
+            net = mat_type_net.get(fac, {})
+            chart_data.add_series(str(fac), [net.get(t, 0) for t in all_types])
+
+        chart = slide.shapes.add_chart(
+            XL_CHART_TYPE.COLUMN_CLUSTERED,
+            Inches(0.5), Inches(1.5), Inches(9), Inches(4.5),
+            chart_data
+        ).chart
+        chart.has_legend = True
+        chart.legend.position = XL_LEGEND_POSITION.BOTTOM
+
+        # 表格备用
+        rows = len(all_types) + 1
+        cols = len(factories) + 1
+        if cols <= 6:
+            tbl = slide.shapes.add_table(
+                rows, cols,
+                Inches(0.5), Inches(6.2),
+                Inches(9), Inches(0.3 * rows)
+            ).table
+            tbl.cell(0, 0).text = '物料类型'
+            tbl.cell(0, 0).text_frame.paragraphs[0].font.bold = True
+            for j, fac in enumerate(factories, 1):
+                tbl.cell(0, j).text = str(fac)
+                tbl.cell(0, j).text_frame.paragraphs[0].font.bold = True
+            for i, mtype in enumerate(all_types, 1):
+                tbl.cell(i, 0).text = mtype
+                for j, fac in enumerate(factories, 1):
+                    val = mat_type_net.get(fac, {}).get(mtype, 0)
+                    tbl.cell(i, j).text = f"{val:,.2f}"
+
+        self._add_page_number(slide, page_num, total_pages)
+        return slide
+
+    def _add_no_remark_warning(self, prs, pre_data, factory, page_num, total_pages):
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        self._set_slide_title(slide, f"无备注预警 Top10 — {factory}（≥5万元）")
+
+        warn_df = pre_data['no_remark_warning'].get(factory, pd.DataFrame())
+
+        if warn_df.empty:
+            tf = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(8), Inches(1))
+            tf.text_frame.paragraphs[0].text = f"该工厂无≥5万元的无备注记录"
+            self._add_page_number(slide, page_num, total_pages)
+            return slide
+
+        COL_MAP = {}
+        for target, candidates in [
+            ('物料名称', ['组件物料描述', '物料名称', '物料描述']),
+            ('车间', ['车间', 'workshop']),
+            ('偏差金额', ['偏差金额', '金额']),
+            ('偏差率', ['偏差率(%)', '偏差率']),
+        ]:
+            for c in candidates:
+                if c in warn_df.columns:
+                    COL_MAP[target] = c
+                    break
+
+        mat_col = COL_MAP.get('物料名称')
+        ws_col = COL_MAP.get('车间')
+        amt_col = COL_MAP.get('偏差金额')
+        rate_col = COL_MAP.get('偏差率')
+
+        rows = min(len(warn_df), 10) + 1
+        cols = 4
+        table = slide.shapes.add_table(
+            rows, cols,
+            Inches(0.3), Inches(1.5),
+            Inches(9.4), Inches(0.4 * rows)
+        ).table
+
+        headers = ['物料名称', '车间', '偏差金额(元)', '偏差率(%)']
+        for j, h in enumerate(headers):
+            table.cell(0, j).text = h
+            table.cell(0, j).text_frame.paragraphs[0].font.bold = True
+
+        for i, (_, row) in enumerate(warn_df.iterrows(), 1):
+            table.cell(i, 0).text = str(row.get(mat_col, ''))[:50]
+            table.cell(i, 1).text = str(row.get(ws_col, ''))
+            table.cell(i, 2).text = f"{row.get(amt_col, 0):,.2f}"
+            table.cell(i, 3).text = f"{row.get(rate_col, 0):.2f}"
+
+        self._add_page_number(slide, page_num, total_pages)
+        return slide
+
+    def _add_abnormal_warning(self, prs, pre_data, page_num, total_pages):
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        self._set_slide_title(slide, "异常预警明细（定额>0 且 实际=0）")
+
+        abnormal_df = pre_data.get('abnormal_warning', pd.DataFrame())
+
+        if abnormal_df.empty:
+            tf = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(8), Inches(1))
+            tf.text_frame.paragraphs[0].text = "无异常预警记录"
+            self._add_page_number(slide, page_num, total_pages)
+            return slide
+
+        display_df = abnormal_df.head(20)
+        factories = pre_data['factories']
+        factory_col = pre_data.get('factory_col')
+
+        COL_MAP = {}
+        for target, candidates in [
+            ('物料名称', ['组件物料描述', '物料名称', '物料描述']),
+            ('车间', ['车间', 'workshop']),
+            ('定额', ['数量 - 定额', '定额数量', 'quota']),
+            ('实际', ['数量 - 实际', '实际数量', 'actual']),
+        ]:
+            for c in candidates:
+                if c in display_df.columns:
+                    COL_MAP[target] = c
+                    break
+
+        mat_col = COL_MAP.get('物料名称')
+        ws_col = COL_MAP.get('车间')
+        quota_col = COL_MAP.get('定额')
+        actual_col = COL_MAP.get('实际')
+
+        cols = 5
+        rows = len(display_df) + 1
+        table = slide.shapes.add_table(
+            rows, cols,
+            Inches(0.3), Inches(1.5),
+            Inches(9.4), Inches(0.35 * rows)
+        ).table
+
+        headers = ['工厂', '车间', '物料名称', '定额', '实际']
+        for j, h in enumerate(headers):
+            table.cell(0, j).text = h
+            table.cell(0, j).text_frame.paragraphs[0].font.bold = True
+
+        for i, (_, row) in enumerate(display_df.iterrows(), 1):
+            factory_val = str(row.get(factory_col, '')) if factory_col else ''
+            table.cell(i, 0).text = factory_val
+            table.cell(i, 1).text = str(row.get(ws_col, ''))
+            table.cell(i, 2).text = str(row.get(mat_col, ''))[:40]
+            table.cell(i, 3).text = str(row.get(quota_col, 0))
+            table.cell(i, 4).text = str(row.get(actual_col, 0))
+
+        if len(abnormal_df) > 20:
+            note = slide.shapes.add_textbox(Inches(0.3), Inches(7.0), Inches(9.4), Inches(0.5))
+            note.text_frame.paragraphs[0].text = f"注：共 {len(abnormal_df)} 条异常记录，仅显示前 20 条"
+            note.text_frame.paragraphs[0].font.size = Pt(10)
+
+        self._add_page_number(slide, page_num, total_pages)
+        return slide
+
+    def _add_freq_reason(self, prs, pre_data, page_num, total_pages):
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        self._set_slide_title(slide, "高频偏差原因对比")
+        factories = pre_data['factories']
+        freq_reasons = pre_data['freq_reasons']
+
+        if not freq_reasons or not any(freq_reasons.values()):
+            tf = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(8), Inches(1))
+            tf.text_frame.paragraphs[0].text = "无偏差原因数据"
+            self._add_page_number(slide, page_num, total_pages)
+            return slide
+
+        if len(factories) == 2:
+            positions = [Inches(0.3), Inches(5.0)]
+        elif len(factories) == 1:
+            positions = [Inches(2)]
+        else:
+            positions = [Inches(0.3)]
+
+        for idx, fac in enumerate(factories):
+            reasons = freq_reasons.get(fac, {})
+            if not reasons:
+                tb = slide.shapes.add_textbox(positions[idx], Inches(1.5), Inches(4.5), Inches(0.5))
+                tb.text_frame.paragraphs[0].text = f"{fac}：无数据"
+                continue
+
+            rows = len(reasons) + 1
+            table = slide.shapes.add_table(
+                rows, 2,
+                positions[idx], Inches(1.5),
+                Inches(4.5), Inches(0.4 * rows)
+            ).table
+            table.cell(0, 0).text = f'{fac} Top5 原因'
+            table.cell(0, 0).text_frame.paragraphs[0].font.bold = True
+            table.cell(0, 1).text = '次数'
+            table.cell(0, 1).text_frame.paragraphs[0].font.bold = True
+            for i, (reason, count) in enumerate(reasons.items(), 1):
+                table.cell(i, 0).text = str(reason)[:50]
+                table.cell(i, 1).text = str(count)
+
+        self._add_page_number(slide, page_num, total_pages)
+        return slide
+
+    def _add_summary(self, prs, pre_data, page_num, total_pages):
+        slide = prs.slides.add_slide(prs.slide_layouts[1])
+        self._set_slide_title(slide, "总结与改进建议")
+
+        tf = slide.placeholders[1].text_frame
+        tf.clear()
+
+        kpis = pre_data['total_kpis']
+        p = tf.paragraphs[0]
+        p.text = "【总体发现】"
+        p.font.bold = True
+        p.font.size = Pt(16)
+
+        for item in [
+            f"  总记录数：{kpis['total_records']:,} 条，分布在 {kpis['factories']} 个工厂",
+            f"  总偏差金额：{kpis['total_amount']:,.2f} 元",
+            f"  高偏差（>10%）记录：{kpis['high_dev_count']} 条",
+            "",
+        ]:
+            p = tf.add_paragraph()
+            p.text = item
+            p.font.size = Pt(13)
+
+        for fac, fac_kpis in pre_data['factory_kpis'].items():
+            p = tf.add_paragraph()
+            p.text = f"【{fac} 专项建议】"
+            p.font.bold = True
+            p.font.size = Pt(16)
+            for item in [
+                f"  无备注记录：{fac_kpis['no_remark_count']} 条，需优先补充",
+                f"  高偏差物料：见 Top10 页面，重点关注偏差率>10%的物料",
+                "  建议：组织车间级物料管控培训，完善领料流程",
+                "",
+            ]:
+                p = tf.add_paragraph()
+                p.text = item
+                p.font.size = Pt(13)
+
+        self._add_page_number(slide, page_num, total_pages)
+        return slide
+
+    def generate_ppt(self, output_path: str = None, progress_callback=None):
+        """生成 PPT 报告（v1.2 优化版，直接读取当前审核数据）
         
         Args:
-            audit_data: 当前审核数据 DataFrame（用于回填）
+            output_path: PPT 输出路径（若为 None，从 View 获取 output_path）
+            progress_callback: 进度回调函数 (0-100)
         
         Returns:
-            restored_count: 恢复的记录数
+            output_path: 生成的 PPT 文件路径
         """
-        self.view.log("从数据库恢复审核数据...", "info")
-        
-        try:
-            # 调用 Model 层恢复数据
-            restored_count = self.model.restore_audit_from_db(audit_data, log_cb=self.view.log)
-            self.view.log(f"已恢复 {restored_count} 条审核记录", "success")
-            return restored_count
-        
-        except Exception as e:
-            self.view.log(f"恢复失败: {e}", "error")
-            raise
+        import pandas as pd
+        from pptx import Presentation
+
+        # 1. 获取当前 DataFrame
+        df = self.view.get_audit_data()
+        if df is None or df.empty:
+            raise ValueError("当前无审核数据，无法生成 PPT")
+
+        if len(df) > 50000:
+            raise Exception("数据量超过 5 万条，请缩小范围")
+
+        # 2. 确定输出路径
+        if output_path is None:
+            import os
+            out_dir = self.view.get_output_path()
+            if out_dir:
+                base = os.path.splitext(os.path.basename(out_dir))[0]
+            else:
+                base = "ZPP011偏差分析"
+            out_dir = os.path.join(os.getcwd(), 'output', 'pptx')
+            os.makedirs(out_dir, exist_ok=True)
+            import datetime
+            date_tag = datetime.datetime.now().strftime('%Y%m%d_%H%M')
+            output_path = os.path.join(out_dir, f"ZPP011偏差分析_{date_tag}.pptx")
+
+        # 3. 数据预处理
+        pre_data = self._pre_aggregate_data(df)
+        factories = pre_data['factories']
+
+        # 4. 加载模板（fallback 机制）
+        import os
+        template_path = os.path.join(os.getcwd(), 'config', 'template.pptx')
+        if os.path.exists(template_path):
+            prs = Presentation(template_path)
+        else:
+            prs = Presentation()
+
+        # 5. 构建页面生成顺序（动态工厂数量）
+        pages = []
+
+        # P1 封面
+        pages.append(('cover', None))
+        # P2 目录
+        pages.append(('toc', None))
+
+        if not factories:
+            # 无工厂数据时添加占位页
+            pages.append(('text', ('无数据', '无有效工厂数据')))
+
+        # P3 核心指标
+        pages.append(('kpi', None))
+        # P4 工厂对比
+        pages.append(('factory_cmp', None))
+
+        # 物料 Top10（每工厂一页）
+        for fac in factories:
+            pages.append(('mat_top10', fac))
+
+        # 偏差类型饼图
+        pages.append(('dev_type_chart', None))
+
+        # 车间详情（每工厂一页）
+        for fac in factories:
+            pages.append(('workshop', fac))
+
+        # Slide 10 物料类型净偏差
+        pages.append(('mat_type_net', None))
+
+        # 无备注预警（每工厂一页）
+        for fac in factories:
+            pages.append(('no_remark', fac))
+
+        # 异常预警
+        pages.append(('abnormal', None))
+
+        # 高频原因
+        pages.append(('freq_reason', None))
+
+        # 总结
+        pages.append(('summary', None))
+
+        total_pages = len(pages)
+
+        # 6. 按顺序生成页面
+        for i, (page_type, factory) in enumerate(pages):
+            try:
+                if page_type == 'cover':
+                    self._add_cover(prs, pre_data, i+1, total_pages)
+                elif page_type == 'toc':
+                    self._add_toc(prs, pre_data, i+1, total_pages)
+                elif page_type == 'kpi':
+                    self._add_kpi_overview(prs, pre_data, i+1, total_pages)
+                elif page_type == 'factory_cmp':
+                    self._add_factory_comparison(prs, pre_data, i+1, total_pages)
+                elif page_type == 'mat_top10':
+                    self._add_material_top10(prs, pre_data, factory, i+1, total_pages)
+                elif page_type == 'dev_type_chart':
+                    self._add_deviation_type_chart(prs, pre_data, i+1, total_pages)
+                elif page_type == 'workshop':
+                    self._add_workshop_details(prs, pre_data, factory, i+1, total_pages)
+                elif page_type == 'mat_type_net':
+                    self._add_material_type_net(prs, pre_data, i+1, total_pages)
+                elif page_type == 'no_remark':
+                    self._add_no_remark_warning(prs, pre_data, factory, i+1, total_pages)
+                elif page_type == 'abnormal':
+                    self._add_abnormal_warning(prs, pre_data, i+1, total_pages)
+                elif page_type == 'freq_reason':
+                    self._add_freq_reason(prs, pre_data, i+1, total_pages)
+                elif page_type == 'summary':
+                    self._add_summary(prs, pre_data, i+1, total_pages)
+                elif page_type == 'text':
+                    title, msg = factory if factory else ('无数据', '')
+                    slide = prs.slides.add_slide(prs.slide_layouts[6])
+                    self._set_slide_title(slide, title)
+                    tb = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(8), Inches(1))
+                    tb.text_frame.paragraphs[0].text = msg
+                    self._add_page_number(slide, i+1, total_pages)
+            except Exception as e:
+                self.view.log(f"[PPT] 生成第{i+1}页失败: {e}", "warn")
+
+            if progress_callback:
+                progress_callback(int((i + 1) / total_pages * 100))
+
+        # 7. 保存
+        os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
+        prs.save(output_path)
+        self.view.log(f"[PPT] 已生成: {output_path}", "success")
+        return output_path
+

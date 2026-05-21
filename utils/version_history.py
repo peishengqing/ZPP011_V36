@@ -14,6 +14,24 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v37.45",
+        "date": "2026-05-22",
+        "build_datetime": "2026-05-22 00:18:00",
+        "features": [
+            "PPT v1.2: DataFrame direct input, no Excel path, global pd import"
+        ],
+        "fixes": [
+            "_pre_aggregate_data missing pd import -> global import pandas as pd",
+            "tests: 19/19 passed"
+        ],
+        "optimizations": [
+            "PPT progress 0-100%%, 20 stages, 9889 rows <30s"
+        ],
+        "notes": [
+            "TASK-001: PPT Gen v1.2"
+        ]
+    },
+    {
         "version": "v37.44",
         "date": "2026-05-20",
         "build_datetime": "2026-05-20 23:45:50",
