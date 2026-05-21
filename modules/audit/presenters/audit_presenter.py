@@ -98,10 +98,94 @@ class AuditPresenter:
         self.cancel_req = True
         self.view.log("取消请求已发送", "warn")
 
-    def filter_audit_data(self, filters: Dict[str, Any]):
-        """筛选数据并刷新视图"""
-        # TODO: 迁移原 _filter_by_stat, _on_filter_changed 逻辑
-        pass
+    def filter_audit_data(self, filters: Dict[str, Any]) -> 'pd.DataFrame':
+        """筛选审核数据（纯业务逻辑，不操作UI）
+
+        Args:
+            filters: dict with keys: stat, color, search, order_date, columns,
+                     factory, admin, name, status, dev_rate, is_alt, remark
+        Returns:
+            Filtered DataFrame
+        """
+        import pandas as pd
+        audit_data = self.view.get_audit_data()
+        if audit_data is None or len(audit_data) == 0:
+            return audit_data
+
+        df = audit_data.copy()
+
+        # 1) Stat card filter
+        stat = filters.get('stat')
+        if stat == 'big_dev':
+            rc = next((c for c in ['偏差率(%)', '偏差率'] if c in df.columns), None)
+            if rc:
+                df = df[pd.to_numeric(df[rc], errors='coerce').abs() > 10]
+        elif stat == 'no_note':
+            rc = next((c for c in ['备注原因', '备注'] if c in df.columns), '备注原因')
+            df = df[df[rc].isna() | (df[rc].astype(str).str.strip() == '')]
+        elif stat == 'approved':
+            rc = next((c for c in ['备注原因', '备注'] if c in df.columns), '备注原因')
+            df = df[df[rc].notna() & (df[rc].astype(str).str.strip() != '')]
+
+        # 2) Color filter
+        color = filters.get('color')
+        if color and color != '全部' and '_priority_label' in df.columns:
+            cmap = {'红': '红', '橙': '橙', '黄': '黄', '绿': '绿'}
+            df = df[df['_priority_label'] == cmap.get(color, color)]
+
+        # 3) Full-text search
+        search = filters.get('search', '').strip()
+        if search:
+            mask = pd.Series(False, index=df.index)
+            for col in df.columns:
+                mask |= df[col].astype(str).str.contains(search, case=False, na=False)
+            df = df[mask]
+
+        # 4) Date range
+        od = filters.get('order_date')
+        if od and '订单日期' in df.columns:
+            s, e = od
+            if s:
+                df = df[df['订单日期'].astype(str).str[:10] >= s]
+            if e:
+                df = df[df['订单日期'].astype(str).str[:10] <= e]
+
+        # 5) Field filters
+        col_map = filters.get('columns', {})
+        for key, col_name in col_map.items():
+            val = filters.get(key)
+            if not val or val == '全部' or col_name is None:
+                continue
+            if key == 'is_alt':
+                alt_pairs = self.view.get_alt_pairs()
+                descs = set()
+                for a, b in alt_pairs:
+                    for item in (a, b):
+                        if isinstance(item, (list, tuple)) and len(item) >= 3:
+                            d = str(item[2]).strip()
+                        elif isinstance(item, (list, tuple)):
+                            d = str(item[1]).strip() if len(item) > 1 and item[1] else ''
+                        else:
+                            d = str(item).strip() if item else ''
+                        if d and d != 'None':
+                            descs.add(d)
+                dc = next((c for c in ['组件物料描述', '物料名称'] if c in df.columns), None)
+                if dc:
+                    if val == '是':
+                        df = df[df[dc].astype(str).str.strip().isin(descs)]
+                    elif val == '否':
+                        df = df[~df[dc].astype(str).str.strip().isin(descs)]
+            elif key == 'dev_rate':
+                rv = pd.to_numeric(df[col_name], errors='coerce')
+                ops = {'>10%': rv > 10, '>20%': rv > 20, '>30%': rv > 30,
+                       '绝对值>10%': rv.abs() > 10, '<-10%': rv < -10, '<-20%': rv < -20}
+                if val in ops:
+                    df = df[ops[val]]
+            else:
+                if col_name in df.columns:
+                    df = df[df[col_name].astype(str).str.contains(val, case=False, na=False)]
+
+        return df
 
     def run_ai_audit(self):
         """AI审核：启动异步审核流程（从 events.py 迁移）
@@ -242,19 +326,89 @@ class AuditPresenter:
             self.view.log(f"保存失败: {e}", "error")
             raise
     def auto_close(self):
-        """自动结案"""
-        # TODO: 迁移原 _auto_close 逻辑
-        pass
+        """启动自动结案（通过View协调异步执行）
+
+        前置检查和业务逻辑在Presenter中，
+        异步执行和UI更新通过View接口协调。
+        """
+        audit_data = self.view.get_audit_data()
+        if audit_data is None or audit_data.empty:
+            self.view.show_warning("警告", "没有数据可操作")
+            return False
+
+        # 检查是否已在运行（通过View查询状态）
+        if hasattr(self.view, '_is_auto_closing') and self.view._is_auto_closing:
+            self.view.show_warning("提示", "自动结案任务进行中，请勿重复操作")
+            return False
+
+        self.view.log("启动自动结案...", "info")
+        self.view.update_progress(0, "正在执行自动结案...")
+
+        # 通知View启动异步任务（View负责创建线程和回调）
+        # View应调用 core/auto_closer.py 的 AutoCloser.process()
+        try:
+            self.view.start_auto_close_task()
+            return True
+        except Exception as e:
+            self.view.log(f"启动自动结案失败: {e}", "error")
+            self.view.show_error("错误", f"启动自动结案失败: {e}")
+            return False
 
     def generate_ppt(self, excel_path: str, output_path: str):
-        """生成 PPT"""
-        # TODO: 迁移原 generate_ppt 逻辑
-        pass
+        """生成PPT报告
+
+        Args:
+            excel_path: 分析结果Excel路径
+            output_path: PPT输出路径
+        """
+        self.view.log("正在生成PPT...", "info")
+        try:
+            from ppt_generator import generate_ppt as _gen_ppt
+            _gen_ppt(excel_path, output_path)
+            self.view.log("PPT生成完成", "success")
+            self.view.show_info("完成", f"PPT已生成: {output_path}")
+            return True
+        except Exception as e:
+            self.view.log(f"PPT生成失败: {e}", "error")
+            self.view.show_error("错误", f"PPT生成失败: {e}")
+            return False
 
     def generate_excel(self, output_path: str):
-        """生成 Excel 表格"""
-        # TODO: 迁移原 generate_excel_direct 逻辑
-        pass
+        """生成审核Excel表格
+
+        Args:
+            output_path: 输出路径
+        """
+        self.view.log("正在生成审核Excel...", "info")
+        try:
+            audit_data = self.view.get_audit_data()
+            if audit_data is None or audit_data.empty:
+                self.view.show_warning("警告", "没有审核数据可导出")
+                return False
+
+            from utils.helpers import standardize_remark
+            import openpyxl
+
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "审核记录"
+
+            # 写入表头
+            headers = [c for c in audit_data.columns]
+            ws.append(headers)
+
+            # 写入数据
+            for _, row in audit_data.iterrows():
+                ws.append([row.get(c, '') for c in headers])
+
+            wb.save(output_path)
+            self.view.log(f"审核Excel已保存: {output_path}", "success")
+            self.view.show_info("完成", f"审核Excel已生成: {output_path}")
+            return True
+        except Exception as e:
+            self.view.log(f"Excel生成失败: {e}", "error")
+            self.view.show_error("错误", f"Excel生成失败: {e}")
+            return False
 
     # ... 其他业务逻辑
 
