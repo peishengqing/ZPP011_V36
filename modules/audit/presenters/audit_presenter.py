@@ -1266,5 +1266,64 @@ class AuditPresenter:
         os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
         prs.save(output_path)
         self.view.log(f"[PPT] 已生成: {output_path}", "success")
-        return output_path
-
+        return output_path
+
+    def load_audit_data(self, audit_df: pd.DataFrame):
+        """
+        从本地数据库加载已保存的审核记录，合并到当前审核数据框。
+        :param audit_df: 当前显示的审核数据（偏差率>10%的记录）
+        :return: None（直接修改 self.audit_data，并刷新视图）
+        """
+        from storage import storage
+        try:
+            # 从数据库加载所有审核记录
+            if not hasattr(storage, 'get_all_audit_records'):
+                self.view.log("storage 模块缺少 get_all_audit_records 方法", "warn")
+                return
+            
+            records = storage.get_all_audit_records()
+            if not records:
+                return
+            
+            # 构建匹配键（日期+订单+物料号）
+            audit_df['_match_key'] = (
+                audit_df['订单日期'].astype(str).str[:10] + '_' +
+                audit_df['流程订单'].astype(str) + '_' +
+                audit_df['组件物料号'].astype(str)
+            )
+            
+            # 遍历记录，填充备注和审核状态
+            for rec in records:
+                match_key = rec.get('_match_key')
+                if match_key and match_key in audit_df['_match_key'].values:
+                    mask = audit_df['_match_key'] == match_key
+                    # 恢复备注原因（若当前为空）
+                    remark = rec.get('remark', '')
+                    if remark and pd.isna(audit_df.loc[mask, '备注原因'].iloc[0]):
+                        audit_df.loc[mask, '备注原因'] = remark
+                    # 恢复审核来源
+                    source = rec.get('audit_source', '')
+                    if source:
+                        audit_df.loc[mask, '审核来源'] = source
+                    # 恢复审核结果
+                    result = rec.get('audit_result', '')
+                    if result:
+                        audit_df.loc[mask, '审核结果'] = result
+                    # 恢复 AI 建议
+                    ai_suggestion = rec.get('AI建议', '')
+                    if ai_suggestion:
+                        audit_df.loc[mask, 'AI建议'] = ai_suggestion
+            
+            # 删除临时列
+            audit_df.drop(columns=['_match_key'], inplace=True)
+            
+            # 刷新表格（通过 View 层的回调）
+            if hasattr(self, 'view') and hasattr(self.view, 'refresh_audit_tree'):
+                self.view.refresh_audit_tree(audit_df)
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            if hasattr(self, 'log'):
+                self.log(f"加载审核记录失败: {e}", 'error')
+
