@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 sheet3_no_note.py — Sheet3 无备注预警（v36 抽取，未修改逻辑）
@@ -22,6 +22,10 @@ def build_sheet3(df, report_progress, progress_idx=3):
     col_p = '偏差率(%)'
     dyn_thresh = 10.0
 
+# 确保数值列为数值类型（防止字符串导致比较错误）
+    for col in ["材料偏差", "偏差率(%)", "偏差金额", "偏差金额(含税)", "数量-实际", "数量-定额"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
     has_dev = df[df['材料偏差'] != 0]
     no_note = has_dev[~(has_dev['备注原因'].notna()) &
                         (has_dev['备注原因'] != '')].copy()

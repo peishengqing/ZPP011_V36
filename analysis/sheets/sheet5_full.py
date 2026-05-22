@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 sheet5_full.py — Sheet5 完整偏差明细（v36 抽取，未修改逻辑）
@@ -20,6 +20,10 @@ def build_sheet5(df, report_progress, progress_idx=5):
     report_progress(progress_idx, "Sheet5-完整偏差明细", 0)
 
     col_p = '偏差率(%)'
+# 确保数值列为数值类型（防止字符串导致比较错误）
+    for col in ["材料偏差", "偏差率(%)", "偏差金额", "偏差金额(含税)", "数量-实际", "数量-定额"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
     has_real_dev = df[(df[col_p] < -1) | (df[col_p] > 1)].copy()
 
     # 计算偏差金额（含税）

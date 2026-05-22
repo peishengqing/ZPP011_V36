@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 sheet7_amount.py — Sheet7 偏差金额分析（v36 抽取，未修改逻辑）
@@ -23,6 +23,13 @@ def build_sheet7(wb, df, report_progress, progress_idx=7):
     返回:
         无（直接写入 wb['偏差金额分析']）
     """
+
+    # 确保数值列为数值类型（防止字符串导致比较错误）
+    numeric_cols = ["偏差金额(含税)", "数量-实际", "数量-定额", "材料偏差", "偏差金额"]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
     report_progress(progress_idx, "Sheet7-偏差金额分析", 0)
     print("[DEBUG do_analysis_v2] 开始生成Sheet7")
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 sheet10_trend.py — Sheet10 趋势分析（v36 抽取，未修改逻辑）
@@ -61,7 +61,7 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
             ws.cell(row=2, column=1, value='无有效订单日期，无法生成趋势')
             return
 
-        unique_dates = sorted(dev['订单日期'].unique())
+        unique_dates = sorted(set(str(x) for x in dev['订单日期'] if pd.notna(x)))
         n = len(unique_dates)
         if n == 0:
             ws.cell(row=2, column=1, value='无有效订单日期，无法生成趋势')

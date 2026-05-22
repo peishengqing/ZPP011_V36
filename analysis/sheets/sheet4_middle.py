@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 sheet4_middle.py — Sheet4 中间地带明细（v36 抽取，未修改逻辑）
@@ -25,10 +25,14 @@ def build_sheet4(df, alt_df, alt_pairs, report_progress, progress_idx=4):
     dyn_thresh = 10.0
     thresh = dyn_thresh
 
+# 确保数值列为数值类型（防止字符串导致比较错误）
+    for col in ["材料偏差", "偏差率(%)", "偏差金额", "偏差金额(含税)", "数量-实际", "数量-定额"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
     middle = df[(df[col_p].notna()) & (df[col_p] >= -thresh)
                 & (df[col_p] <= thresh)].copy()
 
-    alt_orders = alt_df['订单号'].unique() if len(alt_df) > 0 else []
+    alt_orders = list(set(alt_df['订单号'])) if len(alt_df) > 0 else []
     alt_all_descs = [(a[-1] if isinstance(a, (list,tuple)) else a) for a, b in alt_pairs] + [(b[-1] if isinstance(b, (list,tuple)) else b) for a, b in alt_pairs]
     esc_descs = [re.escape(d) for d in alt_all_descs]
     middle = middle[~(middle['组件物料描述'].str.contains('|'.join(
