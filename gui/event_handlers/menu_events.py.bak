@@ -814,7 +814,7 @@ class MenuEvents:
 
 
 
-            text=self.config.get("ui.lock_button_text_locked", "🔒 已锁定") if self.column_locked else "🔓 可调整",
+            text="🔒 已锁定" if self.column_locked else "🔓 可调整",
 
 
 

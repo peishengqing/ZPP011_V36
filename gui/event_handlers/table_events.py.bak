@@ -5,8 +5,6 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import pandas as pd
 import os, json
-from widgets import C
-from core.rule_engine import RuleEngine
 from core.decorators import with_feedback
 from domain.alt_material.alt_manager import save_alt_pairs, load_alt_pairs
 import traceback
@@ -272,7 +270,7 @@ class TableEvents:
 
 
 
-                label = self.config.get('priority.red_label', '红')
+                label = '红'
 
 
 
@@ -290,7 +288,7 @@ class TableEvents:
 
 
 
-                label = self.config.get('priority.yellow_label', '黄')
+                label = '黄'
 
 
 
@@ -308,7 +306,7 @@ class TableEvents:
 
 
 
-                label = self.config.get('priority.green_label', '绿')
+                label = '绿'
 
 
 
@@ -1718,7 +1716,7 @@ class TableEvents:
 
 
 
-        self._card_win.geometry(f"{self.config.get('ui.card_width', 360)}x{self.config.get('ui.card_height', 420)}")
+        self._card_win.geometry("360x420")
 
 
 
@@ -2042,7 +2040,7 @@ class TableEvents:
 
 
 
-        preset_remarks = self.config.get('ui.preset_remarks', ["系统无定额", "替代料", "已核实", "工艺调整", "其他"])
+        preset_remarks = ["系统无定额", "替代料", "已核实", "工艺调整", "其他"]
 
 
 
@@ -2432,7 +2430,7 @@ class TableEvents:
 
 
 
-                color_map = {'🔴 红': self.config.get('priority.red_label', '红'), '🟠 橙': '橙', '🟡 黄': self.config.get('priority.yellow_label', '黄'), '🟢 绿': self.config.get('priority.green_label', '绿')}
+                color_map = {'🔴 红': '红', '🟠 橙': '橙', '🟡 黄': '黄', '🟢 绿': '绿'}
 
 
 
@@ -2834,13 +2832,13 @@ class TableEvents:
 
 
 
-            priority_label = row.get('_priority_label', self.config.get('priority.green_label', '绿'))
+            priority_label = row.get('_priority_label', '绿')
 
 
 
 
 
-            priority_tag = 'priority_red' if priority_label == self.config.get('priority.red_label', '红') else ('priority_yellow' if priority_label == self.config.get('priority.yellow_label', '黄') else 'priority_green')
+            priority_tag = 'priority_red' if priority_label == '红' else ('priority_yellow' if priority_label == '黄' else 'priority_green')
 
 
 
@@ -3722,13 +3720,13 @@ class TableEvents:
 
 
 
-        dev_rate_presets = self.config.get('filter.dev_rate_presets', ['全部', '>10%', '>20%', '>30%', '绝对值>10%', '<-10%', '<-20%'])
+        dev_rate_presets = ['全部', '>10%', '>20%', '>30%', '绝对值>10%', '<-10%', '<-20%']
 
 
 
 
 
-        is_alt_presets = self.config.get('filter.is_alt_presets', ['全部', '是', '否'])
+        is_alt_presets = ['全部', '是', '否']
 
 
 
