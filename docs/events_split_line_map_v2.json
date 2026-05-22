@@ -1,0 +1,1025 @@
+{
+  "file": "gui/events.py",
+  "total_lines": 8224,
+  "groups": {
+    "01_ui_helpers.py": {
+      "total": 0,
+      "entries": [],
+      "missing": []
+    },
+    "02_audit_core_events.py": {
+      "total": 268,
+      "entries": [
+        {
+          "name": "_run_ai_audit",
+          "line": 1293,
+          "end": 1338,
+          "count": 46
+        },
+        {
+          "name": "_cancel_ai_audit",
+          "line": 1371,
+          "end": 1380,
+          "count": 10
+        },
+        {
+          "name": "_on_ai_audit_done",
+          "line": 1381,
+          "end": 1424,
+          "count": 44
+        },
+        {
+          "name": "_on_ai_audit_error",
+          "line": 1425,
+          "end": 1454,
+          "count": 30
+        },
+        {
+          "name": "_auto_close",
+          "line": 4575,
+          "end": 4616,
+          "count": 42
+        },
+        {
+          "name": "_on_auto_close_progress",
+          "line": 4639,
+          "end": 4654,
+          "count": 16
+        },
+        {
+          "name": "_on_auto_close_done",
+          "line": 4655,
+          "end": 4682,
+          "count": 28
+        },
+        {
+          "name": "_on_auto_close_error",
+          "line": 4683,
+          "end": 4712,
+          "count": 30
+        },
+        {
+          "name": "_cancel_auto_close",
+          "line": 4713,
+          "end": 4734,
+          "count": 22
+        }
+      ],
+      "missing": []
+    },
+    "03_audit_batch_events.py": {
+      "total": 436,
+      "entries": [
+        {
+          "name": "_batch_change_status",
+          "line": 4117,
+          "end": 4164,
+          "count": 48
+        },
+        {
+          "name": "_batch_fill_remark",
+          "line": 4199,
+          "end": 4252,
+          "count": 54
+        },
+        {
+          "name": "_batch_remark",
+          "line": 4321,
+          "end": 4390,
+          "count": 70
+        },
+        {
+          "name": "_add_custom_status",
+          "line": 4515,
+          "end": 4544,
+          "count": 30
+        },
+        {
+          "name": "do_add",
+          "line": 4545,
+          "end": 4574,
+          "count": 30
+        },
+        {
+          "name": "_move_to_quarantine",
+          "line": 4735,
+          "end": 4776,
+          "count": 42
+        },
+        {
+          "name": "_quarantine_selected",
+          "line": 5385,
+          "end": 5446,
+          "count": 62
+        },
+        {
+          "name": "_open_quarantine",
+          "line": 5447,
+          "end": 5514,
+          "count": 68
+        },
+        {
+          "name": "_get_quarantine_path",
+          "line": 7045,
+          "end": 7052,
+          "count": 8
+        },
+        {
+          "name": "_load_quarantine",
+          "line": 7053,
+          "end": 7070,
+          "count": 18
+        },
+        {
+          "name": "_save_quarantine",
+          "line": 7071,
+          "end": 7076,
+          "count": 6
+        }
+      ],
+      "missing": []
+    },
+    "04_table_events.py": {
+      "total": 1206,
+      "entries": [
+        {
+          "name": "_on_tree_double_click",
+          "line": 3923,
+          "end": 3930,
+          "count": 8
+        },
+        {
+          "name": "_show_audit_card",
+          "line": 3931,
+          "end": 4068,
+          "count": 138
+        },
+        {
+          "name": "_update_audit_stats",
+          "line": 5673,
+          "end": 5706,
+          "count": 34
+        },
+        {
+          "name": "_show_audit_context_menu",
+          "line": 5707,
+          "end": 5732,
+          "count": 26
+        },
+        {
+          "name": "_filter_audit_tree",
+          "line": 5733,
+          "end": 5918,
+          "count": 186
+        },
+        {
+          "name": "_update_filter_options",
+          "line": 5919,
+          "end": 6072,
+          "count": 154
+        },
+        {
+          "name": "_collect_filters",
+          "line": 6073,
+          "end": 6110,
+          "count": 38
+        },
+        {
+          "name": "_restore_filters",
+          "line": 6185,
+          "end": 6250,
+          "count": 66
+        },
+        {
+          "name": "_restore_sort_state",
+          "line": 6251,
+          "end": 6292,
+          "count": 42
+        },
+        {
+          "name": "_on_filter_changed",
+          "line": 6293,
+          "end": 6454,
+          "count": 162
+        },
+        {
+          "name": "_reset_all_filters",
+          "line": 6455,
+          "end": 6508,
+          "count": 54
+        },
+        {
+          "name": "_refresh_audit_tree",
+          "line": 6509,
+          "end": 6572,
+          "count": 64
+        },
+        {
+          "name": "calc_priority",
+          "line": 6573,
+          "end": 6662,
+          "count": 90
+        },
+        {
+          "name": "_apply_row_colors",
+          "line": 6997,
+          "end": 7044,
+          "count": 48
+        },
+        {
+          "name": "_init_sort_columns",
+          "line": 7477,
+          "end": 7484,
+          "count": 8
+        },
+        {
+          "name": "_on_tree_sort",
+          "line": 7485,
+          "end": 7502,
+          "count": 18
+        },
+        {
+          "name": "_apply_sort_and_refresh",
+          "line": 7503,
+          "end": 7548,
+          "count": 46
+        },
+        {
+          "name": "_update_sort_indicators",
+          "line": 7549,
+          "end": 7572,
+          "count": 24
+        }
+      ],
+      "missing": []
+    },
+    "05_export_events.py": {
+      "total": 1152,
+      "entries": [
+        {
+          "name": "_check_and_upgrade_db",
+          "line": 119,
+          "end": 156,
+          "count": 38
+        },
+        {
+          "name": "_save_audit_back",
+          "line": 157,
+          "end": 458,
+          "count": 302
+        },
+        {
+          "name": "_export_audit_backup",
+          "line": 459,
+          "end": 498,
+          "count": 40
+        },
+        {
+          "name": "_import_audit_backup",
+          "line": 499,
+          "end": 534,
+          "count": 36
+        },
+        {
+          "name": "open_output",
+          "line": 685,
+          "end": 702,
+          "count": 18
+        },
+        {
+          "name": "generate_ppt",
+          "line": 703,
+          "end": 756,
+          "count": 54
+        },
+        {
+          "name": "_update_ppt_progress",
+          "line": 781,
+          "end": 784,
+          "count": 4
+        },
+        {
+          "name": "_on_ppt_done",
+          "line": 785,
+          "end": 800,
+          "count": 16
+        },
+        {
+          "name": "_on_ppt_error",
+          "line": 801,
+          "end": 810,
+          "count": 10
+        },
+        {
+          "name": "generate_excel_direct",
+          "line": 811,
+          "end": 924,
+          "count": 114
+        },
+        {
+          "name": "_generate_excel_thread",
+          "line": 925,
+          "end": 950,
+          "count": 26
+        },
+        {
+          "name": "on_success",
+          "line": 951,
+          "end": 1028,
+          "count": 78
+        },
+        {
+          "name": "_export_audit_excel",
+          "line": 1455,
+          "end": 1512,
+          "count": 58
+        },
+        {
+          "name": "_on_export_progress",
+          "line": 1513,
+          "end": 1538,
+          "count": 26
+        },
+        {
+          "name": "_on_export_done",
+          "line": 1539,
+          "end": 1568,
+          "count": 30
+        },
+        {
+          "name": "_on_export_error",
+          "line": 1569,
+          "end": 1606,
+          "count": 38
+        },
+        {
+          "name": "_export_log",
+          "line": 2199,
+          "end": 2236,
+          "count": 38
+        },
+        {
+          "name": "_export_changelog",
+          "line": 2237,
+          "end": 2342,
+          "count": 106
+        },
+        {
+          "name": "_batch_export",
+          "line": 5265,
+          "end": 5324,
+          "count": 60
+        },
+        {
+          "name": "_copy_wechat_draft",
+          "line": 5325,
+          "end": 5384,
+          "count": 60
+        }
+      ],
+      "missing": []
+    },
+    "06_analysis_events.py": {
+      "total": 1004,
+      "entries": [
+        {
+          "name": "start_analysis",
+          "line": 2681,
+          "end": 2728,
+          "count": 48
+        },
+        {
+          "name": "_analysis_thread",
+          "line": 2729,
+          "end": 2766,
+          "count": 38
+        },
+        {
+          "name": "_on_progress",
+          "line": 2767,
+          "end": 2778,
+          "count": 12
+        },
+        {
+          "name": "_update_timer",
+          "line": 2793,
+          "end": 2828,
+          "count": 36
+        },
+        {
+          "name": "request_cancel",
+          "line": 2829,
+          "end": 2838,
+          "count": 10
+        },
+        {
+          "name": "_on_done",
+          "line": 2839,
+          "end": 2932,
+          "count": 94
+        },
+        {
+          "name": "_cleanup_auto_excel",
+          "line": 2933,
+          "end": 2952,
+          "count": 20
+        },
+        {
+          "name": "_on_cancel",
+          "line": 2953,
+          "end": 2968,
+          "count": 16
+        },
+        {
+          "name": "_on_error",
+          "line": 2969,
+          "end": 2986,
+          "count": 18
+        },
+        {
+          "name": "_filter_by_stat",
+          "line": 2987,
+          "end": 3016,
+          "count": 30
+        },
+        {
+          "name": "_save_lock_state",
+          "line": 3017,
+          "end": 3036,
+          "count": 20
+        },
+        {
+          "name": "_load_audit_data",
+          "line": 3261,
+          "end": 3468,
+          "count": 208
+        },
+        {
+          "name": "_load_audit_data_from_output_click",
+          "line": 3469,
+          "end": 3478,
+          "count": 10
+        },
+        {
+          "name": "_load_audit_data_from_output",
+          "line": 3479,
+          "end": 3524,
+          "count": 46
+        },
+        {
+          "name": "_load_data_worker",
+          "line": 3525,
+          "end": 3580,
+          "count": 56
+        },
+        {
+          "name": "parse_rate",
+          "line": 3581,
+          "end": 3744,
+          "count": 164
+        },
+        {
+          "name": "_on_load_done",
+          "line": 3745,
+          "end": 3896,
+          "count": 152
+        },
+        {
+          "name": "_on_load_error",
+          "line": 3897,
+          "end": 3922,
+          "count": 26
+        }
+      ],
+      "missing": []
+    },
+    "07_menu_events.py": {
+      "total": 412,
+      "entries": [
+        {
+          "name": "_show_shortcuts_help",
+          "line": 535,
+          "end": 576,
+          "count": 42
+        },
+        {
+          "name": "_show_about",
+          "line": 577,
+          "end": 684,
+          "count": 108
+        },
+        {
+          "name": "_toggle_column_lock",
+          "line": 3037,
+          "end": 3084,
+          "count": 48
+        },
+        {
+          "name": "_on_column_resized_lock",
+          "line": 3085,
+          "end": 3100,
+          "count": 16
+        },
+        {
+          "name": "_on_column_resized_save",
+          "line": 3101,
+          "end": 3122,
+          "count": 22
+        },
+        {
+          "name": "_save_column_widths",
+          "line": 3123,
+          "end": 3142,
+          "count": 20
+        },
+        {
+          "name": "_load_column_widths",
+          "line": 3143,
+          "end": 3168,
+          "count": 26
+        },
+        {
+          "name": "_reset_default_widths",
+          "line": 3169,
+          "end": 3204,
+          "count": 36
+        },
+        {
+          "name": "_apply_column_lock",
+          "line": 3205,
+          "end": 3232,
+          "count": 28
+        },
+        {
+          "name": "_restore_column_widths",
+          "line": 3233,
+          "end": 3260,
+          "count": 28
+        },
+        {
+          "name": "_init_menu",
+          "line": 7439,
+          "end": 7462,
+          "count": 24
+        },
+        {
+          "name": "_open_source_backup",
+          "line": 7463,
+          "end": 7476,
+          "count": 14
+        }
+      ],
+      "missing": []
+    },
+    "08_utils_events.py": {
+      "total": 3406,
+      "entries": [
+        {
+          "name": "worker",
+          "line": 757,
+          "end": 760,
+          "count": 4
+        },
+        {
+          "name": "progress",
+          "line": 761,
+          "end": 780,
+          "count": 20
+        },
+        {
+          "name": "_show_tree_view",
+          "line": 1029,
+          "end": 1168,
+          "count": 140
+        },
+        {
+          "name": "_insert_tree_rows",
+          "line": 1169,
+          "end": 1230,
+          "count": 62
+        },
+        {
+          "name": "_refresh_alt_view",
+          "line": 1231,
+          "end": 1292,
+          "count": 62
+        },
+        {
+          "name": "_show_step_log",
+          "line": 1607,
+          "end": 1610,
+          "count": 4
+        },
+        {
+          "name": "_load_lock_state",
+          "line": 1611,
+          "end": 1614,
+          "count": 4
+        },
+        {
+          "name": "_add_alt",
+          "line": 1615,
+          "end": 1644,
+          "count": 30
+        },
+        {
+          "name": "on_focus_a",
+          "line": 1645,
+          "end": 1678,
+          "count": 34
+        },
+        {
+          "name": "on_focus_b",
+          "line": 1679,
+          "end": 1700,
+          "count": 22
+        },
+        {
+          "name": "confirm",
+          "line": 1701,
+          "end": 1712,
+          "count": 12
+        },
+        {
+          "name": "parse_selection",
+          "line": 1713,
+          "end": 1770,
+          "count": 58
+        },
+        {
+          "name": "_extract_code_and_desc",
+          "line": 1771,
+          "end": 1852,
+          "count": 82
+        },
+        {
+          "name": "do_del",
+          "line": 1853,
+          "end": 1930,
+          "count": 78
+        },
+        {
+          "name": "_del_alt",
+          "line": 1931,
+          "end": 1978,
+          "count": 48
+        },
+        {
+          "name": "do_delete",
+          "line": 1979,
+          "end": 2004,
+          "count": 26
+        },
+        {
+          "name": "_reset_alt",
+          "line": 2005,
+          "end": 2022,
+          "count": 18
+        },
+        {
+          "name": "_show_alt_snapshot",
+          "line": 2023,
+          "end": 2080,
+          "count": 58
+        },
+        {
+          "name": "copy_to_clip",
+          "line": 2081,
+          "end": 2094,
+          "count": 14
+        },
+        {
+          "name": "_select_input",
+          "line": 2095,
+          "end": 2114,
+          "count": 20
+        },
+        {
+          "name": "_select_output",
+          "line": 2115,
+          "end": 2122,
+          "count": 8
+        },
+        {
+          "name": "_auto_find",
+          "line": 2123,
+          "end": 2158,
+          "count": 36
+        },
+        {
+          "name": "_preview",
+          "line": 2159,
+          "end": 2198,
+          "count": 40
+        },
+        {
+          "name": "_show_storyline",
+          "line": 2343,
+          "end": 2378,
+          "count": 36
+        },
+        {
+          "name": "copy_to_clipboard",
+          "line": 2379,
+          "end": 2394,
+          "count": 16
+        },
+        {
+          "name": "_scan_remark_cleanup",
+          "line": 2395,
+          "end": 2496,
+          "count": 102
+        },
+        {
+          "name": "_show_cleanup_window",
+          "line": 2497,
+          "end": 2576,
+          "count": 80
+        },
+        {
+          "name": "toggle_check",
+          "line": 2577,
+          "end": 2600,
+          "count": 24
+        },
+        {
+          "name": "select_all",
+          "line": 2601,
+          "end": 2610,
+          "count": 10
+        },
+        {
+          "name": "execute_cleanup",
+          "line": 2611,
+          "end": 2660,
+          "count": 50
+        },
+        {
+          "name": "_set_step",
+          "line": 2661,
+          "end": 2680,
+          "count": 20
+        },
+        {
+          "name": "update",
+          "line": 2779,
+          "end": 2792,
+          "count": 14
+        },
+        {
+          "name": "apply_change",
+          "line": 4165,
+          "end": 4198,
+          "count": 34
+        },
+        {
+          "name": "on_combo_change",
+          "line": 4391,
+          "end": 4404,
+          "count": 14
+        },
+        {
+          "name": "apply_remark",
+          "line": 4405,
+          "end": 4514,
+          "count": 110
+        },
+        {
+          "name": "_on_close",
+          "line": 4777,
+          "end": 4812,
+          "count": 36
+        },
+        {
+          "name": "_get_resume_state_path",
+          "line": 4813,
+          "end": 4820,
+          "count": 8
+        },
+        {
+          "name": "_load_resume_state",
+          "line": 4821,
+          "end": 4840,
+          "count": 20
+        },
+        {
+          "name": "_save_resume_state",
+          "line": 4841,
+          "end": 4884,
+          "count": 44
+        },
+        {
+          "name": "_do_resume_state",
+          "line": 4885,
+          "end": 4956,
+          "count": 72
+        },
+        {
+          "name": "_import_bom",
+          "line": 4957,
+          "end": 5264,
+          "count": 308
+        },
+        {
+          "name": "restore_selected",
+          "line": 5515,
+          "end": 5594,
+          "count": 80
+        },
+        {
+          "name": "clear_all",
+          "line": 5595,
+          "end": 5614,
+          "count": 20
+        },
+        {
+          "name": "export_quarantine",
+          "line": 5615,
+          "end": 5672,
+          "count": 58
+        },
+        {
+          "name": "_show_precheck_report",
+          "line": 6111,
+          "end": 6184,
+          "count": 74
+        },
+        {
+          "name": "_extract_desc",
+          "line": 6663,
+          "end": 6958,
+          "count": 296
+        },
+        {
+          "name": "_enable_audit_buttons",
+          "line": 6959,
+          "end": 6996,
+          "count": 38
+        },
+        {
+          "name": "_on_search_delayed",
+          "line": 7077,
+          "end": 7086,
+          "count": 10
+        },
+        {
+          "name": "_run_pre_check",
+          "line": 7087,
+          "end": 7272,
+          "count": 186
+        },
+        {
+          "name": "_load_golden_columns",
+          "line": 7273,
+          "end": 7292,
+          "count": 20
+        },
+        {
+          "name": "_export_duplicate_records",
+          "line": 7345,
+          "end": 7438,
+          "count": 94
+        },
+        {
+          "name": "_s01_start_inventory_check",
+          "line": 7573,
+          "end": 7624,
+          "count": 52
+        },
+        {
+          "name": "_s01_inventory_worker",
+          "line": 7625,
+          "end": 7674,
+          "count": 50
+        },
+        {
+          "name": "_s01_progress_callback",
+          "line": 7675,
+          "end": 7684,
+          "count": 10
+        },
+        {
+          "name": "_s01_on_success",
+          "line": 7685,
+          "end": 7696,
+          "count": 12
+        },
+        {
+          "name": "_s01_on_error",
+          "line": 7697,
+          "end": 7714,
+          "count": 18
+        },
+        {
+          "name": "_s01_cleanup",
+          "line": 7715,
+          "end": 7734,
+          "count": 20
+        },
+        {
+          "name": "_s01_cancel_inventory_check",
+          "line": 7735,
+          "end": 7740,
+          "count": 6
+        },
+        {
+          "name": "_s01_disable_ui",
+          "line": 7741,
+          "end": 7746,
+          "count": 6
+        },
+        {
+          "name": "_s01_enable_ui",
+          "line": 7747,
+          "end": 7754,
+          "count": 8
+        },
+        {
+          "name": "_evaluate_condition",
+          "line": 7755,
+          "end": 7774,
+          "count": 20
+        },
+        {
+          "name": "_s01_setup_treeview_tags",
+          "line": 7775,
+          "end": 7804,
+          "count": 30
+        },
+        {
+          "name": "_s01_populate_table",
+          "line": 7805,
+          "end": 7864,
+          "count": 60
+        },
+        {
+          "name": "update_progress",
+          "line": 7865,
+          "end": 7876,
+          "count": 12
+        },
+        {
+          "name": "refresh_treeview",
+          "line": 7877,
+          "end": 7886,
+          "count": 10
+        },
+        {
+          "name": "show_error",
+          "line": 7887,
+          "end": 7894,
+          "count": 8
+        },
+        {
+          "name": "show_info",
+          "line": 7895,
+          "end": 7902,
+          "count": 8
+        },
+        {
+          "name": "log_message",
+          "line": 7903,
+          "end": 7910,
+          "count": 8
+        },
+        {
+          "name": "set_buttons_state",
+          "line": 7911,
+          "end": 7932,
+          "count": 22
+        },
+        {
+          "name": "enable_buttons",
+          "line": 7933,
+          "end": 7938,
+          "count": 6
+        },
+        {
+          "name": "disable_buttons",
+          "line": 7939,
+          "end": 7944,
+          "count": 6
+        },
+        {
+          "name": "get_audit_data",
+          "line": 7945,
+          "end": 7950,
+          "count": 6
+        },
+        {
+          "name": "get_output_path",
+          "line": 7951,
+          "end": 7956,
+          "count": 6
+        },
+        {
+          "name": "get_alt_pairs",
+          "line": 7957,
+          "end": 8224,
+          "count": 268
+        }
+      ],
+      "missing": []
+    }
+  }
+}
