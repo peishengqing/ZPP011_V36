@@ -86,7 +86,7 @@ class ExportEvents:
 
         import datetime
 
-        default_name = self.config.get("export.default_ppt_filename", "ZPP011偏差分析_{datetime}.pptx").format(datetime=datetime.datetime.now().strftime("%Y%m%d_%H%M")) + ".pptx"
+        default_name = "ZPP011偏差分析_" + datetime.datetime.now().strftime('%Y%m%d_%H%M') + ".pptx"
 
         ppt_output = filedialog.asksaveasfilename(
 
@@ -1584,7 +1584,7 @@ class ExportEvents:
 
 
 
-            default_name = self.config.get("export.default_log_filename", "ZPP011日志_{ts}.txt").format(ts=ts)
+            default_name = f"ZPP011日志_{ts}.txt"
 
 
 
@@ -1902,7 +1902,7 @@ class ExportEvents:
 
 
 
-            default_name = self.config.get("export.default_changelog_filename", "ZPP011版本日志_{ts}.txt").format(ts=ts)
+            default_name = f"ZPP011版本日志_{ts}.txt"
 
 
 
@@ -3282,7 +3282,7 @@ class ExportEvents:
 
 
 
-        lines = [self.config.get("wechat.draft_title", "【料控指令】"), ""]
+        lines = ["【料控指令】", ""]
 
 
 

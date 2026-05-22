@@ -358,7 +358,7 @@ class AnalysisEvents:
 
 
 
-            self.root.after(self.config.get('analysis.cleanup_delay_ms', 0), self._on_done)
+            self.root.after(0, self._on_done)
 
 
 
@@ -370,7 +370,7 @@ class AnalysisEvents:
 
 
 
-            self.root.after(self.config.get('analysis.cleanup_delay_ms', 0), self._on_cancel)
+            self.root.after(0, self._on_cancel)
 
 
 
@@ -382,7 +382,7 @@ class AnalysisEvents:
 
 
 
-            self.root.after(self.config.get('analysis.cleanup_delay_ms', 0), lambda e=e: self._on_error(str(e)))
+            self.root.after(0, lambda e=e: self._on_error(str(e)))
 
 
 
@@ -394,7 +394,7 @@ class AnalysisEvents:
 
 
 
-            self.root.after(self.config.get('analysis.cleanup_delay_ms', 0), lambda e=e: self._on_error(f"BaseException: {e}"))
+            self.root.after(0, lambda e=e: self._on_error(f"BaseException: {e}"))
 
 
 
@@ -496,7 +496,7 @@ class AnalysisEvents:
 
 
 
-        self.root.after(self.config.get('analysis.cleanup_delay_ms', 0), update)
+        self.root.after(0, update)
 
 
 
@@ -670,7 +670,7 @@ class AnalysisEvents:
 
 
 
-        self.timer_id = self.root.after(self.config.get('analysis.cleanup_delay_ms', 1000), self._update_timer)
+        self.timer_id = self.root.after(1000, self._update_timer)
 
 
 
@@ -1066,13 +1066,13 @@ class AnalysisEvents:
 
 
 
-        self.root.after(self.config.get('analysis.cleanup_delay_ms', 100), lambda: self._load_audit_data_from_output(self._analysis_output_path))
+        self.root.after(100, lambda: self._load_audit_data_from_output(self._analysis_output_path))
 
 
 
 
 
-        self.root.after(self.config.get('analysis.cleanup_delay_ms', 200), self._run_pre_check)
+        self.root.after(200, self._run_pre_check)
 
 
 
@@ -1090,7 +1090,7 @@ class AnalysisEvents:
 
 
 
-        self.root.after(self.config.get('analysis.cleanup_delay_ms', 500), self._cleanup_auto_excel)
+        self.root.after(500, self._cleanup_auto_excel)
 
 
 
@@ -1642,7 +1642,7 @@ class AnalysisEvents:
 
 
 
-            high_dev = df[df['偏差率(%)'].abs() > self.config.get('audit.high_deviation_threshold', 10)]
+            high_dev = df[df['偏差率(%)'].abs() > 10]
 
 
 
@@ -3202,7 +3202,7 @@ class AnalysisEvents:
 
 
 
-            self.root.after(self.config.get('analysis.cleanup_delay_ms', 100), lambda: self._on_filter_changed(None) if self.audit_data is not None else None)
+            self.root.after(100, lambda: self._on_filter_changed(None) if self.audit_data is not None else None)
 
 
 
@@ -3214,7 +3214,7 @@ class AnalysisEvents:
 
 
 
-            self.root.after(self.config.get('analysis.cleanup_delay_ms', 300), lambda: self._show_precheck_report(self.audit_data))
+            self.root.after(300, lambda: self._show_precheck_report(self.audit_data))
 
 
 
@@ -3226,7 +3226,7 @@ class AnalysisEvents:
 
 
 
-            # self.root.after(self.config.get('analysis.cleanup_delay_ms', 500), self._check_and_remind_bom)
+            # self.root.after(500, self._check_and_remind_bom)
 
 
 
@@ -3910,13 +3910,13 @@ class AnalysisEvents:
 
 
 
-                    self.root.after(self.config.get('analysis.cleanup_delay_ms', 0), self._s01_progress_callback, idx + 1, total)
+                    self.root.after(0, self._s01_progress_callback, idx + 1, total)
 
 
 
 
 
-            self.root.after(self.config.get('analysis.cleanup_delay_ms', 0), self._s01_on_success, df)
+            self.root.after(0, self._s01_on_success, df)
 
 
 
@@ -3928,7 +3928,7 @@ class AnalysisEvents:
 
 
 
-            self.root.after(self.config.get('analysis.cleanup_delay_ms', 0), self._s01_on_error, e)
+            self.root.after(0, self._s01_on_error, e)
 
 
 
@@ -3940,7 +3940,7 @@ class AnalysisEvents:
 
 
 
-            self.root.after(self.config.get('analysis.cleanup_delay_ms', 0), self._s01_on_error, e)
+            self.root.after(0, self._s01_on_error, e)
 
 
 

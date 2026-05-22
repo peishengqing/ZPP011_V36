@@ -5,6 +5,7 @@ import threading
 import tkinter as tk
 from tkinter import messagebox
 from copy import deepcopy
+from core.rule_engine import RuleEngine
 from core.decorators import with_feedback
 from core.auto_closer import AutoCloser
 
