@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 sheet6_anomaly.py — Sheet6 异常预警（v36 抽取，未修改逻辑）
@@ -22,6 +22,10 @@ def build_sheet6(df, alt_order_mat, report_progress, progress_idx=6):
     col_p = '偏差率(%)'
     dyn_thresh = 10.0
 
+# 确保数值列为数值类型（防止字符串导致比较错误）
+    for col in ["材料偏差", "偏差率(%)", "偏差金额", "偏差金额(含税)", "数量-实际", "数量-定额"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
     anomaly1 = df[(df['数量-定额'] > 0) & (df['备注原因'] == '系统无定额')].copy()
     anomaly2 = df[(df['数量-定额'] > 0) & (df['数量-实际'] <= 0) &
                   (~(df['备注原因'].notna() & (df['备注原因'] != '')))].copy()

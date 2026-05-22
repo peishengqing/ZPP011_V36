@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 sheet2_alt.py — Sheet2 替代料明细（v36 抽取，兼容三元组配对）
@@ -92,7 +92,7 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
     if len(alt_df) == 0 and len(converted_pairs) > 0:
         # 调试：打印前5个配对和df中的描述
         print(f"[DEBUG] 配对数: {len(converted_pairs)}, 前3个: {converted_pairs[:3]}")
-        sample_descs = df['组件物料描述'].dropna().unique()[:5].tolist()
+        sample_descs = list(set(df['组件物料描述'].dropna()))[:5]
         print(f"[DEBUG] df物料描述样本: {sample_descs}")
     report_progress(progress_idx, "Sheet2-替代料明细", 100)
 

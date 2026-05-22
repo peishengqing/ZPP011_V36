@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 云南达利ZPP011生产偏差分析器 — 多条件智能筛选 v36
@@ -25,6 +25,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import scrolledtext, messagebox, filedialog, ttk
 from modules.audit.presenters.audit_presenter import AuditPresenter
+from modules.audit.models.audit_model import AuditModel
 
 # ── 模块化组件 ───────────────────────────────────
 from widgets import C, STEPS, card, btn, label, entry

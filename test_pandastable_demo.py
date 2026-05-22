@@ -121,7 +121,7 @@ class PandaTableDemo(tk.Tk):
         self.table.show()
 
         # 应用颜色
-        self._apply_colors()
+        # self._apply_colors()
 
         # 绑定选择和右键
         self.table.bind("<ButtonRelease-1>", self._on_select)
@@ -136,7 +136,7 @@ class PandaTableDemo(tk.Tk):
         model = self.table.model
         for i in range(len(self.df)):
             bg, fg = row_color(self.df, i)
-            self.table.setRowColors(rows=[i], bg=bg, fg=fg, cols=list(range(len(self.df.columns))))
+            self.table.setRowColors(rows=[i], bgcolor=bg, fgcolor=fg, cols=list(range(len(self.df.columns))))
         self.table.redrawVisible()
 
     def _on_select(self, event=None):
