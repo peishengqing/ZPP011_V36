@@ -462,7 +462,7 @@ def _build_ui(self):
         self.audit_tree.tag_configure('over_amount', background='#ffebee')
         self.audit_tree.tag_configure('under_amount', background='#e8f5e9')
         self.audit_tree.bind("<Double-Button-1>", self._on_tree_double_click)
-        self.audit_tree.bind("<<TreeviewSelect>>", self._show_audit_card)
+        # B004: removed single-click card popup; only double-click triggers _show_audit_card
         self.audit_data = pd.DataFrame()
 
 # 统一操作按钮行
