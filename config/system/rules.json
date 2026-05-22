@@ -1,0 +1,23 @@
+{
+  "version": "1.0",
+  "rules": [
+    {
+      "name": "高偏差（红色）",
+      "condition": "deviation_rate >= 10",
+      "color": "#FF6B6B",
+      "priority": 1
+    },
+    {
+      "name": "中度偏差（黄色）",
+      "condition": "deviation_rate >= 5 and deviation_rate < 10",
+      "color": "#FFD966",
+      "priority": 2
+    },
+    {
+      "name": "正常偏差（绿色）",
+      "condition": "deviation_rate < 5",
+      "color": "#4ECDC4",
+      "priority": 3
+    }
+  ]
+}

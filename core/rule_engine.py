@@ -16,6 +16,16 @@ class RuleEngine:
             rules_path = Path(__file__).parent.parent / "config" / "system" / "rules.json"
         self.rules_path = rules_path
         self.rules: Dict[str, Any] = {}
+        
+        # Auto-create default rules file if not exists
+        if not self.rules_path.exists():
+            self.rules_path.parent.mkdir(parents=True, exist_ok=True)
+            default_rules = self._get_default_rules()
+            with open(self.rules_path, 'w', encoding='utf-8') as f:
+                import json
+                json.dump(default_rules, f, indent=2, ensure_ascii=False)
+            print(f"[RuleEngine] Created default rules file: {self.rules_path}")
+        
         self._load()
 
     def _load(self):
