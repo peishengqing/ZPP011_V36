@@ -60,3 +60,5 @@ _patch_*.py
 # 备份目录
 dist_backup_*/
 backup_pre_*/
+
+*.spec
