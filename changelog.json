@@ -3,6 +3,23 @@
   "author": "裴盛清",
   "versions": [
     {
+      "version": "v39.0",
+      "release_date": "2026-05-22",
+      "build_datetime": "2026-05-22 15:00:00",
+      "features": [
+        "【架构重构】gui/events.py 拆分：8224行→7个handler模块+1个入口文件（137方法零遗漏）"
+      ],
+      "optimizations": [
+        "多重继承MixIn模式：AuditCoreEvents/AuditBatchEvents/TableEvents/ExportEvents/AnalysisEvents/MenuEvents/UtilsEvents",
+        "新增UIHelpers辅助类（进度条、状态栏、按钮状态统一管理）",
+        "gui/event_handlers/包结构：8个handler模块+__init__.py统一导出"
+      ],
+      "notes": [
+        "零逻辑变更：仅剪切搬运，方法内部代码一字未改",
+        "验证通过：py_compile全量编译+EventsMixIn导入+MRO链+137方法完整性校验"
+      ]
+    },
+    {
       "version": "v37.44",
       "release_date": "2026-05-20",
       "build_datetime": "2026-05-20 23:45:50",
