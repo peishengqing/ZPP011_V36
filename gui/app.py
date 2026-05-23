@@ -26,9 +26,9 @@ import tkinter as tk
 from tkinter import scrolledtext, messagebox, filedialog, ttk
 from modules.audit.presenters.audit_presenter import AuditPresenter
 from modules.audit.models.audit_model import AuditModel
+from widgets import C
 
 # ── 模块化组件 ───────────────────────────────────
-from widgets import C, STEPS, card, btn, label, entry
 from storage import storage
 from domain.alt_material import alt_manager
 from analysis.analyzer import do_analysis_v2
@@ -242,10 +242,39 @@ class ZPP011Beautiful(EventsMixIn):
         storage.init_audit_db()
         self.audit_model = AuditModel()
         self.audit_presenter = AuditPresenter(self.audit_model, self)
+
+        # ── 侧边栏筛选面板：必须在 build_ui 之前 pack，才能正确占位 ──
+        self.config = ConfigManager()
+        self.filter_panel = None
+
+        # 读取项目级特性开关（config/defaults.json，非用户配置）
+        _feature_enabled = False
+        try:
+            _defaults_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'defaults.json')
+            if os.path.exists(_defaults_path):
+                with open(_defaults_path, 'r', encoding='utf-8') as _f:
+                    _defaults = json.load(_f)
+                _feature_enabled = _defaults.get('features', {}).get('new_filter_panel', False)
+        except Exception:
+            pass
+
+        if _feature_enabled:
+            try:
+                from gui.filter_panel import FilterPanel
+                self.filter_panel = FilterPanel(self.root, on_filter_changed=self._on_sidebar_filter_changed)
+                self.filter_panel.pack(side="right", fill="y")
+            except Exception as e:
+                import traceback
+                print(f"[FilterPanel] 初始化失败: {e}\n{traceback.format_exc()}")
+
         build_ui(self)
         self._check_and_upgrade_db()  # v37.44 启动时检测并升级旧数据库
-        self.config = ConfigManager()
         self.config.apply_window_geometry(self.root)
+
+        # 侧边栏加载成功日志（此时 log 控件已就绪）
+        if self.filter_panel is not None:
+            self.log("✅ 侧边栏筛选面板已加载", "success")
+
         self._restore_column_widths()
         self._init_sort_columns()  # 初始化多列排序系统
         self._init_menu()  # 初始化菜单栏
@@ -284,6 +313,119 @@ class ZPP011Beautiful(EventsMixIn):
 
         # 启动回调轮询
         self.task_manager.poll(self.root)
+
+    def _on_sidebar_filter_changed(self, filters):
+        """侧边栏筛选条件变更时，刷新表格（不与 TableEvents._on_filter_changed 冲突）"""
+        print(f" [DEBUG] 收到筛选条件：{filters}")
+        
+        if not hasattr(self, 'audit_data') or self.audit_data is None:
+            return
+
+        df = self.audit_data.copy()
+        print(f" [DEBUG] 原始数据：{len(df)} 条")
+
+        # 1. 工厂筛选
+        if filters.get('factory') and filters['factory'] != '全部':
+            if '工厂' in df.columns:
+                df = df[df['工厂'] == filters['factory']]
+
+        # 2. 车间筛选
+        if filters.get('workshop') and filters['workshop'] != '全部':
+            if '车间' in df.columns:
+                df = df[df['车间'] == filters['workshop']]
+
+        # 3. 物料描述（模糊匹配）
+        material = filters.get('material', '').strip()
+        if material:
+            if '物料名称' in df.columns:
+                df = df[df['物料名称'].str.contains(material, na=False, case=False)]
+            elif '组件物料描述' in df.columns:
+                df = df[df['组件物料描述'].str.contains(material, na=False, case=False)]
+
+        # 4. 偏差率筛选
+        dev_rate = filters.get('dev_rate')
+        if dev_rate and dev_rate != '全部' and '偏差率(%)' in df.columns:
+            if dev_rate == '>10%':
+                df = df[df['偏差率(%)'] > 10]
+            elif dev_rate == '>20%':
+                df = df[df['偏差率(%)'] > 20]
+            elif dev_rate == '>30%':
+                df = df[df['偏差率(%)'] > 30]
+            elif dev_rate == '<-10%':
+                df = df[df['偏差率(%)'] < -10]
+            elif dev_rate == '<-20%':
+                df = df[df['偏差率(%)'] < -20]
+
+        # 5. 金额范围（使用"偏差金额"列）
+        amount_min = filters.get('amount_min', '').strip()
+        amount_max = filters.get('amount_max', '').strip()
+        if (amount_min or amount_max) and '偏差金额' in df.columns:
+            if amount_min:
+                try:
+                    min_val = float(amount_min)
+                    df = df[df['偏差金额'] >= min_val]
+                except Exception:
+                    pass
+            if amount_max:
+                try:
+                    max_val = float(amount_max)
+                    df = df[df['偏差金额'] <= max_val]
+                except Exception:
+                    pass
+
+        # 6. 审核状态
+        status = filters.get('status')
+        if status and status != '全部':
+            if status == '已备注':
+                if '备注原因' in df.columns:
+                    df = df[df['备注原因'].notna() & (df['备注原因'] != '')]
+            elif status == '需补备注':
+                if '备注原因' in df.columns:
+                    df = df[df['备注原因'].isna() | (df['备注原因'] == '')]
+
+        # 7. 替代料筛选
+        is_alt = filters.get('is_alt')
+        if is_alt and is_alt != '全部':
+            # 自动查找替代料列（支持多种列名）
+            alt_col = None
+            for col in ['_is_alt', '是否替代料', '替代料', 'is_alt']:
+                if col in df.columns:
+                    alt_col = col
+                    break
+            
+            if alt_col:
+                print(f" [DEBUG] 替代料筛选：列名={alt_col}, 筛选值={is_alt}")
+                if is_alt == '是':
+                    # 布尔型列（如 _is_alt）
+                    if df[alt_col].dtype == bool:
+                        df = df[df[alt_col] == True]
+                    # 字符串列（如 是否替代料、替代料）
+                    else:
+                        df = df[df[alt_col].astype(str) == '是']
+                elif is_alt == '否':
+                    # 布尔型列
+                    if df[alt_col].dtype == bool:
+                        df = df[df[alt_col] == False]
+                    # 字符串列
+                    else:
+                        df = df[df[alt_col].astype(str) != '是']
+                print(f" [DEBUG] 替代料筛选后：{len(df)} 条")
+            else:
+                print(f" [WARN] 未找到替代料列，可用列名：{list(df.columns)}")
+
+        # 8. 优先级颜色
+        color = filters.get('priority_color')
+        if color and color != '全部' and '_priority_label' in df.columns:
+            df = df[df['_priority_label'] == color]
+
+        # 刷新表格
+        self._refresh_audit_tree(df)
+        self._update_audit_stats(df)
+        self.status_lbl.configure(text=f"筛选结果：{len(df)} 条")
+
+    def _on_filter_panel_expand(self, expanded):
+        """侧边栏展开/折叠时的回调（预留，当前不做布局调整）"""
+        pass
 
     def set_status(self, msg):
         self.status_var.set(msg)

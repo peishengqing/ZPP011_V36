@@ -5,9 +5,9 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import pandas as pd
 import os, json
-from widgets import C
 from core.rule_engine import RuleEngine
 from core.decorators import with_feedback
+from widgets import C
 from domain.alt_material.alt_manager import save_alt_pairs, load_alt_pairs
 import traceback
 
@@ -590,7 +590,6 @@ class TableEvents:
 
 
 
-        from widgets import C as _C
 
 
 

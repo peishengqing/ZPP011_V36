@@ -4,8 +4,8 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import os, json
-from widgets import C
 from storage import storage
+from widgets import C
 
 
 class MenuEvents:

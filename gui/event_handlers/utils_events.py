@@ -4,9 +4,9 @@
 import shutil
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
+from widgets import C
 import os, sys as _sys, glob as _glob
 import pandas as pd
-from widgets import C, STEPS
 from storage import storage
 from core.state_store import get_state
 from core.rule_engine import RuleEngine
@@ -22,311 +22,80 @@ import time, datetime, threading, traceback, json, csv, calendar
 class UtilsEvents:
     """故事线、替代料、BOM、预检、树视图、断点等杂项事件"""
     def _show_storyline(self):
-
-
-
-
-
-        """弹出故事线窗口"""
-
-
-
-
-
-        text_content = self._generate_storyline()
-
-
-
-
-
-        if not text_content:
-
-
-
-
-
+        """弹出故事线窗口（直接包含统计逻辑）"""
+        if self.audit_data is None or self.audit_data.empty:
+            messagebox.showinfo("提示", "无数据生成故事线")
             return
 
+        lines = []
+        lines.append(f"📅 统计周期：{self.start_date.get()} 至 {self.end_date.get()}")
+        lines.append("")
 
+        if '偏差金额' in self.audit_data.columns:
+            total_amount = self.audit_data['偏差金额'].sum()
+            lines.append(f"💰 总偏差金额：¥{total_amount:,.2f}")
+        else:
+            lines.append("💰 总偏差金额：无数据")
 
+        over_col = next((c for c in self.audit_data.columns if '多耗' in c or '超耗' in c), None)
+        under_col = next((c for c in self.audit_data.columns if '少耗' in c or '节约' in c), None)
+        if over_col and under_col:
+            lines.append(f"📈 多耗总额：¥{self.audit_data[over_col].sum():,.2f}")
+            lines.append(f"📉 少耗总额：¥{self.audit_data[under_col].sum():,.2f}")
 
+        if '偏差率(%)' in self.audit_data.columns:
+            high = (self.audit_data['偏差率(%)'].abs() > 10).sum()
+            medium = ((self.audit_data['偏差率(%)'].abs() >= 5) & (self.audit_data['偏差率(%)'].abs() <= 10)).sum()
+            low = (self.audit_data['偏差率(%)'].abs() < 5).sum()
+            lines.append("")
+            lines.append(f"🔴 偏差率 >10%：{high} 行")
+            lines.append(f"🟡 偏差率 5%-10%：{medium} 行")
+            lines.append(f"🟢 偏差率 <5%：{low} 行")
 
+        if '备注原因' in self.audit_data.columns:
+            total = len(self.audit_data)
+            has_remark = self.audit_data['备注原因'].notna().sum()
+            lines.append("")
+            lines.append(f"📝 备注覆盖率：{has_remark}/{total} ({has_remark/total*100:.1f}%)")
+
+        text_content = chr(10).join(lines)
+
+        # 创建弹窗
         d = tk.Toplevel(self.root)
-
-
-
-
-
         d.title("📖 本周偏差故事线")
-
-
-
-
-
         d.geometry("600x520")
-
-
-
-
-
         d.transient(self.root)
-
-
-
-
-
+        d.grab_set()
         d.update_idletasks()
-
-
-
-
-
-        rx = self.root.winfo_rootx() + (self.root.winfo_width() - 600) // 2
-
-
-
-
-
-        ry = self.root.winfo_rooty() + (self.root.winfo_height() - 520) // 2
-
-
-
-
-
-        d.geometry(f"+{rx}+{ry}")
-
-
-
-
+        x = self.root.winfo_x() + (self.root.winfo_width() - 600) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - 520) // 2
+        d.geometry(f"+{x}+{y}")
 
         tk.Label(d, text="📖 本周偏差故事线", font=("Microsoft YaHei", 12, "bold")).pack(pady=10)
-
-
-
-
-
         text = tk.Text(d, font=("Microsoft YaHei", 10), wrap="word", height=20)
-
-
-
-
-
         text.pack(fill="both", expand=True, padx=10, pady=5)
-
-
-
-
-
         text.insert("1.0", text_content)
-
-
-
-
-
         text.configure(state="disabled")
 
-
-
-
-
-
-
-
-
-
-
-        def copy_to_clipboard():
-
-
-
-
-
+        def copy_to_clip():
             d.clipboard_clear()
-
-
-
-
-
             d.clipboard_append(text_content)
-
-
-
-
-
-            self.log("📖 故事线已复制到剪贴板", "info")
-
-
-
-
-
             messagebox.showinfo("已复制", "故事线已复制到剪贴板")
 
-
-
-
-
-
-
-
-
-
-
-        tk.Button(d, text="📋 复制到剪贴板", command=copy_to_clipboard,
-
-
-
-
-
-                  bg="#4a90d9", fg="white", font=("Microsoft YaHei", 10),
-
-
-
-
-
-                  relief="flat", width=15).pack(pady=8)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        tk.Button(d, text="📋 复制到剪贴板", command=copy_to_clip,
+                  bg="#4a90d9", fg="white", relief="flat", width=15).pack(pady=8)
 
 
     def _scan_remark_cleanup(self):
-
-
-
-
-
-        """扫描备注，返回可清洗的建议列表（兼容列名）"""
-
-
-
-
-
+        """扫描备注数据并生成清洗建议（如存在）"""
         if self.audit_data is None or self.audit_data.empty:
-
-
-
-
-
-            return []
-
-
-
-
-
-        self.log(f"[DEBUG] 备注清洗：audit_data列名={list(self.audit_data.columns)}", "debug")
-
-
-
-
-
-
-
-
-
-
-
-        # 确定备注列名
-
-
-
-
-
-        remark_col = None
-
-
-
-
-
-        for col in ['备注原因', '备注']:
-
-
-
-
-
-            if col in self.audit_data.columns:
-
-
-
-
-
-                remark_col = col
-
-
-
-
-
-                break
-
-
-
-
-
-        if remark_col is None:
-
-
-
-
-
-            self.log("备注清洗：未找到备注列", "warning")
-
-
-
-
-
-            return []
-
-
-
-
-
-
-
-
-
-
-
-        # 物料描述列
-
-
-
-
-
+            messagebox.showinfo("提示", "无数据可扫描")
+            return
+        # 确定物料描述列
         mat_col = None
-
-
-
-
-
-        for col in ['组件物料描述', '物料名称']:
-
-
-
-
-
-            if col in self.audit_data.columns:
-
-
-
-
-
+        for col in self.audit_data.columns:
+            if '物料描述' in col or '组件描述' in col:
                 mat_col = col
-
-
-
-
-
                 break
 
 
@@ -340,6 +109,9 @@ class UtilsEvents:
 
 
             mat_col = '组件物料描述'
+
+        # 确定备注列
+        remark_col = next((c for c in ['备注', '备注原因'] if c in self.audit_data.columns), '备注')
 
 
 

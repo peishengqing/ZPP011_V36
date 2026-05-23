@@ -4,7 +4,6 @@
 sheet8_reason_summary.py — Sheet8 偏差原因汇总（v36 抽取，未修改逻辑）
 """
 import pandas as pd
-from utils.helpers import standardize_remark
 
 
 def build_sheet8(df, report_progress, progress_idx=8):
@@ -23,9 +22,16 @@ def build_sheet8(df, report_progress, progress_idx=8):
     for col in ["材料偏差", "偏差率(%)", "偏差金额", "偏差金额(含税)", "数量-实际", "数量-定额"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-    has_reason = df[(df['备注原因'].notna()) & (
-        df['备注原因'] != '') & (df['材料偏差'] != 0)].copy()
-    has_reason['_std_reason'] = has_reason['备注原因'].apply(standardize_remark)
+    # 使用 analyzer.py 中已经生成的 '标准原因' 列（替代料、系统无定额等已正确标记）
+    # 如果没有该列（兼容旧版），则动态生成
+    if '标准原因' not in df.columns:
+        from utils.helpers import standardize_remark
+        df['标准原因'] = df['备注原因'].apply(standardize_remark)
+
+    # 过滤：必须有标准原因且材料偏差不为0
+    has_reason = df[(df['标准原因'].notna()) & (
+        df['标准原因'] != '') & (df['材料偏差'] != 0)].copy()
+    has_reason['_std_reason'] = has_reason['标准原因']
 
     reason_summary = []
 

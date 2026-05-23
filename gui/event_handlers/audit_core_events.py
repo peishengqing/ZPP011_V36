@@ -7,6 +7,7 @@ from tkinter import messagebox
 from copy import deepcopy
 from core.rule_engine import RuleEngine
 from core.decorators import with_feedback
+from widgets import C
 from core.auto_closer import AutoCloser
 
 
