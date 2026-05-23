@@ -2910,6 +2910,11 @@ class AnalysisEvents:
 
             self.audit_data = result_df
 
+            # 如果启用了新筛选栏，更新下拉选项
+            if hasattr(self, "filter_panel") and self.filter_panel:
+                self.filter_panel.update_options(self.audit_data)
+
+
 
 
 
