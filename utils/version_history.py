@@ -14,6 +14,48 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v39.1",
+        "date": "2026-05-23",
+        "build_datetime": "2026-05-23 01:11:56",
+        "features": [
+            "✨ 修复 load_audit_data 缺失（AuditPresenter 可正常加载审核记录）",
+            "✨ 规则文件自动创建（RuleEngine 初始化时生成默认 rules.json）"
+        ],
+        "fixes": [
+            "🐛 修复 AuditPresenter.load_audit_data 方法缺失（AttributeError）",
+            "🐛 修复规则文件不存在警告（控制台不再报错）"
+        ],
+        "optimizations": [
+            "⚡ 规则引擎增强：文件缺失时自动创建默认配置，无需手动创建"
+        ],
+        "notes": [
+            "📌 测试版，请裴哥手动测试验证修复效果",
+            "📌 若测试通过，可发布为正式版 v39.1"
+        ]
+    },
+    {
+        "version": "v39",
+        "date": "2026-05-22",
+        "build_datetime": "2026-05-22 17:46:32",
+        "features": [
+            "✨ 拆分 events.py：27,492 行 → 8 个 handler 模块",
+            "✨ 硬编码外部化：基于 JSON 版 ConfigManager，阈值/颜色/路径可配置",
+            "✨ 配置存储：~/.zpp011_audit/config.json，支持窗口几何记忆"
+        ],
+        "fixes": [
+            "🐛 修复缺失导入（RuleEngine、deepcopy），程序可正常启动",
+            "🐛 筛选功能恢复正常"
+        ],
+        "optimizations": [
+            "⚡ 代码守恒：总有效代码 ≤950 行，零逻辑变更",
+            "⚡ 配置外部化消除硬编码，提升可维护性"
+        ],
+        "notes": [
+            "📌 重构预览版，核心功能已验证（加载、筛选、AI审核、PPT导出）",
+            "📌 遗留问题：AuditPresenter.load_audit_data 缺失（手动加载可绕过）"
+        ]
+    },
+    {
         "version": "v38",
         "date": "2026-05-22",
         "build_datetime": "2026-05-22 11:15:00",

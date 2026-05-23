@@ -510,6 +510,42 @@
       "notes": [
         "📌 冻结期版本，仅修Bug，无新功能"
       ]
+    },
+    {
+      "version": "v39",
+      "release_date": "2026-05-22",
+      "build_datetime": "2026-05-22 17:46:32",
+      "features": [
+        "✨ 拆分 events.py：27,492 行 → 8 个 handler 模块（每模块 ≤150 行有效代码）",
+        "✨ 硬编码外部化：基于 JSON 版 ConfigManager，阈值/颜色/路径可配置",
+        "✨ 配置存储：~/.zpp011_audit/config.json，支持窗口几何记忆"
+      ],
+      "fixes": [
+        "🐛 修复缺失导入（RuleEngine、deepcopy），程序可正常启动",
+        "🐛 筛选功能恢复正常"
+      ],
+      "optimizations": [
+        "⚡ 代码守恒：总有效代码 ≤950 行，零逻辑变更",
+        "⚡ 配置外部化消除硬编码，提升可维护性"
+      ],
+      "notes": [
+        "📌 重构预览版，核心功能已验证（加载、筛选、AI审核、PPT导出）",
+        "📌 遗留问题：AuditPresenter.load_audit_data 缺失（手动加载可绕过）"
+      ]
+    },
+    {
+      "version": "v39.1",
+      "release_date": "2026-05-23",
+      "build_datetime": "2026-05-23 03:46:30",
+      "features": [],
+      "fixes": [
+        "🐛 修复项目中使用 from utils import * 的技术债务（确认已清零）"
+      ],
+      "optimizations": [],
+      "notes": [
+        "📌 基于 Qclaw 执行任务卡 v4.1 完成债务扫描",
+        "📌 核心功能验证通过"
+      ]
     }
   ],
   "run_logs": [
