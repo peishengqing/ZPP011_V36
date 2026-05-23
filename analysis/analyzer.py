@@ -30,7 +30,6 @@ import tkinter as tk
 from tkinter import scrolledtext, messagebox, filedialog, ttk
 
 # 模块化组件
-from widgets import C, STEPS
 from storage import storage
 from domain.alt_material import alt_manager
 
@@ -405,20 +404,35 @@ def do_analysis_v2(
     alt_df, alt_order_mat = build_sheet2(df, cleaned_pairs, report_progress)
     check_cancel()
 
+    # 构建所有替代料物料描述集合（用于强制标记）
+    alt_materials_set = set()
+    for pair in cleaned_pairs:
+        a_desc, b_desc = pair  # cleaned_pairs 已经是 (描述, 描述) 的列表
+        alt_materials_set.add(a_desc)
+        alt_materials_set.add(b_desc)
+
     alt_order_mat = set()
     for _, r in alt_df.iterrows():
         alt_order_mat.add((str(r['订单号']), str(r['物料A'])))
         alt_order_mat.add((str(r['订单号']), str(r['物料B'])))
 
+    # 原有的订单级替代料标记（基于 alt_order_mat）
     for idx_r, r in df.iterrows():
         key = (str(r['流程订单']), str(r['组件物料描述']))
         if key in alt_order_mat:
             df.at[idx_r, '_note_source'] = '替代料'
 
+    # 新增：强制标记所有在 alt_materials_set 中的物料行为替代料
+    mask_alt_material = df['组件物料描述'].isin(alt_materials_set)
+    df.loc[mask_alt_material, '_note_source'] = '替代料'
+
+    # 更新标准原因
     df.loc[df['_note_source'] == '替代料', '标准原因'] = '替代料'
 
-    df['_is_alt'] = df.apply(lambda r: (
-        str(r['流程订单']), str(r['组件物料描述'])) in alt_order_mat, axis=1)
+    # 重新计算 _is_alt 标志（满足任意条件即标记）
+    _order_alt = df.apply(lambda r: (str(r['流程订单']), str(r['组件物料描述'])) in alt_order_mat, axis=1)
+    _mat_alt = df['组件物料描述'].isin(alt_materials_set)
+    df['_is_alt'] = _order_alt | _mat_alt
 
     check_cancel()
 

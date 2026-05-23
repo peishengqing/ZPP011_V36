@@ -153,7 +153,7 @@ class FilterPanel(tk.Frame):
 
     def expand(self):
         if not self.is_expanded:
-            self.container.pack(side="right", fill="y", after=self.toggle_bar)
+            self.container.pack(side="right", fill="y", before=self.toggle_bar)
             self.is_expanded = True
             if self.parent and hasattr(self.parent, '_on_filter_panel_expand'):
                 self.parent._on_filter_panel_expand(True)

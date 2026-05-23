@@ -22,13 +22,14 @@ class AnalysisEvents:
 
 
 
-        if self.running:
+        try:
+            if self.running:
 
 
 
 
 
-            return
+                return
 
 
 
@@ -40,7 +41,7 @@ class AnalysisEvents:
 
 
 
-        path = self.input_file.get()
+            path = self.input_file.get()
 
 
 
@@ -52,13 +53,13 @@ class AnalysisEvents:
 
 
 
-        if not path or not os.path.exists(path):
+            if not path or not os.path.exists(path):
 
 
 
 
 
-            messagebox.showerror("错误", "请先选择有效的输入文件！")
+                messagebox.showerror("错误", "请先选择有效的输入文件！")
 
 
 
@@ -70,7 +71,7 @@ class AnalysisEvents:
 
 
 
-            return
+                return
 
 
 
@@ -82,7 +83,7 @@ class AnalysisEvents:
 
 
 
-        self.running = True
+            self.running = True
 
 
 
@@ -94,7 +95,7 @@ class AnalysisEvents:
 
 
 
-        self.cancel_req = False
+            self.cancel_req = False
 
 
 
@@ -106,7 +107,7 @@ class AnalysisEvents:
 
 
 
-        self.run_btn.configure(state="disabled", text="⏳ 分析中...")
+            self.run_btn.configure(state="disabled", text="⏳ 分析中...")
 
 
 
@@ -118,7 +119,7 @@ class AnalysisEvents:
 
 
 
-        self.cancel_btn.configure(state="normal")
+            self.cancel_btn.configure(state="normal")
 
 
 
@@ -130,7 +131,7 @@ class AnalysisEvents:
 
 
 
-        self.open_btn.configure(state="disabled")
+            self.open_btn.configure(state="disabled")
 
 
 
@@ -142,7 +143,7 @@ class AnalysisEvents:
 
 
 
-        self.status_lbl.configure(text="分析中...", fg=C['warn'])
+            self.status_lbl.configure(text="分析中...", fg=C['warn'])
 
 
 
@@ -154,7 +155,7 @@ class AnalysisEvents:
 
 
 
-        self.log_text.configure(state="normal")
+            self.log_text.configure(state="normal")
 
 
 
@@ -166,7 +167,7 @@ class AnalysisEvents:
 
 
 
-        self.log_text.delete("1.0", "end")
+            self.log_text.delete("1.0", "end")
 
 
 
@@ -178,7 +179,7 @@ class AnalysisEvents:
 
 
 
-        self.log_text.configure(state="disabled")
+            self.log_text.configure(state="disabled")
 
 
 
@@ -190,7 +191,7 @@ class AnalysisEvents:
 
 
 
-        self.progress_var.set(0)
+            self.progress_var.set(0)
 
 
 
@@ -202,7 +203,7 @@ class AnalysisEvents:
 
 
 
-        self._current_step = -1
+            self._current_step = -1
 
 
 
@@ -214,13 +215,13 @@ class AnalysisEvents:
 
 
 
-        for i in self.step_frames:
+            for i in self.step_frames:
 
 
 
 
 
-            self._set_step(i, False)
+                self._set_step(i, False)
 
 
 
@@ -232,7 +233,7 @@ class AnalysisEvents:
 
 
 
-        self.start_time = time.time()
+            self.start_time = time.time()
 
 
 
@@ -244,7 +245,7 @@ class AnalysisEvents:
 
 
 
-        self._update_timer()
+            self._update_timer()
 
 
 
@@ -256,7 +257,7 @@ class AnalysisEvents:
 
 
 
-        t = threading.Thread(target=self._analysis_thread, daemon=True)
+            t = threading.Thread(target=self._analysis_thread, daemon=True)
 
 
 
@@ -268,6 +269,17 @@ class AnalysisEvents:
 
 
 
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            from tkinter import messagebox
+            messagebox.showerror("错误", f"分析启动失败: {e}")
+            self.running = False
+            try:
+                self.run_btn.configure(state="normal", text="▶  开始分析")
+            except:
+                pass
         t.start()
 
 
@@ -383,6 +395,8 @@ class AnalysisEvents:
 
 
             self.root.after(self.config.get('analysis.cleanup_delay_ms', 0), lambda e=e: self._on_error(str(e)))
+            import traceback
+            traceback.print_exc()
 
 
 

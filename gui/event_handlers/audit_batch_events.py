@@ -5,8 +5,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import json, os
 import pandas as pd
-from widgets import C
 from core.decorators import with_feedback
+from widgets import C
 
 
 class AuditBatchEvents:

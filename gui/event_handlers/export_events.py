@@ -6,9 +6,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import os
 import pandas as pd
-from widgets import C
 from ppt_generator import run_ppt_generation as _run_ppt
 from core.decorators import with_feedback
+from widgets import C
 from core.exporter import ExcelExporter
 import threading, datetime
 from openpyxl import Workbook, load_workbook
