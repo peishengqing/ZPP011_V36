@@ -1,0 +1,12 @@
+{
+  "version": "1.0.0",
+  "features": {
+    "new_filter_panel": false
+  },
+  "thresholds": {
+    "default_deviation": 10.0
+  },
+  "display": {
+    "factory_highlight": true
+  }
+}
