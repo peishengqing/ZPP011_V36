@@ -5,14 +5,14 @@
 """
 import os
 import sys
-sys.path.insert(0, r'E:\zpp011_dev\模块化脚本')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.stdout.reconfigure(encoding='utf-8')
 
 # 运行测试
 import subprocess
 result = subprocess.run(
     ['python', '-m', 'pytest', 'tests/test_ppt_generation.py', '-v'],
-    cwd=r'E:\zpp011_dev\模块化脚本',
+    cwd=os.path.dirname(os.path.abspath(__file__)),
     capture_output=True,
     text=True,
     encoding='utf-8'

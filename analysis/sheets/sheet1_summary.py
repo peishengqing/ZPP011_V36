@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 sheet1_summary.py — Sheet1 汇总统计（v36 抽取，未修改逻辑）

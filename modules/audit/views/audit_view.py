@@ -1,4 +1,4 @@
-﻿# modules/audit/views/audit_view.py
+# modules/audit/views/audit_view.py
 """
 MVP View 接口定义。
 

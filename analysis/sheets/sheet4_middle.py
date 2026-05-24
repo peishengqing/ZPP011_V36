@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 sheet4_middle.py — Sheet4 中间地带明细（v36 抽取，未修改逻辑）

@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 sheet2_alt.py — Sheet2 替代料明细（v36 抽取，兼容三元组配对）

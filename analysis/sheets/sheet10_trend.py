@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 sheet10_trend.py — Sheet10 趋势分析（v36 抽取，未修改逻辑）

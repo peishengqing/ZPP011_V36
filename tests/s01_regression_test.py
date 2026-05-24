@@ -38,7 +38,7 @@ test_df = pd.DataFrame({
     '材料偏差': [0 for i in range(1000)],
 })
 
-test_excel = r'E:\zpp011_dev\模块化脚本\tests\s01_test_data.xlsx'
+test_excel = os.path.join(os.path.dirname(os.path.abspath(__file__)), 's01_test_data.xlsx')
 test_df.to_excel(test_excel, index=False)
 print(f"✓ Test data saved: {test_excel} ({len(test_df)} rows)")
 
@@ -50,7 +50,7 @@ file_service = FileService()
 backup_path = file_service.backup_file(test_excel)
 print(f"✓ FileService: backup created at {backup_path}")
 
-latest = file_service.find_latest_file("s01_test_data*.xlsx", r'E:\zpp011_dev\模块化脚本\tests')
+latest = file_service.find_latest_file("s01_test_data*.xlsx", os.path.dirname(os.path.abspath(__file__)))
 print(f"✓ FileService: found latest file {os.path.basename(latest)}")
 
 # 测试 2: DataService
@@ -127,7 +127,7 @@ print("\n[8/8] Testing ExportService...")
 from services.export_service import ExportService
 
 export_service = ExportService(data_service, file_service)
-test_ppt = r'E:\zpp011_dev\模块化脚本\tests\s01_test_output.pptx'
+test_ppt = os.path.join(os.path.dirname(os.path.abspath(__file__)), 's01_test_output.pptx')
 
 start_time = time.time()
 ppt_path = export_service.generate_ppt(df_clean, test_ppt)

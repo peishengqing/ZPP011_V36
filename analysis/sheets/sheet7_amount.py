@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 sheet7_amount.py — Sheet7 偏差金额分析（v36 抽取，未修改逻辑）
