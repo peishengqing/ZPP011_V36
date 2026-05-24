@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "features": {
-    "new_filter_panel": false
+    "new_filter_panel": true
   },
   "thresholds": {
     "default_deviation": 10.0
