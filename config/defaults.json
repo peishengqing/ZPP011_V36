@@ -6,6 +6,13 @@
   "thresholds": {
     "default_deviation": 10.0
   },
+  "bias": {
+    "thresholds": {
+      "normal": 0.01,
+      "minor": 0.05,
+      "major": 0.10
+    }
+  },
   "display": {
     "factory_highlight": true
   }
