@@ -374,7 +374,10 @@ def _build_ui(self):
         self.filter_status_lbl = tk.Label(audit, text="", font=("Microsoft YaHei", 8),
                                    bg=C['surface'], fg=C['text_dim'], anchor="w")
         self.filter_status_lbl.pack(fill="x", padx=12, pady=(0, 4))# Treeview 表格
-        tree_container = tk.Frame(audit, bg=C['surface'])
+        self.table_frame = tk.Frame(audit, bg=C['surface'])
+        self.table_frame.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+
+        tree_container = tk.Frame(self.table_frame, bg=C['surface'])
         tree_container.pack(fill="both", expand=True, padx=12, pady=(0, 8))
         audit_vscroll = ttk.Scrollbar(tree_container, orient="vertical")
         audit_vscroll.pack(side="right", fill="y")
@@ -409,7 +412,7 @@ def _build_ui(self):
         self.audit_tree.heading("AI建议", text="AI建议")
         self.audit_tree.heading("audit_status", text="审核状态")
         self.audit_tree.heading("audit_source", text="审核来源")
-                self.audit_tree.heading("deviation_amount", text="偏差金额")
+        self.audit_tree.heading("deviation_amount", text="偏差金额")
         self.audit_tree.heading("remark_check_status", text="")
         self.audit_tree.heading("remark_check_msg", text="校验提示")
         # column() 顺序必须与 heading() 顺序完全一致，否则数据显示错位
@@ -432,7 +435,7 @@ def _build_ui(self):
         self.audit_tree.column("AI建议", width=120, anchor="w")
         self.audit_tree.column("audit_status", width=60, anchor="center")
         self.audit_tree.column("audit_source", width=70, anchor="center")
-                self.audit_tree.column("deviation_amount", width=90, anchor="e")
+        self.audit_tree.column("deviation_amount", width=90, anchor="e")
         self.audit_tree.column("remark_check_status", width=0, stretch=False)
         self.audit_tree.column("remark_check_msg", width=150, anchor="w")
         self.audit_tree.pack(side="left", fill="both", expand=True)
@@ -465,7 +468,7 @@ def _build_ui(self):
         self.audit_tree.tag_configure('amt_rank_2', background='#ffebee')
         self.audit_tree.tag_configure('auto_closed', background='#f0f0f0')
         self.audit_tree.tag_configure('over_amount', background='#ffebee')
-                self.audit_tree.tag_configure('under_amount', background='#e8f5e9')
+        self.audit_tree.tag_configure('under_amount', background='#e8f5e9')
         self.audit_tree.tag_configure('remark_red', background='#ffcccc')
         self.audit_tree.tag_configure('remark_yellow', background='#ffffcc')
         self.audit_tree.bind("<Double-Button-1>", self._on_tree_double_click)
