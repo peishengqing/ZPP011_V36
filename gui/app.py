@@ -315,115 +315,25 @@ class ZPP011Beautiful(EventsMixIn):
         self.task_manager.poll(self.root)
 
     def _on_sidebar_filter_changed(self, filters):
-        """侧边栏筛选条件变更时，刷新表格（不与 TableEvents._on_filter_changed 冲突）"""
-        print(f" [DEBUG] 收到筛选条件：{filters}")
-        
-        if not hasattr(self, 'audit_data') or self.audit_data is None:
-            return
+    """边殊栏筛选条件变更时，使用 FilterEngine 过滠衦格"""
+    if not hasattr(self, 'audit_data') or self.audit_data is None:
+        return
 
-        df = self.audit_data.copy()
-        print(f" [DEBUG] 原始数据：{len(df)} 条")
+    # 懒加载 FilterEngine
+    if not hasattr(self, 'filter_engine') or self.filter_engine is None:
+        from modules.audit.filters.filter_engine import FilterEngine
+        self.filter_engine = FilterEngine()
 
-        # 1. 工厂筛选
-        if filters.get('factory') and filters['factory'] != '全部':
-            if '工厂' in df.columns:
-                df = df[df['工厂'] == filters['factory']]
+    # 应用过滠
+    df_filtered = self.filter_engine.apply(filters, self.audit_data)
 
-        # 2. 车间筛选
-        if filters.get('workshop') and filters['workshop'] != '全部':
-            if '车间' in df.columns:
-                df = df[df['车间'] == filters['workshop']]
+    # 刷新表格和统计
+    self._refresh_audit_tree(df_filtered)
+    self._update_audit_stats(df_filtered)
+    self.status_lbl.configure(text=f""筛选结果：{len(df_filtered)} 条""")
+    print(f""[FilterEngine] 筛选完成，剩余 {len(df_filtered)} 条记录""")
 
-        # 3. 物料描述（模糊匹配）
-        material = filters.get('material', '').strip()
-        if material:
-            if '物料名称' in df.columns:
-                df = df[df['物料名称'].str.contains(material, na=False, case=False)]
-            elif '组件物料描述' in df.columns:
-                df = df[df['组件物料描述'].str.contains(material, na=False, case=False)]
-
-        # 4. 偏差率筛选
-        dev_rate = filters.get('dev_rate')
-        if dev_rate and dev_rate != '全部' and '偏差率(%)' in df.columns:
-            if dev_rate == '>10%':
-                df = df[df['偏差率(%)'] > 10]
-            elif dev_rate == '>20%':
-                df = df[df['偏差率(%)'] > 20]
-            elif dev_rate == '>30%':
-                df = df[df['偏差率(%)'] > 30]
-            elif dev_rate == '<-10%':
-                df = df[df['偏差率(%)'] < -10]
-            elif dev_rate == '<-20%':
-                df = df[df['偏差率(%)'] < -20]
-
-        # 5. 金额范围（使用"偏差金额"列）
-        amount_min = filters.get('amount_min', '').strip()
-        amount_max = filters.get('amount_max', '').strip()
-        if (amount_min or amount_max) and '偏差金额' in df.columns:
-            if amount_min:
-                try:
-                    min_val = float(amount_min)
-                    df = df[df['偏差金额'] >= min_val]
-                except Exception:
-                    pass
-            if amount_max:
-                try:
-                    max_val = float(amount_max)
-                    df = df[df['偏差金额'] <= max_val]
-                except Exception:
-                    pass
-
-        # 6. 审核状态
-        status = filters.get('status')
-        if status and status != '全部':
-            if status == '已备注':
-                if '备注原因' in df.columns:
-                    df = df[df['备注原因'].notna() & (df['备注原因'] != '')]
-            elif status == '需补备注':
-                if '备注原因' in df.columns:
-                    df = df[df['备注原因'].isna() | (df['备注原因'] == '')]
-
-        # 7. 替代料筛选
-        is_alt = filters.get('is_alt')
-        if is_alt and is_alt != '全部':
-            # 自动查找替代料列（支持多种列名）
-            alt_col = None
-            for col in ['_is_alt', '是否替代料', '替代料', 'is_alt']:
-                if col in df.columns:
-                    alt_col = col
-                    break
-            
-            if alt_col:
-                print(f" [DEBUG] 替代料筛选：列名={alt_col}, 筛选值={is_alt}")
-                if is_alt == '是':
-                    # 布尔型列（如 _is_alt）
-                    if df[alt_col].dtype == bool:
-                        df = df[df[alt_col] == True]
-                    # 字符串列（如 是否替代料、替代料）
-                    else:
-                        df = df[df[alt_col].astype(str) == '是']
-                elif is_alt == '否':
-                    # 布尔型列
-                    if df[alt_col].dtype == bool:
-                        df = df[df[alt_col] == False]
-                    # 字符串列
-                    else:
-                        df = df[df[alt_col].astype(str) != '是']
-                print(f" [DEBUG] 替代料筛选后：{len(df)} 条")
-            else:
-                print(f" [WARN] 未找到替代料列，可用列名：{list(df.columns)}")
-
-        # 8. 优先级颜色
-        color = filters.get('priority_color')
-        if color and color != '全部' and '_priority_label' in df.columns:
-            df = df[df['_priority_label'] == color]
-
-        # 刷新表格
-        self._refresh_audit_tree(df)
-        self._update_audit_stats(df)
-        self.status_lbl.configure(text=f"筛选结果：{len(df)} 条")
-
-    def _on_filter_panel_expand(self, expanded):
+def _on_filter_panel_expand(self, expanded):
         """侧边栏展开/折叠时的回调（预留，当前不做布局调整）"""
         pass
 
