@@ -1141,13 +1141,23 @@ class TableEvents:
 
 
 
-            ))
+
+                str(row.get('remark_check_status', '')),  # remark_check_status
+                str(row.get('remark_check_msg', '')),  # remark_check_msg            ))
 
 
 
 
 
-            # RuleEngine 偏差率颜色
+            
+            # Apply remark_check_status tag
+            remark_status = row.get("remark_check_status", "")
+            if remark_status == "red":
+                self.audit_tree.item(item, tags=list(self.audit_tree.item(item, "tags")) + ["remark_red"])
+            elif remark_status == "yellow":
+                self.audit_tree.item(item, tags=list(self.audit_tree.item(item, "tags")) + ["remark_yellow"])
+
+# RuleEngine 偏差率颜色
 
 
 
@@ -2827,7 +2837,9 @@ class TableEvents:
 
 
 
-            ))
+
+                str(row.get('remark_check_status', '')),  # remark_check_status
+                str(row.get('remark_check_msg', '')),  # remark_check_msg            ))
 
 
 
@@ -2845,7 +2857,13 @@ class TableEvents:
 
 
 
-            self.audit_tree.item(item, tags=(priority_tag,))
+            # 追加备注校验标签
+            current_tags = list(self.audit_tree.item(item, 'tags'))
+            if row.get('remark_check_status') == 'red':
+                current_tags.append('remark_red')
+            elif row.get('remark_check_status') == 'yellow':
+                current_tags.append('remark_yellow')
+            self.audit_tree.item(item, tags=current_tags)
 
 
 

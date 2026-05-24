@@ -1,4 +1,3 @@
-import pandas as pd
 from storage import storage
 from analysis.analyzer import do_analysis_v2
 
