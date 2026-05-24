@@ -519,7 +519,7 @@ class ExportEvents:
 
 
 
-        default_dir = r"E:\zpp011_dev\ZPP011偏差分析"
+        default_dir = os.path.join(os.path.expanduser("~"), "ZPP011偏差分析")
 
 
 

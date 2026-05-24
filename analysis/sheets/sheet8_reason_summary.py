@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 sheet8_reason_summary.py — Sheet8 偏差原因汇总（v36 抽取，未修改逻辑）

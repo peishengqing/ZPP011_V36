@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 sheet5_full.py — Sheet5 完整偏差明细（v36 抽取，未修改逻辑）

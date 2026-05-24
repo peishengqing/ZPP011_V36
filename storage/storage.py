@@ -12,19 +12,10 @@ import pandas as pd
 
 
 def _get_app_dir():
-    """返回应用数据目录（优先 E:\zpp011_dev\.zpp011_audit，兼容旧版 ~/.zpp011_audit）"""
-    new_dir = r"E:\zpp011_dev\.zpp011_audit"
-    old_dir = os.path.join(os.path.expanduser("~"), ".zpp011_audit")
-    os.makedirs(new_dir, exist_ok=True)
-    # 一次性迁移：旧目录存在且新目录数据库不存在时，复制过去
-    old_db = os.path.join(old_dir, "audit_log.db")
-    new_db = os.path.join(new_dir, "audit_log.db")
-    if os.path.exists(old_db) and not os.path.exists(new_db):
-        try:
-            shutil.copy2(old_db, new_db)
-        except Exception:
-            pass  # 迁移失败不影响启动
-    return new_dir
+    """返回应用数据目录（~/.zpp011_audit）"""
+    app_dir = os.path.join(os.path.expanduser("~"), ".zpp011_audit")
+    os.makedirs(app_dir, exist_ok=True)
+    return app_dir
 
 
 def get_audit_db_path():

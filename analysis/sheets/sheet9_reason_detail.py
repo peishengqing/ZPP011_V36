@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """sheet9_reason_detail.py — Sheet9 偏差原因分析（v36 抽取，未修改逻辑）"""
 import pandas as pd

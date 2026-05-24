@@ -1,4 +1,4 @@
-﻿from .audit_core_events import AuditCoreEvents
+from .audit_core_events import AuditCoreEvents
 from .audit_batch_events import AuditBatchEvents
 from .table_events import TableEvents
 from .export_events import ExportEvents

@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 云南达利ZPP011生产偏差分析器 — 多条件智能筛选 v36
@@ -528,7 +528,7 @@ class ZPP011Beautiful(EventsMixIn):
                     return _cl_path
         else:
             # 开发环境：先找workspace_dir，再找main.py同目录
-            _cl_path = os.path.join(getattr(self, 'workspace_dir', r'E:\ZPP011_Data'), 'changelog.json')
+            _cl_path = os.path.join(getattr(self, 'workspace_dir', os.path.dirname(os.path.abspath(__file__))), 'changelog.json')
             if os.path.isfile(_cl_path):
                 return _cl_path
             _cl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'changelog.json')

@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 sheet3_no_note.py — Sheet3 无备注预警（v36 抽取，未修改逻辑）
