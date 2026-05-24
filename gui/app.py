@@ -333,9 +333,20 @@ class ZPP011Beautiful(EventsMixIn):
     self.status_lbl.configure(text=f""筛选结果：{len(df_filtered)} 条""")
     print(f""[FilterEngine] 筛选完成，剩余 {len(df_filtered)} 条记录""")
 
-def _on_filter_panel_expand(self, expanded):
-        """侧边栏展开/折叠时的回调（预留，当前不做布局调整）"""
-        pass
+    def _on_filter_panel_expand(self, expanded):
+        """侧边栏展开/折叠时的回调（消除平移抖动）"""
+        try:
+            # 动态获取侧边栏宽度（消除硬编码 250）
+            sidebar_width = getattr(self.filter_panel, 'width', 250)
+            new_width = self.root.winfo_width() - sidebar_width
+            
+            # 优化：仅在宽度变化超过 5px 时执行 update_idletasks
+            current_width = self.table_frame.winfo_width()
+            if abs(new_width - current_width) > 5:
+                self.table_frame.configure(width=new_width)
+                self.root.update_idletasks()
+        except Exception as e:
+            print(f"[_on_filter_panel_expand] 错误: {e}")
 
     def set_status(self, msg):
         self.status_var.set(msg)
