@@ -16,6 +16,8 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
+from pptx.enum.chart import XL_CHART_TYPE
+from pptx.chart.data import ChartData
 import io
 from matplotlib.ticker import FuncFormatter
 import warnings
@@ -235,6 +237,37 @@ def _create_trend_chart_image(trend_df, top_n=5):
     plt.close()
     img_buf.seek(0)
     return img_buf
+
+
+def _add_doughnut_chart(slide, over_amount, under_amount):
+    """添加多耗/少耗环形饼图"""
+    if over_amount == 0 and under_amount == 0:
+        return  # 无数据，跳过
+
+    chart_data = ChartData()
+    chart_data.categories = ['多耗', '少耗']
+    chart_data.add_series('偏差金额', [over_amount, under_amount])
+
+    x, y, cx, cy = Inches(1), Inches(1.5), Inches(8), Inches(4.5)
+    chart = slide.shapes.add_chart(
+        XL_CHART_TYPE.DOUGHNUT, x, y, cx, cy, chart_data
+    ).chart
+
+    # 设置标题
+    chart.has_title = True
+    chart.chart_title.text_frame.text = "多耗与少耗占比"
+
+    # 设置数据点颜色
+    series = chart.series[0]
+    points = series.points
+    if len(points) >= 2:
+        # 多耗 -> 红色
+        points[0].format.fill.solid()
+        points[0].format.fill.fore_color.rgb = RGBColor(0xE7, 0x4C, 0x3C)
+        # 少耗 -> 绿色
+        points[1].format.fill.solid()
+        points[1].format.fill.fore_color.rgb = RGBColor(0x2E, 0xCC, 0x71)
+
 
 def run_ppt_generation(excel_path, output_path, log_cb=None):
     _log_error(f"开始生成 PPT，Excel: {excel_path}, 输出: {output_path}")
@@ -481,6 +514,20 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
                     if c_idx in [2, 3, 4] and isinstance(val, (int, float)) and val < 0:
                         for p in cell.text_frame.paragraphs:
                             p.font.color.rgb = C_GREEN
+
+        # 新增：多耗/少耗环形饼图
+        over_total = 0.0
+        under_total = 0.0
+        if not dev_detail_df.empty and '偏差金额' in dev_detail_df.columns:
+            over_total = dev_detail_df[dev_detail_df['偏差金额'] > 0]['偏差金额'].sum()
+            under_total = dev_detail_df[dev_detail_df['偏差金额'] < 0]['偏差金额'].abs().sum()
+
+        if over_total > 0 or under_total > 0:
+            doughnut_slide = prs.slides.add_slide(_get_blank_layout(prs))
+            set_slide_bg(doughnut_slide, C_BG)
+            add_title_bar(doughnut_slide, '多耗与少耗占比', '偏差金额分布')
+            _add_doughnut_chart(doughnut_slide, over_total, under_total)
+            _log("  [PPT] 环形饼图完成")
 
         # 页面生成
         slide1 = prs.slides.add_slide(_get_blank_layout(prs))
