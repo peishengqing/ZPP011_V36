@@ -6,7 +6,7 @@ Presenter 通过此接口与 UI 层交互，禁止 Presenter 直接操作 tkinte
 events.py 中的 ZPP011Beautiful 类实现此接口（作为 ViewBridge）。
 """
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Callable
+from typing import Dict, List, Optional
 import pandas as pd
 
 

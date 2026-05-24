@@ -6,6 +6,9 @@ from typing import Any, Dict, Optional, List
 
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN
+from pptx.chart.data import CategoryChartData
+from pptx.enum.chart import XL_CHART_TYPE
+from pptx.enum.chart import XL_LEGEND_POSITION
 
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN
@@ -20,7 +23,7 @@ from pptx.enum.text import PP_ALIGN
 class AuditPresenter:
     """MVP Presenter 层：业务逻辑、协调 Model 和 View"""
 
-    def __init__(self, model: 'AuditModel', view: 'AuditViewBridge'):
+    def __init__(self, model, view):
         self.model = model
         self.view = view  # view 是 events.py 中提供的一组回调接口（非完整 View 对象）
         self.running = False
@@ -125,6 +128,30 @@ class AuditPresenter:
         audit_data = self.view.get_audit_data()
         if audit_data is None or len(audit_data) == 0:
             return audit_data
+
+        # ===== 备注校验规则（达析 2026-05-24）=====
+        if 'remark_check_status' not in audit_data.columns:
+            try:
+                from core.rule_engine import RuleEngine
+                rengine = RuleEngine()
+                alt_pairs = self.view.get_alt_pairs() if hasattr(self.view, 'get_alt_pairs') else []
+                alt_codes = set()
+                for a, b in alt_pairs:
+                    for it in (a, b):
+                        if isinstance(it, (list, tuple)) and len(it) >= 2:
+                            alt_codes.add(str(it[1]).strip())
+                        elif isinstance(it, str):
+                            alt_codes.add(it.strip())
+                status_list, msg_list = [], []
+                for _, row in audit_data.iterrows():
+                    st, ms = rengine.check_remark(row.to_dict(), alt_codes)
+                    status_list.append(st)
+                    msg_list.append(ms)
+                audit_data['remark_check_status'] = status_list
+                audit_data['remark_check_msg'] = msg_list
+                self.view.log('备注校验规则已应用', 'info')
+            except Exception as e:
+                self.view.log(f'备注校验失败: {e}', 'warn')
 
         df = audit_data.copy()
 

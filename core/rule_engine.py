@@ -135,3 +135,34 @@ class RuleEngine:
     def get_s01_rules(self) -> dict:
         """返回所有以 's01.' 或 'inventory.' 开头的规则配置"""
         return {k: v for k, v in self.rules.items() if k.startswith('s01.') or k.startswith('inventory.')}
+
+    def check_remark(self, row: Dict, alt_pairs: Optional[set] = None) -> tuple:
+        """
+        备注校验规则引擎
+        :param row: 单行数据字典
+        :param alt_pairs: 替代料编码集合（可选，用于豁免）
+        :return: (status, message) 元组，status ∈ {red, yellow, none}
+        """
+        remark = str(row.get('备注', '')).strip()
+        code = str(row.get('组件物料号', '')).strip()
+        deviation_rate = self._safe_float(row.get('偏差率', 0))
+        stagnant_days = self._safe_float(row.get('呆滞天数', 0))
+
+        # 规则1：空备注 → red
+        if not remark:
+            return ('red', '备注为空')
+
+        # 规则2：无定额非替代料 → yellow
+        # 假设有'定额'列，若无则默认非替代料都提示
+        quota = row.get('定额', None)
+        actual = self._safe_float(row.get('实际', 0))
+        is_alt = code in alt_pairs if alt_pairs else False
+        if quota is None and actual > 0 and not is_alt:
+            return ('yellow', '无定额且非替代料')
+
+        # 规则3：偏差>10%且呆滞>90天 → red
+        if deviation_rate > 0.10 and stagnant_days > 90:
+            return ('red', '偏差>10%且呆滞>90天')
+
+        # 全部通过
+        return ('none', '')

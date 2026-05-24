@@ -383,7 +383,8 @@ def _build_ui(self):
         cols = ("idx", "excel_row", "factory", "admin", "order_date", "order_no",
                 "code", "name", "quota", "actual", "dev_rate", "is_alt", "status",
                 "remark", "batch_remark", "audit_result", "AI建议", "audit_status",
-                "audit_source", "deviation_amount")
+                "audit_source", "deviation_amount",
+                "remark_check_status", "remark_check_msg")
         self.audit_tree = ttk.Treeview(tree_container, columns=cols, show="headings",
                                height=15, style="Custom.Treeview",
                                selectmode="extended",
@@ -408,7 +409,9 @@ def _build_ui(self):
         self.audit_tree.heading("AI建议", text="AI建议")
         self.audit_tree.heading("audit_status", text="审核状态")
         self.audit_tree.heading("audit_source", text="审核来源")
-        self.audit_tree.heading("deviation_amount", text="偏差金额")
+                self.audit_tree.heading("deviation_amount", text="偏差金额")
+        self.audit_tree.heading("remark_check_status", text="")
+        self.audit_tree.heading("remark_check_msg", text="校验提示")
         # column() 顺序必须与 heading() 顺序完全一致，否则数据显示错位
         self.audit_tree.column("idx", width=35, anchor="center")
         self.audit_tree.column("excel_row", width=60, anchor="center")
@@ -429,7 +432,9 @@ def _build_ui(self):
         self.audit_tree.column("AI建议", width=120, anchor="w")
         self.audit_tree.column("audit_status", width=60, anchor="center")
         self.audit_tree.column("audit_source", width=70, anchor="center")
-        self.audit_tree.column("deviation_amount", width=90, anchor="e")
+                self.audit_tree.column("deviation_amount", width=90, anchor="e")
+        self.audit_tree.column("remark_check_status", width=0, stretch=False)
+        self.audit_tree.column("remark_check_msg", width=150, anchor="w")
         self.audit_tree.pack(side="left", fill="both", expand=True)
         # 应用初始列宽锁定状态
         self.root.after(100, self._toggle_column_lock)
@@ -460,7 +465,9 @@ def _build_ui(self):
         self.audit_tree.tag_configure('amt_rank_2', background='#ffebee')
         self.audit_tree.tag_configure('auto_closed', background='#f0f0f0')
         self.audit_tree.tag_configure('over_amount', background='#ffebee')
-        self.audit_tree.tag_configure('under_amount', background='#e8f5e9')
+                self.audit_tree.tag_configure('under_amount', background='#e8f5e9')
+        self.audit_tree.tag_configure('remark_red', background='#ffcccc')
+        self.audit_tree.tag_configure('remark_yellow', background='#ffffcc')
         self.audit_tree.bind("<Double-Button-1>", self._on_tree_double_click)
         # B004: removed single-click card popup; only double-click triggers _show_audit_card
         self.audit_data = pd.DataFrame()

@@ -1,0 +1,206 @@
+# P0 代码扫描报告
+
+**生成时间**：2026-05-24 14:45 GMT+8  
+**执行人**：Qclaw  
+**分支**：dev/v39-refactor  
+**扫描工具**：pyflakes 3.4.0, bandit 1.9.4  
+
+---
+
+## 1. pyflakes 扫描结果
+
+**扫描命令**：
+```bash
+pyflakes modules/audit/
+pyflakes gui/filter_panel.py
+```
+
+**退出代码**：1（发现错误）
+
+### 1.1 未使用的导入（Unused Import）
+
+#### modules/audit/models/audit_model.py
+- 第 1 行：'pandas as pd' imported but unused
+
+#### modules/audit/presenters/audit_presenter.py
+- 第 1 行：'os' imported but unused
+- 第 3 行：'threading' imported but unused
+- 第 4 行：'typing.Optional' imported but unused
+- 第 4 行：'typing.List' imported but unused
+- 第 230 行：'pandas as pd' imported but unused
+- 第 391 行：'numpy as np' imported but unused
+- 第 1143 行：'pandas as pd' imported but unused
+
+### 1.2 未定义的名称（Undefined Name）
+
+#### modules/audit/presenters/audit_presenter.py
+- 第 12 行：undefined name 'AuditModel'
+- 第 12 行：undefined name 'AuditViewBridge'
+- 第 788 行：undefined name 'CategoryChartData'
+- 第 794 行：undefined name 'XL_CHART_TYPE'
+- 第 798 行：undefined name 'XL_LEGEND_POSITION'
+- 第 851 行：undefined name 'CategoryChartData'
+- 第 856 行：undefined name 'XL_CHART_TYPE'
+- 第 899 行：undefined name 'CategoryChartData'
+- 第 906 行：undefined name 'XL_CHART_TYPE'
+- 第 911 行：undefined name 'XL_LEGEND_POSITION'
+
+### 1.3 未使用的局部变量（Unused Variable）
+
+#### modules/audit/presenters/audit_presenter.py
+- 第 616 行：local variable 'fac_names' is assigned to but never used
+- 第 823 行：local variable 'dev_type_dist' is assigned to but never used
+- 第 1000 行：local variable 'factories' is assigned to but never used
+- 第 1161 行：local variable 'base' is assigned to but never used
+
+### 1.4 空的 f-string（Missing Placeholders）
+
+#### modules/audit/presenters/audit_presenter.py
+- 第 736 行：f-string is missing placeholders
+- 第 828 行：f-string is missing placeholders
+- 第 944 行：f-string is missing placeholders
+- 第 1122 行：f-string is missing placeholders
+
+### 1.5 重新定义未使用的变量（Redefinition of Unused）
+
+#### modules/audit/presenters/audit_presenter.py
+- 第 49 行：redefinition of unused 'os' from line 1
+- 第 1156 行：redefinition of unused 'os' from line 1
+
+### 1.6 文件不存在
+
+#### gui/filter_panel.py
+- 错误：No such file or directory
+
+---
+
+## 2. bandit 扫描结果
+
+**扫描命令**：
+```bash
+bandit -r modules/audit/ -s B101 -f txt
+```
+
+**退出代码**：0（无问题）
+
+### 2.1 扫描统计
+- 扫描代码行数：1138 行
+- 跳过行数（#nosec）：0
+- 跳过的潜在问题（disabled tests）：0
+
+### 2.2 问题统计（按严重性）
+- Undefined：0
+- Low：0
+- Medium：0
+- High：0
+
+### 2.3 问题统计（按置信度）
+- Undefined：0
+- Low：0
+- Medium：0
+- High：0
+
+### 2.4 跳过的文件
+- 0 个文件被跳过
+
+---
+
+## 3. 问题分析与建议
+
+### 3.1 高优先级问题（建议修复）
+
+#### 未定义的名称（Undefined Name）
+- **影响**：可能导致运行时 NameError
+- **原因**：
+  - `AuditModel` 和 `AuditViewBridge` 可能是类型提示，需要从 `typing` 导入或使用 `TYPE_CHECKING`
+  - `CategoryChartData`, `XL_CHART_TYPE`, `XL_LEGEND_POSITION` 可能来自 `python-pptx` 库，需要确认导入
+- **建议**：
+  1. 检查这些名称是否真的未定义（可能是残留代码或注释）
+  2. 如果是类型提示，使用 `from __future__ import annotations` 或 `if TYPE_CHECKING:`
+  3. 如果来自第三方库，添加正确的导入语句
+
+### 3.2 中优先级问题（建议清理）
+
+#### 未使用的导入（Unused Import）
+- **影响**：代码冗余，增加加载时间
+- **建议**：删除未使用的导入语句
+
+#### 未使用的局部变量（Unused Variable）
+- **影响**：代码冗余，可能是调试残留
+- **建议**：删除未使用的变量赋值，或使用 `_` 表示故意忽略
+
+### 3.3 低优先级问题（可选修复）
+
+#### 空的 f-string（Missing Placeholders）
+- **影响**：性能轻微下降，代码不规范
+- **建议**：将空的 f-string 改为普通字符串（去掉 `f` 前缀）
+
+#### 重新定义未使用的变量（Redefinition of Unused）
+- **影响**：可能是复制粘贴错误
+- **建议**：检查第 49 行和第 1156 行，确认是否需要重新导入 `os`
+
+### 3.4 路径问题
+
+#### gui/filter_panel.py 不存在
+- **影响**：任务卡中的路径可能有误
+- **建议**：确认 `filter_panel.py` 的实际位置（可能在 `modules/` 或 `gui/` 子目录下）
+
+---
+
+## 4. 验收结论
+
+| 验收项 | 状态 | 说明 |
+|--------|------|------|
+| pyflakes 无错误 | ❌ | 发现 31 个错误（未使用导入、未定义名称、空 f-string 等） |
+| bandit 无高危 | ✅ | 无安全问题（High: 0） |
+| 技术债务已记录 | ⏳ | 待 T2 执行 |
+| Trae 签字确认 | ⏳ | 待 T3 执行 |
+
+**初步结论**：❌ **P0 门禁未通过**（pyflakes 有错误）
+
+---
+
+## 5. 后续操作建议
+
+### 选项 1：修复所有 pyflakes 错误
+- 优点：代码质量最高
+- 缺点：耗时较长，可能引入新错误
+
+### 选项 2：修复高优先级错误（未定义的名称）
+- 优点：平衡代码质量和效率
+- 缺点：仍有一些警告
+
+### 选项 3：忽略 pyflakes 错误（仅关注 bandit）
+- 优点：快速通过验收
+- 缺点：代码质量不高，可能隐藏真正的问题
+
+### 建议
+根据任务卡要求（"pyflakes 无错误"），建议 **选项 1 或选项 2**。  
+如果时间紧迫，可以先修复未定义的名称（防止运行时错误），然后记录其他问题到技术债务。
+
+---
+
+## 6. 附件
+
+### 6.1 pyflakes 完整输出
+```
+modules/audit/models\audit_model.py:1:1: 'pandas as pd' imported ```
+
+### 6.2 bandit 完整输出
+```
+[main]	INFO	profile include tests: None
+[main]	INFO	profile exclude tests: None
+[main]	INFO	cli include tests: None
+[main]	INFO	cli exclude tests: None
+[main]	INFO	running on Python 3.11.9
+Run started:2026-05-24 06:43:38.074049+00:00
+
+Test results:
+	No issues identified.
+
+Code scanned:
+	Total ```
+
+---
+
+**报告结束**
