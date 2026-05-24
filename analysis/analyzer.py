@@ -89,7 +89,7 @@ def do_analysis_v2(
             progress_callback(step_idx, step_name, percent)
             time.sleep(0.01)
 
-    from analysis.sheets.write_sheet_util import get_default_styles
+    from analysis.excel_builder.write_sheet_util import get_default_styles
     _styles = get_default_styles()
     pos_fill = _styles['pos_fill']
     neg_fill = _styles['neg_fill']
