@@ -315,23 +315,23 @@ class ZPP011Beautiful(EventsMixIn):
         self.task_manager.poll(self.root)
 
     def _on_sidebar_filter_changed(self, filters):
-    """边殊栏筛选条件变更时，使用 FilterEngine 过滠衦格"""
-    if not hasattr(self, 'audit_data') or self.audit_data is None:
-        return
+        """边栏筛选条件变更时，使用 FilterEngine 过滤表格"""
+        if not hasattr(self, 'audit_data') or self.audit_data is None:
+            return
 
-    # 懒加载 FilterEngine
-    if not hasattr(self, 'filter_engine') or self.filter_engine is None:
-        from modules.audit.filters.filter_engine import FilterEngine
-        self.filter_engine = FilterEngine()
+        # 懒加载 FilterEngine
+        if not hasattr(self, 'filter_engine') or self.filter_engine is None:
+            from modules.audit.filters.filter_engine import FilterEngine
+            self.filter_engine = FilterEngine()
 
-    # 应用过滠
-    df_filtered = self.filter_engine.apply(filters, self.audit_data)
+        # 应用过滠
+        df_filtered = self.filter_engine.apply(filters, self.audit_data)
 
-    # 刷新表格和统计
-    self._refresh_audit_tree(df_filtered)
-    self._update_audit_stats(df_filtered)
-    self.status_lbl.configure(text=f""筛选结果：{len(df_filtered)} 条""")
-    print(f""[FilterEngine] 筛选完成，剩余 {len(df_filtered)} 条记录""")
+        # 刷新表格和统计
+        self._refresh_audit_tree(df_filtered)
+        self._update_audit_stats(df_filtered)
+        self.status_lbl.configure(text=f"筛选结果：{len(df_filtered)} 条")
+        print(f"[FilterEngine] 筛选完成，剩余 {len(df_filtered)} 条记录")
 
     def _on_filter_panel_expand(self, expanded):
         """侧边栏展开/折叠时的回调（消除平移抖动）"""
