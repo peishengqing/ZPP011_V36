@@ -1143,7 +1143,8 @@ class TableEvents:
 
 
                 str(row.get('remark_check_status', '')),  # remark_check_status
-                str(row.get('remark_check_msg', '')),  # remark_check_msg            ))
+                str(row.get('remark_check_msg', ''))  # remark_check_msg
+            ))
 
 
 
@@ -2839,7 +2840,9 @@ class TableEvents:
 
 
                 str(row.get('remark_check_status', '')),  # remark_check_status
-                str(row.get('remark_check_msg', '')),  # remark_check_msg            ))
+                str(row.get('remark_check_msg', ''))  # remark_check_msg
+
+                ))
 
 
 
