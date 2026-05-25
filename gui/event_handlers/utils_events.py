@@ -4462,6 +4462,7 @@ class UtilsEvents:
         win.geometry("600x500")
         win.transient(self.root)
         # 非模态：不调用 grab_set()，不阻塞主窗口
+        win.attributes('-topmost', True)  # 置顶显示，但不强制交互
 
         text = tk.Text(win, wrap="word", font=("Consolas", 10), padx=10, pady=10)
         text.pack(fill="both", expand=True)
