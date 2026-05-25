@@ -195,7 +195,7 @@ class AuditPresenter:
                         elif isinstance(it, str):
                             alt_codes.add(it.strip())
                 workshop_mapping, turnover_dict = self._load_rule3_data()
-                    status_list, msg_list = [], []
+                status_list, msg_list = [], []
                 for _, row in audit_data.iterrows():
                     st, ms = rengine.check_remark(row.to_dict(), alt_codes,
                                                       workshop_mapping=workshop_mapping,
