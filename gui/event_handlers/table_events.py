@@ -1464,6 +1464,78 @@ class TableEvents:
 
 
 
+
+        # 绑定右键事件（防重复绑定）
+        if not hasattr(self, '_copy_menu_bound'):
+            self.audit_tree.bind("<Button-3>", self._show_copy_menu)
+            self._copy_menu_bound = True
+
+
+    def _show_copy_menu(self, event):
+        """显示右键菜单，并选中当前行"""
+        item = self.audit_tree.identify_row(event.y)
+        if not item:
+            return
+        # 选中右键点击的行
+        self.audit_tree.selection_set(item)
+        self.audit_tree.focus(item)
+        # 懒初始化菜单
+        if not hasattr(self, 'copy_menu'):
+            self.copy_menu = tk.Menu(self.root, tearoff=0)
+            self.copy_menu.add_command(label="复制物料编码", command=self._copy_material_code)
+        self.copy_menu.post(event.x_root, event.y_root)
+
+    def _copy_material_code(self):
+        """复制当前选中行的物料编码到剪贴板（通过 audit_data 反查）"""
+        selected = self.audit_tree.selection()
+        if not selected:
+            return
+        item = selected[0]
+
+        # 获取原表行号（excel_row）
+        values = self.audit_tree.item(item, 'values')
+        columns = list(self.audit_tree['columns'])
+        
+        if 'excel_row' not in columns:
+            self.log("表格中缺少 excel_row 列，无法复制物料编码", "error")
+            return
+
+        excel_row_idx = columns.index('excel_row')
+        try:
+            excel_row = int(values[excel_row_idx])  # 确保整数
+        except (ValueError, TypeError):
+            self.log(f"无效的 excel_row 值: {values[excel_row_idx]}", "error")
+            return
+
+        # 检查 audit_data 是否包含 excel_row 列
+        if self.audit_data is None or 'excel_row' not in self.audit_data.columns:
+            self.log("数据模型中缺少 excel_row 列，无法复制物料编码", "error")
+            return
+
+        # 在 audit_data 中定位行
+        row = self.audit_data[self.audit_data['excel_row'] == excel_row]
+        if row.empty:
+            self.log(f"未找到 excel_row={excel_row} 对应的数据行", "error")
+            return
+
+        # 提取物料编码（支持多种列名）
+        mat_code = None
+
+        for col in ['物料编码', '组件物料号', '物料号', 'code']:
+            if col in row.columns:
+                mat_code = row.iloc[0].get(col, '')
+                if mat_code:
+                    break
+        
+        if not mat_code:
+            self.log("无法从数据中提取物料编码", "error")
+            return
+
+        # 复制到剪贴板
+        self.root.clipboard_clear()
+        self.root.clipboard_append(str(mat_code))
+        self.log(f"已复制物料编码: {mat_code}", "info")
+
     def _apply_row_colors(self):
 
 
