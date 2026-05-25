@@ -316,6 +316,7 @@ class ZPP011Beautiful(EventsMixIn):
 
     def _on_sidebar_filter_changed(self, filters):
         """边栏筛选条件变更时，使用 FilterEngine 过滤表格"""
+        print(f"[FILTER] 收到筛选条件: {filters}")
         if not hasattr(self, 'audit_data') or self.audit_data is None:
             return
 
