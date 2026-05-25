@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 云南达利ZPP011生产偏差分析器 — 多条件智能筛选 v36
