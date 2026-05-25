@@ -1633,6 +1633,29 @@ class TableEvents:
 
 
 
+    _COL_TO_DF = {
+        'idx': None,
+        'excel_row': '原表行号',
+        'factory': '工厂名称',
+        'admin': '生产管理员描述',
+        'order_date': '订单日期',
+        'order_no': '流程订单',
+        'code': '物料编码',
+        'name': '组件物料描述',
+        'quota': '数量-定额',
+        'actual': '数量-实际',
+        'dev_rate': '偏差率(%)',
+        'is_alt': '_is_alt',
+        'status': 'status_temp',
+        'remark': '备注原因',
+        'batch_remark': '批量备注原因',
+        'audit_result': 'audit_result',
+        'AI建议': 'AI建议',
+        'audit_status': 'audit_status',
+        'audit_source': 'audit_source',
+        'deviation_amount': '偏差金额',
+    }
+
     _COL_DISPLAY = {
 
 

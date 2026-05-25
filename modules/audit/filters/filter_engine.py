@@ -25,6 +25,8 @@ class FilterEngine:
         if data is None or data.empty:
             return data
 
+        print(f"[ENGINE] 输入形状: {data.shape}, 筛选条件: {filters}")
+
         df = data.copy()
 
         # 1. 工厂筛选
@@ -94,19 +96,21 @@ class FilterEngine:
                     alt_col = col
                     break
             if alt_col:
-                # 打印列值类型，辅助调试
+                # 调试输出，便于排查（完成后可删除）
+                print(f"[ALT] 列名: {alt_col}, 唯一值: {df[alt_col].unique()}")
                 if alt_col == '_is_alt':
                     # 布尔列
                     df = df[df[alt_col] == (is_alt == '是')]
                 else:
-                    # 字符串列，去除空格后比较
+                    # 字符串列，标准化后比较
                     df = df[df[alt_col].astype(str).str.strip() == ('是' if is_alt == '是' else '否')]
             else:
-                pass
+                print(f"[ALT] 未找到替代料列，可用列: {list(df.columns)}")
 
         # 8. 优先级颜色（如果有）
         color = filters.get('priority_color')
         if color and color != '全部' and '_priority_label' in df.columns:
             df = df[df['_priority_label'] == color]
 
+        print(f"[ENGINE] 输出形状: {df.shape}")
         return df
