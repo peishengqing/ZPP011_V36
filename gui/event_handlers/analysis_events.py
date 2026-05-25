@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """数据分析、加载、进度控制事件"""
 
 import tkinter as tk
