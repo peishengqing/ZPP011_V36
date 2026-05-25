@@ -4456,167 +4456,78 @@ class UtilsEvents:
 
 
     def _show_pre_check_report(self, results):
-
-
-
-
-
+        """显示预检报告（系统检查 + 数据统计），配置化列名，防御缺失列"""
         win = tk.Toplevel(self.root)
-
-
-
-
-
         win.title("数据预检报告")
-
-
-
-
-
-        win.geometry(self.config.get("ui.precheck_window_size", "600x500"))
-
-
-
-
-
+        win.geometry("600x500")
         win.transient(self.root)
-
-
-
-
-
         win.grab_set()
 
-
-
-
-
-        win.update_idletasks()
-
-
-
-
-
-        x = (win.winfo_screenwidth() // 2) - (600 // 2)
-
-
-
-
-
-        y = (win.winfo_screenheight() // 2) - (500 // 2)
-
-
-
-
-
-        win.geometry(f"+{x}+{y}")
-
-
-
-
-
         text = tk.Text(win, wrap="word", font=("Consolas", 10), padx=10, pady=10)
-
-
-
-
-
         text.pack(fill="both", expand=True)
 
-
-
-
-
         text.tag_configure("严重", foreground="#cf222e")
-
-
-
-
-
         text.tag_configure("警告", foreground="#d29922")
-
-
-
-
-
         text.tag_configure("通过", foreground="#1a7f37")
+        text.tag_configure("标题", font=("Consolas", 12, "bold"))
 
-
-
-
-
+        # 1. 系统检查结果
+        text.insert("end", "系统检查结果\n", "标题")
         for level, msg in results:
+            tag = "严重" if level == "严重" else ("警告" if level == "警告" else "通过")
+            text.insert("end", msg + "\n", tag)
 
+        # 2. 数据统计信息（配置化列名 + 防御）
+        if self.audit_data is not None and not self.audit_data.empty:
+            text.insert("end", "\n数据统计\n", "标题")
 
+            # 从配置读取列名
+            bias_rate_col = self.config.get('columns.bias_rate', '偏差率(%)')
+            audit_status_col = self.config.get('columns.audit_status', '审核状态')
 
+            try:
+                # 检查必要列是否存在
+                if bias_rate_col not in self.audit_data.columns:
+                    text.insert("end", f"警告：缺少列 '{bias_rate_col}'，无法统计偏差分布。\n", "警告")
+                    stats_available = False
+                else:
+                    stats_available = True
+            except Exception as e:
+                text.insert("end", f"统计计算出错：{e}\n", "严重")
+                stats_available = False
 
+            if stats_available:
+                total = len(self.audit_data)
+                high_dev = (self.audit_data[bias_rate_col].abs() > 10).sum()
+                mid_dev = ((self.audit_data[bias_rate_col].abs() >= 5) & (self.audit_data[bias_rate_col].abs() <= 10)).sum()
+                low_dev = (self.audit_data[bias_rate_col].abs() < 5).sum()
 
-            text.insert("end", msg + "\n", level)
+                # 审核状态列可能不存在，尝试获取
+                if audit_status_col in self.audit_data.columns:
+                    reviewed = (self.audit_data[audit_status_col] == '已审核').sum()
+                    unreviewed = total - reviewed
+                else:
+                    reviewed = unreviewed = 0
+                    text.insert("end", "警告：缺少审核状态列，审核统计显示为0。\n", "警告")
 
-
-
-
+                stats = f"总行数：{total}\n"
+                stats += f"偏差异常（≥10%）：{high_dev}\n"
+                stats += f"偏差关注（5%-10%）：{mid_dev}\n"
+                stats += f"偏差正常（<5%）：{low_dev}\n"
+                stats += f"已审核：{reviewed}\n"
+                stats += f"未审核：{unreviewed}"
+                text.insert("end", stats + "\n", "通过")
+        else:
+            text.insert("end", "\n数据统计\n无数据\n", "标题")
 
         text.configure(state="disabled")
 
-
-
-
-
         btn_frame = tk.Frame(win)
-
-
-
-
-
         btn_frame.pack(pady=10)
-
-
-
-
-
         if hasattr(self, '_duplicate_records') and hasattr(self._duplicate_records, 'empty') and not self._duplicate_records.empty:
-
-
-
-
-
             tk.Button(btn_frame, text="导出重复数据", command=self._export_duplicate_records,
-
-
-
-
-
                       bg="#f0f0f0", font=("Microsoft YaHei", 9)).pack(side="left", padx=5)
-
-
-
-
-
-        tk.Button(btn_frame, text="关闭", command=win.destroy,
-
-
-
-
-
-                  bg="#f0f0f0", font=("Microsoft YaHei", 9)).pack(side="left", padx=5)
-
-
-
-
-
-
-
-
-
-
-
-    # ==================== 导出重复数据 ====================
-
-
-
-
-
+        tk.Button(btn_frame, text="关闭", command=win.destroy, width=10).pack(side="left", padx=5)
     def _export_duplicate_records(self):
 
 

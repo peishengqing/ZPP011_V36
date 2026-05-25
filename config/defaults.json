@@ -15,5 +15,9 @@
   },
   "display": {
     "factory_highlight": true
+  },
+  "columns": {
+    "bias_rate": "偏差率(%)",
+    "audit_status": "审核状态"
   }
 }

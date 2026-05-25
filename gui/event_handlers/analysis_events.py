@@ -4037,7 +4037,6 @@ class AnalysisEvents:
 
 
 
-        messagebox.showinfo("完成", "库存检查完成")
 
 
 
