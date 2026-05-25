@@ -4461,7 +4461,7 @@ class UtilsEvents:
         win.title("数据预检报告")
         win.geometry("600x500")
         win.transient(self.root)
-        win.grab_set()
+        # 非模态：不调用 grab_set()，不阻塞主窗口
 
         text = tk.Text(win, wrap="word", font=("Consolas", 10), padx=10, pady=10)
         text.pack(fill="both", expand=True)
