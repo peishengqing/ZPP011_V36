@@ -1,0 +1,5 @@
+{
+  "material_code_col": "物料号",
+  "inventory_location_col": "库存地点描述",
+  "turnover_days_col": "周转天数"
+}
