@@ -1344,7 +1344,6 @@ class AnalysisEvents:
 
 
 
-    @with_feedback("数据加载成功", "数据加载失败")
 
 
 
@@ -2016,13 +2015,11 @@ class AnalysisEvents:
 
 
 
-    @with_feedback("", "加载数据失败")
 
 
 
 
 
-    @with_feedback("数据加载成功", "数据加载失败")
 
 
 
