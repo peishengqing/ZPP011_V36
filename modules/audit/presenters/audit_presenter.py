@@ -32,6 +32,58 @@ class AuditPresenter:
         self._ai_cancel_flag = None
         self.is_auditing = False
 
+
+    def _load_rule3_data(self):
+        """加载规则3所需数据：车间映射 + 进销存周转天数"""
+        import json
+        workshop_mapping = None
+        turnover_dict = None
+
+        # 车间 -> 库存地点映射
+        wm_file = 'config/workshop_inventory_mapping.json'
+        if os.path.exists(wm_file):
+            try:
+                with open(wm_file, 'r', encoding='utf-8') as f:
+                    workshop_mapping = json.load(f)
+                self.view.log(f'车间映射加载成功，共 {len(workshop_mapping)} 条', 'info')
+            except Exception as e:
+                self.view.log(f'车间映射加载失败: {e}', 'warn')
+        else:
+            self.view.log(f'车间映射文件不存在({wm_file})，规则3将禁用', 'warn')
+
+        # 进销存表 -> 周转天数字典
+        inv_file = 'data/inventory_turnover.xlsx'
+        if os.path.exists(inv_file):
+            try:
+                col_map_file = 'config/inventory_mapping.json'
+                if os.path.exists(col_map_file):
+                    with open(col_map_file, 'r', encoding='utf-8') as f:
+                        col_map = json.load(f)
+                    code_col = col_map.get('material_code_col', '物料号')
+                    loc_col = col_map.get('inventory_location_col', '库存地点描述')
+                    days_col = col_map.get('turnover_days_col', '周转天数')
+                else:
+                    code_col, loc_col, days_col = '物料号', '库存地点描述', '周转天数'
+
+                df = pd.read_excel(inv_file)
+                missing = [c for c in [code_col, loc_col, days_col] if c not in df.columns]
+                if missing:
+                    self.view.log(f'进销存表缺少列: {missing}', 'warn')
+                else:
+                    turnover_dict = {}
+                    for _, row in df.iterrows():
+                        key = (str(row[code_col]).strip(), str(row[loc_col]).strip())
+                        days = row[days_col]
+                        if pd.notna(days):
+                            turnover_dict[key] = float(days)
+                    self.view.log(f'进销存表加载成功，共 {len(turnover_dict)} 条记录', 'info')
+            except Exception as e:
+                self.view.log(f'进销存表加载失败: {e}', 'warn')
+        else:
+            self.view.log(f'进销存表不存在({inv_file})，规则3将禁用', 'warn')
+
+        return workshop_mapping, turnover_dict
+
     # ---------- 业务逻辑方法（从 events.py 迁移）----------
     def start_analysis(self, input_file: str, alt_pairs: list,
                      start_date: str = None, end_date: str = None,
@@ -142,9 +194,12 @@ class AuditPresenter:
                             alt_codes.add(str(it[1]).strip())
                         elif isinstance(it, str):
                             alt_codes.add(it.strip())
-                status_list, msg_list = [], []
+                workshop_mapping, turnover_dict = self._load_rule3_data()
+                    status_list, msg_list = [], []
                 for _, row in audit_data.iterrows():
-                    st, ms = rengine.check_remark(row.to_dict(), alt_codes)
+                    st, ms = rengine.check_remark(row.to_dict(), alt_codes,
+                                                      workshop_mapping=workshop_mapping,
+                                                      turnover_dict=turnover_dict)
                     status_list.append(st)
                     msg_list.append(ms)
                 audit_data['remark_check_status'] = status_list
