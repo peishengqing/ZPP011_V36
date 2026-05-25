@@ -85,6 +85,7 @@ def do_analysis_v2(
             raise KeyboardInterrupt("用户取消")
 
     def report_progress(step_idx, step_name, percent):
+        """封装进度回调，供5阶段调用。"""
         if progress_callback:
             progress_callback(step_idx, step_name, percent)
             time.sleep(0.01)
@@ -102,13 +103,13 @@ def do_analysis_v2(
     data_font = _styles['data_font']
     anomaly_fills = _styles['anomaly_fills']
 
-    report_progress(0, "预处理", 30)
     check_cancel()
 
     src_file = input_file
     try:
         df = pd.read_excel(src_file, sheet_name='Data')
         _dprint(f"[DEBUG do_analysis_v2] 读取Data表成功，{len(df)} 行")
+        report_progress(1, "1/5 正在读取 Excel 文件", 10)
         # 强制刷新输出
         import sys
         sys.stdout.flush()
@@ -155,6 +156,7 @@ def do_analysis_v2(
             except Exception as e:
                 print(f"⚠️ 检查列 [{col}] 时出错: {e}")
     print("[诊断] 数值列检查完成")
+    report_progress(2, "2/5 正在解析生产数据", 30)
     
     # 同时写入诊断日志文件
     with open(_diag_log, 'a', encoding='utf-8') as _f:
@@ -208,7 +210,6 @@ def do_analysis_v2(
         try:
             sd = pd.to_datetime(start_date)
             df = df[df['订单开始日期'] >= sd]
-            report_progress(0, "日期过滤", 100)
             if progress_callback:
                 progress_callback(-1, f"已按开始日期 {start_date} 过滤", 0)
         except BaseException:
@@ -218,7 +219,6 @@ def do_analysis_v2(
         try:
             ed = pd.to_datetime(end_date)
             df = df[df['订单开始日期'] <= ed]
-            report_progress(0, "日期过滤", 100)
             if progress_callback:
                 progress_callback(-1, f"已按结束日期 {end_date} 过滤", 0)
         except BaseException:
@@ -232,7 +232,6 @@ def do_analysis_v2(
         name_cols = [c for c in df.columns if any(k in str(c).lower() for k in ['组件描述', '物料描述', '名称', 'name', '描述', 'desc', 'description'])]
 
         if not code_cols and not name_cols:
-            report_progress(0, "物料过滤", 100)
             if progress_callback:
                 progress_callback(-1, f"⚠ 未找到编码/名称列，跳过搜索", 0)
         else:
@@ -245,7 +244,6 @@ def do_analysis_v2(
                 mask = name_mask if mask is None else (mask | name_mask)
 
             df = df[mask]
-            report_progress(0, "物料过滤", 100)
             if progress_callback:
                 used_cols = []
                 if code_cols: used_cols.append(f"编码列={code_cols[0]}")
@@ -272,7 +270,6 @@ def do_analysis_v2(
     date_range = f"{pd.Timestamp(date_min).strftime('%Y%m%d')}-{pd.Timestamp(date_max).strftime('%m%d')}"
     _dprint(f"[DEBUG do_analysis_v2] 日期范围：{date_range}")
     
-    report_progress(0, "预处理", 100)
 
     def classify_material(row):
         mtype = row['组件物料类型']
@@ -337,6 +334,7 @@ def do_analysis_v2(
     if '金额-实际(含税)' in df.columns and '金额-定额(含税)' in df.columns:
         # 方法1：直接相减（推荐，最准确）
         df['偏差金额(含税)'] = (df['金额-实际(含税)'] - df['金额-定额(含税)']).round(2)
+        report_progress(3, "3/5 正在计算偏差金额和偏差率", 50)
         print(f"[偏差金额计算] 使用含税金额直接相减，非零偏差行数: {(df['偏差金额(含税)'] != 0).sum()}")
     else:
         # 方法2：降级使用材料偏差 × 单价（兼容旧格式）
@@ -430,6 +428,7 @@ def do_analysis_v2(
     df.loc[df['_note_source'] == '替代料', '标准原因'] = '替代料'
 
     # 重新计算 _is_alt 标志（满足任意条件即标记）
+    report_progress(4, "4/5 正在匹配替代料信息", 70)
     _order_alt = df.apply(lambda r: (str(r['流程订单']), str(r['组件物料描述'])) in alt_order_mat, axis=1)
     _mat_alt = df['组件物料描述'].isin(alt_materials_set)
     df['_is_alt'] = _order_alt | _mat_alt
@@ -659,7 +658,7 @@ def do_analysis_v2(
             output_dir,
             f'ZPP011偏差分析最终版_{date_range}_v{next_ver:02d}.xlsx')
 
-    report_progress(11, "生成Excel", 50)
+    report_progress(5, "5/5 正在生成审核表格", 90)
 
     # ── 分析说明 sheet ────────────────────────────
     ws_info = wb.create_sheet('📋 分析说明', index=0)
@@ -713,7 +712,6 @@ def do_analysis_v2(
             f"  • 关闭 Excel 中打开的这个文件，然后重试\n"
             f"  • 或者换一个输出文件名（在弹出的另存为对话框中修改文件名）"
         ) from e
-    report_progress(11, "生成Excel", 100)
     # 返回实际保存的路径
     _dprint(f"[DEBUG do_analysis_v2] 保存完成，返回：{final_output_path}")
     # ========== 保存追踪日志 ==========
