@@ -26,6 +26,8 @@ class FilterEngine:
             return data
 
         df = data.copy()
+        print(f"[ENGINE] 输入数据形状: {df.shape}")
+        print(f"[ENGINE] 筛选条件: {filters}")
 
         # 1. 工厂筛选
         factory = filters.get('factory')
@@ -87,28 +89,28 @@ class FilterEngine:
         # 7. 替代料筛选（关键）
         is_alt = filters.get('is_alt')
         if is_alt and is_alt != '全部':
+            possible_alt_cols = ['_is_alt', '是否替代料', '替代料']
             alt_col = None
-            for col in ['_is_alt', '是否替代料', '替代料']:
+            for col in possible_alt_cols:
                 if col in df.columns:
                     alt_col = col
                     break
             if alt_col:
-                if is_alt == '是':
-                    if df[alt_col].dtype == bool:
-                        df = df[df[alt_col] == True]
-                    else:
-                        df = df[df[alt_col].astype(str) == '是']
-                elif is_alt == '否':
-                    if df[alt_col].dtype == bool:
-                        df = df[df[alt_col] == False]
-                    else:
-                        df = df[df[alt_col].astype(str) != '是']
+                # 打印列值类型，辅助调试
+                print(f"[ALT-DEBUG] 列 '{alt_col}' 唯一值: {df[alt_col].unique()}")
+                if alt_col == '_is_alt':
+                    # 布尔列
+                    df = df[df[alt_col] == (is_alt == '是')]
+                else:
+                    # 字符串列，去除空格后比较
+                    df = df[df[alt_col].astype(str).str.strip() == ('是' if is_alt == '是' else '否')]
             else:
-                print(f"[FilterEngine] 警告：未找到替代料列，可用列：{list(df.columns)}")
+                print(f"[ALT-DEBUG] 未找到替代料列，可用列: {list(df.columns)}")
 
         # 8. 优先级颜色（如果有）
         color = filters.get('priority_color')
         if color and color != '全部' and '_priority_label' in df.columns:
             df = df[df['_priority_label'] == color]
 
+        print(f"[ENGINE] 输出数据形状: {df.shape}")
         return df
