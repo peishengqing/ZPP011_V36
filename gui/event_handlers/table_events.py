@@ -1465,10 +1465,11 @@ class TableEvents:
 
 
 
-        # 绑定右键事件（防重复绑定）
-        if not hasattr(self, '_copy_menu_bound'):
-            self.audit_tree.bind("<Button-3>", self._show_copy_menu)
-            self._copy_menu_bound = True
+        # 绑定右键事件：使用原有 audit_context_menu，追加"复制物料编码"（仅初始化一次）
+        if not hasattr(self, '_copy_item_added') and hasattr(self, 'audit_context_menu'):
+            self.audit_context_menu.add_separator()
+            self.audit_context_menu.add_command(label="📋 复制物料编码", command=self._copy_material_code)
+            self._copy_item_added = True
 
 
     def _show_copy_menu(self, event):
@@ -5458,4 +5459,12 @@ class TableEvents:
 
 
 
-        messagebox.showinfo("预检报告", msg)
+        # 改为日志输出，不弹模态窗口
+        self.log("=== 📊 预检报告 ===", "info")
+        for line in msg.strip().split('\n'):
+            if line.strip():
+                self.log(line, "info")
+        self.log("=== 预检报告结束 ===", "info")
+        # 更新状态栏提示
+        if hasattr(self, 'status_lbl'):
+            self.status_lbl.configure(text=f"数据加载完成，共{total}条，预检报告已写入日志")
