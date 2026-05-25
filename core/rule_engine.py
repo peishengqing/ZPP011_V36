@@ -164,8 +164,10 @@ class RuleEngine:
 
         # 规则3：偏差率(%) > 10 且 周转天数 > 90 → yellow
         if deviation_rate > 10 and workshop_mapping and turnover_dict:
+            factory = str(row.get('工厂', '')).strip()
             workshop = str(row.get('车间', '')).strip()
-            inv_location = workshop_mapping.get(workshop)
+            key = f"{factory}:{workshop}"
+            inv_location = workshop_mapping.get(key)
             if inv_location:
                 material_code = str(row.get('物料编码', '')).strip()
                 key = (material_code, inv_location)
