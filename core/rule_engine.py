@@ -24,7 +24,6 @@ class RuleEngine:
             with open(self.rules_path, 'w', encoding='utf-8') as f:
                 import json
                 json.dump(default_rules, f, indent=2, ensure_ascii=False)
-            print(f"[RuleEngine] Created default rules file: {self.rules_path}")
         
         self._load()
 

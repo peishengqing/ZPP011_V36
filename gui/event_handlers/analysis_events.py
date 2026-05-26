@@ -34,10 +34,14 @@ class AnalysisEvents:
             return
         try:
             if self.running:
+                self.analysis_lock.release()
+                self.run_btn.configure(state="normal", text="▶  开始分析")
                 return
             path = self.input_file.get()
             if not path or not os.path.exists(path):
                 messagebox.showerror("错误", "请先选择有效的输入文件！")
+                self.analysis_lock.release()
+                self.run_btn.configure(state="normal", text="▶  开始分析")
                 return
             self.running = True
             self.cancel_req = False
@@ -66,6 +70,8 @@ class AnalysisEvents:
                 self.run_btn.configure(state="normal", text="▶  开始分析")
             except:
                 pass
+            finally:
+                self.analysis_lock.release()
 
     def _analysis_thread(self):
         """分析线程（委托给 Presenter）"""
