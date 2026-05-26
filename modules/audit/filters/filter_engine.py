@@ -103,6 +103,7 @@ class FilterEngine:
                     # 字符串列，标准化后比较
                     df = df[df[alt_col].astype(str).str.strip() == ('是' if is_alt == '是' else '否')]
             else:
+                pass  # 未找到替代料列，不做筛选
 
         # 8. 优先级颜色（如果有）
         color = filters.get('priority_color')

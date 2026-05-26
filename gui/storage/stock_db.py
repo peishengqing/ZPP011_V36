@@ -191,6 +191,7 @@ class StockDatabase:
                 ))
                 success_count += 1
             except Exception as e:
+                pass  # 插入失败，跳过该行
         self.conn.commit()
         return success_count
 
