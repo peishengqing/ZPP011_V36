@@ -147,8 +147,6 @@ class StockDatabase:
             params.append(f"%{search_text}%")
         query += " ORDER BY group_warehouse_category, material_code, report_month DESC"
         # 调试打印
-        print("SQL:", query)
-        print("Params:", params)
         return pd.read_sql_query(query, self.conn, params=params)
 
     def insert_summary(self, df):
@@ -179,7 +177,6 @@ class StockDatabase:
                 ))
                 success_count += 1
             except Exception as e:
-                print(f"插入失败: {e}")
         self.conn.commit()
         return success_count
 
@@ -536,8 +533,6 @@ class StockSummaryWindow:
         search_text = self.search_var.get().strip() or None
 
         # 修复一：调试输出，确认筛选参数传递
-        print(f"[DEBUG] plant={plant}, category={category}, mat_group={mat_group}")
-        print(f"[DEBUG] start_month={start_month}, end_month={end_month}")
 
         try:
             df = self.db.query_summary(
@@ -595,8 +590,6 @@ class StockSummaryWindow:
         df['outbound_amount'] = pd.to_numeric(df['outbound_amount'], errors='coerce').fillna(0)
 
         # 调试：打印前几行金额和总和，确认转换后正确
-        print("[DEBUG] closing_amount 前5行:", df['closing_amount'].head().tolist())
-        print("[DEBUG] total_amount =", df['closing_amount'].sum())
 
         # 修复三：直接对筛选后的所有行求和（不去重，与 Excel 口径一致）
         total_amount = df['closing_amount'].sum()

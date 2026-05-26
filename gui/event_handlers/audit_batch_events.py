@@ -1,23 +1,22 @@
-# -*- coding: utf-8 -*-
-"""批量操作 + 隔离区事件"""
+﻿# -*- coding: utf-8 -*-
+"""鎵归噺鎿嶄綔 + 闅旂鍖轰簨浠?""
 
 import tkinter as tk
 from tkinter import ttk, messagebox
 import json, os
 import pandas as pd
-from core.decorators import with_feedback
 from widgets import C
 
 
 class AuditBatchEvents:
-    """批量操作 + 隔离区事件"""
+    """鎵归噺鎿嶄綔 + 闅旂鍖轰簨浠?""
     def _batch_change_status(self, event=None):
 
 
 
 
 
-        """批量更改选中行的状态"""
+        """鎵归噺鏇存敼閫変腑琛岀殑鐘舵€?""
 
 
 
@@ -35,7 +34,7 @@ class AuditBatchEvents:
 
 
 
-            messagebox.showwarning("提示", "请先选择要更改状态的行")
+            messagebox.showwarning("鎻愮ず", "璇峰厛閫夋嫨瑕佹洿鏀圭姸鎬佺殑琛?)
 
 
 
@@ -53,7 +52,7 @@ class AuditBatchEvents:
 
 
 
-        status_options = ["已备注", "需补备注", "已确认", "待处理", "异常"]
+        status_options = ["宸插娉?, "闇€琛ュ娉?, "宸茬‘璁?, "寰呭鐞?, "寮傚父"]
 
 
 
@@ -83,7 +82,7 @@ class AuditBatchEvents:
 
 
 
-        dialog.title("批量更改状态")
+        dialog.title("鎵归噺鏇存敼鐘舵€?)
 
 
 
@@ -137,7 +136,7 @@ class AuditBatchEvents:
 
 
 
-        tk.Label(dialog, text=f"选择新状态（将为 {len(selected)} 行数据更改）:",
+        tk.Label(dialog, text=f"閫夋嫨鏂扮姸鎬侊紙灏嗕负 {len(selected)} 琛屾暟鎹洿鏀癸級:",
 
 
 
@@ -221,13 +220,13 @@ class AuditBatchEvents:
 
 
 
-                    if mask.any() and '备注原因' in self.audit_data.columns:
+                    if mask.any() and '澶囨敞鍘熷洜' in self.audit_data.columns:
 
 
 
 
 
-                        self.audit_data.loc[mask, '备注原因'] = new_status
+                        self.audit_data.loc[mask, '澶囨敞鍘熷洜'] = new_status
 
 
 
@@ -245,7 +244,7 @@ class AuditBatchEvents:
 
 
 
-            messagebox.showinfo("完成", f"已将 {len(selected)} 行状态更改为「{new_status}」")
+            messagebox.showinfo("瀹屾垚", f"宸插皢 {len(selected)} 琛岀姸鎬佹洿鏀逛负銆寋new_status}銆?)
 
 
 
@@ -275,13 +274,13 @@ class AuditBatchEvents:
 
 
 
-        tk.Button(btn_frame, text="确定", width=10, command=apply_change).pack(side="left", padx=10)
+        tk.Button(btn_frame, text="纭畾", width=10, command=apply_change).pack(side="left", padx=10)
 
 
 
 
 
-        tk.Button(btn_frame, text="取消", width=10, command=dialog.destroy).pack(side="left", padx=10)
+        tk.Button(btn_frame, text="鍙栨秷", width=10, command=dialog.destroy).pack(side="left", padx=10)
 
 
 
@@ -305,7 +304,7 @@ class AuditBatchEvents:
 
 
 
-        """批量填写备注"""
+        """鎵归噺濉啓澶囨敞"""
 
 
 
@@ -323,7 +322,7 @@ class AuditBatchEvents:
 
 
 
-            messagebox.showwarning("提示", "请先选择要填写备注的行")
+            messagebox.showwarning("鎻愮ず", "璇峰厛閫夋嫨瑕佸～鍐欏娉ㄧ殑琛?)
 
 
 
@@ -341,13 +340,13 @@ class AuditBatchEvents:
 
 
 
-        # P1：按使用频率排序的预设备注列表
+        # P1锛氭寜浣跨敤棰戠巼鎺掑簭鐨勯璁惧娉ㄥ垪琛?
 
 
 
 
 
-        base_remarks = ["已核实，偏差正常", "已沟通，确认无误", "已调整，请复查", "待进一步确认", "替代料替换", "工艺调整", "库存调整", "其他原因"]
+        base_remarks = ["宸叉牳瀹烇紝鍋忓樊姝ｅ父", "宸叉矡閫氾紝纭鏃犺", "宸茶皟鏁达紝璇峰鏌?, "寰呰繘涓€姝ョ‘璁?, "鏇夸唬鏂欐浛鎹?, "宸ヨ壓璋冩暣", "搴撳瓨璋冩暣", "鍏朵粬鍘熷洜"]
 
 
 
@@ -359,7 +358,7 @@ class AuditBatchEvents:
 
 
 
-        remark_options = sorted_remarks + ["(清空备注)"]
+        remark_options = sorted_remarks + ["(娓呯┖澶囨敞)"]
 
 
 
@@ -389,7 +388,7 @@ class AuditBatchEvents:
 
 
 
-        dialog.title("批量填写备注")
+        dialog.title("鎵归噺濉啓澶囨敞")
 
 
 
@@ -437,7 +436,7 @@ class AuditBatchEvents:
 
 
 
-        tk.Label(dialog, text=f"选择备注（将为 {len(selected)} 行填写）:",
+        tk.Label(dialog, text=f"閫夋嫨澶囨敞锛堝皢涓?{len(selected)} 琛屽～鍐欙級:",
 
 
 
@@ -497,7 +496,7 @@ class AuditBatchEvents:
 
 
 
-            if remark == "(清空备注)":
+            if remark == "(娓呯┖澶囨敞)":
 
 
 
@@ -521,7 +520,7 @@ class AuditBatchEvents:
 
 
 
-                self.audit_tree.set(item, 'batch_remark', remark)  # 写入批量备注列
+                self.audit_tree.set(item, 'batch_remark', remark)  # 鍐欏叆鎵归噺澶囨敞鍒?
 
 
 
@@ -551,7 +550,7 @@ class AuditBatchEvents:
 
 
 
-                        # 优先写入批量备注列，兼容 fallback
+                        # 浼樺厛鍐欏叆鎵归噺澶囨敞鍒楋紝鍏煎 fallback
 
 
 
@@ -563,7 +562,7 @@ class AuditBatchEvents:
 
 
 
-                        for col in ['批量备注原因', '批量备注']:
+                        for col in ['鎵归噺澶囨敞鍘熷洜', '鎵归噺澶囨敞']:
 
 
 
@@ -605,13 +604,13 @@ class AuditBatchEvents:
 
 
 
-                        elif '备注原因' in self.audit_data.columns:
+                        elif '澶囨敞鍘熷洜' in self.audit_data.columns:
 
 
 
 
 
-                            self.audit_data.loc[mask, '备注原因'] = remark
+                            self.audit_data.loc[mask, '澶囨敞鍘熷洜'] = remark
 
 
 
@@ -623,7 +622,7 @@ class AuditBatchEvents:
 
 
 
-            self._record_remark_freq(remark_var.get())  # P1：记录频率
+            self._record_remark_freq(remark_var.get())  # P1锛氳褰曢鐜?
 
 
 
@@ -641,13 +640,13 @@ class AuditBatchEvents:
 
 
 
-            label = "清空" if not remark else f"「{remark}」"
+            label = "娓呯┖" if not remark else f"銆寋remark}銆?
 
 
 
 
 
-            messagebox.showinfo("完成", f"已为 {count if count else len(selected)} 行填写备注 {label}")
+            messagebox.showinfo("瀹屾垚", f"宸蹭负 {count if count else len(selected)} 琛屽～鍐欏娉?{label}")
 
 
 
@@ -677,37 +676,20 @@ class AuditBatchEvents:
 
 
 
-        tk.Button(btn_frame, text="确定", width=10, command=apply_remark).pack(side="left", padx=10)
+        tk.Button(btn_frame, text="纭畾", width=10, command=apply_remark).pack(side="left", padx=10)
 
 
 
 
 
-        tk.Button(btn_frame, text="取消", width=10, command=dialog.destroy).pack(side="left", padx=10)
-
-
-
-
-
-
-
-
-
-
-
-    @with_feedback("批量备注完成", "批量备注失败")
-
-
-
-
-
+        tk.Button(btn_frame, text="鍙栨秷", width=10, command=dialog.destroy).pack(side="left", padx=10)
     def _batch_remark(self, event=None):
 
 
 
 
 
-        """批量备注：为选中的行添加备注（下拉框选择，可追加换行）"""
+        """鎵归噺澶囨敞锛氫负閫変腑鐨勮娣诲姞澶囨敞锛堜笅鎷夋閫夋嫨锛屽彲杩藉姞鎹㈣锛?""
 
 
 
@@ -731,7 +713,7 @@ class AuditBatchEvents:
 
 
 
-                messagebox.showinfo("提示", "请先选中要添加备注的行（可多选）")
+                messagebox.showinfo("鎻愮ず", "璇峰厛閫変腑瑕佹坊鍔犲娉ㄧ殑琛岋紙鍙閫夛級")
 
 
 
@@ -749,13 +731,13 @@ class AuditBatchEvents:
 
 
 
-            # P1：按使用频率排序的预设备注列表
+            # P1锛氭寜浣跨敤棰戠巼鎺掑簭鐨勯璁惧娉ㄥ垪琛?
 
 
 
 
 
-            base_remarks = ["已核实，偏差正常", "已沟通，确认无误", "已调整，请复查", "待进一步确认", "替代料替换", "工艺调整", "库存调整", "其他原因"]
+            base_remarks = ["宸叉牳瀹烇紝鍋忓樊姝ｅ父", "宸叉矡閫氾紝纭鏃犺", "宸茶皟鏁达紝璇峰鏌?, "寰呰繘涓€姝ョ‘璁?, "鏇夸唬鏂欐浛鎹?, "宸ヨ壓璋冩暣", "搴撳瓨璋冩暣", "鍏朵粬鍘熷洜"]
 
 
 
@@ -767,7 +749,7 @@ class AuditBatchEvents:
 
 
 
-            remark_options = sorted_remarks + ["(清空备注)", "——手动输入——"]
+            remark_options = sorted_remarks + ["(娓呯┖澶囨敞)", "鈥斺€旀墜鍔ㄨ緭鍏モ€斺€?]
 
 
 
@@ -797,7 +779,7 @@ class AuditBatchEvents:
 
 
 
-            dialog.title("批量备注")
+            dialog.title("鎵归噺澶囨敞")
 
 
 
@@ -845,7 +827,7 @@ class AuditBatchEvents:
 
 
 
-            tk.Label(dialog, text=f"选择备注（将为 {len(selected)} 行填写）:",
+            tk.Label(dialog, text=f"閫夋嫨澶囨敞锛堝皢涓?{len(selected)} 琛屽～鍐欙級:",
 
 
 
@@ -899,7 +881,7 @@ class AuditBatchEvents:
 
 
 
-            # 手动输入框（默认隐藏）
+            # 鎵嬪姩杈撳叆妗嗭紙榛樿闅愯棌锛?
 
 
 
@@ -929,7 +911,7 @@ class AuditBatchEvents:
 
 
 
-            input_frame.pack_forget()  # 默认隐藏
+            input_frame.pack_forget()  # 榛樿闅愯棌
 
 
 
@@ -941,7 +923,7 @@ class AuditBatchEvents:
 
 
 
-            # 监听选择变化，切换手动输入框
+            # 鐩戝惉閫夋嫨鍙樺寲锛屽垏鎹㈡墜鍔ㄨ緭鍏ユ
 
 
 
@@ -953,7 +935,7 @@ class AuditBatchEvents:
 
 
 
-                if remark_var.get() == "——手动输入——":
+                if remark_var.get() == "鈥斺€旀墜鍔ㄨ緭鍏モ€斺€?:
 
 
 
@@ -1013,7 +995,7 @@ class AuditBatchEvents:
 
 
 
-                if remark == "(清空备注)":
+                if remark == "(娓呯┖澶囨敞)":
 
 
 
@@ -1025,7 +1007,7 @@ class AuditBatchEvents:
 
 
 
-                elif remark == "——手动输入——":
+                elif remark == "鈥斺€旀墜鍔ㄨ緭鍏モ€斺€?:
 
 
 
@@ -1043,7 +1025,7 @@ class AuditBatchEvents:
 
 
 
-                        messagebox.showwarning("提示", "请输入备注内容")
+                        messagebox.showwarning("鎻愮ず", "璇疯緭鍏ュ娉ㄥ唴瀹?)
 
 
 
@@ -1073,7 +1055,7 @@ class AuditBatchEvents:
 
 
 
-                # 确定 DataFrame 中的备注列名（优先批量备注列）
+                # 纭畾 DataFrame 涓殑澶囨敞鍒楀悕锛堜紭鍏堟壒閲忓娉ㄥ垪锛?
 
 
 
@@ -1085,7 +1067,7 @@ class AuditBatchEvents:
 
 
 
-                for col in ['批量备注原因', '批量备注']:
+                for col in ['鎵归噺澶囨敞鍘熷洜', '鎵归噺澶囨敞']:
 
 
 
@@ -1115,7 +1097,7 @@ class AuditBatchEvents:
 
 
 
-                    df_remark_col = "批量备注"
+                    df_remark_col = "鎵归噺澶囨敞"
 
 
 
@@ -1133,7 +1115,7 @@ class AuditBatchEvents:
 
 
 
-                # 使用 excel_row 定位，构建 item->df_idx 映射
+                # 浣跨敤 excel_row 瀹氫綅锛屾瀯寤?item->df_idx 鏄犲皠
 
 
 
@@ -1187,7 +1169,7 @@ class AuditBatchEvents:
 
 
 
-                    messagebox.showwarning("警告", "无法定位选中行，请刷新重试")
+                    messagebox.showwarning("璀﹀憡", "鏃犳硶瀹氫綅閫変腑琛岋紝璇峰埛鏂伴噸璇?)
 
 
 
@@ -1205,7 +1187,7 @@ class AuditBatchEvents:
 
 
 
-                # 追加备注（换行连接，区分符 /）
+                # 杩藉姞澶囨敞锛堟崲琛岃繛鎺ワ紝鍖哄垎绗?/锛?
 
 
 
@@ -1223,7 +1205,7 @@ class AuditBatchEvents:
 
 
 
-                    self.audit_tree.set(item, 'batch_remark', remark)  # 刷新树形列
+                    self.audit_tree.set(item, 'batch_remark', remark)  # 鍒锋柊鏍戝舰鍒?
 
 
 
@@ -1271,7 +1253,7 @@ class AuditBatchEvents:
 
 
 
-                self._record_remark_freq(remark)  # P1：记录频率
+                self._record_remark_freq(remark)  # P1锛氳褰曢鐜?
 
 
 
@@ -1295,13 +1277,13 @@ class AuditBatchEvents:
 
 
 
-                label = "清空" if not remark else f"「{remark}」"
+                label = "娓呯┖" if not remark else f"銆寋remark}銆?
 
 
 
 
 
-                messagebox.showinfo("完成", f"已为 {count} 行添加备注 {label}")
+                messagebox.showinfo("瀹屾垚", f"宸蹭负 {count} 琛屾坊鍔犲娉?{label}")
 
 
 
@@ -1331,13 +1313,13 @@ class AuditBatchEvents:
 
 
 
-            tk.Button(btn_frame, text="确定", width=10, command=apply_remark).pack(side="left", padx=10)
+            tk.Button(btn_frame, text="纭畾", width=10, command=apply_remark).pack(side="left", padx=10)
 
 
 
 
 
-            tk.Button(btn_frame, text="取消", width=10, command=dialog.destroy).pack(side="left", padx=10)
+            tk.Button(btn_frame, text="鍙栨秷", width=10, command=dialog.destroy).pack(side="left", padx=10)
 
 
 
@@ -1367,7 +1349,7 @@ class AuditBatchEvents:
 
 
 
-            messagebox.showerror("错误", f"批量备注失败：{str(e)}")
+            messagebox.showerror("閿欒", f"鎵归噺澶囨敞澶辫触锛歿str(e)}")
 
 
 
@@ -1385,7 +1367,7 @@ class AuditBatchEvents:
 
 
 
-        """添加自定义状态标签"""
+        """娣诲姞鑷畾涔夌姸鎬佹爣绛?""
 
 
 
@@ -1397,7 +1379,7 @@ class AuditBatchEvents:
 
 
 
-        dialog.title("添加状态标签")
+        dialog.title("娣诲姞鐘舵€佹爣绛?)
 
 
 
@@ -1445,7 +1427,7 @@ class AuditBatchEvents:
 
 
 
-        tk.Label(dialog, text="输入新状态标签名称：", font=("Microsoft YaHei", 10)).pack(pady=10)
+        tk.Label(dialog, text="杈撳叆鏂扮姸鎬佹爣绛惧悕绉帮細", font=("Microsoft YaHei", 10)).pack(pady=10)
 
 
 
@@ -1499,7 +1481,7 @@ class AuditBatchEvents:
 
 
 
-                messagebox.showwarning("提示", "标签名称不能为空")
+                messagebox.showwarning("鎻愮ず", "鏍囩鍚嶇О涓嶈兘涓虹┖")
 
 
 
@@ -1565,13 +1547,13 @@ class AuditBatchEvents:
 
 
 
-        tk.Button(btn_frame, text="添加", width=8, command=do_add).pack(side="left", padx=8)
+        tk.Button(btn_frame, text="娣诲姞", width=8, command=do_add).pack(side="left", padx=8)
 
 
 
 
 
-        tk.Button(btn_frame, text="取消", width=8, command=dialog.destroy).pack(side="left", padx=8)
+        tk.Button(btn_frame, text="鍙栨秷", width=8, command=dialog.destroy).pack(side="left", padx=8)
 
 
 
@@ -1595,7 +1577,7 @@ class AuditBatchEvents:
 
 
 
-        """将选中的行移动到隔离区（标记但不删除）"""
+        """灏嗛€変腑鐨勮绉诲姩鍒伴殧绂诲尯锛堟爣璁颁絾涓嶅垹闄わ級"""
 
 
 
@@ -1619,7 +1601,7 @@ class AuditBatchEvents:
 
 
 
-                messagebox.showinfo("提示", "请先选中要隔离的行")
+                messagebox.showinfo("鎻愮ず", "璇峰厛閫変腑瑕侀殧绂荤殑琛?)
 
 
 
@@ -1703,7 +1685,7 @@ class AuditBatchEvents:
 
 
 
-            messagebox.showinfo("完成", f"已隔离 {count} 行")
+            messagebox.showinfo("瀹屾垚", f"宸查殧绂?{count} 琛?)
 
 
 
@@ -1733,7 +1715,7 @@ class AuditBatchEvents:
 
 
 
-            messagebox.showerror("错误", f"隔离操作失败：{str(e)}")
+            messagebox.showerror("閿欒", f"闅旂鎿嶄綔澶辫触锛歿str(e)}")
 
 
 
@@ -1751,7 +1733,7 @@ class AuditBatchEvents:
 
 
 
-        """打开隔离区窗口"""
+        """鎵撳紑闅旂鍖虹獥鍙?""
 
 
 
@@ -1775,7 +1757,7 @@ class AuditBatchEvents:
 
 
 
-        win.title("📦 异常隔离区")
+        win.title("馃摝 寮傚父闅旂鍖?)
 
 
 
@@ -1799,7 +1781,7 @@ class AuditBatchEvents:
 
 
 
-        # ── 表格区域 ──
+        # 鈹€鈹€ 琛ㄦ牸鍖哄煙 鈹€鈹€
 
 
 
@@ -1823,7 +1805,7 @@ class AuditBatchEvents:
 
 
 
-        # 复用审核表格的列定义
+        # 澶嶇敤瀹℃牳琛ㄦ牸鐨勫垪瀹氫箟
 
 
 
@@ -1919,7 +1901,7 @@ class AuditBatchEvents:
 
 
 
-        # 填充数据
+        # 濉厖鏁版嵁
 
 
 
@@ -1967,7 +1949,7 @@ class AuditBatchEvents:
 
 
 
-        # ── 操作按钮 ──
+        # 鈹€鈹€ 鎿嶄綔鎸夐挳 鈹€鈹€
 
 
 
@@ -2009,7 +1991,7 @@ class AuditBatchEvents:
 
 
 
-                messagebox.showwarning("提示", "请先选择要恢复的行")
+                messagebox.showwarning("鎻愮ず", "璇峰厛閫夋嫨瑕佹仮澶嶇殑琛?)
 
 
 
@@ -2063,7 +2045,7 @@ class AuditBatchEvents:
 
 
 
-                # 重新插入审核表格（如果有 audit_data）
+                # 閲嶆柊鎻掑叆瀹℃牳琛ㄦ牸锛堝鏋滄湁 audit_data锛?
 
 
 
@@ -2087,97 +2069,97 @@ class AuditBatchEvents:
 
 
 
-                        '物料编码': rec.get('物料编码', ''),
+                        '鐗╂枡缂栫爜': rec.get('鐗╂枡缂栫爜', ''),
 
 
 
 
 
-                        '物料名称': rec.get('物料名称', ''),
+                        '鐗╂枡鍚嶇О': rec.get('鐗╂枡鍚嶇О', ''),
 
 
 
 
 
-                        '工厂名称': rec.get('工厂名称', ''),
+                        '宸ュ巶鍚嶇О': rec.get('宸ュ巶鍚嶇О', ''),
 
 
 
 
 
-                        '车间': rec.get('车间', ''),
+                        '杞﹂棿': rec.get('杞﹂棿', ''),
 
 
 
 
 
-                        '订单日期': rec.get('订单日期', ''),
+                        '璁㈠崟鏃ユ湡': rec.get('璁㈠崟鏃ユ湡', ''),
 
 
 
 
 
-                        '定额': float(rec.get('定额', 0)) if rec.get('定额') not in ('', '-', None) else 0,
+                        '瀹氶': float(rec.get('瀹氶', 0)) if rec.get('瀹氶') not in ('', '-', None) else 0,
 
 
 
 
 
-                        '实际': float(rec.get('实际', 0)) if rec.get('实际') not in ('', '-', None) else 0,
+                        '瀹為檯': float(rec.get('瀹為檯', 0)) if rec.get('瀹為檯') not in ('', '-', None) else 0,
 
 
 
 
 
-                        '偏差率(%)': float(str(rec.get('偏差率(%)', '0')).rstrip('%')),
+                        '鍋忓樊鐜?%)': float(str(rec.get('鍋忓樊鐜?%)', '0')).rstrip('%')),
 
 
 
 
 
-                        '偏差数量': float(rec.get('偏差数量', 0)) if rec.get('偏差数量') not in ('', '-', None) else 0,
+                        '鍋忓樊鏁伴噺': float(rec.get('鍋忓樊鏁伴噺', 0)) if rec.get('鍋忓樊鏁伴噺') not in ('', '-', None) else 0,
 
 
 
 
 
-                        '备注原因': rec.get('备注原因', ''),
+                        '澶囨敞鍘熷洜': rec.get('澶囨敞鍘熷洜', ''),
 
 
 
 
 
-                        '备注来源': rec.get('备注来源', ''),
+                        '澶囨敞鏉ユ簮': rec.get('澶囨敞鏉ユ簮', ''),
 
 
 
 
 
-                        '组件物料号': rec.get('组件物料号', ''),
+                        '缁勪欢鐗╂枡鍙?: rec.get('缁勪欢鐗╂枡鍙?, ''),
 
 
 
 
 
-                        '组件物料描述': rec.get('组件物料描述', ''),
+                        '缁勪欢鐗╂枡鎻忚堪': rec.get('缁勪欢鐗╂枡鎻忚堪', ''),
 
 
 
 
 
-                        '数量-定额': float(rec.get('数量-定额', 0)) if rec.get('数量-定额') not in ('', '-', None) else 0,
+                        '鏁伴噺-瀹氶': float(rec.get('鏁伴噺-瀹氶', 0)) if rec.get('鏁伴噺-瀹氶') not in ('', '-', None) else 0,
 
 
 
 
 
-                        '数量-实际': float(rec.get('数量-实际', 0)) if rec.get('数量-实际') not in ('', '-', None) else 0,
+                        '鏁伴噺-瀹為檯': float(rec.get('鏁伴噺-瀹為檯', 0)) if rec.get('鏁伴噺-瀹為檯') not in ('', '-', None) else 0,
 
 
 
 
 
-                        '生产管理员描述': rec.get('生产管理员描述', ''),
+                        '鐢熶骇绠＄悊鍛樻弿杩?: rec.get('鐢熶骇绠＄悊鍛樻弿杩?, ''),
 
 
 
@@ -2237,13 +2219,13 @@ class AuditBatchEvents:
 
 
 
-            self.log(f"📤 已从隔离区恢复 {len(restored)} 条记录", "info")
+            self.log(f"馃摛 宸蹭粠闅旂鍖烘仮澶?{len(restored)} 鏉¤褰?, "info")
 
 
 
 
 
-            messagebox.showinfo("完成", f"已恢复 {len(restored)} 条记录到审核表格")
+            messagebox.showinfo("瀹屾垚", f"宸叉仮澶?{len(restored)} 鏉¤褰曞埌瀹℃牳琛ㄦ牸")
 
 
 
@@ -2267,7 +2249,7 @@ class AuditBatchEvents:
 
 
 
-                messagebox.showinfo("提示", "隔离区已空")
+                messagebox.showinfo("鎻愮ず", "闅旂鍖哄凡绌?)
 
 
 
@@ -2279,7 +2261,7 @@ class AuditBatchEvents:
 
 
 
-            if messagebox.askyesno("确认", f"确定清空所有 {len(quarantine_list)} 条隔离记录？此操作不可恢复。"):
+            if messagebox.askyesno("纭", f"纭畾娓呯┖鎵€鏈?{len(quarantine_list)} 鏉￠殧绂昏褰曪紵姝ゆ搷浣滀笉鍙仮澶嶃€?):
 
 
 
@@ -2309,7 +2291,7 @@ class AuditBatchEvents:
 
 
 
-                self.log("🗑️ 隔离区已清空", "info")
+                self.log("馃棏锔?闅旂鍖哄凡娓呯┖", "info")
 
 
 
@@ -2333,7 +2315,7 @@ class AuditBatchEvents:
 
 
 
-                messagebox.showwarning("提示", "没有可导出的数据")
+                messagebox.showwarning("鎻愮ず", "娌℃湁鍙鍑虹殑鏁版嵁")
 
 
 
@@ -2351,13 +2333,13 @@ class AuditBatchEvents:
 
 
 
-                title="导出隔离区", defaultextension=".xlsx",
+                title="瀵煎嚭闅旂鍖?, defaultextension=".xlsx",
 
 
 
 
 
-                filetypes=[("Excel 文件", "*.xlsx"), ("CSV 文件", "*.csv")]
+                filetypes=[("Excel 鏂囦欢", "*.xlsx"), ("CSV 鏂囦欢", "*.csv")]
 
 
 
@@ -2417,13 +2399,13 @@ class AuditBatchEvents:
 
 
 
-                self.log(f"📤 隔离区已导出：{file_path}", "success")
+                self.log(f"馃摛 闅旂鍖哄凡瀵煎嚭锛歿file_path}", "success")
 
 
 
 
 
-                messagebox.showinfo("导出成功", f"已导出 {len(quarantine_list)} 条记录")
+                messagebox.showinfo("瀵煎嚭鎴愬姛", f"宸插鍑?{len(quarantine_list)} 鏉¤褰?)
 
 
 
@@ -2435,7 +2417,7 @@ class AuditBatchEvents:
 
 
 
-                messagebox.showerror("导出失败", str(e))
+                messagebox.showerror("瀵煎嚭澶辫触", str(e))
 
 
 
@@ -2447,7 +2429,7 @@ class AuditBatchEvents:
 
 
 
-        tk.Button(btn_frame, text="⬆ 恢复选中", command=restore_selected,
+        tk.Button(btn_frame, text="猬?鎭㈠閫変腑", command=restore_selected,
 
 
 
@@ -2465,7 +2447,7 @@ class AuditBatchEvents:
 
 
 
-        tk.Button(btn_frame, text="🗑️ 清空隔离区", command=clear_all,
+        tk.Button(btn_frame, text="馃棏锔?娓呯┖闅旂鍖?, command=clear_all,
 
 
 
@@ -2483,7 +2465,7 @@ class AuditBatchEvents:
 
 
 
-        tk.Button(btn_frame, text="📤 导出", command=export_quarantine,
+        tk.Button(btn_frame, text="馃摛 瀵煎嚭", command=export_quarantine,
 
 
 
@@ -2496,36 +2478,13 @@ class AuditBatchEvents:
 
 
                   width=12).pack(side="left")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    @with_feedback("移入隔离区成功", "移入隔离区失败")
-
-
-
-
-
     def _quarantine_selected(self):
 
 
 
 
 
-        """将选中行移入隔离区"""
+        """灏嗛€変腑琛岀Щ鍏ラ殧绂诲尯"""
 
 
 
@@ -2543,7 +2502,7 @@ class AuditBatchEvents:
 
 
 
-            messagebox.showwarning("提示", "请先选择要移入隔离区的行")
+            messagebox.showwarning("鎻愮ず", "璇峰厛閫夋嫨瑕佺Щ鍏ラ殧绂诲尯鐨勮")
 
 
 
@@ -2621,7 +2580,7 @@ class AuditBatchEvents:
 
 
 
-            # 从底层 DataFrame 中移除对应行
+            # 浠庡簳灞?DataFrame 涓Щ闄ゅ搴旇
 
 
 
@@ -2663,7 +2622,7 @@ class AuditBatchEvents:
 
 
 
-        # 保存隔离区文件
+        # 淇濆瓨闅旂鍖烘枃浠?
 
 
 
@@ -2681,7 +2640,7 @@ class AuditBatchEvents:
 
 
 
-        # 从表格中移除选中行
+        # 浠庤〃鏍间腑绉婚櫎閫変腑琛?
 
 
 
@@ -2705,7 +2664,7 @@ class AuditBatchEvents:
 
 
 
-        # 刷新统计和筛选
+        # 鍒锋柊缁熻鍜岀瓫閫?
 
 
 
@@ -2735,13 +2694,13 @@ class AuditBatchEvents:
 
 
 
-        self.log(f"🔒 已将 {len(selected)} 条记录移入隔离区（累计 {len(quarantine_list)} 条）", "info")
+        self.log(f"馃敀 宸插皢 {len(selected)} 鏉¤褰曠Щ鍏ラ殧绂诲尯锛堢疮璁?{len(quarantine_list)} 鏉★級", "info")
 
 
 
 
 
-        messagebox.showinfo("完成", f"已移入隔离区 {len(selected)} 条记录。\n隔离区累计：{len(quarantine_list)} 条")
+        messagebox.showinfo("瀹屾垚", f"宸茬Щ鍏ラ殧绂诲尯 {len(selected)} 鏉¤褰曘€俓n闅旂鍖虹疮璁★細{len(quarantine_list)} 鏉?)
 
 
 

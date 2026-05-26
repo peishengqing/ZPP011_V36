@@ -191,7 +191,6 @@ class StockDatabase:
                 ))
                 success_count += 1
             except Exception as e:
-                print(f"插入失败: {e}")
         self.conn.commit()
         return success_count
 

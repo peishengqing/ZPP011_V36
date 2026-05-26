@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
-"""故事线、替代料、BOM、预检、树视图、断点等杂项事件"""
+﻿# -*- coding: utf-8 -*-
+"""鏁呬簨绾裤€佹浛浠ｆ枡銆丅OM銆侀妫€銆佹爲瑙嗗浘銆佹柇鐐圭瓑鏉傞」浜嬩欢"""
 
 import shutil
 import tkinter as tk
@@ -10,7 +10,6 @@ import pandas as pd
 from storage import storage
 from core.state_store import get_state
 from core.rule_engine import RuleEngine
-from core.decorators import with_feedback
 from core.task_manager import TaskManager
 from modules.audit.models.audit_model import AuditModel
 from openpyxl import Workbook, load_workbook
@@ -20,49 +19,49 @@ import time, datetime, threading, traceback, json, csv, calendar
 
 
 class UtilsEvents:
-    """故事线、替代料、BOM、预检、树视图、断点等杂项事件"""
+    """鏁呬簨绾裤€佹浛浠ｆ枡銆丅OM銆侀妫€銆佹爲瑙嗗浘銆佹柇鐐圭瓑鏉傞」浜嬩欢"""
     def _show_storyline(self):
-        """弹出故事线窗口（直接包含统计逻辑）"""
+        """寮瑰嚭鏁呬簨绾跨獥鍙ｏ紙鐩存帴鍖呭惈缁熻閫昏緫锛?""
         if self.audit_data is None or self.audit_data.empty:
-            messagebox.showinfo("提示", "无数据生成故事线")
+            messagebox.showinfo("鎻愮ず", "鏃犳暟鎹敓鎴愭晠浜嬬嚎")
             return
 
         lines = []
-        lines.append(f"📅 统计周期：{self.start_date.get()} 至 {self.end_date.get()}")
+        lines.append(f"馃搮 缁熻鍛ㄦ湡锛歿self.start_date.get()} 鑷?{self.end_date.get()}")
         lines.append("")
 
-        if '偏差金额' in self.audit_data.columns:
-            total_amount = self.audit_data['偏差金额'].sum()
-            lines.append(f"💰 总偏差金额：¥{total_amount:,.2f}")
+        if '鍋忓樊閲戦' in self.audit_data.columns:
+            total_amount = self.audit_data['鍋忓樊閲戦'].sum()
+            lines.append(f"馃挵 鎬诲亸宸噾棰濓細楼{total_amount:,.2f}")
         else:
-            lines.append("💰 总偏差金额：无数据")
+            lines.append("馃挵 鎬诲亸宸噾棰濓細鏃犳暟鎹?)
 
-        over_col = next((c for c in self.audit_data.columns if '多耗' in c or '超耗' in c), None)
-        under_col = next((c for c in self.audit_data.columns if '少耗' in c or '节约' in c), None)
+        over_col = next((c for c in self.audit_data.columns if '澶氳€? in c or '瓒呰€? in c), None)
+        under_col = next((c for c in self.audit_data.columns if '灏戣€? in c or '鑺傜害' in c), None)
         if over_col and under_col:
-            lines.append(f"📈 多耗总额：¥{self.audit_data[over_col].sum():,.2f}")
-            lines.append(f"📉 少耗总额：¥{self.audit_data[under_col].sum():,.2f}")
+            lines.append(f"馃搱 澶氳€楁€婚锛毬self.audit_data[over_col].sum():,.2f}")
+            lines.append(f"馃搲 灏戣€楁€婚锛毬self.audit_data[under_col].sum():,.2f}")
 
-        if '偏差率(%)' in self.audit_data.columns:
-            high = (self.audit_data['偏差率(%)'].abs() > 10).sum()
-            medium = ((self.audit_data['偏差率(%)'].abs() >= 5) & (self.audit_data['偏差率(%)'].abs() <= 10)).sum()
-            low = (self.audit_data['偏差率(%)'].abs() < 5).sum()
+        if '鍋忓樊鐜?%)' in self.audit_data.columns:
+            high = (self.audit_data['鍋忓樊鐜?%)'].abs() > 10).sum()
+            medium = ((self.audit_data['鍋忓樊鐜?%)'].abs() >= 5) & (self.audit_data['鍋忓樊鐜?%)'].abs() <= 10)).sum()
+            low = (self.audit_data['鍋忓樊鐜?%)'].abs() < 5).sum()
             lines.append("")
-            lines.append(f"🔴 偏差率 >10%：{high} 行")
-            lines.append(f"🟡 偏差率 5%-10%：{medium} 行")
-            lines.append(f"🟢 偏差率 <5%：{low} 行")
+            lines.append(f"馃敶 鍋忓樊鐜?>10%锛歿high} 琛?)
+            lines.append(f"馃煛 鍋忓樊鐜?5%-10%锛歿medium} 琛?)
+            lines.append(f"馃煝 鍋忓樊鐜?<5%锛歿low} 琛?)
 
-        if '备注原因' in self.audit_data.columns:
+        if '澶囨敞鍘熷洜' in self.audit_data.columns:
             total = len(self.audit_data)
-            has_remark = self.audit_data['备注原因'].notna().sum()
+            has_remark = self.audit_data['澶囨敞鍘熷洜'].notna().sum()
             lines.append("")
-            lines.append(f"📝 备注覆盖率：{has_remark}/{total} ({has_remark/total*100:.1f}%)")
+            lines.append(f"馃摑 澶囨敞瑕嗙洊鐜囷細{has_remark}/{total} ({has_remark/total*100:.1f}%)")
 
         text_content = chr(10).join(lines)
 
-        # 创建弹窗
+        # 鍒涘缓寮圭獥
         d = tk.Toplevel(self.root)
-        d.title("📖 本周偏差故事线")
+        d.title("馃摉 鏈懆鍋忓樊鏁呬簨绾?)
         d.geometry("600x520")
         d.transient(self.root)
         d.grab_set()
@@ -71,7 +70,7 @@ class UtilsEvents:
         y = self.root.winfo_y() + (self.root.winfo_height() - 520) // 2
         d.geometry(f"+{x}+{y}")
 
-        tk.Label(d, text="📖 本周偏差故事线", font=("Microsoft YaHei", 12, "bold")).pack(pady=10)
+        tk.Label(d, text="馃摉 鏈懆鍋忓樊鏁呬簨绾?, font=("Microsoft YaHei", 12, "bold")).pack(pady=10)
         text = tk.Text(d, font=("Microsoft YaHei", 10), wrap="word", height=20)
         text.pack(fill="both", expand=True, padx=10, pady=5)
         text.insert("1.0", text_content)
@@ -80,21 +79,21 @@ class UtilsEvents:
         def copy_to_clip():
             d.clipboard_clear()
             d.clipboard_append(text_content)
-            messagebox.showinfo("已复制", "故事线已复制到剪贴板")
+            messagebox.showinfo("宸插鍒?, "鏁呬簨绾垮凡澶嶅埗鍒板壀璐存澘")
 
-        tk.Button(d, text="📋 复制到剪贴板", command=copy_to_clip,
+        tk.Button(d, text="馃搵 澶嶅埗鍒板壀璐存澘", command=copy_to_clip,
                   bg="#4a90d9", fg="white", relief="flat", width=15).pack(pady=8)
 
 
     def _scan_remark_cleanup(self):
-        """扫描备注数据并生成清洗建议（如存在）"""
+        """鎵弿澶囨敞鏁版嵁骞剁敓鎴愭竻娲楀缓璁紙濡傚瓨鍦級"""
         if self.audit_data is None or self.audit_data.empty:
-            messagebox.showinfo("提示", "无数据可扫描")
+            messagebox.showinfo("鎻愮ず", "鏃犳暟鎹彲鎵弿")
             return
-        # 确定物料描述列
+        # 纭畾鐗╂枡鎻忚堪鍒?
         mat_col = None
         for col in self.audit_data.columns:
-            if '物料描述' in col or '组件描述' in col:
+            if '鐗╂枡鎻忚堪' in col or '缁勪欢鎻忚堪' in col:
                 mat_col = col
                 break
 
@@ -108,12 +107,10 @@ class UtilsEvents:
 
 
 
-            mat_col = '组件物料描述'
+            mat_col = '缁勪欢鐗╂枡鎻忚堪'
 
-        # 确定备注列
-        remark_col = next((c for c in ['备注', '备注原因'] if c in self.audit_data.columns), '备注')
-
-
+        # 纭畾澶囨敞鍒?
+        remark_col = next((c for c in ['澶囨敞', '澶囨敞鍘熷洜'] if c in self.audit_data.columns), '澶囨敞')
 
 
 
@@ -123,7 +120,9 @@ class UtilsEvents:
 
 
 
-        # 清洗规则
+
+
+        # 娓呮礂瑙勫垯
 
 
 
@@ -135,55 +134,55 @@ class UtilsEvents:
 
 
 
-            '额定不足': '定额偏低', '定额低': '定额偏低',
+            '棰濆畾涓嶈冻': '瀹氶鍋忎綆', '瀹氶浣?: '瀹氶鍋忎綆',
 
 
 
 
 
-            '定额高': '定额偏高', '设高': '定额偏高',
+            '瀹氶楂?: '瀹氶鍋忛珮', '璁鹃珮': '瀹氶鍋忛珮',
 
 
 
 
 
-            '设低': '定额偏低', '没有定额': '系统无定额',
+            '璁句綆': '瀹氶鍋忎綆', '娌℃湁瀹氶': '绯荤粺鏃犲畾棰?,
 
 
 
 
 
-            '无定额': '系统无定额', '未定额': '系统无定额',
+            '鏃犲畾棰?: '绯荤粺鏃犲畾棰?, '鏈畾棰?: '绯荤粺鏃犲畾棰?,
 
 
 
 
 
-            '没用过': '未填写', '不知道': '未填写',
+            '娌＄敤杩?: '鏈～鍐?, '涓嶇煡閬?: '鏈～鍐?,
 
 
 
 
 
-            '待查': '未填写', '测试': '试产',
+            '寰呮煡': '鏈～鍐?, '娴嬭瘯': '璇曚骇',
 
 
 
 
 
-            '试机': '试产', '打样': '试产',
+            '璇曟満': '璇曚骇', '鎵撴牱': '璇曚骇',
 
 
 
 
 
-            '样板': '试产', '堵': '堵料',
+            '鏍锋澘': '璇曚骇', '鍫?: '鍫垫枡',
 
 
 
 
 
-            '卡': '卡料', '破': '破损', '烂': '破损',
+            '鍗?: '鍗℃枡', '鐮?: '鐮存崯', '鐑?: '鐮存崯',
 
 
 
@@ -255,19 +254,19 @@ class UtilsEvents:
 
 
 
-                        '物料': str(row.get(mat_col, ''))[:25],
+                        '鐗╂枡': str(row.get(mat_col, ''))[:25],
 
 
 
 
 
-                        '当前备注': remark,
+                        '褰撳墠澶囨敞': remark,
 
 
 
 
 
-                        '建议标准化为': standard,
+                        '寤鸿鏍囧噯鍖栦负': standard,
 
 
 
@@ -315,7 +314,7 @@ class UtilsEvents:
 
 
 
-        """显示备注清洗标准化窗口"""
+        """鏄剧ず澶囨敞娓呮礂鏍囧噯鍖栫獥鍙?""
 
 
 
@@ -333,7 +332,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showinfo("提示", "未发现可清洗的备注，数据已很规范")
+            messagebox.showinfo("鎻愮ず", "鏈彂鐜板彲娓呮礂鐨勫娉紝鏁版嵁宸插緢瑙勮寖")
 
 
 
@@ -357,7 +356,7 @@ class UtilsEvents:
 
 
 
-        d.title("🧹 备注清洗标准化")
+        d.title("馃Ч 澶囨敞娓呮礂鏍囧噯鍖?)
 
 
 
@@ -411,7 +410,7 @@ class UtilsEvents:
 
 
 
-        tk.Label(d, text=f"发现 {len(suggestions)} 条可标准化的备注，勾选后点击执行",
+        tk.Label(d, text=f"鍙戠幇 {len(suggestions)} 鏉″彲鏍囧噯鍖栫殑澶囨敞锛屽嬀閫夊悗鐐瑰嚮鎵ц",
 
 
 
@@ -429,7 +428,7 @@ class UtilsEvents:
 
 
 
-        # 表格：物料 / 当前备注 / 建议标准化为
+        # 琛ㄦ牸锛氱墿鏂?/ 褰撳墠澶囨敞 / 寤鸿鏍囧噯鍖栦负
 
 
 
@@ -459,25 +458,25 @@ class UtilsEvents:
 
 
 
-        tree.heading("select", text="✓")
+        tree.heading("select", text="鉁?)
 
 
 
 
 
-        tree.heading("material", text="物料描述")
+        tree.heading("material", text="鐗╂枡鎻忚堪")
 
 
 
 
 
-        tree.heading("current", text="当前备注")
+        tree.heading("current", text="褰撳墠澶囨敞")
 
 
 
 
 
-        tree.heading("suggested", text="建议标准化为")
+        tree.heading("suggested", text="寤鸿鏍囧噯鍖栦负")
 
 
 
@@ -543,7 +542,7 @@ class UtilsEvents:
 
 
 
-        # 填充数据
+        # 濉厖鏁版嵁
 
 
 
@@ -561,7 +560,7 @@ class UtilsEvents:
 
 
 
-            item_id = tree.insert('', 'end', values=('☐', sug['物料'], sug['当前备注'], sug['建议标准化为']))
+            item_id = tree.insert('', 'end', values=('鈽?, sug['鐗╂枡'], sug['褰撳墠澶囨敞'], sug['寤鸿鏍囧噯鍖栦负']))
 
 
 
@@ -579,7 +578,7 @@ class UtilsEvents:
 
 
 
-        # 点击行切换勾选状态
+        # 鐐瑰嚮琛屽垏鎹㈠嬀閫夌姸鎬?
 
 
 
@@ -627,7 +626,7 @@ class UtilsEvents:
 
 
 
-            tree.set(item_id, "select", '☑' if new_checked else '☐')
+            tree.set(item_id, "select", '鈽? if new_checked else '鈽?)
 
 
 
@@ -651,7 +650,7 @@ class UtilsEvents:
 
 
 
-        # 底部按钮
+        # 搴曢儴鎸夐挳
 
 
 
@@ -699,7 +698,7 @@ class UtilsEvents:
 
 
 
-                tree.set(item_id, "select", '☑')
+                tree.set(item_id, "select", '鈽?)
 
 
 
@@ -735,7 +734,7 @@ class UtilsEvents:
 
 
 
-                    remark_col = sug.get('remark_col', '备注原因'); self.audit_data.at[sug['idx'], remark_col] = sug['建议标准化为']
+                    remark_col = sug.get('remark_col', '澶囨敞鍘熷洜'); self.audit_data.at[sug['idx'], remark_col] = sug['寤鸿鏍囧噯鍖栦负']
 
 
 
@@ -777,7 +776,7 @@ class UtilsEvents:
 
 
 
-                self.log("[DEBUG] AI审核完成后强制恢复displaycolumns", "info")
+                self.log("[DEBUG] AI瀹℃牳瀹屾垚鍚庡己鍒舵仮澶峝isplaycolumns", "info")
 
 
 
@@ -789,7 +788,7 @@ class UtilsEvents:
 
 
 
-                self.log(f"[ERROR] 恢复displaycolumns失败: {e}", "error")
+                self.log(f"[ERROR] 鎭㈠displaycolumns澶辫触: {e}", "error")
 
 
 
@@ -807,13 +806,13 @@ class UtilsEvents:
 
 
 
-                self.log(f"🧹 备注清洗完成：{cleaned} 条已标准化", "success")
+                self.log(f"馃Ч 澶囨敞娓呮礂瀹屾垚锛歿cleaned} 鏉″凡鏍囧噯鍖?, "success")
 
 
 
 
 
-                messagebox.showinfo("完成", f"已标准化 {cleaned} 条备注")
+                messagebox.showinfo("瀹屾垚", f"宸叉爣鍑嗗寲 {cleaned} 鏉″娉?)
 
 
 
@@ -831,7 +830,7 @@ class UtilsEvents:
 
 
 
-        tk.Button(btn_frame, text="全选", command=select_all,
+        tk.Button(btn_frame, text="鍏ㄩ€?, command=select_all,
 
 
 
@@ -843,7 +842,7 @@ class UtilsEvents:
 
 
 
-        tk.Button(btn_frame, text="执行选中", command=execute_cleanup,
+        tk.Button(btn_frame, text="鎵ц閫変腑", command=execute_cleanup,
 
 
 
@@ -855,7 +854,7 @@ class UtilsEvents:
 
 
 
-        tk.Button(btn_frame, text="取消", command=d.destroy,
+        tk.Button(btn_frame, text="鍙栨秷", command=d.destroy,
 
 
 
@@ -891,7 +890,7 @@ class UtilsEvents:
 
 
 
-        d.title("添加替代料配对")
+        d.title("娣诲姞鏇夸唬鏂欓厤瀵?)
 
 
 
@@ -927,7 +926,7 @@ class UtilsEvents:
 
 
 
-        tk.Label(d, text="物料A（编码或名称）：", font=("Microsoft YaHei", 10),
+        tk.Label(d, text="鐗╂枡A锛堢紪鐮佹垨鍚嶇О锛夛細", font=("Microsoft YaHei", 10),
 
 
 
@@ -975,7 +974,7 @@ class UtilsEvents:
 
 
 
-            cb_a.set("输入关键字或点击下拉选择...")
+            cb_a.set("杈撳叆鍏抽敭瀛楁垨鐐瑰嚮涓嬫媺閫夋嫨...")
 
 
 
@@ -987,7 +986,7 @@ class UtilsEvents:
 
 
 
-                if var_a.get() == "输入关键字或点击下拉选择...":
+                if var_a.get() == "杈撳叆鍏抽敭瀛楁垨鐐瑰嚮涓嬫媺閫夋嫨...":
 
 
 
@@ -1029,7 +1028,7 @@ class UtilsEvents:
 
 
 
-            e_a.insert(0, "（未找到物料列表，请手动输入）")
+            e_a.insert(0, "锛堟湭鎵惧埌鐗╂枡鍒楄〃锛岃鎵嬪姩杈撳叆锛?)
 
 
 
@@ -1041,7 +1040,7 @@ class UtilsEvents:
 
 
 
-        tk.Label(d, text="物料B（编码或名称）：", font=("Microsoft YaHei", 10),
+        tk.Label(d, text="鐗╂枡B锛堢紪鐮佹垨鍚嶇О锛夛細", font=("Microsoft YaHei", 10),
 
 
 
@@ -1089,7 +1088,7 @@ class UtilsEvents:
 
 
 
-            cb_b.set("输入关键字或点击下拉选择...")
+            cb_b.set("杈撳叆鍏抽敭瀛楁垨鐐瑰嚮涓嬫媺閫夋嫨...")
 
 
 
@@ -1101,7 +1100,7 @@ class UtilsEvents:
 
 
 
-                if var_b.get() == "输入关键字或点击下拉选择...":
+                if var_b.get() == "杈撳叆鍏抽敭瀛楁垨鐐瑰嚮涓嬫媺閫夋嫨...":
 
 
 
@@ -1143,7 +1142,7 @@ class UtilsEvents:
 
 
 
-            e_b.insert(0, "（未找到物料列表，请手动输入）")
+            e_b.insert(0, "锛堟湭鎵惧埌鐗╂枡鍒楄〃锛岃鎵嬪姩杈撳叆锛?)
 
 
 
@@ -1155,13 +1154,13 @@ class UtilsEvents:
 
 
 
-        # 已有配对列表（用于删除）
+        # 宸叉湁閰嶅鍒楄〃锛堢敤浜庡垹闄わ級
 
 
 
 
 
-        lst = None  # 将在后面定义
+        lst = None  # 灏嗗湪鍚庨潰瀹氫箟
 
 
 
@@ -1197,7 +1196,7 @@ class UtilsEvents:
 
 
 
-                messagebox.showwarning("提示", "物料A和物料B都必须填写！")
+                messagebox.showwarning("鎻愮ず", "鐗╂枡A鍜岀墿鏂橞閮藉繀椤诲～鍐欙紒")
 
 
 
@@ -1239,13 +1238,13 @@ class UtilsEvents:
 
 
 
-                        # 格式: 工厂 | 编码 | 名称
+                        # 鏍煎紡: 宸ュ巶 | 缂栫爜 | 鍚嶇О
 
 
 
 
 
-                        return parts[0], parts[1], parts[2]  # (工厂, 编码, 名称)
+                        return parts[0], parts[1], parts[2]  # (宸ュ巶, 缂栫爜, 鍚嶇О)
 
 
 
@@ -1257,13 +1256,13 @@ class UtilsEvents:
 
 
 
-                        # 格式: 编码 | 名称
+                        # 鏍煎紡: 缂栫爜 | 鍚嶇О
 
 
 
 
 
-                        return '', parts[0], parts[1]  # (空工厂, 编码, 名称)
+                        return '', parts[0], parts[1]  # (绌哄伐鍘? 缂栫爜, 鍚嶇О)
 
 
 
@@ -1275,7 +1274,7 @@ class UtilsEvents:
 
 
 
-                        return '', parts[0], ''  # (空工厂, 编码, 空名称)
+                        return '', parts[0], ''  # (绌哄伐鍘? 缂栫爜, 绌哄悕绉?
 
 
 
@@ -1287,7 +1286,7 @@ class UtilsEvents:
 
 
 
-                    # 手动输入时尝试从物料列表匹配
+                    # 鎵嬪姩杈撳叆鏃跺皾璇曚粠鐗╂枡鍒楄〃鍖归厤
 
 
 
@@ -1317,13 +1316,13 @@ class UtilsEvents:
 
 
 
-                                return parts[0], parts[1], parts[2]  # (工厂, 编码, 名称)
+                                return parts[0], parts[1], parts[2]  # (宸ュ巶, 缂栫爜, 鍚嶇О)
 
 
 
 
 
-                    return '', x, x  # 兜底
+                    return '', x, x  # 鍏滃簳
 
 
 
@@ -1353,7 +1352,7 @@ class UtilsEvents:
 
 
 
-            # Bug 6 修复：检查 A 和 B 不能是同一个物料
+            # Bug 6 淇锛氭鏌?A 鍜?B 涓嶈兘鏄悓涓€涓墿鏂?
 
 
 
@@ -1365,7 +1364,7 @@ class UtilsEvents:
 
 
 
-                messagebox.showwarning("提示", "物料A和物料B不能是同一个物料！")
+                messagebox.showwarning("鎻愮ず", "鐗╂枡A鍜岀墿鏂橞涓嶈兘鏄悓涓€涓墿鏂欙紒")
 
 
 
@@ -1383,7 +1382,7 @@ class UtilsEvents:
 
 
 
-            # 去重检查：是否已存在相同配对（编码为空时用描述匹配）
+            # 鍘婚噸妫€鏌ワ細鏄惁宸插瓨鍦ㄧ浉鍚岄厤瀵癸紙缂栫爜涓虹┖鏃剁敤鎻忚堪鍖归厤锛?
 
 
 
@@ -1437,7 +1436,7 @@ class UtilsEvents:
 
 
 
-                            return code if code else desc  # 编码为空用描述
+                            return code if code else desc  # 缂栫爜涓虹┖鐢ㄦ弿杩?
 
 
 
@@ -1551,13 +1550,13 @@ class UtilsEvents:
 
 
 
-                msg = f"配对已存在：{a_code} ↔ {b_code}\n是否仍要添加？"
+                msg = f"閰嶅宸插瓨鍦細{a_code} 鈫?{b_code}\n鏄惁浠嶈娣诲姞锛?
 
 
 
 
 
-                if not messagebox.askyesno("重复配对", msg):
+                if not messagebox.askyesno("閲嶅閰嶅", msg):
 
 
 
@@ -1575,13 +1574,13 @@ class UtilsEvents:
 
 
 
-                warn = f"物料 {a_code} 或 {b_code} 已存在于其他配对中，继续添加可能导致冲突。\n是否仍要添加？"
+                warn = f"鐗╂枡 {a_code} 鎴?{b_code} 宸插瓨鍦ㄤ簬鍏朵粬閰嶅涓紝缁х画娣诲姞鍙兘瀵艰嚧鍐茬獊銆俓n鏄惁浠嶈娣诲姞锛?
 
 
 
 
 
-                if not messagebox.askyesno("物料冲突", warn):
+                if not messagebox.askyesno("鐗╂枡鍐茬獊", warn):
 
 
 
@@ -1635,7 +1634,7 @@ class UtilsEvents:
 
 
 
-                messagebox.showerror("错误", f"替代料添加失败：{e}")
+                messagebox.showerror("閿欒", f"鏇夸唬鏂欐坊鍔犲け璐ワ細{e}")
 
 
 
@@ -1653,7 +1652,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showinfo("提示", "替代料添加成功！")
+            messagebox.showinfo("鎻愮ず", "鏇夸唬鏂欐坊鍔犳垚鍔燂紒")
 
 
 
@@ -1719,7 +1718,7 @@ class UtilsEvents:
 
 
 
-                messagebox.showwarning("提示", "请先选择要删除的配对")
+                messagebox.showwarning("鎻愮ず", "璇峰厛閫夋嫨瑕佸垹闄ょ殑閰嶅")
 
 
 
@@ -1743,7 +1742,7 @@ class UtilsEvents:
 
 
 
-        tk.Button(btn_frame, text="✓ 确定", command=confirm, bg="#4CAF50", fg="white",
+        tk.Button(btn_frame, text="鉁?纭畾", command=confirm, bg="#4CAF50", fg="white",
 
 
 
@@ -1755,7 +1754,7 @@ class UtilsEvents:
 
 
 
-        tk.Button(btn_frame, text="✗ 取消", command=d.destroy, bg="#9E9E9E", fg="white",
+        tk.Button(btn_frame, text="鉁?鍙栨秷", command=d.destroy, bg="#9E9E9E", fg="white",
 
 
 
@@ -1779,7 +1778,7 @@ class UtilsEvents:
 
 
 
-            tk.Label(d, text="已有配对（点击可删除）：", font=("Microsoft YaHei", 9),
+            tk.Label(d, text="宸叉湁閰嶅锛堢偣鍑诲彲鍒犻櫎锛夛細", font=("Microsoft YaHei", 9),
 
 
 
@@ -1809,7 +1808,7 @@ class UtilsEvents:
 
 
 
-                # 解析显示
+                # 瑙ｆ瀽鏄剧ず
 
 
 
@@ -1899,13 +1898,13 @@ class UtilsEvents:
 
 
 
-                lst.insert('end', left + " ⇄ " + right)
+                lst.insert('end', left + " 鈬?" + right)
 
 
 
 
 
-            tk.Button(d, text="删除选中配对", command=do_del, bg=C['danger'], fg="white",
+            tk.Button(d, text="鍒犻櫎閫変腑閰嶅", command=do_del, bg=C['danger'], fg="white",
 
 
 
@@ -1941,7 +1940,7 @@ class UtilsEvents:
 
 
 
-        """删除替代料配对"""
+        """鍒犻櫎鏇夸唬鏂欓厤瀵?""
 
 
 
@@ -1953,7 +1952,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showinfo("提示", "当前没有替代料配对可删除")
+            messagebox.showinfo("鎻愮ず", "褰撳墠娌℃湁鏇夸唬鏂欓厤瀵瑰彲鍒犻櫎")
 
 
 
@@ -1971,7 +1970,7 @@ class UtilsEvents:
 
 
 
-        d.title("删除替代料配对")
+        d.title("鍒犻櫎鏇夸唬鏂欓厤瀵?)
 
 
 
@@ -1995,7 +1994,7 @@ class UtilsEvents:
 
 
 
-        tk.Label(d, text="请选择要删除的配对：", font=("Microsoft YaHei", 10)).pack(pady=8)
+        tk.Label(d, text="璇烽€夋嫨瑕佸垹闄ょ殑閰嶅锛?, font=("Microsoft YaHei", 10)).pack(pady=8)
 
 
 
@@ -2019,7 +2018,7 @@ class UtilsEvents:
 
 
 
-            # a, b 都是 (factory, code, name) 元组
+            # a, b 閮芥槸 (factory, code, name) 鍏冪粍
 
 
 
@@ -2049,7 +2048,7 @@ class UtilsEvents:
 
 
 
-            lst.insert('end', left + " ⇄ " + right)
+            lst.insert('end', left + " 鈬?" + right)
 
 
 
@@ -2127,13 +2126,13 @@ class UtilsEvents:
 
 
 
-                messagebox.showwarning("提示", "请先选择要删除的配对")
+                messagebox.showwarning("鎻愮ず", "璇峰厛閫夋嫨瑕佸垹闄ょ殑閰嶅")
 
 
 
 
 
-        tk.Button(btn_frame, text="删除", command=do_delete, bg=C['danger'], fg="white",
+        tk.Button(btn_frame, text="鍒犻櫎", command=do_delete, bg=C['danger'], fg="white",
 
 
 
@@ -2145,7 +2144,7 @@ class UtilsEvents:
 
 
 
-        tk.Button(btn_frame, text="取消", command=d.destroy, bg="#d0d7de",
+        tk.Button(btn_frame, text="鍙栨秷", command=d.destroy, bg="#d0d7de",
 
 
 
@@ -2175,13 +2174,13 @@ class UtilsEvents:
 
 
 
-        self.alt_pairs = []   # 清空替代料配对
+        self.alt_pairs = []   # 娓呯┖鏇夸唬鏂欓厤瀵?
 
 
 
 
 
-        # 刷新界面显示
+        # 鍒锋柊鐣岄潰鏄剧ず
 
 
 
@@ -2205,7 +2204,7 @@ class UtilsEvents:
 
 
 
-        # 保存到配置文件
+        # 淇濆瓨鍒伴厤缃枃浠?
 
 
 
@@ -2271,7 +2270,7 @@ class UtilsEvents:
 
 
 
-            # 期望 a, b 都是 (factory, code, name) 格式
+            # 鏈熸湜 a, b 閮芥槸 (factory, code, name) 鏍煎紡
 
 
 
@@ -2325,7 +2324,7 @@ class UtilsEvents:
 
 
 
-            # 将 None / 'None' 转为空字符串
+            # 灏?None / 'None' 杞负绌哄瓧绗︿覆
 
 
 
@@ -2361,7 +2360,7 @@ class UtilsEvents:
 
 
 
-            # 显示：编码 + 名称（若名称存在）
+            # 鏄剧ず锛氱紪鐮?+ 鍚嶇О锛堣嫢鍚嶇О瀛樺湪锛?
 
 
 
@@ -2397,7 +2396,7 @@ class UtilsEvents:
 
 
 
-            tk.Label(fr, text=f"↔ {a_disp}", font=("Consolas", 8), fg=C['text'],
+            tk.Label(fr, text=f"鈫?{a_disp}", font=("Consolas", 8), fg=C['text'],
 
 
 
@@ -2451,7 +2450,7 @@ class UtilsEvents:
 
 
 
-        """显示替代料配置的JSON快照（基于 alt_manager 动态路径）"""
+        """鏄剧ず鏇夸唬鏂欓厤缃殑JSON蹇収锛堝熀浜?alt_manager 鍔ㄦ€佽矾寰勶級"""
 
 
 
@@ -2481,13 +2480,13 @@ class UtilsEvents:
 
 
 
-            messagebox.showinfo("提示",
+            messagebox.showinfo("鎻愮ず",
 
 
 
 
 
-                f"未找到配置文件：\n{config_path}\n\n当前使用默认内置替代料数据。")
+                f"鏈壘鍒伴厤缃枃浠讹細\n{config_path}\n\n褰撳墠浣跨敤榛樿鍐呯疆鏇夸唬鏂欐暟鎹€?)
 
 
 
@@ -2541,7 +2540,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showerror("读取失败", f"无法解析 JSON 文件：\n{e}")
+            messagebox.showerror("璇诲彇澶辫触", f"鏃犳硶瑙ｆ瀽 JSON 鏂囦欢锛歕n{e}")
 
 
 
@@ -2565,7 +2564,7 @@ class UtilsEvents:
 
 
 
-        win.title(f"替代料快照 - {os.path.basename(config_path)}")
+        win.title(f"鏇夸唬鏂欏揩鐓?- {os.path.basename(config_path)}")
 
 
 
@@ -2685,7 +2684,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showinfo("已复制", "JSON 内容已复制到剪贴板")
+            messagebox.showinfo("宸插鍒?, "JSON 鍐呭宸插鍒跺埌鍓创鏉?)
 
 
 
@@ -2697,7 +2696,7 @@ class UtilsEvents:
 
 
 
-        tk.Button(win, text="复制到剪贴板", command=copy_to_clip,
+        tk.Button(win, text="澶嶅埗鍒板壀璐存澘", command=copy_to_clip,
 
 
 
@@ -2727,7 +2726,7 @@ class UtilsEvents:
 
 
 
-        """导入 BOM 数据文件，与旧 BOM 比对差异"""
+        """瀵煎叆 BOM 鏁版嵁鏂囦欢锛屼笌鏃?BOM 姣斿宸紓"""
 
 
 
@@ -2739,13 +2738,13 @@ class UtilsEvents:
 
 
 
-            title="选择 BOM 数据文件",
+            title="閫夋嫨 BOM 鏁版嵁鏂囦欢",
 
 
 
 
 
-            filetypes=[("Excel 文件", "*.xlsx *.xls"), ("所有文件", "*.*")]
+            filetypes=[("Excel 鏂囦欢", "*.xlsx *.xls"), ("鎵€鏈夋枃浠?, "*.*")]
 
 
 
@@ -2775,7 +2774,7 @@ class UtilsEvents:
 
 
 
-            self.log(f"📦 正在读取 BOM 文件：{os.path.basename(file_path)}", "info")
+            self.log(f"馃摝 姝ｅ湪璇诲彇 BOM 鏂囦欢锛歿os.path.basename(file_path)}", "info")
 
 
 
@@ -2787,7 +2786,7 @@ class UtilsEvents:
 
 
 
-            self.log(f"   共读取 {len(new_df)} 行数据", "info")
+            self.log(f"   鍏辫鍙?{len(new_df)} 琛屾暟鎹?, "info")
 
 
 
@@ -2799,7 +2798,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showerror("读取失败", f"无法读取 BOM 文件：{e}")
+            messagebox.showerror("璇诲彇澶辫触", f"鏃犳硶璇诲彇 BOM 鏂囦欢锛歿e}")
 
 
 
@@ -2817,13 +2816,13 @@ class UtilsEvents:
 
 
 
-        # ── 查找物料编码键 ──
+        # 鈹€鈹€ 鏌ユ壘鐗╂枡缂栫爜閿?鈹€鈹€
 
 
 
 
 
-        key_candidates = ['组件物料号', '物料编码', '物料号', '物料', 'code', 'material_code']
+        key_candidates = ['缁勪欢鐗╂枡鍙?, '鐗╂枡缂栫爜', '鐗╂枡鍙?, '鐗╂枡', 'code', 'material_code']
 
 
 
@@ -2865,13 +2864,13 @@ class UtilsEvents:
 
 
 
-            cols_str = '、'.join(new_df.columns[:10].tolist())
+            cols_str = '銆?.join(new_df.columns[:10].tolist())
 
 
 
 
 
-            messagebox.showerror("列缺失", f"未找到物料编码列（候选：{key_candidates}）\n当前列：{cols_str}")
+            messagebox.showerror("鍒楃己澶?, f"鏈壘鍒扮墿鏂欑紪鐮佸垪锛堝€欓€夛細{key_candidates}锛塡n褰撳墠鍒楋細{cols_str}")
 
 
 
@@ -2883,7 +2882,7 @@ class UtilsEvents:
 
 
 
-        self.log(f"   物料编码键列：{key_col}", "info")
+        self.log(f"   鐗╂枡缂栫爜閿垪锛歿key_col}", "info")
 
 
 
@@ -2895,7 +2894,7 @@ class UtilsEvents:
 
 
 
-        # 清洗新数据
+        # 娓呮礂鏂版暟鎹?
 
 
 
@@ -2925,7 +2924,7 @@ class UtilsEvents:
 
 
 
-        # ── 加载旧 BOM ──
+        # 鈹€鈹€ 鍔犺浇鏃?BOM 鈹€鈹€
 
 
 
@@ -2949,7 +2948,7 @@ class UtilsEvents:
 
 
 
-        old_key_col = key_col  # 默认使用新文件的key列
+        old_key_col = key_col  # 榛樿浣跨敤鏂版枃浠剁殑key鍒?
 
 
 
@@ -3009,7 +3008,7 @@ class UtilsEvents:
 
 
 
-                    # 使用旧BOM保存时的key列名（兼容新旧格式不一致的情况）
+                    # 浣跨敤鏃OM淇濆瓨鏃剁殑key鍒楀悕锛堝吋瀹规柊鏃ф牸寮忎笉涓€鑷寸殑鎯呭喌锛?
 
 
 
@@ -3057,7 +3056,7 @@ class UtilsEvents:
 
 
 
-                self.log(f"   旧 BOM 共 {len(old_records)} 条记录", "info")
+                self.log(f"   鏃?BOM 鍏?{len(old_records)} 鏉¤褰?, "info")
 
 
 
@@ -3069,7 +3068,7 @@ class UtilsEvents:
 
 
 
-                self.log(f"   旧 BOM 读取失败（将视为全新导入）：{e}", "warning")
+                self.log(f"   鏃?BOM 璇诲彇澶辫触锛堝皢瑙嗕负鍏ㄦ柊瀵煎叆锛夛細{e}", "warning")
 
 
 
@@ -3081,7 +3080,7 @@ class UtilsEvents:
 
 
 
-        # ── 比对 ──
+        # 鈹€鈹€ 姣斿 鈹€鈹€
 
 
 
@@ -3099,7 +3098,7 @@ class UtilsEvents:
 
 
 
-            detail_lines.append(f"🆕 全新导入，共 {added_count} 条新记录")
+            detail_lines.append(f"馃啎 鍏ㄦ柊瀵煎叆锛屽叡 {added_count} 鏉℃柊璁板綍")
 
 
 
@@ -3135,7 +3134,7 @@ class UtilsEvents:
 
 
 
-            # 快速修改检测（旧记录转dict）
+            # 蹇€熶慨鏀规娴嬶紙鏃ц褰曡浆dict锛?
 
 
 
@@ -3267,7 +3266,7 @@ class UtilsEvents:
 
 
 
-                detail_lines.append(f"🆕 新增 {added_count} 条（示例：{', '.join(sample_added)}）")
+                detail_lines.append(f"馃啎 鏂板 {added_count} 鏉★紙绀轰緥锛歿', '.join(sample_added)}锛?)
 
 
 
@@ -3285,7 +3284,7 @@ class UtilsEvents:
 
 
 
-                detail_lines.append(f"➖ 删除 {removed_count} 条（示例：{', '.join(sample_removed)}）")
+                detail_lines.append(f"鉃?鍒犻櫎 {removed_count} 鏉★紙绀轰緥锛歿', '.join(sample_removed)}锛?)
 
 
 
@@ -3297,7 +3296,7 @@ class UtilsEvents:
 
 
 
-                detail_lines.append(f"✏️ 修改 {modified_count} 条")
+                detail_lines.append(f"鉁忥笍 淇敼 {modified_count} 鏉?)
 
 
 
@@ -3309,7 +3308,7 @@ class UtilsEvents:
 
 
 
-        # ── 保存新 BOM ──
+        # 鈹€鈹€ 淇濆瓨鏂?BOM 鈹€鈹€
 
 
 
@@ -3375,7 +3374,7 @@ class UtilsEvents:
 
 
 
-            self.log(f"   BOM 已保存至：{old_path}", "info")
+            self.log(f"   BOM 宸蹭繚瀛樿嚦锛歿old_path}", "info")
 
 
 
@@ -3387,7 +3386,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showerror("保存失败", f"无法保存 BOM 数据：{e}")
+            messagebox.showerror("淇濆瓨澶辫触", f"鏃犳硶淇濆瓨 BOM 鏁版嵁锛歿e}")
 
 
 
@@ -3405,7 +3404,7 @@ class UtilsEvents:
 
 
 
-        # ── 展示对比报告 ──
+        # 鈹€鈹€ 灞曠ず瀵规瘮鎶ュ憡 鈹€鈹€
 
 
 
@@ -3417,7 +3416,7 @@ class UtilsEvents:
 
 
 
-        report_win.title("BOM 导入报告")
+        report_win.title("BOM 瀵煎叆鎶ュ憡")
 
 
 
@@ -3495,7 +3494,7 @@ class UtilsEvents:
 
 
 
-        title_label = Label(bg_frame, text="📦 BOM 导入报告", font=('微软雅黑', 14, 'bold'),
+        title_label = Label(bg_frame, text="馃摝 BOM 瀵煎叆鎶ュ憡", font=('寰蒋闆呴粦', 14, 'bold'),
 
 
 
@@ -3519,37 +3518,37 @@ class UtilsEvents:
 
 
 
-        summary_text = f"文件：{os.path.basename(file_path)}\n"
+        summary_text = f"鏂囦欢锛歿os.path.basename(file_path)}\n"
 
 
 
 
 
-        summary_text += f"总行数：{len(new_df)}　｜　"
+        summary_text += f"鎬昏鏁帮細{len(new_df)}銆€锝溿€€"
 
 
 
 
 
-        summary_text += f"🆕新增 {added_count}　｜　"
+        summary_text += f"馃啎鏂板 {added_count}銆€锝溿€€"
 
 
 
 
 
-        summary_text += f"➖删除 {removed_count}　｜　"
+        summary_text += f"鉃栧垹闄?{removed_count}銆€锝溿€€"
 
 
 
 
 
-        summary_text += f"✏️修改 {modified_count}"
+        summary_text += f"鉁忥笍淇敼 {modified_count}"
 
 
 
 
 
-        summary_label = Label(bg_frame, text=summary_text, font=('微软雅黑', 10),
+        summary_label = Label(bg_frame, text=summary_text, font=('寰蒋闆呴粦', 10),
 
 
 
@@ -3669,13 +3668,13 @@ class UtilsEvents:
 
 
 
-                color = '#1a7f37' if '新增' in line else ('#d29922' if '删除' in line else '#79c0ff')
+                color = '#1a7f37' if '鏂板' in line else ('#d29922' if '鍒犻櫎' in line else '#79c0ff')
 
 
 
 
 
-                lbl = Label(content_frame, text=line, font=('微软雅黑', 10),
+                lbl = Label(content_frame, text=line, font=('寰蒋闆呴粦', 10),
 
 
 
@@ -3699,7 +3698,7 @@ class UtilsEvents:
 
 
 
-            Label(content_frame, text="✓ 无变更（数据完全一致）", font=('微软雅黑', 10),
+            Label(content_frame, text="鉁?鏃犲彉鏇达紙鏁版嵁瀹屽叏涓€鑷达級", font=('寰蒋闆呴粦', 10),
 
 
 
@@ -3717,7 +3716,7 @@ class UtilsEvents:
 
 
 
-        close_btn = Button(bg_frame, text="关闭", font=('微软雅黑', 10),
+        close_btn = Button(bg_frame, text="鍏抽棴", font=('寰蒋闆呴粦', 10),
 
 
 
@@ -3747,13 +3746,13 @@ class UtilsEvents:
 
 
 
-        self.log(f"📦 BOM 导入完成：新增 {added_count} / 删除 {removed_count} / 修改 {modified_count}", "info")
+        self.log(f"馃摝 BOM 瀵煎叆瀹屾垚锛氭柊澧?{added_count} / 鍒犻櫎 {removed_count} / 淇敼 {modified_count}", "info")
 
 
 
 
 
-        self.log(f"   BOM 数据已保存，下次过期检查将自动对比差异", "info")
+        self.log(f"   BOM 鏁版嵁宸蹭繚瀛橈紝涓嬫杩囨湡妫€鏌ュ皢鑷姩瀵规瘮宸紓", "info")
 
 
 
@@ -3777,7 +3776,7 @@ class UtilsEvents:
 
 
 
-        """完整预检报告：列完整性 + 重复订单 + 数值异常 + 替代料配置 + 弹窗"""
+        """瀹屾暣棰勬鎶ュ憡锛氬垪瀹屾暣鎬?+ 閲嶅璁㈠崟 + 鏁板€煎紓甯?+ 鏇夸唬鏂欓厤缃?+ 寮圭獥"""
 
 
 
@@ -3801,13 +3800,13 @@ class UtilsEvents:
 
 
 
-                self.log("预检失败：输入文件不存在", "error")
+                self.log("棰勬澶辫触锛氳緭鍏ユ枃浠朵笉瀛樺湪", "error")
 
 
 
 
 
-                messagebox.showwarning("预检失败", "请先选择输入文件")
+                messagebox.showwarning("棰勬澶辫触", "璇峰厛閫夋嫨杈撳叆鏂囦欢")
 
 
 
@@ -3843,7 +3842,7 @@ class UtilsEvents:
 
 
 
-            # 1. 列完整性检查（黄金模板）
+            # 1. 鍒楀畬鏁存€ф鏌ワ紙榛勯噾妯℃澘锛?
 
 
 
@@ -3855,13 +3854,13 @@ class UtilsEvents:
 
 
 
-                '流程订单', '订单开始日期', '组件物料号', '组件物料描述',
+                '娴佺▼璁㈠崟', '璁㈠崟寮€濮嬫棩鏈?, '缁勪欢鐗╂枡鍙?, '缁勪欢鐗╂枡鎻忚堪',
 
 
 
 
 
-                '组件数量', '单位', '工厂名称', '生产管理员描述'
+                '缁勪欢鏁伴噺', '鍗曚綅', '宸ュ巶鍚嶇О', '鐢熶骇绠＄悊鍛樻弿杩?
 
 
 
@@ -3885,7 +3884,7 @@ class UtilsEvents:
 
 
 
-                results.append(('严重', f'缺失标准列：{", ".join(missing_cols)}'))
+                results.append(('涓ラ噸', f'缂哄け鏍囧噯鍒楋細{", ".join(missing_cols)}'))
 
 
 
@@ -3897,7 +3896,7 @@ class UtilsEvents:
 
 
 
-                results.append(('通过', '黄金模板列完整'))
+                results.append(('閫氳繃', '榛勯噾妯℃澘鍒楀畬鏁?))
 
 
 
@@ -3909,7 +3908,7 @@ class UtilsEvents:
 
 
 
-            # 2. 重复订单检查（日期 + 流程订单 + 物料编码 联合去重）
+            # 2. 閲嶅璁㈠崟妫€鏌ワ紙鏃ユ湡 + 娴佺▼璁㈠崟 + 鐗╂枡缂栫爜 鑱斿悎鍘婚噸锛?
 
 
 
@@ -3921,7 +3920,7 @@ class UtilsEvents:
 
 
 
-            for col in ['订单开始日期', '订单日期', '日期']:
+            for col in ['璁㈠崟寮€濮嬫棩鏈?, '璁㈠崟鏃ユ湡', '鏃ユ湡']:
 
 
 
@@ -3945,7 +3944,7 @@ class UtilsEvents:
 
 
 
-            # 确定物料编码列名
+            # 纭畾鐗╂枡缂栫爜鍒楀悕
 
 
 
@@ -3957,7 +3956,7 @@ class UtilsEvents:
 
 
 
-            for col in ['物料编码', '组件物料号', '物料号', '编码']:
+            for col in ['鐗╂枡缂栫爜', '缁勪欢鐗╂枡鍙?, '鐗╂枡鍙?, '缂栫爜']:
 
 
 
@@ -3981,7 +3980,7 @@ class UtilsEvents:
 
 
 
-            if date_col and '流程订单' in df.columns and mat_col:
+            if date_col and '娴佺▼璁㈠崟' in df.columns and mat_col:
 
 
 
@@ -3993,7 +3992,7 @@ class UtilsEvents:
 
 
 
-                dup_mask = df.duplicated(subset=['_check_date', '流程订单', mat_col], keep=False)
+                dup_mask = df.duplicated(subset=['_check_date', '娴佺▼璁㈠崟', mat_col], keep=False)
 
 
 
@@ -4011,13 +4010,13 @@ class UtilsEvents:
 
 
 
-                    dup_groups = dup_orders.groupby(['_check_date', '流程订单', mat_col]).ngroups
+                    dup_groups = dup_orders.groupby(['_check_date', '娴佺▼璁㈠崟', mat_col]).ngroups
 
 
 
 
 
-                    results.append(('警告', f'发现 {len(dup_orders)} 条重复记录（{dup_groups} 组重复），请检查 SAP 导出是否重复'))
+                    results.append(('璀﹀憡', f'鍙戠幇 {len(dup_orders)} 鏉￠噸澶嶈褰曪紙{dup_groups} 缁勯噸澶嶏級锛岃妫€鏌?SAP 瀵煎嚭鏄惁閲嶅'))
 
 
 
@@ -4029,7 +4028,7 @@ class UtilsEvents:
 
 
 
-                    results.append(('通过', '无重复记录（日期+订单+物料）'))
+                    results.append(('閫氳繃', '鏃犻噸澶嶈褰曪紙鏃ユ湡+璁㈠崟+鐗╂枡锛?))
 
 
 
@@ -4053,25 +4052,25 @@ class UtilsEvents:
 
 
 
-                if not date_col: missing.append('日期列')
+                if not date_col: missing.append('鏃ユ湡鍒?)
 
 
 
 
 
-                if '流程订单' not in df.columns: missing.append('流程订单')
+                if '娴佺▼璁㈠崟' not in df.columns: missing.append('娴佺▼璁㈠崟')
 
 
 
 
 
-                if not mat_col: missing.append('物料编码/组件物料号')
+                if not mat_col: missing.append('鐗╂枡缂栫爜/缁勪欢鐗╂枡鍙?)
 
 
 
 
 
-                results.append(('警告', f'缺少必要列（{", ".join(missing)}），无法检测重复订单'))
+                results.append(('璀﹀憡', f'缂哄皯蹇呰鍒楋紙{", ".join(missing)}锛夛紝鏃犳硶妫€娴嬮噸澶嶈鍗?))
 
 
 
@@ -4083,19 +4082,19 @@ class UtilsEvents:
 
 
 
-            # 3. 数值异常检查
+            # 3. 鏁板€煎紓甯告鏌?
 
 
 
 
 
-            if '组件数量' in df.columns:
+            if '缁勪欢鏁伴噺' in df.columns:
 
 
 
 
 
-                neg_quota = df[df['组件数量'] < 0]
+                neg_quota = df[df['缁勪欢鏁伴噺'] < 0]
 
 
 
@@ -4107,7 +4106,7 @@ class UtilsEvents:
 
 
 
-                    results.append(('警告', f'发现 {len(neg_quota)} 行定额为负数'))
+                    results.append(('璀﹀憡', f'鍙戠幇 {len(neg_quota)} 琛屽畾棰濅负璐熸暟'))
 
 
 
@@ -4119,7 +4118,7 @@ class UtilsEvents:
 
 
 
-                    results.append(('通过', '定额无负数'))
+                    results.append(('閫氳繃', '瀹氶鏃犺礋鏁?))
 
 
 
@@ -4131,7 +4130,7 @@ class UtilsEvents:
 
 
 
-            # 4. 替代料配置检查
+            # 4. 鏇夸唬鏂欓厤缃鏌?
 
 
 
@@ -4161,7 +4160,7 @@ class UtilsEvents:
 
 
 
-                    results.append(('警告', '替代料配置文件不存在，将使用内置配对'))
+                    results.append(('璀﹀憡', '鏇夸唬鏂欓厤缃枃浠朵笉瀛樺湪锛屽皢浣跨敤鍐呯疆閰嶅'))
 
 
 
@@ -4179,7 +4178,7 @@ class UtilsEvents:
 
 
 
-                    results.append(('通过', f'替代料配置加载成功，共 {len(alt_pairs)} 组配对'))
+                    results.append(('閫氳繃', f'鏇夸唬鏂欓厤缃姞杞芥垚鍔燂紝鍏?{len(alt_pairs)} 缁勯厤瀵?))
 
 
 
@@ -4191,7 +4190,7 @@ class UtilsEvents:
 
 
 
-                results.append(('严重', f'替代料配置加载失败：{e}'))
+                results.append(('涓ラ噸', f'鏇夸唬鏂欓厤缃姞杞藉け璐ワ細{e}'))
 
 
 
@@ -4203,7 +4202,7 @@ class UtilsEvents:
 
 
 
-            # 5. 黄金模板对比
+            # 5. 榛勯噾妯℃澘瀵规瘮
 
 
 
@@ -4257,7 +4256,7 @@ class UtilsEvents:
 
 
 
-                        results.append(('严重', f'黄金模板缺失列：{", ".join(sorted(missing))}'))
+                        results.append(('涓ラ噸', f'榛勯噾妯℃澘缂哄け鍒楋細{", ".join(sorted(missing))}'))
 
 
 
@@ -4269,7 +4268,7 @@ class UtilsEvents:
 
 
 
-                        results.append(('警告', f'黄金模板多出列：{", ".join(sorted(extra))}'))
+                        results.append(('璀﹀憡', f'榛勯噾妯℃澘澶氬嚭鍒楋細{", ".join(sorted(extra))}'))
 
 
 
@@ -4281,7 +4280,7 @@ class UtilsEvents:
 
 
 
-                        results.append(('通过', '黄金模板列结构完全匹配'))
+                        results.append(('閫氳繃', '榛勯噾妯℃澘鍒楃粨鏋勫畬鍏ㄥ尮閰?))
 
 
 
@@ -4293,7 +4292,7 @@ class UtilsEvents:
 
 
 
-                    results.append(('警告', '尚未设置黄金模板，跳过列结构对比'))
+                    results.append(('璀﹀憡', '灏氭湭璁剧疆榛勯噾妯℃澘锛岃烦杩囧垪缁撴瀯瀵规瘮'))
 
 
 
@@ -4305,7 +4304,7 @@ class UtilsEvents:
 
 
 
-                results.append(('警告', f'黄金模板对比失败：{e}'))
+                results.append(('璀﹀憡', f'榛勯噾妯℃澘瀵规瘮澶辫触锛歿e}'))
 
 
 
@@ -4317,13 +4316,13 @@ class UtilsEvents:
 
 
 
-            # 汇总到日志
+            # 姹囨€诲埌鏃ュ織
 
 
 
 
 
-            self.log("📋 数据预检报告：", "info")
+            self.log("馃搵 鏁版嵁棰勬鎶ュ憡锛?, "info")
 
 
 
@@ -4335,7 +4334,7 @@ class UtilsEvents:
 
 
 
-                self.log(f" [{severity}] {msg}", severity if severity in ("通过", "警告", "严重") else "info")
+                self.log(f" [{severity}] {msg}", severity if severity in ("閫氳繃", "璀﹀憡", "涓ラ噸") else "info")
 
 
 
@@ -4347,7 +4346,7 @@ class UtilsEvents:
 
 
 
-            # 弹窗显示
+            # 寮圭獥鏄剧ず
 
 
 
@@ -4371,13 +4370,13 @@ class UtilsEvents:
 
 
 
-            self.log(f"预检失败：{e}", "error")
+            self.log(f"棰勬澶辫触锛歿e}", "error")
 
 
 
 
 
-            messagebox.showerror("预检错误", f"预检过程中发生错误：{str(e)}")
+            messagebox.showerror("棰勬閿欒", f"棰勬杩囩▼涓彂鐢熼敊璇細{str(e)}")
 
 
 
@@ -4395,7 +4394,7 @@ class UtilsEvents:
 
 
 
-        """加载黄金模板列名（从配置文件，若不存在返回None）"""
+        """鍔犺浇榛勯噾妯℃澘鍒楀悕锛堜粠閰嶇疆鏂囦欢锛岃嫢涓嶅瓨鍦ㄨ繑鍥濶one锛?""
 
 
 
@@ -4456,45 +4455,45 @@ class UtilsEvents:
 
 
     def _show_pre_check_report(self, results):
-        """显示预检报告（系统检查 + 数据统计），配置化列名，防御缺失列"""
+        """鏄剧ず棰勬鎶ュ憡锛堢郴缁熸鏌?+ 鏁版嵁缁熻锛夛紝閰嶇疆鍖栧垪鍚嶏紝闃插尽缂哄け鍒?""
         win = tk.Toplevel(self.root)
-        win.title("数据预检报告")
+        win.title("鏁版嵁棰勬鎶ュ憡")
         win.geometry("600x500")
         win.transient(self.root)
-        # 非模态：不调用 grab_set()，不阻塞主窗口
-        win.attributes('-topmost', True)  # 置顶显示，但不强制交互
+        # 闈炴ā鎬侊細涓嶈皟鐢?grab_set()锛屼笉闃诲涓荤獥鍙?
+        win.attributes('-topmost', True)  # 缃《鏄剧ず锛屼絾涓嶅己鍒朵氦浜?
 
         text = tk.Text(win, wrap="word", font=("Consolas", 10), padx=10, pady=10)
         text.pack(fill="both", expand=True)
 
-        text.tag_configure("严重", foreground="#cf222e")
-        text.tag_configure("警告", foreground="#d29922")
-        text.tag_configure("通过", foreground="#1a7f37")
-        text.tag_configure("标题", font=("Consolas", 12, "bold"))
+        text.tag_configure("涓ラ噸", foreground="#cf222e")
+        text.tag_configure("璀﹀憡", foreground="#d29922")
+        text.tag_configure("閫氳繃", foreground="#1a7f37")
+        text.tag_configure("鏍囬", font=("Consolas", 12, "bold"))
 
-        # 1. 系统检查结果
-        text.insert("end", "系统检查结果\n", "标题")
+        # 1. 绯荤粺妫€鏌ョ粨鏋?
+        text.insert("end", "绯荤粺妫€鏌ョ粨鏋淺n", "鏍囬")
         for level, msg in results:
-            tag = "严重" if level == "严重" else ("警告" if level == "警告" else "通过")
+            tag = "涓ラ噸" if level == "涓ラ噸" else ("璀﹀憡" if level == "璀﹀憡" else "閫氳繃")
             text.insert("end", msg + "\n", tag)
 
-        # 2. 数据统计信息（配置化列名 + 防御）
+        # 2. 鏁版嵁缁熻淇℃伅锛堥厤缃寲鍒楀悕 + 闃插尽锛?
         if self.audit_data is not None and not self.audit_data.empty:
-            text.insert("end", "\n数据统计\n", "标题")
+            text.insert("end", "\n鏁版嵁缁熻\n", "鏍囬")
 
-            # 从配置读取列名
-            bias_rate_col = self.config.get('columns.bias_rate', '偏差率(%)')
-            audit_status_col = self.config.get('columns.audit_status', '审核状态')
+            # 浠庨厤缃鍙栧垪鍚?
+            bias_rate_col = self.config.get('columns.bias_rate', '鍋忓樊鐜?%)')
+            audit_status_col = self.config.get('columns.audit_status', '瀹℃牳鐘舵€?)
 
             try:
-                # 检查必要列是否存在
+                # 妫€鏌ュ繀瑕佸垪鏄惁瀛樺湪
                 if bias_rate_col not in self.audit_data.columns:
-                    text.insert("end", f"警告：缺少列 '{bias_rate_col}'，无法统计偏差分布。\n", "警告")
+                    text.insert("end", f"璀﹀憡锛氱己灏戝垪 '{bias_rate_col}'锛屾棤娉曠粺璁″亸宸垎甯冦€俓n", "璀﹀憡")
                     stats_available = False
                 else:
                     stats_available = True
             except Exception as e:
-                text.insert("end", f"统计计算出错：{e}\n", "严重")
+                text.insert("end", f"缁熻璁＄畻鍑洪敊锛歿e}\n", "涓ラ噸")
                 stats_available = False
 
             if stats_available:
@@ -4503,32 +4502,32 @@ class UtilsEvents:
                 mid_dev = ((self.audit_data[bias_rate_col].abs() >= 5) & (self.audit_data[bias_rate_col].abs() <= 10)).sum()
                 low_dev = (self.audit_data[bias_rate_col].abs() < 5).sum()
 
-                # 审核状态列可能不存在，尝试获取
+                # 瀹℃牳鐘舵€佸垪鍙兘涓嶅瓨鍦紝灏濊瘯鑾峰彇
                 if audit_status_col in self.audit_data.columns:
-                    reviewed = (self.audit_data[audit_status_col] == '已审核').sum()
+                    reviewed = (self.audit_data[audit_status_col] == '宸插鏍?).sum()
                     unreviewed = total - reviewed
                 else:
                     reviewed = unreviewed = 0
-                    text.insert("end", "警告：缺少审核状态列，审核统计显示为0。\n", "警告")
+                    text.insert("end", "璀﹀憡锛氱己灏戝鏍哥姸鎬佸垪锛屽鏍哥粺璁℃樉绀轰负0銆俓n", "璀﹀憡")
 
-                stats = f"总行数：{total}\n"
-                stats += f"偏差异常（≥10%）：{high_dev}\n"
-                stats += f"偏差关注（5%-10%）：{mid_dev}\n"
-                stats += f"偏差正常（<5%）：{low_dev}\n"
-                stats += f"已审核：{reviewed}\n"
-                stats += f"未审核：{unreviewed}"
-                text.insert("end", stats + "\n", "通过")
+                stats = f"鎬昏鏁帮細{total}\n"
+                stats += f"鍋忓樊寮傚父锛堚墺10%锛夛細{high_dev}\n"
+                stats += f"鍋忓樊鍏虫敞锛?%-10%锛夛細{mid_dev}\n"
+                stats += f"鍋忓樊姝ｅ父锛?5%锛夛細{low_dev}\n"
+                stats += f"宸插鏍革細{reviewed}\n"
+                stats += f"鏈鏍革細{unreviewed}"
+                text.insert("end", stats + "\n", "閫氳繃")
         else:
-            text.insert("end", "\n数据统计\n无数据\n", "标题")
+            text.insert("end", "\n鏁版嵁缁熻\n鏃犳暟鎹甛n", "鏍囬")
 
         text.configure(state="disabled")
 
         btn_frame = tk.Frame(win)
         btn_frame.pack(pady=10)
         if hasattr(self, '_duplicate_records') and hasattr(self._duplicate_records, 'empty') and not self._duplicate_records.empty:
-            tk.Button(btn_frame, text="导出重复数据", command=self._export_duplicate_records,
+            tk.Button(btn_frame, text="瀵煎嚭閲嶅鏁版嵁", command=self._export_duplicate_records,
                       bg="#f0f0f0", font=("Microsoft YaHei", 9)).pack(side="left", padx=5)
-        tk.Button(btn_frame, text="关闭", command=win.destroy, width=10).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="鍏抽棴", command=win.destroy, width=10).pack(side="left", padx=5)
     def _export_duplicate_records(self):
 
 
@@ -4559,13 +4558,13 @@ class UtilsEvents:
 
 
 
-            filetypes=[("Excel 文件", "*.xlsx")],
+            filetypes=[("Excel 鏂囦欢", "*.xlsx")],
 
 
 
 
 
-            initialfile="重复订单记录.xlsx"
+            initialfile="閲嶅璁㈠崟璁板綍.xlsx"
 
 
 
@@ -4613,13 +4612,13 @@ class UtilsEvents:
 
 
 
-            if '流程订单' in df.columns and '物料编码' in df.columns:
+            if '娴佺▼璁㈠崟' in df.columns and '鐗╂枡缂栫爜' in df.columns:
 
 
 
 
 
-                df = df.sort_values(['流程订单', '物料编码'])
+                df = df.sort_values(['娴佺▼璁㈠崟', '鐗╂枡缂栫爜'])
 
 
 
@@ -4637,7 +4636,7 @@ class UtilsEvents:
 
 
 
-            ws.title = "重复记录"
+            ws.title = "閲嶅璁板綍"
 
 
 
@@ -4691,13 +4690,13 @@ class UtilsEvents:
 
 
 
-                if '流程订单' in df.columns and '物料编码' in df.columns:
+                if '娴佺▼璁㈠崟' in df.columns and '鐗╂枡缂栫爜' in df.columns:
 
 
 
 
 
-                    group_key = (row['流程订单'], row['物料编码'])
+                    group_key = (row['娴佺▼璁㈠崟'], row['鐗╂枡缂栫爜'])
 
 
 
@@ -4775,13 +4774,13 @@ class UtilsEvents:
 
 
 
-            self.log(f"重复数据已导出：{file_path}", "success")
+            self.log(f"閲嶅鏁版嵁宸插鍑猴細{file_path}", "success")
 
 
 
 
 
-            messagebox.showinfo("导出成功", "已导出到：" + file_path)
+            messagebox.showinfo("瀵煎嚭鎴愬姛", "宸插鍑哄埌锛? + file_path)
 
 
 
@@ -4793,13 +4792,13 @@ class UtilsEvents:
 
 
 
-            self.log(f"导出重复数据失败：{e}", "error")
+            self.log(f"瀵煎嚭閲嶅鏁版嵁澶辫触锛歿e}", "error")
 
 
 
 
 
-            messagebox.showerror("导出失败", str(e))
+            messagebox.showerror("瀵煎嚭澶辫触", str(e))
 
 
 
@@ -4811,7 +4810,7 @@ class UtilsEvents:
 
 
 
-    # ==================== 菜单初始化 ====================
+    # ==================== 鑿滃崟鍒濆鍖?====================
 
 
 
@@ -4823,7 +4822,7 @@ class UtilsEvents:
 
 
 
-        """在新窗口中以树形结构展示审核数据"""
+        """鍦ㄦ柊绐楀彛涓互鏍戝舰缁撴瀯灞曠ず瀹℃牳鏁版嵁"""
 
 
 
@@ -4835,7 +4834,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showwarning("提示", "没有可展示的数据")
+            messagebox.showwarning("鎻愮ず", "娌℃湁鍙睍绀虹殑鏁版嵁")
 
 
 
@@ -4853,7 +4852,7 @@ class UtilsEvents:
 
 
 
-        # 创建新窗口
+        # 鍒涘缓鏂扮獥鍙?
 
 
 
@@ -4865,7 +4864,7 @@ class UtilsEvents:
 
 
 
-        win.title("偏差数据 - 树形视图")
+        win.title("鍋忓樊鏁版嵁 - 鏍戝舰瑙嗗浘")
 
 
 
@@ -4919,55 +4918,55 @@ class UtilsEvents:
 
 
 
-        tree.heading("#0", text="工厂 / 车间 / 物料分类")
+        tree.heading("#0", text="宸ュ巶 / 杞﹂棿 / 鐗╂枡鍒嗙被")
 
 
 
 
 
-        tree.heading("code", text="物料号")
+        tree.heading("code", text="鐗╂枡鍙?)
 
 
 
 
 
-        tree.heading("name", text="物料描述")
+        tree.heading("name", text="鐗╂枡鎻忚堪")
 
 
 
 
 
-        tree.heading("order_date", text="订单日期")
+        tree.heading("order_date", text="璁㈠崟鏃ユ湡")
 
 
 
 
 
-        tree.heading("quota", text="定额")
+        tree.heading("quota", text="瀹氶")
 
 
 
 
 
-        tree.heading("actual", text="实际")
+        tree.heading("actual", text="瀹為檯")
 
 
 
 
 
-        tree.heading("dev_rate", text="偏差率%")
+        tree.heading("dev_rate", text="鍋忓樊鐜?")
 
 
 
 
 
-        tree.heading("status", text="状态")
+        tree.heading("status", text="鐘舵€?)
 
 
 
 
 
-        tree.heading("remark", text="备注")
+        tree.heading("remark", text="澶囨敞")
 
 
 
@@ -5069,61 +5068,61 @@ class UtilsEvents:
 
 
 
-        # 灵活确定列名
+        # 鐏垫椿纭畾鍒楀悕
 
 
 
 
 
-        groupby_factory = next((c for c in ['工厂', '工厂名称'] if c in self.audit_data.columns), None)
+        groupby_factory = next((c for c in ['宸ュ巶', '宸ュ巶鍚嶇О'] if c in self.audit_data.columns), None)
 
 
 
 
 
-        groupby_workshop = next((c for c in ['车间', '生产管理员描述'] if c in self.audit_data.columns), None)
+        groupby_workshop = next((c for c in ['杞﹂棿', '鐢熶骇绠＄悊鍛樻弿杩?] if c in self.audit_data.columns), None)
 
 
 
 
 
-        groupby_category = next((c for c in ['物料类型', '物料分类'] if c in self.audit_data.columns), None)
+        groupby_category = next((c for c in ['鐗╂枡绫诲瀷', '鐗╂枡鍒嗙被'] if c in self.audit_data.columns), None)
 
 
 
 
 
-        code_col = next((c for c in ['物料编码', '组件物料号'] if c in self.audit_data.columns), '物料编码')
+        code_col = next((c for c in ['鐗╂枡缂栫爜', '缁勪欢鐗╂枡鍙?] if c in self.audit_data.columns), '鐗╂枡缂栫爜')
 
 
 
 
 
-        name_col = next((c for c in ['物料名称', '组件物料描述'] if c in self.audit_data.columns), '物料名称')
+        name_col = next((c for c in ['鐗╂枡鍚嶇О', '缁勪欢鐗╂枡鎻忚堪'] if c in self.audit_data.columns), '鐗╂枡鍚嶇О')
 
 
 
 
 
-        quota_col = next((c for c in ['定额', '数量-定额'] if c in self.audit_data.columns), '定额')
+        quota_col = next((c for c in ['瀹氶', '鏁伴噺-瀹氶'] if c in self.audit_data.columns), '瀹氶')
 
 
 
 
 
-        actual_col = next((c for c in ['实际', '数量-实际'] if c in self.audit_data.columns), '实际')
+        actual_col = next((c for c in ['瀹為檯', '鏁伴噺-瀹為檯'] if c in self.audit_data.columns), '瀹為檯')
 
 
 
 
 
-        dev_col = next((c for c in ['偏差率', '偏差率(%)'] if c in self.audit_data.columns), '偏差率')
+        dev_col = next((c for c in ['鍋忓樊鐜?, '鍋忓樊鐜?%)'] if c in self.audit_data.columns), '鍋忓樊鐜?)
 
 
 
 
 
-        remark_col = next((c for c in ['备注', '备注原因'] if c in self.audit_data.columns), '备注')
+        remark_col = next((c for c in ['澶囨敞', '澶囨敞鍘熷洜'] if c in self.audit_data.columns), '澶囨敞')
 
 
 
@@ -5141,7 +5140,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showwarning("提示", "数据中未找到工厂列，无法生成树形视图")
+            messagebox.showwarning("鎻愮ず", "鏁版嵁涓湭鎵惧埌宸ュ巶鍒楋紝鏃犳硶鐢熸垚鏍戝舰瑙嗗浘")
 
 
 
@@ -5201,7 +5200,7 @@ class UtilsEvents:
 
 
 
-                                              text=f"{workshop} - {mat_cat}  ({len(w_grp)}条)",
+                                              text=f"{workshop} - {mat_cat}  ({len(w_grp)}鏉?",
 
 
 
@@ -5237,7 +5236,7 @@ class UtilsEvents:
 
 
 
-                                              text=f"{workshop}  ({len(w_grp)}条)",
+                                              text=f"{workshop}  ({len(w_grp)}鏉?",
 
 
 
@@ -5303,7 +5302,7 @@ class UtilsEvents:
 
 
 
-        """向树形视图插入行数据"""
+        """鍚戞爲褰㈣鍥炬彃鍏ヨ鏁版嵁"""
 
 
 
@@ -5345,7 +5344,7 @@ class UtilsEvents:
 
 
 
-                            str(row.get('订单日期', ''))[:12] if pd.notna(row.get('订单日期')) else '',
+                            str(row.get('璁㈠崟鏃ユ湡', ''))[:12] if pd.notna(row.get('璁㈠崟鏃ユ湡')) else '',
 
 
 
@@ -5369,7 +5368,7 @@ class UtilsEvents:
 
 
 
-                            row.get('_audit_status', '未审核'),
+                            row.get('_audit_status', '鏈鏍?),
 
 
 
@@ -5393,13 +5392,13 @@ class UtilsEvents:
 
 
 
-    # ── 以下为 v30 原有的全部方法，必须完整复制到此处 ────────
+    # 鈹€鈹€ 浠ヤ笅涓?v30 鍘熸湁鐨勫叏閮ㄦ柟娉曪紝蹇呴』瀹屾暣澶嶅埗鍒版澶?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 
 
 
-    # 方法列表（请从原 v30.py 中逐个复制，确保不遗漏）：
+    # 鏂规硶鍒楄〃锛堣浠庡師 v30.py 涓€愪釜澶嶅埗锛岀‘淇濅笉閬楁紡锛夛細
 
 
 
@@ -5471,13 +5470,13 @@ class UtilsEvents:
 
 
 
-    # 注：上面这些方法的完整代码请从 v30.py 中全选复制，插入到此处。
+    # 娉細涓婇潰杩欎簺鏂规硶鐨勫畬鏁翠唬鐮佽浠?v30.py 涓叏閫夊鍒讹紝鎻掑叆鍒版澶勩€?
 
 
 
 
 
-    # 复制时注意保持缩进（全部与 _show_tree_view 对齐，class 内部缩进 4 空格）。
+    # 澶嶅埗鏃舵敞鎰忎繚鎸佺缉杩涳紙鍏ㄩ儴涓?_show_tree_view 瀵归綈锛宑lass 鍐呴儴缂╄繘 4 绌烘牸锛夈€?
 
 
 
@@ -5489,7 +5488,7 @@ class UtilsEvents:
 
 
 
-    # ── 以下方法从 v30.py 完整移植 ──
+    # 鈹€鈹€ 浠ヤ笅鏂规硶浠?v30.py 瀹屾暣绉绘 鈹€鈹€
 
 
 
@@ -5507,7 +5506,7 @@ class UtilsEvents:
 
 
 
-        """获取断点状态文件路径"""
+        """鑾峰彇鏂偣鐘舵€佹枃浠惰矾寰?""
 
 
 
@@ -5537,7 +5536,7 @@ class UtilsEvents:
 
 
 
-        """加载断点状态"""
+        """鍔犺浇鏂偣鐘舵€?""
 
 
 
@@ -5603,7 +5602,7 @@ class UtilsEvents:
 
 
 
-        """保存断点状态"""
+        """淇濆瓨鏂偣鐘舵€?""
 
 
 
@@ -5639,7 +5638,7 @@ class UtilsEvents:
 
 
 
-        # 保存选择的行
+        # 淇濆瓨閫夋嫨鐨勮
 
 
 
@@ -5657,7 +5656,7 @@ class UtilsEvents:
 
 
 
-        # 保存搜索文字
+        # 淇濆瓨鎼滅储鏂囧瓧
 
 
 
@@ -5675,7 +5674,7 @@ class UtilsEvents:
 
 
 
-        # 保存筛选条件
+        # 淇濆瓨绛涢€夋潯浠?
 
 
 
@@ -5723,7 +5722,7 @@ class UtilsEvents:
 
 
 
-            self.log(f"保存断点失败：{e}", "warn")
+            self.log(f"淇濆瓨鏂偣澶辫触锛歿e}", "warn")
 
 
 
@@ -5747,7 +5746,7 @@ class UtilsEvents:
 
 
 
-        """一键恢复上次审核状态"""
+        """涓€閿仮澶嶄笂娆″鏍哥姸鎬?""
 
 
 
@@ -5771,7 +5770,7 @@ class UtilsEvents:
 
 
 
-        # 恢复搜索文字
+        # 鎭㈠鎼滅储鏂囧瓧
 
 
 
@@ -5795,7 +5794,7 @@ class UtilsEvents:
 
 
 
-        # 恢复筛选条件
+        # 鎭㈠绛涢€夋潯浠?
 
 
 
@@ -5891,7 +5890,7 @@ class UtilsEvents:
 
 
 
-        # 重新触发筛选
+        # 閲嶆柊瑙﹀彂绛涢€?
 
 
 
@@ -5903,7 +5902,7 @@ class UtilsEvents:
 
 
 
-        # 恢复选中行
+        # 鎭㈠閫変腑琛?
 
 
 
@@ -5951,7 +5950,7 @@ class UtilsEvents:
 
 
 
-        self.log("✅ 已恢复上次审核进度", "success")
+        self.log("鉁?宸叉仮澶嶄笂娆″鏍歌繘搴?, "success")
 
 
 
@@ -5975,7 +5974,7 @@ class UtilsEvents:
 
 
 
-        default_dir = os.path.join(os.path.expanduser("~"), "ZPP011导出文件原数据")
+        default_dir = os.path.join(os.path.expanduser("~"), "ZPP011瀵煎嚭鏂囦欢鍘熸暟鎹?)
 
 
 
@@ -5993,13 +5992,13 @@ class UtilsEvents:
 
 
 
-            title="选择 ZPP011 数据文件",
+            title="閫夋嫨 ZPP011 鏁版嵁鏂囦欢",
 
 
 
 
 
-            filetypes=[("Excel文件", "*.xlsx"), ("所有文件", "*.*")],
+            filetypes=[("Excel鏂囦欢", "*.xlsx"), ("鎵€鏈夋枃浠?, "*.*")],
 
 
 
@@ -6059,7 +6058,7 @@ class UtilsEvents:
 
 
 
-        p = filedialog.askdirectory(title="选择输出目录")
+        p = filedialog.askdirectory(title="閫夋嫨杈撳嚭鐩綍")
 
 
 
@@ -6293,7 +6292,7 @@ class UtilsEvents:
 
 
 
-            self.preview_lbl.configure(text="❌ 文件不存在", fg=C['danger'])
+            self.preview_lbl.configure(text="鉂?鏂囦欢涓嶅瓨鍦?, fg=C['danger'])
 
 
 
@@ -6371,7 +6370,7 @@ class UtilsEvents:
 
 
 
-                text=f"✅ {os.path.basename(path)}\n"
+                text=f"鉁?{os.path.basename(path)}\n"
 
 
 
@@ -6383,7 +6382,7 @@ class UtilsEvents:
 
 
 
-                f"   总行数：{total:,}  行\n"
+                f"   鎬昏鏁帮細{total:,}  琛孿n"
 
 
 
@@ -6395,7 +6394,7 @@ class UtilsEvents:
 
 
 
-                f"   替代料配对：{len(self.alt_pairs)}  组\n"
+                f"   鏇夸唬鏂欓厤瀵癸細{len(self.alt_pairs)}  缁刓n"
 
 
 
@@ -6407,7 +6406,7 @@ class UtilsEvents:
 
 
 
-                f"   列数：{len(cols)}",
+                f"   鍒楁暟锛歿len(cols)}",
 
 
 
@@ -6449,7 +6448,7 @@ class UtilsEvents:
 
 
 
-            self.preview_lbl.configure(text=f"❌ 读取失败：{e}", fg=C['danger'])
+            self.preview_lbl.configure(text=f"鉂?璇诲彇澶辫触锛歿e}", fg=C['danger'])
 
 
 
@@ -6461,7 +6460,7 @@ class UtilsEvents:
 
 
 
-        # 刷新物料列表（供替代料添加对话框下拉使用）
+        # 鍒锋柊鐗╂枡鍒楄〃锛堜緵鏇夸唬鏂欐坊鍔犲璇濇涓嬫媺浣跨敤锛?
 
 
 
@@ -6635,7 +6634,7 @@ class UtilsEvents:
 
 
 
-        """保存列宽锁定状态"""
+        """淇濆瓨鍒楀閿佸畾鐘舵€?""
 
 
 
@@ -6701,7 +6700,7 @@ class UtilsEvents:
 
 
 
-        """窗口关闭前保存断点状态"""
+        """绐楀彛鍏抽棴鍓嶄繚瀛樻柇鐐圭姸鎬?""
 
 
 
@@ -6719,7 +6718,7 @@ class UtilsEvents:
 
 
 
-            self.log("断点已保存", "success")
+            self.log("鏂偣宸蹭繚瀛?, "success")
 
 
 
@@ -6731,13 +6730,13 @@ class UtilsEvents:
 
 
 
-            self.log(f"断点保存失败：{e}", "warn")
+            self.log(f"鏂偣淇濆瓨澶辫触锛歿e}", "warn")
 
 
 
 
 
-        # 保存列宽 + 窗口几何
+        # 淇濆瓨鍒楀 + 绐楀彛鍑犱綍
 
 
 
@@ -6821,7 +6820,7 @@ class UtilsEvents:
 
 
 
-        """更新进度条（供 Presenter 调用）"""
+        """鏇存柊杩涘害鏉★紙渚?Presenter 璋冪敤锛?""
 
 
 
@@ -6863,7 +6862,7 @@ class UtilsEvents:
 
 
 
-        """刷新 Treeview（供 Presenter 调用）"""
+        """鍒锋柊 Treeview锛堜緵 Presenter 璋冪敤锛?""
 
 
 
@@ -6893,13 +6892,13 @@ class UtilsEvents:
 
 
 
-    def show_error(self, msg: str, title: str = '错误'):
+    def show_error(self, msg: str, title: str = '閿欒'):
 
 
 
 
 
-        """显示错误对话框（供 Presenter 调用）"""
+        """鏄剧ず閿欒瀵硅瘽妗嗭紙渚?Presenter 璋冪敤锛?""
 
 
 
@@ -6923,13 +6922,13 @@ class UtilsEvents:
 
 
 
-    def show_info(self, msg: str, title: str = '提示'):
+    def show_info(self, msg: str, title: str = '鎻愮ず'):
 
 
 
 
 
-        """显示信息对话框（供 Presenter 调用）"""
+        """鏄剧ず淇℃伅瀵硅瘽妗嗭紙渚?Presenter 璋冪敤锛?""
 
 
 
@@ -6959,7 +6958,7 @@ class UtilsEvents:
 
 
 
-        """记录日志（供 Presenter 调用）"""
+        """璁板綍鏃ュ織锛堜緵 Presenter 璋冪敤锛?""
 
 
 
@@ -6989,7 +6988,7 @@ class UtilsEvents:
 
 
 
-        """设置按钮状态（供 Presenter 调用）"""
+        """璁剧疆鎸夐挳鐘舵€侊紙渚?Presenter 璋冪敤锛?""
 
 
 
@@ -7061,7 +7060,7 @@ class UtilsEvents:
 
 
 
-        """启用按钮"""
+        """鍚敤鎸夐挳"""
 
 
 
@@ -7085,7 +7084,7 @@ class UtilsEvents:
 
 
 
-        """禁用按钮"""
+        """绂佺敤鎸夐挳"""
 
 
 
@@ -7109,7 +7108,7 @@ class UtilsEvents:
 
 
 
-        """返回当前审核数据 DataFrame（供 Presenter 调用）"""
+        """杩斿洖褰撳墠瀹℃牳鏁版嵁 DataFrame锛堜緵 Presenter 璋冪敤锛?""
 
 
 
@@ -7133,7 +7132,7 @@ class UtilsEvents:
 
 
 
-        """返回当前输出路径（供 Presenter 调用）"""
+        """杩斿洖褰撳墠杈撳嚭璺緞锛堜緵 Presenter 璋冪敤锛?""
 
 
 
@@ -7157,7 +7156,7 @@ class UtilsEvents:
 
 
 
-        """返回替代料配对列表（供 Presenter 调用）"""
+        """杩斿洖鏇夸唬鏂欓厤瀵瑰垪琛紙渚?Presenter 璋冪敤锛?""
 
 
 
