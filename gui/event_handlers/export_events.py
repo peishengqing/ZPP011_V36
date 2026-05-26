@@ -1,5 +1,5 @@
-﻿# -*- coding: utf-8 -*-
-"""瀵煎嚭銆丳PT鐢熸垚銆佸浠界瓑浜嬩欢"""
+# -*- coding: utf-8 -*-
+"""导出、PPT生成、备份等事件"""
 
 import shutil
 import tkinter as tk
@@ -7,6 +7,7 @@ from tkinter import filedialog, messagebox
 import os
 import pandas as pd
 from ppt_generator import run_ppt_generation as _run_ppt
+from core.decorators import with_feedback
 from widgets import C
 from core.exporter import ExcelExporter
 import threading, datetime
@@ -14,14 +15,14 @@ from openpyxl import Workbook, load_workbook
 
 
 class ExportEvents:
-    """瀵煎嚭銆丳PT鐢熸垚銆佸浠界瓑浜嬩欢"""
+    """导出、PPT生成、备份等事件"""
 
     def generate_ppt(self):
-        """閫夋嫨 Excel 鍒嗘瀽缁撴灉锛岀敓鎴?PPT 鎶ュ憡"""
+        """选择 Excel 分析结果，生成 PPT 报告"""
 
         excel_path = filedialog.askopenfilename(
-            title="閫夋嫨 zpp011 鍋忓樊鍒嗘瀽 Excel 鏂囦欢",
-            filetypes=[("Excel 鏂囦欢", "*.xlsx *.xls"), ("鎵€鏈夋枃浠?, "*.*")],
+            title="选择 zpp011 偏差分析 Excel 文件",
+            filetypes=[("Excel 文件", "*.xlsx *.xls"), ("所有文件", "*.*")],
         )
 
         if not excel_path:
@@ -32,7 +33,7 @@ class ExportEvents:
         base = os.path.splitext(os.path.basename(excel_path))[0]
 
         if self.audit_data is None or self.audit_data.empty:
-            messagebox.showwarning("鎻愮ず", "璇峰厛鍔犺浇骞跺垎鏋愭暟鎹悗鍐嶇敓鎴?PPT锛?)
+            messagebox.showwarning("提示", "请先加载并分析数据后再生成 PPT！")
 
             return
 
@@ -40,7 +41,7 @@ class ExportEvents:
 
         default_name = (
             self.config.get(
-                "export.default_ppt_filename", "ZPP011鍋忓樊鍒嗘瀽_{datetime}.pptx"
+                "export.default_ppt_filename", "ZPP011偏差分析_{datetime}.pptx"
             ).format(datetime=datetime.datetime.now().strftime("%Y%m%d_%H%M"))
             + ".pptx"
         )
@@ -49,18 +50,18 @@ class ExportEvents:
             initialdir=out_dir,
             initialfile=default_name,
             defaultextension=".pptx",
-            filetypes=[("PPT 鏂囦欢", "*.pptx"), ("鎵€鏈夋枃浠?, "*")],
-            title="淇濆瓨 PPT 鎶ュ憡",
+            filetypes=[("PPT 文件", "*.pptx"), ("所有文件", "*")],
+            title="保存 PPT 报告",
         )
 
         if not ppt_output:
             return
 
-        self.log("馃搳 寮€濮嬬敓鎴?PPT...", "info")
+        self.log("📊 开始生成 PPT...", "info")
 
-        self.ppt_btn.configure(state="disabled", text="鐢熸垚涓?..")
+        self.ppt_btn.configure(state="disabled", text="生成中...")
 
-        self.status_lbl.configure(text="姝ｅ湪鐢熸垚 PPT...", fg=C["purple"])
+        self.status_lbl.configure(text="正在生成 PPT...", fg=C["purple"])
 
         def worker():
 
@@ -82,18 +83,18 @@ class ExportEvents:
         threading.Thread(target=worker, daemon=True).start()
 
     def _update_ppt_progress(self, pct):
-        """鏇存柊 PPT 鐢熸垚杩涘害鏄剧ず"""
-        self.status_lbl.configure(text=f"姝ｅ湪鐢熸垚 PPT... {int(pct)}%", fg=C["purple"])
+        """更新 PPT 生成进度显示"""
+        self.status_lbl.configure(text=f"正在生成 PPT... {int(pct)}%", fg=C["purple"])
 
     def _on_ppt_done(self, output_path):
 
-        self.ppt_btn.configure(state="normal", text="馃搳 鐢熸垚PPT")
+        self.ppt_btn.configure(state="normal", text="📊 生成PPT")
 
         self.status_lbl.configure(
-            text=f"PPT 宸茬敓鎴?鈥?{os.path.basename(output_path)}", fg=C["green"]
+            text=f"PPT 已生成 — {os.path.basename(output_path)}", fg=C["green"]
         )
 
-        self.log(f"鉁?PPT 宸蹭繚瀛橈細{output_path}", "success")
+        self.log(f"✅ PPT 已保存：{output_path}", "success")
 
         try:
             os.startfile(output_path)
@@ -103,36 +104,36 @@ class ExportEvents:
 
     def _on_ppt_error(self, msg):
 
-        self.ppt_btn.configure(state="normal", text="馃搳 鐢熸垚PPT")
+        self.ppt_btn.configure(state="normal", text="📊 生成PPT")
 
-        self.status_lbl.configure(text="PPT 鐢熸垚鍑洪敊", fg=C["danger"])
+        self.status_lbl.configure(text="PPT 生成出错", fg=C["danger"])
 
-        self.log(f"鉂?PPT 鐢熸垚澶辫触锛歿msg}", "error")
+        self.log(f"❌ PPT 生成失败：{msg}", "error")
 
-        messagebox.showerror("PPT 鐢熸垚鍑洪敊", msg)
+        messagebox.showerror("PPT 生成出错", msg)
 
     def generate_excel_direct(self):
-        """寮瑰嚭鍙﹀瓨涓哄璇濇锛岀敓鎴?Excel 鍒嗘瀽琛ㄦ牸"""
+        """弹出另存为对话框，生成 Excel 分析表格"""
 
         input_path = self.input_file.get()
 
         if not input_path or not os.path.exists(input_path):
-            messagebox.showerror("閿欒", "璇峰厛閫夋嫨杈撳叆鏂囦欢锛?)
+            messagebox.showerror("错误", "请先选择输入文件！")
 
             return
 
-        # 鈹€鈹€ 灏濊瘯浠庡師濮嬫暟鎹腑鑾峰彇鏃ユ湡鑼冨洿锛岀敤浜庨粯璁ゆ枃浠跺悕 鈹€鈹€
+        # ── 尝试从原始数据中获取日期范围，用于默认文件名 ──
 
         date_tag = ""
 
         try:
             df_raw = pd.read_excel(input_path, sheet_name="Data")
 
-            # 鏌ユ壘鍙兘鐨勬棩鏈熷垪
+            # 查找可能的日期列
 
             date_col = None
 
-            for col in ["璁㈠崟寮€濮嬫棩鏈?, "璁㈠崟鏃ユ湡", "鏃ユ湡"]:
+            for col in ["订单开始日期", "订单日期", "日期"]:
                 if col in df_raw.columns:
                     date_col = col
 
@@ -151,7 +152,7 @@ class ExportEvents:
         except Exception:
             pass
 
-        # 濡傛灉浠庢暟鎹腑鑾峰彇澶辫触锛屽洖閫€鍒版墜鍔ㄨ緭鍏ユ垨褰撳墠鏈堜唤
+        # 如果从数据中获取失败，回退到手动输入或当前月份
 
         if not date_tag:
             start_str = self.start_date.get().strip()
@@ -168,7 +169,7 @@ class ExportEvents:
 
                 first_day = now.replace(day=1).strftime("%Y%m%d")
 
-                # 浣跨敤 calendar 璁＄畻鏈堟湯
+                # 使用 calendar 计算月末
 
                 import calendar
 
@@ -178,39 +179,39 @@ class ExportEvents:
 
                 date_tag = f"{first_day}-{last_day[-4:]}"
 
-        # 鈹€鈹€ 鏋勫缓榛樿璺緞鍜屾枃浠跺悕 鈹€鈹€
+        # ── 构建默认路径和文件名 ──
 
-        default_dir = os.path.join(os.path.expanduser("~"), "ZPP011鍋忓樊鍒嗘瀽")
+        default_dir = os.path.join(os.path.expanduser("~"), "ZPP011偏差分析")
 
         os.makedirs(default_dir, exist_ok=True)
 
-        default_name = f"ZPP011鍋忓樊鍒嗘瀽_{date_tag}.xlsx"
+        default_name = f"ZPP011偏差分析_{date_tag}.xlsx"
 
-        # 鈹€鈹€ 寮瑰嚭鍙﹀瓨涓哄璇濇 鈹€鈹€
+        # ── 弹出另存为对话框 ──
 
         file_path = filedialog.asksaveasfilename(
             initialdir=default_dir,
             initialfile=default_name,
             defaultextension=".xlsx",
-            filetypes=[("Excel 鏂囦欢", "*.xlsx"), ("鎵€鏈夋枃浠?, "*.*")],
-            title="淇濆瓨鍋忓樊鍒嗘瀽琛ㄦ牸",
+            filetypes=[("Excel 文件", "*.xlsx"), ("所有文件", "*.*")],
+            title="保存偏差分析表格",
         )
 
         if not file_path:
-            return  # 鐢ㄦ埛鍙栨秷
+            return  # 用户取消
 
-        self.excel_btn.configure(state="disabled", text="鐢熸垚涓?..")
+        self.excel_btn.configure(state="disabled", text="生成中...")
 
-        self.status_lbl.configure(text="姝ｅ湪鐢熸垚琛ㄦ牸...", fg=C["purple"])
+        self.status_lbl.configure(text="正在生成表格...", fg=C["purple"])
 
-        self.log("馃搵 寮€濮嬬敓鎴愬亸宸垎鏋愯〃鏍?..", "info")
+        self.log("📋 开始生成偏差分析表格...", "info")
 
         threading.Thread(
             target=self._generate_excel_thread, args=(file_path,), daemon=True
         ).start()
 
     def _generate_excel_thread(self, output_path: str):
-        """鍚庡彴绾跨▼锛氬鎵?AuditPresenter 鐢熸垚鍋忓樊鍒嗘瀽 Excel锛屽甫璇︾粏閿欒鏃ュ織"""
+        """后台线程：委托 AuditPresenter 生成偏差分析 Excel，带详细错误日志"""
 
         import traceback
 
@@ -227,28 +228,28 @@ class ExportEvents:
 
             def on_success():
 
-                self.log(f"\u2705 琛ㄦ牸鐢熸垚锛歿os.path.basename(result)}", "success")
+                self.log(f"\u2705 表格生成：{os.path.basename(result)}", "success")
 
-                self.excel_btn.configure(state="normal", text="\U0001f4cb 鐢熸垚琛ㄦ牸")
+                self.excel_btn.configure(state="normal", text="\U0001f4cb 生成表格")
 
                 self.status_lbl.configure(
-                    text=f"宸茬敓鎴愶細{os.path.basename(result)}", fg=C["green"]
+                    text=f"已生成：{os.path.basename(result)}", fg=C["green"]
                 )
 
                 _name = os.path.basename(result)
 
-                _msg = "琛ㄦ牸宸茬敓鎴愶細" + _name + chr(10) + chr(10) + "鏄惁绔嬪嵆鎵撳紑锛?
+                _msg = "表格已生成：" + _name + chr(10) + chr(10) + "是否立即打开？"
 
-                if messagebox.askyesno("鐢熸垚鎴愬姛", _msg):
+                if messagebox.askyesno("生成成功", _msg):
                     try:
                         os.startfile(result)
 
-                        self.log(f"\u2705 宸叉墦寮€鏂囦欢锛歿result}", "info")
+                        self.log(f"\u2705 已打开文件：{result}", "info")
 
                     except Exception as oe:
-                        self.log(f"\u26a0\ufe0f 鏃犳硶鎵撳紑鏂囦欢锛歿oe}", "warning")
+                        self.log(f"\u26a0\ufe0f 无法打开文件：{oe}", "warning")
 
-                        messagebox.showwarning("鎵撳紑澶辫触", f"鏃犳硶鎵撳紑鏂囦欢锛歿oe}")
+                        messagebox.showwarning("打开失败", f"无法打开文件：{oe}")
 
             self.root.after(0, on_success)
 
@@ -259,33 +260,33 @@ class ExportEvents:
 
             if "Permission denied" in error_msg or "PermissionError" in error_msg:
                 _warn_msg = (
-                    "\u26a0\ufe0f 鏃犳硶淇濆瓨鏂囦欢"
+                    "\u26a0\ufe0f 无法保存文件"
                     + chr(10)
                     + chr(10)
                     + "\u53ef\u80fd\u7684\u539f\u56e0\uff1a"
                     + chr(10)
-                    + "  鈥?鏂囦欢宸茬敤 Excel 鎵撳紑"
+                    + "  • 文件已用 Excel 打开"
                     + chr(10)
-                    + "  鈥?鏂囦欢琚?WPS 鎴栧叾浠栫▼搴忓崰鐢?
+                    + "  • 文件被 WPS 或其他程序占用"
                     + chr(10)
                     + chr(10)
-                    + "瑙ｅ喅鏂规硶锛?
+                    + "解决方法："
                     + chr(10)
-                    + "  1. 鍏抽棴 Excel 涓墦寮€鐨勮繖涓枃浠?
+                    + "  1. 关闭 Excel 中打开的这个文件"
                     + chr(10)
-                    + "  2. 鐐瑰嚮銆岀敓鎴愯〃鏍笺€嶉噸璇?
+                    + "  2. 点击「生成表格」重试"
                     + chr(10)
-                    + "  3. 鎴栬€呭彟瀛樹负鍏朵粬鏂囦欢鍚?
+                    + "  3. 或者另存为其他文件名"
                 )
 
                 self.root.after(
-                    0, lambda: messagebox.showwarning("鏂囦欢琚崰鐢?, _warn_msg)
+                    0, lambda: messagebox.showwarning("文件被占用", _warn_msg)
                 )
 
                 self.root.after(
                     0,
                     lambda: self.log(
-                        "\u26a0\ufe0f 鏂囦欢琚崰鐢紝璇峰叧闂?Excel 鍚庨噸璇?, "warning"
+                        "\u26a0\ufe0f 文件被占用，请关闭 Excel 后重试", "warning"
                     ),
                 )
 
@@ -294,11 +295,11 @@ class ExportEvents:
 
                 self.root.after(
                     0,
-                    lambda: messagebox.showerror("鐢熸垚澶辫触", f"鐢熸垚琛ㄦ牸鏃跺嚭閿欙細{_err}"),
+                    lambda: messagebox.showerror("生成失败", f"生成表格时出错：{_err}"),
                 )
 
                 self.root.after(
-                    0, lambda: self.log(f"\u274c 琛ㄦ牸鐢熸垚澶辫触锛歿_err}", "error")
+                    0, lambda: self.log(f"\u274c 表格生成失败：{_err}", "error")
                 )
 
             self.root.after(0, lambda: self.log(tb, "error"))
@@ -306,12 +307,14 @@ class ExportEvents:
             self.root.after(
                 0,
                 lambda: self.excel_btn.configure(
-                    state="normal", text="\U0001f4cb 鐢熸垚琛ㄦ牸"
+                    state="normal", text="\U0001f4cb 生成表格"
                 ),
             )
 
-    # 鈹€鈹€ 鏍戝舰瑙嗗浘锛坴31 鏂板锛夆攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    # ── 树形视图（v31 新增）────────────────────────
 
+    @with_feedback("导出成功", "导出失败")
+    @with_feedback("Exporting Excel...", show_progress=True)
     def _export_audit_excel(self, cancel_flag=None, progress_callback=None):
         """Async export audit result (launcher)"""
 
@@ -422,13 +425,13 @@ class ExportEvents:
 
     def _export_audit_backup(self):
 
-        default_name = f"瀹℃牳璁板綍澶囦唤_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        default_name = f"审核记录备份_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
 
         file_path = filedialog.asksaveasfilename(
             defaultextension=".zip",
-            filetypes=[("ZIP 鍘嬬缉鏂囦欢", "*.zip")],
+            filetypes=[("ZIP 压缩文件", "*.zip")],
             initialfile=default_name,
-            title="瀵煎嚭瀹℃牳璁板綍澶囦唤",
+            title="导出审核记录备份",
         )
 
         if not file_path:
@@ -437,27 +440,27 @@ class ExportEvents:
         try:
             storage.export_audit_backup(file_path, log_cb=self.log)
 
-            self.log(f"鉁?瀹℃牳璁板綍宸插鍑猴細{file_path}", "success")
+            self.log(f"✅ 审核记录已导出：{file_path}", "success")
 
-            messagebox.showinfo("瀵煎嚭鎴愬姛", f"澶囦唤鏂囦欢宸蹭繚瀛樺埌锛歕n{file_path}")
+            messagebox.showinfo("导出成功", f"备份文件已保存到：\n{file_path}")
 
         except FileNotFoundError:
-            self.log("鉂?瀵煎嚭澶辫触锛氬鏍告暟鎹簱涓嶅瓨鍦?, "error")
+            self.log("❌ 导出失败：审核数据库不存在", "error")
 
             messagebox.showerror(
-                "瀵煎嚭澶辫触", "瀹℃牳鏁版嵁搴撲笉瀛樺湪锛岃鍏堜繚瀛樺鏍歌褰曞悗鍐嶅鍑恒€?
+                "导出失败", "审核数据库不存在，请先保存审核记录后再导出。"
             )
 
         except Exception as e:
-            self.log(f"鉂?瀵煎嚭澶辫触锛歿e}", "error")
+            self.log(f"❌ 导出失败：{e}", "error")
 
-            messagebox.showerror("瀵煎嚭澶辫触", str(e))
+            messagebox.showerror("导出失败", str(e))
 
     def _import_audit_backup(self):
 
         file_path = filedialog.askopenfilename(
-            title="閫夋嫨瀹℃牳璁板綍澶囦唤鏂囦欢",
-            filetypes=[("ZIP 鍘嬬缉鏂囦欢", "*.zip"), ("鎵€鏈夋枃浠?, "*.*")],
+            title="选择审核记录备份文件",
+            filetypes=[("ZIP 压缩文件", "*.zip"), ("所有文件", "*.*")],
         )
 
         if not file_path:
@@ -466,27 +469,27 @@ class ExportEvents:
         try:
             storage.import_audit_backup(file_path, log_cb=self.log)
 
-            self.log("鉁?瀹℃牳璁板綍宸蹭粠澶囦唤鎭㈠锛屼笅娆″姞杞芥椂鐢熸晥", "success")
+            self.log("✅ 审核记录已从备份恢复，下次加载时生效", "success")
 
             messagebox.showinfo(
-                "瀵煎叆鎴愬姛", "瀹℃牳璁板綍宸叉仮澶嶃€俓n閲嶆柊鍔犺浇鏁版嵁鏃跺皢鑷姩鍖归厤鍘嗗彶瀹℃牳銆?
+                "导入成功", "审核记录已恢复。\n重新加载数据时将自动匹配历史审核。"
             )
 
         except Exception as e:
-            self.log(f"鉂?瀵煎叆澶辫触锛歿e}", "error")
+            self.log(f"❌ 导入失败：{e}", "error")
 
-            messagebox.showerror("瀵煎叆澶辫触", str(e))
+            messagebox.showerror("导入失败", str(e))
 
-    # 鈹€鈹€ 鐗堟湰鏃ュ織宸茶縼绉诲埌 utils/version_history.py 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    # ── 版本日志已迁移到 utils/version_history.py ──────────
 
-    # 鍘?_CHANGELOG_EMBEDDED 纭紪鐮佸凡鍒犻櫎锛岄€氳繃瀵煎叆鍔ㄦ€佽鍙?
+    # 原 _CHANGELOG_EMBEDDED 硬编码已删除，通过导入动态读取
 
-    _CHANGELOG_EMBEDDED = None  # 鍗犱綅锛屼繚鎸佸悜鍚庡吋瀹?
+    _CHANGELOG_EMBEDDED = None  # 占位，保持向后兼容
 
-    # 鈹€鈹€ 鍏叡鍑芥暟锛氳幏鍙?changelog.json 璺緞 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    # ── 公共函数：获取 changelog.json 路径 ──────────
 
     def _export_log(self):
-        """瀵煎嚭鏃ュ織鍒版枃浠?""
+        """导出日志到文件"""
 
         try:
             import datetime as _dt
@@ -494,14 +497,14 @@ class ExportEvents:
             ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
 
             default_name = self.config.get(
-                "export.default_log_filename", "ZPP011鏃ュ織_{ts}.txt"
+                "export.default_log_filename", "ZPP011日志_{ts}.txt"
             ).format(ts=ts)
 
             path = filedialog.asksaveasfilename(
                 defaultextension=".txt",
-                filetypes=[("鏂囨湰鏂囦欢", "*.txt"), ("鎵€鏈夋枃浠?, "*.*")],
+                filetypes=[("文本文件", "*.txt"), ("所有文件", "*.*")],
                 initialfile=default_name,
-                title="瀵煎嚭鏃ュ織",
+                title="导出日志",
             )
 
             if not path:
@@ -510,20 +513,20 @@ class ExportEvents:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(self.log_text.get("1.0", "end"))
 
-            self.log(f"鏃ュ織宸插鍑猴細{os.path.basename(path)}", "success")
+            self.log(f"日志已导出：{os.path.basename(path)}", "success")
 
         except Exception as e:
-            messagebox.showerror("瀵煎嚭澶辫触", str(e))
+            messagebox.showerror("导出失败", str(e))
 
     def _export_changelog(self):
-        """瀵煎嚭鐗堟湰鏃ュ織"""
+        """导出版本日志"""
 
         try:
-            # 浣跨敤鍏叡鍑芥暟鑾峰彇 changelog.json 璺緞
+            # 使用公共函数获取 changelog.json 路径
 
             cl_path = self._get_changelog_path() or ""
 
-            # 璇诲彇 changelog.json
+            # 读取 changelog.json
 
             cl_data = {}
 
@@ -531,54 +534,54 @@ class ExportEvents:
                 with open(cl_path, "r", encoding="utf-8") as f:
                     cl_data = json.load(f)
 
-            # 鏍煎紡鍖栨棩蹇?
+            # 格式化日志
 
             lines = []
 
-            app_name = cl_data.get("app_name", "浜戝崡杈惧埄ZPP011鐢熶骇鍋忓樊鍒嗘瀽鍣?)
+            app_name = cl_data.get("app_name", "云南达利ZPP011生产偏差分析器")
 
-            author = cl_data.get("author", "瑁寸洓娓?)
+            author = cl_data.get("author", "裴盛清")
 
             versions = cl_data.get("versions", [])
 
             lines.append(app_name)
 
-            lines.append(f"浣滆€咃細{author}")
+            lines.append(f"作者：{author}")
 
             lines.append("=" * 50)
 
             for v in versions:
-                lines.append(f"\n銆恵v.get('version', '')}銆憑v.get('date', '')}")
+                lines.append(f"\n【{v.get('version', '')}】{v.get('date', '')}")
 
                 for feat in v.get("features", []):
-                    lines.append(f"  鉁?{feat}")
+                    lines.append(f"  ✦ {feat}")
 
                 for fix in v.get("fixes", []):
-                    lines.append(f"  馃敡 {fix}")
+                    lines.append(f"  🔧 {fix}")
 
                 for opt in v.get("optimizations", []):
-                    lines.append(f"  鈿?{opt}")
+                    lines.append(f"  ⚡ {opt}")
 
                 for les in v.get("lessons", []):
-                    lines.append(f"  馃搶 {les}")
+                    lines.append(f"  📌 {les}")
 
             changelog_text = "\n".join(lines)
 
-            # 寮瑰嚭淇濆瓨瀵硅瘽妗?
+            # 弹出保存对话框
 
             import datetime as _dt
 
             ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
 
             default_name = self.config.get(
-                "export.default_changelog_filename", "ZPP011鐗堟湰鏃ュ織_{ts}.txt"
+                "export.default_changelog_filename", "ZPP011版本日志_{ts}.txt"
             ).format(ts=ts)
 
             path = filedialog.asksaveasfilename(
                 defaultextension=".txt",
-                filetypes=[("鏂囨湰鏂囦欢", "*.txt"), ("鎵€鏈夋枃浠?, "*.*")],
+                filetypes=[("文本文件", "*.txt"), ("所有文件", "*.*")],
                 initialfile=default_name,
-                title="瀵煎嚭鐗堟湰鏃ュ織",
+                title="导出版本日志",
             )
 
             if not path:
@@ -587,97 +590,97 @@ class ExportEvents:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(changelog_text)
 
-            self.log(f"鐗堟湰鏃ュ織宸插鍑猴細{os.path.basename(path)}", "success")
+            self.log(f"版本日志已导出：{os.path.basename(path)}", "success")
 
-            messagebox.showinfo("瀵煎嚭鎴愬姛", f"鐗堟湰鏃ュ織宸蹭繚瀛樺埌锛歕n{path}")
+            messagebox.showinfo("导出成功", f"版本日志已保存到：\n{path}")
 
         except Exception as e:
-            self.log(f"瀵煎嚭鐗堟湰鏃ュ織澶辫触锛歿e}", "error")
+            self.log(f"导出版本日志失败：{e}", "error")
 
-            messagebox.showerror("瀵煎嚭澶辫触", str(e))
+            messagebox.showerror("导出失败", str(e))
 
     def _save_audit_back(self):
-        """淇濆瓨瀹℃牳缁撴灉鍒板師 Excel锛屽悓鏃跺悓姝ュ埌鏈湴鏁版嵁搴?""
+        """保存审核结果到原 Excel，同时同步到本地数据库"""
 
-        # 鈹€鈹€ 1. 鍓嶇疆妫€鏌?鈹€鈹€
+        # ── 1. 前置检查 ──
 
-        self.log("馃捑 姝ｅ湪淇濆瓨瀹℃牳缁撴灉...", "info")
+        self.log("💾 正在保存审核结果...", "info")
 
         if self.audit_data is None or self.audit_data.empty:
-            messagebox.showwarning("鎻愮ず", "娌℃湁瀹℃牳鏁版嵁鍙繚瀛?)
+            messagebox.showwarning("提示", "没有审核数据可保存")
 
             return
 
         src_path = self.input_file.get()
 
         if not src_path or not os.path.exists(src_path):
-            messagebox.showerror("閿欒", "鍘熷鏂囦欢涓嶅瓨鍦紝璇峰厛閫夋嫨姝ｇ‘鐨勮緭鍏ユ枃浠?)
+            messagebox.showerror("错误", "原始文件不存在，请先选择正确的输入文件")
 
             return
 
         try:
-            # 鈹€鈹€ 2. 澶囦唤鍘熸枃浠?鈹€鈹€
+            # ── 2. 备份原文件 ──
 
-            self.log("馃摝 姝ｅ湪澶囦唤鍘熸枃浠?..", "info")
+            self.log("📦 正在备份原文件...", "info")
 
             backup_dir = os.path.dirname(src_path)
 
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-            backup_name = f"{os.path.splitext(os.path.basename(src_path))[0]}_瀹℃牳鍓嶅浠絖{ts}.xlsx"
+            backup_name = f"{os.path.splitext(os.path.basename(src_path))[0]}_审核前备份_{ts}.xlsx"
 
             backup_path = os.path.join(backup_dir, backup_name)
 
             shutil.copy2(src_path, backup_path)
 
-            self.log(f"馃摝 宸插浠藉師鏂囦欢锛歿backup_name}", "info")
+            self.log(f"📦 已备份原文件：{backup_name}", "info")
 
         except Exception as e:
-            self.log(f"鈿?澶囦唤澶辫触锛歿e}", "warning")
+            self.log(f"⚠ 备份失败：{e}", "warning")
 
             if not messagebox.askyesno(
-                "澶囦唤澶辫触", f"鏃犳硶澶囦唤鍘熸枃浠讹細{e}\n鏄惁涓嶅浠界洿鎺ヤ繚瀛橈紵"
+                "备份失败", f"无法备份原文件：{e}\n是否不备份直接保存？"
             ):
                 return
 
-        # 鈹€鈹€ 3. 鎵撳紑 Excel 鍐欏叆瀹℃牳缁撴灉 鈹€鈹€
+        # ── 3. 打开 Excel 写入审核结果 ──
 
         try:
-            self.log("馃搨 姝ｅ湪鎵撳紑 Excel 鏂囦欢...", "info")
+            self.log("📂 正在打开 Excel 文件...", "info")
 
             wb = load_workbook(src_path)
 
             ws = wb["Data"]
 
             self.log(
-                f"   Excel 宸叉墦寮€锛屽叡 {ws.max_row} 琛?x {ws.max_column} 鍒?, "info"
+                f"   Excel 已打开，共 {ws.max_row} 行 x {ws.max_column} 列", "info"
             )
 
         except Exception as e:
-            self.log(f"鉂?鎵撳紑 Excel 澶辫触锛歿e}", "error")
+            self.log(f"❌ 打开 Excel 失败：{e}", "error")
 
             messagebox.showerror(
-                "淇濆瓨澶辫触", f"鏃犳硶鎵撳紑鍘熷鏂囦欢锛歕n{e}\n璇峰叧闂?Excel 鍚庨噸璇曘€?
+                "保存失败", f"无法打开原始文件：\n{e}\n请关闭 Excel 后重试。"
             )
 
             return
 
-        # 鈹€鈹€ 4. 鏋勫缓寰呭啓鍏ョ殑鏁版嵁鍒楄〃 鈹€鈹€
+        # ── 4. 构建待写入的数据列表 ──
 
         save_list = []
 
-        # 璁㈠崟鍒楁煡鎵撅紙鏀寔澶氱鍒楀悕锛?
+        # 订单列查找（支持多种列名）
 
         order_col = None
 
         for possible in [
-            "娴佺▼璁㈠崟",
-            "璁㈠崟鍙?,
-            "璁㈠崟缂栧彿",
-            "璁㈠崟鍙风爜",
-            "璁㈠崟No",
+            "流程订单",
+            "订单号",
+            "订单编号",
+            "订单号码",
+            "订单No",
             "Order No",
-            "鐢熶骇璁㈠崟",
+            "生产订单",
         ]:
             if possible in self.audit_data.columns:
                 order_col = possible
@@ -688,41 +691,41 @@ class ExportEvents:
             wb.close()
 
             self.log(
-                f"鉂?瀹℃牳鏁版嵁涓己灏戣鍗曞垪锛屽疄闄呭垪鍚? {list(self.audit_data.columns)[:10]}",
+                f"❌ 审核数据中缺少订单列，实际列名: {list(self.audit_data.columns)[:10]}",
                 "error",
             )
 
             messagebox.showerror(
-                "淇濆瓨澶辫触",
-                f"瀹℃牳鏁版嵁涓己灏戣鍗曞彿鍒楋紝鏃犳硶瀹氫綅鍘熻〃琛屻€俓n瀹為檯鍒楀悕: {list(self.audit_data.columns)[:10]}",
+                "保存失败",
+                f"审核数据中缺少订单号列，无法定位原表行。\n实际列名: {list(self.audit_data.columns)[:10]}",
             )
 
             return
 
         for _, row in self.audit_data.iterrows():
-            work_date = str(row.get("璁㈠崟鏃ユ湡", ""))[:10]
+            work_date = str(row.get("订单日期", ""))[:10]
 
             order_no = str(row.get(order_col, ""))
 
-            mat_code = str(row.get("缁勪欢鐗╂枡鍙?, ""))
+            mat_code = str(row.get("组件物料号", ""))
 
             if not work_date or not order_no or not mat_code:
                 continue
 
-            # 鍙栨渶缁堝娉細浼樺厛鍙栧凡鏈夊娉紝鍏舵鍙?AI 寤鸿
+            # 取最终备注：优先取已有备注，其次取 AI 建议
 
-            remark = str(row.get("澶囨敞鍘熷洜", "") or row.get("AI寤鸿", "") or "").strip()
+            remark = str(row.get("备注原因", "") or row.get("AI建议", "") or "").strip()
 
             save_list.append((work_date, order_no, mat_code, remark))
 
-        self.log(f"   寰呬繚瀛樿褰曪細{len(save_list)} 鏉?, "info")
+        self.log(f"   待保存记录：{len(save_list)} 条", "info")
 
-        # 璋冭瘯锛氭墦鍗?save_list 鍓?鏉?
+        # 调试：打印 save_list 前3条
 
         if len(save_list) > 0:
-            self.log(f"[DEBUG] save_list 鍓?鏉? {save_list[:3]}", "debug")
+            self.log(f"[DEBUG] save_list 前3条: {save_list[:3]}", "debug")
 
-        # 鈹€鈹€ 5. 鍖归厤 Excel 琛ㄥご鍒楃储寮?鈹€鈹€
+        # ── 5. 匹配 Excel 表头列索引 ──
 
         headers = {}
 
@@ -732,11 +735,11 @@ class ExportEvents:
             if val:
                 headers[val.strip()] = col_idx
 
-        date_col = headers.get("璁㈠崟寮€濮嬫棩鏈?) or headers.get("璁㈠崟鏃ユ湡")
+        date_col = headers.get("订单开始日期") or headers.get("订单日期")
 
-        order_col_excel = headers.get("娴佺▼璁㈠崟") or headers.get("璁㈠崟鍙?)
+        order_col_excel = headers.get("流程订单") or headers.get("订单号")
 
-        mat_col = headers.get("缁勪欢鐗╂枡鍙?) or headers.get("鐗╂枡缂栫爜")
+        mat_col = headers.get("组件物料号") or headers.get("物料编码")
 
         if not all([date_col, order_col_excel, mat_col]):
             wb.close()
@@ -744,35 +747,35 @@ class ExportEvents:
             missing = []
 
             if not date_col:
-                missing.append("鏃ユ湡")
+                missing.append("日期")
 
             if not order_col_excel:
-                missing.append("璁㈠崟鍙?)
+                missing.append("订单号")
 
             if not mat_col:
-                missing.append("鐗╂枡缂栫爜")
+                missing.append("物料编码")
 
-            self.log(f"鉂?Excel 涓己灏戝叧閿垪锛歿', '.join(missing)}", "error")
+            self.log(f"❌ Excel 中缺少关键列：{', '.join(missing)}", "error")
 
             messagebox.showerror(
-                "鍒楀尮閰嶅け璐?,
-                f"鍘熷鏂囦欢涓湭鎵惧埌浠ヤ笅鍏抽敭鍒楋細\n{', '.join(missing)}\n鏃犳硶瀹氫綅鍐欏叆浣嶇疆銆?,
+                "列匹配失败",
+                f"原始文件中未找到以下关键列：\n{', '.join(missing)}\n无法定位写入位置。",
             )
 
             return
 
         self.log(
-            f"   瀹氫綅鍒扮殑鍒楋細鏃ユ湡={date_col}, 璁㈠崟={order_col_excel}, 鐗╂枡={mat_col}",
+            f"   定位到的列：日期={date_col}, 订单={order_col_excel}, 物料={mat_col}",
             "info",
         )
 
-        # 鈹€鈹€ 6. 鍐欏叆瀹℃牳鐘舵€佸垪 鈹€鈹€
+        # ── 6. 写入审核状态列 ──
 
         audit_cols = {
-            "瀹℃牳鐘舵€?: None,
-            "瀹℃牳澶囨敞": None,
-            "瀹℃牳浜?: None,
-            "瀹℃牳鏃堕棿": None,
+            "审核状态": None,
+            "审核备注": None,
+            "审核人": None,
+            "审核时间": None,
         }
 
         next_col = ws.max_column + 1
@@ -789,7 +792,7 @@ class ExportEvents:
                 next_col += 1
 
         self.log(
-            f"   瀹℃牳鍒楋細瀹℃牳鐘舵€?{audit_cols['瀹℃牳鐘舵€?]}, 瀹℃牳澶囨敞={audit_cols['瀹℃牳澶囨敞']}",
+            f"   审核列：审核状态={audit_cols['审核状态']}, 审核备注={audit_cols['审核备注']}",
             "info",
         )
 
@@ -826,43 +829,43 @@ class ExportEvents:
 
                 _, _, _, remark = match
 
-                # 璋冭瘯锛氭墦鍗板尮閰嶅埌鐨勮鍙峰拰鍖归厤閿?
+                # 调试：打印匹配到的行号和匹配键
 
                 self.log(
-                    f"[DEBUG] 鍖归厤鍒拌 {r_idx}: date={r_date}, order={r_order}, mat={r_mat}, 鍐欏叆澶囨敞={remark[:20] if remark else '绌?}",
+                    f"[DEBUG] 匹配到行 {r_idx}: date={r_date}, order={r_order}, mat={r_mat}, 写入备注={remark[:20] if remark else '空'}",
                     "debug",
                 )
 
-                ws.cell(r_idx, audit_cols["瀹℃牳鐘舵€?], "宸插娉? if remark else "鏈鏍?)
+                ws.cell(r_idx, audit_cols["审核状态"], "已备注" if remark else "未审核")
 
-                ws.cell(r_idx, audit_cols["瀹℃牳澶囨敞"], remark)
+                ws.cell(r_idx, audit_cols["审核备注"], remark)
 
-                ws.cell(r_idx, audit_cols["瀹℃牳浜?], auditor)
+                ws.cell(r_idx, audit_cols["审核人"], auditor)
 
-                ws.cell(r_idx, audit_cols["瀹℃牳鏃堕棿"], now_str)
+                ws.cell(r_idx, audit_cols["审核时间"], now_str)
 
                 saved_count += 1
 
-        self.log(f"   鍖归厤鍒?{match_count} 琛岋紝寰呭啓鍏?{saved_count} 琛?, "info")
+        self.log(f"   匹配到 {match_count} 行，待写入 {saved_count} 行", "info")
 
-        # 鈹€鈹€ 7. 淇濆瓨 Excel 鏂囦欢 鈹€鈹€
+        # ── 7. 保存 Excel 文件 ──
 
         try:
-            self.log("馃捑 姝ｅ湪淇濆瓨 Excel 鏂囦欢...", "info")
+            self.log("💾 正在保存 Excel 文件...", "info")
 
             wb.save(src_path)
 
             wb.close()
 
-            self.log("   Excel 淇濆瓨鎴愬姛", "info")
+            self.log("   Excel 保存成功", "info")
 
         except PermissionError:
             wb.close()
 
-            self.log("鉂?鏂囦欢琚崰鐢紝鏃犳硶淇濆瓨銆傝鍏抽棴 Excel 鍚庨噸璇曘€?, "error")
+            self.log("❌ 文件被占用，无法保存。请关闭 Excel 后重试。", "error")
 
             messagebox.showerror(
-                "淇濆瓨澶辫触", "鏂囦欢琚叾浠栫▼搴忓崰鐢紝璇峰叧闂?Excel 鍚庨噸璇曘€?
+                "保存失败", "文件被其他程序占用，请关闭 Excel 后重试。"
             )
 
             return
@@ -870,9 +873,9 @@ class ExportEvents:
         except Exception as e:
             wb.close()
 
-            self.log(f"鉂?鍐欏叆 Excel 澶辫触锛歿e}", "error")
+            self.log(f"❌ 写入 Excel 失败：{e}", "error")
 
-            messagebox.showerror("淇濆瓨澶辫触", f"鍐欏叆鏂囦欢鏃跺嚭閿欙細\n{e}")
+            messagebox.showerror("保存失败", f"写入文件时出错：\n{e}")
 
             return
 
@@ -883,59 +886,59 @@ class ExportEvents:
             except:
                 pass
 
-        # 鈹€鈹€ 8. 鍚屾鍒?SQLite 瀹℃牳鏁版嵁搴?鈹€鈹€
+        # ── 8. 同步到 SQLite 审核数据库 ──
 
         try:
-            self.log("馃搳 姝ｅ湪鍚屾鍒板鏍告暟鎹簱...", "info")
+            self.log("📊 正在同步到审核数据库...", "info")
 
-            # 鏋勯€犻€傚悎 storage 妯″潡鐨?DataFrame锛堢‘淇濇湁璁㈠崟鍙峰垪锛?
+            # 构造适合 storage 模块的 DataFrame（确保有订单号列）
 
             save_df = self.audit_data.copy()
 
-            if "璁㈠崟鍙? not in save_df.columns and "娴佺▼璁㈠崟" in save_df.columns:
-                save_df["璁㈠崟鍙?] = save_df["娴佺▼璁㈠崟"]
+            if "订单号" not in save_df.columns and "流程订单" in save_df.columns:
+                save_df["订单号"] = save_df["流程订单"]
 
-            if "璁㈠崟鏃ユ湡" not in save_df.columns:
-                save_df["璁㈠崟鏃ユ湡"] = save_df.get("璁㈠崟鏃ユ湡", "")
+            if "订单日期" not in save_df.columns:
+                save_df["订单日期"] = save_df.get("订单日期", "")
 
             self.audit_presenter.save_audit_back(auditor=auditor)
 
-            self.log("   鏁版嵁搴撳悓姝ユ垚鍔?, "info")
+            self.log("   数据库同步成功", "info")
 
         except Exception as e:
-            self.log(f"鈿?瀹℃牳鏁版嵁搴撳悓姝ュけ璐ワ紙涓嶅奖鍝?Excel 淇濆瓨锛夛細{e}", "warn")
+            self.log(f"⚠ 审核数据库同步失败（不影响 Excel 保存）：{e}", "warn")
 
-        # 鈹€鈹€ 9. 鏈€缁堝弽棣?鈹€鈹€
+        # ── 9. 最终反馈 ──
 
         self.log(
-            f"鉁?瀹℃牳缁撴灉宸蹭繚瀛橈細Excel 鍐欏叆 {saved_count} 琛岋紝澶囦唤 {backup_name}",
+            f"✅ 审核结果已保存：Excel 写入 {saved_count} 行，备份 {backup_name}",
             "success",
         )
 
         messagebox.showinfo(
-            "淇濆瓨鎴愬姛",
-            f"瀹℃牳缁撴灉宸插啓鍏ュ師濮嬫枃浠?{saved_count} 琛屻€俓n"
-            f"鏂板鍒楋細瀹℃牳鐘舵€?/ 瀹℃牳澶囨敞 / 瀹℃牳浜?/ 瀹℃牳鏃堕棿\n"
-            f"鍘熷澶囦唤锛歿backup_name}",
+            "保存成功",
+            f"审核结果已写入原始文件 {saved_count} 行。\n"
+            f"新增列：审核状态 / 审核备注 / 审核人 / 审核时间\n"
+            f"原始备份：{backup_name}",
         )
 
     def _batch_export(self, event=None):
-        """鎵归噺瀵煎嚭閫変腑琛屼负Excel鎴朇SV"""
+        """批量导出选中行为Excel或CSV"""
 
         selected = self.audit_tree.selection()
 
         if not selected:
-            messagebox.showwarning("鎻愮ず", "璇峰厛閫夋嫨瑕佸鍑虹殑琛?)
+            messagebox.showwarning("提示", "请先选择要导出的行")
 
             return
 
         file_path = filedialog.asksaveasfilename(
-            title="瀵煎嚭閫変腑琛?,
+            title="导出选中行",
             defaultextension=".xlsx",
             filetypes=[
-                ("Excel 鏂囦欢", "*.xlsx"),
-                ("CSV 鏂囦欢", "*.csv"),
-                ("鎵€鏈夋枃浠?, "*.*"),
+                ("Excel 文件", "*.xlsx"),
+                ("CSV 文件", "*.csv"),
+                ("所有文件", "*.*"),
             ],
         )
 
@@ -968,25 +971,25 @@ class ExportEvents:
                 )
 
             messagebox.showinfo(
-                "瀵煎嚭鎴愬姛", f"宸叉垚鍔熷鍑?{len(export_data)} 琛屾暟鎹埌\n{file_path}"
+                "导出成功", f"已成功导出 {len(export_data)} 行数据到\n{file_path}"
             )
 
         except Exception as e:
-            messagebox.showerror("瀵煎嚭澶辫触", f"瀵煎嚭鏃跺彂鐢熼敊璇細{str(e)}")
+            messagebox.showerror("导出失败", f"导出时发生错误：{str(e)}")
 
     def _copy_wechat_draft(self):
-        """灏嗛€変腑琛岀敓鎴愬井淇¤崏绋垮苟澶嶅埗鍒板壀璐存澘"""
+        """将选中行生成微信草稿并复制到剪贴板"""
 
         selected = self.audit_tree.selection()
 
         if not selected:
-            messagebox.showwarning("鎻愮ず", "璇峰厛閫夋嫨瑕佺敓鎴愯崏绋跨殑琛?)
+            messagebox.showwarning("提示", "请先选择要生成草稿的行")
 
             return
 
         cols = self.audit_tree["columns"]
 
-        lines = [self.config.get("wechat.draft_title", "銆愭枡鎺ф寚浠ゃ€?), ""]
+        lines = [self.config.get("wechat.draft_title", "【料控指令】"), ""]
 
         for i, item in enumerate(selected, 1):
             vals = self.audit_tree.item(item, "values")
@@ -1005,18 +1008,18 @@ class ExportEvents:
 
             code = data.get("code", "")
 
-            # 绠€娲佹牸寮忥細搴忓彿. 鐗╂枡 鍋忓樊鐜?鐘舵€?
+            # 简洁格式：序号. 物料 偏差率 状态
 
-            line = f"{i}. {mat_name}锛坽code}锛夊亸宸畕dev_rate} {status}"
+            line = f"{i}. {mat_name}（{code}）偏差{dev_rate} {status}"
 
             if remark and remark.strip():
-                line += f"\n   澶囨敞锛歿remark}"
+                line += f"\n   备注：{remark}"
 
             lines.append(line)
 
         lines.append("")
 
-        lines.append(f"鍏?{len(selected)} 鏉?| 璇风‘璁ゅ悗澶勭悊")
+        lines.append(f"共 {len(selected)} 条 | 请确认后处理")
 
         draft = "\n".join(lines)
 
@@ -1024,8 +1027,8 @@ class ExportEvents:
 
         self.root.clipboard_append(draft)
 
-        self.log(f"馃搵 宸插鍒?{len(selected)} 鏉″井淇¤崏绋垮埌鍓创鏉?, "info")
+        self.log(f"📋 已复制 {len(selected)} 条微信草稿到剪贴板", "info")
 
         messagebox.showinfo(
-            "澶嶅埗鎴愬姛", f"宸插鍒?{len(selected)} 鏉℃寚浠ゅ埌鍓创鏉匡紝鍙洿鎺ョ矘璐村埌寰俊"
+            "复制成功", f"已复制 {len(selected)} 条指令到剪贴板，可直接粘贴到微信"
         )
