@@ -1,0 +1,287 @@
+ZPP011 技术债务清单
+============================================================
+
+[WARN] .\build.py:
+  [WARN] 行 29: 调试 print 语句
+  [WARN] 行 33: 调试 print 语句
+  [WARN] 行 40: 调试 print 语句
+  [WARN] 行 41: 调试 print 语句
+  [WARN] 行 42: 调试 print 语句
+  [WARN] 行 64: 调试 print 语句
+  [WARN] 行 69: 调试 print 语句
+  [WARN] 行 74: 调试 print 语句
+  [WARN] 行 146: 调试 print 语句
+  [WARN] 行 149: 调试 print 语句
+  [WARN] 行 153: 调试 print 语句
+  [WARN] 行 154: 调试 print 语句
+  [WARN] 行 158: 调试 print 语句
+  [WARN] 行 159: 调试 print 语句
+  [WARN] 行 161: 调试 print 语句
+  [WARN] 行 162: 调试 print 语句
+
+[WARN] .\build_exe.py:
+  [WARN] 行 49: 调试 print 语句
+  [WARN] 行 69: 调试 print 语句
+  [WARN] 行 83: 调试 print 语句
+  [WARN] 行 84: 调试 print 语句
+  [WARN] 行 85: 调试 print 语句
+  [WARN] 行 118: 调试 print 语句
+  [WARN] 行 120: 调试 print 语句
+  [WARN] 行 150: 调试 print 语句
+  [WARN] 行 157: 调试 print 语句
+  [WARN] 行 158: 调试 print 语句
+  [WARN] 行 162: 调试 print 语句
+  [WARN] 行 163: 调试 print 语句
+  [WARN] 行 165: 调试 print 语句
+  [WARN] 行 166: 调试 print 语句
+
+[WARN] .\clean_debt.py:
+  [WARN] 行 10: 调试 print 语句
+  [WARN] 行 11: 调试 print 语句
+  [WARN] 行 12: 调试 print 语句
+  [WARN] 行 28: @with_feedback 残留
+  [WARN] 行 42: @with_feedback 残留
+  [WARN] 行 42: 调试 print 语句
+  [WARN] 行 43: 调试 print 语句
+  [WARN] 行 44: 调试 print 语句
+  [WARN] 行 47: 调试 print 语句
+  [WARN] 行 53: @with_feedback 残留
+  [WARN] 行 54: 调试 print 语句
+
+[WARN] .\find_lines.py:
+  [WARN] 行 13: 调试 print 语句
+  [WARN] 行 15: 调试 print 语句
+  [WARN] 行 17: 调试 print 语句
+  [WARN] 行 18: 调试 print 语句
+  [WARN] 行 20: 调试 print 语句
+  [WARN] 行 23: 调试 print 语句
+  [WARN] 行 31: 调试 print 语句
+  [WARN] 行 33: 调试 print 语句
+  [WARN] 行 35: 调试 print 语句
+
+[WARN] .\modify_app.py:
+  [WARN] 行 39: 调试 print 语句
+  [WARN] 行 55: 调试 print 语句
+  [WARN] 行 66: 调试 print 语句
+
+[WARN] .\modify_ui_builder.py:
+  [WARN] 行 21: 调试 print 语句
+  [WARN] 行 24: 调试 print 语句
+  [WARN] 行 25: 调试 print 语句
+  [WARN] 行 44: 调试 print 语句
+  [WARN] 行 45: 调试 print 语句
+  [WARN] 行 46: 调试 print 语句
+  [WARN] 行 48: 调试 print 语句
+  [WARN] 行 49: 调试 print 语句
+  [WARN] 行 59: 调试 print 语句
+
+[WARN] .\ppt_generator.py:
+  [WARN] 行 38: 调试 print 语句
+
+[WARN] .\run_build_v393.py:
+  [WARN] 行 15: 调试 print 语句
+  [WARN] 行 16: 调试 print 语句
+  [WARN] 行 17: 调试 print 语句
+  [WARN] 行 19: 调试 print 语句
+  [WARN] 行 20: 调试 print 语句
+  [WARN] 行 23: 调试 print 语句
+  [WARN] 行 33: 调试 print 语句
+  [WARN] 行 35: 调试 print 语句
+  [WARN] 行 36: 调试 print 语句
+  [WARN] 行 38: 调试 print 语句
+  [WARN] 行 41: 调试 print 语句
+  [WARN] 行 49: 调试 print 语句
+  [WARN] 行 50: 调试 print 语句
+  [WARN] 行 52: 调试 print 语句
+  [WARN] 行 54: 调试 print 语句
+  [WARN] 行 56: 调试 print 语句
+  [WARN] 行 57: 调试 print 语句
+
+[WARN] .\run_tests.py:
+  [WARN] 行 21: 调试 print 语句
+  [WARN] 行 22: 调试 print 语句
+  [WARN] 行 24: 调试 print 语句
+  [WARN] 行 25: 调试 print 语句
+  [WARN] 行 27: 调试 print 语句
+
+[WARN] .\update_changelog_v393.py:
+  [WARN] 行 39: @with_feedback 残留
+  [WARN] 行 54: 调试 print 语句
+  [WARN] 行 58: 调试 print 语句
+  [WARN] 行 65: 调试 print 语句
+  [WARN] 行 66: 调试 print 语句
+
+[WARN] .\_add_doughnut_chart.py:
+  [WARN] 行 15: 调试 print 语句
+  [WARN] 行 61: 调试 print 语句
+  [WARN] 行 67: 调试 print 语句
+  [WARN] 行 72: 调试 print 语句
+  [WARN] 行 97: 调试 print 语句
+  [WARN] 行 98: 调试 print 语句
+
+[WARN] .\_check_git_status.py:
+  [WARN] 行 17: 调试 print 语句
+  [WARN] 行 18: 调试 print 语句
+  [WARN] 行 22: 调试 print 语句
+  [WARN] 行 23: 调试 print 语句
+  [WARN] 行 24: 调试 print 语句
+  [WARN] 行 28: 调试 print 语句
+  [WARN] 行 29: 调试 print 语句
+  [WARN] 行 30: 调试 print 语句
+  [WARN] 行 35: 调试 print 语句
+  [WARN] 行 36: 调试 print 语句
+  [WARN] 行 38: 调试 print 语句
+
+[WARN] .\_git_push_ppt.py:
+  [WARN] 行 11: 调试 print 语句
+  [WARN] 行 12: 调试 print 语句
+  [WARN] 行 15: 调试 print 语句
+  [WARN] 行 17: 调试 print 语句
+  [WARN] 行 20: 调试 print 语句
+  [WARN] 行 31: 调试 print 语句
+  [WARN] 行 34: 调试 print 语句
+  [WARN] 行 36: 调试 print 语句
+  [WARN] 行 39: 调试 print 语句
+  [WARN] 行 41: 调试 print 语句
+  [WARN] 行 43: 调试 print 语句
+
+[WARN] .\_update_changelog_v39_2.py:
+  [WARN] 行 11: 调试 print 语句
+  [WARN] 行 16: 调试 print 语句
+  [WARN] 行 54: 调试 print 语句
+  [WARN] 行 60: 调试 print 语句
+  [WARN] 行 64: 调试 print 语句
+  [WARN] 行 65: 调试 print 语句
+  [WARN] 行 68: 调试 print 语句
+  [WARN] 行 69: 调试 print 语句
+  [WARN] 行 70: 调试 print 语句
+  [WARN] 行 72: 调试 print 语句
+  [WARN] 行 73: 调试 print 语句
+  [WARN] 行 74: 调试 print 语句
+
+[WARN] .\_update_test_push.py:
+  [WARN] 行 38: 调试 print 语句
+  [WARN] 行 46: 调试 print 语句
+  [WARN] 行 54: 调试 print 语句
+  [WARN] 行 62: 调试 print 语句
+  [WARN] 行 70: 调试 print 语句
+  [WARN] 行 78: 调试 print 语句
+  [WARN] 行 88: 调试 print 语句
+  [WARN] 行 92: 调试 print 语句
+  [WARN] 行 93: 调试 print 语句
+  [WARN] 行 94: 调试 print 语句
+  [WARN] 行 97: 调试 print 语句
+  [WARN] 行 101: 调试 print 语句
+  [WARN] 行 104: 调试 print 语句
+  [WARN] 行 106: 调试 print 语句
+  [WARN] 行 108: 调试 print 语句
+  [WARN] 行 109: 调试 print 语句
+  [WARN] 行 111: 调试 print 语句
+  [WARN] 行 114: 调试 print 语句
+  [WARN] 行 119: 调试 print 语句
+  [WARN] 行 122: 调试 print 语句
+  [WARN] 行 123: 调试 print 语句
+  [WARN] 行 124: 调试 print 语句
+
+[WARN] .\生成报告.py:
+  [WARN] 行 19: 调试 print 语句
+  [WARN] 行 26: 调试 print 语句
+
+[WARN] .\analysis\analyzer.py:
+  [WARN] 行 54: 调试 print 语句
+  [WARN] 行 61: 调试 print 语句
+  [WARN] 行 76: 调试 print 语句
+  [WARN] 行 81: 调试 print 语句
+  [WARN] 行 111: 调试 print 语句
+  [WARN] 行 117: 调试 print 语句
+  [WARN] 行 127: 调试 print 语句
+  [WARN] 行 138: 调试 print 语句
+  [WARN] 行 139: 调试 print 语句
+  [WARN] 行 151: 调试 print 语句
+  [WARN] 行 155: 调试 print 语句
+  [WARN] 行 157: 调试 print 语句
+  [WARN] 行 158: 调试 print 语句
+  [WARN] 行 271: 调试 print 语句
+  [WARN] 行 311: 调试 print 语句
+  [WARN] 行 331: 调试 print 语句
+  [WARN] 行 338: 调试 print 语句
+  [WARN] 行 343: 调试 print 语句
+  [WARN] 行 358: 调试 print 语句
+  [WARN] 行 400: 调试 print 语句
+  [WARN] 行 454: 调试 print 语句
+  [WARN] 行 700: 调试 print 语句
+  [WARN] 行 716: 调试 print 语句
+  [WARN] 行 724: 调试 print 语句
+  [WARN] 行 726: 调试 print 语句
+
+[WARN] .\core\rule_engine.py:
+  [WARN] 行 27: 调试 print 语句
+
+[WARN] .\gui\app.py:
+  [WARN] 行 268: 调试 print 语句
+  [WARN] 行 319: 调试 print 语句
+  [WARN] 行 335: 调试 print 语句
+  [WARN] 行 350: 调试 print 语句
+  [WARN] 行 562: 调试 print 语句
+
+[WARN] .\gui\build_exe.py:
+  [WARN] 行 31: 调试 print 语句
+  [WARN] 行 37: 调试 print 语句
+  [WARN] 行 57: 调试 print 语句
+  [WARN] 行 58: 调试 print 语句
+  [WARN] 行 59: 调试 print 语句
+  [WARN] 行 85: 调试 print 语句
+  [WARN] 行 87: 调试 print 语句
+  [WARN] 行 157: 调试 print 语句
+  [WARN] 行 158: 调试 print 语句
+  [WARN] 行 159: 调试 print 语句
+  [WARN] 行 164: 调试 print 语句
+  [WARN] 行 165: 调试 print 语句
+  [WARN] 行 166: 调试 print 语句
+  [WARN] 行 167: 调试 print 语句
+  [WARN] 行 173: 调试 print 语句
+  [WARN] 行 175: 调试 print 语句
+
+[WARN] .\gui\stock_summary.py:
+  [WARN] 行 162: 调试 print 语句
+
+[WARN] .\gui\stock_summary_standalone.py:
+  [WARN] 行 150: 调试 print 语句
+  [WARN] 行 151: 调试 print 语句
+  [WARN] 行 182: 调试 print 语句
+  [WARN] 行 539: 调试 print 语句
+  [WARN] 行 540: 调试 print 语句
+  [WARN] 行 598: 调试 print 语句
+  [WARN] 行 599: 调试 print 语句
+
+[WARN] .\gui\event_handlers\audit_batch_events.py:
+  [WARN] 行 698: @with_feedback 残留
+  [WARN] 行 2516: @with_feedback 残留
+
+[WARN] .\gui\event_handlers\export_events.py:
+  [WARN] 行 316: @with_feedback 残留
+  [WARN] 行 317: @with_feedback 残留
+
+[WARN] .\gui\event_handlers\menu_events.py:
+  [WARN] 行 34: 调试 print 语句
+
+[WARN] .\gui\event_handlers\table_events.py:
+  [WARN] 行 1105: 调试 print 语句
+  [WARN] 行 1154: 调试 print 语句
+
+[WARN] .\gui\storage\stock_db.py:
+  [WARN] 行 194: 调试 print 语句
+
+[WARN] .\modules\audit\filters\filter_engine.py:
+  [WARN] 行 28: 调试 print 语句
+  [WARN] 行 100: 调试 print 语句
+  [WARN] 行 108: 调试 print 语句
+  [WARN] 行 115: 调试 print 语句
+
+[WARN] .\services\file_service.py:
+  [WARN] 行 74: 调试 print 语句
+
+[WARN] .\utils\version_history.py:
+  [WARN] 行 27: @with_feedback 残留
+
+总计：9 处 @with_feedback，214 处 print
