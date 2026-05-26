@@ -71,7 +71,6 @@ class FileService:
             shutil.copy2(file_path, backup_path)
             return backup_path
         except Exception as e:
-            print(f"Backup failed: {e}")
             return None
     
     def find_latest_file(self, pattern: str, directory: str) -> Optional[str]:

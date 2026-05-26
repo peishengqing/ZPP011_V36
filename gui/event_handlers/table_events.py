@@ -1102,10 +1102,6 @@ class TableEvents:
 
         import sys
 
-        print(
-            f"[DEBUG] df_filtered.shape={df_filtered.shape}, empty={df_filtered.empty}",
-            flush=True,
-        )
 
         # ── 异常突变检测（保留在View，依赖View状态）──
 
@@ -1151,10 +1147,6 @@ class TableEvents:
         if hasattr(self, "state"):
             self.state.set("filters", "all", self._collect_filters(), auto_save=True)
 
-        print(
-            f"[DEBUG] Calling _refresh_audit_tree with {len(df_filtered)} rows",
-            flush=True,
-        )
 
         self._refresh_audit_tree(df_filtered)
 

@@ -1,25 +1,24 @@
-# -*- coding: utf-8 -*-
-"""AI审核 + 自动结案核心事件"""
+﻿# -*- coding: utf-8 -*-
+"""AI瀹℃牳 + 鑷姩缁撴鏍稿績浜嬩欢"""
 
 import threading
 import tkinter as tk
 from tkinter import messagebox
 from copy import deepcopy
 from core.rule_engine import RuleEngine
-from core.decorators import with_feedback
 from widgets import C
 from core.auto_closer import AutoCloser
 
 
 class AuditCoreEvents:
-    """AI审核 + 自动结案核心事件"""
+    """AI瀹℃牳 + 鑷姩缁撴鏍稿績浜嬩欢"""
     def _run_ai_audit(self):
 
 
 
 
 
-        """AI审核：委托给 AuditPresenter"""
+        """AI瀹℃牳锛氬鎵樼粰 AuditPresenter"""
 
 
 
@@ -31,7 +30,7 @@ class AuditCoreEvents:
 
 
 
-            messagebox.showwarning("提示", "AI审核正在运行，请等待完成或点击取消")
+            messagebox.showwarning("鎻愮ず", "AI瀹℃牳姝ｅ湪杩愯锛岃绛夊緟瀹屾垚鎴栫偣鍑诲彇娑?)
 
 
 
@@ -49,7 +48,7 @@ class AuditCoreEvents:
 
 
 
-            messagebox.showwarning("警告", "没有审核数据，请先加载审核数据")
+            messagebox.showwarning("璀﹀憡", "娌℃湁瀹℃牳鏁版嵁锛岃鍏堝姞杞藉鏍告暟鎹?)
 
 
 
@@ -67,7 +66,7 @@ class AuditCoreEvents:
 
 
 
-        # 委托 Presenter 准备审核数据
+        # 濮旀墭 Presenter 鍑嗗瀹℃牳鏁版嵁
 
 
 
@@ -85,7 +84,7 @@ class AuditCoreEvents:
 
 
 
-            messagebox.showinfo("提示", "没有需要AI审核的行")
+            messagebox.showinfo("鎻愮ず", "娌℃湁闇€瑕丄I瀹℃牳鐨勮")
 
 
 
@@ -103,7 +102,7 @@ class AuditCoreEvents:
 
 
 
-        # 设置状态
+        # 璁剧疆鐘舵€?
 
 
 
@@ -127,7 +126,7 @@ class AuditCoreEvents:
 
 
 
-        self.set_status("AI审核中...")
+        self.set_status("AI瀹℃牳涓?..")
 
 
 
@@ -229,7 +228,7 @@ class AuditCoreEvents:
 
 
 
-                self.set_status(f"AI审核中... {p}%")
+                self.set_status(f"AI瀹℃牳涓?.. {p}%")
 
 
 
@@ -295,7 +294,7 @@ class AuditCoreEvents:
 
 
 
-        """取消当前 AI 审核（直接设置 cancel_flag）"""
+        """鍙栨秷褰撳墠 AI 瀹℃牳锛堢洿鎺ヨ缃?cancel_flag锛?""
 
 
 
@@ -313,7 +312,7 @@ class AuditCoreEvents:
 
 
 
-        self.set_status("正在取消AI审核...")
+        self.set_status("姝ｅ湪鍙栨秷AI瀹℃牳...")
 
 
 
@@ -331,7 +330,7 @@ class AuditCoreEvents:
 
 
 
-        """AI审核完成回调"""
+        """AI瀹℃牳瀹屾垚鍥炶皟"""
 
 
 
@@ -355,7 +354,7 @@ class AuditCoreEvents:
 
 
 
-        # 修正：Lambda 不能返回元组，拆成两条语句
+        # 淇锛歀ambda 涓嶈兘杩斿洖鍏冪粍锛屾媶鎴愪袱鏉¤鍙?
 
 
 
@@ -379,7 +378,7 @@ class AuditCoreEvents:
 
 
 
-        # 写回审核结果
+        # 鍐欏洖瀹℃牳缁撴灉
 
 
 
@@ -409,19 +408,19 @@ class AuditCoreEvents:
 
 
 
-                self.audit_data.at[idx, 'AI建议'] = row_data['_ai_suggestion']
+                self.audit_data.at[idx, 'AI寤鸿'] = row_data['_ai_suggestion']
 
 
 
 
 
-                self.audit_data.at[idx, '备注来源'] = 'AI审核'
+                self.audit_data.at[idx, '澶囨敞鏉ユ簮'] = 'AI瀹℃牳'
 
 
 
 
 
-                self.audit_data.at[idx, '审核来源'] = 'AI'
+                self.audit_data.at[idx, '瀹℃牳鏉ユ簮'] = 'AI'
 
 
 
@@ -433,7 +432,7 @@ class AuditCoreEvents:
 
 
 
-        # 刷新表格
+        # 鍒锋柊琛ㄦ牸
 
 
 
@@ -445,7 +444,7 @@ class AuditCoreEvents:
 
 
 
-        self.set_status(f"AI审核完成，共 {len(popup_rows)} 条")
+        self.set_status(f"AI瀹℃牳瀹屾垚锛屽叡 {len(popup_rows)} 鏉?)
 
 
 
@@ -457,7 +456,7 @@ class AuditCoreEvents:
 
 
 
-        # 可选：显示结果窗口
+        # 鍙€夛細鏄剧ず缁撴灉绐楀彛
 
 
 
@@ -469,7 +468,7 @@ class AuditCoreEvents:
 
 
 
-            messagebox.showinfo("完成", f"AI审核完成，共处理 {len(popup_rows)} 条记录")
+            messagebox.showinfo("瀹屾垚", f"AI瀹℃牳瀹屾垚锛屽叡澶勭悊 {len(popup_rows)} 鏉¤褰?)
 
 
 
@@ -487,7 +486,7 @@ class AuditCoreEvents:
 
 
 
-        """AI审核错误回调（在主线程执行）"""
+        """AI瀹℃牳閿欒鍥炶皟锛堝湪涓荤嚎绋嬫墽琛岋級"""
 
 
 
@@ -523,13 +522,13 @@ class AuditCoreEvents:
 
 
 
-            self.set_status("AI审核已取消")
+            self.set_status("AI瀹℃牳宸插彇娑?)
 
 
 
 
 
-            messagebox.showinfo("已取消", "AI审核已被用户取消")
+            messagebox.showinfo("宸插彇娑?, "AI瀹℃牳宸茶鐢ㄦ埛鍙栨秷")
 
 
 
@@ -541,7 +540,7 @@ class AuditCoreEvents:
 
 
 
-            self.set_status("AI审核失败")
+            self.set_status("AI瀹℃牳澶辫触")
 
 
 
@@ -553,13 +552,13 @@ class AuditCoreEvents:
 
 
 
-            self.log(f"❌ AI审核异常：{traceback.format_exc()}", "error")
+            self.log(f"鉂?AI瀹℃牳寮傚父锛歿traceback.format_exc()}", "error")
 
 
 
 
 
-            messagebox.showerror("AI审核失败", f"审核过程发生异常：\n{str(exc)}")
+            messagebox.showerror("AI瀹℃牳澶辫触", f"瀹℃牳杩囩▼鍙戠敓寮傚父锛歕n{str(exc)}")
 
 
 
@@ -577,7 +576,7 @@ class AuditCoreEvents:
 
 
 
-        """自动结案（委托Presenter）"""
+        """鑷姩缁撴锛堝鎵楶resenter锛?""
 
 
 
@@ -619,7 +618,7 @@ class AuditCoreEvents:
 
 
 
-            messagebox.showwarning("提示", "自动结案任务进行中，请勿重复操作")
+            messagebox.showwarning("鎻愮ず", "鑷姩缁撴浠诲姟杩涜涓紝璇峰嬁閲嶅鎿嶄綔")
 
 
 
@@ -637,7 +636,7 @@ class AuditCoreEvents:
 
 
 
-            messagebox.showwarning("警告", "没有数据可操作")
+            messagebox.showwarning("璀﹀憡", "娌℃湁鏁版嵁鍙搷浣?)
 
 
 
@@ -679,7 +678,7 @@ class AuditCoreEvents:
 
 
 
-        self.set_status("正在执行自动结案...")
+        self.set_status("姝ｅ湪鎵ц鑷姩缁撴...")
 
 
 
@@ -691,7 +690,7 @@ class AuditCoreEvents:
 
 
 
-        # 双快照：防止规则漂移
+        # 鍙屽揩鐓э細闃叉瑙勫垯婕傜Щ
 
 
 
@@ -715,7 +714,7 @@ class AuditCoreEvents:
 
 
 
-        # 包装函数，保存 cancel_flag 引用
+        # 鍖呰鍑芥暟锛屼繚瀛?cancel_flag 寮曠敤
 
 
 
@@ -799,7 +798,7 @@ class AuditCoreEvents:
 
 
 
-        """进度回调"""
+        """杩涘害鍥炶皟"""
 
 
 
@@ -823,13 +822,13 @@ class AuditCoreEvents:
 
 
 
-        eta_text = f", 剩余约{int(eta)}秒" if eta else ""
+        eta_text = f", 鍓╀綑绾int(eta)}绉? if eta else ""
 
 
 
 
 
-        self.set_status(f"自动结案中: {current}/{total} ({percent}%){eta_text}")
+        self.set_status(f"鑷姩缁撴涓? {current}/{total} ({percent}%){eta_text}")
 
 
 
@@ -847,7 +846,7 @@ class AuditCoreEvents:
 
 
 
-        """成功回调"""
+        """鎴愬姛鍥炶皟"""
 
 
 
@@ -889,13 +888,13 @@ class AuditCoreEvents:
 
 
 
-        self.set_status(f"自动结案完成，成功 {success} 行，失败 {fail} 行")
+        self.set_status(f"鑷姩缁撴瀹屾垚锛屾垚鍔?{success} 琛岋紝澶辫触 {fail} 琛?)
 
 
 
 
 
-        msg = f"自动结案完成\n成功: {success} 行\n失败: {fail} 行"
+        msg = f"鑷姩缁撴瀹屾垚\n鎴愬姛: {success} 琛孿n澶辫触: {fail} 琛?
 
 
 
@@ -907,13 +906,13 @@ class AuditCoreEvents:
 
 
 
-            msg += f"\n失败行号: {fail_rows[:10]}{'...' if len(fail_rows) > 10 else ''}\n请查看日志获取详情。"
+            msg += f"\n澶辫触琛屽彿: {fail_rows[:10]}{'...' if len(fail_rows) > 10 else ''}\n璇锋煡鐪嬫棩蹇楄幏鍙栬鎯呫€?
 
 
 
 
 
-        messagebox.showinfo("完成", msg)
+        messagebox.showinfo("瀹屾垚", msg)
 
 
 
@@ -931,7 +930,7 @@ class AuditCoreEvents:
 
 
 
-        """错误回调（取消时丢弃快照，不回写数据）"""
+        """閿欒鍥炶皟锛堝彇娑堟椂涓㈠純蹇収锛屼笉鍥炲啓鏁版嵁锛?""
 
 
 
@@ -967,13 +966,13 @@ class AuditCoreEvents:
 
 
 
-            self.set_status("自动结案已取消")
+            self.set_status("鑷姩缁撴宸插彇娑?)
 
 
 
 
 
-            messagebox.showwarning("已取消", "自动结案操作已取消，数据未变动。")
+            messagebox.showwarning("宸插彇娑?, "鑷姩缁撴鎿嶄綔宸插彇娑堬紝鏁版嵁鏈彉鍔ㄣ€?)
 
 
 
@@ -985,13 +984,13 @@ class AuditCoreEvents:
 
 
 
-            self.set_status("自动结案失败")
+            self.set_status("鑷姩缁撴澶辫触")
 
 
 
 
 
-            messagebox.showerror("错误", f"自动结案失败: {error}")
+            messagebox.showerror("閿欒", f"鑷姩缁撴澶辫触: {error}")
 
 
 
@@ -1003,7 +1002,7 @@ class AuditCoreEvents:
 
 
 
-            get_logger("Events").error(f"自动结案异步失败: {error}")
+            get_logger("Events").error(f"鑷姩缁撴寮傛澶辫触: {error}")
 
 
 
@@ -1021,7 +1020,7 @@ class AuditCoreEvents:
 
 
 
-        """取消自动结案"""
+        """鍙栨秷鑷姩缁撴"""
 
 
 
@@ -1043,7 +1042,7 @@ class AuditCoreEvents:
             except Exception:
                 pass  # timeout OK, cancel flag already set
 
-            self.set_status("正在取消自动结案...")
+            self.set_status("姝ｅ湪鍙栨秷鑷姩缁撴...")
 
 
 
@@ -1055,4 +1054,4 @@ class AuditCoreEvents:
 
 
 
-            messagebox.showwarning("提示", "当前没有正在运行的自动结案任务")
+            messagebox.showwarning("鎻愮ず", "褰撳墠娌℃湁姝ｅ湪杩愯鐨勮嚜鍔ㄧ粨妗堜换鍔?)

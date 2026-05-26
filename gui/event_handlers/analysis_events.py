@@ -5,7 +5,6 @@ from tkinter import messagebox
 import os, threading, time
 import pandas as pd
 from widgets import C
-from core.decorators import with_feedback
 from analysis.analyzer import do_analysis_v2
 from openpyxl import load_workbook
 from storage import storage
@@ -56,6 +55,7 @@ class AnalysisEvents:
             self.start_time = time.time()
             self._update_timer()
             t = threading.Thread(target=self._analysis_thread, daemon=True)
+            t.start()  # 启动线程
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -66,7 +66,6 @@ class AnalysisEvents:
                 self.run_btn.configure(state="normal", text="▶  开始分析")
             except:
                 pass
-        t.start()
 
     def _analysis_thread(self):
         """分析线程（委托给 Presenter）"""

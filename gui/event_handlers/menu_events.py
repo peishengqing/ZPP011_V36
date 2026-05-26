@@ -31,7 +31,6 @@ class MenuEvents:
             help_menu.add_command(label="关于", command=self._show_about)
 
         except Exception as e:
-            print(f"[WARN] 菜单栏初始化失败: {e}")
 
     # ==================== 历史源码查看 ====================
 
