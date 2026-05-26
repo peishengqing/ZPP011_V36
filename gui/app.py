@@ -265,7 +265,7 @@ class ZPP011Beautiful(EventsMixIn):
                 self.filter_panel.pack(side="right", fill="y")
             except Exception as e:
                 import traceback
-                print(f"[FilterPanel] 初始化失败: {e}\n{traceback.format_exc()}")
+                # FilterPanel 初始化失败，忽略
 
         build_ui(self)
         self._check_and_upgrade_db()  # v37.44 启动时检测并升级旧数据库
@@ -316,7 +316,6 @@ class ZPP011Beautiful(EventsMixIn):
 
     def _on_sidebar_filter_changed(self, filters):
         """边栏筛选条件变更时，使用 FilterEngine 过滤表格"""
-        print(f"[FILTER] 收到筛选条件: {filters}")
         if not hasattr(self, 'audit_data') or self.audit_data is None:
             return
 
@@ -332,7 +331,6 @@ class ZPP011Beautiful(EventsMixIn):
         self._refresh_audit_tree(df_filtered)
         self._update_audit_stats(df_filtered)
         self.status_lbl.configure(text=f"筛选结果：{len(df_filtered)} 条")
-        print(f"[FilterEngine] 筛选完成，剩余 {len(df_filtered)} 条记录")
 
     def _on_filter_panel_expand(self, expanded):
         """侧边栏展开/折叠时的回调（消除平移抖动）"""
@@ -347,7 +345,7 @@ class ZPP011Beautiful(EventsMixIn):
                 self.table_frame.configure(width=new_width)
                 self.root.update_idletasks()
         except Exception as e:
-            print(f"[_on_filter_panel_expand] 错误: {e}")
+            pass  # 忽略侧边栏展开错误
 
     def set_status(self, msg):
         self.status_var.set(msg)
@@ -559,7 +557,7 @@ class ZPP011Beautiful(EventsMixIn):
                             self.material_list.append(display)
                     self.material_list.sort()
             except Exception as e:
-                print(f'加载物料列表失败: {e}')
+                pass  # 加载物料列表失败，忽略
 
 
     def _load_audit_database(self):

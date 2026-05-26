@@ -34,10 +34,7 @@ def _log_error(msg):
         pass
 
 def _log(msg):
-    try:
-        print(msg)
-    except:
-        pass
+    pass
 
 plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False

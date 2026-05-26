@@ -16,14 +16,11 @@ def main():
         filetypes=[("Excel 文件", "*.xlsx"), ("所有文件", "*.*")]
     )
     if not excel_path:
-        print("未选择文件，退出")
         return
     
     # 生成输出路径：在原文件名后加 _专业报告
     base, ext = os.path.splitext(excel_path)
     output_path = f"{base}_专业报告.pptx"
-    
-    print(f"正在生成报告...\n输入文件：{excel_path}\n输出文件：{output_path}")
     success = run_ppt_generation(excel_path, output_path)
     
     if success:
