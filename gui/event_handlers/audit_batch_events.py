@@ -248,6 +248,15 @@ class AuditBatchEvents:
             messagebox.showinfo("完成", f"已将 {len(selected)} 行状态更改为「{new_status}」")
 
 
+        # Audit log (Task 004)
+        if hasattr(self, 'audit_logger'):
+            self.audit_logger.log(
+                action='batch_change_status',
+                old_value=old_status,
+                new_value=new_status,
+                source='batch'
+            )
+
 
 
 
@@ -1303,6 +1312,8 @@ class AuditBatchEvents:
 
                 messagebox.showinfo("完成", f"已为 {count} 行添加备注 {label}")
 
+
+        # Audit log (Task 004)
 
 
 

@@ -488,6 +488,29 @@ class ExportEvents:
 
     # ── 公共函数：获取 changelog.json 路径 ──────────
 
+    
+    def _export_audit_log(self):
+        """导出审计日志为 CSV（异步）"""
+        from tkinter import filedialog
+        import os
+        
+        output_path = filedialog.asksaveasfilename(
+            title="导出审计日志",
+            initialdir=os.path.expanduser("~"),
+            initialfile=f"audit_log_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            defaultextension=".csv",
+            filetypes=[("CSV 文件", "*.csv")]
+        )
+        
+        if not output_path:
+            return
+        
+        if hasattr(self, 'audit_logger'):
+            self.audit_logger.export_csv_async(
+                output_path,
+                callback=lambda path, error: self.root.after(0, lambda: messagebox.showinfo("导出完成", f"审计日志已导出到：\n{path}"))
+            )
+
     def _export_log(self):
         """导出日志到文件"""
 
@@ -921,6 +944,15 @@ class ExportEvents:
             f"新增列：审核状态 / 审核备注 / 审核人 / 审核时间\n"
             f"原始备份：{backup_name}",
         )
+
+
+        # 记录审计日志（Task 004）
+        if hasattr(self, 'audit_logger'):
+            self.audit_logger.log(
+                action='save_audit',
+                extra={'saved_count': saved_count},
+                source='manual'
+            )
 
     def _batch_export(self, event=None):
         """批量导出选中行为Excel或CSV"""
