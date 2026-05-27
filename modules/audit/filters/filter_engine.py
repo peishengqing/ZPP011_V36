@@ -105,7 +105,27 @@ class FilterEngine:
             else:
                 pass  # 未找到替代料列，不做筛选
 
-        # 8. 优先级颜色（如果有）
+        # 8. 审核来源
+        audit_source = filters.get('audit_source')
+        if audit_source and audit_source != '全部' and 'audit_source' in df.columns:
+            df = df[df['audit_source'] == audit_source]
+
+        # 9. 审核状态
+        audit_status = filters.get('audit_status')
+        if audit_status and audit_status != '全部' and 'audit_status' in df.columns:
+            df = df[df['audit_status'] == audit_status]
+
+        # 10. 校验提示（映射业务含义）
+        remark_check = filters.get('remark_check_status')
+        if remark_check and remark_check != '全部' and 'remark_check_status' in df.columns:
+            if remark_check == '需处理':
+                df = df[df['remark_check_status'] == 'red']
+            elif remark_check == '可疑':
+                df = df[df['remark_check_status'] == 'yellow']
+            elif remark_check == '正常':
+                df = df[df['remark_check_status'] == 'none']
+
+        # 11. 优先级颜色（如果有）
         color = filters.get('priority_color')
         if color and color != '全部' and '_priority_label' in df.columns:
             df = df[df['_priority_label'] == color]

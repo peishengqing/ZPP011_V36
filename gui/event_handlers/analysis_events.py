@@ -502,6 +502,61 @@ class AnalysisEvents:
             audit_df['AI建议'] = ''
         if 'audit_result' not in audit_df.columns:
             audit_df['audit_result'] = ''
+
+        # ====== 补充 _is_alt 列（替代料标识）======
+        if hasattr(self, 'alt_pairs') and self.alt_pairs:
+            alt_materials = set()
+            for pair in self.alt_pairs:
+                for item in pair:
+                    if isinstance(item, (list, tuple)):
+                        desc = str(item[-1]).strip() if len(item) > 1 else str(item[0]).strip()
+                    else:
+                        desc = str(item).strip()
+                    if desc:
+                        alt_materials.add(desc)
+            name_col = None
+            for col in ['物料名称', '物料描述', '组件物料描述']:
+                if col in audit_df.columns:
+                    name_col = col
+                    break
+            if name_col:
+                audit_df['_is_alt'] = audit_df[name_col].astype(str).str.strip().isin(alt_materials)
+                print(f"[临时补丁] 已标记替代料：{audit_df['_is_alt'].sum()} 行")
+            else:
+                print("[临时补丁] 未找到物料名称列，无法标记替代料")
+                audit_df['_is_alt'] = False
+        else:
+            audit_df['_is_alt'] = False
+
+        # ====== 补充审核来源（audit_source）======
+        if 'audit_source' not in audit_df.columns:
+            def infer_audit_source(row):
+                src = row.get('审核来源', '')
+                if src and src not in ('nan', 'None', ''):
+                    return src
+                note_src = str(row.get('备注来源', '')).strip()
+                if 'AI' in note_src:
+                    return 'AI'
+                if note_src in ('人工填写', '手动'):
+                    return '手动'
+                if note_src == '替代料':
+                    return '替代料'
+                if row.get('_is_alt', False):
+                    return '替代料'
+                return '系统'
+            audit_df['audit_source'] = audit_df.apply(infer_audit_source, axis=1)
+
+        # ====== 补充审核状态（audit_status）======
+        if 'audit_status' not in audit_df.columns:
+            if 'audit_result' in audit_df.columns:
+                audit_df['audit_status'] = audit_df['audit_result'].apply(
+                    lambda x: '已审核' if x and str(x).strip() not in ('', 'nan') else '未审核'
+                )
+            else:
+                audit_df['audit_status'] = audit_df['备注原因'].apply(
+                    lambda x: '已审核' if x and str(x).strip() not in ('', 'nan') else '未审核'
+                )
+
         return audit_df
 
     def _on_load_done(self, result_df):
