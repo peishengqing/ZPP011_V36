@@ -118,9 +118,9 @@ class FilterEngine:
         # 10. 校验提示（映射业务含义）
         remark_check = filters.get('remark_check_status')
         if remark_check and remark_check != '全部' and 'remark_check_status' in df.columns:
-            if remark_check == '需处理':
+            if remark_check == '红色':
                 df = df[df['remark_check_status'] == 'red']
-            elif remark_check == '可疑':
+            elif remark_check == '黄色':
                 df = df[df['remark_check_status'] == 'yellow']
             elif remark_check == '正常':
                 df = df[df['remark_check_status'] == 'none']

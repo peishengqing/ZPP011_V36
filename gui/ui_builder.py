@@ -263,21 +263,17 @@ def _build_ui(self):
         filter_bar.pack(fill="x", padx=12, pady=(0, 5))
 
         filter_cols = [
-            ('factory', '工厂'),
-            ('order_date', '订单日期'),
-            ('admin', '车间'),
-            ('name', '物料描述'),
-            ('status', '状态'),
-            ('dev_rate', '偏差率%'),
-            ('is_alt', '替代料'),
             ('remark', '备注'),
             ('ai_result', 'AI审核'),
             ('_color', '颜色'),
+            ('audit_source', '审核来源'),
+            ('audit_status', '审核状态'),
+            ('remark_check_status', '校验提示'),
         ]
         # ── P1#12：筛选栏宽度映射 ──
         filter_width = {
-            '工厂': 8, '订单日期': 8, '状态': 8,
-            '车间': 6, '替代料': 6, 'AI审核': 6, '颜色': 7,
+            '备注': 8, 'AI审核': 8, '颜色': 7,
+            '审核来源': 8, '审核状态': 8, '校验提示': 8,
         }
 
         self.filter_widgets = {}
@@ -335,12 +331,26 @@ def _build_ui(self):
                     self.filter_vars[col_key] = tk.StringVar(value="全部")
                     self.filter_widgets[col_key] = cb
                 else:
-                    cb = ttk.Combobox(col_frame, state="readonly", font=("Microsoft YaHei", 8), width=col_width)
+                    # 为新增筛选预设选项值
+                    preset_options = {
+                        'audit_source': ["全部", "AI", "手动", "替代料", "系统"],
+                        'audit_status': ["全部", "已审核", "未审核"],
+                        'remark_check_status': ["全部", "红色", "黄色", "正常"],
+                    }
+                    cb = ttk.Combobox(
+                        col_frame, state="readonly",
+                        font=("Microsoft YaHei", 8),
+                        width=col_width,
+                        values=preset_options.get(col_key, [])
+                    )
                     cb.pack(fill="x")
-                    cb.bind("<<ComboboxSelected>>", lambda e, k=col_key: self._on_filter_changed(k))
+                    if preset_options.get(col_key):
+                        cb.current(0)
+                    cb.bind("<<ComboboxSelected>>",
+                        lambda e, k=col_key: self._on_filter_changed(k))
                     self.filter_widgets[col_key] = cb
                 # ── P1#12：常用组 后加分隔线 ──
-                if col_key == 'status':
+                if col_key == 'ai_result':
                     sep = tk.Frame(filter_bar, bg=C['surface'], width=2, height=20)
                     sep.configure(bg='#cccccc')  # 分隔线颜色
                     sep.grid(row=row_idx, column=col_idx+1, padx=(8, 0), pady=2, sticky='ns')
@@ -350,9 +360,9 @@ def _build_ui(self):
                 col_idx = 0
                 row_idx += 1
 
-        # 重置按钮放在第二行末尾
+        # 重置按钮放在第二行
         reset_btn_frame = tk.Frame(filter_bar, bg=C['surface'])
-        reset_btn_frame.grid(row=1, column=4, pady=(4,0), sticky="e")
+        reset_btn_frame.grid(row=1, column=0, pady=(4,0), sticky="w")
         reset_btn = btn(reset_btn_frame, "重置", self._reset_all_filters,
                               bg="#d0d7de", fg=C['text'], width=6)
         reset_btn.pack(side="left")
