@@ -231,6 +231,14 @@ class ZPP011Beautiful(EventsMixIn):
         self.output_dir = tk.StringVar(value=os.path.join(os.path.expanduser('~'), 'Desktop'))
         self.start_date = tk.StringVar()
         self.end_date = tk.StringVar()
+        
+        # 日期筛选变量（日历选择器）
+        self.date_start_val = None
+        self.date_end_val = None
+        self._tmp_start = None
+        self._tmp_end = None
+        self._picker_year = None
+        self._picker_month = None
         self.material_search = tk.StringVar()
 
         self.filter_vars = {}
@@ -325,6 +333,11 @@ class ZPP011Beautiful(EventsMixIn):
             self.filter_engine = FilterEngine()
 
         # 应用过滠
+        # 传递日期范围变量（日历选择器）
+        if hasattr(self, 'date_start_val'):
+            filters['date_start'] = self.date_start_val
+            filters['date_end'] = self.date_end_val
+        
         df_filtered = self.filter_engine.apply(filters, self.audit_data)
 
         # 刷新表格和统计
@@ -1238,3 +1251,117 @@ class ZPP011Beautiful(EventsMixIn):
         sorted_list = sorted(preset_list, key=lambda x: freq.get(x, 0), reverse=True)
         return sorted_list, freq
 
+    def _show_date_picker(self):
+        """弹出日历选择窗口（简化版）"""
+        import calendar
+        from datetime import datetime, timedelta
+        from tkinter import Toplevel, Frame, Label, Button
+        
+        win = Toplevel(self.root)
+        win.title("选择日期范围")
+        win.geometry("300x280")
+        win.resizable(False, False)
+        
+        # 初始化临时变量
+        if not hasattr(self, '_temp_start'):
+            self._temp_start = None
+        if not hasattr(self, '_temp_end'):
+            self._temp_end = None
+        
+        self._temp_start = None
+        self._temp_end = None
+        
+        # 当前显示的年月
+        today = datetime.today()
+        self._picker_year = today.year
+        self._picker_month = today.month
+        
+        def update_calendar():
+            """更新日历显示"""
+            # 清空旧控件
+            for widget in cal_frame.winfo_children():
+                widget.destroy()
+            
+            # 月份标题
+            Label(cal_frame, text=f"{self._picker_year}年 {self._picker_month}月",
+                  font=("Microsoft YaHei", 10, "bold")).grid(row=0, column=1, columnspan=5)
+            
+            # 星期标题
+            for i, day in enumerate(["一", "二", "三", "四", "五", "六", "日"]):
+                Label(cal_frame, text=day, font=("Microsoft YaHei", 8)).grid(row=1, column=i)
+            
+            # 日期网格
+            cal = calendar.monthcalendar(self._picker_year, self._picker_month)
+            for r, week in enumerate(cal, 2):
+                for c, day in enumerate(week):
+                    if day == 0:
+                        continue
+                    btn = Button(cal_frame, text=str(day), width=4,
+                                command=lambda d=day: self._on_day_click(d))
+                    btn.grid(row=r, column=c, padx=1, pady=1)
+        
+        def change_month(delta):
+            """切换月份"""
+            self._picker_month += delta
+            if self._picker_month > 12:
+                self._picker_month = 1
+                self._picker_year += 1
+            elif self._picker_month < 1:
+                self._picker_month = 12
+                self._picker_year -= 1
+            update_calendar()
+        
+        # 控件布局
+        top_frame = Frame(win)
+        top_frame.pack(pady=5)
+        Button(top_frame, text="<", command=lambda: change_month(-1)).pack(side="left", padx=5)
+        Label(top_frame, text="日历", font=("Microsoft YaHei", 10)).pack(side="left", padx=10)
+        Button(top_frame, text=">", command=lambda: change_month(1)).pack(side="left", padx=5)
+        
+        cal_frame = Frame(win)
+        cal_frame.pack(pady=5)
+        
+        btn_frame = Frame(win)
+        btn_frame.pack(pady=5)
+        Button(btn_frame, text="清除", command=self._clear_date_filter).pack(side="left", padx=5)
+        Button(btn_frame, text="确定", command=self._apply_date_selection).pack(side="left", padx=5)
+        
+        update_calendar()
+    
+    def _on_day_click(self, day):
+        """点击日期"""
+        from datetime import date
+        clicked = date(self._picker_year, self._picker_month, day)
+        
+        if self._temp_start is None or self._temp_end is not None:
+            # 第一次点击或已选完区间，重新开始
+            self._temp_start = clicked
+            self._temp_end = None
+        else:
+            # 第二次点击，确定结束日期
+            if clicked > self._temp_start:
+                self._temp_end = clicked
+            else:
+                self._temp_end = self._temp_start
+                self._temp_start = clicked
+    
+    def _apply_date_selection(self):
+        """应用日期选择"""
+        self.date_start_val = self._temp_start
+        self.date_end_val = self._temp_end
+        
+        if self.date_start_val and self.date_end_val:
+            self.date_range_var.set(f"{self.date_start_val} ~ {self.date_end_val}")
+        elif self.date_start_val:
+            self.date_range_var.set(f"{self.date_start_val} 起")
+        else:
+            self.date_range_var.set("全部日期")
+        
+        self._on_filter_changed('date_range')
+    
+    def _clear_date_filter(self):
+        """清除日期筛选"""
+        self.date_start_val = None
+        self.date_end_val = None
+        self.date_range_var.set("全部日期")
+        self._on_filter_changed('date_range')
