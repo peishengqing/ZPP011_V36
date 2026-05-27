@@ -557,6 +557,22 @@ class AnalysisEvents:
                     lambda x: '已审核' if x and str(x).strip() not in ('', 'nan') else '未审核'
                 )
 
+        # 生成优先级颜色标签（用于颜色筛选）
+        if '偏差率(%)' in audit_df.columns:
+            def get_priority_label(rate):
+                if pd.isna(rate):
+                    return '绿'
+                rate = abs(float(rate))
+                if rate > 30:
+                    return '红'
+                elif rate > 20:
+                    return '橙'
+                elif rate > 10:
+                    return '黄'
+                else:
+                    return '绿'
+            audit_df['_priority_label'] = audit_df['偏差率(%)'].apply(get_priority_label)
+
         return audit_df
 
     def _on_load_done(self, result_df):
