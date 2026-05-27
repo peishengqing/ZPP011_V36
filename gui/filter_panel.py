@@ -81,7 +81,7 @@ class FilterPanel(tk.Frame):
         self.dev_rate_var = tk.StringVar(value="全部")
         self.dev_rate_cb = ttk.Combobox(
             self.group_dev, textvariable=self.dev_rate_var,
-            values=["全部", ">10%", ">20%", ">30%", "<-10%", "<-20%"],
+            values=["全部", ">10%", ">20%", ">30%", "<-10%", "<-20%", "绝对值≥10%"],
             state="readonly", width=20
         )
         self.dev_rate_cb.grid(row=0, column=1, padx=5, pady=2)

@@ -84,121 +84,128 @@ class MenuEvents:
         ttk.Button(win, text="关闭", command=win.destroy).pack(pady=10)
 
     def _show_about(self):
-
         from utils.version_history import (
             get_current_version,
-            get_version_display,
-            get_version_history_text,
             APP_NAME,
             AUTHOR,
+            VERSION_HISTORY,
         )
 
         _ver_str = get_current_version()
-
-        _ver_date = ""
-
-        # 从 VERSION_HISTORY 获取日期
-
-        from utils.version_history import VERSION_HISTORY
-
-        if VERSION_HISTORY:
-            _ver_date = VERSION_HISTORY[0].get("date", "")
-
-        changelog = get_version_history_text()
-
-        info = (
-            f"{APP_NAME}\n"
-            f"版本：{_ver_str}\n"
-            f"作者：{AUTHOR}\n"
-            f"日期：{_ver_date}\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            "功能：SAP生产订单偏差自动分析\n"
-            "特点：多条件筛选 + 批量操作 + 替代料管理\n"
-            "新增：AI审核建议、审核进度条、日志导出\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        )
+        _ver_date = VERSION_HISTORY[0].get("date", "") if VERSION_HISTORY else ""
 
         d = tk.Toplevel(self.root)
-
-        d.title("关于")
-
-        d.geometry("480x580")
-
-        d.resizable(False, False)
-
+        d.title("关于本软件")
+        d.geometry("700x560")
+        d.resizable(True, True)
         d.transient(self.root)
-
         d.grab_set()
 
-        container = tk.Frame(d, bg="#1a1a2e")
-
-        container.pack(fill="both", expand=True)
+        # ── 深色顶部信息栏 ──
+        header = tk.Frame(d, bg="#1a1a2e")
+        header.pack(fill="x")
 
         tk.Label(
-            container,
-            text="关于",
+            header,
+            text=APP_NAME,
             font=("Microsoft YaHei", 14, "bold"),
             fg="#e94560",
             bg="#1a1a2e",
-        ).pack(pady=(15, 5))
-
-        info_lbl = tk.Label(
-            container,
-            text=info,
-            font=("Microsoft YaHei", 10),
-            fg="#eaeaea",
-            bg="#16213e",
-            justify="left",
-            anchor="w",
-            padx=20,
-            pady=12,
-        )
-
-        info_lbl.pack(fill="x", padx=30, ipady=4)
+        ).pack(pady=(14, 2))
 
         tk.Label(
-            container,
-            text="📋 版本日志",
-            font=("Microsoft YaHei", 11, "bold"),
-            fg="#0f3460",
+            header,
+            text=f"版本：{_ver_str}   |   发布日期：{_ver_date}   |   制作人：{AUTHOR}   |   © 2026 云南达利食品有限公司",
+            font=("Microsoft YaHei", 9),
+            fg="#aaaacc",
             bg="#1a1a2e",
+        ).pack(pady=(0, 12))
+
+        # ── 版本日志区域标题 ──
+        tk.Label(
+            d,
+            text="  📋 完整版本日志",
+            font=("Microsoft YaHei", 10, "bold"),
+            fg="#1a365d",
+            bg="#e8eaf6",
             anchor="w",
-            padx=30,
-        ).pack(fill="x", pady=(10, 0))
+            relief="flat",
+        ).pack(fill="x", padx=0, pady=(8, 0))
 
-        log_frame = tk.Frame(container, bg="#f8f9fa")
+        # ── 带滚动条的日志文本框 ──
+        log_frame = tk.Frame(d)
+        log_frame.pack(fill="both", expand=True, padx=10, pady=(4, 6))
 
-        log_frame.pack(fill="both", expand=True, padx=30, pady=(5, 15))
+        scrollbar = tk.Scrollbar(log_frame)
+        scrollbar.pack(side="right", fill="y")
 
         tb = tk.Text(
             log_frame,
-            font=("Microsoft YaHei", 9),
+            font=("Consolas", 9),
             fg="#1f2328",
-            bg="#ffffff",
+            bg="#fafafa",
             relief="flat",
-            state="disabled",
             wrap="word",
-            height=18,
+            yscrollcommand=scrollbar.set,
+            bd=1,
         )
+        tb.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=tb.yview)
 
-        tb.pack(fill="both", expand=True)
+        # 字体标签
+        tb.tag_config("ver_header", font=("Microsoft YaHei", 10, "bold"), foreground="#1a365d", spacing1=6)
+        tb.tag_config("feat",  font=("Consolas", 9), foreground="#276749")
+        tb.tag_config("fix",   font=("Consolas", 9), foreground="#c0392b")
+        tb.tag_config("opt",   font=("Consolas", 9), foreground="#2b6cb0")
+        tb.tag_config("note",  font=("Consolas", 9), foreground="#7d6608")
+        tb.tag_config("sep",   font=("Consolas", 8), foreground="#999999")
 
-        tb.configure(state="normal")
+        # 按 VERSION_HISTORY 逐版本填充（最新在顶）
+        for v in VERSION_HISTORY:
+            ver_label = f"【{v.get('version', '?')}】  {v.get('date', '')}"
+            tb.insert(tk.END, ver_label + "\n", "ver_header")
 
-        tb.insert("1.0", changelog.strip())
+            for item in v.get("features", []):
+                tb.insert(tk.END, f"  ✨ {item}\n", "feat")
+            for item in v.get("fixes", []):
+                tb.insert(tk.END, f"  🐛 {item}\n", "fix")
+            for item in v.get("optimizations", []):
+                tb.insert(tk.END, f"  ⚡ {item}\n", "opt")
+            for item in v.get("notes", []):
+                tb.insert(tk.END, f"  📌 {item}\n", "note")
+            for item in v.get("lessons", []):
+                tb.insert(tk.END, f"  📌 {item}\n", "note")
+
+            # 兼容旧格式 changes 数组
+            for change in v.get("changes", []):
+                if "✨" in change or "【新增】" in change or "✦" in change:
+                    tb.insert(tk.END, f"  ✨ {change.lstrip('✨✦ ')}\n", "feat")
+                elif "🔧" in change or "【修复】" in change:
+                    tb.insert(tk.END, f"  🐛 {change.lstrip('🔧 ')}\n", "fix")
+                elif "⚡" in change or "【优化】" in change or "🏗" in change:
+                    tb.insert(tk.END, f"  ⚡ {change.lstrip('⚡🏗️ ')}\n", "opt")
+                elif "📌" in change or "【教训】" in change:
+                    tb.insert(tk.END, f"  📌 {change.lstrip('📌 ')}\n", "note")
+                else:
+                    tb.insert(tk.END, f"  · {change}\n", "fix")
+
+            tb.insert(tk.END, "\n", "sep")
 
         tb.configure(state="disabled")
+        tb.see("1.0")
 
+        # ── 确定按钮 ──
         tk.Button(
-            container,
-            text="确定",
+            d,
+            text="  关 闭  ",
             font=("Microsoft YaHei", 10),
             command=d.destroy,
             bg="#e94560",
             fg="white",
             relief="flat",
-            padx=20,
+            padx=16,
             pady=5,
+            cursor="hand2",
         ).pack(pady=(0, 12))
 
     # ── 界面构建 ────────────────
