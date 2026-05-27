@@ -1,4 +1,4 @@
-import tkinter as tk
+﻿import tkinter as tk
 from tkinter import scrolledtext, messagebox, filedialog, ttk
 from widgets import C, STEPS, card, btn, label, entry
 from domain.alt_material import alt_manager
@@ -269,11 +269,12 @@ def _build_ui(self):
             ('audit_source', '审核来源'),
             ('audit_status', '审核状态'),
             ('remark_check_status', '校验提示'),
+            ('date_range', '订单日期'),
         ]
         # ── P1#12：筛选栏宽度映射 ──
         filter_width = {
             '备注': 8, 'AI审核': 8, '颜色': 7,
-            '审核来源': 8, '审核状态': 8, '校验提示': 8,
+            '审核来源': 8, '审核状态': 8, '校验提示': 8, '订单日期': 8,
         }
 
         self.filter_widgets = {}
@@ -318,37 +319,46 @@ def _build_ui(self):
                 self.date_start_entry.bind("<Return>", lambda e: self._on_filter_changed('order_date'))
                 self.date_end_entry.bind("<Return>", lambda e: self._on_filter_changed('order_date'))
                 self.filter_widgets[col_key] = (self.date_start_entry, self.date_end_entry)
+
+            elif col_key == 'date_range':
+                # 日期范围按钮 + 显示标签
+                date_btn = tk.Button(col_frame, text="[日历]",
+                                     command=self._show_date_picker,
+                                     font=("Microsoft YaHei", 9),
+                                     bg='#4a90d9', fg='white',
+                                     cursor='hand2', relief='raised', padx=6)
+                date_btn.pack(fill="x", pady=(0, 2))
+                self.date_range_var = tk.StringVar(value="全部日期")
+                tk.Label(col_frame, textvariable=self.date_range_var,
+                         font=("Microsoft YaHei", 8), fg=C['text_dim']).pack()
+            elif col_key == 'priority_color':
+                color_options = ["全部", "🔴 红", "🟠 橙", "🟡 黄", "🟢 绿"]
+                cb = ttk.Combobox(col_frame, state="readonly", font=("Microsoft YaHei", 8),
+                              width=col_width, values=color_options)
+                cb.current(0)
+                cb.pack(fill="x")
+                cb.bind("<<ComboboxSelected>>", lambda e, k=col_key: self._on_filter_changed(k))
+                self.filter_vars[col_key] = tk.StringVar(value="全部")
+                self.filter_widgets[col_key] = cb
             else:
-                col_width = filter_width.get(col_label, 10)
-                # ── P1#13：颜色筛选下拉框 ──
-                if col_key == '_color':
-                    color_options = ["全部", "🔴 红", "🟠 橙", "🟡 黄", "🟢 绿"]
-                    cb = ttk.Combobox(col_frame, state="readonly", font=("Microsoft YaHei", 8), 
-                                  width=col_width, values=color_options)
+                # 为新增筛选预设选项值
+                preset_options = {
+                    'audit_source': ["全部", "AI", "手动", "替代料", "系统"],
+                    'audit_status': ["全部", "已审核", "未审核"],
+                    'remark_check_status': ["全部", "需处理", "可疑", "正常"],
+                }
+                cb = ttk.Combobox(
+                    col_frame, state="readonly",
+                    font=("Microsoft YaHei", 8),
+                    width=col_width,
+                    values=preset_options.get(col_key, [])
+                )
+                cb.pack(fill="x")
+                if preset_options.get(col_key):
                     cb.current(0)
-                    cb.pack(fill="x")
-                    cb.bind("<<ComboboxSelected>>", lambda e, k=col_key: self._on_filter_changed(k))
-                    self.filter_vars[col_key] = tk.StringVar(value="全部")
-                    self.filter_widgets[col_key] = cb
-                else:
-                    # 为新增筛选预设选项值
-                    preset_options = {
-                        'audit_source': ["全部", "AI", "手动", "替代料", "系统"],
-                        'audit_status': ["全部", "已审核", "未审核"],
-                        'remark_check_status': ["全部", "需处理", "可疑", "正常"],
-                    }
-                    cb = ttk.Combobox(
-                        col_frame, state="readonly",
-                        font=("Microsoft YaHei", 8),
-                        width=col_width,
-                        values=preset_options.get(col_key, [])
-                    )
-                    cb.pack(fill="x")
-                    if preset_options.get(col_key):
-                        cb.current(0)
-                    cb.bind("<<ComboboxSelected>>",
-                        lambda e, k=col_key: self._on_filter_changed(k))
-                    self.filter_widgets[col_key] = cb
+                cb.bind("<<ComboboxSelected>>",
+                    lambda e, k=col_key: self._on_filter_changed(k))
+                self.filter_widgets[col_key] = cb
                 # ── P1#12：常用组 后加分隔线 ──
                 if col_key == 'ai_result':
                     sep = tk.Frame(filter_bar, bg=C['surface'], width=2, height=20)
