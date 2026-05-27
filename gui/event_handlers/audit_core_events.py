@@ -31,7 +31,10 @@ class AuditCoreEvents:
 
 
 
-            messagebox.showwarning("提示", "AI审核正在运行，请等待完成或点击取消")
+            if getattr(self, '_auto_chain_mode', False):
+                self.log("AI审核正在运行，跳过自动审核", "warn")
+            else:
+                messagebox.showwarning("提示", "AI审核正在运行，请等待完成或点击取消")
 
 
 
@@ -49,7 +52,10 @@ class AuditCoreEvents:
 
 
 
-            messagebox.showwarning("警告", "没有审核数据，请先加载审核数据")
+            if getattr(self, '_auto_chain_mode', False):
+                self.log("自动审核跳过：没有审核数据", "warn")
+            else:
+                messagebox.showwarning("警告", "没有审核数据，请先加载审核数据")
 
 
 
@@ -85,7 +91,10 @@ class AuditCoreEvents:
 
 
 
-            messagebox.showinfo("提示", "没有需要AI审核的行")
+            if getattr(self, '_auto_chain_mode', False):
+                self.log("没有需要AI审核的行，跳过自动审核", "info")
+            else:
+                messagebox.showinfo("提示", "没有需要AI审核的行")
 
 
 
@@ -469,7 +478,10 @@ class AuditCoreEvents:
 
 
 
-            messagebox.showinfo("完成", f"AI审核完成，共处理 {len(popup_rows)} 条记录")
+            if getattr(self, '_auto_chain_mode', False):
+                self.log(f"AI审核完成（自动模式），共处理 {len(popup_rows)} 条", "success")
+            else:
+                messagebox.showinfo("完成", f"AI审核完成，共处理 {len(popup_rows)} 条记录")
 
 
 
@@ -478,6 +490,13 @@ class AuditCoreEvents:
 
 
 
+
+
+
+        # 自动链模式：AI审核完成后自动结案
+        if getattr(self, '_auto_chain_mode', False):
+            self._auto_chain_mode = False
+            self.root.after(200, self._auto_close_passed)
 
 
 
@@ -1056,3 +1075,34 @@ class AuditCoreEvents:
 
 
             messagebox.showwarning("提示", "当前没有正在运行的自动结案任务")
+
+    def _auto_audit_and_close(self):
+        """分析完成后自动执行 AI 审核和自动结案（静默模式）"""
+        if not hasattr(self, 'audit_data') or self.audit_data is None or self.audit_data.empty:
+            self.log("自动审核跳过：无审核数据", "warn")
+            return
+        # 防止重复执行
+        if getattr(self, '_auto_processed', False):
+            return
+        self._auto_processed = True
+        self.log("开始自动 AI 审核备注...", "info")
+        self._auto_chain_mode = True
+        self._run_ai_audit()
+
+    def _auto_close_passed(self):
+        """自动结案：AI 审核结果为'通过'的记录 -> 审核状态=已审核，来源=系统自动"""
+        if not hasattr(self, 'audit_data') or self.audit_data is None or self.audit_data.empty:
+            self.log("自动结案跳过：无审核数据", "warn")
+            return
+        if 'audit_result' not in self.audit_data.columns:
+            self.log("自动结案跳过：缺少 audit_result 列", "warn")
+            return
+        passed_mask = self.audit_data['audit_result'] == '通过'
+        if not passed_mask.any():
+            self.log("没有 AI 审核结果为'通过'的记录，跳过自动结案", "info")
+            return
+        count = passed_mask.sum()
+        self.audit_data.loc[passed_mask, 'audit_status'] = '已审核'
+        self.audit_data.loc[passed_mask, 'audit_source'] = '系统自动'
+        self._refresh_audit_tree(self.audit_data)
+        self.log(f"自动结案：已将 {count} 条 AI 审核通过的记录标记为已审核（来源：系统自动）", "success")

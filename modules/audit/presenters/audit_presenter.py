@@ -274,7 +274,8 @@ class AuditPresenter:
             elif key == 'dev_rate':
                 rv = pd.to_numeric(df[col_name], errors='coerce')
                 ops = {'>10%': rv > 10, '>20%': rv > 20, '>30%': rv > 30,
-                       '绝对值>10%': rv.abs() > 10, '<-10%': rv < -10, '<-20%': rv < -20}
+                       '绝对值>10%': rv.abs() > 10, '绝对值≥10%': rv.abs() >= 10,
+                       '<-10%': rv < -10, '<-20%': rv < -20}
                 if val in ops:
                     df = df[ops[val]]
             elif key == 'remark':

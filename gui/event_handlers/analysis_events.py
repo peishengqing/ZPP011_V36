@@ -649,6 +649,9 @@ class AnalysisEvents:
                 self.progress_bar.pack_forget()
             if hasattr(self, 'set_status'):
                 self.set_status(f"加载完成，共 {total} 行")
+            # 自动 AI 审核 + 自动结案
+            if not getattr(self, '_auto_processed', False):
+                self.root.after(500, self._auto_audit_and_close)
         except Exception as e:
             if hasattr(self, 'progress_bar'):
                 self.progress_bar.stop()
