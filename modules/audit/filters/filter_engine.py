@@ -125,7 +125,7 @@ class FilterEngine:
             elif remark_check == '正常':
                 df = df[df['remark_check_status'] == 'none']
 
-        # 11. 优先级颜色（如果有）
+        # 11. 颜色筛选（优先级标签）
         color = filters.get('priority_color')
         if color and color != '全部' and '_priority_label' in df.columns:
             df = df[df['_priority_label'] == color]

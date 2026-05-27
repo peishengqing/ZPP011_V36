@@ -265,7 +265,7 @@ def _build_ui(self):
         filter_cols = [
             ('remark', '备注'),
             ('ai_result', 'AI审核'),
-            ('_color', '颜色'),
+            ('priority_color', '颜色'),
             ('audit_source', '审核来源'),
             ('audit_status', '审核状态'),
             ('remark_check_status', '校验提示'),
@@ -335,7 +335,7 @@ def _build_ui(self):
                     preset_options = {
                         'audit_source': ["全部", "AI", "手动", "替代料", "系统"],
                         'audit_status': ["全部", "已审核", "未审核"],
-                        'remark_check_status': ["全部", "红色", "黄色", "正常"],
+                        'remark_check_status': ["全部", "需处理", "可疑", "正常"],
                     }
                     cb = ttk.Combobox(
                         col_frame, state="readonly",
