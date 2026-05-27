@@ -127,10 +127,11 @@ class FilterEngine:
             elif remark_check == '正常':
                 df = df[df['remark_check_status'] == 'none']
 
-        # 11. 颜色筛选（优先级标签）
-        color = filters.get('priority_color')
+        # 11. 颜色筛选（优先级标签）——同时兼容侧边栏 priority_color 和顶部栏 _color
+        color = filters.get('priority_color') or filters.get('_color')
         if color and color != '全部' and '_priority_label' in df.columns:
-            df = df[df['_priority_label'] == color]
+            cmap = {'红': '红', '橙': '橙', '黄': '黄', '绿': '绿'}
+            df = df[df['_priority_label'] == cmap.get(color, color)]
 
         # 12. 日期范围筛选
         date_start = filters.get('date_start')
@@ -143,5 +144,45 @@ class FilterEngine:
             if date_end:
                 end_dt = pd.to_datetime(date_end)
                 df = df[df['订单日期'] <= end_dt]
+
+        # 13. 关键词搜索（全文匹配）
+        search = filters.get('search', '').strip()
+        if search:
+            mask = pd.Series(False, index=df.index)
+            for col in df.columns:
+                mask |= df[col].astype(str).str.contains(search, case=False, na=False)
+            df = df[mask]
+
+        # 14. 备注筛选
+        remark = filters.get('remark')
+        if remark and remark != '全部':
+            remark_col = next(
+                (c for c in ['备注原因', '备注', 'remark'] if c in df.columns), None
+            )
+            if remark_col:
+                temp = df[remark_col].fillna('').astype(str).str.strip().replace('nan', '')
+                if remark == '为空':
+                    df = df[temp == '']
+                elif remark == '不为空':
+                    df = df[temp != '']
+                else:
+                    df = df[temp == remark]
+
+        # 15. AI审核结果筛选
+        ai_result = filters.get('ai_result')
+        if ai_result and ai_result != '全部':
+            src_col = next(
+                (c for c in ['审核来源', 'audit_source'] if c in df.columns), None
+            )
+            if src_col:
+                if ai_result == '合格':
+                    df = df[df[src_col] == '审核合格']
+                elif ai_result == '需改进':
+                    df = df[df[src_col] == '审核待改进']
+                elif ai_result == 'AI建议':
+                    df = df[df[src_col].str.startswith('AI建议', na=False)]
+                elif ai_result == '未处理':
+                    ai_sources = {'审核合格', '审核待改进', 'AI建议', 'AI建议（小偏差）'}
+                    df = df[~(df[src_col].isin(ai_sources) | df[src_col].isna())]
 
         return df
