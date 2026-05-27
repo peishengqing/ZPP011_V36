@@ -28,6 +28,10 @@ class MenuEvents:
 
             help_menu.add_separator()
 
+            help_menu.add_command(label="健康检查", command=self._show_health_check)
+
+            help_menu.add_separator()
+
             help_menu.add_command(label="关于", command=self._show_about)
 
         except Exception as e:
@@ -207,6 +211,11 @@ class MenuEvents:
             pady=5,
             cursor="hand2",
         ).pack(pady=(0, 12))
+
+    def _show_health_check(self):
+        """打开健康检查面板"""
+        from gui.health_check_dialog import HealthCheckDialog
+        HealthCheckDialog(self.root)
 
     # ── 界面构建 ────────────────
 

@@ -269,13 +269,12 @@ def _build_ui(self):
             ('ai_result', 'AI审核'),
             ('_color', '颜色'),
             ('audit_source', '审核来源'),
-            ('status', '状态'),
             ('remark_check_status', '校验提示'),
         ]
         # ── P1#12：筛选栏宽度映射 ──
         filter_width = {
             '订单日期': 16, '备注': 10, 'AI审核': 8, '颜色': 7,
-            '审核来源': 10, '状态': 10, '校验提示': 10,
+            '审核来源': 10, '校验提示': 10,
         }
 
         self.filter_widgets = {}
@@ -337,7 +336,6 @@ def _build_ui(self):
                     # 为新增筛选预设选项值
                     preset_options = {
                         'audit_source': ["全部", "AI", "手动", "替代料", "系统"],
-                        'status': ["全部", "已备注", "需补备注"],
                         'remark_check_status': ["全部", "红色", "黄色", "正常"],
                     }
                     cb = ttk.Combobox(
