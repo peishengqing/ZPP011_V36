@@ -12,6 +12,9 @@ import traceback
 import calendar
 import json
 import sys
+
+# ── Task 003：异步备份管理器 ──
+from core.backup_manager import BackupManager
 class AnalysisEvents:
     """数据分析、加载、进度控制事件"""
 
@@ -58,6 +61,17 @@ class AnalysisEvents:
                 self._set_step(i, False)
             self.start_time = time.time()
             self._update_timer()
+
+            # ── Task 003：分析前异步备份 ──
+            _backup_mgr = BackupManager()
+            _backup_mgr.backup_before_analysis_async(
+                input_excel_path=path,
+                progress_callback=None,
+                done_callback=lambda meta, err: self.root.after(
+                    0, lambda: self._on_backup_done(meta, err)
+                ),
+            )
+
             t = threading.Thread(target=self._analysis_thread, daemon=True)
             t.start()  # 启动线程
         except Exception as e:
@@ -72,6 +86,13 @@ class AnalysisEvents:
                 pass
             finally:
                 self.analysis_lock.release()
+
+    def _on_backup_done(self, meta, error):
+        """异步备份完成回调（主线程安全）"""
+        if error:
+            self.log(f"⚠ 分析前备份失败：{error}", "warn")
+        else:
+            self.log("✅ 分析前备份完成", "info")
 
     def _analysis_thread(self):
         """分析线程（委托给 Presenter）"""
@@ -192,6 +213,13 @@ class AnalysisEvents:
         if hasattr(self, 'load_audit_btn'):
             self.load_audit_btn.configure(state="normal")
             self.log("✅ 已启用「加载审核数据」按钮", "info")
+
+        # ── Task 003：分析成功，清除恢复标记 ──
+        try:
+            _backup_mgr = BackupManager()
+            _backup_mgr._clear_recovery_flag()
+        except Exception:
+            pass
 
     def _cleanup_auto_excel(self):
         """删除分析自动生成的Excel文件，用户需要时可手动生成"""

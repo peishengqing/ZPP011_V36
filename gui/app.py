@@ -42,6 +42,10 @@ from core.ai_client import AIClient
 from gui.events import EventsMixIn
 from utils.version_history import get_version_display, get_current_version, APP_NAME as _VH_APP_NAME
 
+# ── Task 003/004：备份管理器 & 审计日志 ──
+from core.backup_manager import BackupManager
+from core.audit_logger import AuditLogger
+
 # ── 备注标准化（已迁移到 utils/helpers.py）───
 from utils.helpers import standardize_remark
 
@@ -323,7 +327,7 @@ class ZPP011Beautiful(EventsMixIn):
         self.task_manager.poll(self.root)
 
     def _on_sidebar_filter_changed(self, filters):
-        """边栏筛选条件变更时，使用 FilterEngine 过滤表格"""
+        """边栏筛选条件变更时，合并顶部栏条件，使用 FilterEngine 统一过滤"""
         if not hasattr(self, 'audit_data') or self.audit_data is None:
             return
 
@@ -332,12 +336,40 @@ class ZPP011Beautiful(EventsMixIn):
             from modules.audit.filters.filter_engine import FilterEngine
             self.filter_engine = FilterEngine()
 
-        # 应用过滠
-        # 传递日期范围变量（日历选择器）
-        if hasattr(self, 'date_start_val'):
-            filters['date_start'] = self.date_start_val
-            filters['date_end'] = self.date_end_val
-        
+        # ── 收集顶部筛选栏的值（不覆盖侧边栏已有的 key）──
+        top_keys_used = set(filters.keys())
+
+        # 搜索关键词
+        if 'search' not in top_keys_used and hasattr(self, 'search_var'):
+            st = self.search_var.get().strip()
+            default_hint = "输入任意关键词，实时过滤全部列..."
+            if st and st != default_hint:
+                filters['search'] = st
+
+        # 日期范围（从顶部栏的 DateEntry 控件读取，不是 self.date_start_val）
+        if 'date_start' not in top_keys_used and 'date_end' not in top_keys_used:
+            if hasattr(self, 'filter_widgets') and 'order_date' in self.filter_widgets:
+                date_widgets = self.filter_widgets['order_date']
+                if isinstance(date_widgets, tuple) and len(date_widgets) == 2:
+                    try:
+                        if date_widgets[0].get_date():
+                            filters['date_start'] = date_widgets[0].get_date().strftime('%Y-%m-%d')
+                        if date_widgets[1].get_date():
+                            filters['date_end'] = date_widgets[1].get_date().strftime('%Y-%m-%d')
+                    except Exception:
+                        pass
+
+        # 顶部栏下拉框值（remark, ai_result, _color, audit_source, remark_check_status）
+        top_combos = ['remark', 'ai_result', '_color', 'audit_source', 'remark_check_status']
+        if hasattr(self, 'filter_widgets'):
+            for key in top_combos:
+                if key not in top_keys_used and key in self.filter_widgets:
+                    w = self.filter_widgets[key]
+                    if hasattr(w, 'get'):
+                        val = w.get()
+                        if val and val != '全部':
+                            filters[key] = val
+
         df_filtered = self.filter_engine.apply(filters, self.audit_data)
 
         # 刷新表格和统计
