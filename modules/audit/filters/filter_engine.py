@@ -130,4 +130,16 @@ class FilterEngine:
         if color and color != '全部' and '_priority_label' in df.columns:
             df = df[df['_priority_label'] == color]
 
+        # 12. 日期范围筛选
+        date_start = filters.get('date_start')
+        date_end = filters.get('date_end')
+        if (date_start or date_end) and '订单日期' in df.columns:
+            df['订单日期'] = pd.to_datetime(df['订单日期'], errors='coerce')
+            if date_start:
+                start_dt = pd.to_datetime(date_start)
+                df = df[df['订单日期'] >= start_dt]
+            if date_end:
+                end_dt = pd.to_datetime(date_end)
+                df = df[df['订单日期'] <= end_dt]
+
         return df

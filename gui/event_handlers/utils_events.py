@@ -5975,7 +5975,7 @@ class UtilsEvents:
 
 
 
-        default_dir = os.path.join(os.path.expanduser("~"), "ZPP011导出文件原数据")
+        default_dir = r"E:\zpp011_dev\ZPP011导出文件原数据"
 
 
 

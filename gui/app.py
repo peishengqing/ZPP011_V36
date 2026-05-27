@@ -228,7 +228,7 @@ class ZPP011Beautiful(EventsMixIn):
         self.timer_id = None
         self.alt_pairs = list(DEFAULT_ALT_PAIRS)
         self.input_file = tk.StringVar()
-        self.output_dir = tk.StringVar(value=os.path.join(os.path.expanduser('~'), 'Desktop'))
+        self.output_dir = tk.StringVar(value=os.path.join(os.path.expanduser('~'), 'Documents', 'ZPP011分析报告'))
         self.start_date = tk.StringVar()
         self.end_date = tk.StringVar()
         

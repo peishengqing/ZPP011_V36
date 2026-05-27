@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """表格展示、筛选、排序、双击卡片等事件"""
 
 import tkinter as tk
@@ -1047,9 +1047,9 @@ class TableEvents:
             date_widgets = self.filter_widgets["order_date"]
 
             if isinstance(date_widgets, tuple) and len(date_widgets) == 2:
-                start_d = date_widgets[0].get().strip()
+                start_d = date_widgets[0].get_date().strftime('%Y-%m-%d') if date_widgets[0].get_date() else ''
 
-                end_d = date_widgets[1].get().strip()
+                end_d = date_widgets[1].get_date().strftime('%Y-%m-%d') if date_widgets[1].get_date() else ''
 
                 if start_d or end_d:
                     date_range = (start_d, end_d)
