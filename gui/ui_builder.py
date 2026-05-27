@@ -511,6 +511,11 @@ def _build_ui(self):
         self.save_audit_btn = btn(row1_frame, "💾 保存审核结果", self._save_audit_back,
                                 bg="#e76f51", fg="white", width=14, state="disabled")
         self.save_audit_btn.pack(side="left", padx=(0, 8))
+
+        # Audit log export button (Task 004)
+        self.export_audit_log_btn = btn(row1_frame, "📋 导出审计日志", self._export_audit_log,
+                                        bg="#6c757d", fg="#ffffff", width=14)
+        self.export_audit_log_btn.pack(side="left", padx=(0, 8))
         self.export_db_btn = btn(row1_frame, "📤 导出备份", self._export_audit_backup,
                                bg="#4a90d9", fg="white", width=12, state="normal")
         self.export_db_btn.pack(side="left", padx=(0, 8))

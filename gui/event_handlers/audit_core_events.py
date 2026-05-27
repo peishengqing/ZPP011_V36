@@ -298,6 +298,14 @@ class AuditCoreEvents:
 
 
 
+
+        # 记录审计日志（Task 004）
+        if hasattr(self, 'audit_logger'):
+            self.audit_logger.log(
+                action='ai_audit',
+                source='AI'
+            )
+
     def _cancel_ai_audit(self):
 
 
@@ -1106,3 +1114,11 @@ class AuditCoreEvents:
         self.audit_data.loc[passed_mask, 'audit_source'] = '系统自动'
         self._refresh_audit_tree(self.audit_data)
         self.log(f"自动结案：已将 {count} 条 AI 审核通过的记录标记为已审核（来源：系统自动）", "success")
+
+
+        # Audit log (Task 004)
+        if hasattr(self, 'audit_logger'):
+            self.audit_logger.log(
+                action='auto_close',
+                source='system_auto'
+            )

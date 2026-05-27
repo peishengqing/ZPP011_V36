@@ -304,6 +304,9 @@ class ZPP011Beautiful(EventsMixIn):
 
         # 任务管理器 + 进度条
         self.task_manager = core.task_manager.TaskManager(max_workers=2)
+        # 审计日志器（Task 004）
+        from core.audit_logger import AuditLogger
+        self.audit_logger = AuditLogger()
         self.ai_client = AIClient()
         self.is_auditing = False
         self.unsaved_ai_results = False
@@ -1397,3 +1400,14 @@ class ZPP011Beautiful(EventsMixIn):
         self.date_end_val = None
         self.date_range_var.set("全部日期")
         self._on_filter_changed('date_range')
+    
+    def _on_close(self):
+        """窗口关闭时的清理工作（Task 004）"""
+        try:
+            # 关闭审计日志器
+            if hasattr(self, 'audit_logger'):
+                self.audit_logger.shutdown()
+        except Exception as e:
+            print(f"关闭审计日志时出错: {e}")
+        finally:
+            self.root.destroy()
