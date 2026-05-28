@@ -28,6 +28,19 @@ class FilterEngine:
 
         df = data.copy()
 
+        # 防御性：确保 material_category 列存在（如果不存在，现场从物料编码计算）
+        if "material_category" not in df.columns and "物料编码" in df.columns:
+            mat_cat_map = {
+                "100": "原辅料", "200": "包材", "400": "食品辅料/食品半成品",
+                "410": "饮料辅料/饮料半成品", "500": "食品成品", "510": "饮料成品",
+                "600": "促销品"
+            }
+            df["material_category"] = df["物料编码"].apply(
+                lambda x: mat_cat_map.get(str(x)[:3], str(x)[:3]) if pd.notna(x) else ""
+            )
+            print(f"[DEBUG FilterEngine] 现场计算 material_category, 值分布: {df['material_category'].value_counts().to_dict()}")
+
+
         # 0. Stat 卡片筛选（大偏差/无备注/已审核）
         stat = filters.get('stat')
         if stat == 'big_dev':
@@ -159,18 +172,19 @@ class FilterEngine:
             cmap = {'红': '红', '橙': '橙', '黄': '黄', '绿': '绿'}
             df = df[df['_priority_label'] == cmap.get(color, color)]
 
-        # 12. 物料大类筛选（兼容 material_category 和 物料类型 两种列名）
+        # 12. 物料大类筛选（优先使用 material_category 列）
         material_category = filters.get('material_category')
         if material_category and material_category != '全部':
-            cat_col = None
-            for col in ['material_category', '物料类型', '物料大类']:
-                if col in df.columns:
-                    cat_col = col
-                    break
-            if cat_col:
-                print(f'[DEBUG] 物料大类筛选: 选={material_category}, 使用列={cat_col}, 列值分布={df[cat_col].value_counts().to_dict()}')
-                df = df[df[cat_col] == material_category]
-                print(f'[DEBUG] 筛选后行数: {len(df)}')
+            # 优先使用计算出的 material_category 列
+            if 'material_category' in df.columns:
+                print(f'[DEBUG FilterEngine 12] material_category 列值分布: {df["material_category"].value_counts().to_dict()}')
+                print(f'[DEBUG FilterEngine 12] 筛选值: {material_category}')
+                df = df[df['material_category'] == material_category]
+                print(f'[DEBUG FilterEngine 12] 筛选后行数: {len(df)}')
+            elif '物料类型' in df.columns:
+                print(f'[DEBUG FilterEngine 12] 使用物料类型列, 值分布: {df["物料类型"].value_counts().to_dict()}')
+                df = df[df['物料类型'] == material_category]
+                print(f'[DEBUG FilterEngine 12] 筛选后行数: {len(df)}')
             else:
                 print(f'[DEBUG] 物料大类筛选: 未找到物料类型列, df.columns={list(df.columns)}')
 

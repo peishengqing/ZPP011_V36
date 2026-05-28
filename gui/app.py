@@ -1141,6 +1141,19 @@ class ZPP011Beautiful(EventsMixIn):
             audit_df['偏差率(%)'] = audit_df['偏差率数值'] * 100
             audit_df['备注原因'] = audit_df['备注']
             audit_df['订单日期'] = audit_df['订单日期']  # 添加订单日期列
+            # ── 物料大类列（供筛选用） ──
+            mat_category_map = {
+                "100": "原辅料",
+                "200": "包材",
+                "400": "食品辅料/食品半成品",
+                "410": "饮料辅料/饮料半成品",
+                "500": "食品成品",
+                "510": "饮料成品",
+                "600": "促销品",
+            }
+            audit_df['material_category'] = audit_df['物料编码'].apply(
+                lambda x: mat_category_map.get(str(x)[:3], str(x)[:3]) if pd.notna(x) else ''
+            )
             self.audit_data = audit_df
             self._update_filter_options()
             self._refresh_audit_tree(self.audit_data)

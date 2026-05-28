@@ -226,16 +226,9 @@ class TableEvents:
         if code_col and 'material_category' not in df.columns:
             df['material_category'] = df[code_col].apply(_get_mat_category)
 
-        # ── 动态更新物料大类下拉框选项 ──
-        if hasattr(self, 'mat_category_cb') and self.mat_category_cb:
-            unique_cats = sorted(df['material_category'].dropna().unique())
-            values = ["全部"] + [str(c) for c in unique_cats if c]
-            self.mat_category_cb['values'] = values
-            current = self.mat_category_cb.get()
-            if current not in values:
-                self.mat_category_cb.set("全部")
-            print(f'[DEBUG] material_category 实际唯一值: {unique_cats}')
-            print(f'[DEBUG] 下拉框当前values: {values}')
+        # ── 注意：下拉框选项不再这里动态更新，改为在数据加载时一次性设置 ──
+        # 原因：如果基于当前 df（可能是筛选后的子集）更新选项，会导致下拉框选项随筛选结果一起变少
+        # 正确做法：基于 self.full_audit_data（全量数据）在 _update_filter_options 中设置一次
 
         for i, (_, row) in enumerate(df.iterrows(), 1):
             # ===== 计算审核来源（核心逻辑）=====

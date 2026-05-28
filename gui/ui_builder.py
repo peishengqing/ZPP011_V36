@@ -268,13 +268,14 @@ def _build_ui(self):
             ('remark', '备注'),
             ('ai_result', 'AI审核'),
             ('_color', '颜色'),
+            ('material_category', '物料大类'),
             ('audit_source', '审核来源'),
             ('remark_check_status', '校验提示'),
         ]
         # ── P1#12：筛选栏宽度映射 ──
         filter_width = {
             '订单日期': 16, '备注': 10, 'AI审核': 8, '颜色': 7,
-            '审核来源': 10, '校验提示': 10,
+            '物料大类': 10, '审核来源': 10, '校验提示': 10,
         }
 
         self.filter_widgets = {}
@@ -333,18 +334,28 @@ def _build_ui(self):
                     self.filter_vars[col_key] = tk.StringVar(value="全部")
                     self.filter_widgets[col_key] = cb
                 else:
-                    # 为新增筛选预设选项值
-                    preset_options = {
-                        'audit_source': ["全部", "AI", "手动", "替代料", "系统"],
-                        'remark_check_status': ["全部", "红色", "黄色", "正常"],
-                    }
-                    cb = ttk.Combobox(
-                        col_frame, state="readonly",
-                        font=("Microsoft YaHei", 9),
-                        width=col_width,
-                        values=preset_options.get(col_key, [])
-                    )
-                    cb.pack(fill="x")
+                    # ── material_category 改为动态加载（从实际数据提取唯一值） ──
+                    if col_key == 'material_category':
+                        cb = ttk.Combobox(col_frame, state="readonly", font=("Microsoft YaHei", 9),
+                                      width=col_width, values=["全部"])
+                        cb.current(0)
+                        cb.pack(fill="x")
+                        cb.bind("<<ComboboxSelected>>", lambda e, k=col_key: self._on_filter_changed(k))
+                        self.filter_vars[col_key] = tk.StringVar(value="全部")
+                        self.filter_widgets[col_key] = cb
+                        self.mat_category_cb = cb  # 保存引用，供动态更新
+                    else:
+                        preset_options = {
+                            'audit_source': ["全部", "AI审核", "手动", "替代料"],
+                            'remark_check_status': ["全部", "红色", "黄色", "正常"],
+                        }
+                        cb = ttk.Combobox(
+                            col_frame, state="readonly",
+                            font=("Microsoft YaHei", 9),
+                            width=col_width,
+                            values=preset_options.get(col_key, [])
+                        )
+                        cb.pack(fill="x")
                     if preset_options.get(col_key):
                         cb.current(0)
                     cb.bind("<<ComboboxSelected>>",
@@ -395,7 +406,7 @@ def _build_ui(self):
         audit_hscroll = ttk.Scrollbar(tree_container, orient="horizontal")
         audit_hscroll.pack(side="bottom", fill="x")
         cols = ("idx", "excel_row", "factory", "admin", "order_date", "order_no",
-                "code", "name", "quota", "actual", "dev_rate", "is_alt", "status",
+                "code", "material_category", "name", "quota", "actual", "dev_rate", "is_alt", "status",
                 "remark", "batch_remark", "audit_result", "AI建议", "audit_status",
                 "audit_source", "deviation_amount",
                 "remark_check_status", "remark_check_msg")
@@ -411,6 +422,7 @@ def _build_ui(self):
         self.audit_tree.heading("order_date", text="订单日期")
         self.audit_tree.heading("order_no", text="流程订单")
         self.audit_tree.heading("code", text="物料号")
+        self.audit_tree.heading("material_category", text="物料大类")
         self.audit_tree.heading("name", text="物料描述")
         self.audit_tree.heading("quota", text="定额")
         self.audit_tree.heading("actual", text="实际")
@@ -434,6 +446,7 @@ def _build_ui(self):
         self.audit_tree.column("order_date", width=70, anchor="center")
         self.audit_tree.column("order_no", width=100, anchor="center")
         self.audit_tree.column("code", width=70, anchor="center")
+        self.audit_tree.column("material_category", width=90, anchor="center")
         self.audit_tree.column("name", width=100, anchor="w")
         self.audit_tree.column("quota", width=50, anchor="e")
         self.audit_tree.column("actual", width=50, anchor="e")
