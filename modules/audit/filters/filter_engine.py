@@ -28,16 +28,51 @@ class FilterEngine:
 
         df = data.copy()
 
+        # 防御性：确保 material_category 列存在（如果不存在，现场从物料编码计算）
+        if "material_category" not in df.columns and "物料编码" in df.columns:
+            mat_cat_map = {
+                "100": "原辅料", "200": "包材", "400": "食品辅料/食品半成品",
+                "410": "饮料辅料/饮料半成品", "500": "食品成品", "510": "饮料成品",
+                "600": "促销品"
+            }
+            df["material_category"] = df["物料编码"].apply(
+                lambda x: mat_cat_map.get(str(x)[:3], str(x)[:3]) if pd.notna(x) else ""
+            )
+            print(f"[DEBUG FilterEngine] 现场计算 material_category, 值分布: {df['material_category'].value_counts().to_dict()}")
+
+
+        # 0. Stat 卡片筛选（大偏差/无备注/已审核）
+        stat = filters.get('stat')
+        if stat == 'big_dev':
+            rc = next((c for c in ['偏差率(%)', '偏差率'] if c in df.columns), None)
+            if rc:
+                df = df[pd.to_numeric(df[rc], errors='coerce').abs() > 10]
+        elif stat == 'no_note':
+            rc = next((c for c in ['备注原因', '备注'] if c in df.columns), None)
+            if rc:
+                df = df[df[rc].isna() | (df[rc].astype(str).str.strip() == '')]
+        elif stat == 'approved':
+            rc = next((c for c in ['备注原因', '备注'] if c in df.columns), None)
+            if rc:
+                df = df[df[rc].notna() & (df[rc].astype(str).str.strip() != '')]
+
         # 1. 工厂筛选
         factory = filters.get('factory')
-        if factory and factory != '全部' and '工厂' in df.columns:
-            df = df[df['工厂'] == factory]
+        if factory and factory != '全部':
+            factory_col = next(
+                (c for c in ['工厂', '工厂名称'] if c in df.columns), None
+            )
+            if factory_col:
+                df = df[df[factory_col] == factory]
 
         # 2. 车间筛选
         workshop = filters.get('workshop')
-        if workshop and workshop != '全部' and '车间' in df.columns:
-            df = df[df['车间'] == workshop]
-
+        if workshop and workshop != '全部':
+            workshop_col = next(
+                (c for c in ['车间', '生产管理员描述'] if c in df.columns), None
+            )
+            if workshop_col:
+                df = df[df[workshop_col] == workshop]
         # 3. 物料描述模糊匹配
         material = filters.get('material', '').strip()
         if material:
@@ -59,6 +94,8 @@ class FilterEngine:
                 df = df[df['偏差率(%)'] < -10]
             elif dev_rate == '<-20%':
                 df = df[df['偏差率(%)'] < -20]
+            elif dev_rate == '绝对值≥10%':
+                df = df[df['偏差率(%)'].abs() >= 10]
 
         # 5. 金额范围
         amount_min = filters.get('amount_min', '').strip()
@@ -105,9 +142,102 @@ class FilterEngine:
             else:
                 pass  # 未找到替代料列，不做筛选
 
-        # 8. 优先级颜色（如果有）
-        color = filters.get('priority_color')
+        # 8. 审核来源（兼容 UI 显示值和存储值）
+        audit_source = filters.get('audit_source')
+        if audit_source and audit_source != '全部':
+            src_col = next(
+                (c for c in ['audit_source', '审核来源'] if c in df.columns), None
+            )
+            if src_col:
+                df = df[df[src_col] == audit_source]
+
+        # 9. 审核状态
+        audit_status = filters.get('audit_status')
+        if audit_status and audit_status != '全部' and 'audit_status' in df.columns:
+            df = df[df['audit_status'] == audit_status]
+
+        # 10. 校验提示（映射业务含义）
+        remark_check = filters.get('remark_check_status')
+        if remark_check and remark_check != '全部' and 'remark_check_status' in df.columns:
+            if remark_check == '红色':
+                df = df[df['remark_check_status'] == 'red']
+            elif remark_check == '黄色':
+                df = df[df['remark_check_status'] == 'yellow']
+            elif remark_check == '正常':
+                df = df[df['remark_check_status'] == 'none']
+
+        # 11. 颜色筛选（优先级标签）——同时兼容侧边栏 priority_color 和顶部栏 _color
+        color = filters.get('priority_color') or filters.get('_color')
         if color and color != '全部' and '_priority_label' in df.columns:
-            df = df[df['_priority_label'] == color]
+            cmap = {'红': '红', '橙': '橙', '黄': '黄', '绿': '绿'}
+            df = df[df['_priority_label'] == cmap.get(color, color)]
+
+        # 12. 物料大类筛选（优先使用 material_category 列）
+        material_category = filters.get('material_category')
+        if material_category and material_category != '全部':
+            # 优先使用计算出的 material_category 列
+            if 'material_category' in df.columns:
+                print(f'[DEBUG FilterEngine 12] material_category 列值分布: {df["material_category"].value_counts().to_dict()}')
+                print(f'[DEBUG FilterEngine 12] 筛选值: {material_category}')
+                df = df[df['material_category'] == material_category]
+                print(f'[DEBUG FilterEngine 12] 筛选后行数: {len(df)}')
+            elif '物料类型' in df.columns:
+                print(f'[DEBUG FilterEngine 12] 使用物料类型列, 值分布: {df["物料类型"].value_counts().to_dict()}')
+                df = df[df['物料类型'] == material_category]
+                print(f'[DEBUG FilterEngine 12] 筛选后行数: {len(df)}')
+            else:
+                print(f'[DEBUG] 物料大类筛选: 未找到物料类型列, df.columns={list(df.columns)}')
+
+        # 13. 日期范围筛选
+        date_start = filters.get('date_start')
+        date_end = filters.get('date_end')
+        if (date_start or date_end) and '订单日期' in df.columns:
+            df['订单日期'] = pd.to_datetime(df['订单日期'], errors='coerce')
+            if date_start:
+                start_dt = pd.to_datetime(date_start)
+                df = df[df['订单日期'] >= start_dt]
+            if date_end:
+                end_dt = pd.to_datetime(date_end)
+                df = df[df['订单日期'] <= end_dt]
+
+        # 14. 关键词搜索（全文匹配）
+        search = filters.get('search', '').strip()
+        if search:
+            mask = pd.Series(False, index=df.index)
+            for col in df.columns:
+                mask |= df[col].astype(str).str.contains(search, case=False, na=False)
+            df = df[mask]
+
+        # 15. 备注筛选
+        remark = filters.get('remark')
+        if remark and remark != '全部':
+            remark_col = next(
+                (c for c in ['备注原因', '备注', 'remark'] if c in df.columns), None
+            )
+            if remark_col:
+                temp = df[remark_col].fillna('').astype(str).str.strip().replace('nan', '')
+                if remark == '为空':
+                    df = df[temp == '']
+                elif remark == '不为空':
+                    df = df[temp != '']
+                else:
+                    df = df[temp == remark]
+
+        # 15. AI审核结果筛选
+        ai_result = filters.get('ai_result')
+        if ai_result and ai_result != '全部':
+            src_col = next(
+                (c for c in ['审核来源', 'audit_source'] if c in df.columns), None
+            )
+            if src_col:
+                if ai_result == '合格':
+                    df = df[df[src_col] == '审核合格']
+                elif ai_result == '需改进':
+                    df = df[df[src_col] == '审核待改进']
+                elif ai_result == 'AI建议':
+                    df = df[df[src_col].str.startswith('AI建议', na=False)]
+                elif ai_result == '未处理':
+                    ai_sources = {'审核合格', '审核待改进', 'AI建议', 'AI建议（小偏差）'}
+                    df = df[~(df[src_col].isin(ai_sources) | df[src_col].isna())]
 
         return df

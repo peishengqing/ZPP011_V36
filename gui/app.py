@@ -42,6 +42,10 @@ from core.ai_client import AIClient
 from gui.events import EventsMixIn
 from utils.version_history import get_version_display, get_current_version, APP_NAME as _VH_APP_NAME
 
+# ── Task 003/004：备份管理器 & 审计日志 ──
+from core.backup_manager import BackupManager
+from core.audit_logger import AuditLogger
+
 # ── 备注标准化（已迁移到 utils/helpers.py）───
 from utils.helpers import standardize_remark
 
@@ -228,9 +232,17 @@ class ZPP011Beautiful(EventsMixIn):
         self.timer_id = None
         self.alt_pairs = list(DEFAULT_ALT_PAIRS)
         self.input_file = tk.StringVar()
-        self.output_dir = tk.StringVar(value=os.path.join(os.path.expanduser('~'), 'Desktop'))
+        self.output_dir = tk.StringVar(value=os.path.join(os.path.expanduser('~'), 'Documents', 'ZPP011分析报告'))
         self.start_date = tk.StringVar()
         self.end_date = tk.StringVar()
+        
+        # 日期筛选变量（日历选择器）
+        self.date_start_val = None
+        self.date_end_val = None
+        self._tmp_start = None
+        self._tmp_end = None
+        self._picker_year = None
+        self._picker_month = None
         self.material_search = tk.StringVar()
 
         self.filter_vars = {}
@@ -292,6 +304,9 @@ class ZPP011Beautiful(EventsMixIn):
 
         # 任务管理器 + 进度条
         self.task_manager = core.task_manager.TaskManager(max_workers=2)
+        # 审计日志器（Task 004）
+        from core.audit_logger import AuditLogger
+        self.audit_logger = AuditLogger()
         self.ai_client = AIClient()
         self.is_auditing = False
         self.unsaved_ai_results = False
@@ -315,7 +330,7 @@ class ZPP011Beautiful(EventsMixIn):
         self.task_manager.poll(self.root)
 
     def _on_sidebar_filter_changed(self, filters):
-        """边栏筛选条件变更时，使用 FilterEngine 过滤表格"""
+        """边栏筛选条件变更时，合并顶部栏条件，使用 FilterEngine 统一过滤"""
         if not hasattr(self, 'audit_data') or self.audit_data is None:
             return
 
@@ -324,7 +339,40 @@ class ZPP011Beautiful(EventsMixIn):
             from modules.audit.filters.filter_engine import FilterEngine
             self.filter_engine = FilterEngine()
 
-        # 应用过滠
+        # ── 收集顶部筛选栏的值（不覆盖侧边栏已有的 key）──
+        top_keys_used = set(filters.keys())
+
+        # 搜索关键词
+        if 'search' not in top_keys_used and hasattr(self, 'search_var'):
+            st = self.search_var.get().strip()
+            default_hint = "输入任意关键词，实时过滤全部列..."
+            if st and st != default_hint:
+                filters['search'] = st
+
+        # 日期范围（从顶部栏的 DateEntry 控件读取，不是 self.date_start_val）
+        if 'date_start' not in top_keys_used and 'date_end' not in top_keys_used:
+            if hasattr(self, 'filter_widgets') and 'order_date' in self.filter_widgets:
+                date_widgets = self.filter_widgets['order_date']
+                if isinstance(date_widgets, tuple) and len(date_widgets) == 2:
+                    try:
+                        if date_widgets[0].get_date():
+                            filters['date_start'] = date_widgets[0].get_date().strftime('%Y-%m-%d')
+                        if date_widgets[1].get_date():
+                            filters['date_end'] = date_widgets[1].get_date().strftime('%Y-%m-%d')
+                    except Exception:
+                        pass
+
+        # 顶部栏下拉框值（remark, ai_result, _color, audit_source, remark_check_status）
+        top_combos = ['remark', 'ai_result', '_color', 'audit_source', 'remark_check_status']
+        if hasattr(self, 'filter_widgets'):
+            for key in top_combos:
+                if key not in top_keys_used and key in self.filter_widgets:
+                    w = self.filter_widgets[key]
+                    if hasattr(w, 'get'):
+                        val = w.get()
+                        if val and val != '全部':
+                            filters[key] = val
+
         df_filtered = self.filter_engine.apply(filters, self.audit_data)
 
         # 刷新表格和统计
@@ -1093,6 +1141,19 @@ class ZPP011Beautiful(EventsMixIn):
             audit_df['偏差率(%)'] = audit_df['偏差率数值'] * 100
             audit_df['备注原因'] = audit_df['备注']
             audit_df['订单日期'] = audit_df['订单日期']  # 添加订单日期列
+            # ── 物料大类列（供筛选用） ──
+            mat_category_map = {
+                "100": "原辅料",
+                "200": "包材",
+                "400": "食品辅料/食品半成品",
+                "410": "饮料辅料/饮料半成品",
+                "500": "食品成品",
+                "510": "饮料成品",
+                "600": "促销品",
+            }
+            audit_df['material_category'] = audit_df['物料编码'].apply(
+                lambda x: mat_category_map.get(str(x)[:3], str(x)[:3]) if pd.notna(x) else ''
+            )
             self.audit_data = audit_df
             self._update_filter_options()
             self._refresh_audit_tree(self.audit_data)
@@ -1238,3 +1299,128 @@ class ZPP011Beautiful(EventsMixIn):
         sorted_list = sorted(preset_list, key=lambda x: freq.get(x, 0), reverse=True)
         return sorted_list, freq
 
+    def _show_date_picker(self):
+        """弹出日历选择窗口（简化版）"""
+        import calendar
+        from datetime import datetime, timedelta
+        from tkinter import Toplevel, Frame, Label, Button
+        
+        win = Toplevel(self.root)
+        win.title("选择日期范围")
+        win.geometry("300x280")
+        win.resizable(False, False)
+        
+        # 初始化临时变量
+        if not hasattr(self, '_temp_start'):
+            self._temp_start = None
+        if not hasattr(self, '_temp_end'):
+            self._temp_end = None
+        
+        self._temp_start = None
+        self._temp_end = None
+        
+        # 当前显示的年月
+        today = datetime.today()
+        self._picker_year = today.year
+        self._picker_month = today.month
+        
+        def update_calendar():
+            """更新日历显示"""
+            # 清空旧控件
+            for widget in cal_frame.winfo_children():
+                widget.destroy()
+            
+            # 月份标题
+            Label(cal_frame, text=f"{self._picker_year}年 {self._picker_month}月",
+                  font=("Microsoft YaHei", 10, "bold")).grid(row=0, column=1, columnspan=5)
+            
+            # 星期标题
+            for i, day in enumerate(["一", "二", "三", "四", "五", "六", "日"]):
+                Label(cal_frame, text=day, font=("Microsoft YaHei", 8)).grid(row=1, column=i)
+            
+            # 日期网格
+            cal = calendar.monthcalendar(self._picker_year, self._picker_month)
+            for r, week in enumerate(cal, 2):
+                for c, day in enumerate(week):
+                    if day == 0:
+                        continue
+                    btn = Button(cal_frame, text=str(day), width=4,
+                                command=lambda d=day: self._on_day_click(d))
+                    btn.grid(row=r, column=c, padx=1, pady=1)
+        
+        def change_month(delta):
+            """切换月份"""
+            self._picker_month += delta
+            if self._picker_month > 12:
+                self._picker_month = 1
+                self._picker_year += 1
+            elif self._picker_month < 1:
+                self._picker_month = 12
+                self._picker_year -= 1
+            update_calendar()
+        
+        # 控件布局
+        top_frame = Frame(win)
+        top_frame.pack(pady=5)
+        Button(top_frame, text="<", command=lambda: change_month(-1)).pack(side="left", padx=5)
+        Label(top_frame, text="日历", font=("Microsoft YaHei", 10)).pack(side="left", padx=10)
+        Button(top_frame, text=">", command=lambda: change_month(1)).pack(side="left", padx=5)
+        
+        cal_frame = Frame(win)
+        cal_frame.pack(pady=5)
+        
+        btn_frame = Frame(win)
+        btn_frame.pack(pady=5)
+        Button(btn_frame, text="清除", command=self._clear_date_filter).pack(side="left", padx=5)
+        Button(btn_frame, text="确定", command=self._apply_date_selection).pack(side="left", padx=5)
+        
+        update_calendar()
+    
+    def _on_day_click(self, day):
+        """点击日期"""
+        from datetime import date
+        clicked = date(self._picker_year, self._picker_month, day)
+        
+        if self._temp_start is None or self._temp_end is not None:
+            # 第一次点击或已选完区间，重新开始
+            self._temp_start = clicked
+            self._temp_end = None
+        else:
+            # 第二次点击，确定结束日期
+            if clicked > self._temp_start:
+                self._temp_end = clicked
+            else:
+                self._temp_end = self._temp_start
+                self._temp_start = clicked
+    
+    def _apply_date_selection(self):
+        """应用日期选择"""
+        self.date_start_val = self._temp_start
+        self.date_end_val = self._temp_end
+        
+        if self.date_start_val and self.date_end_val:
+            self.date_range_var.set(f"{self.date_start_val} ~ {self.date_end_val}")
+        elif self.date_start_val:
+            self.date_range_var.set(f"{self.date_start_val} 起")
+        else:
+            self.date_range_var.set("全部日期")
+        
+        self._on_filter_changed('date_range')
+    
+    def _clear_date_filter(self):
+        """清除日期筛选"""
+        self.date_start_val = None
+        self.date_end_val = None
+        self.date_range_var.set("全部日期")
+        self._on_filter_changed('date_range')
+    
+    def _on_close(self):
+        """窗口关闭时的清理工作（Task 004）"""
+        try:
+            # 关闭审计日志器
+            if hasattr(self, 'audit_logger'):
+                self.audit_logger.shutdown()
+        except Exception as e:
+            print(f"关闭审计日志时出错: {e}")
+        finally:
+            self.root.destroy()
