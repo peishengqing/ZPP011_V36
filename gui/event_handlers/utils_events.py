@@ -6774,6 +6774,16 @@ class UtilsEvents:
 
 
                 self.config.set('table.column_widths', widths)
+                # Task 008：同步保存到 JSON 文件（与 _save_column_widths 一致）
+                self.column_widths = widths
+                try:
+                    from gui.ui_builder import COLUMN_WIDTHS_FILE
+                    import json as _json
+                    os.makedirs(os.path.dirname(COLUMN_WIDTHS_FILE), exist_ok=True)
+                    with open(COLUMN_WIDTHS_FILE, 'w', encoding='utf-8') as _f:
+                        _json.dump(widths, _f, ensure_ascii=False)
+                except Exception:
+                    pass
 
 
 

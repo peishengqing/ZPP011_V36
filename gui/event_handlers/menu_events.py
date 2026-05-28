@@ -233,6 +233,21 @@ class MenuEvents:
         else:
             os.startfile(os.path.expanduser("~"))
 
+    # ── Task 008：列宽持久化 ────────────────────────────────
+    def _init_column_width_tracking(self):
+        """初始化列宽追踪（Task 008：根据锁定状态设置绑定）"""
+        if not hasattr(self, 'audit_tree'):
+            return
+        # 初始化 self.column_widths
+        if not hasattr(self, 'column_widths'):
+            self.column_widths = {col: self.audit_tree.column(col, 'width') for col in self.audit_tree['columns']}
+        if getattr(self, 'column_locked', True):
+            # 锁定模式：定时恢复列宽
+            self._start_column_lock_polling()
+        else:
+            # 解锁模式：检测拖拽调整
+            self.audit_tree.bind('<ButtonRelease-1>', self._on_column_drag_release)
+
     def _toggle_column_lock(self):
         """切换列宽锁定状态"""
 
@@ -240,26 +255,15 @@ class MenuEvents:
 
         self._save_lock_state(self.column_locked)
 
-        # 解绑旧事件
-
+        # 更新列宽追踪绑定（Task 008：替代不工作的 <<TreeviewColumnResized>>）
         if hasattr(self, "audit_tree"):
-            try:
-                self.audit_tree.unbind("<<TreeviewColumnResized>>")
-
-            except:
-                pass
-
-            # 绑定新事件
-
             if self.column_locked:
-                self.audit_tree.bind(
-                    "<<TreeviewColumnResized>>", self._on_column_resized_lock
-                )
-
+                # 锁定：用定时器轮询恢复列宽
+                self._start_column_lock_polling()
             else:
-                self.audit_tree.bind(
-                    "<<TreeviewColumnResized>>", self._on_column_resized_save
-                )
+                # 解锁：用 ButtonRelease-1 检测拖拽调整
+                self._stop_column_lock_polling()
+                self.audit_tree.bind('<ButtonRelease-1>', self._on_column_drag_release)
 
         self._apply_column_lock()
 
@@ -274,50 +278,94 @@ class MenuEvents:
             f"列宽{'已锁定' if self.column_locked else '已解锁，可拖动调整'}", "info"
         )
 
-    def _on_column_resized_lock(self, event):
-        """锁定状态下：阻止列宽变化，恢复为保存的宽度"""
-
-        col = event.column
-
-        if hasattr(self, "column_widths") and col in self.column_widths:
-            try:
-                self.audit_tree.column(
-                    col, width=self.column_widths[col], stretch=False
-                )
-
-            except:
-                pass
-
-    def _on_column_resized_save(self, event):
-        """解锁状态下：保存新的列宽"""
-
-        col = event.column
-
+    def _on_column_drag_release(self, event):
+        """解锁状态下：鼠标释放时检测列宽变化并保存（Task 008）"""
+        # 检查是否在列头区域拖拽了分隔线
         try:
-            new_w = self.audit_tree.column(col, "width")
-
-            if not hasattr(self, "column_widths"):
-                self.column_widths = {}
-
-            self.column_widths[col] = new_w
-
-            self._save_column_widths()
-
-        except:
+            region = self.audit_tree.identify_region(event.x, event.y)
+            if region == 'separator' or region == 'heading':
+                # 延迟 300ms 后保存（避免频繁 I/O）
+                if hasattr(self, '_width_save_timer') and self._width_save_timer:
+                    self.root.after_cancel(self._width_save_timer)
+                self._width_save_timer = self.root.after(300, self._save_all_column_widths)
+        except Exception:
             pass
 
+    def _save_all_column_widths(self):
+        """保存所有列宽到 JSON 文件和 ConfigManager（Task 008：统一双存储）"""
+        try:
+            if hasattr(self, 'audit_tree'):
+                self.column_widths = {}
+                for col in self.audit_tree['columns']:
+                    self.column_widths[col] = self.audit_tree.column(col, 'width')
+                self._save_column_widths()
+                # 同步到 ConfigManager
+                if hasattr(self, 'config'):
+                    self.config.set('table.column_widths', self.column_widths)
+        except Exception:
+            pass
+
+    # ── 列宽锁定轮询（替代不工作的 <<TreeviewColumnResized>> 事件）──
+    _lock_poll_id = None
+
+    def _start_column_lock_polling(self):
+        """锁定状态下：每 200ms 检查并恢复列宽"""
+        self._stop_column_lock_polling()
+        # 解绑 ButtonRelease-1
+        if hasattr(self, 'audit_tree'):
+            try:
+                self.audit_tree.unbind('<ButtonRelease-1>')
+            except Exception:
+                pass
+        self._lock_poll_id = self.root.after(200, self._column_lock_poll)
+
+    def _stop_column_lock_polling(self):
+        """停止锁定轮询"""
+        if hasattr(self, '_lock_poll_id') and self._lock_poll_id:
+            try:
+                self.root.after_cancel(self._lock_poll_id)
+            except Exception:
+                pass
+            self._lock_poll_id = None
+
+    def _column_lock_poll(self):
+        """锁定轮询：恢复被拖拽改变的列宽"""
+        if not getattr(self, 'column_locked', True) or not hasattr(self, 'audit_tree'):
+            return
+        if hasattr(self, 'column_widths') and self.column_widths:
+            for col, w in self.column_widths.items():
+                if col in self.audit_tree['columns']:
+                    try:
+                        current_w = self.audit_tree.column(col, 'width')
+                        if current_w != w:
+                            self.audit_tree.column(col, width=w, stretch=False)
+                    except Exception:
+                        pass
+        self._lock_poll_id = self.root.after(200, self._column_lock_poll)
+
     def _save_column_widths(self):
-        """保存列宽配置到文件"""
+        """保存列宽配置到 JSON 文件（Task 008：含所有列）"""
 
         import json
 
         try:
             from gui.ui_builder import COLUMN_WIDTHS_FILE
 
+            # 保存所有列宽（不仅仅是 self.column_widths 中已有的）
+            if hasattr(self, 'audit_tree'):
+                all_widths = {}
+                for col in self.audit_tree['columns']:
+                    all_widths[col] = self.audit_tree.column(col, 'width')
+                self.column_widths = all_widths
+
             os.makedirs(os.path.dirname(COLUMN_WIDTHS_FILE), exist_ok=True)
 
             with open(COLUMN_WIDTHS_FILE, "w", encoding="utf-8") as f:
-                json.dump(self.column_widths, f)
+                json.dump(self.column_widths, f, ensure_ascii=False)
+
+            # 同步到 ConfigManager
+            if hasattr(self, 'config'):
+                self.config.set('table.column_widths', self.column_widths)
 
         except:
             pass
@@ -344,7 +392,7 @@ class MenuEvents:
         return DEFAULT_COL_WIDTHS.copy()
 
     def _reset_default_widths(self):
-        """重置列宽为默认值"""
+        """重置列宽为默认值（Task 008：含所有列）"""
 
         from gui.ui_builder import DEFAULT_COL_WIDTHS, COLUMN_WIDTHS_FILE
 
@@ -354,11 +402,10 @@ class MenuEvents:
             for col_id, w in DEFAULT_COL_WIDTHS.items():
                 try:
                     min_w = w if getattr(self, "column_locked", True) else 20
-
-                    self.audit_tree.column(
-                        col_id, width=w, minwidth=min_w, stretch=False
-                    )
-
+                    if col_id in self.audit_tree['columns']:
+                        self.audit_tree.column(
+                            col_id, width=w, minwidth=min_w, stretch=False
+                        )
                 except Exception:
                     pass
 
@@ -370,6 +417,13 @@ class MenuEvents:
 
         except Exception:
             pass
+
+        # 同步清除 ConfigManager 中的列宽配置
+        if hasattr(self, "config"):
+            try:
+                self.config.set("table.column_widths", {})
+            except Exception:
+                pass
 
         self.log("列宽已重置为默认值", "info")
 
@@ -395,12 +449,18 @@ class MenuEvents:
                 pass
 
     def _restore_column_widths(self):
-        """从 ConfigManager 恢复保存的列宽"""
+        """启动时恢复列宽配置（Task 008：优先从 JSON 文件，其次从 ConfigManager）"""
 
-        if not hasattr(self, "audit_tree") or not hasattr(self, "config"):
+        if not hasattr(self, "audit_tree"):
             return
 
-        widths = self.config.get("table.column_widths", {})
+        # 优先从 JSON 文件加载（与 _save_column_widths 一致）
+        widths = self._load_column_widths()
+
+        # JSON 文件加载失败时，尝试从 ConfigManager 加载
+        if not widths:
+            if hasattr(self, "config"):
+                widths = self.config.get("table.column_widths", {})
 
         if not widths:
             return
@@ -412,6 +472,7 @@ class MenuEvents:
 
                 except Exception:
                     pass
+
 
     def _check_and_upgrade_db(self):
         """
