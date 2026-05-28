@@ -367,7 +367,8 @@ class AnalysisEvents:
             # 添加物料大类列（始终用物料编码前缀计算，确保值和下拉选项一致）
             mat_cat_map = {
                 "100": "原辅料", "200": "包材", "400": "食品辅料/食品半成品",
-                "410": "饮料辅料/饮料半成品", "500": "食品成品", "510": "饮料成品"
+                "410": "饮料辅料/饮料半成品", "500": "食品成品", "510": "饮料成品",
+                "600": "促销品"
             }
             self.audit_data['material_category'] = self.audit_data['物料编码'].apply(
                 lambda x: mat_cat_map.get(str(x)[:3], str(x)[:3]) if pd.notna(x) else ''
@@ -629,6 +630,24 @@ class AnalysisEvents:
                 if col in self.audit_data.columns:
                     self.audit_data[col] = pd.to_numeric(self.audit_data[col], errors="coerce").fillna(0)
             self._full_dev_df = result_df.copy()
+            # ── 补充 material_category 列（与 _load_audit_data 路径保持一致） ──
+            mat_cat_map = {
+                "100": "原辅料", "200": "包材", "400": "食品辅料/食品半成品",
+                "410": "饮料辅料/饮料半成品", "500": "食品成品", "510": "饮料成品",
+                "600": "促销品"
+            }
+            mat_code_col = None
+            for mc in ['物料编码', '组件物料号']:
+                if mc in self.audit_data.columns:
+                    mat_code_col = mc
+                    break
+            if mat_code_col:
+                self.audit_data['material_category'] = self.audit_data[mat_code_col].apply(
+                    lambda x: mat_cat_map.get(str(x)[:3], str(x)[:3]) if pd.notna(x) else ''
+                )
+            else:
+                self.audit_data['material_category'] = ''
+            self.full_audit_data = self.audit_data.copy()
             self.log(f"[DEBUG] _on_load_done: {len(self.audit_data)}行", "info")
             # 调试：打印前5行 excel_row 和 原表行号
             if 'excel_row' in self.audit_data.columns:
@@ -888,40 +907,6 @@ class AnalysisEvents:
     # ---------- View 接口方法（供 AuditPresenter 调用）----------
 
 
-    def _update_filter_options(self):
-        """基于全量数据 (self.full_audit_data) 更新筛选下拉框的选项。
-        确保方法只在数据加载时被调用一次。
-        """
-        if not hasattr(self, 'full_audit_data') or self.full_audit_data is None:
-            print("[DEBUG] full_audit_data 不存在，跳过下拉框初始化")
-            return
-        
-        # 选择性地打印数据列，方便调试
-        print(f"[DEBUG] 全量数据列名: {list(self.full_audit_data.columns)}")
-        
-        # 在全量数据中查找物料相关列
-        if 'material_category' in self.full_audit_data.columns:
-            category_col = 'material_category'
-        elif '物料类型' in self.full_audit_data.columns:
-            category_col = '物料类型'
-        else:
-            print("[DEBUG] 未找到物料大类列，跳过下拉框初始化")
-            return
-        
-        # 从全量数据中提取唯一值并排序
-        unique_vals = sorted(self.full_audit_data[category_col].dropna().unique())
-        options = ["全部"] + [str(val) for val in unique_vals if val]
-        
-        # 更新下拉框
-        if hasattr(self, 'mat_category_cb') and self.mat_category_cb:
-            self.mat_category_cb['values'] = options
-            # 如果当前选中的值已不在新选项列表中，则重置为"全部"
-            if self.mat_category_cb.get() not in options:
-                self.mat_category_cb.set("全部")
-            print(f"[DEBUG] 物料大类下拉框已初始化，选项数: {len(options)}")
-            print(f"[DEBUG] 选项内容: {options}")
-        
-        # 触发一次筛选刷新
-        if hasattr(self, '_on_filter_changed'):
-            self._on_filter_changed('material_category')
+    # _update_filter_options 已移入 table_events.py（优先级更高的 MRO 位置）
+    # 在那里统一处理全部下拉框，包括 material_category（基于 full_audit_data）
 
