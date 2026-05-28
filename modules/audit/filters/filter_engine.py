@@ -172,7 +172,7 @@ class FilterEngine:
                 df = df[df[cat_col] == material_category]
                 print(f'[DEBUG] 筛选后行数: {len(df)}')
             else:
-                print(f'[DEBUG] 物料大类筛选: 未找到物料类型列, filters={filters}')
+                print(f'[DEBUG] 物料大类筛选: 未找到物料类型列, df.columns={list(df.columns)}')
 
         # 13. 日期范围筛选
         date_start = filters.get('date_start')
