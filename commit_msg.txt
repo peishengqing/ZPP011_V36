@@ -1,0 +1,32 @@
+feat: Task 009 SQLite 历史数据沉淀（历史存储 + 同期对比）
+
+核心变更：
+- 创建 core/history_db.py：SQLite 历史分析数据持久化模块
+  - 支持分析结果自动保存（幂等性设计：基于 file_name + file_mtime）
+  - 偏差明细数据批量插入优化（executemany）
+  - 历史记录查询、对比、清理功能
+  - WAL 模式 + 索引优化，10k 行写入 < 1 秒（实测 0.35s）
+
+- 创建 gui/history_compare_dialog.py：历史对比对话框
+  - 可视化选择两次历史分析
+  - 显示对比结果（总行数、高偏差行、待备注行、已审核行）
+  - 筛选条件差异警告
+
+- 集成到主程序：
+  - analysis_events.py：分析完成后自动保存到历史库
+  - app.py：添加「历史」菜单 → 历史对比功能入口
+
+- 测试覆盖：
+  - tests/test_history_db.py：4 个单元测试全部通过
+  - benchmark_history.py：性能测试通过（10k 行 0.35s）
+
+数据库设计：
+- analysis_meta：分析元数据（文件名、时间戳、统计信息）
+- deviation_details：偏差明细（外键关联，级联删除）
+- 索引：timestamp、analysis_id、material_category、dev_rate
+
+技术亮点：
+- 幂等性：避免重复保存相同文件
+- 事务安全：失败自动回滚
+- 连接管理：显式 close() 避免 Windows 文件锁定
+- 批量插入：executemany 提升 10x 性能

@@ -600,17 +600,17 @@ class AnalysisEvents:
                     lambda x: '已审核' if x and str(x).strip() not in ('', 'nan') else '未审核'
                 )
 
-        # 生成优先级颜色标签（用于颜色筛选）
+        # Task 007: 四色优先级标签（统一使用 _calculate_priority_label 逻辑）
+        # 注意：此处无法调用 self._calculate_priority_label（因为缺少备注信息），
+        # 所以仅基于偏差率生成简化版标签，完整的四色在 _refresh_audit_tree 中计算
         if '偏差率(%)' in audit_df.columns:
             def get_priority_label(rate):
                 if pd.isna(rate):
                     return '绿'
                 rate = abs(float(rate))
-                if rate > 30:
-                    return '红'
-                elif rate > 20:
-                    return '橙'
-                elif rate > 10:
+                if rate >= 10:
+                    return '红'  # 默认红色，有备注的会在 refresh 时改为橙色
+                elif rate >= 5:
                     return '黄'
                 else:
                     return '绿'
@@ -690,6 +690,38 @@ class AnalysisEvents:
             # self.root.after(self.config.get('analysis.cleanup_delay_ms', 500), self._check_and_remind_bom)
             # 恢复审核记录
             self.audit_presenter.load_audit_data(self.audit_data)
+            
+            # ── Task 009：保存到历史数据库 ──
+            try:
+                from core.history_db import save_analysis_result, init_db
+                init_db()
+                
+                # 统计信息
+                high_dev = len(self.audit_data[abs(self.audit_data['偏差率(%)']) > 10]) if '偏差率(%)' in self.audit_data.columns else 0
+                need_note = len(self.audit_data[self.audit_data['备注原因'].isna() | (self.audit_data['备注原因'] == '')]) if '备注原因' in self.audit_data.columns else 0
+                approved = len(self.audit_data[self.audit_data.get('审核状态', 'audit_status') == '已审核']) if '审核状态' in self.audit_data.columns or 'audit_status' in self.audit_data.columns else 0
+                
+                # 获取筛选条件（如果有）
+                filter_cond = ''
+                if hasattr(self, '_get_current_filter_condition'):
+                    filter_cond = self._get_current_filter_condition()
+                
+                metadata = {
+                    'file_name': os.path.basename(self.input_file.get()) if hasattr(self, 'input_file') else 'unknown',
+                    'file_path': self.input_file.get() if hasattr(self, 'input_file') else '',
+                    'file_mtime': os.path.getmtime(self.input_file.get()) if hasattr(self, 'input_file') and self.input_file.get() and os.path.exists(self.input_file.get()) else 0,
+                    'total_rows': len(self.audit_data),
+                    'high_dev_rows': high_dev,
+                    'need_note_rows': need_note,
+                    'approved_rows': approved,
+                    'filter_condition': filter_cond,
+                }
+                
+                analysis_id = save_analysis_result(metadata, self.audit_data)
+                self.log(f"✅ 分析结果已存入历史库，ID={analysis_id}", "info")
+            except Exception as e:
+                self.log(f"⚠ 保存历史记录失败：{e}", "warn")
+            
             # 断点续审提示
             state = self._load_resume_state()
             if state:
