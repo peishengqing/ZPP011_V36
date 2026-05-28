@@ -28,16 +28,38 @@ class FilterEngine:
 
         df = data.copy()
 
+        # 0. Stat 卡片筛选（大偏差/无备注/已审核）
+        stat = filters.get('stat')
+        if stat == 'big_dev':
+            rc = next((c for c in ['偏差率(%)', '偏差率'] if c in df.columns), None)
+            if rc:
+                df = df[pd.to_numeric(df[rc], errors='coerce').abs() > 10]
+        elif stat == 'no_note':
+            rc = next((c for c in ['备注原因', '备注'] if c in df.columns), None)
+            if rc:
+                df = df[df[rc].isna() | (df[rc].astype(str).str.strip() == '')]
+        elif stat == 'approved':
+            rc = next((c for c in ['备注原因', '备注'] if c in df.columns), None)
+            if rc:
+                df = df[df[rc].notna() & (df[rc].astype(str).str.strip() != '')]
+
         # 1. 工厂筛选
         factory = filters.get('factory')
-        if factory and factory != '全部' and '工厂' in df.columns:
-            df = df[df['工厂'] == factory]
+        if factory and factory != '全部':
+            factory_col = next(
+                (c for c in ['工厂', '工厂名称'] if c in df.columns), None
+            )
+            if factory_col:
+                df = df[df[factory_col] == factory]
 
         # 2. 车间筛选
         workshop = filters.get('workshop')
-        if workshop and workshop != '全部' and '车间' in df.columns:
-            df = df[df['车间'] == workshop]
-
+        if workshop and workshop != '全部':
+            workshop_col = next(
+                (c for c in ['车间', '生产管理员描述'] if c in df.columns), None
+            )
+            if workshop_col:
+                df = df[df[workshop_col] == workshop]
         # 3. 物料描述模糊匹配
         material = filters.get('material', '').strip()
         if material:
@@ -107,10 +129,14 @@ class FilterEngine:
             else:
                 pass  # 未找到替代料列，不做筛选
 
-        # 8. 审核来源
+        # 8. 审核来源（兼容 UI 显示值和存储值）
         audit_source = filters.get('audit_source')
-        if audit_source and audit_source != '全部' and 'audit_source' in df.columns:
-            df = df[df['audit_source'] == audit_source]
+        if audit_source and audit_source != '全部':
+            src_col = next(
+                (c for c in ['audit_source', '审核来源'] if c in df.columns), None
+            )
+            if src_col:
+                df = df[df[src_col] == audit_source]
 
         # 9. 审核状态
         audit_status = filters.get('audit_status')
@@ -133,7 +159,22 @@ class FilterEngine:
             cmap = {'红': '红', '橙': '橙', '黄': '黄', '绿': '绿'}
             df = df[df['_priority_label'] == cmap.get(color, color)]
 
-        # 12. 日期范围筛选
+        # 12. 物料大类筛选（兼容 material_category 和 物料类型 两种列名）
+        material_category = filters.get('material_category')
+        if material_category and material_category != '全部':
+            cat_col = None
+            for col in ['material_category', '物料类型', '物料大类']:
+                if col in df.columns:
+                    cat_col = col
+                    break
+            if cat_col:
+                print(f'[DEBUG] 物料大类筛选: 选={material_category}, 使用列={cat_col}, 列值分布={df[cat_col].value_counts().to_dict()}')
+                df = df[df[cat_col] == material_category]
+                print(f'[DEBUG] 筛选后行数: {len(df)}')
+            else:
+                print(f'[DEBUG] 物料大类筛选: 未找到物料类型列, filters={filters}')
+
+        # 13. 日期范围筛选
         date_start = filters.get('date_start')
         date_end = filters.get('date_end')
         if (date_start or date_end) and '订单日期' in df.columns:
@@ -145,7 +186,7 @@ class FilterEngine:
                 end_dt = pd.to_datetime(date_end)
                 df = df[df['订单日期'] <= end_dt]
 
-        # 13. 关键词搜索（全文匹配）
+        # 14. 关键词搜索（全文匹配）
         search = filters.get('search', '').strip()
         if search:
             mask = pd.Series(False, index=df.index)
@@ -153,7 +194,7 @@ class FilterEngine:
                 mask |= df[col].astype(str).str.contains(search, case=False, na=False)
             df = df[mask]
 
-        # 14. 备注筛选
+        # 15. 备注筛选
         remark = filters.get('remark')
         if remark and remark != '全部':
             remark_col = next(
