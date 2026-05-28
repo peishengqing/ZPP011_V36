@@ -13,91 +13,118 @@ import traceback
 
 class TableEvents:
     """表格展示、筛选、排序、双击卡片等事件"""
+    # 分页加载状态（Task 006）
+    _display_start = 0
+    _display_limit = 500
+    _total_rows = 0
+    _is_loading = False
+    _native_yscroll_set = None
+    
+    # ==================== Task 006: 无限滚动 ====================
+    
+    def _init_scroll_binding(self):
+        """替换 yscrollcommand，桥接原生滚动与自定义加载"""
+        # 查找滚动条对象
+        scrollbar = getattr(self, 'audit_vscroll', None) or getattr(self, 'vscroll', None)
+        if scrollbar:
+            self._native_yscroll_set = scrollbar.set
+            self.audit_tree.configure(yscrollcommand=self._combined_scroll)
+    
+    def _combined_scroll(self, *args):
+        """组合滚动回调：更新滚动条位置 + 检测触底加载"""
+        # 1. 更新滚动条位置
+        if self._native_yscroll_set:
+            self._native_yscroll_set(*args)
+        # 2. 检测触底加载
+        if not self._is_loading and len(args) > 1:
+            try:
+                if float(args[1]) >= 0.99:
+                    if self._display_start + self._display_limit < self._total_rows:
+                        self._load_more_data()
+            except (ValueError, IndexError):
+                pass
+
+    
+    def _load_more_data(self):
+        """加载更多数据（分页加载）"""
+        if self._is_loading:
+            return
+        self._is_loading = True
+        
+        new_start = self._display_start + self._display_limit
+        if new_start >= self._total_rows:
+            self._is_loading = False
+            return
+        
+        self._display_start = new_start
+        # 追加数据
+        self._append_rows_to_treeview(self._display_start, self._display_limit)
+        # 滑动窗口：超过 2000 行时移除前面的行
+        self._trim_treeview_if_needed()
+        self._is_loading = False
+    
+    def _trim_treeview_if_needed(self):
+        """滑动窗口：保持 Treeview 性能"""
+        children = self.audit_tree.get_children()
+        if len(children) > 2000:
+            to_remove = children[:500]
+            for child in to_remove:
+                self.audit_tree.detach(child)  # detach 比 delete 快    
+    
+    def _append_rows_to_treeview(self, start, limit):
+        """追加行到 Treeview（分页加载核心）"""
+        if not hasattr(self, 'audit_data') or self.audit_data is None:
+            return
+        
+        end = min(start + limit, self._total_rows)
+        
+        for idx in range(start, end):
+            if idx >= len(self.audit_data):
+                break
+            
+            row_data = self.audit_data.iloc[idx]
+            
+            # 转换为 treeview 可识别的值列表（按列顺序）
+            values = [str(row_data.get(col, '')) for col in self.audit_tree['columns']]
+            
+            # 获取 tag（查找现有的 tag 逻辑）
+            tags = self._get_row_tags(idx) if hasattr(self, '_get_row_tags') else ()
+            
+            self.audit_tree.insert("", "end", values=values, tags=tags)
+    
+    def _reset_pagination(self):
+        """重置分页状态"""
+        self.__class__._display_start = 0
+        self.__class__._is_loading = False
 
     def _refresh_audit_tree(self, df, skip_auto_sort=False):
-        """用给定的 DataFrame 刷新智能审核表格"""
-
-        # 自动设置日期筛选范围为数据的实际日期范围（仅首次加载时）
-        if len(df) > 0 and '订单日期' in df.columns:
-            date_col = pd.to_datetime(df['订单日期'], errors='coerce')
-            valid_dates = date_col.dropna()
-            if len(valid_dates) > 0:
-                min_date = valid_dates.min().date()
-                max_date = valid_dates.max().date()
-                try:
-                    self.date_start_de.set_date(min_date)
-                    self.date_end_de.set_date(max_date)
-                except Exception:
-                    pass
-
-        # 【调试】打印列定义和第一行数据
-
-        self.log(f"[DEBUG] cols = {self.audit_tree['columns']}")
-
-        if len(df) > 0:
-            first = df.iloc[0]
-
-            self.log(
-                f"[DEBUG] 第一行数据样例: idx={first.name}, "
-                + ", ".join(
-                    [
-                        f"{c}={first.get(c, '?')}"
-                        for c in [
-                            "工厂",
-                            "车间",
-                            "订单日期",
-                            "流程订单",
-                            "物料编码",
-                            "物料名称",
-                            "定额",
-                            "实际",
-                            "偏差率",
-                        ]
-                        if c in first.index
-                    ]
-                )
-            )
-
-        self.log(f"[DEBUG] _refresh_audit_tree: df={len(df)}行", "info")
-
-        # AI建议列诊断
-
-        if "AI建议" not in df.columns:
-            self.log("[WARN] DataFrame中没有'AI建议'列!", "warn")
-
+        """用给定的 DataFrame 刷新智能审核表格（支持分页加载）"""
+        # 重置分页状态
+        self._reset_pagination()
+        
+        # 清空 Treeview
+        if hasattr(self, 'audit_tree'):
+            self.audit_tree.delete(*self.audit_tree.get_children())
+        
+        # 设置总行数
+        if df is not None and not df.empty:
+            self.audit_data = df.copy()
+            self._total_rows = len(df)
         else:
-            non_empty = df["AI建议"].notna().sum()
+            self.audit_data = None
+            self._total_rows = 0
+        
+        # 加载首屏数据
+        self._append_rows_to_treeview(0, self._display_limit)
+        
+        # 初始化滚动绑定（如果还没初始化）
+        if self._native_yscroll_set is None:
+            self._init_scroll_binding()
+        
+        # 以下保留原有的调试和优先级标记逻辑
+        if hasattr(self, '_log'):
+            self._log(f"[DEBUG] _refresh_audit_tree: loaded first {self._display_limit} rows, total {self._total_rows} rows")
 
-            self.log(f"[DEBUG] AI建议列非空: {non_empty}/{len(df)}", "info")
-
-            if non_empty > 0:
-                sample = str(df["AI建议"].dropna().iloc[0])[:80]
-
-                self.log(f"[DEBUG] AI建议示例: {sample}", "info")
-
-        # 确保 audit_result 和 AI建议 列存在（在副本上操作，不影响原始数据）
-
-        df = df.copy()
-
-        for col in ("audit_result", "AI建议"):
-            if col not in df.columns:
-                df[col] = ""
-
-        for row in self.audit_tree.get_children():
-            self.audit_tree.delete(row)
-
-        if df is None or len(df) == 0:
-            return
-
-        # ── 性能优化：暂停绘制，批量插入后再恢复 ──
-
-        try:
-            pass  # [FIX] 跳过 displaycolumns=[] 暂停绘制，防止异常时无法恢复
-
-        except Exception:
-            pass
-
-        # ── P1：智能优先级标记 ──
 
         def calc_priority(row):
 
@@ -1076,6 +1103,9 @@ class TableEvents:
     def _on_filter_changed(self, col_key):
         """任一筛选下拉框变化时，组合所有筛选条件并刷新表格（统一使用 FilterEngine）"""
         print(f"[DEBUG] _on_filter_changed called with key={col_key}")
+        # 重置分页
+        self._reset_pagination()
+
 
         if self.audit_data is None or len(self.audit_data) == 0:
             return
@@ -1569,6 +1599,9 @@ class TableEvents:
         self._apply_sort_and_refresh()
 
     def _apply_sort_and_refresh(self):
+        # 重置分页
+        self._reset_pagination()
+
 
         if self.audit_data is None or self.audit_data.empty:
             return
