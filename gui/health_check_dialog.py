@@ -125,6 +125,14 @@ class HealthCheckDialog:
         db_ok, db_detail = self._check_database()
         results.append(("审核数据库", "✅ 正常" if db_ok else "⚠ 异常", db_detail))
 
+        # ⑤ 备份恢复状态
+        bm = BackupManager()
+        pending = bm.get_pending_recovery()
+        if pending:
+            results.append(("备份恢复", "⚠ 待恢复", f"备份时间：{pending.get('timestamp', '未知')}"))
+        else:
+            results.append(("备份恢复", "✅ 正常", "无待恢复备份"))
+
         # 刷新表格
         self.tree.delete(*self.tree.get_children())
         for item in results:

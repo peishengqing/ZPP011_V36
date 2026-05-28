@@ -246,6 +246,18 @@ class BackupManager:
             except Exception:
                 pass
 
+    def get_pending_recovery(self):
+        """检查是否有待恢复的备份。返回备份 meta 字典，若无则返回 None。"""
+        flag_path = os.path.join(_get_app_dir(), "_recovery_needed.flag")
+        if not os.path.exists(flag_path):
+            return None
+        try:
+            with open(flag_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            return meta
+        except Exception:
+            return None
+
     def _mark_recovery_needed(self, meta: dict):
         """写入恢复标记文件。"""
         flag_path = os.path.join(_get_app_dir(), "_recovery_needed.flag")
