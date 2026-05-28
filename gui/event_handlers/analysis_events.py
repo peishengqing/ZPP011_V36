@@ -364,17 +364,16 @@ class AnalysisEvents:
             self.audit_stat_labels['need_note'].configure(text=str(len(need_note)))
             self.audit_stat_labels['ok_note'].configure(text=str(len(ok_note)))
             self.audit_data = high_dev.copy()
-            # 添加物料大类列（优先用数据中已有的「物料类型」列，否则用物料编码前缀计算）
-            if '物料类型' in self.audit_data.columns and self.audit_data['物料类型'].notna().any():
-                self.audit_data['material_category'] = self.audit_data['物料类型'].astype(str)
-            else:
-                mat_cat_map = {
-                    "100": "原辅料", "200": "包材", "400": "食品辅料/食品半成品",
-                    "410": "饮料辅料/饮料半成品", "500": "食品成品", "510": "饮料成品"
-                }
-                self.audit_data['material_category'] = self.audit_data['物料编码'].apply(
-                    lambda x: mat_cat_map.get(str(x)[:3], str(x)[:3]) if pd.notna(x) else ''
-                )
+            # 添加物料大类列（始终用物料编码前缀计算，确保值和下拉选项一致）
+            mat_cat_map = {
+                "100": "原辅料", "200": "包材", "400": "食品辅料/食品半成品",
+                "410": "饮料辅料/饮料半成品", "500": "食品成品", "510": "饮料成品"
+            }
+            self.audit_data['material_category'] = self.audit_data['物料编码'].apply(
+                lambda x: mat_cat_map.get(str(x)[:3], str(x)[:3]) if pd.notna(x) else ''
+            )
+            # 如果数据中「物料类型」列有更精确的分类，可以覆盖（可选）
+            # 目前不打乱逻辑，保持用物料编码前缀计算的结果
             print(f'[DEBUG audit_data] 列: {list(self.audit_data.columns)}')
             print(f'[DEBUG material_category] 值分布: {self.audit_data["material_category"].value_counts().to_dict()}')
             # 映射订单日期列（Data sheet 用"订单开始日期"，统一为"订单日期"）
