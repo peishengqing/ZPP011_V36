@@ -10,11 +10,13 @@ import pandas as pd
 
 # 默认列宽配置
 DEFAULT_COL_WIDTHS = {
-    'idx': 35, 'excel_row': 60, 'code': 70, 'name': 100, 'factory': 70,
+    'idx': 35, 'excel_row': 60, 'code': 70, 'material_category': 70, 'name': 100, 'factory': 70,
     'order_date': 70, 'admin': 70, 'quota': 50, 'actual': 50, 'dev_rate': 55,
     'is_alt': 50, 'status': 55, 'remark': 80, 'batch_remark': 90,
     'audit_result': 80, 'AI建议': 120, 'audit_status': 60, 'audit_source': 70,
-    'deviation_amount': 90, 'order_no': 100
+    'deviation_amount': 90, 'order_no': 100,
+    'remark_check_status': 0,
+    'remark_check_msg': 150,
 }
 # 列宽配置文件路径
 COLUMN_WIDTHS_FILE = os.path.join(os.path.expanduser('~'), '.zpp011_audit', 'column_widths.json')

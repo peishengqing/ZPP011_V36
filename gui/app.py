@@ -288,6 +288,7 @@ class ZPP011Beautiful(EventsMixIn):
             self.log("✅ 侧边栏筛选面板已加载", "success")
 
         self._restore_column_widths()
+        self._init_column_width_tracking()  # Task 008：列宽变化追踪
         self._init_sort_columns()  # 初始化多列排序系统
         self._init_menu()  # 初始化菜单栏
         self.log("✅ UI 初始化完成，日志系统测试", "success")
