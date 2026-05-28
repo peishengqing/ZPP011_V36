@@ -211,6 +211,10 @@ class ZPP011Beautiful(EventsMixIn):
 
         # ── 菜单栏 ─────────────────
         menubar = tk.Menu(self.root)
+        # Task 009：历史对比菜单
+        history_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label='历史', menu=history_menu)
+        history_menu.add_command(label='历史对比', command=self._show_history_compare)
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label='帮助', menu=help_menu)
         help_menu.add_command(label='快捷键说明', command=self._show_shortcuts_help)
@@ -1414,6 +1418,11 @@ class ZPP011Beautiful(EventsMixIn):
         self.date_end_val = None
         self.date_range_var.set("全部日期")
         self._on_filter_changed('date_range')
+    
+    def _show_history_compare(self):
+        """显示历史对比窗口（Task 009）"""
+        from gui.history_compare_dialog import HistoryCompareDialog
+        HistoryCompareDialog(self.root)
     
     def _on_close(self):
         """窗口关闭时的清理工作（Task 004）"""
