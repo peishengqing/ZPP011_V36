@@ -1,6 +1,7 @@
-import tkinter as tk
+﻿import tkinter as tk
 from tkinter import scrolledtext, messagebox, filedialog, ttk
 from widgets import C, STEPS, card, btn, label, entry
+from tkcalendar import DateEntry
 from domain.alt_material import alt_manager
 import os
 import json
@@ -41,7 +42,7 @@ def _build_ui(self):
                  font=("Microsoft YaHei", 14, "bold"), fg='#ffffff',
                  bg=C['header_bg']).pack(anchor="w")
         tk.Label(title_frame, text=f"制作人：裴盛清  |  {_ver}",
-                 font=("Microsoft YaHei", 8), fg='#cae8ff',
+                 font=("Microsoft YaHei", 9), fg='#cae8ff',
                  bg=C['header_bg']).pack(anchor="w")
 
         main = tk.Frame(self.root, bg=C['bg'])
@@ -84,14 +85,14 @@ def _build_ui(self):
         tk.Label(fr_date1, text="开始", font=("Microsoft YaHei", 9),
                  fg=C['text_dim'], bg=C['surface'], width=6, anchor="w").pack(side="left")
         entry(fr_date1, self.start_date).pack(side="left", fill="x", expand=True)
-        tk.Label(fr_date1, text="例：2026-04-01", font=("Microsoft YaHei", 8),
+        tk.Label(fr_date1, text="例：2026-04-01", font=("Microsoft YaHei", 9),
                  fg=C['text_dim'], bg=C['surface']).pack(side="right")
         fr_date2 = tk.Frame(date_card, bg=C['surface'])
         fr_date2.pack(fill="x", padx=12, pady=(0, 8))
         tk.Label(fr_date2, text="结束", font=("Microsoft YaHei", 9),
                  fg=C['text_dim'], bg=C['surface'], width=6, anchor="w").pack(side="left")
         entry(fr_date2, self.end_date).pack(side="left", fill="x", expand=True)
-        tk.Label(fr_date2, text="例：2026-04-30", font=("Microsoft YaHei", 8),
+        tk.Label(fr_date2, text="例：2026-04-30", font=("Microsoft YaHei", 9),
                  fg=C['text_dim'], bg=C['surface']).pack(side="right")
 
         # 物料搜索卡片
@@ -105,7 +106,7 @@ def _build_ui(self):
         tk.Label(fr_search, text="编码/名称", font=("Microsoft YaHei", 9),
                  fg=C['text_dim'], bg=C['surface'], width=8, anchor="w").pack(side="left")
         entry(fr_search, self.material_search).pack(side="left", fill="x", expand=True, padx=(0, 4))
-        tk.Label(fr_search, text="留空分析全部", font=("Microsoft YaHei", 8),
+        tk.Label(fr_search, text="留空分析全部", font=("Microsoft YaHei", 9),
                  fg=C['text_dim'], bg=C['surface']).pack(side="right")
 
         # 数据预览
@@ -230,7 +231,7 @@ def _build_ui(self):
             lbl = tk.Label(fr, text="0", font=("Microsoft YaHei", 18, "bold"),
                           fg=color, bg=C['surface2'], anchor="center")
             lbl.pack(pady=(8, 0))
-            tk.Label(fr, text=text, font=("Microsoft YaHei", 8),
+            tk.Label(fr, text=text, font=("Microsoft YaHei", 9),
                     fg=C['text_dim'], bg=C['surface2'], anchor="center").pack()
             self.audit_stat_labels[key] = lbl
             self.audit_stat_cards[key] = fr
@@ -263,21 +264,18 @@ def _build_ui(self):
         filter_bar.pack(fill="x", padx=12, pady=(0, 5))
 
         filter_cols = [
-            ('factory', '工厂'),
             ('order_date', '订单日期'),
-            ('admin', '车间'),
-            ('name', '物料描述'),
-            ('status', '状态'),
-            ('dev_rate', '偏差率%'),
-            ('is_alt', '替代料'),
             ('remark', '备注'),
             ('ai_result', 'AI审核'),
             ('_color', '颜色'),
+            ('material_category', '物料大类'),
+            ('audit_source', '审核来源'),
+            ('remark_check_status', '校验提示'),
         ]
         # ── P1#12：筛选栏宽度映射 ──
         filter_width = {
-            '工厂': 8, '订单日期': 8, '状态': 8,
-            '车间': 6, '替代料': 6, 'AI审核': 6, '颜色': 7,
+            '订单日期': 16, '备注': 10, 'AI审核': 8, '颜色': 7,
+            '物料大类': 10, '审核来源': 10, '校验提示': 10,
         }
 
         self.filter_widgets = {}
@@ -292,42 +290,43 @@ def _build_ui(self):
             col_frame.grid(row=row_idx, column=col_idx, padx=2, pady=2, sticky="ew")
             filter_bar.columnconfigure(col_idx, weight=1)
 
-            tk.Label(col_frame, text=col_label, font=("Microsoft YaHei", 8),
+            tk.Label(col_frame, text=col_label, font=("Microsoft YaHei", 9),
                      bg=C['surface'], fg=C['text_dim']).pack()
 
             if col_key == 'name':
-                name_entry = tk.Entry(col_frame, font=("Microsoft YaHei", 8), width=10)
+                name_entry = tk.Entry(col_frame, font=("Microsoft YaHei", 9), width=10)
                 name_entry.pack(fill="x")
                 name_entry.bind("<KeyRelease>", lambda e, k=col_key: self._on_filter_changed(k))
                 self.filter_widgets[col_key] = name_entry
                 self.filter_vars[col_key] = name_entry
             elif col_key == 'order_date':
+                # ── tkcalendar DateEntry 日期选择 ──
                 date_row = tk.Frame(col_frame, bg=C['surface'])
                 date_row.pack(fill="x")
-                self.date_start_var = tk.StringVar()
-                self.date_end_var = tk.StringVar()
-                self.date_start_entry = tk.Entry(date_row, textvariable=self.date_start_var,
-                                                 font=("Microsoft YaHei", 8), width=10)
-                self.date_start_entry.pack(side="left", padx=(0,2))
+                self.date_start_de = DateEntry(date_row, width=12,
+                                               background='#4a90d9', foreground='white',
+                                               borderwidth=1, font=("Microsoft YaHei", 9),
+                                               locale='zh_CN', date_pattern='yyyy-mm-dd')
+                self.date_start_de.pack(side="left", padx=(0, 2))
                 tk.Label(date_row, text="~", font=("Microsoft YaHei", 9, 'bold'),
                          bg=C['surface'], fg=C['text_dim']).pack(side="left")
-                self.date_end_entry = tk.Entry(date_row, textvariable=self.date_end_var,
-                                               font=("Microsoft YaHei", 8), width=10)
-                self.date_end_entry.pack(side="left", padx=(2,4))
-                date_btn = tk.Button(date_row, text="筛选", font=("Microsoft YaHei", 8),
+                self.date_end_de = DateEntry(date_row, width=12,
+                                             background='#4a90d9', foreground='white',
+                                             borderwidth=1, font=("Microsoft YaHei", 9),
+                                             locale='zh_CN', date_pattern='yyyy-mm-dd')
+                self.date_end_de.pack(side="left", padx=(2, 4))
+                date_btn = tk.Button(date_row, text="筛选", font=("Microsoft YaHei", 9),
                                      bg='#4a90d9', fg='white', cursor='hand2',
                                      command=lambda: self._on_filter_changed('order_date'),
                                      relief='flat', padx=6)
                 date_btn.pack(side="left")
-                self.date_start_entry.bind("<Return>", lambda e: self._on_filter_changed('order_date'))
-                self.date_end_entry.bind("<Return>", lambda e: self._on_filter_changed('order_date'))
-                self.filter_widgets[col_key] = (self.date_start_entry, self.date_end_entry)
+                self.filter_widgets[col_key] = (self.date_start_de, self.date_end_de)
             else:
                 col_width = filter_width.get(col_label, 10)
                 # ── P1#13：颜色筛选下拉框 ──
                 if col_key == '_color':
-                    color_options = ["全部", "🔴 红", "🟠 橙", "🟡 黄", "🟢 绿"]
-                    cb = ttk.Combobox(col_frame, state="readonly", font=("Microsoft YaHei", 8), 
+                    color_options = ["全部", "红", "橙", "黄", "绿"]
+                    cb = ttk.Combobox(col_frame, state="readonly", font=("Microsoft YaHei", 9), 
                                   width=col_width, values=color_options)
                     cb.current(0)
                     cb.pack(fill="x")
@@ -335,12 +334,35 @@ def _build_ui(self):
                     self.filter_vars[col_key] = tk.StringVar(value="全部")
                     self.filter_widgets[col_key] = cb
                 else:
-                    cb = ttk.Combobox(col_frame, state="readonly", font=("Microsoft YaHei", 8), width=col_width)
-                    cb.pack(fill="x")
-                    cb.bind("<<ComboboxSelected>>", lambda e, k=col_key: self._on_filter_changed(k))
+                    # ── material_category 改为动态加载（从实际数据提取唯一值） ──
+                    if col_key == 'material_category':
+                        cb = ttk.Combobox(col_frame, state="readonly", font=("Microsoft YaHei", 9),
+                                      width=col_width, values=["全部"])
+                        cb.current(0)
+                        cb.pack(fill="x")
+                        cb.bind("<<ComboboxSelected>>", lambda e, k=col_key: self._on_filter_changed(k))
+                        self.filter_vars[col_key] = tk.StringVar(value="全部")
+                        self.filter_widgets[col_key] = cb
+                        self.mat_category_cb = cb  # 保存引用，供动态更新
+                    else:
+                        preset_options = {
+                            'audit_source': ["全部", "AI审核", "手动", "替代料"],
+                            'remark_check_status': ["全部", "红色", "黄色", "正常"],
+                        }
+                        cb = ttk.Combobox(
+                            col_frame, state="readonly",
+                            font=("Microsoft YaHei", 9),
+                            width=col_width,
+                            values=preset_options.get(col_key, [])
+                        )
+                        cb.pack(fill="x")
+                    if preset_options.get(col_key):
+                        cb.current(0)
+                    cb.bind("<<ComboboxSelected>>",
+                            lambda e, k=col_key: self._on_filter_changed(k))
                     self.filter_widgets[col_key] = cb
                 # ── P1#12：常用组 后加分隔线 ──
-                if col_key == 'status':
+                if col_key == 'order_date':
                     sep = tk.Frame(filter_bar, bg=C['surface'], width=2, height=20)
                     sep.configure(bg='#cccccc')  # 分隔线颜色
                     sep.grid(row=row_idx, column=col_idx+1, padx=(8, 0), pady=2, sticky='ns')
@@ -361,17 +383,17 @@ def _build_ui(self):
         lock_text = "🔒 已锁定" if self.column_locked else "🔓 可调整"
         self.lock_btn = tk.Button(reset_btn_frame, text=lock_text,
                                   command=self._toggle_column_lock,
-                                  font=("Microsoft YaHei", 8),
+                                  font=("Microsoft YaHei", 9),
                                   bg="#f0f0f0" if self.column_locked else "#e8f5e9",
                                   fg="#333333", relief="flat", cursor="hand2",
                                   activebackground="#e0e0e0", width=10)
         self.lock_btn.pack(side="left", padx=(4, 0))
         # 重置列宽按钮
         tk.Button(reset_btn_frame, text="↩重置列宽", command=self._reset_default_widths,
-                  font=("Microsoft YaHei", 8), bg="#fff3e0", fg="#333333",
+                  font=("Microsoft YaHei", 9), bg="#fff3e0", fg="#333333",
                   relief="flat", cursor="hand2", activebackground="#ffe0b2",
                   width=8).pack(side="left", padx=(4, 0))
-        self.filter_status_lbl = tk.Label(audit, text="", font=("Microsoft YaHei", 8),
+        self.filter_status_lbl = tk.Label(audit, text="", font=("Microsoft YaHei", 9),
                                    bg=C['surface'], fg=C['text_dim'], anchor="w")
         self.filter_status_lbl.pack(fill="x", padx=12, pady=(0, 4))# Treeview 表格
         self.table_frame = tk.Frame(audit, bg=C['surface'])
@@ -384,7 +406,7 @@ def _build_ui(self):
         audit_hscroll = ttk.Scrollbar(tree_container, orient="horizontal")
         audit_hscroll.pack(side="bottom", fill="x")
         cols = ("idx", "excel_row", "factory", "admin", "order_date", "order_no",
-                "code", "name", "quota", "actual", "dev_rate", "is_alt", "status",
+                "code", "material_category", "name", "quota", "actual", "dev_rate", "is_alt", "status",
                 "remark", "batch_remark", "audit_result", "AI建议", "audit_status",
                 "audit_source", "deviation_amount",
                 "remark_check_status", "remark_check_msg")
@@ -400,6 +422,7 @@ def _build_ui(self):
         self.audit_tree.heading("order_date", text="订单日期")
         self.audit_tree.heading("order_no", text="流程订单")
         self.audit_tree.heading("code", text="物料号")
+        self.audit_tree.heading("material_category", text="物料大类")
         self.audit_tree.heading("name", text="物料描述")
         self.audit_tree.heading("quota", text="定额")
         self.audit_tree.heading("actual", text="实际")
@@ -423,6 +446,7 @@ def _build_ui(self):
         self.audit_tree.column("order_date", width=70, anchor="center")
         self.audit_tree.column("order_no", width=100, anchor="center")
         self.audit_tree.column("code", width=70, anchor="center")
+        self.audit_tree.column("material_category", width=90, anchor="center")
         self.audit_tree.column("name", width=100, anchor="w")
         self.audit_tree.column("quota", width=50, anchor="e")
         self.audit_tree.column("actual", width=50, anchor="e")
@@ -500,6 +524,11 @@ def _build_ui(self):
         self.save_audit_btn = btn(row1_frame, "💾 保存审核结果", self._save_audit_back,
                                 bg="#e76f51", fg="white", width=14, state="disabled")
         self.save_audit_btn.pack(side="left", padx=(0, 8))
+
+        # Audit log export button (Task 004)
+        self.export_audit_log_btn = btn(row1_frame, "📋 导出审计日志", self._export_audit_log,
+                                        bg="#6c757d", fg="#ffffff", width=14)
+        self.export_audit_log_btn.pack(side="left", padx=(0, 8))
         self.export_db_btn = btn(row1_frame, "📤 导出备份", self._export_audit_backup,
                                bg="#4a90d9", fg="white", width=12, state="normal")
         self.export_db_btn.pack(side="left", padx=(0, 8))
@@ -546,7 +575,7 @@ def _build_ui(self):
             tk.Label(col_frame, text=period, font=("Microsoft YaHei", 10, "bold"),
                     bg=C['surface2'], fg=C['text']).pack(pady=(6, 2))
             self.trend_labels[period] = {
-                "range": tk.Label(col_frame, text="--", font=("Microsoft YaHei", 8),
+                "range": tk.Label(col_frame, text="--", font=("Microsoft YaHei", 9),
                                    bg=C['surface2'], fg=C['text_dim']),
                 "dev_rate": tk.Label(col_frame, text="--", font=("Microsoft YaHei", 9),
                                      bg=C['surface2'], fg=C['text']),
@@ -588,15 +617,15 @@ def _build_ui(self):
         log_title_bar.pack(fill="x", padx=12, pady=(10, 3))
         tk.Label(log_title_bar, text="  📝 运行日志", font=("Microsoft YaHei", 10, "bold"),
                  fg=C['text'], bg=C['surface'], anchor="w").pack(side="left")
-        tk.Button(log_title_bar, text="导出", font=("Microsoft YaHei", 8),
+        tk.Button(log_title_bar, text="导出", font=("Microsoft YaHei", 9),
                   command=self._export_log,
                   bg=C['surface2'], fg=C['text'], relief="flat", cursor="hand2",
                   activebackground=C['surface'], activeforeground=C['accent']).pack(side="right", padx=4)
-        tk.Button(log_title_bar, text="版本日志", font=("Microsoft YaHei", 8),
+        tk.Button(log_title_bar, text="版本日志", font=("Microsoft YaHei", 9),
                   command=self._export_changelog,
                   bg=C['surface2'], fg=C['text'], relief="flat", cursor="hand2",
                   activebackground=C['surface'], activeforeground=C['accent']).pack(side="right", padx=4)
-        tk.Button(log_title_bar, text="📖 故事线", font=("Microsoft YaHei", 8),
+        tk.Button(log_title_bar, text="📖 故事线", font=("Microsoft YaHei", 9),
                   command=self._show_storyline,
                   bg=C['surface2'], fg=C['text'], relief="flat", cursor="hand2",
                   activebackground=C['surface'], activeforeground=C['accent']).pack(side="right", padx=4)
@@ -619,7 +648,7 @@ def _build_ui(self):
         status.pack_propagate(False)
         tk.Frame(status, bg=C['accent'], width=3).pack(side="left", fill="y")
         self.status_lbl = tk.Label(status, text="就绪 — 选择输入文件后点击「开始分析」",
-                                   font=("Microsoft YaHei", 8), fg=C['text_dim'],
+                                   font=("Microsoft YaHei", 9), fg=C['text_dim'],
                                    bg=C['header_bg'], anchor="w")
         self.status_lbl.pack(side="left", padx=12)
 

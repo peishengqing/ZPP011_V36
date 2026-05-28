@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """表格展示、筛选、排序、双击卡片等事件"""
 
 import tkinter as tk
@@ -13,78 +13,118 @@ import traceback
 
 class TableEvents:
     """表格展示、筛选、排序、双击卡片等事件"""
+    # 分页加载状态（Task 006）
+    _display_start = 0
+    _display_limit = 500
+    _total_rows = 0
+    _is_loading = False
+    _native_yscroll_set = None
+    
+    # ==================== Task 006: 无限滚动 ====================
+    
+    def _init_scroll_binding(self):
+        """替换 yscrollcommand，桥接原生滚动与自定义加载"""
+        # 查找滚动条对象
+        scrollbar = getattr(self, 'audit_vscroll', None) or getattr(self, 'vscroll', None)
+        if scrollbar:
+            self._native_yscroll_set = scrollbar.set
+            self.audit_tree.configure(yscrollcommand=self._combined_scroll)
+    
+    def _combined_scroll(self, *args):
+        """组合滚动回调：更新滚动条位置 + 检测触底加载"""
+        # 1. 更新滚动条位置
+        if self._native_yscroll_set:
+            self._native_yscroll_set(*args)
+        # 2. 检测触底加载
+        if not self._is_loading and len(args) > 1:
+            try:
+                if float(args[1]) >= 0.99:
+                    if self._display_start + self._display_limit < self._total_rows:
+                        self._load_more_data()
+            except (ValueError, IndexError):
+                pass
+
+    
+    def _load_more_data(self):
+        """加载更多数据（分页加载）"""
+        if self._is_loading:
+            return
+        self._is_loading = True
+        
+        new_start = self._display_start + self._display_limit
+        if new_start >= self._total_rows:
+            self._is_loading = False
+            return
+        
+        self._display_start = new_start
+        # 追加数据
+        self._append_rows_to_treeview(self._display_start, self._display_limit)
+        # 滑动窗口：超过 2000 行时移除前面的行
+        self._trim_treeview_if_needed()
+        self._is_loading = False
+    
+    def _trim_treeview_if_needed(self):
+        """滑动窗口：保持 Treeview 性能"""
+        children = self.audit_tree.get_children()
+        if len(children) > 2000:
+            to_remove = children[:500]
+            for child in to_remove:
+                self.audit_tree.detach(child)  # detach 比 delete 快    
+    
+    def _append_rows_to_treeview(self, start, limit):
+        """追加行到 Treeview（分页加载核心）"""
+        if not hasattr(self, 'audit_data') or self.audit_data is None:
+            return
+        
+        end = min(start + limit, self._total_rows)
+        
+        for idx in range(start, end):
+            if idx >= len(self.audit_data):
+                break
+            
+            row_data = self.audit_data.iloc[idx]
+            
+            # 转换为 treeview 可识别的值列表（按列顺序）
+            values = [str(row_data.get(col, '')) for col in self.audit_tree['columns']]
+            
+            # 获取 tag（查找现有的 tag 逻辑）
+            tags = self._get_row_tags(idx) if hasattr(self, '_get_row_tags') else ()
+            
+            self.audit_tree.insert("", "end", values=values, tags=tags)
+    
+    def _reset_pagination(self):
+        """重置分页状态"""
+        self.__class__._display_start = 0
+        self.__class__._is_loading = False
 
     def _refresh_audit_tree(self, df, skip_auto_sort=False):
-        """用给定的 DataFrame 刷新智能审核表格"""
-
-        # 【调试】打印列定义和第一行数据
-
-        self.log(f"[DEBUG] cols = {self.audit_tree['columns']}")
-
-        if len(df) > 0:
-            first = df.iloc[0]
-
-            self.log(
-                f"[DEBUG] 第一行数据样例: idx={first.name}, "
-                + ", ".join(
-                    [
-                        f"{c}={first.get(c, '?')}"
-                        for c in [
-                            "工厂",
-                            "车间",
-                            "订单日期",
-                            "流程订单",
-                            "物料编码",
-                            "物料名称",
-                            "定额",
-                            "实际",
-                            "偏差率",
-                        ]
-                        if c in first.index
-                    ]
-                )
-            )
-
-        self.log(f"[DEBUG] _refresh_audit_tree: df={len(df)}行", "info")
-
-        # AI建议列诊断
-
-        if "AI建议" not in df.columns:
-            self.log("[WARN] DataFrame中没有'AI建议'列!", "warn")
-
+        """用给定的 DataFrame 刷新智能审核表格（支持分页加载）"""
+        # 重置分页状态
+        self._reset_pagination()
+        
+        # 清空 Treeview
+        if hasattr(self, 'audit_tree'):
+            self.audit_tree.delete(*self.audit_tree.get_children())
+        
+        # 设置总行数
+        if df is not None and not df.empty:
+            self.audit_data = df.copy()
+            self._total_rows = len(df)
         else:
-            non_empty = df["AI建议"].notna().sum()
+            self.audit_data = None
+            self._total_rows = 0
+        
+        # 加载首屏数据
+        self._append_rows_to_treeview(0, self._display_limit)
+        
+        # 初始化滚动绑定（如果还没初始化）
+        if self._native_yscroll_set is None:
+            self._init_scroll_binding()
+        
+        # 以下保留原有的调试和优先级标记逻辑
+        if hasattr(self, '_log'):
+            self._log(f"[DEBUG] _refresh_audit_tree: loaded first {self._display_limit} rows, total {self._total_rows} rows")
 
-            self.log(f"[DEBUG] AI建议列非空: {non_empty}/{len(df)}", "info")
-
-            if non_empty > 0:
-                sample = str(df["AI建议"].dropna().iloc[0])[:80]
-
-                self.log(f"[DEBUG] AI建议示例: {sample}", "info")
-
-        # 确保 audit_result 和 AI建议 列存在（在副本上操作，不影响原始数据）
-
-        df = df.copy()
-
-        for col in ("audit_result", "AI建议"):
-            if col not in df.columns:
-                df[col] = ""
-
-        for row in self.audit_tree.get_children():
-            self.audit_tree.delete(row)
-
-        if df is None or len(df) == 0:
-            return
-
-        # ── 性能优化：暂停绘制，批量插入后再恢复 ──
-
-        try:
-            pass  # [FIX] 跳过 displaycolumns=[] 暂停绘制，防止异常时无法恢复
-
-        except Exception:
-            pass
-
-        # ── P1：智能优先级标记 ──
 
         def calc_priority(row):
 
@@ -197,12 +237,45 @@ class TableEvents:
 
         # ── 填充 Tree（按优先级排序） ──
 
+        # ── 计算物料大类列（插入Tree前先加到DataFrame，确保筛选可用） ──
+        def _get_mat_category(code):
+            if not code:
+                return ""
+            prefix = str(code)[:3]
+            mat_map = {
+                "100": "原辅料", "200": "包材",
+                "400": "食品辅料/食品半成品", "410": "饮料辅料/饮料半成品",
+                "500": "食品成品", "510": "饮料成品", "600": "促销品",
+            }
+            return mat_map.get(prefix, prefix)
+
+        code_col = next((c for c in ['物料编码', '组件物料号'] if c in df.columns), None)
+        if code_col and 'material_category' not in df.columns:
+            df['material_category'] = df[code_col].apply(_get_mat_category)
+
+        # ── 注意：下拉框选项不再这里动态更新，改为在数据加载时一次性设置 ──
+        # 原因：如果基于当前 df（可能是筛选后的子集）更新选项，会导致下拉框选项随筛选结果一起变少
+        # 正确做法：基于 self.full_audit_data（全量数据）在 _update_filter_options 中设置一次
+
         for i, (_, row) in enumerate(df.iterrows(), 1):
             # ===== 计算审核来源（核心逻辑）=====
 
             remark = str(row.get("备注原因", "")).strip()
 
             code = str(row.get("物料编码", row.get("组件物料号", "")))
+
+            # ===== 物料大类分类 =====
+            mat_code_prefix = code[:3] if code else ""
+            mat_category_map = {
+                "100": "原辅料",
+                "200": "包材",
+                "400": "食品辅料/食品半成品",
+                "410": "饮料辅料/饮料半成品",
+                "500": "食品成品",
+                "510": "饮料成品",
+                "600": "促销品",
+            }
+            mat_category = mat_category_map.get(mat_code_prefix, mat_code_prefix)
 
             name = str(row.get("组件物料描述", row.get("物料名称", ""))).strip()
 
@@ -308,7 +381,7 @@ class TableEvents:
                 note_source = str(row.get("备注来源", ""))
 
                 if note_source in ("AI审核合格", "AI审核待改进", "AI生成"):
-                    audit_source_val = "AI"
+                    audit_source_val = "AI审核"
 
                 elif note_source == "人工填写":
                     audit_source_val = "手动"
@@ -337,11 +410,12 @@ class TableEvents:
                     else "",  # excel_row
                     str(row.get("工厂", row.get("工厂名称", ""))),  # factory
                     str(row.get("车间", row.get("生产管理员描述", ""))),  # admin
-                    str(row.get("订单日期", ""))[:12]
+                    str(row.get("订单日期", ""))[:10]
                     if pd.notna(row.get("订单日期"))
                     else "",  # order_date
                     order_no_val,  # order_no
                     str(row.get("物料编码", row.get("组件物料号", ""))),  # code
+                    mat_category,  # material_category
                     mat_desc[:20],  # name
                     f"{row.get('定额', row.get('数量-定额', 0)):.3f}",  # quota
                     f"{row.get('实际', row.get('数量-实际', 0)):.3f}",  # actual
@@ -926,7 +1000,7 @@ class TableEvents:
                 note_source = str(row.get("备注来源", ""))
 
                 if note_source in ("AI审核合格", "AI审核待改进", "AI生成"):
-                    audit_source_val = "AI"
+                    audit_source_val = "AI审核"
 
                 elif note_source == "人工填写":
                     audit_source_val = "手动"
@@ -977,7 +1051,7 @@ class TableEvents:
                     else "",  # excel_row
                     factory_val,  # factory
                     admin_val,  # admin
-                    str(row.get("订单日期", ""))[:12]
+                    str(row.get("订单日期", ""))[:10]
                     if pd.notna(row.get("订单日期"))
                     else "",  # order_date
                     order_no_val,  # order_no
@@ -1027,147 +1101,122 @@ class TableEvents:
     # ── 智能审核筛选栏方法 ─────────────────────────────
 
     def _on_filter_changed(self, col_key):
-        """任一筛选下拉框变化时，组合所有筛选条件并刷新表格（委托Presenter）"""
+        """任一筛选下拉框变化时，组合所有筛选条件并刷新表格（统一使用 FilterEngine）"""
+        print(f"[DEBUG] _on_filter_changed called with key={col_key}")
+        # 重置分页
+        self._reset_pagination()
+
 
         if self.audit_data is None or len(self.audit_data) == 0:
             return
 
-        # 读取所有筛选条件
+        # 统一使用 FilterEngine 进行筛选
+        from modules.audit.filters.filter_engine import FilterEngine
 
+        filters = {}
+
+        # 1. 搜索关键词
         search_text = self.search_var.get().strip()
+        if search_text and search_text != "输入任意关键词，实时过滤全部列...":
+            filters['search'] = search_text
 
-        if search_text == "输入任意关键词，实时过滤全部列...":
-            search_text = ""
-
-        # 读取日期范围
-
-        date_range = None
-
+        # 2. 日期范围
         if "order_date" in self.filter_widgets:
             date_widgets = self.filter_widgets["order_date"]
-
             if isinstance(date_widgets, tuple) and len(date_widgets) == 2:
-                start_d = date_widgets[0].get().strip()
+                start_d = date_widgets[0].get_date().strftime('%Y-%m-%d') if date_widgets[0].get_date() else ''
+                end_d = date_widgets[1].get_date().strftime('%Y-%m-%d') if date_widgets[1].get_date() else ''
+                if start_d:
+                    filters['date_start'] = start_d
+                if end_d:
+                    filters['date_end'] = end_d
 
-                end_d = date_widgets[1].get().strip()
-
-                if start_d or end_d:
-                    date_range = (start_d, end_d)
-
-        # 构建列筛选字典
-
-        col_map = {
-            "factory": "工厂名称",
-            "admin": "生产管理员描述",
-            "name": "组件物料描述",
-            "status": "status_temp",
-            "dev_rate": "偏差率(%)",
-            "is_alt": None,
-            "ai_result": None,
-        }
-
-        # 动态备注列
-
-        remark_col = next(
-            (c for c in ["备注原因", "备注", "remark"] if c in self.audit_data.columns),
-            "备注原因",
-        )
-
-        col_map["remark"] = remark_col
-
-        # 读取所有下拉框值
-
-        field_filters = {}
-
+        # 3. 顶部栏下拉框值
         for key, cb in self.filter_widgets.items():
             if key == "order_date" or isinstance(cb, tuple):
                 continue
-
             val = cb.get()
-
             if val and val != "全部":
-                field_filters[key] = val
+                filters[key] = val
 
-        # 委托 Presenter 执行纯 DataFrame 筛选
+        # 4. 侧边栏条件（从 FilterPanel 获取，不覆盖顶部栏已有的 key）
+        if hasattr(self, 'filter_panel'):
+            sidebar_filters = self.filter_panel.get_filters()
+            for k, v in sidebar_filters.items():
+                if k not in filters and v and v != '全部':
+                    filters[k] = v
 
-        filters = {
-            "search": search_text,
-            "order_date": date_range,
-            "columns": col_map,
-            **field_filters,
-        }
-
-        df_filtered = self.audit_presenter.filter_audit_data(filters)
+        # 使用 FilterEngine 统一筛选
+        engine = FilterEngine()
+        df_filtered = engine.apply(filters, self.audit_data)
 
         import sys
 
 
         # ── 异常突变检测（保留在View，依赖View状态）──
+        try:
+            self.mutation_materials = set()
 
-        self.mutation_materials = set()
+            if hasattr(self, "rule_engine") and "订单日期" in df_filtered.columns:
+                df_dates = pd.to_datetime(
+                    df_filtered["订单日期"].astype(str).str[:10], errors="coerce"
+                )
 
-        if hasattr(self, "rule_engine") and "订单日期" in df_filtered.columns:
-            df_dates = pd.to_datetime(
-                df_filtered["订单日期"].astype(str).str[:10], errors="coerce"
-            )
+                unique_dates = sorted(set(df_dates.dropna()))
 
-            unique_dates = sorted(set(df_dates.dropna()))
+                if len(unique_dates) >= 5:
+                    split_idx = int(len(unique_dates) * 0.7)
 
-            if len(unique_dates) >= 5:
-                split_idx = int(len(unique_dates) * 0.7)
+                    early_dates = set(unique_dates[:split_idx])
 
-                early_dates = set(unique_dates[:split_idx])
+                    recent_dates = set(unique_dates[split_idx:])
 
-                recent_dates = set(unique_dates[split_idx:])
+                    df_temp = df_filtered.copy()
 
-                df_temp = df_filtered.copy()
+                    df_temp["date_key"] = df_dates
 
-                df_temp["_date"] = df_dates
+                    early_df = df_temp[df_temp["date_key"].isin(early_dates)]
 
-                df_temp["_dev_num"] = pd.to_numeric(
-                    df_temp["偏差率(%)"], errors="coerce"
-                ).abs()
+                    recent_df = df_temp[df_temp["date_key"].isin(recent_dates)]
 
-                for code, grp in df_temp.groupby("组件物料号"):
-                    early_avg = grp[grp["_date"].isin(early_dates)]["_dev_num"].mean()
+                    early_stats = (
+                        early_df.groupby("组件物料号")["偏差率(%)"]
+                        .agg(["mean", "std"])
+                        .reset_index()
+                    )
 
-                    recent_avg = grp[grp["_date"].isin(recent_dates)]["_dev_num"].mean()
+                    for _, row in recent_df.iterrows():
+                        mat = row.get("组件物料号")
 
-                    if (
-                        pd.notna(early_avg)
-                        and pd.notna(recent_avg)
-                        and early_avg <= 5
-                        and recent_avg >= 15
-                    ):
-                        self.mutation_materials.add(code)
+                        if pd.isna(mat):
+                            continue
 
-        # ── View 层后续处理（Treeview渲染 + 状态提示）──
+                        early_row = early_stats[early_stats["组件物料号"] == mat]
 
-        if hasattr(self, "state"):
-            self.state.set("filters", "all", self._collect_filters(), auto_save=True)
+                        if not early_row.empty:
+                            early_mean = early_row["mean"].values[0]
 
+                            early_std = early_row["std"].values[0]
 
+                            curr_dev = row.get("偏差率(%)", 0)
+
+                            if (
+                                pd.notna(early_mean)
+                                and pd.notna(early_std)
+                                and early_std > 0
+                            ):
+                                z_score = (curr_dev - early_mean) / early_std
+
+                                if abs(z_score) > 2:
+                                    self.mutation_materials.add(mat)
+        except Exception as e:
+            self.log(f"异常突变检测出错：{e}", "error")
+
+        # 刷新表格和统计
+        self.filtered_data = df_filtered  # ← 添加这行，保存筛选后的数据
         self._refresh_audit_tree(df_filtered)
-
-        # 更新状态提示
-
-        active_filters = []
-
-        for key, cb in self.filter_widgets.items():
-            if isinstance(cb, tuple):
-                continue
-
-            val = cb.get()
-
-            if val and val != "全部":
-                active_filters.append(str(val))
-
-        filter_hint = ", ".join(active_filters[:5])
-
-        if len(active_filters) > 5:
-            filter_hint += "..."
-
-        self.status_lbl.configure(text="筛选: {}".format(filter_hint or "全部"))
+        self._update_audit_stats(df_filtered)
+        self.log(f"筛选完成：显示 {len(df_filtered)} 条记录", "info")
 
     def _reset_all_filters(self):
         """重置所有筛选条件"""
@@ -1255,6 +1304,10 @@ class TableEvents:
             # name 是 Entry 控件，不需要更新下拉选项
 
             if key == "name":
+                continue
+
+            # material_category 单独在循环后处理（基于全量数据）
+            if key == "material_category":
                 continue
 
             if key == "dev_rate":
@@ -1360,6 +1413,27 @@ class TableEvents:
 
             if cb.get() not in cb["values"]:
                 cb.set("全部")
+
+        # ── material_category 单独处理：必须基于全量数据，避免筛选后选项丢失 ──
+        if "material_category" in self.filter_widgets:
+            cb_cat = self.filter_widgets["material_category"]
+            # 优先使用 full_audit_data，回退到 audit_data
+            data_src = (
+                self.full_audit_data
+                if hasattr(self, "full_audit_data") and self.full_audit_data is not None
+                else self.audit_data
+            )
+            if data_src is not None and "material_category" in data_src.columns:
+                unique_cats = sorted(
+                    [str(v) for v in data_src["material_category"].dropna().unique() if v != ""]
+                )
+                cat_options = ["全部"] + unique_cats
+                cb_cat["values"] = cat_options
+                if cb_cat.get() not in cat_options:
+                    cb_cat.set("全部")
+                print(f"[DEBUG] 物料大类下拉框已更新，选项: {cat_options}")
+            else:
+                print("[DEBUG] material_category 列不存在，物料大类下拉框保持不变")
 
     def _collect_filters(self):
         """收集所有筛选控件的当前值"""
@@ -1502,22 +1576,32 @@ class TableEvents:
     # ── S01 库存检查方法 ──────────────────────────────
 
     def _on_tree_sort(self, col_id):
-
-        remaining = [(cid, asc) for cid, asc in self.sort_columns if cid != col_id]
-
-        if col_id in [cid for cid, _ in self.sort_columns]:
-            old_asc = next(asc for cid, asc in self.sort_columns if cid == col_id)
-
-            self.sort_columns = [(col_id, not old_asc)] + remaining
-
-        else:
-            # 新列追加到末尾
-
-            self.sort_columns = self.sort_columns + [(col_id, True)]
-
+        """多列同时排序，每列三轮循环：正序 → 倒序 → 取消排序 → 正序..."""
+        
+        # 查找该列是否已在排序列表中
+        found = False
+        new_sort_columns = []
+        for cid, asc in self.sort_columns:
+            if cid == col_id:
+                found = True
+                # 三态循环：True(正序) → False(倒序) → 移除(取消)
+                if asc == True:
+                    new_sort_columns.append((cid, False))  # 正序 → 倒序
+                # False → 不添加（取消排序）
+            else:
+                new_sort_columns.append((cid, asc))
+        
+        if not found:
+            # 新列追加到末尾，初始为正序
+            new_sort_columns.append((col_id, True))
+        
+        self.sort_columns = new_sort_columns
         self._apply_sort_and_refresh()
 
     def _apply_sort_and_refresh(self):
+        # 重置分页
+        self._reset_pagination()
+
 
         if self.audit_data is None or self.audit_data.empty:
             return
@@ -1544,7 +1628,7 @@ class TableEvents:
 
         asc_list = [asc for _, asc in valid]
 
-        df_sorted = self.audit_data.copy()
+        df_sorted = (self.filtered_data if hasattr(self, 'filtered_data') and self.filtered_data is not None else self.audit_data).copy()
 
         for col in by:
             if col in ("偏差率(%)", "偏差金额", "数量-定额", "数量-实际"):
@@ -1571,9 +1655,12 @@ class TableEvents:
         """更新统计卡片（联动筛选后的数据）"""
 
         if self.audit_data is None or len(self.audit_data) == 0:
+            self.log(f"[DEBUG] _update_audit_stats: audit_data 为空，跳过", "info")
             return
 
         data = filtered_data if filtered_data is not None else self.audit_data
+
+        self.log(f"[DEBUG] _update_audit_stats: data={len(data)}行, 列={list(data.columns)[:10]}", "info")
 
         total = len(data)
 
@@ -1718,3 +1805,4 @@ class TableEvents:
             self.status_lbl.configure(
                 text=f"数据加载完成，共{total}条，预检报告已写入日志"
             )
+

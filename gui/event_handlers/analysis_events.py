@@ -12,6 +12,9 @@ import traceback
 import calendar
 import json
 import sys
+
+# ── Task 003：异步备份管理器 ──
+from core.backup_manager import BackupManager
 class AnalysisEvents:
     """数据分析、加载、进度控制事件"""
 
@@ -58,6 +61,17 @@ class AnalysisEvents:
                 self._set_step(i, False)
             self.start_time = time.time()
             self._update_timer()
+
+            # ── Task 003：分析前异步备份 ──
+            _backup_mgr = BackupManager()
+            _backup_mgr.backup_before_analysis_async(
+                input_excel_path=path,
+                progress_callback=None,
+                done_callback=lambda meta, err: self.root.after(
+                    0, lambda: self._on_backup_done(meta, err)
+                ),
+            )
+
             t = threading.Thread(target=self._analysis_thread, daemon=True)
             t.start()  # 启动线程
         except Exception as e:
@@ -72,6 +86,13 @@ class AnalysisEvents:
                 pass
             finally:
                 self.analysis_lock.release()
+
+    def _on_backup_done(self, meta, error):
+        """异步备份完成回调（主线程安全）"""
+        if error:
+            self.log(f"⚠ 分析前备份失败：{error}", "warn")
+        else:
+            self.log("✅ 分析前备份完成", "info")
 
     def _analysis_thread(self):
         """分析线程（委托给 Presenter）"""
@@ -192,6 +213,13 @@ class AnalysisEvents:
         if hasattr(self, 'load_audit_btn'):
             self.load_audit_btn.configure(state="normal")
             self.log("✅ 已启用「加载审核数据」按钮", "info")
+
+        # ── Task 003：分析成功，清除恢复标记 ──
+        try:
+            _backup_mgr = BackupManager()
+            _backup_mgr._clear_recovery_flag()
+        except Exception:
+            pass
 
     def _cleanup_auto_excel(self):
         """删除分析自动生成的Excel文件，用户需要时可手动生成"""
@@ -336,6 +364,21 @@ class AnalysisEvents:
             self.audit_stat_labels['need_note'].configure(text=str(len(need_note)))
             self.audit_stat_labels['ok_note'].configure(text=str(len(ok_note)))
             self.audit_data = high_dev.copy()
+            # 添加物料大类列（始终用物料编码前缀计算，确保值和下拉选项一致）
+            mat_cat_map = {
+                "100": "原辅料", "200": "包材", "400": "食品辅料/食品半成品",
+                "410": "饮料辅料/饮料半成品", "500": "食品成品", "510": "饮料成品",
+                "600": "促销品"
+            }
+            self.audit_data['material_category'] = self.audit_data['物料编码'].apply(
+                lambda x: mat_cat_map.get(str(x)[:3], str(x)[:3]) if pd.notna(x) else ''
+            )
+            # 保存全量数据副本（在添加 material_category 列之后，确保列存在）
+            self.full_audit_data = self.audit_data.copy()
+            # 如果数据中「物料类型」列有更精确的分类，可以覆盖（可选）
+            # 目前不打乱逻辑，保持用物料编码前缀计算的结果
+            print(f'[DEBUG audit_data] 列: {list(self.audit_data.columns)}')
+            print(f'[DEBUG material_category] 值分布: {self.audit_data["material_category"].value_counts().to_dict()}')
             # 映射订单日期列（Data sheet 用"订单开始日期"，统一为"订单日期"）
             if '订单开始日期' in self.audit_data.columns:
                 self.audit_data['订单日期'] = pd.to_datetime(self.audit_data['订单开始日期'], errors='coerce').dt.strftime('%Y-%m-%d')
@@ -502,6 +545,77 @@ class AnalysisEvents:
             audit_df['AI建议'] = ''
         if 'audit_result' not in audit_df.columns:
             audit_df['audit_result'] = ''
+
+        # ====== 补充 _is_alt 列（替代料标识）======
+        if hasattr(self, 'alt_pairs') and self.alt_pairs:
+            alt_materials = set()
+            for pair in self.alt_pairs:
+                for item in pair:
+                    if isinstance(item, (list, tuple)):
+                        desc = str(item[-1]).strip() if len(item) > 1 else str(item[0]).strip()
+                    else:
+                        desc = str(item).strip()
+                    if desc:
+                        alt_materials.add(desc)
+            name_col = None
+            for col in ['物料名称', '物料描述', '组件物料描述']:
+                if col in audit_df.columns:
+                    name_col = col
+                    break
+            if name_col:
+                audit_df['_is_alt'] = audit_df[name_col].astype(str).str.strip().isin(alt_materials)
+                print(f"[临时补丁] 已标记替代料：{audit_df['_is_alt'].sum()} 行")
+            else:
+                print("[临时补丁] 未找到物料名称列，无法标记替代料")
+                audit_df['_is_alt'] = False
+        else:
+            audit_df['_is_alt'] = False
+
+        # ====== 补充审核来源（audit_source）======
+        if 'audit_source' not in audit_df.columns:
+            def infer_audit_source(row):
+                src = row.get('审核来源', '')
+                if src and src not in ('nan', 'None', ''):
+                    return src
+                note_src = str(row.get('备注来源', '')).strip()
+                if 'AI' in note_src:
+                    return 'AI'
+                if note_src in ('人工填写', '手动'):
+                    return '手动'
+                if note_src == '替代料':
+                    return '替代料'
+                if row.get('_is_alt', False):
+                    return '替代料'
+                return '系统'
+            audit_df['audit_source'] = audit_df.apply(infer_audit_source, axis=1)
+
+        # ====== 补充审核状态（audit_status）======
+        if 'audit_status' not in audit_df.columns:
+            if 'audit_result' in audit_df.columns:
+                audit_df['audit_status'] = audit_df['audit_result'].apply(
+                    lambda x: '已审核' if x and str(x).strip() not in ('', 'nan') else '未审核'
+                )
+            else:
+                audit_df['audit_status'] = audit_df['备注原因'].apply(
+                    lambda x: '已审核' if x and str(x).strip() not in ('', 'nan') else '未审核'
+                )
+
+        # 生成优先级颜色标签（用于颜色筛选）
+        if '偏差率(%)' in audit_df.columns:
+            def get_priority_label(rate):
+                if pd.isna(rate):
+                    return '绿'
+                rate = abs(float(rate))
+                if rate > 30:
+                    return '红'
+                elif rate > 20:
+                    return '橙'
+                elif rate > 10:
+                    return '黄'
+                else:
+                    return '绿'
+            audit_df['_priority_label'] = audit_df['偏差率(%)'].apply(get_priority_label)
+
         return audit_df
 
     def _on_load_done(self, result_df):
@@ -516,6 +630,24 @@ class AnalysisEvents:
                 if col in self.audit_data.columns:
                     self.audit_data[col] = pd.to_numeric(self.audit_data[col], errors="coerce").fillna(0)
             self._full_dev_df = result_df.copy()
+            # ── 补充 material_category 列（与 _load_audit_data 路径保持一致） ──
+            mat_cat_map = {
+                "100": "原辅料", "200": "包材", "400": "食品辅料/食品半成品",
+                "410": "饮料辅料/饮料半成品", "500": "食品成品", "510": "饮料成品",
+                "600": "促销品"
+            }
+            mat_code_col = None
+            for mc in ['物料编码', '组件物料号']:
+                if mc in self.audit_data.columns:
+                    mat_code_col = mc
+                    break
+            if mat_code_col:
+                self.audit_data['material_category'] = self.audit_data[mat_code_col].apply(
+                    lambda x: mat_cat_map.get(str(x)[:3], str(x)[:3]) if pd.notna(x) else ''
+                )
+            else:
+                self.audit_data['material_category'] = ''
+            self.full_audit_data = self.audit_data.copy()
             self.log(f"[DEBUG] _on_load_done: {len(self.audit_data)}行", "info")
             # 调试：打印前5行 excel_row 和 原表行号
             if 'excel_row' in self.audit_data.columns:
@@ -578,6 +710,9 @@ class AnalysisEvents:
                 self.progress_bar.pack_forget()
             if hasattr(self, 'set_status'):
                 self.set_status(f"加载完成，共 {total} 行")
+            # 自动 AI 审核 + 自动结案
+            if not getattr(self, '_auto_processed', False):
+                self.root.after(500, self._auto_audit_and_close)
         except Exception as e:
             if hasattr(self, 'progress_bar'):
                 self.progress_bar.stop()
@@ -770,3 +905,8 @@ class AnalysisEvents:
             values = [row_dict.get(c, '') for c in cols]
             tree.insert('', 'end', values=values, tags=(tag,))
     # ---------- View 接口方法（供 AuditPresenter 调用）----------
+
+
+    # _update_filter_options 已移入 table_events.py（优先级更高的 MRO 位置）
+    # 在那里统一处理全部下拉框，包括 material_category（基于 full_audit_data）
+
