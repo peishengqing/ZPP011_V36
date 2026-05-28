@@ -10,7 +10,8 @@ from ppt_generator import run_ppt_generation as _run_ppt
 from core.decorators import with_feedback
 from widgets import C
 from core.exporter import ExcelExporter
-import threading, datetime
+import threading
+from datetime import datetime
 from openpyxl import Workbook, load_workbook
 
 
