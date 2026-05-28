@@ -1276,6 +1276,10 @@ class TableEvents:
             if key == "name":
                 continue
 
+            # material_category 单独在循环后处理（基于全量数据）
+            if key == "material_category":
+                continue
+
             if key == "dev_rate":
                 cb["values"] = dev_rate_presets
 
@@ -1379,6 +1383,27 @@ class TableEvents:
 
             if cb.get() not in cb["values"]:
                 cb.set("全部")
+
+        # ── material_category 单独处理：必须基于全量数据，避免筛选后选项丢失 ──
+        if "material_category" in self.filter_widgets:
+            cb_cat = self.filter_widgets["material_category"]
+            # 优先使用 full_audit_data，回退到 audit_data
+            data_src = (
+                self.full_audit_data
+                if hasattr(self, "full_audit_data") and self.full_audit_data is not None
+                else self.audit_data
+            )
+            if data_src is not None and "material_category" in data_src.columns:
+                unique_cats = sorted(
+                    [str(v) for v in data_src["material_category"].dropna().unique() if v != ""]
+                )
+                cat_options = ["全部"] + unique_cats
+                cb_cat["values"] = cat_options
+                if cb_cat.get() not in cat_options:
+                    cb_cat.set("全部")
+                print(f"[DEBUG] 物料大类下拉框已更新，选项: {cat_options}")
+            else:
+                print("[DEBUG] material_category 列不存在，物料大类下拉框保持不变")
 
     def _collect_filters(self):
         """收集所有筛选控件的当前值"""
