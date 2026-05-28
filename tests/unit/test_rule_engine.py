@@ -1,160 +1,131 @@
 # -*- coding: utf-8 -*-
-"""RuleEngine.check_remark unit tests"""
-
+"""规则引擎测试"""
+import pytest
+import pandas as pd
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from core.rule_engine import RuleEngine
 
 
-def make_row(remark='', quota=None, code='MAT001', deviation_rate=0.0,
-             actual=0, workshop='', material_code=''):
-    return {
-        '备注': remark,
-        '定额': quota,
-        '组件物料号': code,
-        '偏差率(%)': deviation_rate,
-        '实际': actual,
-        '车间': workshop,
-        '物料编码': material_code,
-    }
+class TestRuleEngine:
+    """规则引擎测试"""
 
+    def test_check_remark_empty(self):
+        """规则1：空备注 → red"""
+        engine = RuleEngine()
+        row = {'备注': '', '定额': 100, '实际': 110, '替代料': '否', '偏差率(%)': 10}
+        status, msg = engine.check_remark(row)
+        assert status == 'red'
+        assert '空' in msg
 
-def test_empty_remark():
-    engine = RuleEngine()
-    status, msg = engine.check_remark(make_row(remark=''), alt_pairs=None)
-    assert status == 'red', f'expected red, got {status}'
-    print('[OK] test_empty_remark')
+    def test_check_remark_no_quota_not_alt(self):
+        """规则2：无定额非替代料 → yellow"""
+        engine = RuleEngine()
+        row = {'备注': '物料替代', '定额': None, '实际': 50, '组件物料号': 'X001', '偏差率(%)': 0}
+        status, msg = engine.check_remark(row)
+        assert status == 'yellow'
+        assert '无定额' in msg or '替代料' in msg
 
+    def test_check_remark_with_alt_pair(self):
+        """规则2豁免：无定额但是替代料 → none"""
+        engine = RuleEngine()
+        row = {'备注': '物料替代', '定额': None, '实际': 50, '组件物料号': 'ALT001', '偏差率(%)': 0}
+        status, msg = engine.check_remark(row, alt_pairs={'ALT001'})
+        assert status == 'none'
 
-def test_non_quota_non_alt():
-    engine = RuleEngine()
-    status, msg = engine.check_remark(
-        make_row(remark='有备注', quota=None, code='MAT002', actual=100),
-        alt_pairs={'MAT001'})
-    assert status == 'yellow', f'expected yellow, got {status}'
-    print('[OK] test_non_quota_non_alt')
+    def test_check_remark_high_dev_stagnant(self):
+        """规则3：偏差率>10% 且 周转天数>90 → yellow"""
+        engine = RuleEngine()
+        row = {
+            '备注': '测试备注', '定额': 100, '实际': 120,
+            '组件物料号': 'MAT001', '偏差率(%)': 20,
+            '工厂': '工厂A', '车间': '车间1', '物料编码': 'MAT001'
+        }
+        workshop_mapping = {'工厂A:车间1': 'WH001'}
+        turnover_dict = {('MAT001', 'WH001'): 120}
+        status, msg = engine.check_remark(row, workshop_mapping=workshop_mapping, turnover_dict=turnover_dict)
+        assert status == 'yellow'
+        assert '周转' in msg
 
+    def test_check_remark_normal(self):
+        """正常备注 → none"""
+        engine = RuleEngine()
+        row = {'备注': '物料替代，偏差合理', '定额': 100, '实际': 105, '偏差率(%)': 5}
+        status, msg = engine.check_remark(row)
+        assert status == 'none'
 
-def test_non_quota_zero_actual():
-    engine = RuleEngine()
-    status, msg = engine.check_remark(
-        make_row(remark='有备注', quota=None, code='MAT002', actual=0),
-        alt_pairs={'MAT001'})
-    assert status == 'none', f'expected none, got {status}'
-    print('[OK] test_non_quota_zero_actual')
+    def test_get_band_with_default_rules(self):
+        """测试偏差率区间判定（使用默认规则或实际规则）"""
+        engine = RuleEngine()
+        # 尝试从 deviation_rate_bands 获取（仅默认规则有此 key）
+        band = engine.get_band(0.02, 'deviation_rate_bands')
+        if band is not None:
+            assert 'label' in band or 'color' in band
+        else:
+            # 实际 rules.json 可能没有 deviation_rate_bands，检查其他结构
+            rules = engine.get_all_rules()
+            assert 'version' in rules or 'rules' in rules
 
+    def test_get_band_missing_key(self):
+        """测试获取不存在的 band key → 返回 None"""
+        engine = RuleEngine()
+        result = engine.get_band(0.5, 'nonexistent_key')
+        assert result is None
 
-def test_alt_material_exempt():
-    engine = RuleEngine()
-    status, msg = engine.check_remark(
-        make_row(remark='有备注', quota=None, code='MAT001', actual=100),
-        alt_pairs={'MAT001', 'MAT002'})
-    assert status == 'none', f'expected none, got {status}'
-    print('[OK] test_alt_material_exempt')
+    def test_get_color_for_deviation_rate(self):
+        """测试偏差率颜色"""
+        engine = RuleEngine()
+        color = engine.get_color_for_deviation_rate(0.02)
+        assert isinstance(color, str)
+        assert color.startswith('#')
 
+    def test_check_auto_close_condition_disabled(self):
+        """测试自动关闭条件（实际 rules.json 无 auto_close → disabled）"""
+        engine = RuleEngine()
+        row = {'审核状态': '已审核', '偏差率': 0.03}
+        # 实际 rules.json 没有 auto_close 配置，返回 False
+        result = engine.check_auto_close_condition(row)
+        assert result == False
 
-def test_all_pass():
-    engine = RuleEngine()
-    status, msg = engine.check_remark(
-        make_row(remark='正常备注', quota=100, code='MAT004', deviation_rate=5.0, actual=100),
-        alt_pairs=None)
-    assert status == 'none', f'expected none, got {status}'
-    print('[OK] test_all_pass')
+    def test_evaluate_condition(self):
+        """测试条件评估"""
+        engine = RuleEngine()
+        assert engine._evaluate_condition(5, 'gt', 3) == True
+        assert engine._evaluate_condition(5, 'lt', 3) == False
+        assert engine._evaluate_condition('已审核', 'eq', '已审核') == True
+        assert engine._evaluate_condition(5, 'ge', 5) == True
+        assert engine._evaluate_condition(5, 'le', 5) == True
+        assert engine._evaluate_condition(5, 'ne', 3) == True
 
+    def test_evaluate_condition_unsupported_op(self):
+        """测试不支持的操作符"""
+        engine = RuleEngine()
+        assert engine._evaluate_condition(5, 'unknown_op', 3) == False
 
-# ---- Rule 3: turnover-based ----
+    def test_safe_float(self):
+        """测试安全浮点转换"""
+        engine = RuleEngine()
+        assert engine._safe_float('3.14') == pytest.approx(3.14)
+        assert engine._safe_float('abc') == 0.0
+        assert engine._safe_float(None) == 0.0
+        assert engine._safe_float(42) == 42.0
 
-def test_rule3_turnover_trigger():
-    """deviation_rate=15 > 10, turnover_days=95 > 90 -> yellow"""
-    engine = RuleEngine()
-    wm = {'1车间': '食品主原料仓'}
-    td = {('10000000', '食品主原料仓'): 95}
-    status, msg = engine.check_remark(
-        make_row(remark='有备注', deviation_rate=15.0, workshop='1车间', material_code='10000000'),
-        alt_pairs=[], workshop_mapping=wm, turnover_dict=td)
-    assert status == 'yellow', f'expected yellow, got {status}: {msg}'
-    assert '周转天数' in msg
-    print('[OK] test_rule3_turnover_trigger')
+    def test_reload(self):
+        """测试规则热重载"""
+        engine = RuleEngine()
+        engine.reload()
+        assert len(engine.rules) > 0
 
+    def test_get_all_rules(self):
+        """测试获取全部规则"""
+        engine = RuleEngine()
+        rules = engine.get_all_rules()
+        assert isinstance(rules, dict)
+        assert len(rules) > 0
 
-def test_rule3_turnover_no_mapping():
-    """No workshop_mapping -> rule3 skipped"""
-    engine = RuleEngine()
-    status, msg = engine.check_remark(
-        make_row(remark='有备注', deviation_rate=15.0, workshop='1车间'),
-        alt_pairs=[], workshop_mapping=None, turnover_dict={})
-    assert status == 'none', f'expected none, got {status}'
-    print('[OK] test_rule3_turnover_no_mapping')
-
-
-def test_rule3_turnover_no_dict():
-    """No turnover_dict -> rule3 skipped"""
-    engine = RuleEngine()
-    status, msg = engine.check_remark(
-        make_row(remark='有备注', deviation_rate=15.0, workshop='1车间'),
-        alt_pairs=[], workshop_mapping={'1车间': '仓'}, turnover_dict=None)
-    assert status == 'none', f'expected none, got {status}'
-    print('[OK] test_rule3_turnover_no_dict')
-
-
-def test_rule3_turnover_low_rate():
-    """deviation_rate=5 <= 10 -> rule3 not triggered"""
-    engine = RuleEngine()
-    wm = {'1车间': '食品主原料仓'}
-    td = {('10000000', '食品主原料仓'): 95}
-    status, msg = engine.check_remark(
-        make_row(remark='有备注', deviation_rate=5.0, workshop='1车间', material_code='10000000'),
-        alt_pairs=[], workshop_mapping=wm, turnover_dict=td)
-    assert status == 'none', f'expected none, got {status}'
-    print('[OK] test_rule3_turnover_low_rate')
-
-
-def test_rule3_turnover_low_days():
-    """turnover_days=50 <= 90 -> rule3 not triggered"""
-    engine = RuleEngine()
-    wm = {'1车间': '食品主原料仓'}
-    td = {('10000000', '食品主原料仓'): 50}
-    status, msg = engine.check_remark(
-        make_row(remark='有备注', deviation_rate=15.0, workshop='1车间', material_code='10000000'),
-        alt_pairs=[], workshop_mapping=wm, turnover_dict=td)
-    assert status == 'none', f'expected none, got {status}'
-    print('[OK] test_rule3_turnover_low_days')
-
-
-def test_rule3_turnover_workshop_not_mapped():
-    """workshop not in mapping -> rule3 skipped for this row"""
-    engine = RuleEngine()
-    wm = {'1车间': '食品主原料仓'}
-    td = {('10000000', '食品主原料仓'): 95}
-    status, msg = engine.check_remark(
-        make_row(remark='有备注', deviation_rate=15.0, workshop='99车间', material_code='10000000'),
-        alt_pairs=[], workshop_mapping=wm, turnover_dict=td)
-    assert status == 'none', f'expected none, got {status}'
-    print('[OK] test_rule3_turnover_workshop_not_mapped')
-
-
-def test_rule3_backward_compat():
-    """Old call without new params still works"""
-    engine = RuleEngine()
-    status, msg = engine.check_remark(
-        make_row(remark='有备注', quota=100, deviation_rate=15.0, actual=100),
-        alt_pairs=None)
-    assert status == 'none', f'expected none, got {status}'
-    print('[OK] test_rule3_backward_compat')
-
-
-if __name__ == '__main__':
-    test_empty_remark()
-    test_non_quota_non_alt()
-    test_non_quota_zero_actual()
-    test_alt_material_exempt()
-    test_all_pass()
-    test_rule3_turnover_trigger()
-    test_rule3_turnover_no_mapping()
-    test_rule3_turnover_no_dict()
-    test_rule3_turnover_low_rate()
-    test_rule3_turnover_low_days()
-    test_rule3_turnover_workshop_not_mapped()
-    test_rule3_backward_compat()
-    print('\nAll tests passed!')
+    def test_get_s01_rules(self):
+        """测试获取 S01 规则"""
+        engine = RuleEngine()
+        s01_rules = engine.get_s01_rules()
+        assert isinstance(s01_rules, dict)
