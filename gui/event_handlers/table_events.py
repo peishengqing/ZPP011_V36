@@ -347,12 +347,6 @@ class TableEvents:
         if not skip_auto_sort and df is not None and not df.empty:
             df = df.sort_values("_priority_order")
 
-        # 保存最终 df 到 audit_data（包含 _row_id, _priority_order, _priority_label）
-        if df is not None and not df.empty:
-            self.audit_data = df.copy()
-        else:
-            self.audit_data = None
-
         # ── P1：金额排名着色 ──
 
         amount_col = None
