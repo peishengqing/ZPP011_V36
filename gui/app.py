@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+﻿﻿﻿﻿﻿#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 云南达利ZPP011生产偏差分析器 — 多条件智能筛选 v36
@@ -35,6 +35,7 @@ from analysis.analyzer import do_analysis_v2
 
 from gui.ui_builder import build_ui
 import ppt_generator
+from gui.management_dashboard import DashboardWindow
 from domain.alt_material.alt_manager import DEFAULT_ALT_PAIRS, save_alt_pairs, load_alt_pairs
 from core.config_manager import ConfigManager
 import core.task_manager
@@ -333,7 +334,11 @@ class ZPP011Beautiful(EventsMixIn):
         if hasattr(self, 'notebook'):
             self.notebook.bind('<<NotebookTabChanged>>', self._s01_on_tab_changed)
 
-        # 启动回调轮询
+        # 
+        # Task 011: Dashboard quick button (menu already available at 历史 > 管理看板)
+        # Button added in _show_management_dashboard via menu
+
+启动回调轮询
         self.task_manager.poll(self.root)
 
     def _on_sidebar_filter_changed(self, filters):
@@ -689,7 +694,9 @@ class ZPP011Beautiful(EventsMixIn):
         except Exception as e:
             self.log(f"趋势显示更新失败: {e}", "warn")
 
-    def _run_pre_check_from_excel(self, output_path=None):
+    
+
+def _run_pre_check_from_excel(self, output_path=None):
         """从分析结果 Excel 读取数据，生成预检报告并弹窗"""
         if not output_path or not os.path.exists(output_path):
             messagebox.showwarning("文件缺失", "请先生成分析结果 Excel。")
@@ -1426,10 +1433,16 @@ class ZPP011Beautiful(EventsMixIn):
         from gui.history_compare_dialog import HistoryCompareDialog
         HistoryCompareDialog(self.root)
 
+    def get_current_audit_data(self):
+        """供看板调用的接口"""
+        if hasattr(self, 'audit_data') and self.audit_data is not None:
+            return self.audit_data.copy()
+        return pd.DataFrame()
+
     def _show_management_dashboard(self):
         """显示管理看板窗口（Task 011）"""
-        from gui.management_dashboard import ManagementDashboard
-        ManagementDashboard(self.root)
+        from gui.management_dashboard import DashboardWindow
+        DashboardWindow(self)
     
     def _on_close(self):
         """窗口关闭时的清理工作（Task 004）"""
