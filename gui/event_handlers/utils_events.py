@@ -736,6 +736,7 @@ class UtilsEvents:
 
 
                     remark_col = sug.get('remark_col', '备注原因'); self.audit_data.at[sug['idx'], remark_col] = sug['建议标准化为']
+                    self._invalidate_tag_cache()  # Task 007
 
 
 

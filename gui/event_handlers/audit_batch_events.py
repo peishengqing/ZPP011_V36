@@ -228,6 +228,7 @@ class AuditBatchEvents:
 
 
                         self.audit_data.loc[mask, '备注原因'] = new_status
+                        self._invalidate_tag_cache()  # Task 007
 
 
 
@@ -621,6 +622,7 @@ class AuditBatchEvents:
 
 
                             self.audit_data.loc[mask, '备注原因'] = remark
+                            self._invalidate_tag_cache()  # Task 007
 
 
 
