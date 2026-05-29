@@ -1,414 +1,228 @@
 # -*- coding: utf-8 -*-
-"""
-管理看板 - 车间/时间维度偏差趋势
-Task 011: 偏差趋势可视化看板
-
-用法: from gui.management_dashboard import ManagementDashboard
-"""
+"""管理看板 - 车间偏差排名 + 时间趋势"""
 import tkinter as tk
-from tkinter import ttk
-from typing import Optional
+from tkinter import ttk, messagebox, filedialog
+import matplotlib
+matplotlib.use('TkAgg')
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
+import pandas as pd
 
-try:
-    import matplotlib
-    matplotlib.use('Agg')  # headless
-    import matplotlib.pyplot as plt
-    import matplotlib.font_manager as fm
-    HAS_MATPLOTLIB = True
-except Exception:
-    HAS_MATPLOTLIB = False
-
-try:
-    import numpy as np
-    HAS_NUMPY = True
-except Exception:
-    HAS_NUMPY = False
-
-from widgets import C
+from core import history_db
 
 
-def _configure_matplotlib_chinese():
-    """配置 matplotlib 中文字体（一次性）"""
-    if not HAS_MATPLOTLIB:
-        return
-    # 尝试系统自带微软雅黑
-    for font_name in ['Microsoft YaHei', '微软雅黑', 'SimHei', 'Arial Unicode MS']:
-        font_paths = fm.findSystemFonts(fontpaths=None, fontext='ttf')
-        for fp in font_paths:
-            if font_name.lower() in fp.lower():
-                try:
-                    fm.fontManager.addfont(fp)
-                    prop = fm.FontProperties(fname=fp)
-                    plt.rcParams['font.family'] = prop.get_name()
-                    return
-                except Exception:
-                    pass
-    # 回退到无衬线
-    plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'Arial']
-
-
-_configure_matplotlib_chinese()
-
-
-class ManagementDashboard:
-    """
-    管理看板窗口：展示车间/月份偏差趋势数据
-    """
-
-    def __init__(self, parent: tk.Tk | tk.Toplevel):
+class DashboardWindow:
+    def __init__(self, parent, history_db_path=None):
+        self.parent = parent
+        self.history_db_path = history_db_path
+        self.current_df = None
         self.window = tk.Toplevel(parent)
-        self.window.title("📊 管理看板 — 偏差趋势")
-        self.window.geometry("1000x680")
-        self.window.configure(bg=C['bg'])
-        self.window.transient(parent)
-        self.window.grab_set()
+        self.window.title("管理看板 - ZPP011")
+        self.window.geometry("900x650")
+        self.window.minsize(800, 500)
 
-        self._df = None
-        self._chart_label: Optional[tk.Label] = None
+        self.source_var = tk.StringVar(value="current")
+        self.history_id = None
 
-        self._create_ui()
-        self._load_data()
+        self._build_ui()
+        self._refresh()
 
-    def _create_ui(self):
-        """布局"""
-        # 标题栏
-        header = tk.Frame(self.window, bg=C['header_bg'], pady=8)
-        header.pack(fill="x")
-        tk.Label(
-            header, text="📊  车间偏差趋势看板",
-            font=("Microsoft YaHei", 14, "bold"),
-            fg="white", bg=C['header_bg']
-        ).pack(side="left", padx=15)
+    def _build_ui(self):
+        # 工具栏
+        toolbar = tk.Frame(self.window)
+        toolbar.pack(fill=tk.X, padx=10, pady=5)
 
-        # 右侧刷新按钮
-        ttk.Button(
-            header, text="🔄 刷新", command=self._load_data
-        ).pack(side="right", padx=15)
+        tk.Label(toolbar, text="数据源:").pack(side=tk.LEFT)
+        tk.Radiobutton(toolbar, text="当前分析结果", variable=self.source_var,
+                       value="current", command=self._refresh).pack(side=tk.LEFT, padx=5)
+        tk.Radiobutton(toolbar, text="历史分析", variable=self.source_var,
+                       value="history", command=self._on_history_selected).pack(side=tk.LEFT, padx=5)
 
-        # 标签页
-        nb = ttk.Notebook(self.window)
-        nb.pack(fill="both", expand=True, padx=10, pady=(5, 10))
+        self.history_combo = ttk.Combobox(toolbar, state="readonly", width=40)
+        self.history_combo.pack(side=tk.LEFT, padx=5)
+        self.history_combo.bind("<<ComboboxSelected>>", lambda e: self._refresh())
 
-        # Tab1: 月度趋势
-        trend_frame = ttk.Frame(nb, padding=5)
-        nb.add(trend_frame, text="📈 月度趋势")
-        self._build_trend_tab(trend_frame)
+        tk.Button(toolbar, text="刷新", command=self._refresh).pack(side=tk.LEFT, padx=5)
+        tk.Button(toolbar, text="导出截图", command=self._export_screenshot).pack(side=tk.RIGHT, padx=5)
 
-        # Tab2: 车间 TOP10
-        workshop_frame = ttk.Frame(nb, padding=5)
-        nb.add(workshop_frame, text="🏭 车间 TOP10")
-        self._build_workshop_tab(workshop_frame)
+        # Notebook 标签页
+        self.notebook = ttk.Notebook(self.window)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
-    def _build_trend_tab(self, parent: ttk.Frame):
-        """月度趋势 Tab"""
-        # 上部：统计摘要
-        summary_frame = ttk.LabelFrame(parent, text="概览", padding=8)
-        summary_frame.pack(fill="x", padx=5, pady=(0, 5))
-        self._summary_labels = {}
-        for key in ['total', 'high', 'avg_rate', 'total_amt']:
-            lbl = ttk.Label(summary_frame, text="—", font=("Microsoft YaHei", 12, "bold"),
-                            foreground=C['accent'])
-            lbl.pack(side="left", padx=20)
-            self._summary_labels[key] = lbl
-        ttk.Label(summary_frame, text="↑ 全部记录   ↑ 高偏差   ↑ 均偏差率(%)   ↑ 偏差总额(元)").pack(side="right")
+        self.tab_workshop = tk.Frame(self.notebook)
+        self.tab_trend = tk.Frame(self.notebook)
+        self.notebook.add(self.tab_workshop, text="车间偏差排名")
+        self.notebook.add(self.tab_trend, text="时间趋势（近6个月）")
 
-        # 图表区域（matplotlib canvas）
-        chart_frame = ttk.LabelFrame(parent, text="月度偏差趋势（条数）", padding=5)
-        chart_frame.pack(fill="both", expand=True, padx=5, pady=(0, 5))
+        # 归因按钮（单独一行）
+        btn_frame = tk.Frame(self.window)
+        btn_frame.pack(fill=tk.X, padx=10, pady=5)
+        tk.Button(btn_frame, text="AI 归因分析", command=self._show_attribution,
+                  bg="#6f42c1", fg="white").pack(side=tk.RIGHT)
 
-        self._chart_container = tk.Frame(chart_frame, bg=C['surface'])
-        self._chart_container.pack(fill="both", expand=True)
+        # 状态栏
+        self.status_var = tk.StringVar(value="就绪")
+        status_bar = tk.Label(self.window, textvariable=self.status_var, bd=1,
+                              relief=tk.SUNKEN, anchor=tk.W)
+        status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
-        if not HAS_MATPLOTLIB:
-            tk.Label(
-                self._chart_container,
-                text="⚠ matplotlib 未安装，图表不可用\n\npip install matplotlib numpy",
-                font=("Microsoft YaHei", 11), fg=C['warn'], bg=C['surface'],
-                justify="center"
-            ).pack(fill="both", expand=True)
+    def _load_history_list(self):
+        records = history_db.get_analysis_list(limit=50, db_path=self.history_db_path)
+        if records:
+            self.history_combo['values'] = [f"{r['id']}: {r['timestamp'][:16]} - {r['file_name']}" for r in records]
+            if not self.history_combo.get():
+                self.history_combo.current(0)
         else:
-            tk.Label(
-                self._chart_container,
-                text="📊 图表加载中...", font=("Microsoft YaHei", 11),
-                fg=C['text_dim'], bg=C['surface']
-            ).pack(fill="both", expand=True)
+            self.history_combo['values'] = []
+            self.history_combo.set("无历史数据")
 
-        # 表格区域
-        table_frame = ttk.LabelFrame(parent, text="明细", padding=5)
-        table_frame.pack(fill="both", expand=True, padx=5)
-
-        self._trend_tree = self._make_tree(
-            table_frame,
-            columns=('月份', '车间', '总条数', '高偏差条数', '平均偏差率(%)', '总偏差金额'),
-            headings=('#0', '月份', '车间', '总条数', '≥30%条数', '均偏差率(%)', '总金额(元)')
-        )
-
-    def _build_workshop_tab(self, parent: ttk.Frame):
-        """车间 TOP10 Tab"""
-        chart_frame = ttk.LabelFrame(parent, text="车间高偏差条数 TOP10", padding=5)
-        chart_frame.pack(fill="both", expand=True, padx=5, pady=(0, 5))
-        self._ws_chart_container = tk.Frame(chart_frame, bg=C['surface'])
-        self._ws_chart_container.pack(fill="both", expand=True)
-
-        if not HAS_MATPLOTLIB:
-            tk.Label(
-                self._ws_chart_container,
-                text="⚠ matplotlib 未安装",
-                font=("Microsoft YaHei", 11), fg=C['warn'], bg=C['surface']
-            ).pack(fill="both", expand=True)
+    def _get_dataframe(self):
+        if self.source_var.get() == "current":
+            if hasattr(self.parent, 'get_current_audit_data'):
+                df = self.parent.get_current_audit_data()
+                if df is not None and not df.empty:
+                    return df
+            self.status_var.set("当前无分析数据，请先执行分析")
+            return None
         else:
-            tk.Label(
-                self._ws_chart_container,
-                text="📊 图表加载中...",
-                font=("Microsoft YaHei", 11), fg=C['text_dim'], bg=C['surface']
-            ).pack(fill="both", expand=True)
+            selected = self.history_combo.get()
+            if selected and ":" in selected:
+                try:
+                    aid = int(selected.split(":")[0])
+                    df = history_db.get_analysis_data(aid, db_path=self.history_db_path)
+                    return df
+                except Exception as e:
+                    self.status_var.set(f"加载历史数据失败: {e}")
+                    return None
 
-        table_frame = ttk.LabelFrame(parent, text="车间排名明细", padding=5)
-        table_frame.pack(fill="both", expand=True, padx=5)
-        self._ws_tree = self._make_tree(
-            table_frame,
-            columns=('rank', '车间', '总条数', '高偏差条数', '高偏差占比(%)', '平均偏差率(%)', '总偏差金额'),
-            headings=('#0', '排名', '车间', '总条数', '高偏差条数', '占比(%)', '均偏差率(%)', '总金额(元)')
-        )
+    def _refresh(self):
+        if self.source_var.get() == "history":
+            self._load_history_list()
 
-    def _make_tree(self, parent: ttk.Frame, columns: tuple, headings: tuple) -> ttk.Treeview:
-        """创建 Treeview + 滚动条"""
-        tree_frame = ttk.Frame(parent)
-        tree_frame.pack(fill="both", expand=True)
-
-        vsb = ttk.Scrollbar(tree_frame, orient="vertical")
-        hsb = ttk.Scrollbar(tree_frame, orient="horizontal")
-        tree = ttk.Treeview(
-            tree_frame,
-            columns=columns[1:],  # 第一列是 #0（图标列）
-            show='table headings',
-            yscrollcommand=vsb.set,
-            xscrollcommand=hsb.set,
-            height=10
-        )
-        vsb.config(command=tree.yview)
-        hsb.config(command=tree.xview)
-        vsb.pack(side="right", fill="y")
-        hsb.pack(side="bottom", fill="x")
-        tree.pack(side="left", fill="both", expand=True)
-
-        # 设置列
-        col_widths = {'月份': 100, '车间': 120, '总条数': 80, '高偏差条数': 90,
-                      '平均偏差率(%)': 100, '总偏差金额': 110,
-                      'rank': 50, '高偏差占比(%)': 100}
-        for i, col in enumerate(columns):
-            heading_text = headings[i + 1] if i < len(headings) - 1 else col
-            tree.heading(f'#{i}', text=heading_text)
-            tree.column(f'#{i}', width=col_widths.get(col, 100), anchor="center")
-
-        return tree
-
-    def _load_data(self):
-        """从 history_db 加载数据并刷新 UI"""
-        from core.history_db import get_monthly_trend
-
-        try:
-            self._df = get_monthly_trend()
-        except Exception as e:
-            self._df = None
-            print(f"[管理看板] 加载数据失败: {e}")
-            return
-
-        self._refresh_trend_ui()
-        self._refresh_workshop_ui()
-
-    def _refresh_trend_ui(self):
-        """刷新趋势 Tab"""
-        df = self._df
+        df = self._get_dataframe()
         if df is None or df.empty:
-            # 清空摘要
-            for lbl in self._summary_labels.values():
-                lbl.config(text="—")
-            # 清空表格
-            for item in self._trend_tree.get_children():
-                self._trend_tree.delete(item)
+            for widget in self.tab_workshop.winfo_children():
+                widget.destroy()
+            tk.Label(self.tab_workshop, text="无数据", font=("微软雅黑", 14)).pack(expand=True)
+            self.status_var.set("无数据，请先执行分析或选择有效历史记录")
             return
 
-        # 摘要统计
-        total = int(df['总条数'].sum())
-        high = int(df['高偏差条数'].sum())
-        avg_rate = round(df['平均偏差率(%)'].mean(), 1) if len(df) else 0
-        total_amt = round(df['总偏差金额'].sum(), 0)
+        self.current_df = df
+        self._draw_workshop_chart(df)
+        self._draw_trend_chart()
+        self.status_var.set(f"数据行数: {len(df)}")
 
-        self._summary_labels['total'].config(text=f"{total:,}")
-        self._summary_labels['high'].config(text=f"{high:,}")
-        self._summary_labels['avg_rate'].config(text=f"{avg_rate}%")
-        self._summary_labels['total_amt'].config(text=f"{total_amt:,.0f}")
+    def _on_history_selected(self):
+        self._load_history_list()
+        self._refresh()
 
-        # 刷新 Treeview
-        for item in self._trend_tree.get_children():
-            self._trend_tree.delete(item)
+    def _draw_workshop_chart(self, df):
+        # 计算各车间偏差率>10%的行数
+        dev_col = None
+        for col in ['偏差率%', '偏差率(%)']:
+            if col in df.columns:
+                dev_col = col
+                break
 
-        # 按月份排序（最新在前）
-        df_sorted = df.sort_values('月份', ascending=False)
-        for _, row in df_sorted.iterrows():
-            self._trend_tree.insert('', 'end', values=(
-                row['月份'],
-                row['车间'],
-                f"{int(row['总条数']):,}",
-                f"{int(row['高偏差条数']):,}",
-                f"{row['平均偏差率(%)']:.1f}%",
-                f"{row['总偏差金额']:,.0f}",
-            ))
-
-        # 绘制月度趋势图
-        self._draw_trend_chart(df_sorted)
-
-    def _draw_trend_chart(self, df: 'pd.DataFrame'):
-        """绘制月度趋势图（高偏差条数堆叠柱状图）"""
-        if not HAS_MATPLOTLIB or df.empty:
+        if dev_col is None:
+            for widget in self.tab_workshop.winfo_children():
+                widget.destroy()
+            tk.Label(self.tab_workshop, text="数据缺少偏差率列", fg="red").pack(expand=True)
             return
 
-        # 清理旧图
-        for w in self._chart_container.winfo_children():
-            w.destroy()
+        high_dev = df[df[dev_col].abs() > 10]
+        if '车间' not in high_dev.columns:
+            for widget in self.tab_workshop.winfo_children():
+                widget.destroy()
+            tk.Label(self.tab_workshop, text="数据缺少车间列", fg="red").pack(expand=True)
+            return
+
+        workshop_stats = high_dev.groupby('车间').size().sort_values(ascending=False)
+
+        # 清空旧内容
+        for widget in self.tab_workshop.winfo_children():
+            widget.destroy()
+
+        if workshop_stats.empty:
+            tk.Label(self.tab_workshop, text="无偏差>10%的记录", font=("微软雅黑", 14)).pack(expand=True)
+            return
+
+        fig = plt.Figure(figsize=(8, 4), dpi=100)
+        ax = fig.add_subplot(111)
+        workshop_stats.plot(kind='bar', ax=ax, color='steelblue')
+        ax.set_title('各车间偏差>10% 行数')
+        ax.set_xlabel('车间')
+        ax.set_ylabel('行数')
+        ax.tick_params(axis='x', rotation=45)
+
+        canvas = FigureCanvasTkAgg(fig, master=self.tab_workshop)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def _draw_trend_chart(self):
+        for widget in self.tab_trend.winfo_children():
+            widget.destroy()
 
         try:
-            # 按月份聚合
-            monthly = df.groupby('月份').agg(
-                总条数=('总条数', 'sum'),
-                高偏差条数=('高偏差条数', 'sum')
-            ).reset_index().sort_values('月份')
-
+            monthly = history_db.get_monthly_trend(months=6, db_path=self.history_db_path)
             if monthly.empty:
+                tk.Label(self.tab_trend, text="历史数据不足，无法绘制趋势图", font=("微软雅黑", 14)).pack(expand=True)
                 return
 
-            months = monthly['月份'].tolist()
-            total_vals = monthly['总条数'].tolist()
-            high_vals = monthly['高偏差条数'].tolist()
+            fig = plt.Figure(figsize=(8, 4), dpi=100)
+            ax = fig.add_subplot(111)
+            ax.plot(monthly['month'], monthly['high_dev_rows'], marker='o', linestyle='-', color='green')
+            ax.set_title('近6个月偏差>10% 行数趋势')
+            ax.set_xlabel('月份')
+            ax.set_ylabel('行数')
+            ax.tick_params(axis='x', rotation=45)
 
-            fig, ax = plt.subplots(figsize=(8, 3.5), dpi=100)
-            fig.patch.set_facecolor(C['surface'])
-            ax.set_facecolor('#fafbfc')
-
-            x = range(len(months))
-            bar_width = 0.55
-            bars1 = ax.bar(x, total_vals, bar_width, label='总偏差条数',
-                           color=C['accent'], alpha=0.75, zorder=2)
-            bars2 = ax.bar(x, high_vals, bar_width, label='高偏差条数(≥30%)',
-                           color=C['danger'], alpha=0.90, zorder=2)
-
-            # 数据标签
-            for bar in bars1:
-                h = bar.get_height()
-                if h > 0:
-                    ax.text(bar.get_x() + bar.get_width() / 2, h + 1,
-                            f'{int(h)}', ha='center', va='bottom', fontsize=7,
-                            color=C['text_dim'])
-            for bar in bars2:
-                h = bar.get_height()
-                if h > 0:
-                    ax.text(bar.get_x() + bar.get_width() / 2, h + 1,
-                            f'{int(h)}', ha='center', va='bottom', fontsize=7,
-                            color=C['danger'])
-
-            ax.set_xticks(list(x))
-            ax.set_xticklabels(months, rotation=30, ha='right', fontsize=8)
-            ax.set_ylabel('条数', fontsize=9)
-            ax.set_title('月度偏差趋势', fontsize=11, fontweight='bold', pad=8)
-            ax.legend(fontsize=8, framealpha=0.5)
-            ax.grid(axis='y', linestyle='--', alpha=0.4, zorder=1)
-            ax.spines['top'].set_visible(False)
-            ax.spines['right'].set_visible(False)
-            plt.tight_layout()
-
-            # 嵌入 tkinter
-            from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-            canvas = FigureCanvasTkAgg(fig, master=self._chart_container)
+            canvas = FigureCanvasTkAgg(fig, master=self.tab_trend)
             canvas.draw()
-            canvas.get_tk_widget().pack(fill="both", expand=True)
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         except Exception as e:
-            tk.Label(
-                self._chart_container,
-                text=f"图表渲染失败: {e}",
-                font=("Microsoft YaHei", 10), fg=C['warn'], bg=C['surface']
-            ).pack(fill="both", expand=True)
+            tk.Label(self.tab_trend, text=f"加载趋势失败: {e}", fg="red").pack(expand=True)
 
-    def _refresh_workshop_ui(self):
-        """刷新车间 TOP10 Tab"""
-        df = self._df
-        if df is None or df.empty:
-            for item in self._ws_tree.get_children():
-                self._ws_tree.delete(item)
+    def _export_screenshot(self):
+        current_tab = self.notebook.select()
+        tab_text = self.notebook.tab(current_tab, "text")
+        for widget in self.notebook.nametowidget(current_tab).winfo_children():
+            if isinstance(widget, FigureCanvasTkAgg):
+                file_path = filedialog.asksaveasfilename(defaultextension=".png",
+                                                        filetypes=[("PNG files", "*.png")])
+                if file_path:
+                    widget.figure.savefig(file_path, dpi=150)
+                    messagebox.showinfo("导出成功", f"已保存到 {file_path}")
+                return
+        messagebox.showwarning("无法导出", "未找到可导出的图表")
+
+    def _show_attribution(self):
+        if self.current_df is None or self.current_df.empty:
+            messagebox.showwarning("无数据", "没有可分析的数据")
             return
 
-        # 按车间聚合高偏差条数排序，取TOP10
-        ws_rank = df.groupby('车间').agg(
-            总条数=('总条数', 'sum'),
-            高偏差条数=('高偏差条数', 'sum'),
-            平均偏差率=('平均偏差率(%)', 'mean'),
-            总偏差金额=('总偏差金额', 'sum'),
-        ).reset_index().sort_values('高偏差条数', ascending=False).head(10).reset_index(drop=True)
+        # 获取历史数据（如果有）
+        history_df = None
+        if self.source_var.get() == "history" and self.history_combo.get():
+            selected = self.history_combo.get()
+            if ":" in selected:
+                aid = int(selected.split(":")[0])
+                history_df = history_db.get_analysis_data(aid, db_path=self.history_db_path)
+        elif self.source_var.get() == "current":
+            # 自动找最近一次历史数据
+            records = history_db.get_analysis_list(limit=1, db_path=self.history_db_path)
+            if records:
+                history_df = history_db.get_analysis_data(records[0]['id'], db_path=self.history_db_path)
 
-        for item in self._ws_tree.get_children():
-            self._ws_tree.delete(item)
+        from core.attribution import calculate_attribution
+        report = calculate_attribution(self.current_df, history_df)
 
-        for idx, row in ws_rank.iterrows():
-            rank = idx + 1
-            total = int(row['总条数'])
-            high = int(row['高偏差条数'])
-            pct = round(high / total * 100, 1) if total else 0
-            self._ws_tree.insert('', 'end', values=(
-                f"#{rank}",
-                row['车间'],
-                f"{total:,}",
-                f"{high:,}",
-                f"{pct}%",
-                f"{row['平均偏差率']:.1f}%",
-                f"{row['总偏差金额']:,.0f}",
-            ))
-
-        # 绘制车间TOP10图
-        self._draw_workshop_chart(ws_rank)
-
-    def _draw_workshop_chart(self, ws_rank: 'pd.DataFrame'):
-        """绘制车间TOP10柱状图"""
-        if not HAS_MATPLOTLIB or ws_rank.empty:
-            return
-
-        for w in self._ws_chart_container.winfo_children():
-            w.destroy()
-
-        try:
-            fig, ax = plt.subplots(figsize=(7, 3.5), dpi=100)
-            fig.patch.set_facecolor(C['surface'])
-            ax.set_facecolor('#fafbfc')
-
-            workshops = ws_rank['车间'].tolist()
-            high_vals = ws_rank['高偏差条数'].tolist()
-            total_vals = ws_rank['总条数'].tolist()
-
-            y = range(len(workshops))
-            bar_height = 0.55
-
-            ax.barh(list(y), total_vals, bar_height, label='总偏差条数',
-                    color=C['accent'], alpha=0.65, zorder=2)
-            ax.barh(list(y), high_vals, bar_height, label='高偏差条数(≥30%)',
-                    color=C['danger'], alpha=0.90, zorder=2)
-
-            ax.set_yticks(list(y))
-            ax.set_yticklabels(workshops, fontsize=8)
-            ax.set_xlabel('条数', fontsize=9)
-            ax.set_title('车间高偏差条数 TOP10', fontsize=11, fontweight='bold', pad=8)
-            ax.legend(fontsize=8, framealpha=0.5, loc='lower right')
-            ax.grid(axis='x', linestyle='--', alpha=0.4, zorder=1)
-            ax.spines['top'].set_visible(False)
-            ax.spines['right'].set_visible(False)
-            ax.invert_yaxis()
-            plt.tight_layout()
-
-            from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-            canvas = FigureCanvasTkAgg(fig, master=self._ws_chart_container)
-            canvas.draw()
-            canvas.get_tk_widget().pack(fill="both", expand=True)
-        except Exception as e:
-            tk.Label(
-                self._ws_chart_container,
-                text=f"图表渲染失败: {e}",
-                font=("Microsoft YaHei", 10), fg=C['warn'], bg=C['surface']
-            ).pack(fill="both", expand=True)
+        # 弹出报告窗口
+        win = tk.Toplevel(self.window)
+        win.title("AI 归因分析报告")
+        win.geometry("600x400")
+        text = tk.Text(win, wrap=tk.WORD, font=("微软雅黑", 10))
+        text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        text.insert(tk.END, report)
+        text.config(state=tk.DISABLED)
+        tk.Button(win, text="关闭", command=win.destroy).pack(pady=5)

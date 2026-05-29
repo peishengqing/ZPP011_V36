@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """历史分析数据持久化到 SQLite"""
 import sqlite3, json, os, pandas as pd
 from datetime import datetime
@@ -360,38 +360,19 @@ def cleanup_old_records(months: int = 6, db_path: str = DB_PATH) -> int:
     finally:
         conn.close()
 
-def get_monthly_trend(db_path: str = DB_PATH) -> pd.DataFrame:
-    """
-    按月份和车间聚合偏差数据，返回趋势 DataFrame。
-    返回列：月份, 车间, 总条数, 高偏差条数, 平均偏差率(%), 总偏差金额
-    """
+def get_monthly_trend(months=6, db_path=DB_PATH):
+    """获取近几个月的偏差趋势（分析看板专用）"""
     if not os.path.exists(db_path):
-        return pd.DataFrame(
-            columns=['月份', '车间', '总条数', '高偏差条数', '平均偏差率(%)', '总偏差金额'])
+        return pd.DataFrame()
 
-    conn = sqlite3.connect(db_path)
-    try:
-        cursor = conn.execute("""
-            SELECT
-                strftime('%Y-%m', m.timestamp) AS month,
-                d.workshop,
-                COUNT(*) AS total_rows,
-                SUM(CASE WHEN d.dev_rate >= 30 THEN 1 ELSE 0 END) AS high_dev_rows,
-                ROUND(AVG(d.dev_rate), 2) AS avg_dev_rate,
-                ROUND(SUM(COALESCE(d.deviation_amount, 0)), 2) AS total_deviation_amount
-            FROM deviation_details d
-            JOIN analysis_meta m ON d.analysis_id = m.id
-            GROUP BY strftime('%Y-%m', m.timestamp), d.workshop
-            ORDER BY month DESC, high_dev_rows DESC
-        """)
-        rows = cursor.fetchall()
-        if not rows:
-            return pd.DataFrame(
-                columns=['月份', '车间', '总条数', '高偏差条数', '平均偏差率(%)', '总偏差金额'])
-        df = pd.DataFrame(rows, columns=['月份', '车间', '总条数', '高偏差条数', '平均偏差率(%)', '总偏差金额'])
-        # 数值类型
-        for col in ['总条数', '高偏差条数', '平均偏差率(%)', '总偏差金额']:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-        return df
-    finally:
-        conn.close()
+    with sqlite3.connect(db_path) as conn:
+        query = """
+            SELECT strftime('%Y-%m', timestamp) as month,
+                   SUM(high_dev_rows) as high_dev_rows
+            FROM analysis_meta
+            WHERE timestamp >= datetime('now', ?)
+            GROUP BY month
+            ORDER BY month ASC
+            LIMIT ?
+        """
+        return pd.read_sql_query(query, conn, params=(f'-{months} months', months))
