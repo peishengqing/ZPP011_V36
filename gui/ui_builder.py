@@ -486,6 +486,12 @@ def _build_ui(self):
         self.audit_tree.tag_configure('ok_note',   background='#e8f5e9', foreground='#1a6b1a')
         self.audit_tree.tag_configure('ai_gen',    background='#fce4ec', foreground='#880e4f')
         self.audit_tree.tag_configure('sel', background=C['accent'], foreground='#ffffff')
+        # Task 007: 四色优先级标签（中文名）
+        self.audit_tree.tag_configure('priority_红', background='#ffe0e0')
+        self.audit_tree.tag_configure('priority_橙', background='#ffddcc')
+        self.audit_tree.tag_configure('priority_黄', background='#fff8e0')
+        self.audit_tree.tag_configure('priority_绿', background='#e8f5e9')
+        # 兼容旧版英文 tag 名（如有其他地方引用）
         self.audit_tree.tag_configure('priority_red', background='#ffe0e0')
         self.audit_tree.tag_configure('priority_yellow', background='#fff8e0')
         self.audit_tree.tag_configure('priority_green', background='#e8f5e9')

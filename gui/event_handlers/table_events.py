@@ -19,6 +19,10 @@ class TableEvents:
     _total_rows = 0
     _is_loading = False
     _native_yscroll_set = None
+
+    # ── Task 007: tag 状态缓存 ──
+    _row_tag_cache = {}       # {_row_id: (priority_tag, color_hex)}
+    _cache_built = False
     
     # ==================== Task 006: 无限滚动 ====================
     
@@ -97,6 +101,187 @@ class TableEvents:
         self.__class__._display_start = 0
         self.__class__._is_loading = False
 
+    # ── Task 007: 四色优先级 + tag 缓存 ──
+
+    def _calculate_priority_label(self, dev_rate, has_note):
+        """四色优先级标签：红(高偏差无备注) / 橙(高偏差有备注) / 黄(低偏差无备注) / 绿(其余)
+
+        红：偏差率≥10% 且 无备注
+        橙：偏差率≥10% 且 有备注
+        黄：偏差率5%~10% 且 无备注
+        绿：其余（低偏差或已有备注）
+        """
+        dev = abs(float(dev_rate or 0))
+        if dev >= 10:
+            return "橙" if has_note else "红"
+        elif dev >= 5:
+            return "黄" if not has_note else "绿"
+        else:
+            return "绿"
+
+    def _compute_row_tag(self, row, alt_all_descs=None):
+        """计算单行的 tag 元组（Task 007 缓存版）
+
+        返回: (priority_tag, color_hex, final_tags_tuple)
+        """
+        dev_rate = row.get("偏差率(%)", 0) or 0
+        remark = str(row.get("备注原因", "")).strip()
+        batch_remark = str(row.get("批量备注原因", "")).strip() if pd.notna(row.get("批量备注原因")) else ""
+        if batch_remark in ("nan", "NaN", "None"):
+            batch_remark = ""
+        has_note = remark != "" or batch_remark != ""
+
+        # 1) 四色优先级
+        label = self._calculate_priority_label(dev_rate, has_note)
+        priority_tag = f"priority_{label}"
+
+        # 2) RuleEngine 偏差率颜色
+        color_hex = None
+        try:
+            if hasattr(self, "rule_engine"):
+                color_hex = self.rule_engine.get_color_for_deviation_rate(dev_rate)
+        except Exception:
+            color_hex = None
+
+        # 3) 状态 tag
+        note_src = str(row.get("备注来源", ""))
+        if note_src in ("nan", "NaN", "None"):
+            note_src = ""
+
+        if note_src == "自动结案":
+            tag = ("auto_closed",)
+        elif note_src == "AI生成":
+            tag = ("ai_gen",)
+        elif note_src in ("AI审核合格", "人工填写", "系统无定额(广宣)", "自动填充", "替代料"):
+            tag = ("ok_note",)
+        elif note_src == "AI审核待改进":
+            tag = ("need_note",)
+        elif not has_note:
+            tag = ("need_note",)
+        else:
+            tag = ("ok_note",)
+
+        # 4) 突变物料
+        mat_code = str(row.get("组件物料号", ""))
+        if hasattr(self, "mutation_materials") and mat_code in self.mutation_materials:
+            tag = ("mutation_alert",) + tag
+
+        # 5) 正负偏差方向
+        if dev_rate > 0:
+            tag = tag + ("over_amount",)
+        elif dev_rate < 0:
+            tag = tag + ("under_amount",)
+
+        # 6) 合并
+        final_tag = (color_hex,) + tag if color_hex and isinstance(color_hex, str) else tag
+        final_tag = (priority_tag,) + final_tag
+
+        return priority_tag, color_hex, final_tag
+
+    def _build_tag_cache(self, df):
+        """批量构建 tag 缓存（Task 007）
+
+        以 _row_id 为 key，缓存 (priority_tag, color_hex)。
+        _row_id = 订单日期+流程订单+物料编码 的组合。
+        """
+        self.__class__._row_tag_cache = {}
+
+        # 确保 _row_id 列存在
+        if "_row_id" not in df.columns:
+            def _make_row_id(r):
+                order_date = str(r.get("订单日期", ""))[:10]
+                order_no = ""
+                for _col in ["流程订单", "订单号", "订单编号"]:
+                    if _col in r.index and pd.notna(r.get(_col)):
+                        order_no = str(r.get(_col))
+                        break
+                mat_code = str(r.get("物料编码", r.get("组件物料号", "")))
+                return f"{order_date}|{order_no}|{mat_code}"
+
+            df["_row_id"] = df.apply(_make_row_id, axis=1)
+
+        # 构建替代料描述集合（只需一次）
+        alt_all_descs = set()
+        for a, b in getattr(self, "alt_pairs", []):
+            def _extract_desc(item):
+                if isinstance(item, (list, tuple)):
+                    if len(item) >= 3:
+                        return str(item[2]).strip() if item[2] else ""
+                    if len(item) == 2:
+                        return str(item[1]).strip() if item[1] else ""
+                    return str(item[0]).strip() if item[0] else ""
+                return str(item).strip()
+            da, db = _extract_desc(a), _extract_desc(b)
+            if da:
+                alt_all_descs.add(da)
+            if db:
+                alt_all_descs.add(db)
+
+        for _, row in df.iterrows():
+            row_id = row.get("_row_id", "")
+            priority_tag, color_hex, _ = self._compute_row_tag(row, alt_all_descs)
+            self.__class__._row_tag_cache[row_id] = (priority_tag, color_hex)
+
+        self.__class__._cache_built = True
+        if hasattr(self, "log"):
+            self.log(f"[007] tag 缓存已构建，共 {len(self._row_tag_cache)} 行", "info")
+
+    def _invalidate_tag_cache(self):
+        """使 tag 缓存失效（数据修改后调用）"""
+        self.__class__._cache_built = False
+        self.__class__._row_tag_cache = {}
+
+    def _rebuild_tag_cache_if_needed(self):
+        """如果缓存失效，重新构建（在 _refresh_audit_tree 前调用）"""
+        if not self._cache_built and self.audit_data is not None and not self.audit_data.empty:
+            self._build_tag_cache(self.audit_data)
+
+    def _get_row_tags(self, idx):
+        """根据 DataFrame 行索引返回缓存的 tag（Task 007）"""
+        if not self._cache_built or self.audit_data is None:
+            return ()
+        if idx >= len(self.audit_data):
+            return ()
+        row = self.audit_data.iloc[idx]
+        row_id = row.get("_row_id", "")
+        cached = self._row_tag_cache.get(row_id)
+        if cached:
+            priority_tag, color_hex = cached
+            # 重建完整 tag（简化版，不含 rank tag）
+            tag = ()
+            note_src = str(row.get("备注来源", ""))
+            if note_src in ("nan", "NaN", "None"):
+                note_src = ""
+            remark = str(row.get("备注原因", "")).strip()
+            batch_remark = str(row.get("批量备注原因", "")).strip() if pd.notna(row.get("批量备注原因")) else ""
+            has_note = remark != "" or batch_remark != ""
+
+            if note_src == "自动结案":
+                tag = ("auto_closed",)
+            elif note_src == "AI生成":
+                tag = ("ai_gen",)
+            elif note_src in ("AI审核合格", "人工填写", "系统无定额(广宣)", "自动填充", "替代料"):
+                tag = ("ok_note",)
+            elif note_src == "AI审核待改进":
+                tag = ("need_note",)
+            elif not has_note:
+                tag = ("need_note",)
+            else:
+                tag = ("ok_note",)
+
+            dev_rate = row.get("偏差率(%)", 0) or 0
+            if dev_rate > 0:
+                tag = tag + ("over_amount",)
+            elif dev_rate < 0:
+                tag = tag + ("under_amount",)
+
+            final_tag = (priority_tag,)
+            if color_hex and isinstance(color_hex, str):
+                final_tag = final_tag + (color_hex,)
+            final_tag = final_tag + tag
+            return final_tag
+        return ()
+
     def _refresh_audit_tree(self, df, skip_auto_sort=False):
         """用给定的 DataFrame 刷新智能审核表格（支持分页加载）"""
         # 重置分页状态
@@ -108,10 +293,8 @@ class TableEvents:
         
         # 设置总行数
         if df is not None and not df.empty:
-            self.audit_data = df.copy()
             self._total_rows = len(df)
         else:
-            self.audit_data = None
             self._total_rows = 0
         
         # 加载首屏数据
@@ -126,47 +309,49 @@ class TableEvents:
             self._log(f"[DEBUG] _refresh_audit_tree: loaded first {self._display_limit} rows, total {self._total_rows} rows")
 
 
-        def calc_priority(row):
-
+        # ── Task 007: 四色优先级 + tag 缓存 ──
+        if df is not None and not df.empty:
+            # 确保规则引擎已初始化
             if not hasattr(self, "rule_engine"):
                 self.rule_engine = RuleEngine()
 
-            dev = abs(float(row.get("偏差率(%)", 0) or 0))
+            # 生成 _row_id（稳定行标识）
+            if "_row_id" not in df.columns:
+                def _make_row_id(r):
+                    order_date = str(r.get("订单日期", ""))[:10]
+                    order_no = ""
+                    for _col in ["流程订单", "订单号", "订单编号"]:
+                        if _col in r.index and pd.notna(r.get(_col)):
+                            order_no = str(r.get(_col))
+                            break
+                    mat_code = str(r.get("物料编码", r.get("组件物料号", "")))
+                    return f"{order_date}|{order_no}|{mat_code}"
+                df["_row_id"] = df.apply(_make_row_id, axis=1)
 
-            has_note = (
-                pd.notna(row.get("备注原因"))
-                and str(row.get("备注原因", "")).strip() != ""
+            # 四色优先级计算
+            def _calc_priority_4color(row):
+                remark = str(row.get("备注原因", "")).strip()
+                batch_remark = str(row.get("批量备注原因", "")).strip() if pd.notna(row.get("批量备注原因")) else ""
+                has_note = (pd.notna(row.get("备注原因")) and remark != "") or batch_remark != ""
+                label = self._calculate_priority_label(row.get("偏差率(%)", 0), has_note)
+                order_map = {"红": 0, "橙": 1, "黄": 2, "绿": 3}
+                return order_map.get(label, 3), label
+
+            df[["_priority_order", "_priority_label"]] = df.apply(
+                lambda r: pd.Series(_calc_priority_4color(r)), axis=1
             )
 
-            level = self.rule_engine.get_level_for_deviation_rate(dev)
+            # 构建 tag 缓存
+            self._build_tag_cache(df)
 
-            # level: info/warning/error -> map to label
-
-            if level == "error":
-                label = self.config.get("priority.red_label", "红")
-
-                order = 0 if not has_note else 1
-
-            elif level == "warning":
-                label = self.config.get("priority.yellow_label", "黄")
-
-                order = 2 if not has_note else 3
-
-            else:
-                label = self.config.get("priority.green_label", "绿")
-
-                order = 4
-
-            return order, label
-
-        df = df.copy()
-
-        df[["_priority_order", "_priority_label"]] = df.apply(
-            lambda r: pd.Series(calc_priority(r)), axis=1
-        )
-
-        if not skip_auto_sort:
+        if not skip_auto_sort and df is not None and not df.empty:
             df = df.sort_values("_priority_order")
+
+        # 保存最终 df 到 audit_data（包含 _row_id, _priority_order, _priority_label）
+        if df is not None and not df.empty:
+            self.audit_data = df.copy()
+        else:
+            self.audit_data = None
 
         # ── P1：金额排名着色 ──
 
@@ -446,73 +631,73 @@ class TableEvents:
                     tags=list(self.audit_tree.item(item, "tags")) + ["remark_yellow"],
                 )
 
-            # RuleEngine 偏差率颜色
-
-            color_hex = None
-
-            try:
-                if hasattr(self, "rule_engine"):
-                    color_hex = self.rule_engine.get_color_for_deviation_rate(dev_rate)
-
-                    if color_hex not in self.audit_tree.tag_names():
-                        self.audit_tree.tag_configure(color_hex, background=color_hex)
-
+            # ── Task 007: 使用缓存的 tag ──
+            row_id = row.get("_row_id", "")
+            cached = self._row_tag_cache.get(row_id) if self._cache_built else None
+            if cached:
+                priority_tag, color_hex = cached
+                # 注册动态颜色 tag
+                if color_hex and color_hex not in self.audit_tree.tag_names():
+                    self.audit_tree.tag_configure(color_hex, background=color_hex)
+                # 构建状态 tag
+                if note_src == "自动结案":
+                    status_tag = ("auto_closed",)
+                elif note_src == "AI生成":
+                    status_tag = ("ai_gen",)
+                elif note_src in ("AI审核合格", "人工填写", "系统无定额(广宣)", "自动填充", "替代料"):
+                    status_tag = ("ok_note",)
+                elif note_src == "AI审核待改进" or not has_note:
+                    status_tag = ("need_note",)
                 else:
+                    status_tag = ("ok_note",)
+
+                # 方向 tag
+                dir_tag = ("over_amount",) if dev_rate > 0 else (("under_amount",) if dev_rate < 0 else ())
+
+                # rank tag
+                rank_tag_val = rank_dict.get(_, None)
+                rank_tag = (rank_tag_val,) if rank_tag else ()
+
+                final_tag = (priority_tag,) + rank_tag
+                if color_hex and isinstance(color_hex, str):
+                    final_tag = final_tag + (color_hex,)
+                final_tag = final_tag + status_tag + dir_tag
+            else:
+                # fallback: 旧逻辑
+                color_hex = None
+                try:
+                    if hasattr(self, "rule_engine"):
+                        color_hex = self.rule_engine.get_color_for_deviation_rate(dev_rate)
+                        if color_hex not in self.audit_tree.tag_names():
+                            self.audit_tree.tag_configure(color_hex, background=color_hex)
+                except Exception:
                     color_hex = None
 
-            except Exception:
-                color_hex = None
+                if note_src == "自动结案":
+                    tag = ("auto_closed",)
+                elif note_src == "AI生成":
+                    tag = ("ai_gen",)
+                elif note_src in ("AI审核合格", "人工填写", "系统无定额(广宣)", "自动填充", "替代料"):
+                    tag = ("ok_note",)
+                elif note_src == "AI审核待改进" or not has_note:
+                    tag = ("need_note",)
+                else:
+                    tag = ("ok_note",)
 
-            # 颜色标签
+                mat_code = str(row.get("组件物料号", ""))
+                if hasattr(self, "mutation_materials") and mat_code in self.mutation_materials:
+                    tag = ("mutation_alert",) + tag
 
-            if note_src == "自动结案":
-                tag = ("auto_closed",)
+                rank_tag_val = rank_dict.get(_, None)
+                if rank_tag_val:
+                    tag = (rank_tag_val,) + tag
 
-            elif note_src == "AI生成":
-                tag = ("ai_gen",)
+                if dev_rate > 0:
+                    tag = tag + ("over_amount",)
+                elif dev_rate < 0:
+                    tag = tag + ("under_amount",)
 
-            elif note_src in (
-                "AI审核合格",
-                "人工填写",
-                "系统无定额(广宣)",
-                "自动填充",
-                "替代料",
-            ):
-                tag = ("ok_note",)
-
-            elif note_src == "AI审核待改进":
-                tag = ("need_note",)
-
-            elif not has_note:
-                tag = ("need_note",)
-
-            else:
-                tag = ("ok_note",)
-
-            mat_code = str(row.get("组件物料号", ""))
-
-            if (
-                hasattr(self, "mutation_materials")
-                and mat_code in self.mutation_materials
-            ):
-                tag = ("mutation_alert",) + (tag if isinstance(tag, tuple) else (tag,))
-
-            rank_tag = rank_dict.get(_, None)  # _ 是当前行的原始索引
-
-            if rank_tag:
-                tag = (rank_tag,) + (tag if isinstance(tag, tuple) else (tag,))
-
-            # 金额颜色区分：正偏差红色，负偏差绿色
-
-            if dev_rate > 0:
-                tag = tag + ("over_amount",)
-
-            elif dev_rate < 0:
-                tag = tag + ("under_amount",)
-
-            final_tag = (
-                (color_hex,) + tag if color_hex and isinstance(color_hex, str) else tag
-            )
+                final_tag = (color_hex,) + tag if color_hex and isinstance(color_hex, str) else tag
 
             self.audit_tree.item(item, tags=final_tag)
 
@@ -1075,18 +1260,11 @@ class TableEvents:
             )
 
             priority_label = row.get(
-                "_priority_label", self.config.get("priority.green_label", "绿")
+                "_priority_label", "绿"
             )
 
-            priority_tag = (
-                "priority_red"
-                if priority_label == self.config.get("priority.red_label", "红")
-                else (
-                    "priority_yellow"
-                    if priority_label == self.config.get("priority.yellow_label", "黄")
-                    else "priority_green"
-                )
-            )
+            # Task 007: 四色优先级标签
+            priority_tag = f"priority_{priority_label}"
 
             # 追加备注校验标签
             current_tags = list(self.audit_tree.item(item, "tags"))
