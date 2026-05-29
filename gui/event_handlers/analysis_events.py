@@ -645,7 +645,7 @@ class AnalysisEvents:
                 if 'material_category' in self.audit_data.columns:
                     self.audit_data.drop(columns=['material_category'], inplace=True)
                 self.audit_data['material_category'] = self.audit_data[mat_code_col].apply(
-                    lambda x: mat_cat_map.get(str(x)[:3], str(x)[:3]) if pd.notna(x) else ''
+                    lambda x: mat_cat_map.get(str(x)[:3], '') if pd.notna(x) else ''
                 )
             else:
                 self.audit_data['material_category'] = ''
