@@ -408,7 +408,7 @@ def _build_ui(self):
         audit_hscroll = ttk.Scrollbar(tree_container, orient="horizontal")
         audit_hscroll.pack(side="bottom", fill="x")
         cols = ("idx", "excel_row", "factory", "admin", "order_date", "order_no",
-                "code", "material_category", "name", "quota", "actual", "dev_rate", "is_alt", "status",
+                "material_category", "code", "name", "quota", "actual", "dev_rate", "is_alt", "status",
                 "remark", "batch_remark", "audit_result", "AI建议", "audit_status",
                 "audit_source", "deviation_amount",
                 "remark_check_status", "remark_check_msg")

@@ -289,34 +289,34 @@ class TableEvents:
             df.rename(columns={'material_category[2]': 'material_category'}, inplace=True)
         # 重置分页状态
         self._reset_pagination()
-        
+
         # 清空 Treeview
         if hasattr(self, 'audit_tree'):
             self.audit_tree.delete(*self.audit_tree.get_children())
-        
-        # 设置总行数
-        if df is not None and not df.empty:
-            self._total_rows = len(df)
-        else:
-            self._total_rows = 0
-        
-        # 加载首屏数据
-        self._append_rows_to_treeview(0, self._display_limit)
-        
+
         # 初始化滚动绑定（如果还没初始化）
         if self._native_yscroll_set is None:
             self._init_scroll_binding()
-        
-        # 以下保留原有的调试和优先级标记逻辑
-        if hasattr(self, '_log'):
-            self._log(f"[DEBUG] _refresh_audit_tree: loaded first {self._display_limit} rows, total {self._total_rows} rows")
 
-
-        # ── Task 007: 四色优先级 + tag 缓存 ──
+        # ── Task 007: 数据预处理（四色优先级 + material_category + tag 缓存）──
         if df is not None and not df.empty:
+            df = df.copy()
+
             # 确保规则引擎已初始化
             if not hasattr(self, "rule_engine"):
                 self.rule_engine = RuleEngine()
+
+            # 修正 material_category：强制基于物料编码前缀重新计算
+            _mc_map = {
+                "100": "原辅料", "200": "包材",
+                "400": "食品辅料/食品半成品", "410": "饮料辅料/饮料半成品",
+                "500": "食品成品", "510": "饮料成品", "600": "促销品",
+            }
+            _code_col = next((c for c in ['物料编码', '组件物料号'] if c in df.columns), None)
+            if _code_col:
+                df['material_category'] = df[_code_col].apply(
+                    lambda x: _mc_map.get(str(x)[:3], str(x)[:3]) if pd.notna(x) and str(x) != 'nan' else ''
+                )
 
             # 生成 _row_id（稳定行标识）
             if "_row_id" not in df.columns:
@@ -334,7 +334,10 @@ class TableEvents:
             # 四色优先级计算
             def _calc_priority_4color(row):
                 remark = str(row.get("备注原因", "")).strip()
-                batch_remark = str(row.get("批量备注原因", "")).strip() if pd.notna(row.get("批量备注原因")) else ""
+                batch_remark = (
+                    str(row.get("批量备注原因", "")).strip()
+                    if pd.notna(row.get("批量备注原因")) else ""
+                )
                 has_note = (pd.notna(row.get("备注原因")) and remark != "") or batch_remark != ""
                 label = self._calculate_priority_label(row.get("偏差率(%)", 0), has_note)
                 order_map = {"红": 0, "橙": 1, "黄": 2, "绿": 3}
@@ -344,11 +347,21 @@ class TableEvents:
                 lambda r: pd.Series(_calc_priority_4color(r)), axis=1
             )
 
-            # 构建 tag 缓存
+            if not skip_auto_sort:
+                df = df.sort_values("_priority_order")
+
+            # 构建 tag 缓存（排序后再建）
             self._build_tag_cache(df)
 
-        if not skip_auto_sort and df is not None and not df.empty:
-            df = df.sort_values("_priority_order")
+            # 保存最终 df 到 audit_data
+            self.audit_data = df.copy()
+            self._total_rows = len(df)
+        else:
+            self.audit_data = None
+            self._total_rows = 0
+
+        if hasattr(self, '_log'):
+            self._log(f"[DEBUG] _refresh_audit_tree: total {self._total_rows} rows")
 
         # ── P1：金额排名着色 ──
 
@@ -419,24 +432,7 @@ class TableEvents:
 
         # ── 填充 Tree（按优先级排序） ──
 
-        # ── 计算物料大类列（插入Tree前先加到DataFrame，确保筛选可用） ──
-        def _get_mat_category(code):
-            if not code:
-                return ""
-            prefix = str(code)[:3]
-            mat_map = {
-                "100": "原辅料", "200": "包材",
-                "400": "食品辅料/食品半成品", "410": "饮料辅料/饮料半成品",
-                "500": "食品成品", "510": "饮料成品", "600": "促销品",
-            }
-            return mat_map.get(prefix, prefix)
-
-        code_col = next((c for c in ['物料编码', '组件物料号'] if c in df.columns), None)
-        if code_col and 'material_category' not in df.columns:
-            df['material_category'] = df[code_col].apply(_get_mat_category)
-
         # ── 注意：下拉框选项不再这里动态更新，改为在数据加载时一次性设置 ──
-        # 原因：如果基于当前 df（可能是筛选后的子集）更新选项，会导致下拉框选项随筛选结果一起变少
         # 正确做法：基于 self.full_audit_data（全量数据）在 _update_filter_options 中设置一次
 
         for i, (_, row) in enumerate(df.iterrows(), 1):
@@ -596,8 +592,8 @@ class TableEvents:
                     if pd.notna(row.get("订单日期"))
                     else "",  # order_date
                     order_no_val,  # order_no
+                    mat_category,  # material_category（物料大类在物料号前）
                     str(row.get("物料编码", row.get("组件物料号", ""))),  # code
-                    mat_category,  # material_category
                     mat_desc[:20],  # name
                     f"{row.get('定额', row.get('数量-定额', 0)):.3f}",  # quota
                     f"{row.get('实际', row.get('数量-实际', 0)):.3f}",  # actual
@@ -1223,6 +1219,14 @@ class TableEvents:
                 else str(dev_rate)
             )
 
+            # 物料大类
+            mat_code_prefix_v = code_val[:3] if code_val else ""
+            mat_category_val = {
+                "100": "原辅料", "200": "包材",
+                "400": "食品辅料/食品半成品", "410": "饮料辅料/饮料半成品",
+                "500": "食品成品", "510": "饮料成品", "600": "促销品",
+            }.get(mat_code_prefix_v, mat_code_prefix_v)
+
             item = self.audit_tree.insert(
                 "",
                 "end",
@@ -1237,6 +1241,7 @@ class TableEvents:
                     if pd.notna(row.get("订单日期"))
                     else "",  # order_date
                     order_no_val,  # order_no
+                    mat_category_val,  # material_category（物料大类在物料号前）
                     code_val,  # code
                     name_val,  # name
                     quota_val,  # quota
@@ -1260,11 +1265,9 @@ class TableEvents:
                 "_priority_label", "绿"
             )
 
-            # Task 007: 四色优先级标签
+            # Task 007: 四色优先级标签 + 备注校验标签
             priority_tag = f"priority_{priority_label}"
-
-            # 追加备注校验标签
-            current_tags = list(self.audit_tree.item(item, "tags"))
+            current_tags = [priority_tag]
             if row.get("remark_check_status") == "red":
                 current_tags.append("remark_red")
             elif row.get("remark_check_status") == "yellow":
