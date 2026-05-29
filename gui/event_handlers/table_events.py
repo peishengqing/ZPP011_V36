@@ -284,6 +284,9 @@ class TableEvents:
 
     def _refresh_audit_tree(self, df, skip_auto_sort=False):
         """用给定的 DataFrame 刷新智能审核表格（支持分页加载）"""
+        # 兜底：修正 material_category 列名（防止 pandas 自动重命名产生 [2] 后缀）
+        if df is not None and 'material_category[2]' in df.columns:
+            df.rename(columns={'material_category[2]': 'material_category'}, inplace=True)
         # 重置分页状态
         self._reset_pagination()
         
