@@ -641,6 +641,9 @@ class AnalysisEvents:
                     mat_code_col = mc
                     break
             if mat_code_col:
+                # 先删除已有的 material_category 列（避免列名冲突导致 material_category[2]）
+                if 'material_category' in self.audit_data.columns:
+                    self.audit_data.drop(columns=['material_category'], inplace=True)
                 self.audit_data['material_category'] = self.audit_data[mat_code_col].apply(
                     lambda x: mat_cat_map.get(str(x)[:3], str(x)[:3]) if pd.notna(x) else ''
                 )
