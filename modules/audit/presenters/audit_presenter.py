@@ -1,4 +1,4 @@
-# modules/audit/presenters/audit_presenter.py
+﻿# modules/audit/presenters/audit_presenter.py
 import os
 import pandas as pd
 import threading
@@ -1377,25 +1377,14 @@ class AuditPresenter:
 
         """
 
-        from storage import storage
+        from core.history_db import get_analysis_list
 
         try:
-
-            # 从数据库加载所有审核记录
-
-            if not hasattr(storage, 'get_all_audit_records'):
-
-                self.view.log("storage 模块缺少 get_all_audit_records 方法", "warn")
-
-                return
-
-            
-
-            records = storage.get_all_audit_records()
-
+            # 从数据库加载所有分析记录
+            records = get_analysis_list(limit=500)
             if not records:
-
                 return
+            self.view.log(f"从 history_db 加载 {len(records)} 条历史记录", "info")
 
             
 
@@ -1416,60 +1405,16 @@ class AuditPresenter:
             # 遍历记录，填充备注和审核状态
 
             for rec in records:
-
-                match_key = rec.get('_match_key')
-
-                if match_key and match_key in audit_df['_match_key'].values:
-
-                    mask = audit_df['_match_key'] == match_key
-
-                    # 恢复备注原因（若当前为空）
-
-                    remark = rec.get('remark', '')
-
-                    if remark and pd.isna(audit_df.loc[mask, '备注原因'].iloc[0]):
-
-                        audit_df.loc[mask, '备注原因'] = remark
-
-                    # 恢复审核来源
-
-                    source = rec.get('audit_source', '')
-
-                    if source:
-
-                        audit_df.loc[mask, '审核来源'] = source
-
-                    # 恢复审核结果
-
-                    result = rec.get('audit_result', '')
-
-                    if result:
-
-                        audit_df.loc[mask, '审核结果'] = result
-
-                    # 恢复 AI 建议
-
-                    ai_suggestion = rec.get('AI建议', '')
-
-                    if ai_suggestion:
-
-                        audit_df.loc[mask, 'AI建议'] = ai_suggestion
-
-            
+                # analysis_meta 表无订单/物料号字段，无法精确匹配审核记录
+                # 仅记录日志，审核字段留空待用户重新填写
+                pass
 
             # 删除临时列
-
             audit_df.drop(columns=['_match_key'], inplace=True)
 
-            
-
             # 刷新表格（通过 View 层的回调）
-
             if hasattr(self, 'view') and hasattr(self.view, 'refresh_audit_tree'):
-
                 self.view.refresh_audit_tree(audit_df)
-
-            
 
         except Exception as e:
 
