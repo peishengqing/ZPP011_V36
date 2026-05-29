@@ -1984,3 +1984,28 @@ class TableEvents:
                 text=f"数据加载完成，共{total}条，预检报告已写入日志"
             )
 
+    # ── P1 公共接口 ──
+
+    def get_current_audit_data(self):
+        """返回当前审核数据的副本（供看板/归因模块调用）"""
+        if hasattr(self, 'audit_data') and self.audit_data is not None:
+            return self.audit_data.copy()
+        return pd.DataFrame()
+
+    def _reorder_columns(self, column_order: list):
+        """按指定顺序重排 Treeview 显示列"""
+        if not column_order or not hasattr(self, 'audit_tree'):
+            return
+        current_display = list(self.audit_tree['displaycolumns'])
+        if not current_display:
+            current_display = list(self.audit_tree['columns'])
+        # 过滤无效列名
+        valid_order = [c for c in column_order if c in current_display]
+        # 补充遗漏的列
+        for c in current_display:
+            if c not in valid_order:
+                valid_order.append(c)
+        if valid_order == current_display:
+            return
+        self.audit_tree['displaycolumns'] = tuple(valid_order)
+
