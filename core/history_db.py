@@ -19,9 +19,9 @@ COLUMN_MAP = {
     '物料描述': 'material_name',
     '定额': 'quota',
     '实际': 'actual',
-    '偏差率%': 'dev_rate',
+    '偏差率(%)': 'dev_rate',
     '替代料': 'is_alt',  # 需转换：'是'→1, '否'→0
-    '备注': 'remark',
+    '备注原因': 'remark',
     '审核结果': 'audit_result',
     'AI建议': 'ai_suggestion',
     '审核状态': 'audit_status',
@@ -164,9 +164,9 @@ def save_analysis_result(metadata: dict, df: pd.DataFrame, db_path: str = DB_PAT
                     row_dict.get('物料描述', row_dict.get('物料名称', '')),
                     _to_float(row_dict.get('定额', 0)),
                     _to_float(row_dict.get('实际', 0)),
-                    _to_float(row_dict.get('偏差率%', 0)),
+                    _to_float(row_dict.get('偏差率(%)', row_dict.get('偏差率%', 0))),
                     is_alt,
-                    row_dict.get('备注', ''),
+                    row_dict.get('备注原因', row_dict.get('备注', '')),
                     row_dict.get('审核结果', ''),
                     row_dict.get('AI建议', ''),
                     row_dict.get('审核状态', ''),
@@ -256,8 +256,8 @@ def get_analysis_data(analysis_id: int, db_path: str = DB_PATH) -> pd.DataFrame:
 
         # 转换为 DataFrame，列名使用中文
         columns = ['工厂', '车间', '订单日期', '流程订单', '物料编码',
-                   '物料大类', '物料描述', '定额', '实际', '偏差率%',
-                   '替代料', '备注', '审核结果', 'AI建议', '审核状态', '审核来源', '偏差金额']
+                   '物料大类', '物料描述', '定额', '实际', '偏差率(%)',
+                   '替代料', '备注原因', '审核结果', 'AI建议', '审核状态', '审核来源', '偏差金额']
 
         df = pd.DataFrame(rows, columns=columns)
 
