@@ -52,7 +52,7 @@ class RuleEngine:
                 "enabled": True,
                 "conditions": [
                     {"field": "审核状态", "operator": "eq", "value": "已审核"},
-                    {"field": "偏差率", "operator": "lt", "value": 0.05}
+                    {"field": "偏差率(%)", "operator": "lt", "value": 0.05}
                 ]
             },
             "deviation_amount_bands": [
