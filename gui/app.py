@@ -215,6 +215,8 @@ class ZPP011Beautiful(EventsMixIn):
         history_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label='历史', menu=history_menu)
         history_menu.add_command(label='历史对比', command=self._show_history_compare)
+        history_menu.add_separator()
+        history_menu.add_command(label='📊 管理看板', command=self._show_management_dashboard)
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label='帮助', menu=help_menu)
         help_menu.add_command(label='快捷键说明', command=self._show_shortcuts_help)
@@ -1423,6 +1425,11 @@ class ZPP011Beautiful(EventsMixIn):
         """显示历史对比窗口（Task 009）"""
         from gui.history_compare_dialog import HistoryCompareDialog
         HistoryCompareDialog(self.root)
+
+    def _show_management_dashboard(self):
+        """显示管理看板窗口（Task 011）"""
+        from gui.management_dashboard import ManagementDashboard
+        ManagementDashboard(self.root)
     
     def _on_close(self):
         """窗口关闭时的清理工作（Task 004）"""
