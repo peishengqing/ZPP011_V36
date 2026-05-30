@@ -385,6 +385,8 @@ class AnalysisEvents:
                 self.audit_data['订单日期'] = ''
             self._update_filter_options()
             self._refresh_audit_tree(self.audit_data)
+            self._update_audit_stats(self.audit_data)
+            self._update_summary_row(self.audit_data)  # 合计行更新
             self.audit_tree.tag_configure('need_note', background='#fff0e0', foreground='#b04000')
             self.audit_tree.tag_configure('ok_note',   background='#e8f5e9', foreground='#1a6b1a')
             self.audit_tree.tag_configure('ai_gen',    background='#fce4ec', foreground='#880e4f')
