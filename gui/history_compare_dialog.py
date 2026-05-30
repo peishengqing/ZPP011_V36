@@ -62,6 +62,7 @@ class HistoryCompareDialog:
         btn_frame.pack(fill="x", pady=(10, 0))
 
         ttk.Button(btn_frame, text="刷新", command=self._load_history_list).pack(side="left")
+        ttk.Button(btn_frame, text="批量导出", command=self._batch_export).pack(side="left", padx=5)
 
         # 右侧：选择和对比
         right_frame = ttk.LabelFrame(main_frame, text="对比设置", padding=10)
@@ -200,3 +201,55 @@ class HistoryCompareDialog:
         lines.append(f"  已审核行：{d_approved:+d}")
 
         self.result_text.insert("1.0", "\n".join(lines))
+
+    def _batch_export(self):
+        """批量导出选中记录"""
+        if not self.analysis_list:
+            messagebox.showwarning("提示", "无历史记录可导出")
+            return
+
+        # 选择要导出的记录
+        selection = self.listbox.curselection()
+        if not selection:
+            messagebox.showwarning("提示", "请在列表中选择记录（可多选）")
+            return
+
+        selected_ids = [self.analysis_list[i]['id'] for i in selection if i < len(self.analysis_list)]
+
+        if not selected_ids:
+            messagebox.showwarning("提示", "请选择有效的记录")
+            return
+
+        if len(selected_ids) > 10:
+            messagebox.showwarning("提示", "单次最多导出 10 个记录")
+            return
+
+        # 询问保存路径
+        from tkinter import filedialog
+        from datetime import datetime
+
+        default_name = f"ZPP011_批量导出_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            initialfile=default_name,
+            filetypes=[("Excel files", "*.xlsx")]
+        )
+
+        if not file_path:
+            return
+
+        # 导入批量操作模块
+        from core.batch_operations import batch_export_analyses
+
+        # 执行导出
+        success, msg = batch_export_analyses(
+            selected_ids,
+            file_path,
+            db_path=None,
+            progress_callback=lambda cur, total, info: self.result_text.insert("1.0", f"{info}\n")
+        )
+
+        if success:
+            messagebox.showinfo("导出成功", msg)
+        else:
+            messagebox.showerror("导出失败", msg)
