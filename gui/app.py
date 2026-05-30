@@ -58,7 +58,7 @@ from pathlib import Path
 
 import tkinter as tk
 
-from tkinter import scrolledtext, messagebox, filedialog, ttk
+from tkinter import scrolledtext, messagebox, filedialog, ttk, simpledialog
 
 from modules.audit.presenters.audit_presenter import AuditPresenter
 
@@ -97,9 +97,8 @@ from utils.version_history import get_version_display, get_current_version, APP_
 
 # ── Task 003/004：备份管理器 & 审计日志 ──
 
-from core.backup_manager import BackupManager
-
 from core.audit_logger import AuditLogger
+from core.view_manager import ViewManager
 
 
 # ── 备注标准化（已迁移到 utils/helpers.py）───
@@ -485,6 +484,9 @@ class ZPP011Beautiful(EventsMixIn):
         self.audit_model = AuditModel()
 
         self.audit_presenter = AuditPresenter(self.audit_model, self)
+
+        # ── Task 012：视图管理器 ──
+        self.view_manager = ViewManager()
 
         # ── 侧边栏筛选面板：必须在 build_ui 之前 pack，才能正确占位 ──
 
@@ -2630,6 +2632,218 @@ class ZPP011Beautiful(EventsMixIn):
         from gui.management_dashboard import DashboardWindow
 
         DashboardWindow(self)
+
+    def _open_dashboard(self):
+
+        """管理看板按钮（Task 011）"""
+
+        from gui.management_dashboard import DashboardWindow
+
+        DashboardWindow(self)
+
+    # ── Task 012：视图管理方法 ──
+
+    def _refresh_view_list(self):
+
+        """刷新视图下拉框列表"""
+
+        views = self.view_manager.list_views()
+
+        self.view_combo['values'] = views
+
+        if views:
+
+            current = self.view_combo.get()
+
+            self.view_combo.set(current if current in views else (views[0] if views else ''))
+
+        else:
+
+            self.view_combo.set('')
+
+    def _save_current_view(self):
+
+        """保存当前视图状态"""
+
+        name = simpledialog.askstring("保存视图", "请输入视图名称:")
+
+        if name and name.strip():
+
+            state = self._get_current_view_state()
+
+            self.view_manager.save_view(name.strip(), state)
+
+            self._refresh_view_list()
+
+            self.log(f"视图 '{name}' 已保存", "info")
+
+    def _load_selected_view(self):
+
+        """加载选中的视图"""
+
+        name = self.view_combo.get()
+
+        if not name:
+
+            return
+
+        state = self.view_manager.load_view(name)
+
+        if state:
+
+            self._apply_view_state(state)
+
+            self.log(f"已加载视图 '{name}'", "info")
+
+    def _delete_selected_view(self):
+
+        """删除选中的视图"""
+
+        name = self.view_combo.get()
+
+        if not name:
+
+            return
+
+        if messagebox.askyesno("确认删除", f"确定要删除视图 '{name}' 吗？"):
+
+            self.view_manager.delete_view(name)
+
+            self._refresh_view_list()
+
+            self.log(f"视图 '{name}' 已删除", "info")
+
+    def _get_current_view_state(self):
+
+        """收集当前界面状态（筛选、排序、列顺序、列宽）"""
+
+        state = {
+
+            'filters': {},
+
+            'sort_columns': getattr(self, 'sort_columns', []),
+
+            'column_order': list(self.audit_tree['displaycolumns']) if self.audit_tree['displaycolumns'] else list(self.audit_tree['columns']),
+
+            'column_widths': {col: self.audit_tree.column(col, 'width') for col in self.audit_tree['columns']}
+
+        }
+
+        # 收集筛选条件
+
+        for key, widget in self.filter_widgets.items():
+
+            if key == 'order_date' or isinstance(widget, tuple):
+
+                continue
+
+            val = widget.get() if hasattr(widget, 'get') else None
+
+            if val and val != "全部":
+
+                state['filters'][key] = val
+
+        # 日期范围
+
+        if 'order_date' in self.filter_widgets:
+
+            dw = self.filter_widgets['order_date']
+
+            if isinstance(dw, tuple) and len(dw) == 2:
+
+                s = dw[0].get_date()
+
+                e = dw[1].get_date()
+
+                if s or e:
+
+                    state['filters']['order_date'] = {
+
+                        'start': s.strftime('%Y-%m-%d') if s else '',
+
+                        'end': e.strftime('%Y-%m-%d') if e else ''
+
+                    }
+
+        return state
+
+    def _apply_view_state(self, state):
+
+        """应用视图状态到界面"""
+
+        # 恢复筛选条件
+
+        for key, value in state.get('filters', {}).items():
+
+            if key == 'order_date':
+
+                dw = self.filter_widgets.get('order_date')
+
+                if dw and isinstance(dw, tuple) and len(dw) == 2:
+
+                    from datetime import date
+
+                    start_str = value.get('start', '')
+
+                    end_str = value.get('end', '')
+
+                    if start_str:
+
+                        try:
+
+                            dw[0].set_date(date.fromisoformat(start_str))
+
+                        except Exception:
+
+                            pass
+
+                    if end_str:
+
+                        try:
+
+                            dw[1].set_date(date.fromisoformat(end_str))
+
+                        except Exception:
+
+                            pass
+
+            else:
+
+                widget = self.filter_widgets.get(key)
+
+                if widget and hasattr(widget, 'set'):
+
+                    widget.set(value)
+
+        # 恢复排序
+
+        sort_columns = state.get('sort_columns', [])
+
+        if sort_columns:
+
+            self.sort_columns = sort_columns
+
+            self._apply_sort_and_refresh()
+
+        # 恢复列顺序
+
+        col_order = state.get('column_order')
+
+        if col_order:
+
+            self._reorder_columns(col_order)
+
+        # 恢复列宽
+
+        for col, width in state.get('column_widths', {}).items():
+
+            if col in self.audit_tree['columns']:
+
+                self.audit_tree.column(col, width=width)
+
+        # 刷新表格
+
+        self._on_filter_changed(None)
 
     def _on_close(self):
 
