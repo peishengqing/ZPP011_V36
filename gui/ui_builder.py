@@ -397,7 +397,24 @@ def _build_ui(self):
                   width=8).pack(side="left", padx=(4, 0))
         self.filter_status_lbl = tk.Label(audit, text="", font=("Microsoft YaHei", 9),
                                    bg=C['surface'], fg=C['text_dim'], anchor="w")
-        self.filter_status_lbl.pack(fill="x", padx=12, pady=(0, 4))# Treeview 表格
+        self.filter_status_lbl.pack(fill="x", padx=12, pady=(0, 4))
+
+        # ── Task 012：视图管理工具栏 ──
+        view_bar = tk.Frame(audit, bg=C['surface'])
+        view_bar.pack(fill="x", padx=12, pady=(0, 4))
+        tk.Label(view_bar, text="视图:", font=("Microsoft YaHei", 9),
+                 bg=C['surface'], fg=C['text_dim']).pack(side="left")
+        self.view_combo = ttk.Combobox(view_bar, state="readonly", width=20)
+        self.view_combo.pack(side="left", padx=5)
+        self.view_combo.bind("<<ComboboxSelected>>", lambda e: self._load_selected_view())
+        tk.Button(view_bar, text="💾 保存视图", command=self._save_current_view,
+                  bg="#28a745", fg="white", relief="flat", font=("Microsoft YaHei", 8)).pack(side="left", padx=2)
+        tk.Button(view_bar, text="🗑 删除视图", command=self._delete_selected_view,
+                  bg="#dc3545", fg="white", relief="flat", font=("Microsoft YaHei", 8)).pack(side="left", padx=2)
+        tk.Button(view_bar, text="🔄 刷新列表", command=self._refresh_view_list,
+                  bg="#6c757d", fg="white", relief="flat", font=("Microsoft YaHei", 8)).pack(side="left", padx=2)
+
+        # Treeview 表格
         self.table_frame = tk.Frame(audit, bg=C['surface'])
         self.table_frame.pack(fill="both", expand=True, padx=12, pady=(0, 8))
 
@@ -546,6 +563,10 @@ def _build_ui(self):
         self.tree_view_btn = btn(row1_frame, "🌲 树形视图", self._show_tree_view,
                                bg="#4a90d9", fg="white", width=12, state="disabled")
         self.tree_view_btn.pack(side="left", padx=(8, 0))
+        # ── Task 011：管理看板按钮 ──
+        self.dashboard_btn = btn(row1_frame, "📊 管理看板", self._open_dashboard,
+                               bg="#17a2b8", fg="white", width=12)
+        self.dashboard_btn.pack(side="left", padx=(8, 0))
 
         # 第二行按钮：辅助操作
         row2_frame = tk.Frame(op_card, bg=C['surface'])
