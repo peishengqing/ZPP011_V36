@@ -283,3 +283,139 @@ class BackupManager:
             return get_current_version()
         except Exception:
             return "unknown"
+
+
+# ── 模块级函数（供 export_events / menu_events 直接调用）────────────────
+
+import zipfile
+import sqlite3
+
+
+def get_audit_db_path():
+    """返回审核数据库路径 ~/.zpp011_audit/audit_log.db"""
+    app_dir = os.path.join(os.path.expanduser("~"), ".zpp011_audit")
+    os.makedirs(app_dir, exist_ok=True)
+    return os.path.join(app_dir, "audit_log.db")
+
+
+def export_audit_backup(file_path, log_cb=None):
+    """导出审核记录为 ZIP 压缩包"""
+    db_path = get_audit_db_path()
+    if not os.path.exists(db_path):
+        raise FileNotFoundError("审核数据库不存在，无法导出")
+    with zipfile.ZipFile(file_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(db_path, arcname="audit_log.db")
+    if log_cb:
+        log_cb(f"✅ 审核记录已导出：{file_path}", "success")
+
+
+def import_audit_backup(file_path, log_cb=None):
+    """从 ZIP 备份恢复（解压覆盖 db 文件）"""
+    db_path = get_audit_db_path()
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    with zipfile.ZipFile(file_path, "r") as zf:
+        zf.extract("audit_log.db", os.path.dirname(db_path))
+    if log_cb:
+        log_cb("✅ 审核记录已从备份恢复，下次加载时生效", "success")
+
+
+def _init_audit_db():
+    """创建 audit_records 新表"""
+    conn = sqlite3.connect(get_audit_db_path())
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS audit_records (
+                order_date   TEXT NOT NULL,
+                order_no     TEXT NOT NULL,
+                material_code TEXT NOT NULL,
+                status       TEXT DEFAULT ''
+            )
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def needs_upgrade():
+    """检测旧 audit_log 表是否缺少 order_date 列（即需要升级）"""
+    db_path = get_audit_db_path()
+    if not os.path.exists(db_path):
+        return False
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.execute("PRAGMA table_info(audit_log)")
+        columns = {row[1] for row in cursor.fetchall()}
+        if "order_date" in columns:
+            return False
+        cursor2 = conn.execute("SELECT COUNT(*) FROM audit_log")
+        return cursor2.fetchone()[0] > 0
+    finally:
+        conn.close()
+
+
+def upgrade_audit_db(clear_old=False, log_cb=None):
+    """执行数据库升级：迁移旧表数据到 audit_records，可选删除旧表"""
+    _backup_db(log_cb=log_cb)
+    db_path = get_audit_db_path()
+    conn = sqlite3.connect(db_path)
+    try:
+        _init_audit_db()
+        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_log'")
+        if cursor.fetchone():
+            cursor2 = conn.execute("SELECT COUNT(*) FROM audit_log")
+            old_count = cursor2.fetchone()[0]
+            if old_count > 0:
+                conn.execute("""
+                    INSERT OR REPLACE INTO audit_records
+                    (order_date, order_no, material_code, status, remark, auditor, saved_at)
+                    SELECT
+                        work_date AS order_date, order_no, mat_code AS material_code,
+                        COALESCE(status, ''), COALESCE(remark, ''), COALESCE(auditor, ''), COALESCE(saved_at, '')
+                    FROM audit_log
+                """)
+                conn.commit()
+                if log_cb:
+                    log_cb(f"📦 已迁移 {old_count} 条旧记录到新表", "info")
+            if clear_old:
+                conn.execute("DROP TABLE IF EXISTS audit_log")
+                conn.commit()
+                if log_cb:
+                    log_cb("🗑️ 已删除旧 audit_log 表", "info")
+        if log_cb:
+            log_cb("✅ 数据库升级完成", "success")
+    finally:
+        conn.close()
+
+
+def _backup_db(log_cb=None):
+    """备份数据库文件，最多保留 10 份"""
+    db_path = get_audit_db_path()
+    if not os.path.exists(db_path):
+        return
+    app_dir = os.path.dirname(db_path)
+    ts = __import__('datetime').datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = os.path.join(app_dir, f"audit_log_{ts}.db")
+    try:
+        shutil.copy2(db_path, backup_path)
+        if log_cb:
+            log_cb(f"📦 数据库已备份：{os.path.basename(backup_path)}", "info")
+        backups = sorted([f for f in os.listdir(app_dir) if f.startswith("audit_log_") and f.endswith(".db")])
+        while len(backups) > 10:
+            old = backups.pop(0)
+            try:
+                os.remove(os.path.join(app_dir, old))
+            except Exception:
+                pass
+    except Exception as e:
+        if log_cb:
+            log_cb(f"⚠ 备份失败：{e}", "warn")
+
+
+__all__ = [
+    "BackupManager",
+    "export_audit_backup",
+    "import_audit_backup",
+    "needs_upgrade",
+    "upgrade_audit_db",
+    "get_audit_db_path",
+]

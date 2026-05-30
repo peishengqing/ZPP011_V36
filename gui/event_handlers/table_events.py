@@ -1425,8 +1425,9 @@ class TableEvents:
             self.filter_status_lbl.configure(text="")
 
         if hasattr(self, "status_filter_label"):
+            count = len(self.audit_data) if self.audit_data is not None else 0
             self.status_filter_label.configure(
-                text=f"📋 显示全部 | 共 {len(self.audit_data)} 条"
+                text=f"📋 显示全部 | 共 {count} 条"
             )
 
         # P1-1-4 重置万能搜索框
