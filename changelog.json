@@ -3,6 +3,29 @@
   "author": "裴盛清",
   "versions": [
     {
+      "version": "v39.6",
+      "release_date": "2026-05-30",
+      "build_datetime": "2026-05-30 15:30:00",
+      "features": [
+        "✨ 管理看板：车间偏差排名柱状图 + 近6个月偏差趋势折线图（支持当前分析/历史对比）",
+        "✨ 自定义视图：保存/删除/加载筛选、排序、列顺序、列宽等完整视图状态",
+        "✨ AI 归因雏形：自动对比当前与最近历史分析，输出物料大类贡献度报告"
+      ],
+      "fixes": [
+        "🐛 修复 rank_dict 索引错误导致的 UnboundLocalError",
+        "🐛 修复 history_db 路径为 None 时导致的趋势图加载失败",
+        "🐛 修复管理看板历史数据源切换时的空指针异常"
+      ],
+      "optimizations": [
+        "⚡ 优化物料大类下拉框选项更新逻辑，基于全量数据一次初始化"
+      ],
+      "notes": [
+        "📌 管理看板依赖 matplotlib 和 pillow，请确保环境已安装（pip install matplotlib pillow）",
+        "📌 历史对比需至少两次分析记录才能显示趋势图",
+        "📌 视图配置文件位于 ~/.zpp011_audit/views.json"
+      ]
+    },
+    {
       "version": "v39.5",
       "release_date": "2026-05-29",
       "build_datetime": "2026-05-29 18:00:00",
@@ -323,7 +346,7 @@
       "release_date": "2026-05-10",
       "fixes": [
         "🔧 修复 AI 审核后状态列显示问题",
-        "状态列不再统一显示“已审核”，改为按备注内容显示“已备注”或“需补备注”",
+        "状态列不再统一显示"已审核"，改为按备注内容显示"已备注"或"需补备注"",
         "AI 审核结论独立显示在 audit_result 列",
         "🔧 修复 AI 建议列为空问题",
         "将 _refresh_audit_tree 中读取列名从 'ai_suggest' 改为 'AI建议'",
@@ -358,7 +381,7 @@
         "🔧 修复 AI 审核下拉框选项无法更新问题",
         "将 _build_ui 中筛选列表的键名从 'audit_result' 改为 'ai_result'",
         "与 _update_filter_options 和 _on_filter_changed 中的键名完全对齐",
-        "修复后 AI 审核下拉框可正常显示“合格/需改进/AI建议/未处理”等选项"
+        "修复后 AI 审核下拉框可正常显示"合格/需改进/AI建议/未处理"等选项"
       ]
     },
     {
@@ -540,7 +563,7 @@
         "_edit_audit_remark 缺失导致双击绑定报错，改为调用 _on_tree_double_click"
       ],
       "lessons": [
-        "Tkinter Menu.add_command 在 _build_ui 执行时就评估 command=self.method，找不到即崩溃",
+        "Tkinter Menu.add_command在 _build_ui 执行时就评估 command=self.method，找不到即崩溃",
         "多次编辑后方法体残留在文件但方法签名丢失，下次重构优先用 AST 扫描缺失方法"
       ]
     },
