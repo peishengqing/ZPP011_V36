@@ -722,7 +722,11 @@ class AnalysisEvents:
                 analysis_id = save_analysis_result(metadata, self.audit_data)
                 self.log(f"✅ 分析结果已存入历史库，ID={analysis_id}", "info")
             except Exception as e:
-                self.log(f"⚠ 保存历史记录失败：{e}", "warn")
+                import traceback
+                tb = traceback.format_exc()
+                self.log(f"⚠ 保存历史记录失败：{type(e).__name__}: {e}", "warn")
+                print(f"[DEBUG] Exception type: {type(e)}, value: {e!r}")
+                print(f"[DEBUG] Traceback:\n{tb}")
             
             # 断点续审提示
             state = self._load_resume_state()

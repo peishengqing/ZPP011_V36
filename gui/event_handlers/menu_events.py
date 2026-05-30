@@ -4,7 +4,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import os, json
-from storage import storage
+from core.backup_manager import needs_upgrade, upgrade_audit_db
 from widgets import C
 
 
@@ -496,7 +496,7 @@ class MenuEvents:
         """
 
         try:
-            if not storage.needs_upgrade():
+            if not needs_upgrade():
                 return
 
             choice = messagebox.askyesno(
@@ -507,7 +507,7 @@ class MenuEvents:
                 "此升级仅执行一次。",
             )
 
-            storage.upgrade_audit_db(clear_old=(choice == True), log_cb=self.log)
+            upgrade_audit_db(clear_old=(choice == True), log_cb=self.log)
 
         except Exception as e:
             self.log(f"⚠ 升级检测失败：{e}", "warn")

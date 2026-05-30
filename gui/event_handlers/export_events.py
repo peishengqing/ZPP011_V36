@@ -439,7 +439,8 @@ class ExportEvents:
             return
 
         try:
-            storage.export_audit_backup(file_path, log_cb=self.log)
+            from core.backup_manager import export_audit_backup
+            export_audit_backup(file_path, log_cb=self.log)
 
             self.log(f"✅ 审核记录已导出：{file_path}", "success")
 
@@ -468,7 +469,8 @@ class ExportEvents:
             return
 
         try:
-            storage.import_audit_backup(file_path, log_cb=self.log)
+            from core.backup_manager import import_audit_backup
+            import_audit_backup(file_path, log_cb=self.log)
 
             self.log("✅ 审核记录已从备份恢复，下次加载时生效", "success")
 

@@ -7,7 +7,6 @@ from tkinter import ttk, messagebox, filedialog
 from widgets import C
 import os, sys as _sys, glob as _glob
 import pandas as pd
-from storage import storage
 from core.state_store import get_state
 from core.rule_engine import RuleEngine
 from core.decorators import with_feedback
