@@ -117,43 +117,53 @@ class DashboardWindow:
         self._refresh()
 
     def _draw_workshop_chart(self, df):
-        # 计算各车间偏差率>10%的行数
-        dev_col = None
-        for col in ['偏差率%', '偏差率(%)']:
-            if col in df.columns:
-                dev_col = col
-                break
-
-        if dev_col is None:
-            for widget in self.tab_workshop.winfo_children():
-                widget.destroy()
-            tk.Label(self.tab_workshop, text="数据缺少偏差率列", fg="red").pack(expand=True)
-            return
-
-        high_dev = df[df[dev_col].abs() > 10]
-        if '车间' not in high_dev.columns:
-            for widget in self.tab_workshop.winfo_children():
-                widget.destroy()
-            tk.Label(self.tab_workshop, text="数据缺少车间列", fg="red").pack(expand=True)
-            return
-
-        workshop_stats = high_dev.groupby('车间').size().sort_values(ascending=False)
-
-        # 清空旧内容
+        """绘制各车间偏差金额排名柱状图"""
         for widget in self.tab_workshop.winfo_children():
             widget.destroy()
 
-        if workshop_stats.empty:
-            tk.Label(self.tab_workshop, text="无偏差>10%的记录", font=("微软雅黑", 14)).pack(expand=True)
+        # 确定偏差金额列名
+        amount_col = None
+        for col in ['偏差金额', '偏差金额(含税)', 'deviation_amount']:
+            if col in df.columns:
+                amount_col = col
+                break
+        if amount_col is None:
+            tk.Label(self.tab_workshop, text="数据中无偏差金额列，无法生成车间排名",
+                     font=("微软雅黑", 12), fg="red").pack(expand=True)
             return
 
-        fig = plt.Figure(figsize=(8, 4), dpi=100)
+        # 确定车间列名
+        workshop_col = None
+        for col in ['车间', '生产管理员描述', 'workshop']:
+            if col in df.columns:
+                workshop_col = col
+                break
+        if workshop_col is None:
+            tk.Label(self.tab_workshop, text="数据中无车间列",
+                     font=("微软雅黑", 12), fg="red").pack(expand=True)
+            return
+
+        # 按车间聚合偏差金额（绝对值合计）
+        workshop_amount = df.groupby(workshop_col)[amount_col].apply(
+            lambda x: x.abs().sum()).sort_values(ascending=False)
+        if workshop_amount.empty:
+            tk.Label(self.tab_workshop, text="无有效偏差金额数据",
+                     font=("微软雅黑", 12)).pack(expand=True)
+            return
+
+        fig = plt.Figure(figsize=(8, 5), dpi=100)
         ax = fig.add_subplot(111)
-        workshop_stats.plot(kind='bar', ax=ax, color='steelblue')
-        ax.set_title('各车间偏差>10% 行数')
+        workshops = workshop_amount.index.tolist()
+        amounts = workshop_amount.values
+        bars = ax.bar(workshops, amounts, color='steelblue')
+        ax.set_title('各车间偏差金额（绝对值）排名')
         ax.set_xlabel('车间')
-        ax.set_ylabel('行数')
+        ax.set_ylabel('偏差金额（元）')
         ax.tick_params(axis='x', rotation=45)
+        # 添加数值标签
+        for bar, val in zip(bars, amounts):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(amounts)*0.01,
+                    f'{val:,.0f}', ha='center', va='bottom', fontsize=8)
 
         canvas = FigureCanvasTkAgg(fig, master=self.tab_workshop)
         canvas.draw()
