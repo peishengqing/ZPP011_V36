@@ -435,7 +435,7 @@ class TableEvents:
         # ── 注意：下拉框选项不再这里动态更新，改为在数据加载时一次性设置 ──
         # 正确做法：基于 self.full_audit_data（全量数据）在 _update_filter_options 中设置一次
 
-        for i, (_, row) in enumerate(df.iterrows(), 1):
+        for i, (idx, row) in enumerate(df.iterrows(), 1):
             # ===== 计算审核来源（核心逻辑）=====
 
             remark = str(row.get("备注原因", "")).strip()
@@ -651,7 +651,7 @@ class TableEvents:
                 dir_tag = ("over_amount",) if dev_rate > 0 else (("under_amount",) if dev_rate < 0 else ())
 
                 # rank tag
-                rank_tag_val = rank_dict.get(_, None)
+                rank_tag_val = rank_dict.get(idx, None)
                 rank_tag = (rank_tag_val,) if rank_tag_val else ()
 
                 final_tag = (priority_tag,) + rank_tag
@@ -686,7 +686,7 @@ class TableEvents:
                 if hasattr(self, "mutation_materials") and mat_code in self.mutation_materials:
                     tag = ("mutation_alert",) + tag
 
-                _rank_val = rank_dict.get(_, None)
+                _rank_val = rank_dict.get(idx, None)
                 if _rank_val:
                     tag = (_rank_val,) + tag
 

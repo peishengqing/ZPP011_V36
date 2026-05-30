@@ -203,8 +203,10 @@ def _to_float(value) -> Optional[float]:
         return None
 
 
-def get_analysis_list(limit: int = 100, db_path: str = DB_PATH) -> List[dict]:
+def get_analysis_list(limit: int = 100, db_path: str = None) -> List[dict]:
     """返回历史分析列表"""
+    if db_path is None:
+        db_path = DB_PATH
     if not os.path.exists(db_path):
         return []
 
@@ -360,8 +362,10 @@ def cleanup_old_records(months: int = 6, db_path: str = DB_PATH) -> int:
     finally:
         conn.close()
 
-def get_monthly_trend(months=6, db_path=DB_PATH):
+def get_monthly_trend(months=6, db_path=None):
     """获取近几个月的偏差趋势（分析看板专用）"""
+    if db_path is None:
+        db_path = DB_PATH
     if not os.path.exists(db_path):
         return pd.DataFrame()
 
