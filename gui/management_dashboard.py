@@ -69,8 +69,10 @@ class DashboardWindow:
         # 归因按钮（单独一行）
         btn_frame = tk.Frame(self.window)
         btn_frame.pack(fill=tk.X, padx=10, pady=5)
+        tk.Button(btn_frame, text="智能小结", command=self._show_summary,
+                  bg="#28a745", fg="white").pack(side=tk.LEFT, padx=5)
         tk.Button(btn_frame, text="AI 归因分析", command=self._show_attribution,
-                  bg="#6f42c1", fg="white").pack(side=tk.RIGHT)
+                  bg="#6f42c1", fg="white").pack(side=tk.LEFT, padx=5)
 
         # 状态栏
         self.status_var = tk.StringVar(value="就绪")
@@ -335,6 +337,65 @@ class DashboardWindow:
     def _export_screenshot(self):
         """旧版导出（保留兼容）"""
         self._export_current_chart()
+
+    def _show_summary(self):
+        """显示智能小结"""
+        if self.current_df is None or self.current_df.empty:
+            messagebox.showwarning("无数据", "没有可分析的数据")
+            return
+
+        from core.summary_generator import generate_summary
+        from core import history_db
+
+        # 获取历史数据
+        history_df = None
+        try:
+            records = history_db.get_analysis_list(limit=2)
+            if records and len(records) >= 2:
+                # 取上一条记录作为对比
+                history_id = records[1]['id']
+                history_df = history_db.get_analysis_data(history_id, db_path=self.history_db_path)
+        except Exception:
+            pass
+
+        report = generate_summary(self.current_df, history_df)
+
+        # 显示报告窗口
+        win = tk.Toplevel(self.window)
+        win.title("智能小结")
+        win.geometry("550x450")
+
+        # 文本框（可复制）
+        text = tk.Text(win, wrap=tk.WORD, font=("微软雅黑", 10))
+        text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        text.insert(tk.END, report)
+        text.config(state=tk.DISABLED)
+
+        # 按钮行
+        btn_frame = tk.Frame(win)
+        btn_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        # 复制按钮
+        def copy_report():
+            win.clipboard_clear()
+            win.clipboard_append(report)
+            messagebox.showinfo("已复制", "报告已复制到剪贴板")
+
+        # 保存按钮
+        def save_report():
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".txt",
+                initialfile=f"ZPP011_智能小结_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                filetypes=[("Text files", "*.txt")]
+            )
+            if file_path:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(report)
+                messagebox.showinfo("保存成功", f"报告已保存至 {file_path}")
+
+        tk.Button(btn_frame, text="一键复制", command=copy_report, bg="#28a745", fg="white").pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="保存为Txt", command=save_report).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="关闭", command=win.destroy).pack(side=tk.RIGHT, padx=5)
 
     def _show_attribution(self):
         if self.current_df is None or self.current_df.empty:
