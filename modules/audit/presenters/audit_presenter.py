@@ -1,4 +1,4 @@
-﻿# modules/audit/presenters/audit_presenter.py
+# modules/audit/presenters/audit_presenter.py
 import os
 import pandas as pd
 import threading

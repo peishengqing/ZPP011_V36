@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """历史分析数据持久化到 SQLite"""
 import sqlite3, json, os, pandas as pd
 from datetime import datetime
