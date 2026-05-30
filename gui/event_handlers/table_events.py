@@ -1399,6 +1399,7 @@ class TableEvents:
         self.filtered_data = df_filtered  # ← 添加这行，保存筛选后的数据
         self._refresh_audit_tree(df_filtered)
         self._update_audit_stats(df_filtered)
+        self._update_summary_row(df_filtered)  # 合计行更新
         self.log(f"筛选完成：显示 {len(df_filtered)} 条记录", "info")
 
     def _reset_all_filters(self):
@@ -1425,6 +1426,7 @@ class TableEvents:
 
         if self.audit_data is not None:
             self._refresh_audit_tree(self.audit_data)
+            self._update_summary_row(self.audit_data)  # 合计行更新
 
         if self.filter_status_lbl:
             self.filter_status_lbl.configure(text="")
@@ -1899,6 +1901,7 @@ class TableEvents:
         self._refresh_audit_tree(df_sorted, skip_auto_sort=True)
 
         self._update_sort_indicators()
+        self._update_summary_row(df_sorted)  # 合计行更新
 
     def _init_sort_columns(self):
 
@@ -2001,6 +2004,59 @@ class TableEvents:
                     pass
 
         return enabled
+
+    def _update_summary_row(self, df):
+        """更新合计行（定额、实际、偏差金额）"""
+        if not hasattr(self, 'summary_quota_var'):
+            return
+        if df is None or df.empty:
+            self.summary_quota_var.set("0.00")
+            self.summary_actual_var.set("0.00")
+            self.summary_amount_var.set("0.00")
+            return
+
+        # 定额列（兼容多种列名）
+        quota_col = None
+        for col in ['定额', '数量-定额', 'quota']:
+            if col in df.columns:
+                quota_col = col
+                break
+        if quota_col:
+            quota_sum = df[quota_col].fillna(0).sum()
+        else:
+            quota_sum = 0
+
+        # 实际列
+        actual_col = None
+        for col in ['实际', '数量-实际', 'actual']:
+            if col in df.columns:
+                actual_col = col
+                break
+        if actual_col:
+            actual_sum = df[actual_col].fillna(0).sum()
+        else:
+            actual_sum = 0
+
+        # 偏差金额列
+        amount_col = None
+        for col in ['偏差金额', '偏差金额(含税)', 'deviation_amount']:
+            if col in df.columns:
+                amount_col = col
+                break
+        if amount_col:
+            amount_sum = df[amount_col].fillna(0).sum()
+        else:
+            amount_sum = 0
+
+        # 格式化（千分位，负数带括号）
+        def fmt(val):
+            if val < 0:
+                return f"({abs(val):,.2f})"
+            return f"{val:,.2f}"
+
+        self.summary_quota_var.set(fmt(quota_sum))
+        self.summary_actual_var.set(fmt(actual_sum))
+        self.summary_amount_var.set(fmt(amount_sum))
 
     def _show_precheck_report(self, df):
         """F6 预检报告弹窗"""

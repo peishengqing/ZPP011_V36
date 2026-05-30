@@ -482,6 +482,38 @@ def _build_ui(self):
         self.audit_tree.column("remark_check_status", width=0, stretch=False)
         self.audit_tree.column("remark_check_msg", width=150, anchor="w")
         self.audit_tree.pack(side="left", fill="both", expand=True)
+
+        # ==================== 合计行 ====================
+        summary_frame = tk.Frame(self.table_frame, bg=C['surface'], height=28)
+        summary_frame.pack(fill="x", side=tk.BOTTOM, pady=(2, 0))
+        summary_frame.pack_propagate(False)
+
+        # 左侧合计标签
+        tk.Label(summary_frame, text="合计：", font=("Microsoft YaHei", 9, "bold"),
+                 bg=C['surface'], fg=C['text']).pack(side=tk.LEFT, padx=(10, 5))
+
+        # 定额合计
+        self.summary_quota_var = tk.StringVar(value="0.00")
+        tk.Label(summary_frame, textvariable=self.summary_quota_var, font=("Microsoft YaHei", 9),
+                 bg=C['surface'], fg=C['text'], width=12, anchor="e").pack(side=tk.LEFT, padx=5)
+        tk.Label(summary_frame, text="定额", font=("Microsoft YaHei", 9),
+                 bg=C['surface'], fg=C['text_dim']).pack(side=tk.LEFT)
+
+        # 实际合计
+        self.summary_actual_var = tk.StringVar(value="0.00")
+        tk.Label(summary_frame, textvariable=self.summary_actual_var, font=("Microsoft YaHei", 9),
+                 bg=C['surface'], fg=C['text'], width=12, anchor="e").pack(side=tk.LEFT, padx=5)
+        tk.Label(summary_frame, text="实际", font=("Microsoft YaHei", 9),
+                 bg=C['surface'], fg=C['text_dim']).pack(side=tk.LEFT)
+
+        # 偏差金额合计
+        self.summary_amount_var = tk.StringVar(value="0.00")
+        tk.Label(summary_frame, textvariable=self.summary_amount_var, font=("Microsoft YaHei", 9),
+                 bg=C['surface'], fg=C['text'], width=12, anchor="e").pack(side=tk.LEFT, padx=5)
+        tk.Label(summary_frame, text="偏差金额", font=("Microsoft YaHei", 9),
+                 bg=C['surface'], fg=C['text_dim']).pack(side=tk.LEFT)
+        # ==================== 合计行结束 ====================
+
         # 应用初始列宽锁定状态
         self.root.after(100, self._toggle_column_lock)
         audit_vscroll.config(command=self.audit_tree.yview)
