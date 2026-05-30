@@ -12,7 +12,16 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from storage.storage import get_audit_db_path, _get_app_dir
+# 不修改 storage.py（冷冻区），独立部署。
+# 以下函数从 storage.py 复制而来，避免依赖 storage 模块。
+def _get_app_dir():
+    """返回应用数据目录（~/.zpp011_audit）"""
+    app_dir = os.path.join(os.path.expanduser("~"), ".zpp011_audit")
+    os.makedirs(app_dir, exist_ok=True)
+    return app_dir
+
+def get_audit_db_path():
+    return os.path.join(_get_app_dir(), "audit_log.db")
 
 
 class BackupManager:

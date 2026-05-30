@@ -69,7 +69,7 @@ from widgets import C
 
 # ── 模块化组件 ───────────────────────────────────
 
-from storage import storage
+from storage import init_audit_db, restore_audit_from_db
 
 from domain.alt_material import alt_manager
 
@@ -479,7 +479,7 @@ class ZPP011Beautiful(EventsMixIn):
 
         self.code_to_info = {}
 
-        storage.init_audit_db()
+        init_audit_db()
 
         self.audit_model = AuditModel()
 
@@ -1189,7 +1189,7 @@ class ZPP011Beautiful(EventsMixIn):
 
         try:
 
-            storage.restore_audit_from_db(self.audit_data, log_cb=self.log)
+            restore_audit_from_db(self.audit_data, log_cb=self.log)
 
         except Exception as e:
 

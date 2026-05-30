@@ -1452,6 +1452,80 @@ class TableEvents:
         ):
             self._enable_audit_buttons()
 
+    # ── 视图管理方法 ──
+
+    def _save_current_view(self):
+        """保存当前视图（弹出输入框）"""
+        from core.view_manager import ViewManager
+        from tkinter import simpledialog
+        name = simpledialog.askstring("保存视图", "请输入视图名称：", parent=self.root)
+        if name and name.strip():
+            vm = ViewManager()
+            state = vm.get_current_state(self)
+            vm.save_view(name.strip(), state)
+            self.log(f"视图「{name}」已保存", "info")
+            self._refresh_view_list()
+
+    def _delete_view(self):
+        """删除视图（弹出输入框）"""
+        from core.view_manager import ViewManager
+        from tkinter import simpledialog
+        vm = ViewManager()
+        views = vm.list_views()
+        if not views:
+            self.log("暂无保存的视图", "info")
+            return
+        name = simpledialog.askstring("删除视图", f"现有视图：{', '.join(views)}\n请输入要删除的视图名称：", parent=self.root)
+        if name and name in views:
+            vm.delete_view(name)
+            self.log(f"视图「{name}」已删除", "info")
+            self._refresh_view_list()
+        elif name:
+            self.log(f"未找到视图「{name}」", "warn")
+
+    def _refresh_view_list(self):
+        """刷新视图下拉列表"""
+        from core.view_manager import ViewManager
+        vm = ViewManager()
+        views = vm.list_views()
+        if hasattr(self, 'view_combo'):
+            self.view_combo['values'] = views
+            if self.view_combo.get() not in views:
+                self.view_combo.set('')
+
+    def _load_selected_view(self):
+        """加载选中的视图"""
+        if not hasattr(self, 'view_combo'):
+            return
+        name = self.view_combo.get()
+        if not name:
+            return
+        from core.view_manager import ViewManager
+        vm = ViewManager()
+        state = vm.load_view(name)
+        if state:
+            vm.apply_state(self, state)
+            self.log(f"已加载视图「{name}」", "info")
+        else:
+            self.log(f"视图「{name}」不存在", "error")
+
+    def _delete_selected_view(self):
+        """删除下拉框中选中的视图"""
+        if not hasattr(self, 'view_combo'):
+            return
+        name = self.view_combo.get()
+        if not name:
+            self.log("请先选择要删除的视图", "warn")
+            return
+        from core.view_manager import ViewManager
+        vm = ViewManager()
+        if name in vm.list_views():
+            vm.delete_view(name)
+            self.log(f"视图「{name}」已删除", "info")
+            self._refresh_view_list()
+        else:
+            self.log(f"视图「{name}」不存在", "warn")
+
     def _update_filter_options(self):
         """根据当前 audit_data 更新筛选下拉框的值列表"""
 

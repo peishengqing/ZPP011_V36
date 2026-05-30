@@ -47,6 +47,9 @@ def build_sheet3(df, report_progress, progress_idx=3):
         '备注': '',
     } for _, r in no_note.iterrows()])
 
+    if no_note_df.empty:
+        report_progress(progress_idx, "Sheet3-无备注预警", 100)
+        return no_note_df
     no_note_df['_abs_amt'] = no_note_df['偏差金额(含税)'].apply(
         lambda x: abs(x) if isinstance(x, (int, float)) else 0)
     no_note_df = no_note_df.sort_values(

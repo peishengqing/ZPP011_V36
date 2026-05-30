@@ -89,13 +89,16 @@ def build_sheet7(wb, df, report_progress, progress_idx=7):
         amt_summary['总偏差金额(含税)'] = amt_summary['总偏差金额']
         amt_summary['正偏差金额(含税)'] = amt_summary['正偏差金额']
         amt_summary['负偏差金额(含税)'] = amt_summary['负偏差金额']
-        amt_summary.drop(columns=['正偏差金额', '负偏差金额', '总偏差金额'], inplace=True)
+        if amt_summary.empty:
+            amt_rows = []
+        else:
+            amt_summary.drop(columns=['正偏差金额', '负偏差金额', '总偏差金额'], inplace=True)
 
-        amt_summary['_abs_total'] = amt_summary['总偏差金额(含税)'].apply(
-            lambda x: abs(x) if isinstance(x, (int, float)) else 0)
-        amt_summary = amt_summary.sort_values(
-            '_abs_total', ascending=False).drop('_abs_total', axis=1)
-        amt_rows = amt_summary.to_dict('records')
+            amt_summary['_abs_total'] = amt_summary['总偏差金额(含税)'].apply(
+                lambda x: abs(x) if isinstance(x, (int, float)) else 0)
+            amt_summary = amt_summary.sort_values(
+                '_abs_total', ascending=False).drop('_abs_total', axis=1)
+            amt_rows = amt_summary.to_dict('records')
     else:
         amt_rows = []
 
