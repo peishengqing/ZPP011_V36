@@ -289,7 +289,7 @@ from core.view_manager import ViewManager  # Task 012: 视图管理'''
         print("修改内容:")
         print("  1. 添加了 ViewManager 导入和初始化")
         print("  2. 添加了视图管理工具栏（下拉框 + 保存/删除/刷新按钮）")
-        print("  3. 在菜单栏添加了"管理看板"选项")
+        print('  3. 在菜单栏添加了"管理看板"选项')
         print("  4. 添加了视图管理的所有方法")
         print("\n请测试:")
         print("  - 视图工具栏是否显示")

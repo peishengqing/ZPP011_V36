@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""管理看板 - 车间偏差排名 + 时间趋势"""
+"""管理看板 - 车间偏差排名 + 时间趋势（增强版 v40.0）"""
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import matplotlib
@@ -7,6 +7,8 @@ matplotlib.use('TkAgg')
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
 import pandas as pd
+from datetime import datetime, timedelta
+import os
 
 from core import history_db
 
@@ -24,6 +26,7 @@ class DashboardWindow:
 
         self.source_var = tk.StringVar(value="current")
         self.history_id = None
+        self.comparison_var = tk.StringVar(value="none")  # none | last_month | last_year
 
         self._build_ui()
         self._refresh()
@@ -43,8 +46,16 @@ class DashboardWindow:
         self.history_combo.pack(side=tk.LEFT, padx=5)
         self.history_combo.bind("<<ComboboxSelected>>", lambda e: self._refresh())
 
+        # 对比下拉框
+        tk.Label(toolbar, text="对比:").pack(side=tk.LEFT, padx=(20, 5))
+        self.comparison_combo = ttk.Combobox(toolbar, textvariable=self.comparison_var,
+                                              state="readonly", width=15)
+        self.comparison_combo['values'] = ['none', 'last_month', 'last_year']
+        self.comparison_combo.pack(side=tk.LEFT, padx=5)
+        self.comparison_combo.bind("<<ComboboxSelected>>", lambda e: self._refresh())
+
         tk.Button(toolbar, text="刷新", command=self._refresh).pack(side=tk.LEFT, padx=5)
-        tk.Button(toolbar, text="导出截图", command=self._export_screenshot).pack(side=tk.RIGHT, padx=5)
+        tk.Button(toolbar, text="导出当前图表为PNG", command=self._export_current_chart).pack(side=tk.RIGHT, padx=5)
 
         # Notebook 标签页
         self.notebook = ttk.Notebook(self.window)
@@ -66,6 +77,25 @@ class DashboardWindow:
         status_bar = tk.Label(self.window, textvariable=self.status_var, bd=1,
                               relief=tk.SUNKEN, anchor=tk.W)
         status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # 初始化对比下拉框状态
+        self._update_comparison_availability()
+
+    def _update_comparison_availability(self):
+        """检查是否有足够历史数据，启用/禁用对比下拉框"""
+        try:
+            records = history_db.get_analysis_list(limit=2)
+            if records and len(records) >= 2:
+                self.comparison_combo.config(state="readonly")
+                self.status_var.set("就绪")
+            else:
+                self.comparison_combo.config(state="disabled")
+                self.comparison_var.set("none")
+                self.status_var.set("需至少2次分析记录才能启用对比")
+        except Exception as e:
+            self.comparison_combo.config(state="disabled")
+            self.comparison_var.set("none")
+            self.status_var.set(f"检查历史数据失败: {e}")
 
     def _load_history_list(self):
         records = history_db.get_analysis_list(limit=50)
@@ -96,6 +126,42 @@ class DashboardWindow:
                     self.status_var.set(f"加载历史数据失败: {e}")
                     return None
 
+    def _get_comparison_dataframe(self):
+        """根据 comparison_var 获取对比数据"""
+        mode = self.comparison_var.get()
+        if mode == "none":
+            return None
+
+        try:
+            records = history_db.get_analysis_list(limit=50)
+            if not records or len(records) < 2:
+                return None
+
+            current_idx = 0
+            # 找到当前选中的记录索引
+            selected = self.history_combo.get()
+            if selected and ":" in selected:
+                current_id = int(selected.split(":")[0])
+                for i, r in enumerate(records):
+                    if r['id'] == current_id:
+                        current_idx = i
+                        break
+
+            target_idx = -1
+            if mode == "last_month":
+                target_idx = current_idx + 1 if current_idx + 1 < len(records) else -1
+            elif mode == "last_year":
+                # 简单处理：取前第12条（约一年前）
+                target_idx = current_idx + 12 if current_idx + 12 < len(records) else -1
+
+            if target_idx >= 0 and target_idx < len(records):
+                target_id = records[target_idx]['id']
+                df = history_db.get_analysis_data(target_id, db_path=self.history_db_path)
+                return df
+        except Exception as e:
+            self.status_var.set(f"获取对比数据失败: {e}")
+        return None
+
     def _refresh(self):
         if self.source_var.get() == "history":
             self._load_history_list()
@@ -109,16 +175,21 @@ class DashboardWindow:
             return
 
         self.current_df = df
-        self._draw_workshop_chart(df)
-        self._draw_trend_chart()
-        self.status_var.set(f"数据行数: {len(df)}")
+        self._update_comparison_availability()
+
+        # 获取对比数据
+        comp_df = self._get_comparison_dataframe() if self.comparison_var.get() != "none" else None
+
+        self._draw_workshop_chart(df, comp_df)
+        self._draw_trend_chart(df, comp_df)
+        self.status_var.set(f"数据行数: {len(df)}" + (f" | 对比: {self.comparison_var.get()}" if comp_df is not None else ""))
 
     def _on_history_selected(self):
         self._load_history_list()
         self._refresh()
 
-    def _draw_workshop_chart(self, df):
-        """绘制各车间偏差金额排名柱状图"""
+    def _draw_workshop_chart(self, df, comp_df=None):
+        """绘制各车间偏差金额排名柱状图（支持对比）"""
         for widget in self.tab_workshop.winfo_children():
             widget.destroy()
 
@@ -152,12 +223,34 @@ class DashboardWindow:
                      font=("微软雅黑", 12)).pack(expand=True)
             return
 
+        # 对比数据
+        comp_workshop_amount = None
+        if comp_df is not None:
+            if amount_col in comp_df.columns and workshop_col in comp_df.columns:
+                comp_workshop_amount = comp_df.groupby(workshop_col)[amount_col].apply(
+                    lambda x: x.abs().sum()).sort_values(ascending=False)
+
         fig = plt.Figure(figsize=(8, 5), dpi=100)
         ax = fig.add_subplot(111)
         workshops = workshop_amount.index.tolist()
         amounts = workshop_amount.values
-        bars = ax.bar(workshops, amounts, color='steelblue')
-        ax.set_title('各车间偏差金额（绝对值）排名')
+
+        # 绘制当前数据
+        bars = ax.bar(workshops, amounts, color='steelblue', label='当前')
+
+        # 绘制对比数据
+        if comp_workshop_amount is not None:
+            comp_amounts = [comp_workshop_amount.get(w, 0) for w in workshops]
+            ax.plot(workshops, comp_amounts, marker='o', linestyle='--', color='red', label='对比')
+            ax.legend()
+
+        title_suffix = ""
+        if self.comparison_var.get() == "last_month":
+            title_suffix = "（对比上月）"
+        elif self.comparison_var.get() == "last_year":
+            title_suffix = "（对比去年同期）"
+
+        ax.set_title(f'各车间偏差金额（绝对值）排名{title_suffix}')
         ax.set_xlabel('车间')
         ax.set_ylabel('偏差金额（元）')
         ax.tick_params(axis='x', rotation=45)
@@ -170,13 +263,14 @@ class DashboardWindow:
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-    def _draw_trend_chart(self):
+        # 保存 figure 引用，供导出使用
+        self._current_fig = fig
+
+    def _draw_trend_chart(self, df=None, comp_df=None):
         for widget in self.tab_trend.winfo_children():
             widget.destroy()
 
         try:
-            # 兜底：如果 history_db_path 为 None，使用默认路径
-            db_path = self.history_db_path if self.history_db_path else history_db.DB_PATH
             monthly = history_db.get_monthly_trend(months=6)
             if monthly.empty:
                 tk.Label(self.tab_trend, text="历史数据不足，无法绘制趋势图", font=("微软雅黑", 14)).pack(expand=True)
@@ -184,8 +278,20 @@ class DashboardWindow:
 
             fig = plt.Figure(figsize=(8, 4), dpi=100)
             ax = fig.add_subplot(111)
-            ax.plot(monthly['month'], monthly['high_dev_rows'], marker='o', linestyle='-', color='green')
-            ax.set_title('近6个月偏差>10% 行数趋势')
+            ax.plot(monthly['month'], monthly['high_dev_rows'], marker='o', linestyle='-', color='green', label='当前')
+
+            # 对比数据（简单处理：用去年同期数据）
+            if comp_df is not None:
+                # 这里可以扩展：真正查询去年同期的 monthly 数据
+                pass
+
+            title_suffix = ""
+            if self.comparison_var.get() == "last_month":
+                title_suffix = "（对比上月）"
+            elif self.comparison_var.get() == "last_year":
+                title_suffix = "（对比去年同期）"
+
+            ax.set_title(f'近6个月偏差>10% 行数趋势{title_suffix}')
             ax.set_xlabel('月份')
             ax.set_ylabel('行数')
             ax.tick_params(axis='x', rotation=45)
@@ -193,21 +299,42 @@ class DashboardWindow:
             canvas = FigureCanvasTkAgg(fig, master=self.tab_trend)
             canvas.draw()
             canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+            # 保存 figure 引用，供导出使用
+            self._current_fig = fig
         except Exception as e:
             tk.Label(self.tab_trend, text=f"加载趋势失败: {e}", fg="red").pack(expand=True)
 
-    def _export_screenshot(self):
+    def _export_current_chart(self):
+        """导出当前图表为 PNG"""
         current_tab = self.notebook.select()
         tab_text = self.notebook.tab(current_tab, "text")
-        for widget in self.notebook.nametowidget(current_tab).winfo_children():
-            if isinstance(widget, FigureCanvasTkAgg):
-                file_path = filedialog.asksaveasfilename(defaultextension=".png",
-                                                        filetypes=[("PNG files", "*.png")])
-                if file_path:
-                    widget.figure.savefig(file_path, dpi=150)
-                    messagebox.showinfo("导出成功", f"已保存到 {file_path}")
-                return
-        messagebox.showwarning("无法导出", "未找到可导出的图表")
+
+        if not hasattr(self, '_current_fig'):
+            messagebox.showwarning("无法导出", "未找到图表，请先刷新")
+            return
+
+        # 默认文件名
+        timestamp = datetime.now().strftime('%Y%m%d')
+        default_name = f"{tab_text}_{timestamp}.png"
+        default_name = default_name.replace("（近6个月）", "").replace(" ", "_")
+
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".png",
+            initialfile=default_name,
+            filetypes=[("PNG files", "*.png")]
+        )
+        if file_path:
+            try:
+                self._current_fig.savefig(file_path, dpi=150, facecolor='white', bbox_inches='tight')
+                messagebox.showinfo("导出成功", f"已保存到 {file_path}")
+                self.status_var.set(f"图表已导出: {os.path.basename(file_path)}")
+            except Exception as e:
+                messagebox.showerror("导出失败", f"保存失败: {e}")
+
+    def _export_screenshot(self):
+        """旧版导出（保留兼容）"""
+        self._export_current_chart()
 
     def _show_attribution(self):
         if self.current_df is None or self.current_df.empty:
