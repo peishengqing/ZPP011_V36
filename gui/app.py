@@ -80,8 +80,6 @@ from gui.ui_builder import build_ui
 
 import ppt_generator
 
-from gui.management_dashboard import DashboardWindow
-
 from domain.alt_material.alt_manager import DEFAULT_ALT_PAIRS, save_alt_pairs, load_alt_pairs
 
 from core.config_manager import ConfigManager
@@ -2635,7 +2633,7 @@ class ZPP011Beautiful(EventsMixIn):
 
         from gui.management_dashboard import DashboardWindow
 
-        DashboardWindow(self)
+        DashboardWindow(self.root, current_data_func=self.get_current_audit_data)
 
     def _open_dashboard(self):
 
@@ -2643,7 +2641,7 @@ class ZPP011Beautiful(EventsMixIn):
 
         from gui.management_dashboard import DashboardWindow
 
-        DashboardWindow(self)
+        DashboardWindow(self.root, current_data_func=self.get_current_audit_data)
 
     def _show_attribution_standalone(self):
         """独立 AI 归因分析入口（Task 013）"""

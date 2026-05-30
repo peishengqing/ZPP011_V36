@@ -12,10 +12,11 @@ from core import history_db
 
 
 class DashboardWindow:
-    def __init__(self, parent, history_db_path=None):
+    def __init__(self, parent, history_db_path=None, current_data_func=None):
         self.parent = parent
         self.history_db_path = history_db_path
         self.current_df = None
+        self._current_data_func = current_data_func
         self.window = tk.Toplevel(parent)
         self.window.title("管理看板 - ZPP011")
         self.window.geometry("900x650")
@@ -78,8 +79,8 @@ class DashboardWindow:
 
     def _get_dataframe(self):
         if self.source_var.get() == "current":
-            if hasattr(self.parent, 'get_current_audit_data'):
-                df = self.parent.get_current_audit_data()
+            if self._current_data_func is not None:
+                df = self._current_data_func()
                 if df is not None and not df.empty:
                     return df
             self.status_var.set("当前无分析数据，请先执行分析")
