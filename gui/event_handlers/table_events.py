@@ -652,7 +652,7 @@ class TableEvents:
 
                 # rank tag
                 rank_tag_val = rank_dict.get(_, None)
-                rank_tag = (rank_tag_val,) if rank_tag else ()
+                rank_tag = (rank_tag_val,) if rank_tag_val else ()
 
                 final_tag = (priority_tag,) + rank_tag
                 if color_hex and isinstance(color_hex, str):
@@ -686,9 +686,9 @@ class TableEvents:
                 if hasattr(self, "mutation_materials") and mat_code in self.mutation_materials:
                     tag = ("mutation_alert",) + tag
 
-                rank_tag_val = rank_dict.get(_, None)
-                if rank_tag_val:
-                    tag = (rank_tag_val,) + tag
+                _rank_val = rank_dict.get(_, None)
+                if _rank_val:
+                    tag = (_rank_val,) + tag
 
                 if dev_rate > 0:
                     tag = tag + ("over_amount",)
