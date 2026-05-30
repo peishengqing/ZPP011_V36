@@ -175,7 +175,9 @@ class DashboardWindow:
             widget.destroy()
 
         try:
-            monthly = history_db.get_monthly_trend(months=6, db_path=self.history_db_path)
+            # 兜底：如果 history_db_path 为 None，使用默认路径
+            db_path = self.history_db_path if self.history_db_path else history_db.DB_PATH
+            monthly = history_db.get_monthly_trend(months=6, db_path=db_path)
             if monthly.empty:
                 tk.Label(self.tab_trend, text="历史数据不足，无法绘制趋势图", font=("微软雅黑", 14)).pack(expand=True)
                 return
