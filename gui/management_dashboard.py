@@ -211,28 +211,38 @@ class DashboardWindow:
             messagebox.showwarning("无数据", "没有可分析的数据")
             return
 
-        # 获取历史数据（如果有）
+        from core.attribution import generate_report_text, get_latest_history_analysis
+        # 获取历史数据
         history_df = None
         if self.source_var.get() == "history" and self.history_combo.get():
             selected = self.history_combo.get()
             if ":" in selected:
-                aid = int(selected.split(":")[0])
-                history_df = history_db.get_analysis_data(aid, db_path=self.history_db_path)
+                try:
+                    aid = int(selected.split(":")[0])
+                    history_df = history_db.get_analysis_data(aid, db_path=self.history_db_path)
+                except Exception:
+                    pass
         elif self.source_var.get() == "current":
-            # 自动找最近一次历史数据
-            records = history_db.get_analysis_list(limit=1, db_path=self.history_db_path)
-            if records:
-                history_df = history_db.get_analysis_data(records[0]['id'], db_path=self.history_db_path)
+            history_df = get_latest_history_analysis()
 
-        from core.attribution import calculate_attribution
-        report = calculate_attribution(self.current_df, history_df)
+        report = generate_report_text(self.current_df, history_df)
+        self._show_report_window(report)
 
-        # 弹出报告窗口
+    def _show_report_window(self, report_text):
         win = tk.Toplevel(self.window)
         win.title("AI 归因分析报告")
         win.geometry("600x400")
         text = tk.Text(win, wrap=tk.WORD, font=("微软雅黑", 10))
         text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        text.insert(tk.END, report)
+        text.insert(tk.END, report_text)
         text.config(state=tk.DISABLED)
-        tk.Button(win, text="关闭", command=win.destroy).pack(pady=5)
+        # 保存按钮
+        def save_report():
+            file_path = filedialog.asksaveasfilename(defaultextension=".txt",
+                                                     filetypes=[("Text files", "*.txt")])
+            if file_path:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(report_text)
+                messagebox.showinfo("保存成功", f"报告已保存至 {file_path}")
+        tk.Button(win, text="保存报告", command=save_report).pack(side=tk.LEFT, padx=10, pady=5)
+        tk.Button(win, text="关闭", command=win.destroy).pack(side=tk.RIGHT, padx=10, pady=5)
