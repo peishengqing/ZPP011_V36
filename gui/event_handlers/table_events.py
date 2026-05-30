@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """表格展示、筛选、排序、双击卡片等事件"""
 
 import tkinter as tk

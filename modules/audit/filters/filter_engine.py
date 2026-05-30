@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 筛选引擎（FilterEngine）- 纯业务逻辑，无 GUI 依赖
