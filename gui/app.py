@@ -1518,109 +1518,106 @@ class ZPP011Beautiful(EventsMixIn):
 
             w.destroy()
 
-            # 建立编码->名称映射（兼容旧格式）
+        # 建立编码->名称映射（兼容旧格式）
 
-            excel_path = self.input_file.get()
+        excel_path = self.input_file.get()
 
-            code_to_name = {}
+        code_to_name = {}
 
-            if excel_path and os.path.exists(excel_path):
+        if excel_path and os.path.exists(excel_path):
 
-                try:
+            try:
 
-                    df = pd.read_excel(excel_path, sheet_name='Data')
+                df = pd.read_excel(excel_path, sheet_name='Data')
 
-                    code_cols = [c for c in df.columns if any(k in str(c).lower() for k in ['组件物料号', '组件编码', '物料编码', 'code', '编码'])]
+                code_cols = [c for c in df.columns if any(k in str(c).lower() for k in ['组件物料号', '组件编码', '物料编码', 'code', '编码'])]
 
-                    name_cols = [c for c in df.columns if c == '组件物料描述'] or [c for c in df.columns if any(k in str(c).lower() for k in ['物料描述', '组件描述', '名称', 'name'])]
+                name_cols = [c for c in df.columns if c == '组件物料描述'] or [c for c in df.columns if any(k in str(c).lower() for k in ['物料描述', '组件描述', '名称', 'name'])]
 
-                    if code_cols and name_cols:
+                if code_cols and name_cols:
 
-                        for _, row in df.iterrows():
+                    for _, row in df.iterrows():
 
-                            code = str(row[code_cols[0]])
+                        code = str(row[code_cols[0]])
 
-                            name = str(row[name_cols[0]])
+                        name = str(row[name_cols[0]])
 
-                            if code and code != 'nan':
+                        if code and code != 'nan':
 
-                                code_to_name[code] = name if name != 'nan' else ''
+                            code_to_name[code] = name if name != 'nan' else ''
 
-                except Exception:
+            except Exception:
 
-                    pass
+                pass
 
-            for a, b in self.alt_pairs:
+        for a, b in self.alt_pairs:
 
-                fr = tk.Frame(inner, bg=C['surface2'])
+            fr = tk.Frame(inner, bg=C['surface2'])
 
-                fr.pack(fill="x", pady=1)
+            fr.pack(fill="x", pady=1)
 
-                # 解析物料A：支持新格式 (factory, code, name) 和旧格式 (code, name)
+            # 解析物料A：支持新格式 (factory, code, name) 和旧格式 (code, name)
 
-                if isinstance(a, tuple):
+            if isinstance(a, tuple):
 
-                    if len(a) == 3:
+                if len(a) == 3:
 
-                        _, a_code, a_name = a
+                    _, a_code, a_name = a
 
-                    elif len(a) == 2:
+                elif len(a) == 2:
 
-                        a_code, a_name = a
-
-                    else:
-
-                        a_code = str(a)
-
-                        a_name = ''
+                    a_code, a_name = a
 
                 else:
 
                     a_code = str(a)
 
-                    a_name = code_to_name.get(a_code, '')
+                    a_name = ''
 
-                # 解析物料B：支持新格式 (factory, code, name) 和旧格式 (code, name)
+            else:
 
-                if isinstance(b, tuple):
+                a_code = str(a)
 
-                    if len(b) == 3:
+                a_name = code_to_name.get(a_code, '')
 
-                        _, b_code, b_name = b
+            # 解析物料B：支持新格式 (factory, code, name) 和旧格式 (code, name)
 
-                    elif len(b) == 2:
+            if isinstance(b, tuple):
 
-                        b_code, b_name = b
+                if len(b) == 3:
 
-                    else:
+                    _, b_code, b_name = b
 
-                        b_code = str(b)
+                elif len(b) == 2:
 
-                        b_name = ''
+                    b_code, b_name = b
 
                 else:
 
                     b_code = str(b)
 
-                    b_name = code_to_name.get(b_code, '')
+                    b_name = ''
 
-                # 显示: 编码 + 名称（不显示工厂名称）
+            else:
 
-                a_disp = f"{a_code} {a_name}" if a_name else a_code
+                b_code = str(b)
 
-                b_disp = f"{b_code} {b_name}" if b_name else b_code
+                b_name = code_to_name.get(b_code, '')
 
-                tk.Label(fr, text=f"↔ {a_disp}", font=("Consolas", 8), fg=C['text'],
+            # 显示: 编码 + 名称（不显示工厂名称）
 
-                         bg=C['surface2'], anchor="w").pack(side="left", padx=4)
+            a_disp = f"{a_code} {a_name}" if a_name else a_code
 
-                tk.Label(fr, text="|", font=("Consolas", 8), fg=C['text_dim'],
+            b_disp = f"{b_code} {b_name}" if b_name else b_code
 
-                         bg=C['surface2']).pack(side="left")
+            tk.Label(fr, text=f"↔ {a_disp}", font=("Consolas", 8), fg=C['text'],
+                     bg=C['surface2'], anchor="w").pack(side="left", padx=4)
 
-                tk.Label(fr, text=f"{b_disp}", font=("Consolas", 8), fg=C['purple'],
+            tk.Label(fr, text="|", font=("Consolas", 8), fg=C['text_dim'],
+                     bg=C['surface2']).pack(side="left")
 
-                         bg=C['surface2'], anchor="w").pack(side="left", padx=4)
+            tk.Label(fr, text=f"{b_disp}", font=("Consolas", 8), fg=C['purple'],
+                     bg=C['surface2'], anchor="w").pack(side="left", padx=4)
 
     def _export_duplicate_records(self):
 
