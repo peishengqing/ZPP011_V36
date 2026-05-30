@@ -14,6 +14,29 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v39.6",
+        "date": "2026-05-30",
+        "build_datetime": "2026-05-30 15:30:00",
+        "features": [
+            "✨ 管理看板：车间偏差排名柱状图 + 近6个月偏差趋势折线图（支持当前分析/历史对比）",
+            "✨ 自定义视图：保存/删除/加载筛选、排序、列顺序、列宽等完整视图状态",
+            "✨ AI 归因雏形：自动对比当前与最近历史分析，输出物料大类贡献度报告"
+        ],
+        "fixes": [
+            "🐛 修复 rank_dict 索引错误导致的 UnboundLocalError",
+            "🐛 修复 history_db 路径为 None 时导致的趋势图加载失败",
+            "🐛 修复管理看板历史数据源切换时的空指针异常"
+        ],
+        "optimizations": [
+            "⚡ 优化物料大类下拉框选项更新逻辑，基于全量数据一次初始化"
+        ],
+        "notes": [
+            "📌 管理看板依赖 matplotlib 和 pillow，请确保环境已安装（pip install matplotlib pillow）",
+            "📌 历史对比需至少两次分析记录才能显示趋势图",
+            "📌 视图配置文件位于 ~/.zpp011_audit/views.json"
+        ]
+    },
+    {
         "version": "v39.5",
         "date": "2026-05-29",
         "build_datetime": "2026-05-29 18:00:00",
