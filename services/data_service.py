@@ -35,7 +35,17 @@ class DataService:
         Returns:
             DataFrame
         """
-        df = pd.read_excel(file_path, sheet_name=sheet_name)
+        try:
+            df = pd.read_excel(file_path, sheet_name=sheet_name)
+        except ValueError:
+            # 'Data' sheet 不存在时回退到第一个 sheet
+            xl = pd.ExcelFile(file_path)
+            if xl.sheet_names:
+                fallback = xl.sheet_names[0]
+                self.log(f"[WARN] 工作表 '{sheet_name}' 不存在，回退到 '{fallback}'") if hasattr(self, 'log') else print(f"[WARN] 工作表 '{sheet_name}' 不存在，回退到 '{fallback}'")
+                df = pd.read_excel(file_path, sheet_name=fallback)
+            else:
+                raise
         self._df_cache = df
         return df
     

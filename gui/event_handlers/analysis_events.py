@@ -793,6 +793,21 @@ class AnalysisEvents:
                 self.progress_bar.pack_forget()
             if hasattr(self, 'set_status'):
                 self.set_status(f"加载完成，共 {total} 行")
+            # 自动设置日期筛选控件的默认范围并自动筛选
+            if hasattr(self, 'date_start_de') and hasattr(self, 'date_end_de') and '订单日期' in self.audit_data.columns:
+                try:
+                    dates = pd.to_datetime(self.audit_data['订单日期'], errors='coerce')
+                    min_date = dates.min()
+                    max_date = dates.max()
+                    if pd.notna(min_date) and pd.notna(max_date):
+                        self.date_start_de.set_date(min_date.date())
+                        self.date_end_de.set_date(max_date.date())
+                        self.log(f"日期筛选控件已设置为数据范围：{min_date.date()} 至 {max_date.date()}", "info")
+                        # 自动触发日期筛选
+                        self._on_filter_changed('order_date')
+                except Exception as e:
+                    self.log(f"设置默认日期范围失败：{e}", "warn")
+
             # 自动 AI 审核 + 自动结案
             if not getattr(self, '_auto_processed', False):
                 self.root.after(500, self._auto_audit_and_close)
