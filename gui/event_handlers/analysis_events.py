@@ -479,17 +479,29 @@ class AnalysisEvents:
         else:
             audit_df['excel_row'] = range(2, len(audit_df) + 2)
             audit_df['原表行号'] = audit_df['excel_row']
-        audit_df['组件物料号'] = audit_df.get('物料编码', '')
-        audit_df['组件物料描述'] = audit_df.get('物料名称', '')
-        audit_df['工厂名称'] = audit_df.get('工厂', '')
-        audit_df['生产管理员描述'] = audit_df.get('车间', '')
-        audit_df['数量-定额'] = audit_df.get('定额', 0)
-        audit_df['数量-实际'] = audit_df.get('实际', 0)
+        # 列映射：如果源列存在则赋值，否则用默认值
+        for dst, src, default in [
+            ('组件物料号', '物料编码', ''),
+            ('组件物料描述', '物料名称', ''),
+            ('工厂名称', '工厂', ''),
+            ('生产管理员描述', '车间', ''),
+            ('数量-定额', '定额', 0),
+            ('数量-实际', '实际', 0),
+            ('备注原因', '备注', ''),
+        ]:
+            if src in audit_df.columns:
+                audit_df[dst] = audit_df[src]
+            else:
+                audit_df[dst] = default
         audit_df['偏差率(%)'] = audit_df['偏差率数值'] * 100
-        audit_df['备注原因'] = audit_df.get('备注', '')
         # 调试：对比 订单300354378+物料10000000 的数据
-        mask_debug = (audit_df.get('流程订单', '').astype(str) == '300354378') & (audit_df.get('组件物料号', '').astype(str) == '10000000')
-        if mask_debug.any():
+        _dbg_order = '流程订单' if '流程订单' in audit_df.columns else None
+        _dbg_mat = '组件物料号' if '组件物料号' in audit_df.columns else None
+        if _dbg_order and _dbg_mat:
+            mask_debug = (audit_df[_dbg_order].astype(str) == '300354378') & (audit_df[_dbg_mat].astype(str) == '10000000')
+        else:
+            mask_debug = pd.Series(dtype=bool)
+        if len(mask_debug) > 0 and mask_debug.any():
             d = audit_df[mask_debug].iloc[0]
             self._debug_row = d
             debug_info = f"[DEBUG] 订单300354378+物料10000000: "
@@ -539,7 +551,7 @@ class AnalysisEvents:
         if '备注来源' not in audit_df.columns:
             audit_df['备注来源'] = ''
         if '原备注' not in audit_df.columns:
-            audit_df['原备注'] = audit_df.get('备注原因', '')
+            audit_df['原备注'] = audit_df['备注原因'] if '备注原因' in audit_df.columns else ''
         if 'AI建议' not in audit_df.columns:
             audit_df['AI建议'] = ''
         if 'audit_result' not in audit_df.columns:
@@ -656,11 +668,13 @@ class AnalysisEvents:
                 self.log(f"[DEBUG] excel_row 前5行: {self.audit_data['excel_row'].head().tolist()}", "debug")
             if '原表行号' in self.audit_data.columns:
                 self.log(f"[DEBUG] 原表行号 前5行: {self.audit_data['原表行号'].head().tolist()}", "debug")
-            # 调试：打印 订单300354378+物料10000000 的数据
-            mask = (self.audit_data.get('流程订单', '').astype(str) == '300354378') & (self.audit_data.get('组件物料号', '').astype(str) == '10000000')
-            if mask.any():
-                debug_row = self.audit_data[mask].iloc[0]
-                self.log(f"[DEBUG] 订单300354378+物料10000000: excel_row={debug_row.get('excel_row')}, 定额={debug_row.get('数量-定额')}, 实际={debug_row.get('数量-实际')}", "debug")
+            _order_col = '流程订单' if '流程订单' in self.audit_data.columns else None
+            _mat_col = '组件物料号' if '组件物料号' in self.audit_data.columns else None
+            if _order_col and _mat_col:
+                mask = (self.audit_data[_order_col].astype(str) == '300354378') & (self.audit_data[_mat_col].astype(str) == '10000000')
+                if mask.any():
+                    debug_row = self.audit_data[mask].iloc[0]
+                    self.log(f"[DEBUG] 订单300354378+物料10000000: excel_row={debug_row.get('excel_row') if hasattr(debug_row, 'get') else debug_row.get('excel_row', '')}, 定额={debug_row.get('数量-定额', '')}, 实际={debug_row.get('数量-实际', '')}", "debug")
             # 更新筛选选项和行颜色
             self._update_filter_options()
             self._apply_row_colors()
@@ -698,10 +712,41 @@ class AnalysisEvents:
                 from core.history_db import save_analysis_result, init_db
                 init_db()
                 
-                # 统计信息
-                high_dev = len(self.audit_data[abs(self.audit_data['偏差率(%)']) > 10]) if '偏差率(%)' in self.audit_data.columns else 0
-                need_note = len(self.audit_data[self.audit_data['备注原因'].isna() | (self.audit_data['备注原因'] == '')]) if '备注原因' in self.audit_data.columns else 0
-                approved = len(self.audit_data[self.audit_data.get('审核状态', 'audit_status') == '已审核']) if '审核状态' in self.audit_data.columns or 'audit_status' in self.audit_data.columns else 0
+                # 计算统计指标
+                total_rows = len(self.audit_data)
+
+                # 偏差>10% 行数
+                dev_col = None
+                for col in ['偏差率%', '偏差率(%)']:
+                    if col in self.audit_data.columns:
+                        dev_col = col
+                        break
+                if dev_col:
+                    high_dev = len(self.audit_data[self.audit_data[dev_col].abs() > 10])
+                else:
+                    high_dev = 0
+
+                # 需补备注行数
+                remark_col = None
+                for col in ['备注', '备注原因']:
+                    if col in self.audit_data.columns:
+                        remark_col = col
+                        break
+                if remark_col:
+                    need_note = len(self.audit_data[self.audit_data[remark_col].isna() | (self.audit_data[remark_col].astype(str).str.strip() == '')])
+                else:
+                    need_note = 0
+
+                # 已审核行数
+                status_col = None
+                for col in ['审核状态', 'audit_status']:
+                    if col in self.audit_data.columns:
+                        status_col = col
+                        break
+                if status_col:
+                    approved = len(self.audit_data[self.audit_data[status_col] == '已审核'])
+                else:
+                    approved = 0
                 
                 # 获取筛选条件（如果有）
                 filter_cond = ''
