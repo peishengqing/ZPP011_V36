@@ -353,11 +353,11 @@ class TableEvents:
             # 构建 tag 缓存（排序后再建）
             self._build_tag_cache(df)
 
-            # 保存最终 df 到 audit_data
-            self.audit_data = df.copy()
+            # 保存筛选后 df 到 filtered_data（不覆盖 audit_data，保留原始全量数据）
+            self.filtered_data = df.copy()
             self._total_rows = len(df)
         else:
-            self.audit_data = None
+            self.filtered_data = pd.DataFrame()
             self._total_rows = 0
 
         if hasattr(self, '_log'):
@@ -630,8 +630,11 @@ class TableEvents:
             if cached:
                 priority_tag, color_hex = cached
                 # 注册动态颜色 tag
-                if color_hex and color_hex not in self.audit_tree.tag_names():
-                    self.audit_tree.tag_configure(color_hex, background=color_hex)
+                if color_hex:
+                    try:
+                        self.audit_tree.tag_configure(color_hex, background=color_hex)
+                    except Exception:
+                        pass
                 # 构建状态 tag
                 if note_src == "自动结案":
                     status_tag = ("auto_closed",)
@@ -661,8 +664,10 @@ class TableEvents:
                 try:
                     if hasattr(self, "rule_engine"):
                         color_hex = self.rule_engine.get_color_for_deviation_rate(dev_rate)
-                        if color_hex not in self.audit_tree.tag_names():
+                        try:
                             self.audit_tree.tag_configure(color_hex, background=color_hex)
+                        except Exception:
+                            pass
                 except Exception:
                     color_hex = None
 
@@ -1833,11 +1838,15 @@ class TableEvents:
     def _update_audit_stats(self, filtered_data=None):
         """更新统计卡片（联动筛选后的数据）"""
 
-        if self.audit_data is None or len(self.audit_data) == 0:
-            self.log(f"[DEBUG] _update_audit_stats: audit_data 为空，跳过", "info")
+        # 优先使用 filtered_data 参数，其次用 self.filtered_data，最后用 self.audit_data
+        data = filtered_data
+        if data is None and hasattr(self, 'filtered_data') and self.filtered_data is not None and len(self.filtered_data) > 0:
+            data = self.filtered_data
+        if data is None:
+            data = self.audit_data
+        if data is None or len(data) == 0:
+            self.log(f"[DEBUG] _update_audit_stats: 无可用数据，跳过", "info")
             return
-
-        data = filtered_data if filtered_data is not None else self.audit_data
 
         self.log(f"[DEBUG] _update_audit_stats: data={len(data)}行, 列={list(data.columns)[:10]}", "info")
 
