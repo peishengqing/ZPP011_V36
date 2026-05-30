@@ -68,7 +68,7 @@ class DashboardWindow:
         status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
     def _load_history_list(self):
-        records = history_db.get_analysis_list(limit=50, db_path=self.history_db_path)
+        records = history_db.get_analysis_list(limit=50)
         if records:
             self.history_combo['values'] = [f"{r['id']}: {r['timestamp'][:16]} - {r['file_name']}" for r in records]
             if not self.history_combo.get():
@@ -177,7 +177,7 @@ class DashboardWindow:
         try:
             # 兜底：如果 history_db_path 为 None，使用默认路径
             db_path = self.history_db_path if self.history_db_path else history_db.DB_PATH
-            monthly = history_db.get_monthly_trend(months=6, db_path=db_path)
+            monthly = history_db.get_monthly_trend(months=6)
             if monthly.empty:
                 tk.Label(self.tab_trend, text="历史数据不足，无法绘制趋势图", font=("微软雅黑", 14)).pack(expand=True)
                 return
