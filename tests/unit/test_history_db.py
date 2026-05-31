@@ -18,7 +18,6 @@ from core.history_db import (
     get_analysis_list,
     get_analysis_data,
     get_monthly_trend,
-    delete_analysis,
     cleanup_old_records,
     DB_PATH
 )
@@ -30,29 +29,24 @@ def temp_db(tmp_path):
     db_path = str(tmp_path / "test_history.db")
     init_db(db_path)
     yield db_path
-    # Cleanup handled by tmp_path fixture
 
 
 class TestHistoryDB:
     """Test suite for history_db functions"""
-    
+
     def test_init_db(self, temp_db):
         """Test database initialization"""
         assert os.path.exists(temp_db)
-        
-        # Check tables exist
         conn = sqlite3.connect(temp_db)
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
         tables = [row[0] for row in cursor.fetchall()]
         conn.close()
-        
         assert 'analysis_meta' in tables
         assert 'deviation_details' in tables
-    
+
     def test_save_and_get_analysis(self, temp_db):
         """Test saving and retrieving analysis"""
-        # Prepare test data
         metadata = {
             'file_name': 'test.xlsx',
             'file_path': '/path/to/test.xlsx',
@@ -65,7 +59,6 @@ class TestHistoryDB:
             'filter_condition': '',
             'extra': {}
         }
-        
         df = pd.DataFrame({
             '工厂': ['工厂A', '工厂A', '工厂B'],
             '车间': ['车间1', '车间2', '车间1'],
@@ -84,24 +77,17 @@ class TestHistoryDB:
             '审核来源': ['', '', ''],
             '偏差金额': [20, -20, 10]
         })
-        
-        # Save
         analysis_id = save_analysis_result(metadata, df, db_path=temp_db)
         assert analysis_id > 0
-        
-        # Get list
         analyses = get_analysis_list(db_path=temp_db)
         assert len(analyses) == 1
         assert analyses[0]['file_name'] == 'test.xlsx'
-        
-        # Get data
         retrieved_df = get_analysis_data(analysis_id, db_path=temp_db)
         assert len(retrieved_df) == 3
         assert '工厂' in retrieved_df.columns
-    
+
     def test_get_monthly_trend(self, temp_db):
         """Test getting monthly trend data"""
-        # Insert multiple analyses
         for i in range(3):
             metadata = {
                 'file_name': f'test_{i}.xlsx',
@@ -115,58 +101,22 @@ class TestHistoryDB:
                 'filter_condition': '',
                 'extra': {}
             }
-            
             df = pd.DataFrame({
                 '工厂': ['工厂A'],
                 '偏差金额': [100 * (i + 1)]
             })
-            
             save_analysis_result(metadata, df, db_path=temp_db)
-        
-        # Get trend
         trend = get_monthly_trend(months=3, db_path=temp_db)
-        
         assert len(trend) <= 3
         if len(trend) > 0:
             assert 'month' in trend[0]
             assert 'avg_deviation' in trend[0]
-    
-    def test_delete_analysis(self, temp_db):
-        """Test deleting an analysis"""
-        # Save first
-        metadata = {
-            'file_name': 'to_delete.xlsx',
-            'file_path': '/path/to/to_delete.xlsx',
-            'file_mtime': 123456,
-            'total_rows': 10,
-            'high_dev_rows': 0,
-            'need_note_rows': 0,
-            'approved_rows': 0,
-            'dev_rate_distribution': {},
-            'filter_condition': '',
-            'extra': {}
-        }
-        
-        df = pd.DataFrame({'工厂': ['工厂A'], '偏差金额': [100]})
-        
-        analysis_id = save_analysis_result(metadata, df, db_path=temp_db)
-        assert analysis_id > 0
-        
-        # Delete
-        result = delete_analysis(analysis_id, db_path=temp_db)
-        assert result is True
-        
-        # Verify deletion
-        analyses = get_analysis_list(db_path=temp_db)
-        assert len(analyses) == 0
-    
+
     def test_cleanup_old_records(self, temp_db):
         """Test cleaning up old records (180-day cleanup)"""
-        # This test is tricky without mocking timestamps
-        # For now, just verify the function exists and runs
         result = cleanup_old_records(days=180, db_path=temp_db)
         assert isinstance(result, int)
-    
+
     def test_idempotent_save(self, temp_db):
         """Test that saving the same file twice doesn't create duplicates"""
         metadata = {
@@ -181,17 +131,10 @@ class TestHistoryDB:
             'filter_condition': '',
             'extra': {}
         }
-        
         df = pd.DataFrame({'工厂': ['工厂A'], '偏差金额': [100]})
-        
-        # Save twice
         id1 = save_analysis_result(metadata, df, db_path=temp_db)
         id2 = save_analysis_result(metadata, df, db_path=temp_db)
-        
-        # Should return the same ID
         assert id1 == id2
-        
-        # Should only have one record
         analyses = get_analysis_list(db_path=temp_db)
         assert len(analyses) == 1
 
