@@ -1,4 +1,3 @@
-print("=== 运行最新代码 v39.6 ===")
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
