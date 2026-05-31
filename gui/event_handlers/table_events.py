@@ -460,7 +460,7 @@ class TableEvents:
 
             code = str(row.get("物料编码", row.get("组件物料号", "")))
 
-            # ===== 物料大类分类 =====
+            # ===== 物料大类分类：优先取 df 中已计算的 material_category 列（含原表"组件物料类型描述"）=====
             mat_code_prefix = code[:3] if code else ""
             mat_category_map = {
                 "100": "原辅料",
@@ -471,7 +471,11 @@ class TableEvents:
                 "510": "饮料成品",
                 "600": "促销品",
             }
-            mat_category = mat_category_map.get(mat_code_prefix, mat_code_prefix)
+            _mc_from_df = row.get("material_category", "")
+            if _mc_from_df and str(_mc_from_df).strip() not in ("", "nan", "NaN", "None"):
+                mat_category = str(_mc_from_df).strip()
+            else:
+                mat_category = mat_category_map.get(mat_code_prefix, mat_code_prefix)
 
             name = str(row.get("组件物料描述", row.get("物料名称", ""))).strip()
 
@@ -612,7 +616,7 @@ class TableEvents:
                     order_no_val,  # order_no
                     mat_category,  # material_category（物料大类在物料号前）
                     str(row.get("物料编码", row.get("组件物料号", ""))),  # code
-                    mat_desc[:25],  # name
+                    mat_desc[:30],  # name
                     str(row.get("组件单位", row.get("单位", ""))),  # unit
                     f"{row.get('定额', row.get('数量-定额', 0)):.3f}",  # quota
                     f"{row.get('实际', row.get('数量-实际', 0)):.3f}",  # actual
@@ -919,9 +923,7 @@ class TableEvents:
 
         self._card_win.title("\u5ba1\u6838\u5361\u7247")
 
-        self._card_win.geometry(
-            f"{self.config.get('ui.card_width', 360)}x{self.config.get('ui.card_height', 420)}"
-        )
+        self._card_win.geometry("360x420")
 
         self._card_win.transient(self.root)
 
@@ -1027,9 +1029,7 @@ class TableEvents:
 
         # P1：预设备注列表（按频率排序）
 
-        preset_remarks = self.config.get(
-            "ui.preset_remarks", ["系统无定额", "替代料", "已核实", "工艺调整", "其他"]
-        )
+        preset_remarks = ["系统无定额", "替代料", "已核实", "工艺调整", "其他"]
 
         sorted_remarks, freq = self._get_sorted_remarks(preset_remarks)
 
