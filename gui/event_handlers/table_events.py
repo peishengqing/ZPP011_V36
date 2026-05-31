@@ -306,14 +306,32 @@ class TableEvents:
             if not hasattr(self, "rule_engine"):
                 self.rule_engine = RuleEngine()
 
-            # 修正 material_category：强制基于物料编码前缀重新计算
+            # 修正 material_category：优先使用"组件物料类型描述"列，缺失或全空则回退到编码前缀映射
             _mc_map = {
                 "100": "原辅料", "200": "包材",
                 "400": "食品辅料/食品半成品", "410": "饮料辅料/饮料半成品",
                 "500": "食品成品", "510": "饮料成品", "600": "促销品",
             }
             _code_col = next((c for c in ['物料编码', '组件物料号'] if c in df.columns), None)
-            if _code_col:
+            _type_desc_col = "组件物料类型描述" if "组件物料类型描述" in df.columns else None
+            # 判断"组件物料类型描述"是否有效（存在且非全空）
+            _use_type_desc = (
+                _type_desc_col is not None
+                and df[_type_desc_col].notna().any()
+                and (df[_type_desc_col].astype(str).str.strip() != "").any()
+            )
+            if _use_type_desc:
+                # 优先使用原始"组件物料类型描述"，缺失单行时回退编码前缀
+                def _get_mc(row):
+                    v = str(row.get(_type_desc_col, "")).strip()
+                    if v and v not in ("nan", "NaN", "None"):
+                        return v
+                    if _code_col:
+                        code = str(row.get(_code_col, ""))
+                        return _mc_map.get(code[:3], code[:3]) if pd.notna(row.get(_code_col)) and code != "nan" else ""
+                    return ""
+                df['material_category'] = df.apply(_get_mc, axis=1)
+            elif _code_col:
                 df['material_category'] = df[_code_col].apply(
                     lambda x: _mc_map.get(str(x)[:3], str(x)[:3]) if pd.notna(x) and str(x) != 'nan' else ''
                 )
@@ -594,7 +612,8 @@ class TableEvents:
                     order_no_val,  # order_no
                     mat_category,  # material_category（物料大类在物料号前）
                     str(row.get("物料编码", row.get("组件物料号", ""))),  # code
-                    mat_desc[:20],  # name
+                    mat_desc[:25],  # name
+                    str(row.get("组件单位", row.get("单位", ""))),  # unit
                     f"{row.get('定额', row.get('数量-定额', 0)):.3f}",  # quota
                     f"{row.get('实际', row.get('数量-实际', 0)):.3f}",  # actual
                     f"{dev_rate:.2f}%",  # dev_rate
@@ -1249,6 +1268,7 @@ class TableEvents:
                     mat_category_val,  # material_category（物料大类在物料号前）
                     code_val,  # code
                     name_val,  # name
+                    str(row.get("组件单位", row.get("单位", ""))),  # unit
                     quota_val,  # quota
                     actual_val,  # actual
                     dev_rate_str,  # dev_rate
@@ -1527,6 +1547,193 @@ class TableEvents:
             self._refresh_view_list()
         else:
             self.log(f"视图「{name}」不存在", "warn")
+
+    # ── Task 020：视图导入导出 ──
+
+    def _export_views(self):
+        """导出视图为 JSON 文件"""
+        from core.view_manager import ViewManager
+        from tkinter import filedialog, messagebox
+        from datetime import datetime
+
+        vm = ViewManager()
+        all_views = vm.list_views()
+        if not all_views:
+            messagebox.showinfo("导出视图", "当前无保存的视图可导出")
+            return
+
+        # 多选对话框
+        selected = self._multi_select_dialog("选择要导出的视图", all_views)
+        if not selected:
+            return
+
+        # 自动命名 [豆包·10维]
+        from utils.version_history import get_current_version
+        default_name = f"视图包_{datetime.now().strftime('%Y%m%d')}_v{get_current_version()}.json"
+
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".json",
+            initialfile=default_name,
+            filetypes=[("JSON 文件", "*.json")],
+            parent=self.root
+        )
+        if not file_path:
+            return
+
+        try:
+            vm.export_views(selected, file_path)
+            self.log(f"已导出 {len(selected)} 个视图到 {os.path.basename(file_path)}", "info")
+            messagebox.showinfo("导出成功", f"已导出 {len(selected)} 个视图")
+        except Exception as e:
+            messagebox.showerror("导出失败", str(e))
+
+    def _import_views(self):
+        """导入视图 JSON 文件"""
+        from core.view_manager import ViewManager
+        from tkinter import filedialog, messagebox
+
+        file_path = filedialog.askopenfilename(
+            filetypes=[("JSON 文件", "*.json")],
+            parent=self.root
+        )
+        if not file_path:
+            return
+
+        vm = ViewManager()
+
+        # 1. 校验文件
+        try:
+            data = vm.validate_import_file(file_path)
+        except ValueError as e:
+            messagebox.showerror("导入失败", str(e))
+            return
+
+        # 2. 批量预览 [豆包·10维]
+        import_views_list = vm.get_import_views_list(data)
+        if not import_views_list:
+            messagebox.showinfo("导入视图", "文件中无视图数据")
+            return
+
+        # 检查同名
+        existing = vm.list_views()
+        has_conflict = any(n in existing for n in import_views_list)
+
+        selected = self._multi_select_dialog(
+            "选择要导入的视图",
+            import_views_list,
+            pre_check_conflicts=existing
+        )
+        if not selected:
+            return
+
+        # 同名覆盖二次确认 [豆包·10维]
+        overwrite = False
+        conflict_names = [n for n in selected if n in existing]
+        if conflict_names:
+            overwrite = messagebox.askyesno(
+                "同名视图",
+                f"以下视图已存在：{', '.join(conflict_names)}\n是否覆盖？"
+            )
+            if not overwrite:
+                # 移除同名项
+                selected = [n for n in selected if n not in conflict_names]
+                if not selected:
+                    return
+
+        try:
+            imported = vm.import_views(selected, data, overwrite=overwrite)
+            self.log(f"已导入 {len(imported)} 个视图：{', '.join(imported)}", "info")
+            self._refresh_view_list()
+            messagebox.showinfo("导入成功", f"已导入 {len(imported)} 个视图")
+        except Exception as e:
+            messagebox.showerror("导入失败", str(e))
+
+    def _multi_select_dialog(self, title: str, items: list, pre_check_conflicts: list = None) -> list:
+        """多选对话框 [豆包·10维]
+        
+        Args:
+            title: 对话框标题
+            items: 可选项列表
+            pre_check_conflicts: 已存在的视图名列表（用于标记冲突）
+            
+        Returns:
+            用户选中的项列表
+        """
+        from tkinter import ttk
+        win = tk.Toplevel(self.root)
+        win.title(title)
+        win.geometry("350x400")
+        win.transient(self.root)
+        win.grab_set()
+
+        result = []
+        vars_dict = {}
+
+        # 全选/取消按钮
+        btn_frame_top = tk.Frame(win)
+        btn_frame_top.pack(fill=tk.X, padx=10, pady=5)
+
+        def toggle_all():
+            new_val = not all(v.get() for v in vars_dict.values())
+            for v in vars_dict.values():
+                v.set(new_val)
+
+        tk.Button(btn_frame_top, text="全选/取消", command=toggle_all).pack(side=tk.LEFT)
+
+        # 可滚动列表
+        container = tk.Frame(win)
+        container.pack(fill=tk.BOTH, expand=True, padx=10)
+
+        canvas = tk.Canvas(container)
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        scroll_frame = tk.Frame(canvas)
+
+        scroll_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        for item in items:
+            var = tk.BooleanVar(value=True)
+            text = item
+            fg = None
+            if pre_check_conflicts and item in pre_check_conflicts:
+                text = f"{item} (已存在)"
+                fg = "#cc0000"
+            cb = tk.Checkbutton(scroll_frame, text=text, variable=var, fg=fg)
+            cb.pack(anchor='w')
+            vars_dict[item] = var
+
+        # 确认/取消
+        btn_frame = tk.Frame(win)
+        btn_frame.pack(fill=tk.X, padx=10, pady=5)
+        confirmed = [False]
+
+        def on_confirm():
+            confirmed[0] = True
+            win.destroy()
+
+        def on_cancel():
+            win.destroy()
+
+        tk.Button(btn_frame, text="确认", command=on_confirm, bg="#28a745", fg="white").pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="取消", command=on_cancel).pack(side=tk.RIGHT, padx=5)
+
+        win.wait_window()
+
+        if confirmed[0]:
+            return [name for name, var in vars_dict.items() if var.get()]
+        return []
+
+    def set_filter_and_refresh(self, filter_key: str, filter_value: str):
+        """通用筛选设置+刷新（供看板下钻等调用）"""
+        if filter_key in self.filter_widgets:
+            widget = self.filter_widgets[filter_key]
+            widget.set(filter_value)
+            self._on_filter_changed(filter_key)
+            self.log(f"已设置筛选：{filter_key} = {filter_value}", "info")
 
     def _update_filter_options(self):
         """根据当前 audit_data 更新筛选下拉框的值列表"""
@@ -2148,4 +2355,42 @@ class TableEvents:
         if valid_order == current_display:
             return
         self.audit_tree['displaycolumns'] = tuple(valid_order)
+
+    # ── 任务卡 021：常用备注频率辅助方法 ──
+
+    def _get_sorted_remarks(self, preset_remarks):
+        """按使用频率降序排列预设备注，返回 (sorted_list, freq_dict)"""
+        freq_file = os.path.join(
+            os.path.expanduser('~'), '.zpp011_audit', 'remark_freq.json'
+        )
+        freq = {}
+        try:
+            if os.path.exists(freq_file):
+                with open(freq_file, 'r', encoding='utf-8') as f:
+                    freq = json.load(f)
+        except Exception:
+            freq = {}
+        sorted_remarks = sorted(
+            preset_remarks,
+            key=lambda r: freq.get(r, 0),
+            reverse=True,
+        )
+        return sorted_remarks, freq
+
+    def _record_remark_freq(self, remark: str):
+        """记录备注使用频率（累加并持久化到本地 JSON）"""
+        freq_dir = os.path.join(os.path.expanduser('~'), '.zpp011_audit')
+        freq_file = os.path.join(freq_dir, 'remark_freq.json')
+        try:
+            os.makedirs(freq_dir, exist_ok=True)
+            freq = {}
+            if os.path.exists(freq_file):
+                with open(freq_file, 'r', encoding='utf-8') as f:
+                    freq = json.load(f)
+            freq[remark] = freq.get(remark, 0) + 1
+            with open(freq_file, 'w', encoding='utf-8') as f:
+                json.dump(freq, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            if hasattr(self, 'log'):
+                self.log(f"[021] 记录备注频率失败：{e}", "warn")
 
