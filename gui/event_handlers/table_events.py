@@ -892,197 +892,152 @@ class TableEvents:
 
     def _on_tree_double_click(self, event):
         """双击审核行打开卡片详情（同万能搜索框结果兼容）"""
-
+        print("[DEBUG] _on_tree_double_click 被调用")
         self._show_audit_card(event)
 
     # ── P1：常用备注自动排序 ──
 
     def _show_audit_card(self, event):
-
-        selection = self.audit_tree.selection()
-
-        if not selection:
-            return
-
-        item = selection[0]
-
-        vals = self.audit_tree.item(item, "values")
-
-        cols = self.audit_tree["columns"]
-
-        data = dict(zip(cols, vals))
-
-        if (
-            hasattr(self, "_card_win")
-            and self._card_win
-            and self._card_win.winfo_exists()
-        ):
-            self._card_win.destroy()
-
-        self._card_win = tk.Toplevel(self.root)
-
-        self._card_win.title("\u5ba1\u6838\u5361\u7247")
-
-        self._card_win.geometry("360x420")
-
-        self._card_win.transient(self.root)
-
-        self._card_win.attributes("-topmost", True)
-
-        self.root.update_idletasks()
-
-        rx = self.root.winfo_rootx() + self.root.winfo_width() + 5
-
-        ry = self.root.winfo_rooty() + 100
-
-        self._card_win.geometry(f"+{rx}+{ry}")
-
-        card_bg = "#fefefe"
-
-        self._card_win.configure(bg=card_bg)
-
-        tk.Label(
-            self._card_win,
-            text="\U0001f4cb \u5ba1\u6838\u5361\u7247",
-            font=("Microsoft YaHei", 12, "bold"),
-            bg=card_bg,
-        ).pack(pady=(12, 6))
-
-        text = tk.Text(
-            self._card_win,
-            font=("Microsoft YaHei", 10),
-            bg=card_bg,
-            relief="flat",
-            wrap="word",
-            height=14,
-        )
-
-        text.pack(fill="both", expand=True, padx=12, pady=6)
-
-        parts = []
-
-        for c in cols:
-            if c != "idx":
-                parts.append(c + "：" + str(data.get(c, "")))
-
-        info = "\n".join(parts)
-
-        # ── 成本换算器 ──
-
+        import traceback as _tb
+        print("[DEBUG] _show_audit_card 开始执行")
         try:
-            dev_amount_raw = data.get("deviation_amount", "0")
+            selection = self.audit_tree.selection()
+            print(f"[DEBUG] selection = {selection}")
+            if not selection:
+                print("[DEBUG] selection 为空，返回")
+                return
 
-            if dev_amount_raw and str(dev_amount_raw).strip() not in ("0", "-", ""):
-                dev_amount_clean = str(dev_amount_raw).replace(",", "")
+            item = selection[0]
+            vals = self.audit_tree.item(item, "values")
+            cols = self.audit_tree["columns"]
+            data = dict(zip(cols, vals))
+            print(f"[DEBUG] data keys = {list(data.keys())[:5]}")
 
-                dev_amount_val = float(dev_amount_clean) if dev_amount_clean else 0
+            if (
+                hasattr(self, "_card_win")
+                and self._card_win
+                and self._card_win.winfo_exists()
+            ):
+                self._card_win.destroy()
 
-                if abs(dev_amount_val) > 0.001:
-                    excel_row = int(data.get("excel_row", 0))
+            self._card_win = tk.Toplevel(self.root)
+            self._card_win.title("审核卡片")
+            self._card_win.geometry("360x420")
+            self._card_win.transient(self.root)
+            self._card_win.attributes("-topmost", True)
+            print("[DEBUG] Toplevel 窗口创建成功")
 
-                    unit_price = 0.0
+            self.root.update_idletasks()
+            rx = self.root.winfo_rootx() + self.root.winfo_width() + 5
+            ry = self.root.winfo_rooty() + 100
+            self._card_win.geometry(f"+{rx}+{ry}")
 
-                    unit_name = ""
+            card_bg = "#fefefe"
+            self._card_win.configure(bg=card_bg)
 
-                    if self.audit_data is not None and excel_row > 0:
-                        er_mask = self.audit_data["excel_row"].astype(str) == str(
-                            excel_row
-                        )
+            tk.Label(
+                self._card_win,
+                text="📋 审核卡片",
+                font=("Microsoft YaHei", 12, "bold"),
+                bg=card_bg,
+            ).pack(pady=(12, 6))
 
-                        if er_mask.any():
-                            rd = self.audit_data[er_mask].iloc[0]
-
-                            for pc in ("单价", "_单价"):
-                                if pc in rd.index:
-                                    try:
-                                        unit_price = float(rd[pc] or 0)
-                                        break
-
-                                    except:
-                                        pass
-
-                            for uc in ("组件单位", "单位"):
-                                if uc in rd.index:
-                                    unit_name = str(rd[uc] or "")
-                                    break
-
-                    if unit_price > 0.001:
-                        est_qty = abs(dev_amount_val) / unit_price
-
-                        ud = unit_name if unit_name else "单位"
-
-                        info += f"\n💰 偏差¥{dev_amount_val:,.2f} ≈ {est_qty:.1f} {ud}（单价¥{unit_price:.2f}/{ud})"
-
-                    else:
-                        info += f"\n💰 偏差金额：¥{dev_amount_val:,.2f}（无单价数据）"
-
-        except Exception as e:
-            self.log(f"成本换算器出错：{e}", "warn")
-
-        text.insert("1.0", info)
-
-        text.configure(state="disabled")
-
-        btn_fr = tk.Frame(self._card_win, bg=card_bg)
-
-        btn_fr.pack(pady=(0, 10))
-
-        # P1：预设备注列表（按频率排序）
-
-        preset_remarks = ["系统无定额", "替代料", "已核实", "工艺调整", "其他"]
-
-        sorted_remarks, freq = self._get_sorted_remarks(preset_remarks)
-
-        def fill_remark(tag):
-
-            self.audit_tree.set(item, "remark", tag)
-
-            self.audit_tree.set(item, "status", "已备注")
-
-            uid = data.get("_uid", "")
-
-            if self.audit_data is not None and uid:
-                # 通过唯一ID精确定位，避免误修改其他行
-
-                mask = self.audit_data["_uid"].astype(str) == str(uid)
-
-                if mask.any():
-                    self.audit_data.loc[mask, "备注原因"] = tag
-
-            self._record_remark_freq(tag)
-
-            self._card_win.destroy()
-
-        for i, remark in enumerate(sorted_remarks):
-            count = freq.get(remark, 0)
-
-            # P1：前3名样式突出
-
-            if i < 3 and count > 0:
-                btn_font = ("Microsoft YaHei", 10, "bold")
-
-                btn_bg = "#bbdefb"
-
-            else:
-                btn_font = ("Microsoft YaHei", 9)
-
-                btn_bg = (
-                    "#e3f2fd"
-                    if "无定额" in remark
-                    else "#fff9c4"
-                    if "替代" in remark
-                    else "#f5f5f5"
-                )
-
-            tk.Button(
-                btn_fr,
-                text=f"{remark}({count})" if count > 0 else remark,
-                command=lambda r=remark: fill_remark(r),
-                bg=btn_bg,
-                font=btn_font,
+            text = tk.Text(
+                self._card_win,
+                font=("Microsoft YaHei", 10),
+                bg=card_bg,
                 relief="flat",
-                width=12,
-            ).pack(side="left", padx=3)
+                wrap="word",
+                height=14,
+            )
+            text.pack(fill="both", expand=True, padx=12, pady=6)
+
+            parts = []
+            for c in cols:
+                if c != "idx":
+                    parts.append(c + "：" + str(data.get(c, "")))
+            info = "\n".join(parts)
+
+            # ── 成本换算器 ──
+            try:
+                dev_amount_raw = data.get("deviation_amount", "0")
+                if dev_amount_raw and str(dev_amount_raw).strip() not in ("0", "-", ""):
+                    dev_amount_clean = str(dev_amount_raw).replace(",", "")
+                    dev_amount_val = float(dev_amount_clean) if dev_amount_clean else 0
+                    if abs(dev_amount_val) > 0.001:
+                        excel_row = int(data.get("excel_row", 0))
+                        unit_price = 0.0
+                        unit_name = ""
+                        if self.audit_data is not None and excel_row > 0:
+                            er_mask = self.audit_data["excel_row"].astype(str) == str(excel_row)
+                            if er_mask.any():
+                                rd = self.audit_data[er_mask].iloc[0]
+                                for pc in ("单价", "_单价"):
+                                    if pc in rd.index:
+                                        try:
+                                            unit_price = float(rd[pc] or 0)
+                                            break
+                                        except:
+                                            pass
+                                for uc in ("组件单位", "单位"):
+                                    if uc in rd.index:
+                                        unit_name = str(rd[uc] or "")
+                                        break
+                        if unit_price > 0.001:
+                            est_qty = abs(dev_amount_val) / unit_price
+                            ud = unit_name if unit_name else "单位"
+                            info += f"\n💰 偏差¥{dev_amount_val:,.2f} ≈ {est_qty:.1f} {ud}（单价¥{unit_price:.2f}/{ud})"
+                        else:
+                            info += f"\n💰 偏差金额：¥{dev_amount_val:,.2f}（无单价数据）"
+            except Exception as e:
+                self.log(f"成本换算器出错：{e}", "warn")
+
+            text.insert("1.0", info)
+            text.configure(state="disabled")
+
+            btn_fr = tk.Frame(self._card_win, bg=card_bg)
+            btn_fr.pack(pady=(0, 10))
+
+            preset_remarks = ["系统无定额", "替代料", "已核实", "工艺调整", "其他"]
+            sorted_remarks, freq = self._get_sorted_remarks(preset_remarks)
+
+            def fill_remark(tag):
+                self.audit_tree.set(item, "remark", tag)
+                self.audit_tree.set(item, "status", "已备注")
+                uid = data.get("_uid", "")
+                if self.audit_data is not None and uid:
+                    mask = self.audit_data["_uid"].astype(str) == str(uid)
+                    if mask.any():
+                        self.audit_data.loc[mask, "备注原因"] = tag
+                self._record_remark_freq(tag)
+                self._card_win.destroy()
+
+            for i, remark in enumerate(sorted_remarks):
+                count = freq.get(remark, 0)
+                if i < 3 and count > 0:
+                    btn_font = ("Microsoft YaHei", 10, "bold")
+                    btn_bg = "#bbdefb"
+                else:
+                    btn_font = ("Microsoft YaHei", 9)
+                    btn_bg = (
+                        "#e3f2fd" if "无定额" in remark
+                        else "#fff9c4" if "替代" in remark
+                        else "#f5f5f5"
+                    )
+                tk.Button(
+                    btn_fr,
+                    text=f"{remark}({count})" if count > 0 else remark,
+                    command=lambda r=remark: fill_remark(r),
+                    bg=btn_bg,
+                    font=btn_font,
+                    relief="flat",
+                    width=12,
+                ).pack(side="left", padx=3)
+            print("[DEBUG] _show_audit_card 执行完毕")
+
+        except Exception as _e:
+            print(f"[ERROR] _show_audit_card 异常: {_e}")
+            _tb.print_exc()
 
     def _show_audit_context_menu(self, event):
         """显示审核表格右键菜单"""
