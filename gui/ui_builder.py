@@ -244,6 +244,13 @@ def _build_ui(self):
                 fr.bind("<Button-1>", lambda e: self._filter_audit_tree(None))
                 lbl.bind("<Button-1>", lambda e: self._filter_audit_tree(None))
 
+        # ── 汇总换算标签（成本换算器增强） ──
+        self.summary_cost_frame = tk.Frame(audit, bg=C['surface'])
+        self.summary_cost_frame.pack(fill="x", padx=12, pady=(0, 6))
+        self.summary_cost_lbl = tk.Label(self.summary_cost_frame, text="", font=("Microsoft YaHei", 9),
+            fg=C['text_dim'], bg=C['surface'], anchor="w")
+        self.summary_cost_lbl.pack(fill="x")
+
         # 筛选栏
         # ── P1：万能搜索框 ──
         search_frame = tk.Frame(audit, bg=C['surface'])

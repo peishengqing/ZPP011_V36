@@ -925,12 +925,13 @@ class TableEvents:
             self._card_win.geometry("360x420")
             self._card_win.transient(self.root)
             self._card_win.attributes("-topmost", True)
+            self._card_win.grab_set()
             print("[DEBUG] Toplevel 窗口创建成功")
 
             self.root.update_idletasks()
-            rx = self.root.winfo_rootx() + self.root.winfo_width() + 5
-            ry = self.root.winfo_rooty() + 100
-            self._card_win.geometry(f"+{rx}+{ry}")
+            x = self.root.winfo_rootx() + (self.root.winfo_width() - 360) // 2
+            y = self.root.winfo_rooty() + (self.root.winfo_height() - 420) // 2
+            self._card_win.geometry(f"+{x}+{y}")
 
             card_bg = "#fefefe"
             self._card_win.configure(bg=card_bg)
@@ -958,39 +959,47 @@ class TableEvents:
                     parts.append(c + "：" + str(data.get(c, "")))
             info = "\n".join(parts)
 
-            # ── 成本换算器 ──
+            # ── 成本换算器（从 audit_data 取完整行数据） ──
             try:
-                dev_amount_raw = data.get("deviation_amount", "0")
-                if dev_amount_raw and str(dev_amount_raw).strip() not in ("0", "-", ""):
-                    dev_amount_clean = str(dev_amount_raw).replace(",", "")
-                    dev_amount_val = float(dev_amount_clean) if dev_amount_clean else 0
-                    if abs(dev_amount_val) > 0.001:
-                        excel_row = int(data.get("excel_row", 0))
-                        unit_price = 0.0
-                        unit_name = ""
-                        if self.audit_data is not None and excel_row > 0:
-                            er_mask = self.audit_data["excel_row"].astype(str) == str(excel_row)
-                            if er_mask.any():
-                                rd = self.audit_data[er_mask].iloc[0]
-                                for pc in ("单价", "_单价"):
-                                    if pc in rd.index:
-                                        try:
-                                            unit_price = float(rd[pc] or 0)
-                                            break
-                                        except:
-                                            pass
-                                for uc in ("组件单位", "单位"):
-                                    if uc in rd.index:
-                                        unit_name = str(rd[uc] or "")
-                                        break
-                        if unit_price > 0.001:
-                            est_qty = abs(dev_amount_val) / unit_price
-                            ud = unit_name if unit_name else "单位"
-                            info += f"\n💰 偏差¥{dev_amount_val:,.2f} ≈ {est_qty:.1f} {ud}（单价¥{unit_price:.2f}/{ud})"
-                        else:
-                            info += f"\n💰 偏差金额：¥{dev_amount_val:,.2f}（无单价数据）"
+                # 获取 excel_row 用于定位 audit_data 中的完整行
+                excel_row_val = data.get("excel_row")
+                full_row = None
+                if excel_row_val and self.audit_data is not None:
+                    try:
+                        row_int = int(float(excel_row_val))
+                        if "excel_row" in self.audit_data.columns:
+                            mask = self.audit_data["excel_row"].astype(str).astype(float).astype(int) == row_int
+                            if mask.any():
+                                full_row = self.audit_data[mask].iloc[0]
+                    except Exception:
+                        pass
+
+                if full_row is not None:
+                    quota_val = float(full_row.get("数量-定额", full_row.get("定额", 0)) or 0)
+                    actual_val = float(full_row.get("数量-实际", full_row.get("实际", 0)) or 0)
+                    unit_name = str(full_row.get("组件单位", full_row.get("单位", "")) or "")
+                    dev_amount_val = float(full_row.get("偏差金额", 0) or 0)
+                else:
+                    # 回退到 data 中的值（但 data 只有 5 个键，这条分支基本无效）
+                    quota_val = float(data.get("quota", 0) or 0)
+                    actual_val = float(data.get("actual", 0) or 0)
+                    unit_name = str(data.get("unit", "") or "")
+                    dev_amount_val = float(data.get("deviation_amount", 0) or 0)
+
+                if abs(dev_amount_val) > 0.001:
+                    dev_qty = actual_val - quota_val
+                    if abs(dev_qty) > 0.001:
+                        unit_price = abs(dev_amount_val) / abs(dev_qty)
+                        est_qty = abs(dev_amount_val) / unit_price
+                        sign_icon = "↑" if dev_amount_val > 0 else "↓"
+                        ud = unit_name if unit_name else "单位"
+                        info += f"\n💰 偏差金额：¥{dev_amount_val:,.2f} {sign_icon} ≈ {est_qty:.1f} {ud}（单价 ¥{unit_price:.2f}/{ud}）"
+                    else:
+                        info += f"\n⚠️ 数量偏差为0，无法计算单价"
+                else:
+                    pass  # 偏差金额为0，不显示换算
             except Exception as e:
-                self.log(f"成本换算器出错：{e}", "warn")
+                info += f"\n⚠️ 成本换算失败：{e}"
 
             text.insert("1.0", info)
             text.configure(state="disabled")
@@ -2111,6 +2120,34 @@ class TableEvents:
 
         self.audit_stat_labels["ok_note"].configure(text=str(len(ok_note)))
 
+        # ── 汇总换算标签更新（成本换算器增强） ──
+        if hasattr(self, 'summary_cost_lbl'):
+            try:
+                total_amount = data['偏差金额'].fillna(0).sum()
+                if '数量-实际' in data.columns and '数量-定额' in data.columns:
+                    qty_actual = pd.to_numeric(data['数量-实际'], errors='coerce').fillna(0)
+                    qty_quota = pd.to_numeric(data['数量-定额'], errors='coerce').fillna(0)
+                    total_qty_abs = (qty_actual - qty_quota).abs().sum()
+                    unit_col = next((c for c in ['组件单位', '单位'] if c in data.columns), None)
+                    unit = data[unit_col].iloc[0] if unit_col and len(data) > 0 else ""
+                    if total_qty_abs > 0 and unit:
+                        avg_price = total_amount / total_qty_abs
+                        if avg_price > 0:
+                            est_qty = abs(total_amount) / avg_price
+                            self.summary_cost_lbl.config(
+                                text=f"💸 总偏差金额：¥{total_amount:,.2f} ≈ {est_qty:.1f} {unit}（均价 ¥{avg_price:.2f}/{unit}）"
+                            )
+                        else:
+                            self.summary_cost_lbl.config(text=f"💸 总偏差金额：¥{total_amount:,.2f}（无法换算实物量）")
+                    else:
+                        self.summary_cost_lbl.config(text=f"💸 总偏差金额：¥{total_amount:,.2f}（无法换算实物量）")
+                else:
+                    self.summary_cost_lbl.config(text=f"💸 总偏差金额：¥{total_amount:,.2f}")
+            except Exception as e:
+                self.log(f"汇总换算出错：{e}", "warn")
+                if hasattr(self, 'summary_cost_lbl'):
+                    self.summary_cost_lbl.config(text="")
+
         # 同步更新统一按钮行状态标签
 
         if hasattr(self, "unified_result_lbl"):
@@ -2274,6 +2311,30 @@ class TableEvents:
             f"未审核：{un_reviewed}"
         )
 
+        # ── 汇总换算：偏差总金额 + 实物量估算 ──
+        try:
+            if amount_col and amount_sum != 0:
+                # 计算总数量偏差
+                qty_actual_col = next((c for c in ['数量-实际', '实际'] if c in df.columns), None)
+                qty_quota_col = next((c for c in ['数量-定额', '定额'] if c in df.columns), None)
+                if qty_actual_col and qty_quota_col:
+                    qty_actual = pd.to_numeric(df[qty_actual_col], errors='coerce').fillna(0)
+                    qty_quota = pd.to_numeric(df[qty_quota_col], errors='coerce').fillna(0)
+                    total_qty_abs = (qty_actual - qty_quota).abs().sum()
+                    unit_col = next((c for c in ['组件单位', '单位'] if c in df.columns), None)
+                    unit = df[unit_col].iloc[0] if unit_col and len(df) > 0 else ""
+                    if total_qty_abs > 0 and unit:
+                        avg_price = amount_sum / total_qty_abs
+                        if avg_price > 0:
+                            est_qty = abs(amount_sum) / avg_price
+                            msg += f"\n\n💸 偏差总金额：¥{amount_sum:,.2f} ≈ {est_qty:.1f} {unit}（均价 ¥{avg_price:.2f}/{unit}）"
+                        else:
+                            msg += f"\n\n💸 偏差总金额：¥{amount_sum:,.2f}（无法换算实物量）"
+                    else:
+                        msg += f"\n\n💸 偏差总金额：¥{amount_sum:,.2f}（无法换算实物量）"
+        except Exception as e:
+            self.log(f"预检报告汇总换算出错：{e}", "warn")
+
         # 改为日志输出，不弹模态窗口
         self.log("=== 📊 预检报告 ===", "info")
         for line in msg.strip().split("\n"):
@@ -2348,4 +2409,54 @@ class TableEvents:
         except Exception as e:
             if hasattr(self, 'log'):
                 self.log(f"[021] 记录备注频率失败：{e}", "warn")
+
+
+    # ══════════════════════════════════════════════════════════════════
+    # 批量操作汇总换算方法（成本换算器增强 - Step 6）
+    # ══════════════════════════════════════════════════════════════════
+    def _get_batch_summary(self, selected_items):
+        """根据选中的 Treeview 项，返回偏差金额汇总和实物量换算字符串"""
+        if not selected_items or self.audit_data is None:
+            return ""
+        excel_rows = []
+        for item in selected_items:
+            vals = self.audit_tree.item(item, 'values')
+            cols = self.audit_tree['columns']
+            if 'excel_row' in cols:
+                idx = cols.index('excel_row')
+                try:
+                    row_num = int(float(vals[idx]))
+                    excel_rows.append(row_num)
+                except:
+                    pass
+        if not excel_rows:
+            return ''
+        mask = self.audit_data['excel_row'].astype(str).astype(float).astype(int).isin(excel_rows)
+        selected_df = self.audit_data[mask]
+        if selected_df.empty:
+            return ''
+        total_amount = selected_df['偏差金额'].fillna(0).sum()
+        summary = f'总偏差金额：¥{total_amount:,.2f}'
+        over_amount = selected_df[selected_df['偏差金额'] > 0]['偏差金额'].sum()
+        under_amount = selected_df[selected_df['偏差金额'] < 0]['偏差金额'].sum()
+        unit_col = next((c for c in ['组件单位', '单位'] if c in selected_df.columns), None)
+        unit = selected_df[unit_col].iloc[0] if unit_col and len(selected_df) > 0 else ''
+        if over_amount > 0:
+            qty_actual = pd.to_numeric(selected_df.loc[selected_df['偏差金额'] > 0, '数量-实际'], errors='coerce').fillna(0)
+            qty_quota = pd.to_numeric(selected_df.loc[selected_df['偏差金额'] > 0, '数量-定额'], errors='coerce').fillna(0)
+            over_qty_abs = (qty_actual - qty_quota).abs().sum()
+            if over_qty_abs > 0 and unit:
+                avg_price = over_amount / over_qty_abs
+                est_qty = over_amount / avg_price
+                summary += f'；超耗 ¥{over_amount:,.2f} ≈ {est_qty:.1f} {unit}'
+        if under_amount < 0:
+            under_abs = abs(under_amount)
+            qty_actual = pd.to_numeric(selected_df.loc[selected_df['偏差金额'] < 0, '数量-实际'], errors='coerce').fillna(0)
+            qty_quota = pd.to_numeric(selected_df.loc[selected_df['偏差金额'] < 0, '数量-定额'], errors='coerce').fillna(0)
+            under_qty_abs = (qty_quota - qty_actual).abs().sum()
+            if under_qty_abs > 0 and unit:
+                avg_price = under_abs / under_qty_abs
+                est_qty = under_abs / avg_price
+                summary += f'；少耗 ¥{under_abs:,.2f} ≈ {est_qty:.1f} {unit}'
+        return summary
 
