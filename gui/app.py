@@ -557,7 +557,7 @@ class ZPP011Beautiful(EventsMixIn):
 
         self._init_sort_columns()  # 初始化多列排序系统
 
-        self._init_menu()  # 初始化菜单栏
+        # 菜单栏已在上方创建，无需再次初始化    
 
         self.log("✅ UI 初始化完成，日志系统测试", "success")
 

@@ -11,31 +11,7 @@ from widgets import C
 class MenuEvents:
     """菜单、关于、列宽锁定等事件"""
 
-    def _init_menu(self):
-
-        try:
-            menubar = tk.Menu(self.root)
-
-            self.root.config(menu=menubar)
-
-            help_menu = tk.Menu(menubar, tearoff=0)
-
-            menubar.add_cascade(label="帮助", menu=help_menu)
-
-            help_menu.add_command(
-                label="查看历史源码", command=self._open_source_backup
-            )
-
-            help_menu.add_separator()
-
-            help_menu.add_command(label="健康检查", command=self._show_health_check)
-
-            help_menu.add_separator()
-
-            help_menu.add_command(label="关于", command=self._show_about)
-
-        except Exception as e:
-            print(f"[WARN] 菜单栏初始化失败: {e}")
+    # 菜单栏在 app.py 中创建，此处不再重复创建
 
     # ==================== 历史源码查看 ====================
 
