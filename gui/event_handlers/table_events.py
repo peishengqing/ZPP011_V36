@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """表格展示、筛选、排序、双击卡片等事件"""
 
 import tkinter as tk
@@ -13,375 +13,130 @@ import traceback
 
 class TableEvents:
     """表格展示、筛选、排序、双击卡片等事件"""
-    # 分页加载状态（Task 006）
-    _display_start = 0
-    _display_limit = 500
-    _total_rows = 0
-    _is_loading = False
-    _native_yscroll_set = None
-
-    # ── Task 007: tag 状态缓存 ──
-    _row_tag_cache = {}       # {_row_id: (priority_tag, color_hex)}
-    _cache_built = False
-    
-    # ==================== Task 006: 无限滚动 ====================
-    
-    def _init_scroll_binding(self):
-        """替换 yscrollcommand，桥接原生滚动与自定义加载"""
-        # 查找滚动条对象
-        scrollbar = getattr(self, 'audit_vscroll', None) or getattr(self, 'vscroll', None)
-        if scrollbar:
-            self._native_yscroll_set = scrollbar.set
-            self.audit_tree.configure(yscrollcommand=self._combined_scroll)
-    
-    def _combined_scroll(self, *args):
-        """组合滚动回调：更新滚动条位置 + 检测触底加载"""
-        # 1. 更新滚动条位置
-        if self._native_yscroll_set:
-            self._native_yscroll_set(*args)
-        # 2. 检测触底加载
-        if not self._is_loading and len(args) > 1:
-            try:
-                if float(args[1]) >= 0.99:
-                    if self._display_start + self._display_limit < self._total_rows:
-                        self._load_more_data()
-            except (ValueError, IndexError):
-                pass
-
-    
-    def _load_more_data(self):
-        """加载更多数据（分页加载）"""
-        if self._is_loading:
-            return
-        self._is_loading = True
-        
-        new_start = self._display_start + self._display_limit
-        if new_start >= self._total_rows:
-            self._is_loading = False
-            return
-        
-        self._display_start = new_start
-        # 追加数据
-        self._append_rows_to_treeview(self._display_start, self._display_limit)
-        # 滑动窗口：超过 2000 行时移除前面的行
-        self._trim_treeview_if_needed()
-        self._is_loading = False
-    
-    def _trim_treeview_if_needed(self):
-        """滑动窗口：保持 Treeview 性能"""
-        children = self.audit_tree.get_children()
-        if len(children) > 2000:
-            to_remove = children[:500]
-            for child in to_remove:
-                self.audit_tree.detach(child)  # detach 比 delete 快    
-    
-    def _append_rows_to_treeview(self, start, limit):
-        """追加行到 Treeview（分页加载核心）"""
-        if not hasattr(self, 'audit_data') or self.audit_data is None:
-            return
-        
-        end = min(start + limit, self._total_rows)
-        
-        for idx in range(start, end):
-            if idx >= len(self.audit_data):
-                break
-            
-            row_data = self.audit_data.iloc[idx]
-            
-            # 转换为 treeview 可识别的值列表（按列顺序）
-            values = [str(row_data.get(col, '')) for col in self.audit_tree['columns']]
-            
-            # 获取 tag（查找现有的 tag 逻辑）
-            tags = self._get_row_tags(idx) if hasattr(self, '_get_row_tags') else ()
-            
-            self.audit_tree.insert("", "end", values=values, tags=tags)
-    
-    def _reset_pagination(self):
-        """重置分页状态"""
-        self.__class__._display_start = 0
-        self.__class__._is_loading = False
-
-    # ── Task 007: 四色优先级 + tag 缓存 ──
-
-    def _calculate_priority_label(self, dev_rate, has_note):
-        """四色优先级标签：红(高偏差无备注) / 橙(高偏差有备注) / 黄(低偏差无备注) / 绿(其余)
-
-        红：偏差率≥10% 且 无备注
-        橙：偏差率≥10% 且 有备注
-        黄：偏差率5%~10% 且 无备注
-        绿：其余（低偏差或已有备注）
-        """
-        dev = abs(float(dev_rate or 0))
-        if dev >= 10:
-            return "橙" if has_note else "红"
-        elif dev >= 5:
-            return "黄" if not has_note else "绿"
-        else:
-            return "绿"
-
-    def _compute_row_tag(self, row, alt_all_descs=None):
-        """计算单行的 tag 元组（Task 007 缓存版）
-
-        返回: (priority_tag, color_hex, final_tags_tuple)
-        """
-        dev_rate = row.get("偏差率(%)", 0) or 0
-        remark = str(row.get("备注原因", "")).strip()
-        batch_remark = str(row.get("批量备注原因", "")).strip() if pd.notna(row.get("批量备注原因")) else ""
-        if batch_remark in ("nan", "NaN", "None"):
-            batch_remark = ""
-        has_note = remark != "" or batch_remark != ""
-
-        # 1) 四色优先级
-        label = self._calculate_priority_label(dev_rate, has_note)
-        priority_tag = f"priority_{label}"
-
-        # 2) RuleEngine 偏差率颜色
-        color_hex = None
-        try:
-            if hasattr(self, "rule_engine"):
-                color_hex = self.rule_engine.get_color_for_deviation_rate(dev_rate)
-        except Exception:
-            color_hex = None
-
-        # 3) 状态 tag
-        note_src = str(row.get("备注来源", ""))
-        if note_src in ("nan", "NaN", "None"):
-            note_src = ""
-
-        if note_src == "自动结案":
-            tag = ("auto_closed",)
-        elif note_src == "AI生成":
-            tag = ("ai_gen",)
-        elif note_src in ("AI审核合格", "人工填写", "系统无定额(广宣)", "自动填充", "替代料"):
-            tag = ("ok_note",)
-        elif note_src == "AI审核待改进":
-            tag = ("need_note",)
-        elif not has_note:
-            tag = ("need_note",)
-        else:
-            tag = ("ok_note",)
-
-        # 4) 突变物料
-        mat_code = str(row.get("组件物料号", ""))
-        if hasattr(self, "mutation_materials") and mat_code in self.mutation_materials:
-            tag = ("mutation_alert",) + tag
-
-        # 5) 正负偏差方向
-        if dev_rate > 0:
-            tag = tag + ("over_amount",)
-        elif dev_rate < 0:
-            tag = tag + ("under_amount",)
-
-        # 6) 合并
-        final_tag = (color_hex,) + tag if color_hex and isinstance(color_hex, str) else tag
-        final_tag = (priority_tag,) + final_tag
-
-        return priority_tag, color_hex, final_tag
-
-    def _build_tag_cache(self, df):
-        """批量构建 tag 缓存（Task 007）
-
-        以 _row_id 为 key，缓存 (priority_tag, color_hex)。
-        _row_id = 订单日期+流程订单+物料编码 的组合。
-        """
-        self.__class__._row_tag_cache = {}
-
-        # 确保 _row_id 列存在
-        if "_row_id" not in df.columns:
-            def _make_row_id(r):
-                order_date = str(r.get("订单日期", ""))[:10]
-                order_no = ""
-                for _col in ["流程订单", "订单号", "订单编号"]:
-                    if _col in r.index and pd.notna(r.get(_col)):
-                        order_no = str(r.get(_col))
-                        break
-                mat_code = str(r.get("物料编码", r.get("组件物料号", "")))
-                return f"{order_date}|{order_no}|{mat_code}"
-
-            df["_row_id"] = df.apply(_make_row_id, axis=1)
-
-        # 构建替代料描述集合（只需一次）
-        alt_all_descs = set()
-        for a, b in getattr(self, "alt_pairs", []):
-            def _extract_desc(item):
-                if isinstance(item, (list, tuple)):
-                    if len(item) >= 3:
-                        return str(item[2]).strip() if item[2] else ""
-                    if len(item) == 2:
-                        return str(item[1]).strip() if item[1] else ""
-                    return str(item[0]).strip() if item[0] else ""
-                return str(item).strip()
-            da, db = _extract_desc(a), _extract_desc(b)
-            if da:
-                alt_all_descs.add(da)
-            if db:
-                alt_all_descs.add(db)
-
-        for _, row in df.iterrows():
-            row_id = row.get("_row_id", "")
-            priority_tag, color_hex, _ = self._compute_row_tag(row, alt_all_descs)
-            self.__class__._row_tag_cache[row_id] = (priority_tag, color_hex)
-
-        self.__class__._cache_built = True
-        if hasattr(self, "log"):
-            self.log(f"[007] tag 缓存已构建，共 {len(self._row_tag_cache)} 行", "info")
-
-    def _invalidate_tag_cache(self):
-        """使 tag 缓存失效（数据修改后调用）"""
-        self.__class__._cache_built = False
-        self.__class__._row_tag_cache = {}
-
-    def _rebuild_tag_cache_if_needed(self):
-        """如果缓存失效，重新构建（在 _refresh_audit_tree 前调用）"""
-        if not self._cache_built and self.audit_data is not None and not self.audit_data.empty:
-            self._build_tag_cache(self.audit_data)
-
-    def _get_row_tags(self, idx):
-        """根据 DataFrame 行索引返回缓存的 tag（Task 007）"""
-        if not self._cache_built or self.audit_data is None:
-            return ()
-        if idx >= len(self.audit_data):
-            return ()
-        row = self.audit_data.iloc[idx]
-        row_id = row.get("_row_id", "")
-        cached = self._row_tag_cache.get(row_id)
-        if cached:
-            priority_tag, color_hex = cached
-            # 重建完整 tag（简化版，不含 rank tag）
-            tag = ()
-            note_src = str(row.get("备注来源", ""))
-            if note_src in ("nan", "NaN", "None"):
-                note_src = ""
-            remark = str(row.get("备注原因", "")).strip()
-            batch_remark = str(row.get("批量备注原因", "")).strip() if pd.notna(row.get("批量备注原因")) else ""
-            has_note = remark != "" or batch_remark != ""
-
-            if note_src == "自动结案":
-                tag = ("auto_closed",)
-            elif note_src == "AI生成":
-                tag = ("ai_gen",)
-            elif note_src in ("AI审核合格", "人工填写", "系统无定额(广宣)", "自动填充", "替代料"):
-                tag = ("ok_note",)
-            elif note_src == "AI审核待改进":
-                tag = ("need_note",)
-            elif not has_note:
-                tag = ("need_note",)
-            else:
-                tag = ("ok_note",)
-
-            dev_rate = row.get("偏差率(%)", 0) or 0
-            if dev_rate > 0:
-                tag = tag + ("over_amount",)
-            elif dev_rate < 0:
-                tag = tag + ("under_amount",)
-
-            final_tag = (priority_tag,)
-            if color_hex and isinstance(color_hex, str):
-                final_tag = final_tag + (color_hex,)
-            final_tag = final_tag + tag
-            return final_tag
-        return ()
 
     def _refresh_audit_tree(self, df, skip_auto_sort=False):
-        """用给定的 DataFrame 刷新智能审核表格（支持分页加载）"""
-        # 兜底：修正 material_category 列名（防止 pandas 自动重命名产生 [2] 后缀）
-        if df is not None and 'material_category[2]' in df.columns:
-            df.rename(columns={'material_category[2]': 'material_category'}, inplace=True)
-        # 重置分页状态
-        self._reset_pagination()
+        """用给定的 DataFrame 刷新智能审核表格"""
 
-        # 清空 Treeview
-        if hasattr(self, 'audit_tree'):
-            self.audit_tree.delete(*self.audit_tree.get_children())
+        # 自动设置日期筛选范围为数据的实际日期范围(仅首次加载时)
+        if len(df) > 0 and '订单日期' in df.columns:
+            date_col = pd.to_datetime(df['订单日期'], errors='coerce')
+            valid_dates = date_col.dropna()
+            if len(valid_dates) > 0:
+                min_date = valid_dates.min().date()
+                max_date = valid_dates.max().date()
+                try:
+                    self.date_start_de.set_date(min_date)
+                    self.date_end_de.set_date(max_date)
+                except Exception as e:
+                    self.log(f"初始化日期范围失败: {e}", "warn")
 
-        # 初始化滚动绑定（如果还没初始化）
-        if self._native_yscroll_set is None:
-            self._init_scroll_binding()
+        # 【调试】打印列定义和第一行数据
 
-        # ── Task 007: 数据预处理（四色优先级 + material_category + tag 缓存）──
-        if df is not None and not df.empty:
-            df = df.copy()
+        self.log(f"[DEBUG] cols = {self.audit_tree['columns']}")
 
-            # 确保规则引擎已初始化
+        if len(df) > 0:
+            first = df.iloc[0]
+
+            self.log(
+                f"[DEBUG] 第一行数据样例: idx={first.name}, "
+                + ", ".join(
+                    [
+                        f"{c}={first.get(c, '?')}"
+                        for c in [
+                            "工厂",
+                            "车间",
+                            "订单日期",
+                            "流程订单",
+                            "物料编码",
+                            "物料名称",
+                            "定额",
+                            "实际",
+                            "偏差率",
+                        ]
+                        if c in first.index
+                    ]
+                )
+            )
+
+        self.log(f"[DEBUG] _refresh_audit_tree: df={len(df)}行", "info")
+
+        # AI建议列诊断
+
+        if "AI建议" not in df.columns:
+            self.log("[WARN] DataFrame中没有'AI建议'列!", "warn")
+
+        else:
+            non_empty = df["AI建议"].notna().sum()
+
+            self.log(f"[DEBUG] AI建议列非空: {non_empty}/{len(df)}", "info")
+
+            if non_empty > 0:
+                sample = str(df["AI建议"].dropna().iloc[0])[:80]
+
+                self.log(f"[DEBUG] AI建议示例: {sample}", "info")
+
+        # 确保 audit_result 和 AI建议 列存在(在副本上操作,不影响原始数据)
+
+        df = df.copy()
+
+        for col in ("audit_result", "AI建议"):
+            if col not in df.columns:
+                df[col] = ""
+
+        for row in self.audit_tree.get_children():
+            self.audit_tree.delete(row)
+
+        if df is None or len(df) == 0:
+            return
+
+        # ── 性能优化:暂停绘制,批量插入后再恢复 ──
+        # 原代码 try/pass/except 会吞异常，已移除
+
+        # ── P1:智能优先级标记 ──
+
+        def calc_priority(row):
+
             if not hasattr(self, "rule_engine"):
                 self.rule_engine = RuleEngine()
 
-            # 修正 material_category：优先使用"组件物料类型描述"列，缺失或全空则回退到编码前缀映射
-            _mc_map = {
-                "100": "原辅料", "200": "包材",
-                "400": "食品辅料/食品半成品", "410": "饮料辅料/饮料半成品",
-                "500": "食品成品", "510": "饮料成品", "600": "促销品",
-            }
-            _code_col = next((c for c in ['物料编码', '组件物料号'] if c in df.columns), None)
-            _type_desc_col = "组件物料类型描述" if "组件物料类型描述" in df.columns else None
-            # 判断"组件物料类型描述"是否有效（存在且非全空）
-            _use_type_desc = (
-                _type_desc_col is not None
-                and df[_type_desc_col].notna().any()
-                and (df[_type_desc_col].astype(str).str.strip() != "").any()
-            )
-            if _use_type_desc:
-                # 优先使用原始"组件物料类型描述"，缺失单行时回退编码前缀
-                def _get_mc(row):
-                    v = str(row.get(_type_desc_col, "")).strip()
-                    if v and v not in ("nan", "NaN", "None"):
-                        return v
-                    if _code_col:
-                        code = str(row.get(_code_col, ""))
-                        return _mc_map.get(code[:3], code[:3]) if pd.notna(row.get(_code_col)) and code != "nan" else ""
-                    return ""
-                df['material_category'] = df.apply(_get_mc, axis=1)
-            elif _code_col:
-                df['material_category'] = df[_code_col].apply(
-                    lambda x: _mc_map.get(str(x)[:3], str(x)[:3]) if pd.notna(x) and str(x) != 'nan' else ''
-                )
+            dev = abs(float(row.get("偏差率(%)", 0) or 0))
 
-            # 生成 _row_id（稳定行标识）
-            if "_row_id" not in df.columns:
-                def _make_row_id(r):
-                    order_date = str(r.get("订单日期", ""))[:10]
-                    order_no = ""
-                    for _col in ["流程订单", "订单号", "订单编号"]:
-                        if _col in r.index and pd.notna(r.get(_col)):
-                            order_no = str(r.get(_col))
-                            break
-                    mat_code = str(r.get("物料编码", r.get("组件物料号", "")))
-                    return f"{order_date}|{order_no}|{mat_code}"
-                df["_row_id"] = df.apply(_make_row_id, axis=1)
-
-            # 四色优先级计算
-            def _calc_priority_4color(row):
-                remark = str(row.get("备注原因", "")).strip()
-                batch_remark = (
-                    str(row.get("批量备注原因", "")).strip()
-                    if pd.notna(row.get("批量备注原因")) else ""
-                )
-                has_note = (pd.notna(row.get("备注原因")) and remark != "") or batch_remark != ""
-                label = self._calculate_priority_label(row.get("偏差率(%)", 0), has_note)
-                order_map = {"红": 0, "橙": 1, "黄": 2, "绿": 3}
-                return order_map.get(label, 3), label
-
-            df[["_priority_order", "_priority_label"]] = df.apply(
-                lambda r: pd.Series(_calc_priority_4color(r)), axis=1
+            has_note = (
+                pd.notna(row.get("备注原因"))
+                and str(row.get("备注原因", "")).strip() != ""
             )
 
-            if not skip_auto_sort:
-                df = df.sort_values("_priority_order")
+            level = self.rule_engine.get_level_for_deviation_rate(dev)
 
-            # 构建 tag 缓存（排序后再建）
-            self._build_tag_cache(df)
+            # level: info/warning/error -> map to label
 
-            # 保存筛选后 df 到 filtered_data（不覆盖 audit_data，保留原始全量数据）
-            self.filtered_data = df.copy()
-            self._total_rows = len(df)
-        else:
-            self.filtered_data = pd.DataFrame()
-            self._total_rows = 0
+            if level == "error":
+                label = self.config.get("priority.red_label", "红")
 
-        if hasattr(self, '_log'):
-            self._log(f"[DEBUG] _refresh_audit_tree: total {self._total_rows} rows")
+                order = 0 if not has_note else 1
 
-        # ── P1：金额排名着色 ──
+            elif level == "warning":
+                label = self.config.get("priority.yellow_label", "黄")
+
+                order = 2 if not has_note else 3
+
+            else:
+                label = self.config.get("priority.green_label", "绿")
+
+                order = 4
+
+            return order, label
+
+        df = df.copy()
+
+        df[["_priority_order", "_priority_label"]] = df.apply(
+            lambda r: pd.Series(calc_priority(r)), axis=1
+        )
+
+        if not skip_auto_sort:
+            df = df.sort_values("_priority_order")
+
+        # ── P1:金额排名着色 ──
 
         amount_col = None
 
@@ -416,7 +171,7 @@ class TableEvents:
                 for idx in next7:
                     rank_dict[idx] = "amt_rank_2"
 
-        # 构建替代料名称集合（提取name用于匹配）
+        # 构建替代料名称集合(提取name用于匹配)
 
         alt_all_descs = set()
 
@@ -448,19 +203,36 @@ class TableEvents:
             "info",
         )
 
-        # ── 填充 Tree（按优先级排序） ──
+        # ── 填充 Tree(按优先级排序) ──
 
-        # ── 注意：下拉框选项不再这里动态更新，改为在数据加载时一次性设置 ──
-        # 正确做法：基于 self.full_audit_data（全量数据）在 _update_filter_options 中设置一次
+        # ── 计算物料大类列(插入Tree前先加到DataFrame,确保筛选可用) ──
+        def _get_mat_category(code):
+            if not code:
+                return ""
+            prefix = str(code)[:3]
+            mat_map = {
+                "100": "原辅料", "200": "包材",
+                "400": "食品辅料/食品半成品", "410": "饮料辅料/饮料半成品",
+                "500": "食品成品", "510": "饮料成品", "600": "促销品",
+            }
+            return mat_map.get(prefix, prefix)
 
-        for i, (idx, row) in enumerate(df.iterrows(), 1):
-            # ===== 计算审核来源（核心逻辑）=====
+        code_col = next((c for c in ['物料编码', '组件物料号'] if c in df.columns), None)
+        if code_col and 'material_category' not in df.columns:
+            df['material_category'] = df[code_col].apply(_get_mat_category)
+
+        # ── 注意:下拉框选项不再这里动态更新,改为在数据加载时一次性设置 ──
+        # 原因:如果基于当前 df(可能是筛选后的子集)更新选项,会导致下拉框选项随筛选结果一起变少
+        # 正确做法:基于 self.full_audit_data(全量数据)在 _update_filter_options 中设置一次
+
+        for i, (_, row) in enumerate(df.iterrows(), 1):
+            # ===== 计算审核来源(核心逻辑)=====
 
             remark = str(row.get("备注原因", "")).strip()
 
             code = str(row.get("物料编码", row.get("组件物料号", "")))
 
-            # ===== 物料大类分类：优先取 df 中已计算的 material_category 列（含原表"组件物料类型描述"）=====
+            # ===== 物料大类分类 =====
             mat_code_prefix = code[:3] if code else ""
             mat_category_map = {
                 "100": "原辅料",
@@ -471,11 +243,7 @@ class TableEvents:
                 "510": "饮料成品",
                 "600": "促销品",
             }
-            _mc_from_df = row.get("material_category", "")
-            if _mc_from_df and str(_mc_from_df).strip() not in ("", "nan", "NaN", "None"):
-                mat_category = str(_mc_from_df).strip()
-            else:
-                mat_category = mat_category_map.get(mat_code_prefix, mat_code_prefix)
+            mat_category = mat_category_map.get(mat_code_prefix, mat_code_prefix)
 
             name = str(row.get("组件物料描述", row.get("物料名称", ""))).strip()
 
@@ -542,7 +310,7 @@ class TableEvents:
 
             has_note = orig_remark.strip() != "" or batch_remark.strip() != ""
 
-            # 状态（简单状态，不含审核结论）
+            # 状态(简单状态,不含审核结论)
 
             if note_src == "AI生成":
                 dev_dir = float(dev_rate or 0)
@@ -553,7 +321,7 @@ class TableEvents:
                 status = "已备注"
 
             else:
-                # 包括AI审核合格/待改进/建议等，统一按备注内容显示状态
+                # 包括AI审核合格/待改进/建议等,统一按备注内容显示状态
 
                 status = "已备注" if has_note else "需补备注"
 
@@ -590,7 +358,7 @@ class TableEvents:
                     audit_source_val = "替代料"
 
                 else:
-                    audit_source_val = ""  # 未经过审核的行，来源应为空
+                    audit_source_val = ""  # 未经过审核的行,来源应为空
 
             order_no_val = ""
 
@@ -599,6 +367,11 @@ class TableEvents:
                     order_no_val = str(row.get(_col))
 
                     break
+
+            # 获取订单类型
+            order_type_val = ""
+            if "订单类型" in row.index:
+                order_type_val = str(row.get("订单类型", ""))
 
             item = self.audit_tree.insert(
                 "",
@@ -613,11 +386,12 @@ class TableEvents:
                     str(row.get("订单日期", ""))[:10]
                     if pd.notna(row.get("订单日期"))
                     else "",  # order_date
+                    order_type_val,  # order_type
                     order_no_val,  # order_no
-                    mat_category,  # material_category（物料大类在物料号前）
+                    mat_category,  # material_category
                     str(row.get("物料编码", row.get("组件物料号", ""))),  # code
-                    mat_desc[:30],  # name
-                    str(row.get("组件单位", row.get("单位", ""))),  # unit
+                    mat_desc[:20],  # name
+                    str(row.get("单位", row.get("基本单位", ""))),  # unit
                     f"{row.get('定额', row.get('数量-定额', 0)):.3f}",  # quota
                     f"{row.get('实际', row.get('数量-实际', 0)):.3f}",  # actual
                     f"{dev_rate:.2f}%",  # dev_rate
@@ -647,78 +421,73 @@ class TableEvents:
                     tags=list(self.audit_tree.item(item, "tags")) + ["remark_yellow"],
                 )
 
-            # ── Task 007: 使用缓存的 tag ──
-            row_id = row.get("_row_id", "")
-            cached = self._row_tag_cache.get(row_id) if self._cache_built else None
-            if cached:
-                priority_tag, color_hex = cached
-                # 注册动态颜色 tag
-                if color_hex:
-                    try:
+            # RuleEngine 偏差率颜色
+
+            color_hex = None
+
+            try:
+                if hasattr(self, "rule_engine"):
+                    color_hex = self.rule_engine.get_color_for_deviation_rate(dev_rate)
+
+                    if color_hex not in self.audit_tree.tag_names():
                         self.audit_tree.tag_configure(color_hex, background=color_hex)
-                    except Exception:
-                        pass
-                # 构建状态 tag
-                if note_src == "自动结案":
-                    status_tag = ("auto_closed",)
-                elif note_src == "AI生成":
-                    status_tag = ("ai_gen",)
-                elif note_src in ("AI审核合格", "人工填写", "系统无定额(广宣)", "自动填充", "替代料"):
-                    status_tag = ("ok_note",)
-                elif note_src == "AI审核待改进" or not has_note:
-                    status_tag = ("need_note",)
+
                 else:
-                    status_tag = ("ok_note",)
-
-                # 方向 tag
-                dir_tag = ("over_amount",) if dev_rate > 0 else (("under_amount",) if dev_rate < 0 else ())
-
-                # rank tag
-                rank_tag_val = rank_dict.get(idx, None)
-                rank_tag = (rank_tag_val,) if rank_tag_val else ()
-
-                final_tag = (priority_tag,) + rank_tag
-                if color_hex and isinstance(color_hex, str):
-                    final_tag = final_tag + (color_hex,)
-                final_tag = final_tag + status_tag + dir_tag
-            else:
-                # fallback: 旧逻辑
-                color_hex = None
-                try:
-                    if hasattr(self, "rule_engine"):
-                        color_hex = self.rule_engine.get_color_for_deviation_rate(dev_rate)
-                        try:
-                            self.audit_tree.tag_configure(color_hex, background=color_hex)
-                        except Exception:
-                            pass
-                except Exception:
                     color_hex = None
 
-                if note_src == "自动结案":
-                    tag = ("auto_closed",)
-                elif note_src == "AI生成":
-                    tag = ("ai_gen",)
-                elif note_src in ("AI审核合格", "人工填写", "系统无定额(广宣)", "自动填充", "替代料"):
-                    tag = ("ok_note",)
-                elif note_src == "AI审核待改进" or not has_note:
-                    tag = ("need_note",)
-                else:
-                    tag = ("ok_note",)
+            except Exception:
+                color_hex = None
 
-                mat_code = str(row.get("组件物料号", ""))
-                if hasattr(self, "mutation_materials") and mat_code in self.mutation_materials:
-                    tag = ("mutation_alert",) + tag
+            # 颜色标签
 
-                _rank_val = rank_dict.get(idx, None)
-                if _rank_val:
-                    tag = (_rank_val,) + tag
+            if note_src == "自动结案":
+                tag = ("auto_closed",)
 
-                if dev_rate > 0:
-                    tag = tag + ("over_amount",)
-                elif dev_rate < 0:
-                    tag = tag + ("under_amount",)
+            elif note_src == "AI生成":
+                tag = ("ai_gen",)
 
-                final_tag = (color_hex,) + tag if color_hex and isinstance(color_hex, str) else tag
+            elif note_src in (
+                "AI审核合格",
+                "人工填写",
+                "系统无定额(广宣)",
+                "自动填充",
+                "替代料",
+            ):
+                tag = ("ok_note",)
+
+            elif note_src == "AI审核待改进":
+                tag = ("need_note",)
+
+            elif not has_note:
+                tag = ("need_note",)
+
+            else:
+                tag = ("ok_note",)
+
+            mat_code = str(row.get("组件物料号", ""))
+
+            if (
+                hasattr(self, "mutation_materials")
+                and mat_code in self.mutation_materials
+            ):
+                tag = ("mutation_alert",) + (tag if isinstance(tag, tuple) else (tag,))
+
+            rank_tag = rank_dict.get(_, None)  # _ 是当前行的原始索引
+
+            if rank_tag:
+                tag = (rank_tag,) + (tag if isinstance(tag, tuple) else (tag,))
+
+            # 金额颜色区分:正偏差红色,负偏差绿色
+
+            if dev_rate > 0:
+                tag = tag + ("over_amount",)
+
+            elif dev_rate < 0:
+                tag = tag + ("under_amount",)
+
+            final_tag = (
+                (color_hex,) + tag if color_hex and isinstance(color_hex, str) else tag
+            )
 
             self.audit_tree.item(item, tags=final_tag)
 
@@ -731,15 +500,16 @@ class TableEvents:
 
             self.root.update_idletasks()
 
-        except Exception:
-            pass
+        except Exception as e:
+            self.log(f"恢复表格显示失败: {e}", "error")
+            import traceback; self.log(traceback.format_exc(), "error")
 
         # 确保按钮可用
 
         if len(df) > 0:
             self._enable_audit_buttons()
 
-        # 绑定右键事件：使用原有 audit_context_menu，追加"复制物料编码"（仅初始化一次）
+        # 绑定右键事件:使用原有 audit_context_menu,追加"复制物料编码"(仅初始化一次)
         if not hasattr(self, "_copy_item_added") and hasattr(
             self, "audit_context_menu"
         ):
@@ -750,7 +520,7 @@ class TableEvents:
             self._copy_item_added = True
 
     def _show_copy_menu(self, event):
-        """显示右键菜单，并选中当前行"""
+        """显示右键菜单,并选中当前行"""
         item = self.audit_tree.identify_row(event.y)
         if not item:
             return
@@ -766,18 +536,18 @@ class TableEvents:
         self.copy_menu.post(event.x_root, event.y_root)
 
     def _copy_material_code(self):
-        """复制当前选中行的物料编码到剪贴板（通过 audit_data 反查）"""
+        """复制当前选中行的物料编码到剪贴板(通过 audit_data 反查)"""
         selected = self.audit_tree.selection()
         if not selected:
             return
         item = selected[0]
 
-        # 获取原表行号（excel_row）
+        # 获取原表行号(excel_row)
         values = self.audit_tree.item(item, "values")
         columns = list(self.audit_tree["columns"])
 
         if "excel_row" not in columns:
-            self.log("表格中缺少 excel_row 列，无法复制物料编码", "error")
+            self.log("表格中缺少 excel_row 列,无法复制物料编码", "error")
             return
 
         excel_row_idx = columns.index("excel_row")
@@ -789,7 +559,7 @@ class TableEvents:
 
         # 检查 audit_data 是否包含 excel_row 列
         if self.audit_data is None or "excel_row" not in self.audit_data.columns:
-            self.log("数据模型中缺少 excel_row 列，无法复制物料编码", "error")
+            self.log("数据模型中缺少 excel_row 列,无法复制物料编码", "error")
             return
 
         # 在 audit_data 中定位行
@@ -798,7 +568,7 @@ class TableEvents:
             self.log(f"未找到 excel_row={excel_row} 对应的数据行", "error")
             return
 
-        # 提取物料编码（支持多种列名）
+        # 提取物料编码(支持多种列名)
         mat_code = None
 
         for col in ["物料编码", "组件物料号", "物料号", "code"]:
@@ -891,162 +661,229 @@ class TableEvents:
     }
 
     def _on_tree_double_click(self, event):
-        """双击审核行打开卡片详情（同万能搜索框结果兼容）"""
-        print("[DEBUG] _on_tree_double_click 被调用")
+        """双击审核行打开卡片详情(同万能搜索框结果兼容)"""
+        print("[DEBUG] 双击事件触发!", event)
         self._show_audit_card(event)
 
-    # ── P1：常用备注自动排序 ──
+    # ── P1:常用备注自动排序 ──
+
 
     def _show_audit_card(self, event):
-        import traceback as _tb
-        print("[DEBUG] _show_audit_card 开始执行")
-        try:
-            selection = self.audit_tree.selection()
-            print(f"[DEBUG] selection = {selection}")
-            if not selection:
-                print("[DEBUG] selection 为空，返回")
-                return
+        selection = self.audit_tree.selection()
+        if not selection:
+            return
+        item = selection[0]
 
-            item = selection[0]
+        # 获取 excel_row(从 Treeview 中直接取该列的值)
+        excel_row_val = self.audit_tree.set(item, "excel_row")
+        if not excel_row_val or excel_row_val == "":
+            # 降级:从 item 的 values 中按列索引取
             vals = self.audit_tree.item(item, "values")
-            cols = self.audit_tree["columns"]
-            data = dict(zip(cols, vals))
-            print(f"[DEBUG] data keys = {list(data.keys())[:5]}")
+            cols = list(self.audit_tree["columns"])
+            if "excel_row" in cols:
+                idx = cols.index("excel_row")
+                if idx < len(vals):
+                    excel_row_val = vals[idx]
+        if not excel_row_val:
+            return
 
-            if (
-                hasattr(self, "_card_win")
-                and self._card_win
-                and self._card_win.winfo_exists()
-            ):
-                self._card_win.destroy()
+        # 从原始数据中获取完整行数据
+        data = {}
+        try:
+            row_int = int(float(excel_row_val))
+            if self.audit_data is not None and "excel_row" in self.audit_data.columns:
+                mask = self.audit_data["excel_row"].astype(str).astype(float).astype(int) == row_int
+                if mask.any():
+                    row_series = self.audit_data[mask].iloc[0]
+                    data = row_series.to_dict()
+        except Exception:
+            pass
 
-            self._card_win = tk.Toplevel(self.root)
-            self._card_win.title("审核卡片")
-            self._card_win.geometry("360x420")
-            self._card_win.transient(self.root)
-            self._card_win.attributes("-topmost", True)
-            self._card_win.grab_set()
-            print("[DEBUG] Toplevel 窗口创建成功")
+        if not data:
+            # 如果未找到,降级使用 Treeview 的 values(但可能错位)
+            vals = self.audit_tree.item(item, "values")
+            cols = list(self.audit_tree["columns"])
+            raw = dict(zip(cols, vals))
+            # 英文 tree 列名 → 中文 DataFrame 列名（与 display_fields 保持一致）
+            _col_to_cn = {
+                'excel_row': '原表行号', 'factory': '工厂', 'admin': '车间',
+                'order_date': '订单日期', 'order_no': '流程订单',
+                'material_category': '物料类型', 'code': '物料编码',
+                'name': '物料名称', 'unit': '单位', 'quota': '定额',
+                'actual': '实际', 'dev_rate': '偏差率',
+                'is_alt': '替代料', 'status': '备注状态',
+                'remark': '备注原因', 'batch_remark': '批量备注',
+                'audit_result': '审核结果', 'audit_status': '审核状态',
+                'audit_source': '审核来源', 'deviation_amount': '偏差金额',
+            }
+            data = {_col_to_cn.get(k, k): v for k, v in raw.items()}
 
-            self.root.update_idletasks()
-            x = self.root.winfo_rootx() + (self.root.winfo_width() - 360) // 2
-            y = self.root.winfo_rooty() + (self.root.winfo_height() - 420) // 2
-            self._card_win.geometry(f"+{x}+{y}")
+        # 销毁旧窗口
+        if hasattr(self, "_card_win") and self._card_win and self._card_win.winfo_exists():
+            self._card_win.destroy()
 
-            card_bg = "#fefefe"
-            self._card_win.configure(bg=card_bg)
+        self._card_win = tk.Toplevel(self.root)
+        self._card_win.title("审核卡片")
+        self._card_win.geometry("520x580")
+        self._card_win.minsize(450, 500)
+        self._card_win.transient(self.root)
+        self._card_win.attributes("-topmost", True)
 
-            tk.Label(
-                self._card_win,
-                text="📋 审核卡片",
-                font=("Microsoft YaHei", 12, "bold"),
-                bg=card_bg,
-            ).pack(pady=(12, 6))
+        # 智能位置计算
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        rx = self.root.winfo_rootx() + self.root.winfo_width() + 5
+        ry = self.root.winfo_rooty() + 100
+        if rx + 520 > screen_width:
+            rx = self.root.winfo_rootx() - 525
+        if rx < 0:
+            rx = 10
+        if ry + 580 > screen_height:
+            ry = screen_height - 600
+        if ry < 0:
+            ry = 50
+        self._card_win.geometry(f"+{rx}+{ry}")
+        self._card_win.lift()
+        self._card_win.focus_force()
 
-            text = tk.Text(
-                self._card_win,
-                font=("Microsoft YaHei", 10),
-                bg=card_bg,
-                relief="flat",
-                wrap="word",
-                height=14,
-            )
-            text.pack(fill="both", expand=True, padx=12, pady=6)
+        card_bg = "#fefefe"
+        self._card_win.configure(bg=card_bg)
 
-            parts = []
-            for c in cols:
-                if c != "idx":
-                    parts.append(c + "：" + str(data.get(c, "")))
-            info = "\n".join(parts)
+        tk.Label(self._card_win, text="📋 审核卡片", font=("Microsoft YaHei", 12, "bold"),
+                 bg=card_bg).pack(pady=(12, 6))
 
-            # ── 成本换算器（从 audit_data 取完整行数据） ──
-            try:
-                # 获取 excel_row 用于定位 audit_data 中的完整行
-                excel_row_val = data.get("excel_row")
-                full_row = None
-                if excel_row_val and self.audit_data is not None:
+        text = tk.Text(self._card_win, font=("Microsoft YaHei", 10), bg=card_bg,
+                       relief="flat", wrap="word", height=20)
+        text.pack(fill="both", expand=True, padx=12, pady=6)
+
+        # 友好字段名映射(使用中文key,和 Treeview 列名一致)
+        display_fields = {
+            "订单日期": "订单日期",
+            "流程订单": "流程订单",
+            "工厂": "工厂",
+            "车间": "车间",
+            "物料类型": "物料类型",
+            "物料编码": "物料编码",
+            "物料名称": "物料名称",
+            "单位": "单位",
+            "定额": "定额",
+            "实际": "实际",
+            "偏差数量": "偏差数量",
+            "偏差率": "偏差率",
+            "偏差金额": "偏差金额",
+            "备注原因": "备注原因",
+            "优先级": "优先级",
+        }
+
+        # 删除可能引起重复的字段(保留备注原因,删除备注)
+        if "备注" in data and "备注原因" in data:
+            del data["备注"]
+
+        # 只保留 display_fields 中定义的字段
+        filtered_data = {}
+        for col_name in display_fields.keys():
+            if col_name in data:
+                filtered_data[col_name] = data[col_name]
+
+        # 构建显示内容(只使用过滤后的数据)
+        lines = []
+        for col_name, friendly_name in display_fields.items():
+            if col_name not in filtered_data:
+                continue
+            val = filtered_data[col_name]
+            val_str = str(val) if val is not None else ""
+            if val_str and val_str not in ("nan", "NaN", "None", ""):
+                lines.append(f"{friendly_name}:{val_str}")
+        if not lines:
+            lines = ["(无数据显示)", f"行ID:{item}"]
+        info = "\n".join(lines)
+
+        # 成本换算器（简化版，直接用偏差金额/偏差数量）
+        try:
+            # 获取偏差金额
+            dev_amount_val = None
+            for key in ["deviation_amount", "偏差金额"]:
+                val = data.get(key)
+                if val and str(val).strip() not in ("0", "-", ""):
                     try:
-                        row_int = int(float(excel_row_val))
-                        if "excel_row" in self.audit_data.columns:
-                            mask = self.audit_data["excel_row"].astype(str).astype(float).astype(int) == row_int
-                            if mask.any():
-                                full_row = self.audit_data[mask].iloc[0]
-                    except Exception:
-                        pass
-
-                if full_row is not None:
-                    quota_val = float(full_row.get("数量-定额", full_row.get("定额", 0)) or 0)
-                    actual_val = float(full_row.get("数量-实际", full_row.get("实际", 0)) or 0)
-                    unit_name = str(full_row.get("组件单位", full_row.get("单位", "")) or "")
-                    dev_amount_val = float(full_row.get("偏差金额", 0) or 0)
+                        dev_amount_val = float(str(val).replace(",", ""))
+                        break
+                    except:
+                        continue
+            if dev_amount_val and abs(dev_amount_val) > 0.001:
+                # 获取数量偏差（实际-定额）
+                dev_qty_val = None
+                for key in ["偏差数量", "数量偏差", "dev_qty"]:
+                    val = data.get(key)
+                    if val:
+                        try:
+                            dev_qty_val = float(val)
+                            if abs(dev_qty_val) > 0.0001:
+                                break
+                        except:
+                            continue
+                if dev_qty_val and abs(dev_qty_val) > 0.0001:
+                    # 单价 = 偏差金额绝对值 / 偏差数量绝对值
+                    unit_price = abs(dev_amount_val) / abs(dev_qty_val)
+                    # 单位
+                    unit_name = ""
+                    for key in ["单位", "组件单位", "unit"]:
+                        val = data.get(key)
+                        if val and str(val) not in ("nan", "None", ""):
+                            unit_name = str(val)
+                            break
+                    if not unit_name:
+                        unit_name = "单位"
+                    sign_icon = "↑" if dev_amount_val > 0 else "↓"
+                    # 直接显示
+                    info += f"\n💰 偏差金额：¥{dev_amount_val:,.2f} {sign_icon} ≈ {abs(dev_qty_val):.1f} {unit_name}（单价 ¥{unit_price:.2f}/{unit_name}）"
                 else:
-                    # 回退到 data 中的值（但 data 只有 5 个键，这条分支基本无效）
-                    quota_val = float(data.get("quota", 0) or 0)
-                    actual_val = float(data.get("actual", 0) or 0)
-                    unit_name = str(data.get("unit", "") or "")
-                    dev_amount_val = float(data.get("deviation_amount", 0) or 0)
+                    info += f"\n💰 偏差金额：¥{dev_amount_val:,.2f}（数量偏差为0或缺失）"
+        except Exception as e:
+            info += f"\n⚠️ 成本换算失败：{e}"
 
-                if abs(dev_amount_val) > 0.001:
-                    dev_qty = actual_val - quota_val
-                    if abs(dev_qty) > 0.001:
-                        unit_price = abs(dev_amount_val) / abs(dev_qty)
-                        est_qty = abs(dev_amount_val) / unit_price
-                        sign_icon = "↑" if dev_amount_val > 0 else "↓"
-                        ud = unit_name if unit_name else "单位"
-                        info += f"\n💰 偏差金额：¥{dev_amount_val:,.2f} {sign_icon} ≈ {est_qty:.1f} {ud}（单价 ¥{unit_price:.2f}/{ud}）"
-                    else:
-                        info += f"\n⚠️ 数量偏差为0，无法计算单价"
-                else:
-                    pass  # 偏差金额为0，不显示换算
-            except Exception as e:
-                info += f"\n⚠️ 成本换算失败：{e}"
+        text.insert("1.0", info)
+        text.configure(state="disabled")
 
-            text.insert("1.0", info)
-            text.configure(state="disabled")
+        # 常用备注按钮
+        btn_fr = tk.Frame(self._card_win, bg=card_bg)
+        btn_fr.pack(pady=(0, 10))
 
-            btn_fr = tk.Frame(self._card_win, bg=card_bg)
-            btn_fr.pack(pady=(0, 10))
+        preset_remarks = ["系统无定额", "替代料", "已核实", "工艺调整", "其他"]
+        sorted_remarks, freq = self._get_sorted_remarks(preset_remarks)
 
-            preset_remarks = ["系统无定额", "替代料", "已核实", "工艺调整", "其他"]
-            sorted_remarks, freq = self._get_sorted_remarks(preset_remarks)
-
-            def fill_remark(tag):
-                self.audit_tree.set(item, "remark", tag)
-                self.audit_tree.set(item, "status", "已备注")
-                uid = data.get("_uid", "")
-                if self.audit_data is not None and uid:
-                    mask = self.audit_data["_uid"].astype(str) == str(uid)
+        def fill_remark(tag):
+            # 更新 Treeview 中显示的备注
+            self.audit_tree.set(item, "remark", tag)
+            self.audit_tree.set(item, "status", "已备注")
+            # 更新原始数据
+            if "excel_row" in data:
+                try:
+                    row_int = int(float(data["excel_row"]))
+                    mask = self.audit_data["excel_row"].astype(str).astype(float).astype(int) == row_int
                     if mask.any():
                         self.audit_data.loc[mask, "备注原因"] = tag
-                self._record_remark_freq(tag)
-                self._card_win.destroy()
+                except:
+                    pass
+            self._record_remark_freq(tag)
+            self._card_win.destroy()
 
-            for i, remark in enumerate(sorted_remarks):
-                count = freq.get(remark, 0)
-                if i < 3 and count > 0:
-                    btn_font = ("Microsoft YaHei", 10, "bold")
-                    btn_bg = "#bbdefb"
+        for i, remark in enumerate(sorted_remarks):
+            count = freq.get(remark, 0)
+            if i < 3 and count > 0:
+                btn_font = ("Microsoft YaHei", 10, "bold")
+                btn_bg = "#bbdefb"
+            else:
+                btn_font = ("Microsoft YaHei", 9)
+                if "无定额" in remark:
+                    btn_bg = "#e3f2fd"
+                elif "替代" in remark:
+                    btn_bg = "#fff9c4"
                 else:
-                    btn_font = ("Microsoft YaHei", 9)
-                    btn_bg = (
-                        "#e3f2fd" if "无定额" in remark
-                        else "#fff9c4" if "替代" in remark
-                        else "#f5f5f5"
-                    )
-                tk.Button(
-                    btn_fr,
-                    text=f"{remark}({count})" if count > 0 else remark,
-                    command=lambda r=remark: fill_remark(r),
-                    bg=btn_bg,
-                    font=btn_font,
-                    relief="flat",
-                    width=12,
-                ).pack(side="left", padx=3)
-            print("[DEBUG] _show_audit_card 执行完毕")
-
-        except Exception as _e:
-            print(f"[ERROR] _show_audit_card 异常: {_e}")
-            _tb.print_exc()
+                    btn_bg = "#f5f5f5"
+            tk.Button(btn_fr, text=f"{remark}({count})" if count > 0 else remark,
+                      command=lambda r=remark: fill_remark(r), bg=btn_bg,
+                      font=btn_font, relief="flat", width=12).pack(side="left", padx=3)
 
     def _show_audit_context_menu(self, event):
         """显示审核表格右键菜单"""
@@ -1056,7 +893,7 @@ class TableEvents:
         item = self.audit_tree.identify_row(event.y)
 
         if item:
-            # 如果点击的项不在已选中项中，清除其他选择并选中当前项
+            # 如果点击的项不在已选中项中,清除其他选择并选中当前项
 
             if item not in self.audit_tree.selection():
                 self.audit_tree.selection_set(item)
@@ -1095,7 +932,7 @@ class TableEvents:
         elif filter_type == "ok_note":
             filtered_data = self.audit_data[self.audit_data["备注原因"].notna()]
 
-        # ── P1#13：颜色筛选 ──
+        # ── P1#13:颜色筛选 ──
 
         elif filter_type == "_color":
             color_val = self.filter_vars.get("_color", tk.StringVar(value="全部")).get()
@@ -1175,7 +1012,7 @@ class TableEvents:
                     audit_source_val = "替代料"
 
                 else:
-                    audit_source_val = ""  # 未经过审核的行，来源应为空
+                    audit_source_val = ""  # 未经过审核的行,来源应为空
 
             # 流程订单
 
@@ -1207,14 +1044,6 @@ class TableEvents:
                 else str(dev_rate)
             )
 
-            # 物料大类
-            mat_code_prefix_v = code_val[:3] if code_val else ""
-            mat_category_val = {
-                "100": "原辅料", "200": "包材",
-                "400": "食品辅料/食品半成品", "410": "饮料辅料/饮料半成品",
-                "500": "食品成品", "510": "饮料成品", "600": "促销品",
-            }.get(mat_code_prefix_v, mat_code_prefix_v)
-
             item = self.audit_tree.insert(
                 "",
                 "end",
@@ -1229,10 +1058,8 @@ class TableEvents:
                     if pd.notna(row.get("订单日期"))
                     else "",  # order_date
                     order_no_val,  # order_no
-                    mat_category_val,  # material_category（物料大类在物料号前）
                     code_val,  # code
                     name_val,  # name
-                    str(row.get("组件单位", row.get("单位", ""))),  # unit
                     quota_val,  # quota
                     actual_val,  # actual
                     dev_rate_str,  # dev_rate
@@ -1251,28 +1078,34 @@ class TableEvents:
             )
 
             priority_label = row.get(
-                "_priority_label", "绿"
+                "_priority_label", self.config.get("priority.green_label", "绿")
             )
 
-            # Task 007: 四色优先级标签 + 备注校验标签
-            priority_tag = f"priority_{priority_label}"
-            current_tags = [priority_tag]
+            priority_tag = (
+                "priority_red"
+                if priority_label == self.config.get("priority.red_label", "红")
+                else (
+                    "priority_yellow"
+                    if priority_label == self.config.get("priority.yellow_label", "黄")
+                    else "priority_green"
+                )
+            )
+
+            # 追加备注校验标签
+            current_tags = list(self.audit_tree.item(item, "tags"))
             if row.get("remark_check_status") == "red":
                 current_tags.append("remark_red")
             elif row.get("remark_check_status") == "yellow":
                 current_tags.append("remark_yellow")
             self.audit_tree.item(item, tags=current_tags)
 
-        self.log(f"筛选完成：显示 {len(filtered_data)} 条记录", "info")
+        self.log(f"筛选完成:显示 {len(filtered_data)} 条记录", "info")
 
     # ── 智能审核筛选栏方法 ─────────────────────────────
 
     def _on_filter_changed(self, col_key):
-        """任一筛选下拉框变化时，组合所有筛选条件并刷新表格（统一使用 FilterEngine）"""
+        """任一筛选下拉框变化时,组合所有筛选条件并刷新表格(统一使用 FilterEngine)"""
         print(f"[DEBUG] _on_filter_changed called with key={col_key}")
-        # 重置分页
-        self._reset_pagination()
-
 
         if self.audit_data is None or len(self.audit_data) == 0:
             return
@@ -1284,7 +1117,7 @@ class TableEvents:
 
         # 1. 搜索关键词
         search_text = self.search_var.get().strip()
-        if search_text and search_text != "输入任意关键词，实时过滤全部列...":
+        if search_text and search_text != "输入任意关键词,实时过滤全部列...":
             filters['search'] = search_text
 
         # 2. 日期范围
@@ -1306,7 +1139,7 @@ class TableEvents:
             if val and val != "全部":
                 filters[key] = val
 
-        # 4. 侧边栏条件（从 FilterPanel 获取，不覆盖顶部栏已有的 key）
+        # 4. 侧边栏条件(从 FilterPanel 获取,不覆盖顶部栏已有的 key)
         if hasattr(self, 'filter_panel'):
             sidebar_filters = self.filter_panel.get_filters()
             for k, v in sidebar_filters.items():
@@ -1320,7 +1153,7 @@ class TableEvents:
         import sys
 
 
-        # ── 异常突变检测（保留在View，依赖View状态）──
+        # ── 异常突变检测(保留在View,依赖View状态)──
         try:
             self.mutation_materials = set()
 
@@ -1377,26 +1210,25 @@ class TableEvents:
                                 if abs(z_score) > 2:
                                     self.mutation_materials.add(mat)
         except Exception as e:
-            self.log(f"异常突变检测出错：{e}", "error")
+            self.log(f"异常突变检测出错:{e}", "error")
 
         # 刷新表格和统计
-        self.filtered_data = df_filtered  # ← 添加这行，保存筛选后的数据
+        self.filtered_data = df_filtered  # ← 添加这行,保存筛选后的数据
         self._refresh_audit_tree(df_filtered)
         self._update_audit_stats(df_filtered)
-        self._update_summary_row(df_filtered)  # 合计行更新
-        self.log(f"筛选完成：显示 {len(df_filtered)} 条记录", "info")
+        self.log(f"筛选完成:显示 {len(df_filtered)} 条记录", "info")
 
     def _reset_all_filters(self):
         """重置所有筛选条件"""
 
         for key, widget in self.filter_widgets.items():
             if key == "name":
-                # Entry 控件：清空文本
+                # Entry 控件:清空文本
 
                 widget.delete(0, tk.END)
 
             elif key == "order_date":
-                # 日期控件：清空两个输入框
+                # 日期控件:清空两个输入框
 
                 if isinstance(widget, tuple) and len(widget) == 2:
                     widget[0].delete(0, tk.END)
@@ -1404,21 +1236,19 @@ class TableEvents:
                     widget[1].delete(0, tk.END)
 
             else:
-                # Combobox 控件：重置为"全部"
+                # Combobox 控件:重置为"全部"
 
                 widget.set("全部")
 
         if self.audit_data is not None:
             self._refresh_audit_tree(self.audit_data)
-            self._update_summary_row(self.audit_data)  # 合计行更新
 
         if self.filter_status_lbl:
             self.filter_status_lbl.configure(text="")
 
         if hasattr(self, "status_filter_label"):
-            count = len(self.audit_data) if self.audit_data is not None else 0
             self.status_filter_label.configure(
-                text=f"📋 显示全部 | 共 {count} 条"
+                text=f"📋 显示全部 | 共 {len(self.audit_data)} 条"
             )
 
         # P1-1-4 重置万能搜索框
@@ -1427,7 +1257,7 @@ class TableEvents:
 
         self.search_entry.delete(0, "end")
 
-        self.search_entry.insert(0, "输入任意关键词，实时过滤全部列...")
+        self.search_entry.insert(0, "输入任意关键词,实时过滤全部列...")
 
         self.log("已重置所有筛选条件", "info")
 
@@ -1437,267 +1267,6 @@ class TableEvents:
             and len(self.audit_data) > 0
         ):
             self._enable_audit_buttons()
-
-    # ── 视图管理方法 ──
-
-    def _save_current_view(self):
-        """保存当前视图（弹出输入框）"""
-        from core.view_manager import ViewManager
-        from tkinter import simpledialog
-        name = simpledialog.askstring("保存视图", "请输入视图名称：", parent=self.root)
-        if name and name.strip():
-            vm = ViewManager()
-            state = vm.get_current_state(self)
-            vm.save_view(name.strip(), state)
-            self.log(f"视图「{name}」已保存", "info")
-            self._refresh_view_list()
-
-    def _delete_view(self):
-        """删除视图（弹出输入框）"""
-        from core.view_manager import ViewManager
-        from tkinter import simpledialog
-        vm = ViewManager()
-        views = vm.list_views()
-        if not views:
-            self.log("暂无保存的视图", "info")
-            return
-        name = simpledialog.askstring("删除视图", f"现有视图：{', '.join(views)}\n请输入要删除的视图名称：", parent=self.root)
-        if name and name in views:
-            vm.delete_view(name)
-            self.log(f"视图「{name}」已删除", "info")
-            self._refresh_view_list()
-        elif name:
-            self.log(f"未找到视图「{name}」", "warn")
-
-    def _refresh_view_list(self):
-        """刷新视图下拉列表"""
-        from core.view_manager import ViewManager
-        vm = ViewManager()
-        views = vm.list_views()
-        if hasattr(self, 'view_combo'):
-            self.view_combo['values'] = views
-            if self.view_combo.get() not in views:
-                self.view_combo.set('')
-
-    def _load_selected_view(self):
-        """加载选中的视图"""
-        if not hasattr(self, 'view_combo'):
-            return
-        name = self.view_combo.get()
-        if not name:
-            return
-        from core.view_manager import ViewManager
-        vm = ViewManager()
-        state = vm.load_view(name)
-        if state:
-            vm.apply_state(self, state)
-            self.log(f"已加载视图「{name}」", "info")
-        else:
-            self.log(f"视图「{name}」不存在", "error")
-
-    def _delete_selected_view(self):
-        """删除下拉框中选中的视图"""
-        if not hasattr(self, 'view_combo'):
-            return
-        name = self.view_combo.get()
-        if not name:
-            self.log("请先选择要删除的视图", "warn")
-            return
-        from core.view_manager import ViewManager
-        vm = ViewManager()
-        if name in vm.list_views():
-            vm.delete_view(name)
-            self.log(f"视图「{name}」已删除", "info")
-            self._refresh_view_list()
-        else:
-            self.log(f"视图「{name}」不存在", "warn")
-
-    # ── Task 020：视图导入导出 ──
-
-    def _export_views(self):
-        """导出视图为 JSON 文件"""
-        from core.view_manager import ViewManager
-        from tkinter import filedialog, messagebox
-        from datetime import datetime
-
-        vm = ViewManager()
-        all_views = vm.list_views()
-        if not all_views:
-            messagebox.showinfo("导出视图", "当前无保存的视图可导出")
-            return
-
-        # 多选对话框
-        selected = self._multi_select_dialog("选择要导出的视图", all_views)
-        if not selected:
-            return
-
-        # 自动命名 [豆包·10维]
-        from utils.version_history import get_current_version
-        default_name = f"视图包_{datetime.now().strftime('%Y%m%d')}_v{get_current_version()}.json"
-
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".json",
-            initialfile=default_name,
-            filetypes=[("JSON 文件", "*.json")],
-            parent=self.root
-        )
-        if not file_path:
-            return
-
-        try:
-            vm.export_views(selected, file_path)
-            self.log(f"已导出 {len(selected)} 个视图到 {os.path.basename(file_path)}", "info")
-            messagebox.showinfo("导出成功", f"已导出 {len(selected)} 个视图")
-        except Exception as e:
-            messagebox.showerror("导出失败", str(e))
-
-    def _import_views(self):
-        """导入视图 JSON 文件"""
-        from core.view_manager import ViewManager
-        from tkinter import filedialog, messagebox
-
-        file_path = filedialog.askopenfilename(
-            filetypes=[("JSON 文件", "*.json")],
-            parent=self.root
-        )
-        if not file_path:
-            return
-
-        vm = ViewManager()
-
-        # 1. 校验文件
-        try:
-            data = vm.validate_import_file(file_path)
-        except ValueError as e:
-            messagebox.showerror("导入失败", str(e))
-            return
-
-        # 2. 批量预览 [豆包·10维]
-        import_views_list = vm.get_import_views_list(data)
-        if not import_views_list:
-            messagebox.showinfo("导入视图", "文件中无视图数据")
-            return
-
-        # 检查同名
-        existing = vm.list_views()
-        has_conflict = any(n in existing for n in import_views_list)
-
-        selected = self._multi_select_dialog(
-            "选择要导入的视图",
-            import_views_list,
-            pre_check_conflicts=existing
-        )
-        if not selected:
-            return
-
-        # 同名覆盖二次确认 [豆包·10维]
-        overwrite = False
-        conflict_names = [n for n in selected if n in existing]
-        if conflict_names:
-            overwrite = messagebox.askyesno(
-                "同名视图",
-                f"以下视图已存在：{', '.join(conflict_names)}\n是否覆盖？"
-            )
-            if not overwrite:
-                # 移除同名项
-                selected = [n for n in selected if n not in conflict_names]
-                if not selected:
-                    return
-
-        try:
-            imported = vm.import_views(selected, data, overwrite=overwrite)
-            self.log(f"已导入 {len(imported)} 个视图：{', '.join(imported)}", "info")
-            self._refresh_view_list()
-            messagebox.showinfo("导入成功", f"已导入 {len(imported)} 个视图")
-        except Exception as e:
-            messagebox.showerror("导入失败", str(e))
-
-    def _multi_select_dialog(self, title: str, items: list, pre_check_conflicts: list = None) -> list:
-        """多选对话框 [豆包·10维]
-        
-        Args:
-            title: 对话框标题
-            items: 可选项列表
-            pre_check_conflicts: 已存在的视图名列表（用于标记冲突）
-            
-        Returns:
-            用户选中的项列表
-        """
-        from tkinter import ttk
-        win = tk.Toplevel(self.root)
-        win.title(title)
-        win.geometry("350x400")
-        win.transient(self.root)
-        win.grab_set()
-
-        result = []
-        vars_dict = {}
-
-        # 全选/取消按钮
-        btn_frame_top = tk.Frame(win)
-        btn_frame_top.pack(fill=tk.X, padx=10, pady=5)
-
-        def toggle_all():
-            new_val = not all(v.get() for v in vars_dict.values())
-            for v in vars_dict.values():
-                v.set(new_val)
-
-        tk.Button(btn_frame_top, text="全选/取消", command=toggle_all).pack(side=tk.LEFT)
-
-        # 可滚动列表
-        container = tk.Frame(win)
-        container.pack(fill=tk.BOTH, expand=True, padx=10)
-
-        canvas = tk.Canvas(container)
-        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
-        scroll_frame = tk.Frame(canvas)
-
-        scroll_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        for item in items:
-            var = tk.BooleanVar(value=True)
-            text = item
-            fg = None
-            if pre_check_conflicts and item in pre_check_conflicts:
-                text = f"{item} (已存在)"
-                fg = "#cc0000"
-            cb = tk.Checkbutton(scroll_frame, text=text, variable=var, fg=fg)
-            cb.pack(anchor='w')
-            vars_dict[item] = var
-
-        # 确认/取消
-        btn_frame = tk.Frame(win)
-        btn_frame.pack(fill=tk.X, padx=10, pady=5)
-        confirmed = [False]
-
-        def on_confirm():
-            confirmed[0] = True
-            win.destroy()
-
-        def on_cancel():
-            win.destroy()
-
-        tk.Button(btn_frame, text="确认", command=on_confirm, bg="#28a745", fg="white").pack(side=tk.LEFT, padx=5)
-        tk.Button(btn_frame, text="取消", command=on_cancel).pack(side=tk.RIGHT, padx=5)
-
-        win.wait_window()
-
-        if confirmed[0]:
-            return [name for name, var in vars_dict.items() if var.get()]
-        return []
-
-    def set_filter_and_refresh(self, filter_key: str, filter_value: str):
-        """通用筛选设置+刷新（供看板下钻等调用）"""
-        if filter_key in self.filter_widgets:
-            widget = self.filter_widgets[filter_key]
-            widget.set(filter_value)
-            self._on_filter_changed(filter_key)
-            self.log(f"已设置筛选：{filter_key} = {filter_value}", "info")
 
     def _update_filter_options(self):
         """根据当前 audit_data 更新筛选下拉框的值列表"""
@@ -1720,7 +1289,7 @@ class TableEvents:
             "name": "组件物料描述",
             "status": "status_temp",
             "dev_rate": "偏差率(%)",
-            "is_alt": None,  # 特殊处理：替代料筛选
+            "is_alt": None,  # 特殊处理:替代料筛选
             "remark": "备注原因",
         }
 
@@ -1732,12 +1301,12 @@ class TableEvents:
         is_alt_presets = self.config.get("filter.is_alt_presets", ["全部", "是", "否"])
 
         for key, cb in self.filter_widgets.items():
-            # name 是 Entry 控件，不需要更新下拉选项
+            # name 是 Entry 控件,不需要更新下拉选项
 
             if key == "name":
                 continue
 
-            # material_category 单独在循环后处理（基于全量数据）
+            # material_category 单独在循环后处理(基于全量数据)
             if key == "material_category":
                 continue
 
@@ -1750,7 +1319,7 @@ class TableEvents:
                 continue
 
             if key == "remark":
-                # 备注筛选：已填写的值 + "为空" 选项
+                # 备注筛选:已填写的值 + "为空" 选项
 
                 str_vals = sorted(
                     [
@@ -1807,7 +1376,7 @@ class TableEvents:
                 continue
 
             if key == "is_alt":
-                # 替代料筛选：固定选项
+                # 替代料筛选:固定选项
 
                 cb["values"] = is_alt_presets
 
@@ -1845,10 +1414,10 @@ class TableEvents:
             if cb.get() not in cb["values"]:
                 cb.set("全部")
 
-        # ── material_category 单独处理：必须基于全量数据，避免筛选后选项丢失 ──
+        # ── material_category 单独处理:必须基于全量数据,避免筛选后选项丢失 ──
         if "material_category" in self.filter_widgets:
             cb_cat = self.filter_widgets["material_category"]
-            # 优先使用 full_audit_data，回退到 audit_data
+            # 优先使用 full_audit_data,回退到 audit_data
             data_src = (
                 self.full_audit_data
                 if hasattr(self, "full_audit_data") and self.full_audit_data is not None
@@ -1862,9 +1431,9 @@ class TableEvents:
                 cb_cat["values"] = cat_options
                 if cb_cat.get() not in cat_options:
                     cb_cat.set("全部")
-                print(f"[DEBUG] 物料大类下拉框已更新，选项: {cat_options}")
+                print(f"[DEBUG] 物料大类下拉框已更新,选项: {cat_options}")
             else:
-                print("[DEBUG] material_category 列不存在，物料大类下拉框保持不变")
+                print("[DEBUG] material_category 列不存在,物料大类下拉框保持不变")
 
     def _collect_filters(self):
         """收集所有筛选控件的当前值"""
@@ -1881,7 +1450,7 @@ class TableEvents:
                 elif isinstance(widget, tk.Entry):
                     val = widget.get().strip()
 
-                    if val and val != "输入任意关键词，实时过滤全部列...":
+                    if val and val != "输入任意关键词,实时过滤全部列...":
                         filters[key] = val
 
                 else:
@@ -2007,32 +1576,29 @@ class TableEvents:
     # ── S01 库存检查方法 ──────────────────────────────
 
     def _on_tree_sort(self, col_id):
-        """多列同时排序，每列三轮循环：正序 → 倒序 → 取消排序 → 正序..."""
-        
+        """多列同时排序,每列三轮循环:正序 → 倒序 → 取消排序 → 正序..."""
+
         # 查找该列是否已在排序列表中
         found = False
         new_sort_columns = []
         for cid, asc in self.sort_columns:
             if cid == col_id:
                 found = True
-                # 三态循环：True(正序) → False(倒序) → 移除(取消)
+                # 三态循环:True(正序) → False(倒序) → 移除(取消)
                 if asc == True:
                     new_sort_columns.append((cid, False))  # 正序 → 倒序
-                # False → 不添加（取消排序）
+                # False → 不添加(取消排序)
             else:
                 new_sort_columns.append((cid, asc))
-        
+
         if not found:
-            # 新列追加到末尾，初始为正序
+            # 新列追加到末尾,初始为正序
             new_sort_columns.append((col_id, True))
-        
+
         self.sort_columns = new_sort_columns
         self._apply_sort_and_refresh()
 
     def _apply_sort_and_refresh(self):
-        # 重置分页
-        self._reset_pagination()
-
 
         if self.audit_data is None or self.audit_data.empty:
             return
@@ -2072,7 +1638,6 @@ class TableEvents:
         self._refresh_audit_tree(df_sorted, skip_auto_sort=True)
 
         self._update_sort_indicators()
-        self._update_summary_row(df_sorted)  # 合计行更新
 
     def _init_sort_columns(self):
 
@@ -2084,17 +1649,13 @@ class TableEvents:
         self.sort_columns = []
 
     def _update_audit_stats(self, filtered_data=None):
-        """更新统计卡片（联动筛选后的数据）"""
+        """更新统计卡片(联动筛选后的数据)"""
 
-        # 优先使用 filtered_data 参数，其次用 self.filtered_data，最后用 self.audit_data
-        data = filtered_data
-        if data is None and hasattr(self, 'filtered_data') and self.filtered_data is not None and len(self.filtered_data) > 0:
-            data = self.filtered_data
-        if data is None:
-            data = self.audit_data
-        if data is None or len(data) == 0:
-            self.log(f"[DEBUG] _update_audit_stats: 无可用数据，跳过", "info")
+        if self.audit_data is None or len(self.audit_data) == 0:
+            self.log(f"[DEBUG] _update_audit_stats: audit_data 为空,跳过", "info")
             return
+
+        data = filtered_data if filtered_data is not None else self.audit_data
 
         self.log(f"[DEBUG] _update_audit_stats: data={len(data)}行, 列={list(data.columns)[:10]}", "info")
 
@@ -2120,40 +1681,49 @@ class TableEvents:
 
         self.audit_stat_labels["ok_note"].configure(text=str(len(ok_note)))
 
-        # ── 汇总换算标签更新（成本换算器增强） ──
-        if hasattr(self, 'summary_cost_lbl'):
-            try:
-                total_amount = data['偏差金额'].fillna(0).sum()
-                if '数量-实际' in data.columns and '数量-定额' in data.columns:
-                    qty_actual = pd.to_numeric(data['数量-实际'], errors='coerce').fillna(0)
-                    qty_quota = pd.to_numeric(data['数量-定额'], errors='coerce').fillna(0)
-                    total_qty_abs = (qty_actual - qty_quota).abs().sum()
-                    unit_col = next((c for c in ['组件单位', '单位'] if c in data.columns), None)
-                    unit = data[unit_col].iloc[0] if unit_col and len(data) > 0 else ""
-                    if total_qty_abs > 0 and unit:
-                        avg_price = total_amount / total_qty_abs
-                        if avg_price > 0:
-                            est_qty = abs(total_amount) / avg_price
-                            self.summary_cost_lbl.config(
-                                text=f"💸 总偏差金额：¥{total_amount:,.2f} ≈ {est_qty:.1f} {unit}（均价 ¥{avg_price:.2f}/{unit}）"
-                            )
-                        else:
-                            self.summary_cost_lbl.config(text=f"💸 总偏差金额：¥{total_amount:,.2f}（无法换算实物量）")
-                    else:
-                        self.summary_cost_lbl.config(text=f"💸 总偏差金额：¥{total_amount:,.2f}（无法换算实物量）")
-                else:
-                    self.summary_cost_lbl.config(text=f"💸 总偏差金额：¥{total_amount:,.2f}")
-            except Exception as e:
-                self.log(f"汇总换算出错：{e}", "warn")
-                if hasattr(self, 'summary_cost_lbl'):
-                    self.summary_cost_lbl.config(text="")
-
         # 同步更新统一按钮行状态标签
 
         if hasattr(self, "unified_result_lbl"):
             self.unified_result_lbl.configure(
-                text=f"筛选结果：{total} 条 | 偏差>10%: {high_dev} | 需补备注: {len(need_note)}"
+                text=f"筛选结果:{total} 条 | 偏差>10%: {high_dev} | 需补备注: {len(need_note)}"
             )
+
+        # 总偏差金额 + 实物量换算
+        data = filtered_data if filtered_data is not None else self.audit_data
+        if data is not None and not data.empty and '偏差金额' in data.columns:
+            total_amount = data['偏差金额'].fillna(0).sum()
+            # 单位一致性检测
+            unit_col = next((c for c in ['组件单位', '单位'] if c in data.columns), None)
+            if unit_col:
+                units = data[unit_col].dropna().unique()
+                if len(units) == 1:
+                    unit = str(units[0])
+                    # 计算总数量偏差绝对值
+                    if '偏差数量' in data.columns:
+                        total_qty_abs = data['偏差数量'].abs().sum()
+                    else:
+                        actual_col = next((c for c in ['数量-实际', '实际'] if c in data.columns), None)
+                        quota_col = next((c for c in ['数量-定额', '定额'] if c in data.columns), None)
+                        if actual_col and quota_col:
+                            total_qty_abs = (data[actual_col] - data[quota_col]).abs().sum()
+                        else:
+                            total_qty_abs = 0
+                    if total_qty_abs > 0 and abs(total_amount) > 0.01:
+                        avg_price = abs(total_amount) / total_qty_abs
+                        est_qty = abs(total_amount) / avg_price
+                        text = f"💸 总偏差金额:¥{total_amount:,.2f} ≈ {est_qty:.1f} {unit}(均价 ¥{avg_price:.2f}/{unit})"
+                    else:
+                        text = f"💸 总偏差金额:¥{total_amount:,.2f}"
+                else:
+                    unit_preview = ', '.join([str(u) for u in list(units)[:3]])
+                    text = f"💸 总偏差金额:¥{total_amount:,.2f}(多种单位:{unit_preview}...,无法汇总实物量)"
+            else:
+                text = f"💸 总偏差金额:¥{total_amount:,.2f}"
+            if hasattr(self, 'summary_cost_lbl'):
+                self.summary_cost_lbl.config(text=text)
+        else:
+            if hasattr(self, 'summary_cost_lbl'):
+                self.summary_cost_lbl.config(text="")
 
     def _on_search_delayed(self, event):
 
@@ -2204,59 +1774,6 @@ class TableEvents:
 
         return enabled
 
-    def _update_summary_row(self, df):
-        """更新合计行（定额、实际、偏差金额）"""
-        if not hasattr(self, 'summary_quota_var'):
-            return
-        if df is None or df.empty:
-            self.summary_quota_var.set("0.00")
-            self.summary_actual_var.set("0.00")
-            self.summary_amount_var.set("0.00")
-            return
-
-        # 定额列（兼容多种列名）
-        quota_col = None
-        for col in ['定额', '数量-定额', 'quota']:
-            if col in df.columns:
-                quota_col = col
-                break
-        if quota_col:
-            quota_sum = df[quota_col].fillna(0).sum()
-        else:
-            quota_sum = 0
-
-        # 实际列
-        actual_col = None
-        for col in ['实际', '数量-实际', 'actual']:
-            if col in df.columns:
-                actual_col = col
-                break
-        if actual_col:
-            actual_sum = df[actual_col].fillna(0).sum()
-        else:
-            actual_sum = 0
-
-        # 偏差金额列
-        amount_col = None
-        for col in ['偏差金额', '偏差金额(含税)', 'deviation_amount']:
-            if col in df.columns:
-                amount_col = col
-                break
-        if amount_col:
-            amount_sum = df[amount_col].fillna(0).sum()
-        else:
-            amount_sum = 0
-
-        # 格式化（千分位，负数带括号）
-        def fmt(val):
-            if val < 0:
-                return f"({abs(val):,.2f})"
-            return f"{val:,.2f}"
-
-        self.summary_quota_var.set(fmt(quota_sum))
-        self.summary_actual_var.set(fmt(actual_sum))
-        self.summary_amount_var.set(fmt(amount_sum))
-
     def _show_precheck_report(self, df):
         """F6 预检报告弹窗"""
 
@@ -2303,39 +1820,53 @@ class TableEvents:
 
         msg = (
             f"数据加载完成\n\n"
-            f"总行数：{total}\n"
-            f"偏差异常（≥10%）：{abnormal}\n"
-            f"偏差关注（5%-10%）：{warning}\n"
-            f"偏差正常（<5%）：{normal}\n\n"
-            f"已审核：{reviewed}\n"
-            f"未审核：{un_reviewed}"
+            f"总行数:{total}\n"
+            f"偏差异常(≥10%):{abnormal}\n"
+            f"偏差关注(5%-10%):{warning}\n"
+            f"偏差正常(<5%):{normal}\n\n"
+            f"已审核:{reviewed}\n"
+            f"未审核:{un_reviewed}"
         )
 
-        # ── 汇总换算：偏差总金额 + 实物量估算 ──
+        # ── 汇总换算:偏差总金额 + 实物量估算 ──
         try:
-            if amount_col and amount_sum != 0:
-                # 计算总数量偏差
-                qty_actual_col = next((c for c in ['数量-实际', '实际'] if c in df.columns), None)
-                qty_quota_col = next((c for c in ['数量-定额', '定额'] if c in df.columns), None)
-                if qty_actual_col and qty_quota_col:
-                    qty_actual = pd.to_numeric(df[qty_actual_col], errors='coerce').fillna(0)
-                    qty_quota = pd.to_numeric(df[qty_quota_col], errors='coerce').fillna(0)
-                    total_qty_abs = (qty_actual - qty_quota).abs().sum()
-                    unit_col = next((c for c in ['组件单位', '单位'] if c in df.columns), None)
-                    unit = df[unit_col].iloc[0] if unit_col and len(df) > 0 else ""
-                    if total_qty_abs > 0 and unit:
-                        avg_price = amount_sum / total_qty_abs
-                        if avg_price > 0:
-                            est_qty = abs(amount_sum) / avg_price
-                            msg += f"\n\n💸 偏差总金额：¥{amount_sum:,.2f} ≈ {est_qty:.1f} {unit}（均价 ¥{avg_price:.2f}/{unit}）"
+            # 查找偏差金额列
+            amount_col = None
+            for col in ['偏差金额', '偏差金额(含税)', 'deviation_amount']:
+                if col in df.columns:
+                    amount_col = col
+                    break
+            if amount_col:
+                amount_sum = df[amount_col].fillna(0).sum()
+                if abs(amount_sum) > 0.01:
+                    # 计算总数量偏差(绝对值)
+                    qty_actual_col = next((c for c in ['数量-实际', '实际'] if c in df.columns), None)
+                    qty_quota_col = next((c for c in ['数量-定额', '定额'] if c in df.columns), None)
+                    if qty_actual_col and qty_quota_col:
+                        qty_actual = pd.to_numeric(df[qty_actual_col], errors='coerce').fillna(0)
+                        qty_quota = pd.to_numeric(df[qty_quota_col], errors='coerce').fillna(0)
+                        total_qty_abs = (qty_actual - qty_quota).abs().sum()
+                        unit_col = next((c for c in ['组件单位', '单位'] if c in df.columns), None)
+                        if total_qty_abs > 0 and unit_col:
+                            unit = df[unit_col].iloc[0] if len(df) > 0 else ""
+                            avg_price = amount_sum / total_qty_abs
+                            if avg_price > 0 and unit:
+                                est_qty = abs(amount_sum) / avg_price
+                                msg += f"\n\n💸 偏差总金额:¥{amount_sum:,.2f} ≈ {est_qty:.1f} {unit}(均价 ¥{avg_price:.2f}/{unit})"
+                            else:
+                                msg += f"\n\n💸 偏差总金额:¥{amount_sum:,.2f}(无法换算实物量)"
                         else:
-                            msg += f"\n\n💸 偏差总金额：¥{amount_sum:,.2f}（无法换算实物量）"
+                            msg += f"\n\n💸 偏差总金额:¥{amount_sum:,.2f}(无法换算实物量)"
                     else:
-                        msg += f"\n\n💸 偏差总金额：¥{amount_sum:,.2f}（无法换算实物量）"
+                        msg += f"\n\n💸 偏差总金额:¥{amount_sum:,.2f}(无法换算实物量)"
+                else:
+                    msg += f"\n\n💸 偏差总金额:¥{amount_sum:,.2f}"
+            else:
+                msg += f"\n\n💸 偏差总金额:无法计算(缺少金额列)"
         except Exception as e:
-            self.log(f"预检报告汇总换算出错：{e}", "warn")
+            self.log(f"预检报告汇总换算出错:{e}", "warn")
 
-        # 改为日志输出，不弹模态窗口
+        # 改为日志输出,不弹模态窗口
         self.log("=== 📊 预检报告 ===", "info")
         for line in msg.strip().split("\n"):
             if line.strip():
@@ -2344,119 +1875,6 @@ class TableEvents:
         # 更新状态栏提示
         if hasattr(self, "status_lbl"):
             self.status_lbl.configure(
-                text=f"数据加载完成，共{total}条，预检报告已写入日志"
+                text=f"数据加载完成,共{total}条,预检报告已写入日志"
             )
-
-    # ── P1 公共接口 ──
-
-    def get_current_audit_data(self):
-        """返回当前审核数据的副本（供看板/归因模块调用）"""
-        if hasattr(self, 'audit_data') and self.audit_data is not None:
-            return self.audit_data.copy()
-        return pd.DataFrame()
-
-    def _reorder_columns(self, column_order: list):
-        """按指定顺序重排 Treeview 显示列"""
-        if not column_order or not hasattr(self, 'audit_tree'):
-            return
-        current_display = list(self.audit_tree['displaycolumns'])
-        if not current_display:
-            current_display = list(self.audit_tree['columns'])
-        # 过滤无效列名
-        valid_order = [c for c in column_order if c in current_display]
-        # 补充遗漏的列
-        for c in current_display:
-            if c not in valid_order:
-                valid_order.append(c)
-        if valid_order == current_display:
-            return
-        self.audit_tree['displaycolumns'] = tuple(valid_order)
-
-    # ── 任务卡 021：常用备注频率辅助方法 ──
-
-    def _get_sorted_remarks(self, preset_remarks):
-        """按使用频率降序排列预设备注，返回 (sorted_list, freq_dict)"""
-        freq_file = os.path.join(
-            os.path.expanduser('~'), '.zpp011_audit', 'remark_freq.json'
-        )
-        freq = {}
-        try:
-            if os.path.exists(freq_file):
-                with open(freq_file, 'r', encoding='utf-8') as f:
-                    freq = json.load(f)
-        except Exception:
-            freq = {}
-        sorted_remarks = sorted(
-            preset_remarks,
-            key=lambda r: freq.get(r, 0),
-            reverse=True,
-        )
-        return sorted_remarks, freq
-
-    def _record_remark_freq(self, remark: str):
-        """记录备注使用频率（累加并持久化到本地 JSON）"""
-        freq_dir = os.path.join(os.path.expanduser('~'), '.zpp011_audit')
-        freq_file = os.path.join(freq_dir, 'remark_freq.json')
-        try:
-            os.makedirs(freq_dir, exist_ok=True)
-            freq = {}
-            if os.path.exists(freq_file):
-                with open(freq_file, 'r', encoding='utf-8') as f:
-                    freq = json.load(f)
-            freq[remark] = freq.get(remark, 0) + 1
-            with open(freq_file, 'w', encoding='utf-8') as f:
-                json.dump(freq, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            if hasattr(self, 'log'):
-                self.log(f"[021] 记录备注频率失败：{e}", "warn")
-
-
-    # ══════════════════════════════════════════════════════════════════
-    # 批量操作汇总换算方法（成本换算器增强 - Step 6）
-    # ══════════════════════════════════════════════════════════════════
-    def _get_batch_summary(self, selected_items):
-        """根据选中的 Treeview 项，返回偏差金额汇总和实物量换算字符串"""
-        if not selected_items or self.audit_data is None:
-            return ""
-        excel_rows = []
-        for item in selected_items:
-            vals = self.audit_tree.item(item, 'values')
-            cols = self.audit_tree['columns']
-            if 'excel_row' in cols:
-                idx = cols.index('excel_row')
-                try:
-                    row_num = int(float(vals[idx]))
-                    excel_rows.append(row_num)
-                except:
-                    pass
-        if not excel_rows:
-            return ''
-        mask = self.audit_data['excel_row'].astype(str).astype(float).astype(int).isin(excel_rows)
-        selected_df = self.audit_data[mask]
-        if selected_df.empty:
-            return ''
-        total_amount = selected_df['偏差金额'].fillna(0).sum()
-        summary = f'总偏差金额：¥{total_amount:,.2f}'
-        over_amount = selected_df[selected_df['偏差金额'] > 0]['偏差金额'].sum()
-        under_amount = selected_df[selected_df['偏差金额'] < 0]['偏差金额'].sum()
-        unit_col = next((c for c in ['组件单位', '单位'] if c in selected_df.columns), None)
-        unit = selected_df[unit_col].iloc[0] if unit_col and len(selected_df) > 0 else ''
-        if over_amount > 0:
-            qty_actual = pd.to_numeric(selected_df.loc[selected_df['偏差金额'] > 0, '数量-实际'], errors='coerce').fillna(0)
-            qty_quota = pd.to_numeric(selected_df.loc[selected_df['偏差金额'] > 0, '数量-定额'], errors='coerce').fillna(0)
-            over_qty_abs = (qty_actual - qty_quota).abs().sum()
-            if over_qty_abs > 0 and unit:
-                avg_price = over_amount / over_qty_abs
-                est_qty = over_amount / avg_price
-                summary += f'；超耗 ¥{over_amount:,.2f} ≈ {est_qty:.1f} {unit}'
-        if under_amount < 0:
-            under_abs = abs(under_amount)
-            qty_actual = pd.to_numeric(selected_df.loc[selected_df['偏差金额'] < 0, '数量-实际'], errors='coerce').fillna(0)
-            qty_quota = pd.to_numeric(selected_df.loc[selected_df['偏差金额'] < 0, '数量-定额'], errors='coerce').fillna(0)
-            under_qty_abs = (qty_quota - qty_actual).abs().sum()
-            if under_qty_abs > 0 and unit:
-                avg_price = under_abs / under_qty_abs
-                est_qty = under_abs / avg_price
-                summary += f'；少耗 ¥{under_abs:,.2f} ≈ {est_qty:.1f} {unit}'
-        return summary
 
