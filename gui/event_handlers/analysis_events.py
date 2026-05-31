@@ -355,8 +355,7 @@ class AnalysisEvents:
             df.loc[mask, '_unit_price'] = df.loc[mask, '金额-实际(含税)'] / df.loc[mask, '数量-实际']
             # 偏差金额 = (实际 - 定额) × 含税单价
             df['偏差金额'] = ((df['数量-实际'] - df['数量-定额']) * df['_unit_price']).round(2)
-            # 删除临时列
-            df.drop(columns=['_unit_price'], inplace=True)
+            # _unit_price 保留，供成本换算器使用
             # 更新统计卡片
             self.audit_stat_labels['total'].configure(text=str(total))
             self.audit_stat_labels['high_dev'].configure(text=str(len(high_dev)))
@@ -526,7 +525,7 @@ class AnalysisEvents:
                 else:
                     audit_df['数量偏差'] = 0.0
                 audit_df['偏差金额'] = (audit_df['数量偏差'] * audit_df['_unit_price']).round(2)
-                audit_df.drop(columns=['_unit_price'], inplace=True, errors='ignore')
+                # _unit_price 保留，供成本换算器使用
             else:
                 audit_df['偏差金额'] = 0.0
         else:
@@ -635,6 +634,15 @@ class AnalysisEvents:
         """异步加载成功回调：处理所有UI更新"""
         try:
             self.audit_data = result_df
+            # ── 预计算单价（金额-实际(含税) / 数量-实际）用于成本换算器 ──
+            if '金额-实际(含税)' in self.audit_data.columns and '数量-实际' in self.audit_data.columns:
+                self.audit_data['_unit_price'] = 0.0
+                mask = (self.audit_data['数量-实际'].notna()) & (self.audit_data['数量-实际'] != 0)
+                self.audit_data.loc[mask, '_unit_price'] = (
+                    self.audit_data.loc[mask, '金额-实际(含税)'] / self.audit_data.loc[mask, '数量-实际']
+                )
+            else:
+                self.audit_data['_unit_price'] = 0.0
             # 如果启用了新筛选栏，更新下拉选项
             if hasattr(self, "filter_panel") and self.filter_panel:
                 self.filter_panel.update_options(self.audit_data)
