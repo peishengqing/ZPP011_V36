@@ -19,7 +19,9 @@ class DashboardWindow:
         self.history_db_path = history_db_path
         self.current_df = None
         self._current_data_func = current_data_func
-        self.window = tk.Toplevel(parent)
+        # 兼容：parent 可能是 ZPP011Beautiful 实例（含 .root）或 tk.Tk 根窗口
+        tk_parent = parent.root if hasattr(parent, 'root') else parent
+        self.window = tk.Toplevel(tk_parent)
         self.window.title("管理看板 - ZPP011")
         self.window.geometry("900x650")
         self.window.minsize(800, 500)
@@ -63,8 +65,10 @@ class DashboardWindow:
 
         self.tab_workshop = tk.Frame(self.notebook)
         self.tab_trend = tk.Frame(self.notebook)
+        self.tab_material = tk.Frame(self.notebook)
         self.notebook.add(self.tab_workshop, text="车间偏差排名")
         self.notebook.add(self.tab_trend, text="时间趋势（近6个月）")
+        self.notebook.add(self.tab_material, text="物料大类偏差排名")
 
         # 归因按钮（单独一行）
         btn_frame = tk.Frame(self.window)
@@ -184,6 +188,7 @@ class DashboardWindow:
 
         self._draw_workshop_chart(df, comp_df)
         self._draw_trend_chart(df, comp_df)
+        self._draw_material_category_chart(df, comp_df)
         self.status_var.set(f"数据行数: {len(df)}" + (f" | 对比: {self.comparison_var.get()}" if comp_df is not None else ""))
 
     def _on_history_selected(self):
@@ -306,6 +311,103 @@ class DashboardWindow:
             self._current_fig = fig
         except Exception as e:
             tk.Label(self.tab_trend, text=f"加载趋势失败: {e}", fg="red").pack(expand=True)
+
+
+
+    def _draw_material_category_chart(self, df, comp_df=None):
+        """绘制物料大类偏差金额柱状图，支持点击下钻"""
+        for widget in self.tab_material.winfo_children():
+            widget.destroy()
+
+        # 确定偏差金额列
+        amount_col = None
+        for col in ['偏差金额', '偏差金额(含税)', 'deviation_amount']:
+            if col in df.columns:
+                amount_col = col
+                break
+        if amount_col is None:
+            tk.Label(self.tab_material, text="数据中无偏差金额列，无法生成物料大类排名",
+                     font=("微软雅黑", 12), fg="red").pack(expand=True)
+            return
+
+        # 确定物料大类列（已在主界面计算好）
+        cat_col = 'material_category'
+        if cat_col not in df.columns:
+            tk.Label(self.tab_material, text="数据中无物料大类列，请先执行分析或刷新",
+                     font=("微软雅黑", 12), fg="red").pack(expand=True)
+            return
+
+        # 按物料大类聚合偏差金额（绝对值合计）
+        cat_amount = df.groupby(cat_col)[amount_col].apply(
+            lambda x: x.abs().sum()).sort_values(ascending=False)
+        if cat_amount.empty:
+            tk.Label(self.tab_material, text="无有效偏差金额数据",
+                     font=("微软雅黑", 12)).pack(expand=True)
+            return
+
+        # 对比数据（可选）
+        comp_cat_amount = None
+        if comp_df is not None:
+            if amount_col in comp_df.columns and cat_col in comp_df.columns:
+                comp_cat_amount = comp_df.groupby(cat_col)[amount_col].apply(
+                    lambda x: x.abs().sum()).sort_values(ascending=False)
+
+        # 创建图形
+        fig = plt.Figure(figsize=(8, 5), dpi=100)
+        ax = fig.add_subplot(111)
+        categories = cat_amount.index.tolist()
+        amounts = cat_amount.values
+
+        bars = ax.bar(categories, amounts, color='#2ecc71', picker=True, label='当前')
+        if comp_cat_amount is not None:
+            comp_amounts = [comp_cat_amount.get(c, 0) for c in categories]
+            ax.plot(categories, comp_amounts, marker='o', linestyle='--', color='red', label='对比')
+            ax.legend()
+
+        title_suffix = ""
+        if self.comparison_var.get() == "last_month":
+            title_suffix = "（对比上月）"
+        elif self.comparison_var.get() == "last_year":
+            title_suffix = "（对比去年同期）"
+        ax.set_title(f'各物料大类偏差金额排名{title_suffix}')
+        ax.set_xlabel('物料大类')
+        ax.set_ylabel('偏差金额（元）')
+        ax.tick_params(axis='x', rotation=45)
+
+        # 添加数值标签
+        for bar, val in zip(bars, amounts):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(amounts)*0.01,
+                    f'{val:,.0f}', ha='center', va='bottom', fontsize=8)
+
+        # 保存 bar 与物料大类的映射，供点击事件使用
+        self._bar_category_map = {bar: cat for bar, cat in zip(bars, categories)}
+
+        canvas = FigureCanvasTkAgg(fig, master=self.tab_material)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        # 绑定点击事件
+        canvas.mpl_connect('pick_event', self._on_material_bar_click)
+
+        # 保存当前 figure 供导出使用
+        self._current_fig = fig
+
+    def _on_material_bar_click(self, event):
+        """点击物料大类柱状图时，通知主窗口筛选该物料大类（Task 019）"""
+        if not hasattr(event, 'artist') or not hasattr(self, '_bar_category_map'):
+            return
+        bar = event.artist
+        category = self._bar_category_map.get(bar)
+        if category:
+            if hasattr(self.parent, 'set_filter_and_refresh'):
+                self.parent.set_filter_and_refresh('material_category', category)
+                # 激活主窗口
+                tk_root = self.parent.root if hasattr(self.parent, 'root') else self.parent
+                tk_root.lift()
+                tk_root.focus_force()
+                self.status_var.set(f"已下钻至物料大类：{category}")
+            else:
+                self.status_var.set("主窗口未实现 set_filter_and_refresh 方法，无法下钻")
 
     def _export_current_chart(self):
         """导出当前图表为 PNG"""

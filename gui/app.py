@@ -538,9 +538,7 @@ class ZPP011Beautiful(EventsMixIn):
                 import traceback
 
                 # FilterPanel 初始化失败，忽略
-
         build_ui(self)
-
         self._check_and_upgrade_db()  # v37.44 启动时检测并升级旧数据库
 
         self.config.apply_window_geometry(self.root)
@@ -2633,7 +2631,7 @@ class ZPP011Beautiful(EventsMixIn):
 
         from gui.management_dashboard import DashboardWindow
 
-        DashboardWindow(self.root, current_data_func=self.get_current_audit_data)
+        DashboardWindow(self, current_data_func=self.get_current_audit_data)
 
     def _open_dashboard(self):
 
@@ -2641,7 +2639,14 @@ class ZPP011Beautiful(EventsMixIn):
 
         from gui.management_dashboard import DashboardWindow
 
-        DashboardWindow(self.root, current_data_func=self.get_current_audit_data)
+        DashboardWindow(self, current_data_func=self.get_current_audit_data)
+
+    def set_filter_and_refresh(self, filter_key: str, filter_value: str):
+        """供看板下钻调用，设置筛选器并刷新表格（Task 019）"""
+        if hasattr(self, 'table_events') and self.table_events is not None:
+            self.table_events.set_filter_and_refresh(filter_key, filter_value)
+        elif hasattr(self, 'log'):
+            self.log("table_events 未初始化，无法下钻", "error")
 
     def _show_attribution_standalone(self):
         """独立 AI 归因分析入口（Task 013）"""
@@ -2894,4 +2899,3 @@ class ZPP011Beautiful(EventsMixIn):
         finally:
 
             self.root.destroy()
-

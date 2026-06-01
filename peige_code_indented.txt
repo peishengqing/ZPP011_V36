@@ -1,0 +1,28 @@
+    def _show_audit_card(self, event):
+        
+            
+  
+        
+  
+          
+            
+   
+  
+        cols = list(self.au
+    
+      
+    
+    
+        
+   
+   
+        
+        
+        
+        
+    
+    
+    
+    
+    
+
