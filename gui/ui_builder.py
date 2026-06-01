@@ -11,7 +11,7 @@ import pandas as pd
 # 默认列宽配置
 DEFAULT_COL_WIDTHS = {
     'idx': 35, 'excel_row': 60, 'code': 70, 'material_category': 70, 'name': 100, 'unit': 45, 'factory': 70,
-    'order_date': 70, 'admin': 70, 'quota': 50, 'actual': 50, 'dev_rate': 55,
+    'order_date': 70, 'order_type': 70, 'admin': 70, 'quota': 50, 'actual': 50, 'dev_rate': 55,
     'is_alt': 50, 'status': 55, 'remark': 80, 'batch_remark': 90,
     'audit_result': 80, 'AI建议': 120, 'audit_status': 60, 'audit_source': 70,
     'deviation_amount': 90, 'order_no': 100,
@@ -420,10 +420,10 @@ def _build_ui(self):
                   bg="#dc3545", fg="white", relief="flat", font=("Microsoft YaHei", 8)).pack(side="left", padx=2)
         tk.Button(view_bar, text="🔄 刷新列表", command=self._refresh_view_list,
                   bg="#6c757d", fg="white", relief="flat", font=("Microsoft YaHei", 8)).pack(side="left", padx=2)
-        self.export_view_btn = tk.Button(view_bar, text="📤 导出视图", command=self._export_views,
+        self.export_view_btn = tk.Button(view_bar, text="📤 导出视图", command=lambda: getattr(self, '_export_views', lambda: None)(),
                   bg="#17a2b8", fg="white", relief="flat", font=("Microsoft YaHei", 8))
         self.export_view_btn.pack(side="left", padx=2)
-        self.import_view_btn = tk.Button(view_bar, text="📥 导入视图", command=self._import_views,
+        self.import_view_btn = tk.Button(view_bar, text="📥 导入视图", command=lambda: getattr(self, '_import_views', lambda: None)(),
                   bg="#fd7e14", fg="white", relief="flat", font=("Microsoft YaHei", 8))
         self.import_view_btn.pack(side="left", padx=2)
         # 功能开关检查 [豆包·10维]
@@ -441,7 +441,7 @@ def _build_ui(self):
         audit_vscroll.pack(side="right", fill="y")
         audit_hscroll = ttk.Scrollbar(tree_container, orient="horizontal")
         audit_hscroll.pack(side="bottom", fill="x")
-        cols = ("idx", "excel_row", "factory", "admin", "order_date", "order_no",
+        cols = ("idx", "excel_row", "factory", "admin", "order_date", "order_type", "order_no",
                 "material_category", "code", "name", "unit", "quota", "actual", "dev_rate", "is_alt", "status",
                 "remark", "batch_remark", "audit_result", "AI建议", "audit_status",
                 "audit_source", "deviation_amount",
@@ -456,9 +456,10 @@ def _build_ui(self):
         self.audit_tree.heading("factory", text="工厂名称")
         self.audit_tree.heading("admin", text="车间")
         self.audit_tree.heading("order_date", text="订单日期")
+        self.audit_tree.heading("order_type", text="订单类型")
         self.audit_tree.heading("order_no", text="流程订单")
-        self.audit_tree.heading("code", text="物料号")
         self.audit_tree.heading("material_category", text="物料大类")
+        self.audit_tree.heading("code", text="物料号")
         self.audit_tree.heading("name", text="物料描述")
         self.audit_tree.heading("unit", text="单位")
         self.audit_tree.heading("quota", text="定额")
@@ -481,6 +482,7 @@ def _build_ui(self):
         self.audit_tree.column("factory", width=70, anchor="w")
         self.audit_tree.column("admin", width=70, anchor="w")
         self.audit_tree.column("order_date", width=70, anchor="center")
+        self.audit_tree.column("order_type", width=70, anchor="center")
         self.audit_tree.column("order_no", width=100, anchor="center")
         self.audit_tree.column("code", width=70, anchor="center")
         self.audit_tree.column("material_category", width=90, anchor="center")

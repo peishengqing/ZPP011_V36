@@ -24,6 +24,8 @@ class TableEvents:
         """
         cols = self.audit_tree["columns"]
         vals = []
+        if i == 1:
+            print(f"[DEBUG] _build_audit_values cols={cols}")
         for col in cols:
             if col == "idx":
                 vals.append(i)
@@ -87,6 +89,7 @@ class TableEvents:
 
     def _refresh_audit_tree(self, df, skip_auto_sort=False):
         """用给定的 DataFrame 刷新智能审核表格"""
+        print(f"[DEBUG] _refresh_audit_tree 被调用, df={len(df)}行, skip_auto_sort={skip_auto_sort}")
 
         # 自动设置日期筛选范围为数据的实际日期范围(仅首次加载时)
         if len(df) > 0 and '订单日期' in df.columns:
@@ -445,13 +448,27 @@ class TableEvents:
                 order_type_val = str(row.get("订单类型", ""))
 
             # 用 _build_audit_values 动态构建 values，避免列错位
-            values = self._build_audit_values(
-                row, i, mat_category, mat_desc, order_no_val,
-                order_type_val, dev_rate, is_alt, status,
-                remark, batch_remark, audit_result_val,
-                audit_status_val, audit_source_val
-            )
-            item = self.audit_tree.insert("", "end", values=values)
+            try:
+                values = self._build_audit_values(
+                    row, i, mat_category, mat_desc, order_no_val,
+                    order_type_val, dev_rate, is_alt, status,
+                    remark, batch_remark, audit_result_val,
+                    audit_status_val, audit_source_val
+                )
+            except Exception as _be:
+                print(f"[ERROR] _build_audit_values 第{i}行失败: {_be}")
+                import traceback
+                traceback.print_exc()
+                continue
+            try:
+                item = self.audit_tree.insert("", "end", values=values)
+            except Exception as _ie:
+                print(f"[ERROR] insert 第{i}行失败: {_ie}, values数={len(values)}, cols数={len(self.audit_tree['columns'])}")
+                import traceback
+                traceback.print_exc()
+                continue
+            if i <= 3:
+                print(f"[DEBUG] insert 第{i}行成功, item={item}")
 
             # Apply remark_check_status tag
             remark_status = row.get("remark_check_status", "")
@@ -534,6 +551,9 @@ class TableEvents:
             )
 
             self.audit_tree.item(item, tags=final_tag)
+
+        inserted = len(self.audit_tree.get_children())
+        print(f"[DEBUG] _refresh_audit_tree 插入完成, Tree中共有 {inserted} 行")
 
         # ── 恢复绘制 ──
 
