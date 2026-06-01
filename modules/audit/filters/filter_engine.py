@@ -25,7 +25,7 @@ class FilterEngine:
         if data is None or data.empty:
             return data
 
-
+        print(f"[DEBUG FilterEngine.apply] 进入: data={len(data)}行, filters={filters}")
         df = data.copy()
 
         # 防御性：确保 material_category 列存在（如果不存在，现场从物料编码计算）
@@ -191,14 +191,20 @@ class FilterEngine:
         # 13. 日期范围筛选
         date_start = filters.get('date_start')
         date_end = filters.get('date_end')
+        print(f"[DEBUG FilterEngine] date_start={date_start}, date_end={date_end}, 订单日期列存在={'订单日期' in df.columns}")
         if (date_start or date_end) and '订单日期' in df.columns:
             df['订单日期'] = pd.to_datetime(df['订单日期'], errors='coerce')
+            print(f"[DEBUG FilterEngine] 订单日期转换后: {df['订单日期'].head(3).tolist()}, NaT数={df['订单日期'].isna().sum()}")
             if date_start:
                 start_dt = pd.to_datetime(date_start)
+                before = len(df)
                 df = df[df['订单日期'] >= start_dt]
+                print(f"[DEBUG FilterEngine] 按start筛选: {before}->{len(df)} 行")
             if date_end:
                 end_dt = pd.to_datetime(date_end)
+                before = len(df)
                 df = df[df['订单日期'] <= end_dt]
+                print(f"[DEBUG FilterEngine] 按end筛选: {before}->{len(df)} 行")
 
         # 14. 关键词搜索（全文匹配）
         search = filters.get('search', '').strip()
