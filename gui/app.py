@@ -415,6 +415,10 @@ class ZPP011Beautiful(EventsMixIn):
 
         help_menu.add_separator()
 
+        help_menu.add_command(label='规则配置', command=self._open_rule_config)
+
+        help_menu.add_separator()
+
         help_menu.add_command(label='关于', command=self._show_about)
 
         self.root.config(menu=menubar)
