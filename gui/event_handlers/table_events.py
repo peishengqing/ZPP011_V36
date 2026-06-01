@@ -654,19 +654,10 @@ class TableEvents:
                 else:
                     audit_source_val = ""  # 未经过审核的行，来源应为空
 
-            # 订单类型（优先取 row 中已保留的列，其次从 dev_df 来源推断）
+            # 订单类型（直接从原表取，不硬编码推断）
             order_type_val = str(row.get("订单类型", "")).strip()
-            if not order_type_val or order_type_val in ("", "nan", "NaN", "None"):
-                # 根据流程订单号前缀推断（100xxxx=ZP01, 200xxxx=ZP02 等）
-                _ono = str(row.get("流程订单", row.get("订单号", ""))).strip()
-                if _ono.startswith("100"):
-                    order_type_val = "ZP01"
-                elif _ono.startswith("200"):
-                    order_type_val = "ZP02"
-                elif _ono.startswith("300"):
-                    order_type_val = "ZP03"
-                else:
-                    order_type_val = ""
+            if order_type_val in ("", "nan", "NaN", "None"):
+                order_type_val = ""
 
             order_no_val = ""
             for _col in ["流程订单", "订单号", "订单编号"]:
@@ -1270,18 +1261,10 @@ class TableEvents:
                 else:
                     audit_source_val = ""  # 未经过审核的行，来源应为空
 
-            # 订单类型（优先取 row 中已保留的列，其次从订单号前缀推断）
+            # 订单类型（直接从原表取，不硬编码推断）
             order_type_val = str(row.get("订单类型", "")).strip()
-            if not order_type_val or order_type_val in ("", "nan", "NaN", "None"):
-                _ono = str(row.get("流程订单", row.get("订单号", ""))).strip()
-                if _ono.startswith("100"):
-                    order_type_val = "ZP01"
-                elif _ono.startswith("200"):
-                    order_type_val = "ZP02"
-                elif _ono.startswith("300"):
-                    order_type_val = "ZP03"
-                else:
-                    order_type_val = ""
+            if order_type_val in ("", "nan", "NaN", "None"):
+                order_type_val = ""
 
             # 流程订单
             order_no_val = ""
