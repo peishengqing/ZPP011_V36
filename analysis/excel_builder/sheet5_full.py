@@ -39,6 +39,7 @@ def build_sheet5(df, report_progress, progress_idx=5):
 
     dev_df = pd.DataFrame([{
         '订单日期': pd.Timestamp(r['订单开始日期']).strftime('%Y-%m-%d'),
+        '订单类型': r['订单类型'] if '订单类型' in r and pd.notna(r['订单类型']) else '',
         '流程订单': r['流程订单'],
         '工厂': r['工厂名称'],
         '车间': r['车间'],

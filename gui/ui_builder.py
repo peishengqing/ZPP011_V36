@@ -7,6 +7,7 @@ import os
 import json
 import sys
 import pandas as pd
+from config import audit_cols_config as col_cfg
 
 # 默认列宽配置
 DEFAULT_COL_WIDTHS = {
@@ -20,6 +21,7 @@ DEFAULT_COL_WIDTHS = {
 }
 # 列宽配置文件路径
 COLUMN_WIDTHS_FILE = os.path.join(os.path.expanduser('~'), '.zpp011_audit', 'column_widths.json')
+from config import audit_cols_config as col_cfg
 
 
 def build_ui(app_instance):
@@ -441,67 +443,22 @@ def _build_ui(self):
         audit_vscroll.pack(side="right", fill="y")
         audit_hscroll = ttk.Scrollbar(tree_container, orient="horizontal")
         audit_hscroll.pack(side="bottom", fill="x")
-        cols = ("idx", "excel_row", "factory", "admin", "order_date", "order_type", "order_no",
-                "material_category", "code", "name", "unit", "quota", "actual", "dev_rate", "is_alt", "status",
-                "remark", "batch_remark", "audit_result", "AI建议", "audit_status",
-                "audit_source", "deviation_amount",
-                "remark_check_status", "remark_check_msg")
+        cols = col_cfg.get_cols()
         self.audit_tree = ttk.Treeview(tree_container, columns=cols, show="headings",
                                height=15, style="Custom.Treeview",
                                selectmode="extended",
                                yscrollcommand=audit_vscroll.set,
                                xscrollcommand=audit_hscroll.set)
-        self.audit_tree.heading("idx", text="序号")
-        self.audit_tree.heading("excel_row", text="原表行号")
-        self.audit_tree.heading("factory", text="工厂名称")
-        self.audit_tree.heading("admin", text="车间")
-        self.audit_tree.heading("order_date", text="订单日期")
-        self.audit_tree.heading("order_type", text="订单类型")
-        self.audit_tree.heading("order_no", text="流程订单")
-        self.audit_tree.heading("material_category", text="物料大类")
-        self.audit_tree.heading("code", text="物料号")
-        self.audit_tree.heading("name", text="物料描述")
-        self.audit_tree.heading("unit", text="单位")
-        self.audit_tree.heading("quota", text="定额")
-        self.audit_tree.heading("actual", text="实际")
-        self.audit_tree.heading("dev_rate", text="偏差率%")
-        self.audit_tree.heading("is_alt", text="替代料")
-        self.audit_tree.heading("status", text="状态")
-        self.audit_tree.heading("remark", text="备注")
-        self.audit_tree.heading("batch_remark", text="批量备注")
-        self.audit_tree.heading("audit_result", text="审核结果")
-        self.audit_tree.heading("AI建议", text="AI建议")
-        self.audit_tree.heading("audit_status", text="审核状态")
-        self.audit_tree.heading("audit_source", text="审核来源")
-        self.audit_tree.heading("deviation_amount", text="偏差金额")
-        self.audit_tree.heading("remark_check_status", text="")
-        self.audit_tree.heading("remark_check_msg", text="校验提示")
-        # column() 顺序必须与 heading() 顺序完全一致，否则数据显示错位
-        self.audit_tree.column("idx", width=35, anchor="center")
-        self.audit_tree.column("excel_row", width=60, anchor="center")
-        self.audit_tree.column("factory", width=70, anchor="w")
-        self.audit_tree.column("admin", width=70, anchor="w")
-        self.audit_tree.column("order_date", width=70, anchor="center")
-        self.audit_tree.column("order_type", width=70, anchor="center")
-        self.audit_tree.column("order_no", width=100, anchor="center")
-        self.audit_tree.column("code", width=70, anchor="center")
-        self.audit_tree.column("material_category", width=90, anchor="center")
-        self.audit_tree.column("name", width=100, anchor="w")
-        self.audit_tree.column("unit", width=45, anchor="center")
-        self.audit_tree.column("quota", width=50, anchor="e")
-        self.audit_tree.column("actual", width=50, anchor="e")
-        self.audit_tree.column("dev_rate", width=55, anchor="center")
-        self.audit_tree.column("is_alt", width=50, anchor="center")
-        self.audit_tree.column("status", width=55, anchor="center")
-        self.audit_tree.column("remark", width=80, anchor="w")
-        self.audit_tree.column("batch_remark", width=90, anchor="w")
-        self.audit_tree.column("audit_result", width=80, anchor="center")
-        self.audit_tree.column("AI建议", width=120, anchor="w")
-        self.audit_tree.column("audit_status", width=60, anchor="center")
-        self.audit_tree.column("audit_source", width=70, anchor="center")
-        self.audit_tree.column("deviation_amount", width=90, anchor="e")
-        self.audit_tree.column("remark_check_status", width=0, stretch=False)
-        self.audit_tree.column("remark_check_msg", width=150, anchor="w")
+        # 从配置自动生成 heading
+        _heading_map = col_cfg.get_heading_map()
+        for _key in cols:
+            _text = _heading_map.get(_key, _key)
+            self.audit_tree.heading(_key, text=_text)
+        # 从配置自动生成 column（顺序与 heading 完全一致）
+        _column_map = col_cfg.get_column_map()
+        for _key in cols:
+            _w, _a = _column_map.get(_key, (80, "w"))
+            self.audit_tree.column(_key, width=_w, anchor=_a)
         self.audit_tree.pack(side="left", fill="both", expand=True)
 
         # ==================== 合计行 ====================
