@@ -1091,7 +1091,6 @@ class TableEvents:
             # ── 成本换算器 ──
             try:
                 _dev_amt_raw = data.get("deviation_amount", "0")
-                print(f"[成本换算器] deviation_amount原始值: {repr(_dev_amt_raw)}, data keys前5: {list(data.keys())[:5]}")
                 if _dev_amt_raw and str(_dev_amt_raw).strip() not in ("0", "-", ""):
                     _dev_amt_clean = str(_dev_amt_raw).replace(",", "")
                     _dev_amt_val = float(_dev_amt_clean) if _dev_amt_clean else 0
