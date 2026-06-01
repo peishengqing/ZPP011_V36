@@ -423,6 +423,10 @@ class ZPP011Beautiful(EventsMixIn):
 
         help_menu.add_separator()
 
+        help_menu.add_command(label='生成详细分析报告', command=self._generate_full_report)
+
+        help_menu.add_separator()
+
         help_menu.add_command(label='关于', command=self._show_about)
 
         self.root.config(menu=menubar)
@@ -2942,6 +2946,15 @@ class ZPP011Beautiful(EventsMixIn):
 
                 self.audit_logger.shutdown()
 
+            # 清理分析临时 Excel 文件
+            if hasattr(self, '_analysis_output_path') and self._analysis_output_path:
+                try:
+                    if os.path.exists(self._analysis_output_path):
+                        os.remove(self._analysis_output_path)
+                        print(f"已清理临时文件: {self._analysis_output_path}")
+                except Exception as e:
+                    print(f"清理临时文件失败: {e}")
+
         except Exception as e:
 
             print(f"关闭审计日志时出错: {e}")
@@ -2949,3 +2962,24 @@ class ZPP011Beautiful(EventsMixIn):
         finally:
 
             self.root.destroy()
+
+    def _generate_full_report(self):
+        """调用 ppt_generator 基于当前分析结果生成 PPT 报告"""
+        if self.audit_data is None or self.audit_data.empty:
+            messagebox.showinfo("提示", "请先完成分析并加载审核数据")
+            return
+        # 获取本次分析对应的 Excel 文件路径
+        excel_path = getattr(self, '_analysis_output_path', None)
+        if not excel_path or not os.path.exists(excel_path):
+            messagebox.showwarning("提示", "未找到分析结果 Excel，请重新分析或手动生成")
+            return
+        from ppt_generator import run_ppt_generation
+        output_dir = self.output_dir.get() or os.path.expanduser("~/Documents/ZPP011分析报告")
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, f"ZPP011偏差分析报告_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pptx")
+        success = run_ppt_generation(excel_path, output_path, log_cb=self.log)
+        if success:
+            if messagebox.askyesno("生成成功", f"PPT 已生成：\n{output_path}\n是否立即打开？"):
+                os.startfile(output_path)
+        else:
+            messagebox.showerror("生成失败", "PPT 生成失败，请查看日志")

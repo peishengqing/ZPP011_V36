@@ -950,15 +950,16 @@ class AnalysisEvents:
                 self.progress_bar.pack_forget()
             raise
 
-        # --- 加载成功后清理临时 Excel 文件 ---
-        if hasattr(self, '_analysis_output_path') and self._analysis_output_path:
-            try:
-                if os.path.exists(self._analysis_output_path):
-                    os.remove(self._analysis_output_path)
-                    self.log("已清理临时文件: " + os.path.basename(self._analysis_output_path), "info")
-                    self._analysis_output_path = None
-            except Exception as e:
-                self.log("清理临时文件失败: " + str(e), "warn")
+        # --- 加载成功后清理临时 Excel 文件（延后到程序退出）---
+        # 不再立即删除，改为在 ZPP011Beautiful.on_closing 中统一清理
+        # if hasattr(self, '_analysis_output_path') and self._analysis_output_path:
+        #     try:
+        #         if os.path.exists(self._analysis_output_path):
+        #             os.remove(self._analysis_output_path)
+        #             self.log("已清理临时文件: " + os.path.basename(self._analysis_output_path), "info")
+        #             self._analysis_output_path = None
+        #     except Exception as e:
+        #         self.log("清理临时文件失败: " + str(e), "warn")
 
     def _on_load_error(self, error):
         """异步加载失败回调"""
