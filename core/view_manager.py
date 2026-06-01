@@ -4,41 +4,54 @@ import json
 import os
 from typing import Dict, List, Any
 
-VIEWS_FILE = os.path.join(os.path.expanduser('~'), '.zpp011_audit', 'views.json')
+DEFAULT_VIEWS_DIR = os.path.join(os.path.expanduser('~'), '.zpp011_audit')
+VIEWS_FILE = os.path.join(DEFAULT_VIEWS_DIR, 'views.json')
 
 
 class ViewManager:
-    def __init__(self):
+    def __init__(self, config_dir: str = None):
+        if config_dir:
+            self.config_dir = config_dir
+            self.views_file = os.path.join(config_dir, 'views.json')
+        else:
+            self.config_dir = DEFAULT_VIEWS_DIR
+            self.views_file = VIEWS_FILE
         self.views = self._load()
 
     def _load(self) -> Dict[str, Any]:
-        if os.path.exists(VIEWS_FILE):
+        if os.path.exists(self.views_file):
             try:
-                with open(VIEWS_FILE, 'r', encoding='utf-8') as f:
+                with open(self.views_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except:
                 return {}
         return {}
 
     def _save(self):
-        os.makedirs(os.path.dirname(VIEWS_FILE), exist_ok=True)
-        with open(VIEWS_FILE, 'w', encoding='utf-8') as f:
+        os.makedirs(os.path.dirname(self.views_file), exist_ok=True)
+        with open(self.views_file, 'w', encoding='utf-8') as f:
             json.dump(self.views, f, indent=2, ensure_ascii=False)
 
     def list_views(self) -> List[str]:
         return list(self.views.keys())
 
-    def save_view(self, name: str, state: Dict[str, Any]):
-        self.views[name] = state
-        self._save()
+    def save_view(self, name: str, state: Dict[str, Any]) -> bool:
+        try:
+            self.views[name] = state
+            self._save()
+            return True
+        except:
+            return False
 
-    def delete_view(self, name: str):
+    def delete_view(self, name: str) -> bool:
         if name in self.views:
             del self.views[name]
             self._save()
+            return True
+        return False
 
     def load_view(self, name: str) -> Dict[str, Any]:
-        return self.views.get(name, {})
+        return self.views.get(name)  # 不存在时返回 None，不是 {}
 
     def get_current_state(self, app) -> Dict[str, Any]:
         """从当前界面收集视图状态"""

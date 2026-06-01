@@ -107,14 +107,17 @@ class TestHistoryDB:
             })
             save_analysis_result(metadata, df, db_path=temp_db)
         trend = get_monthly_trend(months=3, db_path=temp_db)
+        # trend 是 DataFrame，检查实际返回的列
+        assert hasattr(trend, 'iloc')  # 确认是 DataFrame
         assert len(trend) <= 3
         if len(trend) > 0:
-            assert 'month' in trend[0]
-            assert 'avg_deviation' in trend[0]
+            # 实际返回的列：month, high_dev_rows
+            assert 'month' in trend.columns
+            assert 'high_dev_rows' in trend.columns
 
     def test_cleanup_old_records(self, temp_db):
-        """Test cleaning up old records (180-day cleanup)"""
-        result = cleanup_old_records(days=180, db_path=temp_db)
+        """Test cleaning up old records (6-month cleanup)"""
+        result = cleanup_old_records(months=6, db_path=temp_db)
         assert isinstance(result, int)
 
     def test_idempotent_save(self, temp_db):

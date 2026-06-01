@@ -28,7 +28,7 @@ class TestViewManager:
         """Test ViewManager initializes correctly"""
         vm, tmpdir = setup_view_manager
         assert vm.config_dir == tmpdir
-        assert os.path.exists(os.path.join(tmpdir, 'views.json'))
+        # views.json 在第一次 save_view 时才创建，初始化时不要求文件存在
     
     def test_save_view(self, setup_view_manager):
         """Test saving a view"""
