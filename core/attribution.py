@@ -1,172 +1,152 @@
 # -*- coding: utf-8 -*-
-"""AI 归因分析算法 - 偏差原因智能分析"""
+"""
+AI 归因分析模块
+对比当前分析数据与历史分析数据，定位偏差变化的主要贡献维度
+"""
 import pandas as pd
-from typing import Dict, Any, Optional
-from core.history_db import get_analysis_list, get_analysis_data
+from core import history_db
 
 
-def get_latest_history_analysis() -> Optional[pd.DataFrame]:
-    """获取最近一次历史分析的明细数据（排除当前分析）"""
-    records = get_analysis_list(limit=2)  # 最近两次
-    if not records:
-        return None
-    # 如果有两条以上，取第二条（即上一次）；如果只有一条，则无历史
-    if len(records) >= 2:
-        latest_id = records[1]['id']  # 第一条是最新（当前），第二条是上一次
-        return get_analysis_data(latest_id)
+def get_latest_history_analysis():
+    """获取最近一次历史分析的数据（用于对比）"""
+    try:
+        records = history_db.get_analysis_list(limit=2)
+        if records and len(records) >= 2:
+            latest_id = records[1]['id']  # 最近一次（非当前）
+            return history_db.get_analysis_data(latest_id)
+    except Exception:
+        pass
     return None
 
 
-def calculate_contribution(current_df: pd.DataFrame, history_df: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+def generate_report_text(current_df, history_df):
     """
-    计算偏差变化的贡献度（按物料大类 + 车间）
-    返回: {
-        'has_history': bool,
-        'current_total': float,
-        'history_total': float,
-        'change': float,
-        'change_pct': float,
-        'contributions': [{'dimension': '包材', 'contribution': 12000, 'pct': 60, ...}, ...],
-        'workshop_contributions': [{'dimension': '车间A', ...}, ...],
-        'report_text': str
-    }
+    生成 AI 归因分析报告文本
     """
-    # 确定偏差金额列名
+    if current_df is None or current_df.empty:
+        return "无当前分析数据，无法生成归因报告。"
+
+    # 1. 计算偏差总额
     amount_col = None
     for col in ['偏差金额', '偏差金额(含税)', 'deviation_amount']:
         if col in current_df.columns:
             amount_col = col
             break
     if amount_col is None:
-        return {'error': '当前数据缺少偏差金额列', 'report_text': '无法进行归因分析：数据中无偏差金额信息。'}
+        return "数据中缺少偏差金额列，无法进行归因分析。"
 
-    # 当前总额
-    current_total = current_df[amount_col].sum()
-    result = {
-        'has_history': False,
-        'current_total': current_total,
-        'history_total': 0.0,
-        'change': 0.0,
-        'change_pct': 0.0,
-        'contributions': [],
-        'workshop_contributions': [],
-        'report_text': ''
-    }
+    current_total = current_df[amount_col].fillna(0).sum()
+    if history_df is not None and not history_df.empty:
+        history_total = history_df[amount_col].fillna(0).sum()
+        change = current_total - history_total
+        change_pct = (change / abs(history_total) * 100) if history_total != 0 else float('inf')
+    else:
+        history_total = None
+        change = None
+        change_pct = None
 
-    if history_df is None or history_df.empty:
-        # 无历史数据：仅展示当前分布
-        report = f"📊 AI 归因分析报告\n\n"
-        report += f"当前偏差总额: {current_total:,.2f} 元\n\n"
-        # 按物料大类统计
-        if 'material_category' in current_df.columns:
-            cat_stats = current_df.groupby('material_category')[amount_col].apply(
-                lambda x: x.abs().sum()).sort_values(ascending=False)
-            report += "偏差金额按物料大类分布（绝对值）：\n"
-            for cat, amt in cat_stats.head(5).items():
-                pct = (amt / current_total * 100) if current_total != 0 else 0
-                report += f"  • {cat}: {amt:,.2f} 元 ({pct:.1f}%)\n"
-        else:
-            report += "数据中缺少物料大类列，无法按类别分析。\n"
-        # 按车间统计
-        for wcol in ['车间', '生产管理员描述']:
-            if wcol in current_df.columns:
-                ws_stats = current_df.groupby(wcol)[amount_col].apply(
-                    lambda x: x.abs().sum()).sort_values(ascending=False)
-                report += f"\n偏差金额按{wcol}分布（绝对值）：\n"
-                for ws, amt in ws_stats.head(5).items():
-                    pct = (amt / current_total * 100) if current_total != 0 else 0
-                    report += f"  • {ws}: {amt:,.2f} 元 ({pct:.1f}%)\n"
-                break
-        result['report_text'] = report
-        return result
+    # 报告头部
+    lines = []
+    lines.append("📊 AI 归因分析报告")
+    lines.append("=" * 40)
+    if history_total is not None:
+        lines.append("对比基准：最近一次历史分析")
+        lines.append(f"历史偏差总额: {history_total:,.2f} 元")
+        lines.append(f"当前偏差总额: {current_total:,.2f} 元")
+        if change is not None:
+            sign = "+" if change >= 0 else ""
+            lines.append(f"变化: {sign}{change:,.2f} 元 ({sign}{change_pct:.1f}%)")
+            lines.append("")
+    else:
+        lines.append("对比基准：无历史数据，仅展示当前分析")
+        lines.append("")
 
-    # 有历史数据：计算变化贡献度
-    history_total = history_df[amount_col].sum()
-    change = current_total - history_total
-    change_pct = (change / history_total * 100) if history_total != 0 else float('inf')
-
-    result['has_history'] = True
-    result['history_total'] = history_total
-    result['change'] = change
-    result['change_pct'] = change_pct
-
-    # 按物料大类计算贡献度
-    if 'material_category' in current_df.columns and 'material_category' in history_df.columns:
-        current_by_cat = current_df.groupby('material_category')[amount_col].sum()
-        history_by_cat = history_df.groupby('material_category')[amount_col].sum()
-        all_cats = set(current_by_cat.index).union(history_by_cat.index)
-        contributions = []
-        for cat in all_cats:
-            cur = current_by_cat.get(cat, 0)
-            hist = history_by_cat.get(cat, 0)
-            contr = cur - hist
-            if contr != 0:
-                contributions.append({
-                    'dimension': cat,
-                    'contribution': contr,
-                    'current': cur,
-                    'history': hist,
-                    'pct': (contr / change * 100) if change != 0 else 0
-                })
-        contributions.sort(key=lambda x: abs(x['contribution']), reverse=True)
-        result['contributions'] = contributions[:5]
-
-    # 按车间计算贡献度
-    for wcol in ['车间', '生产管理员描述']:
-        if wcol in current_df.columns and wcol in history_df.columns:
-            current_by_ws = current_df.groupby(wcol)[amount_col].sum()
-            history_by_ws = history_df.groupby(wcol)[amount_col].sum()
-            all_ws = set(current_by_ws.index).union(history_by_ws.index)
-            ws_contribs = []
-            for ws in all_ws:
-                cur = current_by_ws.get(ws, 0)
-                hist = history_by_ws.get(ws, 0)
-                contr = cur - hist
-                if contr != 0:
-                    ws_contribs.append({
-                        'dimension': ws,
-                        'contribution': contr,
-                        'current': cur,
-                        'history': hist,
-                        'pct': (contr / change * 100) if change != 0 else 0
-                    })
-            ws_contribs.sort(key=lambda x: abs(x['contribution']), reverse=True)
-            result['workshop_contributions'] = ws_contribs[:5]
+    # 2. 按车间贡献度分解（如果有车间列）
+    workshop_col = None
+    for col in ['车间', '生产管理员描述', 'admin']:
+        if col in current_df.columns:
+            workshop_col = col
             break
+    if workshop_col and history_total is not None and history_df is not None:
+        # 计算各车间偏差金额（绝对值，用于贡献度）
+        # 注意：贡献度定义为 (当前车间偏差 - 历史车间偏差) 占总变化的百分比
+        hist_workshop = history_df.groupby(workshop_col)[amount_col].sum().fillna(0)
+        curr_workshop = current_df.groupby(workshop_col)[amount_col].sum().fillna(0)
+        all_workshops = set(hist_workshop.index) | set(curr_workshop.index)
+        workshop_contrib = []
+        for ws in all_workshops:
+            hist_val = hist_workshop.get(ws, 0)
+            curr_val = curr_workshop.get(ws, 0)
+            diff = curr_val - hist_val
+            if abs(diff) > 0.01 and abs(change) > 0.01:
+                contrib = diff / change * 100
+                workshop_contrib.append((ws, diff, contrib))
+        # 按贡献度绝对值排序
+        workshop_contrib.sort(key=lambda x: abs(x[2]), reverse=True)
+        if workshop_contrib:
+            lines.append("📌 主要偏差来源（按车间贡献度）：")
+            for i, (ws, diff, contrib) in enumerate(workshop_contrib[:5], 1):
+                sign = "+" if diff >= 0 else ""
+                lines.append(f"  {i}. {ws}: {sign}{diff:,.2f} 元 (贡献率 {contrib:.1f}%)")
+            lines.append("")
 
-    # 生成报告文本
-    report = f"📊 AI 归因分析报告\n\n"
-    report += f"对比基准：最近一次历史分析\n"
-    report += f"历史偏差总额: {history_total:,.2f} 元\n"
-    report += f"当前偏差总额: {current_total:,.2f} 元\n"
-    if history_total != 0:
-        report += f"变化: {change:+,.2f} 元 ({change_pct:+.1f}%)\n\n"
-    else:
-        report += f"变化: 历史总额为零，无法计算百分比\n\n"
+    # 3. 按物料大类贡献度分解（如果有物料大类列）
+    cat_col = None
+    for col in ['material_category', '物料大类']:
+        if col in current_df.columns:
+            cat_col = col
+            break
+    if cat_col and history_total is not None and history_df is not None:
+        hist_cat = history_df.groupby(cat_col)[amount_col].sum().fillna(0)
+        curr_cat = current_df.groupby(cat_col)[amount_col].sum().fillna(0)
+        all_cats = set(hist_cat.index) | set(curr_cat.index)
+        cat_contrib = []
+        for cat in all_cats:
+            hist_val = hist_cat.get(cat, 0)
+            curr_val = curr_cat.get(cat, 0)
+            diff = curr_val - hist_val
+            if abs(diff) > 0.01 and abs(change) > 0.01:
+                contrib = diff / change * 100
+                cat_contrib.append((cat, diff, contrib))
+        cat_contrib.sort(key=lambda x: abs(x[2]), reverse=True)
+        if cat_contrib:
+            lines.append("📌 主要偏差来源（按物料大类贡献度）：")
+            for i, (cat, diff, contrib) in enumerate(cat_contrib[:5], 1):
+                sign = "+" if diff >= 0 else ""
+                lines.append(f"  {i}. {cat}: {sign}{diff:,.2f} 元 (贡献率 {contrib:.1f}%)")
+            lines.append("")
+        else:
+            lines.append("📌 物料大类数据不足，无法归因。")
+            lines.append("")
 
-    if result['contributions']:
-        report += "📌 主要偏差来源（按物料大类贡献度）：\n"
-        for i, c in enumerate(result['contributions'][:3], 1):
-            if c['contribution'] > 0:
-                report += f"  {i}. {c['dimension']}: 增加 {c['contribution']:+,.2f} 元 (贡献率 {c['pct']:.1f}%)\n"
-            else:
-                report += f"  {i}. {c['dimension']}: 减少 {c['contribution']:+,.2f} 元 (贡献率 {c['pct']:.1f}%)\n"
-    else:
-        report += "无有效的物料大类数据，无法归因。\n"
+    # 4. 偏差方向分析（超耗/少耗）
+    if '偏差率(%)' in current_df.columns:
+        over = current_df[current_df['偏差率(%)'] > 0][amount_col].sum()
+        under = current_df[current_df['偏差率(%)'] < 0][amount_col].sum()
+        lines.append("💡 偏差方向分析：")
+        lines.append(f"  超耗金额: {over:,.2f} 元")
+        lines.append(f"  少耗金额: {under:,.2f} 元")
+        lines.append("")
 
-    if result['workshop_contributions']:
-        report += "\n📌 主要偏差来源（按车间贡献度）：\n"
-        for i, c in enumerate(result['workshop_contributions'][:3], 1):
-            if c['contribution'] > 0:
-                report += f"  {i}. {c['dimension']}: 增加 {c['contribution']:+,.2f} 元 (贡献率 {c['pct']:.1f}%)\n"
-            else:
-                report += f"  {i}. {c['dimension']}: 减少 {c['contribution']:+,.2f} 元 (贡献率 {c['pct']:.1f}%)\n"
+    # 5. 审核情况（可选）
+    if '审核状态' in current_df.columns:
+        reviewed = (current_df['审核状态'] == '已审核').sum()
+        total = len(current_df)
+        if total > 0:
+            rate = reviewed / total * 100
+            lines.append(f"📋 审核进度：{reviewed}/{total} 行已审核 ({rate:.1f}%)")
+            lines.append("")
 
-    result['report_text'] = report
-    return result
+    # 6. 备注覆盖率（可选）
+    if '备注原因' in current_df.columns:
+        noted = current_df['备注原因'].notna().sum()
+        total = len(current_df)
+        if total > 0:
+            noted_rate = noted / total * 100
+            lines.append(f"📝 备注覆盖率：{noted}/{total} 行有备注 ({noted_rate:.1f}%)")
+            lines.append("")
 
+    lines.append("=" * 40)
+    lines.append("报告生成时间：" + pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"))
 
-def generate_report_text(current_df: pd.DataFrame, history_df: Optional[pd.DataFrame] = None) -> str:
-    """生成可直接展示的文本报告"""
-    res = calculate_contribution(current_df, history_df)
-    return res.get('report_text', '归因分析失败')
+    return "\n".join(lines)

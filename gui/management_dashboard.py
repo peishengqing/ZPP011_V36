@@ -358,7 +358,7 @@ class DashboardWindow:
         categories = cat_amount.index.tolist()
         amounts = cat_amount.values
 
-        bars = ax.bar(categories, amounts, color='#2ecc71', picker=True, label='当前')
+        bars = ax.bar(categories, amounts, color='#2ecc71', picker=5, label='当前')
         if comp_cat_amount is not None:
             comp_amounts = [comp_cat_amount.get(c, 0) for c in categories]
             ax.plot(categories, comp_amounts, marker='o', linestyle='--', color='red', label='对比')
@@ -388,26 +388,57 @@ class DashboardWindow:
 
         # 绑定点击事件
         canvas.mpl_connect('pick_event', self._on_material_bar_click)
+        
+        # 兼容：也尝试绑定 button_press_event（备用方案）
+        def on_click(event):
+            if event.inaxes != ax:
+                return
+            # 查找最近的柱子
+            clicked_cat = None
+            min_dist = float('inf')
+            for i, cat in enumerate(categories):
+                bar = bars[i]
+                bar_x = bar.get_x() + bar.get_width() / 2
+                if abs(event.xdata - bar_x) < bar.get_width():
+                    clicked_cat = cat
+                    break
+            if clicked_cat:
+                self._handle_category_click(clicked_cat)
+        canvas.mpl_connect('button_press_event', on_click)
 
         # 保存当前 figure 供导出使用
         self._current_fig = fig
 
     def _on_material_bar_click(self, event):
         """点击物料大类柱状图时，通知主窗口筛选该物料大类（Task 019）"""
+        print(f"[DEBUG] pick_event triggered, artist: {event.artist}")
         if not hasattr(event, 'artist') or not hasattr(self, '_bar_category_map'):
+            print("[DEBUG] 缺少必要属性")
             return
         bar = event.artist
         category = self._bar_category_map.get(bar)
         if category:
-            if hasattr(self.parent, 'set_filter_and_refresh'):
+            self._handle_category_click(category)
+        else:
+            print(f"[DEBUG] 未找到类别映射: {bar}")
+
+    def _handle_category_click(self, category):
+        """处理物料大类点击（统一入口）"""
+        print(f"[DEBUG] 点击物料大类: {category}")
+        if hasattr(self.parent, 'set_filter_and_refresh'):
+            try:
                 self.parent.set_filter_and_refresh('material_category', category)
                 # 激活主窗口
                 tk_root = self.parent.root if hasattr(self.parent, 'root') else self.parent
                 tk_root.lift()
                 tk_root.focus_force()
                 self.status_var.set(f"已下钻至物料大类：{category}")
-            else:
-                self.status_var.set("主窗口未实现 set_filter_and_refresh 方法，无法下钻")
+            except Exception as e:
+                print(f"[ERROR] 下钻失败: {e}")
+                self.status_var.set(f"下钻失败: {e}")
+        else:
+            print("[ERROR] 主窗口未实现 set_filter_and_refresh 方法")
+            self.status_var.set("主窗口未实现下钻方法")
 
     def _export_current_chart(self):
         """导出当前图表为 PNG"""

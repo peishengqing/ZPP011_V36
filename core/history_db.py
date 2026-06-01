@@ -259,13 +259,22 @@ def get_analysis_data(analysis_id: int, db_path: str = DB_PATH) -> pd.DataFrame:
         # 转换为 DataFrame，列名使用中文
         columns = ['工厂', '车间', '订单日期', '流程订单', '物料编码',
                    '物料大类', '物料描述', '定额', '实际', '偏差率(%)',
-                   '替代料', '备注原因', '审核结果', 'AI建议', '审核状态', '审核来源', '偏差金额']
+                   'is_alt', '备注原因', '审核结果', 'AI建议', '审核状态', '审核来源', '偏差金额']
 
         df = pd.DataFrame(rows, columns=columns)
 
-        # 转换替代料字段
-        df['替代料'] = df['is_alt'].map({1: '是', 0: '否'})
-        df = df.drop(columns=['is_alt'])
+        # 转换替代料字段（兼容 is_alt 列缺失或类型为 bool/str）
+        if 'is_alt' in df.columns:
+            try:
+                if df['is_alt'].dtype in ('int64', 'float64'):
+                    df['替代料'] = df['is_alt'].map({1: '是', 0: '否'})
+                else:
+                    df['替代料'] = df['is_alt'].apply(lambda x: '是' if x else '否')
+            except Exception:
+                df['替代料'] = ''
+            df = df.drop(columns=['is_alt'])
+        else:
+            df['替代料'] = ''
 
         return df
     finally:
