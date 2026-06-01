@@ -2884,6 +2884,27 @@ class ZPP011Beautiful(EventsMixIn):
 
         self._on_filter_changed(None)
 
+    def _open_rule_config(self):
+        """打开可视化规则配置窗口"""
+        try:
+            from gui.rule_config_dialog import RuleConfigDialog
+            import os
+            rules_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'system', 'rules.json')
+            rules_path = os.path.abspath(rules_path)
+
+            def on_rules_changed():
+                # 重新加载规则引擎
+                if hasattr(self, 'rule_engine'):
+                    self.rule_engine.reload_rules()
+                # 刷新表格颜色/状态
+                if hasattr(self, 'audit_data') and self.audit_data is not None:
+                    self._refresh_audit_tree(self.audit_data)
+
+            RuleConfigDialog(self, rules_path, on_rules_changed_callback=on_rules_changed)
+        except Exception as e:
+            from tkinter import messagebox
+            messagebox.showerror("错误", f"打开规则配置失败: {e}")
+
     def _on_close(self):
 
         """窗口关闭时的清理工作（Task 004）"""
