@@ -2424,6 +2424,8 @@ class TableEvents:
             self.summary_quota_var.set("0.00")
             self.summary_actual_var.set("0.00")
             self.summary_amount_var.set("0.00")
+            if hasattr(self, 'summary_qty_var'):
+                self.summary_qty_var.set("0.00")
             return
 
         # 定额列（兼容多种列名）
@@ -2468,6 +2470,91 @@ class TableEvents:
         self.summary_quota_var.set(fmt(quota_sum))
         self.summary_actual_var.set(fmt(actual_sum))
         self.summary_amount_var.set(fmt(amount_sum))
+
+        # 偏差数量列（新增）
+        qty_col = None
+        for col in ['偏差数量', '数量偏差', 'delta_qty', 'dev_qty']:
+            if col in df.columns:
+                qty_col = col
+                break
+        if qty_col is None and actual_col and quota_col:
+            qty_sum = (df[actual_col] - df[quota_col]).fillna(0).sum()
+        elif qty_col:
+            qty_sum = df[qty_col].fillna(0).sum()
+        else:
+            qty_sum = 0
+
+        if hasattr(self, 'summary_qty_var'):
+            self.summary_qty_var.set(fmt(qty_sum))
+
+    def _show_unit_summary(self):
+        """弹出按单位分组汇总窗口（方案一 + 三个补丁）"""
+        from tkinter import messagebox, ttk
+        import pandas as pd
+        import tkinter as tk
+
+        # 获取当前数据（优先使用筛选后的数据）
+        df = self.filtered_data if hasattr(self, 'filtered_data') and self.filtered_data is not None else self.audit_data
+        if df is None or df.empty:
+            messagebox.showinfo("提示", "无数据")
+            return
+
+        # ===== 补丁1：列名兜底（模糊匹配单位列）=====
+        unit_col = None
+        for c in df.columns:
+            if '单位' in str(c) or 'unit' in str(c).lower():
+                unit_col = c
+                break
+        if not unit_col:
+            messagebox.showwarning("提示", "数据中未找到包含'单位'的列，无法按单位汇总")
+            return
+
+        # 确定定额、实际、偏差金额、偏差数量列
+        quota_col = next((c for c in ['定额', '数量-定额', 'quota'] if c in df.columns), None)
+        actual_col = next((c for c in ['实际', '数量-实际', 'actual'] if c in df.columns), None)
+        amount_col = next((c for c in ['偏差金额', '偏差金额(含税)', 'deviation_amount'] if c in df.columns), None)
+        qty_col = next((c for c in ['偏差数量', '数量偏差', 'dev_qty'] if c in df.columns), None)
+
+        # 按单位分组
+        groups = df.groupby(unit_col)
+        result_lines = []
+        for unit, group in groups:
+            # ===== 补丁2：强制数值化 + 填充0，防止空值崩溃 =====
+            quota_sum = pd.to_numeric(group[quota_col], errors='coerce').fillna(0).sum() if quota_col else 0
+            actual_sum = pd.to_numeric(group[actual_col], errors='coerce').fillna(0).sum() if actual_col else 0
+            amount_sum = pd.to_numeric(group[amount_col], errors='coerce').fillna(0).sum() if amount_col else 0
+
+            if qty_col:
+                qty_sum = pd.to_numeric(group[qty_col], errors='coerce').fillna(0).sum()
+            elif actual_col and quota_col:
+                qty_sum = (pd.to_numeric(group[actual_col], errors='coerce').fillna(0) -
+                          pd.to_numeric(group[quota_col], errors='coerce').fillna(0)).sum()
+            else:
+                qty_sum = 0
+
+            result_lines.append(
+                f"单位 {unit}：定额 {quota_sum:,.2f}，实际 {actual_sum:,.2f}，"
+                f"偏差金额 {amount_sum:,.2f}，偏差数量 {qty_sum:,.2f}"
+            )
+
+        if not result_lines:
+            messagebox.showinfo("提示", "无有效分组数据")
+            return
+
+        # ===== 补丁3：模态窗口 + 依附主窗口 =====
+        win = tk.Toplevel(self.root)
+        win.title("按单位汇总")
+        win.geometry("600x300")
+        win.transient(self.root)  # 依附主窗口
+        win.grab_set()  # 模态，强制用户处理
+
+        text = tk.Text(win, wrap=tk.WORD, font=("微软雅黑", 10))
+        text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        text.insert(tk.END, "\n".join(result_lines))
+        text.config(state=tk.DISABLED)
+
+        # 关闭按钮（释放 grab）
+        tk.Button(win, text="关闭", command=win.destroy).pack(pady=5)
 
     def _show_precheck_report(self, df):
         """F6 预检报告弹窗"""

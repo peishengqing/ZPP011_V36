@@ -490,6 +490,19 @@ def _build_ui(self):
                  bg=C['surface'], fg=C['text'], width=12, anchor="e").pack(side=tk.LEFT, padx=5)
         tk.Label(summary_frame, text="偏差金额", font=("Microsoft YaHei", 9),
                  bg=C['surface'], fg=C['text_dim']).pack(side=tk.LEFT)
+
+        # 偏差数量合计（新增）
+        self.summary_qty_var = tk.StringVar(value="0.00")
+        tk.Label(summary_frame, textvariable=self.summary_qty_var, font=("Microsoft YaHei", 9),
+                 bg=C['surface'], fg=C['text'], width=12, anchor="e").pack(side=tk.LEFT, padx=5)
+        tk.Label(summary_frame, text="偏差数量", font=("Microsoft YaHei", 9),
+                 bg=C['surface'], fg=C['text_dim']).pack(side=tk.LEFT)
+
+        # 单位汇总按钮（新增）
+        self.unit_summary_btn = tk.Button(summary_frame, text="📊 单位汇总",
+                 command=self._show_unit_summary,
+                 font=("Microsoft YaHei", 9), bg="#e9ecef", relief="flat", padx=5)
+        self.unit_summary_btn.pack(side=tk.RIGHT, padx=10)
         # ==================== 合计行结束 ====================
 
         # 应用初始列宽锁定状态
