@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """表格展示、筛选、排序、双击卡片等事件"""
 
 import tkinter as tk
@@ -1102,6 +1102,22 @@ class TableEvents:
         self.log(f"筛选完成:显示 {len(filtered_data)} 条记录", "info")
 
     # ── 智能审核筛选栏方法 ─────────────────────────────
+
+    def set_filter_and_refresh(self, filter_key: str, filter_value: str):
+        """供看板下钻等外部调用，设置筛选器并刷新表格（Task 019）"""
+        if filter_key in self.filter_widgets:
+            widget = self.filter_widgets[filter_key]
+            # 日期筛选器是 tuple，不支持 set
+            if isinstance(widget, tuple):
+                return
+            if hasattr(widget, 'set'):
+                widget.set(filter_value)
+            self._on_filter_changed(filter_key)
+            if hasattr(self, 'log'):
+                self.log(f"[019] 下钻筛选：{filter_key} = {filter_value}", "info")
+        else:
+            if hasattr(self, 'log'):
+                self.log(f"[019] 筛选器 '{filter_key}' 不存在，无法下钻", "error")
 
     def _on_filter_changed(self, col_key):
         """任一筛选下拉框变化时,组合所有筛选条件并刷新表格(统一使用 FilterEngine)"""

@@ -413,7 +413,7 @@ class AnalysisEvents:
         self._load_audit_data_from_output()
 
     def _load_audit_data_from_output(self, file_path=None):
-        """分析完成后：异步从输出目录加载偏差明细到审核表格"""
+        """分析完成后：从输出目录加载偏差明细到审核表格（同步加载）"""
         try:
             # 显示进度条
             if hasattr(self, 'progress_bar'):
@@ -421,23 +421,20 @@ class AnalysisEvents:
                 self.progress_bar.start(10)
             if hasattr(self, 'set_status'):
                 self.set_status("正在加载数据，请稍候...")
-            # Capture UI values for worker (no UI access in worker)
+            # Capture UI values for worker
             self._pending_output_dir = self.output_dir.get() if hasattr(self, 'output_dir') else None
-            self.task_manager.run(
-                lambda: self._load_data_worker(file_path),
-                callback=self._on_load_done,
-                error_callback=self._on_load_error
-            )
+            # 直接同步调用（8000行数据很快，不需要线程）
+            result_df = self._load_data_worker(file_path)
+            self._on_load_done(result_df)
         except Exception as e:
-            if hasattr(self, 'progress_bar'):
-                self.progress_bar.stop()
-                self.progress_bar.pack_forget()
-            self.log(f"[ERROR] _on_load_done异常: {e}", "error")
             import traceback
-            self.log(traceback.format_exc()[-600:], "error")
+            err_msg = f"{e}\n{traceback.format_exc()}"
+            self._on_load_error(err_msg)
 
     def _load_data_worker(self, file_path=None):
         """纯数据处理：查找文件、读取、清洗、构建audit_df（禁止UI操作）"""
+        with open(r"C:\Users\Administrator\Desktop\zpp011_debug.txt", "a", encoding="utf-8") as _lf:
+            _lf.write(f"[TRACE] _load_data_worker START\n")
         import pandas as pd
         import glob as _glob
         # 1. 确定输出目录
@@ -450,15 +447,25 @@ class AnalysisEvents:
                 out_dir = os.path.expanduser('~/Desktop')
         else:
             out_dir = None
-        # 2. 找文件
+        # 2. 找文件（支持多种命名格式）
         if file_path:
             latest_file = file_path
         else:
-            pattern = os.path.join(out_dir, 'ZPP011偏差分析最终版_*.xlsx')
-            files = _glob.glob(pattern)
-            if not files:
-                raise FileNotFoundError("未找到任何分析结果文件")
-            latest_file = max(files, key=os.path.getmtime)
+            # 按优先级尝试多种文件命名格式
+            patterns = [
+                os.path.join(out_dir, 'ZPP011偏差分析最终版_*.xlsx'),
+                os.path.join(out_dir, 'ZPP011偏差分析结果包_*.xlsx'),
+                os.path.join(out_dir, 'ZPP011偏差分析_*.xlsx'),
+                os.path.join(out_dir, 'ZPP011*.xlsx'),
+            ]
+            latest_file = None
+            for pattern in patterns:
+                files = _glob.glob(pattern)
+                if files:
+                    latest_file = max(files, key=os.path.getmtime)
+                    break
+            if not latest_file:
+                raise FileNotFoundError("未找到任何分析结果文件（已尝试多种命名格式）")
         # 3. 读取
         dev_df = pd.read_excel(latest_file, sheet_name='完整偏差明细')
         if dev_df.empty:
@@ -471,6 +478,24 @@ class AnalysisEvents:
         dev_df['偏差率数值'] = dev_df['偏差率'].apply(parse_rate)
         # 5. 构建 audit_df
         audit_df = dev_df.copy()
+
+        # ===== 保留金额和数量列，用于成本换算 =====
+        if '金额-实际(含税)' in dev_df.columns and '数量-实际' in dev_df.columns:
+            audit_df['金额-实际(含税)'] = dev_df['金额-实际(含税)']
+            audit_df['数量-实际'] = dev_df['数量-实际']
+            audit_df['_unit_price'] = 0.0
+            mask = (audit_df['数量-实际'] != 0) & audit_df['数量-实际'].notna()
+            audit_df.loc[mask, '_unit_price'] = audit_df.loc[mask, '金额-实际(含税)'] / audit_df.loc[mask, '数量-实际']
+        else:
+            audit_df['_unit_price'] = 0.0
+            print("[警告] 原始数据缺少金额或数量列，成本换算将不可用")
+
+        # 确保订单类型列存在（原始SAP数据中有"订单类型"列，值为ZP01等）
+        # 确保订单类型列存在（原始SAP数据中有"订单类型"列，值为ZP01等）
+        if '订单类型' in dev_df.columns:
+            audit_df['订单类型'] = dev_df['订单类型']
+        else:
+            audit_df['订单类型'] = ''
         # 修正原表行号：优先使用 analyzer 计算的 _excel_row（openpyxl真实行号）
         if '_excel_row' in dev_df.columns:
             audit_df['excel_row'] = dev_df['_excel_row'].apply(lambda x: int(x) if pd.notna(x) else 0)
@@ -628,12 +653,18 @@ class AnalysisEvents:
                     return '绿'
             audit_df['_priority_label'] = audit_df['偏差率(%)'].apply(get_priority_label)
 
+        with open(r"C:\Users\Administrator\Desktop\zpp011_debug.txt", "a", encoding="utf-8") as _lf:
+            _lf.write(f"[TRACE] _load_data_worker 完成: {len(audit_df) if 'audit_df' in dir() else '??'} 行\n")
         return audit_df
 
     def _on_load_done(self, result_df):
         """异步加载成功回调：处理所有UI更新"""
+        with open(r"C:\Users\Administrator\Desktop\zpp011_debug.txt", "a", encoding="utf-8") as _lf:
+            _lf.write(f"[TRACE] _on_load_done START: result_df={len(result_df) if result_df is not None else "None"} 行\n")
         try:
             self.audit_data = result_df
+            with open(r"C:\Users\Administrator\Desktop\zpp011_debug.txt", "a", encoding="utf-8") as _lf:
+                _lf.write(f"[TRACE] audit_data 已赋值: {len(self.audit_data)} 行\n")
             # ── 预计算单价（金额-实际(含税) / 数量-实际）用于成本换算器 ──
             if '金额-实际(含税)' in self.audit_data.columns and '数量-实际' in self.audit_data.columns:
                 self.audit_data['_unit_price'] = 0.0
