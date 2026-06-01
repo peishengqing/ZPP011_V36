@@ -14,6 +14,77 @@ import traceback
 class TableEvents:
     """表格展示、筛选、排序、双击卡片等事件"""
 
+    def _build_audit_values(self, row, i, mat_category, mat_desc, order_no_val,
+                              order_type_val, dev_rate, is_alt, status,
+                              remark, batch_remark, audit_result_val,
+                              audit_status_val, audit_source_val):
+        """
+        按 self.audit_tree['columns'] 的顺序动态构建 values 元组，
+        彻底避免 cols / heading / values 三处顺序不一致导致的列错位。
+        """
+        cols = self.audit_tree["columns"]
+        vals = []
+        for col in cols:
+            if col == "idx":
+                vals.append(i)
+            elif col == "excel_row":
+                v = row.get("原表行号", row.get("excel_row", 0))
+                vals.append(int(v)) if pd.notna(v) else vals.append("")
+            elif col == "factory":
+                vals.append(str(row.get("工厂", row.get("工厂名称", ""))))
+            elif col == "admin":
+                vals.append(str(row.get("车间", row.get("生产管理员描述", ""))))
+            elif col == "order_date":
+                v = str(row.get("订单日期", ""))[:10]
+                vals.append(v if pd.notna(row.get("订单日期")) else "")
+            elif col == "order_type":
+                vals.append(str(row.get("订单类型", "")))
+            elif col == "order_no":
+                vals.append(order_no_val)
+            elif col == "material_category":
+                vals.append(mat_category)
+            elif col == "code":
+                vals.append(str(row.get("物料编码", row.get("组件物料号", ""))))
+            elif col == "name":
+                vals.append(mat_desc[:30])
+            elif col == "unit":
+                vals.append(str(row.get("组件单位", row.get("单位", ""))))
+            elif col == "quota":
+                v = row.get("定额", row.get("数量-定额", 0))
+                vals.append(f"{v:.3f}")
+            elif col == "actual":
+                v = row.get("实际", row.get("数量-实际", 0))
+                vals.append(f"{v:.3f}")
+            elif col == "dev_rate":
+                vals.append(f"{dev_rate:.2f}%" if isinstance(dev_rate, (int, float)) else str(dev_rate))
+            elif col == "is_alt":
+                vals.append(is_alt)
+            elif col == "status":
+                vals.append(status)
+            elif col == "remark":
+                vals.append(remark)
+            elif col == "batch_remark":
+                vals.append(batch_remark[:30])
+            elif col == "audit_result":
+                vals.append(audit_result_val)
+            elif col == "AI建议":
+                v = str(row.get("AI建议", ""))[:50]
+                vals.append(v)
+            elif col == "audit_status":
+                vals.append(audit_status_val)
+            elif col == "audit_source":
+                vals.append(audit_source_val)
+            elif col == "deviation_amount":
+                v = row.get("偏差金额", row.get("材料偏差", 0))
+                vals.append(f"{v:,.2f}" if isinstance(v, (int, float)) else str(v))
+            elif col == "remark_check_status":
+                vals.append(str(row.get("remark_check_status", "")))
+            elif col == "remark_check_msg":
+                vals.append(str(row.get("remark_check_msg", "")))
+            else:
+                vals.append("")
+        return tuple(vals)
+
     def _refresh_audit_tree(self, df, skip_auto_sort=False):
         """用给定的 DataFrame 刷新智能审核表格"""
 
@@ -373,41 +444,14 @@ class TableEvents:
             if "订单类型" in row.index:
                 order_type_val = str(row.get("订单类型", ""))
 
-            item = self.audit_tree.insert(
-                "",
-                "end",
-                values=(
-                    i,  # idx
-                    int(row.get("原表行号", row.get("excel_row", 0)))
-                    if pd.notna(row.get("原表行号", row.get("excel_row")))
-                    else "",  # excel_row
-                    str(row.get("工厂", row.get("工厂名称", ""))),  # factory
-                    str(row.get("车间", row.get("生产管理员描述", ""))),  # admin
-                    str(row.get("订单日期", ""))[:10]
-                    if pd.notna(row.get("订单日期"))
-                    else "",  # order_date
-                    order_type_val,  # order_type
-                    order_no_val,  # order_no
-                    mat_category,  # material_category
-                    str(row.get("物料编码", row.get("组件物料号", ""))),  # code
-                    mat_desc[:20],  # name
-                    str(row.get("单位", row.get("基本单位", ""))),  # unit
-                    f"{row.get('定额', row.get('数量-定额', 0)):.3f}",  # quota
-                    f"{row.get('实际', row.get('数量-实际', 0)):.3f}",  # actual
-                    f"{dev_rate:.2f}%",  # dev_rate
-                    is_alt,  # is_alt
-                    status,  # status
-                    remark,  # remark
-                    batch_remark[:30],  # batch_remark
-                    audit_result_val,  # audit_result
-                    str(row.get("AI建议", ""))[:50],  # AI建议
-                    audit_status_val,  # audit_status
-                    audit_source_val,  # audit_source
-                    f"{row.get('偏差金额', 0):,.2f}",  # deviation_amount
-                    str(row.get("remark_check_status", "")),  # remark_check_status
-                    str(row.get("remark_check_msg", "")),  # remark_check_msg
-                ),
+            # 用 _build_audit_values 动态构建 values，避免列错位
+            values = self._build_audit_values(
+                row, i, mat_category, mat_desc, order_no_val,
+                order_type_val, dev_rate, is_alt, status,
+                remark, batch_remark, audit_result_val,
+                audit_status_val, audit_source_val
             )
+            item = self.audit_tree.insert("", "end", values=values)
 
             # Apply remark_check_status tag
             remark_status = row.get("remark_check_status", "")
@@ -913,13 +957,11 @@ class TableEvents:
 
         for key in self.audit_stat_cards:
             self.audit_stat_cards[key].configure(bg=C["surface2"])
-
             for child in self.audit_stat_cards[key].winfo_children():
                 child.configure(bg=C["surface2"])
 
         if filter_type:
             self.audit_stat_cards[filter_type].configure(bg="#e8f0fe")
-
             for child in self.audit_stat_cards[filter_type].winfo_children():
                 child.configure(bg="#e8f0fe")
 
@@ -932,11 +974,8 @@ class TableEvents:
         elif filter_type == "ok_note":
             filtered_data = self.audit_data[self.audit_data["备注原因"].notna()]
 
-        # ── P1#13:颜色筛选 ──
-
         elif filter_type == "_color":
             color_val = self.filter_vars.get("_color", tk.StringVar(value="全部")).get()
-
             if color_val and color_val != "全部":
                 color_map = {
                     "🔴 红": self.config.get("priority.red_label", "红"),
@@ -944,162 +983,140 @@ class TableEvents:
                     "🟡 黄": self.config.get("priority.yellow_label", "黄"),
                     "🟢 绿": self.config.get("priority.green_label", "绿"),
                 }
-
                 target_color = color_map.get(color_val, color_val)
-
                 filtered_data = self.audit_data[
                     self.audit_data["_priority_label"] == target_color
                 ]
-
             else:
                 filtered_data = self.audit_data
 
         else:
             filtered_data = self.audit_data
 
-        # 联动更新顶部统计卡片
-
         self._update_audit_stats(filtered_data)
 
         for i, (_, row) in enumerate(filtered_data.iterrows(), 1):
-            dev_rate = row.get("偏差率", row.get("偏差率(%)", 0))
+            # ── 与 _refresh_audit_tree 保持完全一致的变量名 ──
 
-            has_note = (
-                pd.notna(row.get("备注", row.get("备注原因", "")))
-                and str(row.get("备注", row.get("备注原因", ""))).strip() != ""
-            )
+            # 备注
+            orig_remark = str(row.get("备注原因", row.get("备注", ""))).strip()
+            if orig_remark in ("nan", "NaN", "None", ""):
+                orig_remark = ""
+            remark = orig_remark[:30]
 
-            status = "已备注" if has_note else "需补备注"
+            # 批量备注
+            batch_remark = str(row.get("批量备注原因", row.get("批量备注", ""))).strip()
+            if batch_remark in ("nan", "NaN", "None", ""):
+                batch_remark = ""
+            batch_remark = batch_remark[:30]
 
-            remark = (
-                str(row.get("备注", row.get("备注原因", "")))[:30]
-                if pd.notna(row.get("备注", row.get("备注原因", "")))
-                else ""
-            )
+            has_note = remark != "" or batch_remark != ""
 
-            batch_remark = (
-                str(row.get("批量备注", row.get("批量备注原因", "")))[:30]
-                if pd.notna(row.get("批量备注", row.get("批量备注原因", "")))
-                else ""
-            )
-
-            is_alt = "是" if row.get("备注来源") == "替代料" else "否"
-
-            # audit_status 和 audit_source
-
-            audit_result_val = str(row.get("audit_result", ""))[:30]
-
-            audit_status_val = (
-                "已审核"
-                if audit_result_val and audit_result_val.strip() not in ("", "nan")
-                else "未审核"
-            )
-
-            audit_source_val = str(row.get("审核来源", ""))
-
-            if audit_source_val in ("nan", "NaN", "None", ""):
-                # 尝试从备注来源推断
-
-                note_source = str(row.get("备注来源", ""))
-
-                if note_source in ("AI审核合格", "AI审核待改进", "AI生成"):
-                    audit_source_val = "AI审核"
-
-                elif note_source == "人工填写":
-                    audit_source_val = "手动"
-
-                elif note_source == "替代料":
-                    audit_source_val = "替代料"
-
+            # 状态
+            note_src = str(row.get("备注来源", "")).strip()
+            if note_src in ("nan", "NaN", "None", ""):
+                note_src = ""
+            if remark:
+                # 有备注：直接标记已备注
+                status = '已备注'
+            else:
+                # 无备注：按 note_src 判断
+                if note_src in ('AI审核合格', 'AI审核待改进', 'AI生成'):
+                    status = f"AI生成{'↑' if float(row.get('偏差率(%)', 0)) > 0 else '↓'}"
+                elif note_src in ('人工填写', '系统无定额(广宣)', '自动填充', '替代料'):
+                    status = '已备注'
                 else:
-                    audit_source_val = ""  # 未经过审核的行,来源应为空
+                    status = '需补备注'
+            # 物料大类
+            _mc_from_df = row.get("material_category", "")
+            if _mc_from_df and str(_mc_from_df).strip() not in ("", "nan", "NaN", "None"):
+                mat_category = str(_mc_from_df).strip()
+            else:
+                code = str(row.get("物料编码", row.get("组件物料号", "")))
+                mat_code_prefix = code[:3] if code else ""
+                _mat_map = {
+                    "100": "原辅料", "200": "包材",
+                    "400": "食品辅料/食品半成品", "410": "饮料辅料/饮料半成品",
+                    "500": "食品成品", "510": "饮料成品", "600": "促销品",
+                }
+                mat_category = _mat_map.get(mat_code_prefix, mat_code_prefix)
 
-            # 流程订单
+            # 物料描述
+            mat_desc = str(row.get("组件物料描述", row.get("物料名称", ""))).strip()
+            if not mat_desc:
+                mat_desc = str(row.get("物料描述", "")).strip()
+            mat_desc = mat_desc[:30]
 
+            # 替代料
+            alt_all_descs = getattr(self, "alt_all_descs", set())
+            is_alt = "是" if mat_desc and mat_desc in alt_all_descs else ""
+
+            # 偏差率
+            dev_rate = row.get("偏差率(%)", row.get("偏差率", 0)) or 0
+            try:
+                dev_rate = float(dev_rate)
+            except Exception:
+                dev_rate = 0.0
+
+            # 订单号
             order_no_val = ""
-
             for _col in ["流程订单", "订单号", "订单编号"]:
                 if _col in row.index and pd.notna(row.get(_col)):
                     order_no_val = str(row.get(_col))
-
                     break
 
-            # 灵活列名
+            # 订单类型
+            order_type_val = str(row.get("订单类型", ""))
 
-            factory_val = str(row.get("工厂", row.get("工厂名称", "")))
-
-            admin_val = str(row.get("车间", row.get("生产管理员描述", "")))
-
-            code_val = str(row.get("物料编码", row.get("组件物料号", "")))
-
-            name_val = str(row.get("物料名称", row.get("组件物料描述", "")))[:20]
-
-            quota_val = f"{row.get('定额', row.get('数量-定额', 0)):.3f}"
-
-            actual_val = f"{row.get('实际', row.get('数量-实际', 0)):.3f}"
-
-            dev_rate_str = (
-                f"{dev_rate:.2f}%"
-                if isinstance(dev_rate, (int, float))
-                else str(dev_rate)
+            # audit_result / audit_status / audit_source
+            audit_result_val = str(row.get("audit_result", ""))
+            audit_status_val = (
+                "已审核" if audit_result_val and audit_result_val.strip() not in ("", "nan")
+                else "未审核"
             )
+            audit_source_val = note_src
+            if audit_source_val in ("nan", "NaN", "None", ""):
+                _ns = str(row.get("备注来源", ""))
+                if _ns in ("AI审核合格", "AI审核待改进", "AI生成"):
+                    audit_source_val = "AI审核"
+                elif _ns == "人工填写":
+                    audit_source_val = "手动"
+                elif _ns == "替代料":
+                    audit_source_val = "替代料"
+                else:
+                    audit_source_val = ""
 
-            item = self.audit_tree.insert(
-                "",
-                "end",
-                values=(
-                    i,  # idx
-                    int(row.get("原表行号", row.get("excel_row", 0)))
-                    if pd.notna(row.get("原表行号", row.get("excel_row")))
-                    else "",  # excel_row
-                    factory_val,  # factory
-                    admin_val,  # admin
-                    str(row.get("订单日期", ""))[:10]
-                    if pd.notna(row.get("订单日期"))
-                    else "",  # order_date
-                    order_no_val,  # order_no
-                    code_val,  # code
-                    name_val,  # name
-                    quota_val,  # quota
-                    actual_val,  # actual
-                    dev_rate_str,  # dev_rate
-                    is_alt,  # is_alt
-                    status,  # status
-                    remark,  # remark
-                    batch_remark,  # batch_remark
-                    audit_result_val,  # audit_result
-                    str(row.get("AI建议", ""))[:50],  # AI建议
-                    audit_status_val,  # audit_status
-                    audit_source_val,  # audit_source
-                    f"{row.get('偏差金额', 0):,.2f}",  # deviation_amount
-                    str(row.get("remark_check_status", "")),  # remark_check_status
-                    str(row.get("remark_check_msg", "")),  # remark_check_msg
-                ),
+            # 用统一方法构建 values
+            values = self._build_audit_values(
+                row, i, mat_category, mat_desc, order_no_val,
+                order_type_val, dev_rate, is_alt, status,
+                remark, batch_remark, audit_result_val,
+                audit_status_val, audit_source_val
             )
+            item = self.audit_tree.insert("", "end", values=values)
 
-            priority_label = row.get(
-                "_priority_label", self.config.get("priority.green_label", "绿")
-            )
-
-            priority_tag = (
-                "priority_red"
-                if priority_label == self.config.get("priority.red_label", "红")
-                else (
-                    "priority_yellow"
-                    if priority_label == self.config.get("priority.yellow_label", "黄")
-                    else "priority_green"
-                )
-            )
-
-            # 追加备注校验标签
-            current_tags = list(self.audit_tree.item(item, "tags"))
-            if row.get("remark_check_status") == "red":
+            # 标签
+            remark_status = row.get("remark_check_status", "")
+            current_tags = []
+            if remark_status == "red":
                 current_tags.append("remark_red")
-            elif row.get("remark_check_status") == "yellow":
+            elif remark_status == "yellow":
                 current_tags.append("remark_yellow")
-            self.audit_tree.item(item, tags=current_tags)
+
+            _priority_label = row.get("_priority_label", "")
+            if _priority_label:
+                if "红" in str(_priority_label):
+                    current_tags.append("priority_red")
+                elif "橙" in str(_priority_label) or "黄" in str(_priority_label):
+                    current_tags.append("priority_yellow")
+                else:
+                    current_tags.append("priority_green")
+
+            if current_tags:
+                self.audit_tree.item(item, tags=current_tags)
 
         self.log(f"筛选完成:显示 {len(filtered_data)} 条记录", "info")
+
 
     # ── 智能审核筛选栏方法 ─────────────────────────────
 
