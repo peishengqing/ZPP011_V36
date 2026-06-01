@@ -491,11 +491,27 @@ class AnalysisEvents:
             print("[警告] 原始数据缺少金额或数量列，成本换算将不可用")
 
         # 确保订单类型列存在（原始SAP数据中有"订单类型"列，值为ZP01等）
-        # 确保订单类型列存在（原始SAP数据中有"订单类型"列，值为ZP01等）
         if '订单类型' in dev_df.columns:
             audit_df['订单类型'] = dev_df['订单类型']
         else:
             audit_df['订单类型'] = ''
+
+        # 确保成本换算器所需列存在
+        if '偏差数量' not in audit_df.columns:
+            if '数量偏差' in audit_df.columns:
+                audit_df['偏差数量'] = audit_df['数量偏差']
+            elif '材料偏差' in audit_df.columns:
+                audit_df['偏差数量'] = audit_df['材料偏差']
+            else:
+                audit_df['偏差数量'] = 0.0
+        if '单位' not in audit_df.columns:
+            # 尝试从 dev_df 获取
+            if '组件单位' in dev_df.columns:
+                audit_df['单位'] = dev_df['组件单位']
+            elif '单位' in dev_df.columns:
+                audit_df['单位'] = dev_df['单位']
+            else:
+                audit_df['单位'] = ''
         # 修正原表行号：优先使用 analyzer 计算的 _excel_row（openpyxl真实行号）
         if '_excel_row' in dev_df.columns:
             audit_df['excel_row'] = dev_df['_excel_row'].apply(lambda x: int(x) if pd.notna(x) else 0)

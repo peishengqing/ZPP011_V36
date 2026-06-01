@@ -8,6 +8,7 @@ import os, json
 from core.rule_engine import RuleEngine
 from widgets import C
 from domain.alt_material.alt_manager import save_alt_pairs, load_alt_pairs
+from config import audit_cols_config as _col_cfg
 import traceback
 
 
@@ -1048,40 +1049,81 @@ class TableEvents:
             )
             text.pack(fill="both", expand=True, padx=12, pady=6)
 
-            # 列名中文映射
-            col_name_map = {
-                "excel_row": "Excel行号",
-                "factory": "工厂",
-                "admin": "车间",
-                "order_date": "订单日期",
-                "order_no": "流程订单",
-                "material_category": "物料大类",
-                "code": "物料编码",
-                "name": "物料描述",
-                "unit": "单位",
-                "quota": "定额",
-                "actual": "实际",
-                "dev_rate": "偏差率",
-                "is_alt": "替代料",
-                "status": "备注状态",
-                "remark": "备注原因",
-                "batch_remark": "批量备注",
-                "audit_result": "审核结果",
-                "AI建议": "AI建议",
-                "audit_status": "审核状态",
-                "audit_source": "审核来源",
-                "deviation_amount": "偏差金额",
-                "remark_check_status": "备注校验状态",
-                "remark_check_msg": "备注校验信息",
+            # 从黄金模板读取字段配置，自动生成卡片内容
+            _heading_map = _col_cfg.get_heading_map()
+            _exclude_keys = {"idx", "remark_check_status", "remark_check_msg", "batch_remark", "audit_result", "AI建议"}
+            # 黄金模板 key -> 可能的数据列名（兼容中英文）
+            _key_map = {
+                "factory": ["工厂", "工厂名称", "factory"],
+                "admin": ["车间", "生产管理员描述", "admin"],
+                "order_date": ["订单日期", "order_date"],
+                "order_type": ["订单类型", "order_type"],
+                "order_no": ["流程订单", "订单号", "order_no"],
+                "material_category": ["物料大类", "material_category"],
+                "code": ["物料编码", "组件物料号", "code"],
+                "name": ["物料名称", "物料描述", "组件物料描述", "name"],
+                "unit": ["单位", "组件单位", "unit"],
+                "quota": ["定额", "数量-定额", "quota"],
+                "actual": ["实际", "数量-实际", "actual"],
+                "dev_rate": ["偏差率", "偏差率(%)", "dev_rate"],
+                "is_alt": ["替代料", "is_alt"],
+                "status": ["状态", "status"],
+                "remark": ["备注", "备注原因", "remark"],
+                "deviation_amount": ["偏差金额", "deviation_amount"],
+                "audit_status": ["审核状态", "audit_status"],
+                "audit_source": ["审核来源", "audit_source"],
             }
+            _lines = []
+            for _key in _col_cfg.get_cols():
+                if _key in _exclude_keys:
+                    continue
+                _val = None
+                for _pk in _key_map.get(_key, [_key]):
+                    if _pk in data:
+                        _val = data[_pk]
+                        break
+                if _val is not None and str(_val) not in ("", "nan", "NaN", "None"):
+                    _display = _heading_map.get(_key, _key)
+                    _lines.append(f"{_display}：{_val}")
+            if not _lines:
+                _lines = ["（无数据显示）", f"行ID：{item}"]
 
-            parts = []
-            for c in cols:
-                if c != "idx":
-                    # 使用中文映射，如果没有映射则使用原列名
-                    display_name = col_name_map.get(c, c)
-                    parts.append(display_name + "：" + str(data.get(c, "")))
-            info = "\n".join(parts)
+            # ── 成本换算器 ──
+            try:
+                _dev_amt_raw = data.get("deviation_amount", "0")
+                print(f"[成本换算器] deviation_amount原始值: {repr(_dev_amt_raw)}, data keys前5: {list(data.keys())[:5]}")
+                if _dev_amt_raw and str(_dev_amt_raw).strip() not in ("0", "-", ""):
+                    _dev_amt_clean = str(_dev_amt_raw).replace(",", "")
+                    _dev_amt_val = float(_dev_amt_clean) if _dev_amt_clean else 0
+                    if abs(_dev_amt_val) > 0.001:
+                        _excel_row = int(data.get("excel_row", 0))
+                        _unit_price = 0.0
+                        _unit_name = ""
+                        if self.audit_data is not None and _excel_row > 0:
+                            _er_mask = self.audit_data["excel_row"].astype(str) == str(_excel_row)
+                            if _er_mask.any():
+                                _rd = self.audit_data[_er_mask].iloc[0]
+                                for _pc in ("_unit_price", "单价", "_单价"):
+                                    if _pc in _rd.index:
+                                        try:
+                                            _unit_price = float(_rd[_pc] or 0)
+                                            break
+                                        except Exception:
+                                            pass
+                                for _uc in ("组件单位", "单位"):
+                                    if _uc in _rd.index:
+                                        _unit_name = str(_rd[_uc] or "")
+                                        break
+                        if _unit_price > 0.001:
+                            _est_qty = abs(_dev_amt_val) / _unit_price
+                            _ud = _unit_name if _unit_name else "单位"
+                            _lines.append(f"💰 偏差¥{_dev_amt_val:,.2f} ≈ {_est_qty:.1f} {_ud}（单价¥{_unit_price:.2f}/{_ud})")
+                        else:
+                            _lines.append(f"💰 偏差金额：¥{_dev_amt_val:,.2f}（无单价数据）")
+            except Exception as _ce:
+                self.log(f"成本换算器出错：{_ce}", "warn")
+
+            info = "\n".join(_lines)
 
             text.insert("1.0", info)
             text.configure(state="disabled")
