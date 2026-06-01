@@ -2,7 +2,9 @@
 """数据分析、加载、进度控制事件"""
 import tkinter as tk
 from tkinter import messagebox
-import os, threading, time
+import os
+import threading
+import time
 import pandas as pd
 from widgets import C
 from analysis.analyzer import do_analysis_v2
@@ -14,6 +16,8 @@ import sys
 
 # ── Task 003：异步备份管理器 ──
 from core.backup_manager import BackupManager
+
+
 class AnalysisEvents:
     """数据分析、加载、进度控制事件"""
 
@@ -105,15 +109,19 @@ class AnalysisEvents:
                 progress_callback=self._on_progress,
                 cancel_check=lambda: self.cancel_req,
             )
-            self.root.after(self.config.get('analysis.cleanup_delay_ms', 0), self._on_done)
+            self.root.after(self.config.get(
+                'analysis.cleanup_delay_ms', 0), self._on_done)
         except KeyboardInterrupt:
-            self.root.after(self.config.get('analysis.cleanup_delay_ms', 0), self._on_cancel)
+            self.root.after(self.config.get(
+                'analysis.cleanup_delay_ms', 0), self._on_cancel)
         except Exception as e:
-            self.root.after(self.config.get('analysis.cleanup_delay_ms', 0), lambda e=e: self._on_error(str(e)))
+            self.root.after(self.config.get(
+                'analysis.cleanup_delay_ms', 0), lambda e=e: self._on_error(str(e)))
             import traceback
             traceback.print_exc()
         except BaseException as e:
-            self.root.after(self.config.get('analysis.cleanup_delay_ms', 0), lambda e=e: self._on_error(f"BaseException: {e}"))
+            self.root.after(self.config.get('analysis.cleanup_delay_ms', 0),
+                            lambda e=e: self._on_error(f"BaseException: {e}"))
 
     def _on_progress(self, step_idx, step_name, percent):
         if self.cancel_req:
@@ -128,13 +136,17 @@ class AnalysisEvents:
         self._current_step = step_idx
         now = time.strftime("%H:%M:%S")
         total_stages = len(self.STAGES)
+
         def update():
             self.progress_var.set(percent)
-            self.progress_lbl.configure(text=f"{step_name}  {percent:.0f}%", fg=C['accent'])
+            self.progress_lbl.configure(
+                text=f"{step_name}  {percent:.0f}%", fg=C['accent'])
             self._set_step(step_idx)
-            self.log(f"[{now}] [{step_idx + 1}/{total_stages}] {step_name} {percent:.0f}%", "step")
+            self.log(
+                f"[{now}] [{step_idx + 1}/{total_stages}] {step_name} {percent:.0f}%", "step")
             self.root.update_idletasks()
-        self.root.after(self.config.get('analysis.cleanup_delay_ms', 0), update)
+        self.root.after(self.config.get(
+            'analysis.cleanup_delay_ms', 0), update)
 
     def _update_timer(self):
         if not self.running or not self.start_time:
@@ -153,7 +165,8 @@ class AnalysisEvents:
             self.timer_lbl.configure(
                 text=f"⏱ {m:02d}:{s:02d}",
                 fg=C['text_dim'])
-        self.timer_id = self.root.after(self.config.get('analysis.cleanup_delay_ms', 1000), self._update_timer)
+        self.timer_id = self.root.after(self.config.get(
+            'analysis.cleanup_delay_ms', 1000), self._update_timer)
 
     def request_cancel(self):
         if self.running:
@@ -167,20 +180,23 @@ class AnalysisEvents:
         if hasattr(self, 'analysis_lock') and self.analysis_lock.locked():
             self.analysis_lock.release()
         self.log("分析任务结束，按钮已恢复", "info")
-        self.log(f"🔍 _on_done: output_path = {getattr(self, 'output_path', 'NOT_SET')}", "info")
+        self.log(
+            f"🔍 _on_done: output_path = {getattr(self, 'output_path', 'NOT_SET')}", "info")
         # 如果 output_path 为 None，尝试自动查找最新的输出文件
         if not self.output_path:
             try:
                 import glob as _glob
                 out_dir = self.output_dir.get()
                 if not out_dir or not os.path.isdir(out_dir):
-                    out_dir = os.path.dirname(self.input_file.get()) if self.input_file.get() else os.path.expanduser('~/Desktop')
+                    out_dir = os.path.dirname(self.input_file.get()) if self.input_file.get(
+                    ) else os.path.expanduser('~/Desktop')
                 pattern = os.path.join(out_dir, 'ZPP011偏差分析最终版_*.xlsx')
                 files = _glob.glob(pattern)
                 if files:
                     latest_file = max(files, key=os.path.getmtime)
                     self.output_path = latest_file
-                    self.log(f"🔍 自动找到输出文件：{os.path.basename(latest_file)}", "info")
+                    self.log(
+                        f"🔍 自动找到输出文件：{os.path.basename(latest_file)}", "info")
             except Exception as _e:
                 self.log(f"🔍 自动查找输出文件失败：{_e}", "warn")
         if self.timer_id:
@@ -193,7 +209,8 @@ class AnalysisEvents:
         self.open_btn.configure(state="normal")
         self.progress_var.set(100)
         self.progress_lbl.configure(text="✅ 完成 (100%)", fg=C['green'])
-        _basename = os.path.basename(self.output_path) if self.output_path else '未知文件'
+        _basename = os.path.basename(
+            self.output_path) if self.output_path else '未知文件'
         self.status_lbl.configure(
             text=f"完成 — {_basename}",
             fg=C['green'])
@@ -204,10 +221,11 @@ class AnalysisEvents:
         # ✅ 新增：自动加载审核数据，联动统计卡片（从分析结果文件加载）
         self._analysis_output_path = self.output_path  # 保存路径供加载使用
         self.log("🔄 准备加载审核数据...", "info")
-        self.root.after(self.config.get('analysis.cleanup_delay_ms', 100), lambda: self._load_audit_data_from_output(self._analysis_output_path))
-        self.root.after(self.config.get('analysis.cleanup_delay_ms', 200), self._run_pre_check)
-        # 加载完成后删除自动生成的Excel（用户需要时可手动点击"生成Excel"按钮）
-        self.root.after(self.config.get('analysis.cleanup_delay_ms', 500), self._cleanup_auto_excel)
+        self.root.after(self.config.get('analysis.cleanup_delay_ms', 100),
+                        lambda: self._load_audit_data_from_output(self._analysis_output_path))
+        self.root.after(self.config.get(
+            'analysis.cleanup_delay_ms', 200), self._run_pre_check)
+        # 不再自动删除临时文件，改为在加载成功后删除（见 _on_load_done）
         # ✅ 启用"加载审核数据"按钮，让用户手动加载
         if hasattr(self, 'load_audit_btn'):
             self.load_audit_btn.configure(state="normal")
@@ -284,7 +302,8 @@ class AnalysisEvents:
             if getattr(sys, 'frozen', False):
                 base = os.path.dirname(sys.executable)
             else:
-                base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                base = os.path.dirname(os.path.dirname(
+                    os.path.dirname(os.path.abspath(__file__))))
             json_path = os.path.join(base, 'config', 'error_messages.json')
             with open(json_path, 'r', encoding='utf-8') as f:
                 cls._ERROR_MESSAGES = json.load(f)
@@ -301,7 +320,8 @@ class AnalysisEvents:
             return
         try:
             df = pd.read_excel(path, sheet_name='Data')
-            df['偏差率(%)'] = pd.to_numeric(df['偏差率(%)'], errors='coerce').fillna(0)
+            df['偏差率(%)'] = pd.to_numeric(
+                df['偏差率(%)'], errors='coerce').fillna(0)
             # 用 openpyxl 读取真实 Excel 行号（避免 pandas 跳过空行导致偏移）
             try:
                 from openpyxl import load_workbook
@@ -326,7 +346,8 @@ class AnalysisEvents:
             end_date_str = self.end_date.get().strip()
             if start_date_str or end_date_str:
                 if '订单开始日期' in df.columns:
-                    df['订单开始日期'] = pd.to_datetime(df['订单开始日期'], errors='coerce')
+                    df['订单开始日期'] = pd.to_datetime(
+                        df['订单开始日期'], errors='coerce')
                     if start_date_str:
                         try:
                             start_dt = pd.to_datetime(start_date_str)
@@ -342,24 +363,30 @@ class AnalysisEvents:
                         except:
                             pass
             total = len(df)
-            high_dev = df[df['偏差率(%)'].abs() > self.config.get('audit.high_deviation_threshold', 10)]
+            high_dev = df[df['偏差率(%)'].abs() > self.config.get(
+                'audit.high_deviation_threshold', 10)]
             need_note = high_dev[high_dev['备注原因'].isna()]
             ok_note = high_dev[high_dev['备注原因'].notna()]
             # ── P1#11：计算偏差金额 ─────────────────────────────
             df['数量-定额'] = pd.to_numeric(df['数量-定额'], errors='coerce').fillna(0)
             df['数量-实际'] = pd.to_numeric(df['数量-实际'], errors='coerce').fillna(0)
-            df['金额-实际(含税)'] = pd.to_numeric(df['金额-实际(含税)'], errors='coerce').fillna(0)
+            df['金额-实际(含税)'] = pd.to_numeric(df['金额-实际(含税)'],
+                                            errors='coerce').fillna(0)
             # 计算含税单价（避开除以0）
             df['_unit_price'] = 0.0
             mask = df['数量-实际'] != 0
-            df.loc[mask, '_unit_price'] = df.loc[mask, '金额-实际(含税)'] / df.loc[mask, '数量-实际']
+            df.loc[mask, '_unit_price'] = df.loc[mask,
+                                                 '金额-实际(含税)'] / df.loc[mask, '数量-实际']
             # 偏差金额 = (实际 - 定额) × 含税单价
-            df['偏差金额'] = ((df['数量-实际'] - df['数量-定额']) * df['_unit_price']).round(2)
+            df['偏差金额'] = ((df['数量-实际'] - df['数量-定额'])
+                          * df['_unit_price']).round(2)
             # _unit_price 保留，供成本换算器使用
             # 更新统计卡片
             self.audit_stat_labels['total'].configure(text=str(total))
-            self.audit_stat_labels['high_dev'].configure(text=str(len(high_dev)))
-            self.audit_stat_labels['need_note'].configure(text=str(len(need_note)))
+            self.audit_stat_labels['high_dev'].configure(
+                text=str(len(high_dev)))
+            self.audit_stat_labels['need_note'].configure(
+                text=str(len(need_note)))
             self.audit_stat_labels['ok_note'].configure(text=str(len(ok_note)))
             self.audit_data = high_dev.copy()
             # 添加物料大类列（始终用物料编码前缀计算，确保值和下拉选项一致）
@@ -369,26 +396,32 @@ class AnalysisEvents:
                 "600": "促销品"
             }
             self.audit_data['material_category'] = self.audit_data['物料编码'].apply(
-                lambda x: mat_cat_map.get(str(x)[:3], str(x)[:3]) if pd.notna(x) else ''
+                lambda x: mat_cat_map.get(
+                    str(x)[:3], str(x)[:3]) if pd.notna(x) else ''
             )
             # 保存全量数据副本（在添加 material_category 列之后，确保列存在）
             self.full_audit_data = self.audit_data.copy()
             # 如果数据中「物料类型」列有更精确的分类，可以覆盖（可选）
             # 目前不打乱逻辑，保持用物料编码前缀计算的结果
             print(f'[DEBUG audit_data] 列: {list(self.audit_data.columns)}')
-            print(f'[DEBUG material_category] 值分布: {self.audit_data["material_category"].value_counts().to_dict()}')
+            print(
+                f'[DEBUG material_category] 值分布: {self.audit_data["material_category"].value_counts().to_dict()}')
             # 映射订单日期列（Data sheet 用"订单开始日期"，统一为"订单日期"）
             if '订单开始日期' in self.audit_data.columns:
-                self.audit_data['订单日期'] = pd.to_datetime(self.audit_data['订单开始日期'], errors='coerce').dt.strftime('%Y-%m-%d')
+                self.audit_data['订单日期'] = pd.to_datetime(
+                    self.audit_data['订单开始日期'], errors='coerce').dt.strftime('%Y-%m-%d')
             elif '订单日期' not in self.audit_data.columns:
                 self.audit_data['订单日期'] = ''
             self._update_filter_options()
             self._refresh_audit_tree(self.audit_data)
             self._update_audit_stats(self.audit_data)
             self._update_summary_row(self.audit_data)  # 合计行更新
-            self.audit_tree.tag_configure('need_note', background='#fff0e0', foreground='#b04000')
-            self.audit_tree.tag_configure('ok_note',   background='#e8f5e9', foreground='#1a6b1a')
-            self.audit_tree.tag_configure('ai_gen',    background='#fce4ec', foreground='#880e4f')
+            self.audit_tree.tag_configure(
+                'need_note', background='#fff0e0', foreground='#b04000')
+            self.audit_tree.tag_configure(
+                'ok_note',   background='#e8f5e9', foreground='#1a6b1a')
+            self.audit_tree.tag_configure(
+                'ai_gen',    background='#fce4ec', foreground='#880e4f')
             self.audit_ai_btn.configure(state="normal")
             self.audit_export_btn.configure(state="normal")
             # 同时启用偏差明细表的按钮
@@ -403,7 +436,8 @@ class AnalysisEvents:
             self._apply_row_colors()
             # P0-B4：恢复审核记录（从数据库）
             self.audit_presenter.load_audit_data(self.audit_data)
-            self.log(f"智能审核：加载完成 | 共{total}条 | 偏差>10%共{len(high_dev)}条 | 需补备注{len(need_note)}条", "success")
+            self.log(
+                f"智能审核：加载完成 | 共{total}条 | 偏差>10%共{len(high_dev)}条 | 需补备注{len(need_note)}条", "success")
         except Exception as e:
             messagebox.showerror("错误", f"加载数据失败：{e}")
             self.log(f"加载审核数据失败：{e}", "error")
@@ -422,7 +456,8 @@ class AnalysisEvents:
             if hasattr(self, 'set_status'):
                 self.set_status("正在加载数据，请稍候...")
             # Capture UI values for worker
-            self._pending_output_dir = self.output_dir.get() if hasattr(self, 'output_dir') else None
+            self._pending_output_dir = self.output_dir.get(
+            ) if hasattr(self, 'output_dir') else None
             # 直接同步调用（8000行数据很快，不需要线程）
             result_df = self._load_data_worker(file_path)
             self._on_load_done(result_df)
@@ -471,9 +506,10 @@ class AnalysisEvents:
         if dev_df.empty:
             raise ValueError("偏差明细工作表为空")
         # 4. 解析偏差率
+
         def parse_rate(v):
             if isinstance(v, str):
-                return float(v.replace('%','').replace('＞','>').replace('>','')) / 100
+                return float(v.replace('%', '').replace('＞', '>').replace('>', '')) / 100
             return abs(float(v)) if pd.notna(v) else 0
         dev_df['偏差率数值'] = dev_df['偏差率'].apply(parse_rate)
         # 5. 构建 audit_df
@@ -485,7 +521,8 @@ class AnalysisEvents:
             audit_df['数量-实际'] = dev_df['数量-实际']
             audit_df['_unit_price'] = 0.0
             mask = (audit_df['数量-实际'] != 0) & audit_df['数量-实际'].notna()
-            audit_df.loc[mask, '_unit_price'] = audit_df.loc[mask, '金额-实际(含税)'] / audit_df.loc[mask, '数量-实际']
+            audit_df.loc[mask, '_unit_price'] = audit_df.loc[mask,
+                                                             '金额-实际(含税)'] / audit_df.loc[mask, '数量-实际']
         else:
             audit_df['_unit_price'] = 0.0
             print("[警告] 原始数据缺少金额或数量列，成本换算将不可用")
@@ -514,10 +551,12 @@ class AnalysisEvents:
                 audit_df['单位'] = ''
         # 修正原表行号：优先使用 analyzer 计算的 _excel_row（openpyxl真实行号）
         if '_excel_row' in dev_df.columns:
-            audit_df['excel_row'] = dev_df['_excel_row'].apply(lambda x: int(x) if pd.notna(x) else 0)
+            audit_df['excel_row'] = dev_df['_excel_row'].apply(
+                lambda x: int(x) if pd.notna(x) else 0)
             audit_df['原表行号'] = dev_df['_excel_row']  # 同步修正显示列
         elif '原表行号' in dev_df.columns:
-            audit_df['excel_row'] = dev_df['原表行号'].apply(lambda x: int(x) if pd.notna(x) else 0)
+            audit_df['excel_row'] = dev_df['原表行号'].apply(
+                lambda x: int(x) if pd.notna(x) else 0)
         else:
             audit_df['excel_row'] = range(2, len(audit_df) + 2)
             audit_df['原表行号'] = audit_df['excel_row']
@@ -540,7 +579,8 @@ class AnalysisEvents:
         _dbg_order = '流程订单' if '流程订单' in audit_df.columns else None
         _dbg_mat = '组件物料号' if '组件物料号' in audit_df.columns else None
         if _dbg_order and _dbg_mat:
-            mask_debug = (audit_df[_dbg_order].astype(str) == '300354378') & (audit_df[_dbg_mat].astype(str) == '10000000')
+            mask_debug = (audit_df[_dbg_order].astype(str) == '300354378') & (
+                audit_df[_dbg_mat].astype(str) == '10000000')
         else:
             mask_debug = pd.Series(dtype=bool)
         if len(mask_debug) > 0 and mask_debug.any():
@@ -560,12 +600,14 @@ class AnalysisEvents:
             if '金额-实际(含税)' in dev_df.columns and '数量-实际' in dev_df.columns:
                 audit_df['_unit_price'] = 0.0
                 m = (dev_df['数量-实际'] != 0) & dev_df['数量-实际'].notna()
-                audit_df.loc[m, '_unit_price'] = dev_df.loc[m, '金额-实际(含税)'] / dev_df.loc[m, '数量-实际']
+                audit_df.loc[m, '_unit_price'] = dev_df.loc[m,
+                                                            '金额-实际(含税)'] / dev_df.loc[m, '数量-实际']
                 if '数量-定额' in dev_df.columns:
                     audit_df['数量偏差'] = dev_df['数量-实际'] - dev_df['数量-定额']
                 else:
                     audit_df['数量偏差'] = 0.0
-                audit_df['偏差金额'] = (audit_df['数量偏差'] * audit_df['_unit_price']).round(2)
+                audit_df['偏差金额'] = (audit_df['数量偏差'] *
+                                    audit_df['_unit_price']).round(2)
                 # 确保"偏差数量"列存在（卡片成本换算器依赖此列名）
                 if '偏差数量' not in audit_df.columns and '数量偏差' in audit_df.columns:
                     audit_df['偏差数量'] = audit_df['数量偏差']
@@ -573,7 +615,8 @@ class AnalysisEvents:
             else:
                 audit_df['偏差金额'] = 0.0
         else:
-            audit_df['偏差金额'] = pd.to_numeric(audit_df['偏差金额'], errors='coerce').fillna(0).round(2)
+            audit_df['偏差金额'] = pd.to_numeric(
+                audit_df['偏差金额'], errors='coerce').fillna(0).round(2)
         # 订单列查找
         order_col = None
         for possible in ['流程订单', '订单号', '订单编号', '订单号码', '订单No', 'Order No', '生产订单']:
@@ -608,7 +651,8 @@ class AnalysisEvents:
             for pair in self.alt_pairs:
                 for item in pair:
                     if isinstance(item, (list, tuple)):
-                        desc = str(item[-1]).strip() if len(item) > 1 else str(item[0]).strip()
+                        desc = str(
+                            item[-1]).strip() if len(item) > 1 else str(item[0]).strip()
                     else:
                         desc = str(item).strip()
                     if desc:
@@ -619,7 +663,8 @@ class AnalysisEvents:
                     name_col = col
                     break
             if name_col:
-                audit_df['_is_alt'] = audit_df[name_col].astype(str).str.strip().isin(alt_materials)
+                audit_df['_is_alt'] = audit_df[name_col].astype(
+                    str).str.strip().isin(alt_materials)
                 print(f"[临时补丁] 已标记替代料：{audit_df['_is_alt'].sum()} 行")
             else:
                 print("[临时补丁] 未找到物料名称列，无法标记替代料")
@@ -643,17 +688,20 @@ class AnalysisEvents:
                 if row.get('_is_alt', False):
                     return '替代料'
                 return '系统'
-            audit_df['audit_source'] = audit_df.apply(infer_audit_source, axis=1)
+            audit_df['audit_source'] = audit_df.apply(
+                infer_audit_source, axis=1)
 
         # ====== 补充审核状态（audit_status）======
         if 'audit_status' not in audit_df.columns:
             if 'audit_result' in audit_df.columns:
                 audit_df['audit_status'] = audit_df['audit_result'].apply(
-                    lambda x: '已审核' if x and str(x).strip() not in ('', 'nan') else '未审核'
+                    lambda x: '已审核' if x and str(
+                        x).strip() not in ('', 'nan') else '未审核'
                 )
             else:
                 audit_df['audit_status'] = audit_df['备注原因'].apply(
-                    lambda x: '已审核' if x and str(x).strip() not in ('', 'nan') else '未审核'
+                    lambda x: '已审核' if x and str(
+                        x).strip() not in ('', 'nan') else '未审核'
                 )
 
         # Task 007: 四色优先级标签（统一使用 _calculate_priority_label 逻辑）
@@ -670,26 +718,32 @@ class AnalysisEvents:
                     return '黄'
                 else:
                     return '绿'
-            audit_df['_priority_label'] = audit_df['偏差率(%)'].apply(get_priority_label)
+            audit_df['_priority_label'] = audit_df['偏差率(%)'].apply(
+                get_priority_label)
 
         with open(r"C:\Users\Administrator\Desktop\zpp011_debug.txt", "a", encoding="utf-8") as _lf:
-            _lf.write(f"[TRACE] _load_data_worker 完成: {len(audit_df) if 'audit_df' in dir() else '??'} 行\n")
+            _lf.write(
+                f"[TRACE] _load_data_worker 完成: {len(audit_df) if 'audit_df' in dir() else '??'} 行\n")
         return audit_df
 
     def _on_load_done(self, result_df):
         """异步加载成功回调：处理所有UI更新"""
         with open(r"C:\Users\Administrator\Desktop\zpp011_debug.txt", "a", encoding="utf-8") as _lf:
-            _lf.write(f"[TRACE] _on_load_done START: result_df={len(result_df) if result_df is not None else 'None'} 行\n")
+            _lf.write(
+                f"[TRACE] _on_load_done START: result_df={len(result_df) if result_df is not None else 'None'} 行\n")
         try:
             self.audit_data = result_df
             with open(r"C:\Users\Administrator\Desktop\zpp011_debug.txt", "a", encoding="utf-8") as _lf:
-                _lf.write(f"[TRACE] audit_data 已赋值: {len(self.audit_data)} 行\n")
+                _lf.write(
+                    f"[TRACE] audit_data 已赋值: {len(self.audit_data)} 行\n")
             # ── 预计算单价（金额-实际(含税) / 数量-实际）用于成本换算器 ──
             if '金额-实际(含税)' in self.audit_data.columns and '数量-实际' in self.audit_data.columns:
                 self.audit_data['_unit_price'] = 0.0
-                mask = (self.audit_data['数量-实际'].notna()) & (self.audit_data['数量-实际'] != 0)
+                mask = (self.audit_data['数量-实际'].notna()
+                        ) & (self.audit_data['数量-实际'] != 0)
                 self.audit_data.loc[mask, '_unit_price'] = (
-                    self.audit_data.loc[mask, '金额-实际(含税)'] / self.audit_data.loc[mask, '数量-实际']
+                    self.audit_data.loc[mask,
+                                        '金额-实际(含税)'] / self.audit_data.loc[mask, '数量-实际']
                 )
             else:
                 self.audit_data['_unit_price'] = 0.0
@@ -699,7 +753,8 @@ class AnalysisEvents:
             # 确保数值列为数值类型（防止字符串导致比较错误）
             for col in ["偏差率(%)", "材料偏差", "数量-定额", "数量-实际", "偏差金额"]:
                 if col in self.audit_data.columns:
-                    self.audit_data[col] = pd.to_numeric(self.audit_data[col], errors="coerce").fillna(0)
+                    self.audit_data[col] = pd.to_numeric(
+                        self.audit_data[col], errors="coerce").fillna(0)
             self._full_dev_df = result_df.copy()
             # ── 补充 material_category 列（与 _load_audit_data 路径保持一致） ──
             mat_cat_map = {
@@ -715,9 +770,11 @@ class AnalysisEvents:
             if mat_code_col:
                 # 先删除已有的 material_category 列（避免列名冲突导致 material_category[2]）
                 if 'material_category' in self.audit_data.columns:
-                    self.audit_data.drop(columns=['material_category'], inplace=True)
+                    self.audit_data.drop(
+                        columns=['material_category'], inplace=True)
                 self.audit_data['material_category'] = self.audit_data[mat_code_col].apply(
-                    lambda x: mat_cat_map.get(str(x)[:3], '') if pd.notna(x) else ''
+                    lambda x: mat_cat_map.get(
+                        str(x)[:3], '') if pd.notna(x) else ''
                 )
             else:
                 self.audit_data['material_category'] = ''
@@ -725,16 +782,20 @@ class AnalysisEvents:
             self.log(f"[DEBUG] _on_load_done: {len(self.audit_data)}行", "info")
             # 调试：打印前5行 excel_row 和 原表行号
             if 'excel_row' in self.audit_data.columns:
-                self.log(f"[DEBUG] excel_row 前5行: {self.audit_data['excel_row'].head().tolist()}", "debug")
+                self.log(
+                    f"[DEBUG] excel_row 前5行: {self.audit_data['excel_row'].head().tolist()}", "debug")
             if '原表行号' in self.audit_data.columns:
-                self.log(f"[DEBUG] 原表行号 前5行: {self.audit_data['原表行号'].head().tolist()}", "debug")
+                self.log(
+                    f"[DEBUG] 原表行号 前5行: {self.audit_data['原表行号'].head().tolist()}", "debug")
             _order_col = '流程订单' if '流程订单' in self.audit_data.columns else None
             _mat_col = '组件物料号' if '组件物料号' in self.audit_data.columns else None
             if _order_col and _mat_col:
-                mask = (self.audit_data[_order_col].astype(str) == '300354378') & (self.audit_data[_mat_col].astype(str) == '10000000')
+                mask = (self.audit_data[_order_col].astype(str) == '300354378') & (
+                    self.audit_data[_mat_col].astype(str) == '10000000')
                 if mask.any():
                     debug_row = self.audit_data[mask].iloc[0]
-                    self.log(f"[DEBUG] 订单300354378+物料10000000: excel_row={debug_row.get('excel_row') if hasattr(debug_row, 'get') else debug_row.get('excel_row', '')}, 定额={debug_row.get('数量-定额', '')}, 实际={debug_row.get('数量-实际', '')}", "debug")
+                    self.log(
+                        f"[DEBUG] 订单300354378+物料10000000: excel_row={debug_row.get('excel_row') if hasattr(debug_row, 'get') else debug_row.get('excel_row', '')}, 定额={debug_row.get('数量-定额', '')}, 实际={debug_row.get('数量-实际', '')}", "debug")
             # 更新筛选选项和行颜色
             self._update_filter_options()
             self._apply_row_colors()
@@ -742,12 +803,15 @@ class AnalysisEvents:
                 self._update_trend_display()
             # 统计卡片
             total = len(result_df)
-            high_dev = len(result_df[result_df['偏差率(%)'] > 10]) if '偏差率(%)' in result_df.columns else 0
-            no_note = len(result_df[result_df['备注原因'].isna() | (result_df['备注原因'] == '')]) if '备注原因' in result_df.columns else 0
-            approved_note = result_df['备注来源'].isin(['AI审核合格','AI审核待改进','AI生成']).sum() if '备注来源' in result_df.columns else 0
+            high_dev = len(result_df[result_df['偏差率(%)'] > 10]
+                           ) if '偏差率(%)' in result_df.columns else 0
+            no_note = len(result_df[result_df['备注原因'].isna() | (
+                result_df['备注原因'] == '')]) if '备注原因' in result_df.columns else 0
+            approved_note = result_df['备注来源'].isin(
+                ['AI审核合格', 'AI审核待改进', 'AI生成']).sum() if '备注来源' in result_df.columns else 0
             if hasattr(self, 'audit_stat_labels'):
                 for k, v in [('total', total), ('high_dev', high_dev),
-                               ('need_note', no_note), ('ok_note', approved_note)]:
+                             ('need_note', no_note), ('ok_note', approved_note)]:
                     if k in self.audit_stat_labels:
                         self.audit_stat_labels[k].configure(text=str(v))
             if hasattr(self, 'unified_result_lbl'):
@@ -756,22 +820,25 @@ class AnalysisEvents:
             # 启用所有按钮
             enabled = self._enable_audit_buttons()
             self.log(f"[DEBUG] 已启用{enabled}个按钮", "info")
-            self.log(f"✅ 审核数据加载完成 | 共 {total} 条 | 偏差>10%: {high_dev} 条", "success")
+            self.log(
+                f"✅ 审核数据加载完成 | 共 {total} 条 | 偏差>10%: {high_dev} 条", "success")
             # 恢复筛选和排序状态
             self._restore_filters()
-            self.root.after(self.config.get('analysis.cleanup_delay_ms', 100), lambda: self._on_filter_changed(None) if self.audit_data is not None else None)
+            self.root.after(self.config.get('analysis.cleanup_delay_ms', 100), lambda: self._on_filter_changed(
+                None) if self.audit_data is not None else None)
             self._restore_sort_state()
-            self.root.after(self.config.get('analysis.cleanup_delay_ms', 300), lambda: self._show_precheck_report(self.audit_data))
+            self.root.after(self.config.get('analysis.cleanup_delay_ms', 300),
+                            lambda: self._show_precheck_report(self.audit_data))
             # BOM 过期提醒（功能待实现，暂注释）
             # self.root.after(self.config.get('analysis.cleanup_delay_ms', 500), self._check_and_remind_bom)
             # 恢复审核记录
             self.audit_presenter.load_audit_data(self.audit_data)
-            
+
             # ── Task 009：保存到历史数据库 ──
             try:
                 from core.history_db import save_analysis_result, init_db
                 init_db()
-                
+
                 # 计算统计指标
                 total_rows = len(self.audit_data)
 
@@ -782,7 +849,8 @@ class AnalysisEvents:
                         dev_col = col
                         break
                 if dev_col:
-                    high_dev = len(self.audit_data[self.audit_data[dev_col].abs() > 10])
+                    high_dev = len(
+                        self.audit_data[self.audit_data[dev_col].abs() > 10])
                 else:
                     high_dev = 0
 
@@ -793,7 +861,8 @@ class AnalysisEvents:
                         remark_col = col
                         break
                 if remark_col:
-                    need_note = len(self.audit_data[self.audit_data[remark_col].isna() | (self.audit_data[remark_col].astype(str).str.strip() == '')])
+                    need_note = len(self.audit_data[self.audit_data[remark_col].isna() | (
+                        self.audit_data[remark_col].astype(str).str.strip() == '')])
                 else:
                     need_note = 0
 
@@ -804,15 +873,16 @@ class AnalysisEvents:
                         status_col = col
                         break
                 if status_col:
-                    approved = len(self.audit_data[self.audit_data[status_col] == '已审核'])
+                    approved = len(
+                        self.audit_data[self.audit_data[status_col] == '已审核'])
                 else:
                     approved = 0
-                
+
                 # 获取筛选条件（如果有）
                 filter_cond = ''
                 if hasattr(self, '_get_current_filter_condition'):
                     filter_cond = self._get_current_filter_condition()
-                
+
                 metadata = {
                     'file_name': os.path.basename(self.input_file.get()) if hasattr(self, 'input_file') else 'unknown',
                     'file_path': self.input_file.get() if hasattr(self, 'input_file') else '',
@@ -823,7 +893,7 @@ class AnalysisEvents:
                     'approved_rows': approved,
                     'filter_condition': filter_cond,
                 }
-                
+
                 analysis_id = save_analysis_result(metadata, self.audit_data)
                 self.log(f"✅ 分析结果已存入历史库，ID={analysis_id}", "info")
             except Exception as e:
@@ -832,7 +902,7 @@ class AnalysisEvents:
                 self.log(f"⚠ 保存历史记录失败：{type(e).__name__}: {e}", "warn")
                 print(f"[DEBUG] Exception type: {type(e)}, value: {e!r}")
                 print(f"[DEBUG] Traceback:\n{tb}")
-            
+
             # 断点续审提示
             state = self._load_resume_state()
             if state:
@@ -842,10 +912,11 @@ class AnalysisEvents:
                     self.log(f"📌 检测到上次审核进度：第 {saved_row} 行", "info")
                     tip = tk.Toplevel(self.root)
                     tip.wm_overrideredirect(True)
-                    tip.geometry(f"280x28+{self.root.winfo_rootx()+self.root.winfo_width()-290}+{self.root.winfo_rooty()+self.root.winfo_height()-60}")
+                    tip.geometry(
+                        f"280x28+{self.root.winfo_rootx()+self.root.winfo_width()-290}+{self.root.winfo_rooty()+self.root.winfo_height()-60}")
                     tk.Label(tip, text=f"💡 上次审核到第 {saved_row} 行，点击「恢复进度」继续",
-                            font=("Microsoft YaHei", 9), bg="#1a1a2e", fg="white",
-                            padx=8, pady=4).pack()
+                             font=("Microsoft YaHei", 9), bg="#1a1a2e", fg="white",
+                             padx=8, pady=4).pack()
                     tip.after(4000, tip.destroy)
             # 隐藏进度条
             if hasattr(self, 'progress_bar'):
@@ -856,13 +927,15 @@ class AnalysisEvents:
             # 自动设置日期筛选控件的默认范围并自动筛选
             if hasattr(self, 'date_start_de') and hasattr(self, 'date_end_de') and '订单日期' in self.audit_data.columns:
                 try:
-                    dates = pd.to_datetime(self.audit_data['订单日期'], errors='coerce')
+                    dates = pd.to_datetime(
+                        self.audit_data['订单日期'], errors='coerce')
                     min_date = dates.min()
                     max_date = dates.max()
                     if pd.notna(min_date) and pd.notna(max_date):
                         self.date_start_de.set_date(min_date.date())
                         self.date_end_de.set_date(max_date.date())
-                        self.log(f"日期筛选控件已设置为数据范围：{min_date.date()} 至 {max_date.date()}", "info")
+                        self.log(
+                            f"日期筛选控件已设置为数据范围：{min_date.date()} 至 {max_date.date()}", "info")
                         # 自动触发日期筛选
                         self._on_filter_changed('order_date')
                 except Exception as e:
@@ -876,6 +949,16 @@ class AnalysisEvents:
                 self.progress_bar.stop()
                 self.progress_bar.pack_forget()
             raise
+
+        # --- 加载成功后清理临时 Excel 文件 ---
+        if hasattr(self, '_analysis_output_path') and self._analysis_output_path:
+            try:
+                if os.path.exists(self._analysis_output_path):
+                    os.remove(self._analysis_output_path)
+                    self.log("已清理临时文件: " + os.path.basename(self._analysis_output_path), "info")
+                    self._analysis_output_path = None
+            except Exception as e:
+                self.log("清理临时文件失败: " + str(e), "warn")
 
     def _on_load_error(self, error):
         """异步加载失败回调"""
@@ -904,7 +987,8 @@ class AnalysisEvents:
         labels = {'total': '全部', 'big_dev': '偏差>10%',
                   'no_note': '需补备注', 'approved': '已审核'}
         self.status_filter_label.config(
-            text="筛选：{} | 共 {} 条".format(labels.get(filter_key, ''), len(filtered))
+            text="筛选：{} | 共 {} 条".format(
+                labels.get(filter_key, ''), len(filtered))
         )
 
     def _s01_start_inventory_check(self, data: pd.DataFrame) -> None:
@@ -953,12 +1037,16 @@ class AnalysisEvents:
                 row_dict = row._asdict()
                 # 业务逻辑待补充
                 if (idx + 1) % 50 == 0 or idx + 1 == total:
-                    self.root.after(self.config.get('analysis.cleanup_delay_ms', 0), self._s01_progress_callback, idx + 1, total)
-            self.root.after(self.config.get('analysis.cleanup_delay_ms', 0), self._s01_on_success, df)
+                    self.root.after(self.config.get(
+                        'analysis.cleanup_delay_ms', 0), self._s01_progress_callback, idx + 1, total)
+            self.root.after(self.config.get(
+                'analysis.cleanup_delay_ms', 0), self._s01_on_success, df)
         except InterruptedError as e:
-            self.root.after(self.config.get('analysis.cleanup_delay_ms', 0), self._s01_on_error, e)
+            self.root.after(self.config.get(
+                'analysis.cleanup_delay_ms', 0), self._s01_on_error, e)
         except Exception as e:
-            self.root.after(self.config.get('analysis.cleanup_delay_ms', 0), self._s01_on_error, e)
+            self.root.after(self.config.get(
+                'analysis.cleanup_delay_ms', 0), self._s01_on_error, e)
 
     def _s01_progress_callback(self, current: int, total: int) -> None:
         """进度回调"""
@@ -1011,7 +1099,8 @@ class AnalysisEvents:
         dangerous = ['__', 'import', 'exec', 'eval', 'compile', 'open', 'file']
         if any(d in condition_str for d in dangerous):
             return False
-        allowed = {k: v for k, v in row.items() if isinstance(v, (int, float, str, bool))}
+        allowed = {k: v for k, v in row.items() if isinstance(
+            v, (int, float, str, bool))}
         try:
             return bool(eval(condition_str, {"__builtins__": {}}, allowed))
         except Exception:
@@ -1050,7 +1139,8 @@ class AnalysisEvents:
         # 清空旧数据
         for item in tree.get_children():
             tree.delete(item)
-        cols = list(tree['columns']) if tree['columns'] else (list(df.columns) if not df.empty else [])
+        cols = list(tree['columns']) if tree['columns'] else (
+            list(df.columns) if not df.empty else [])
         for row_tuple in df.itertuples():
             row_dict = row_tuple._asdict()
             row_dict.pop('Index', None)
@@ -1064,7 +1154,5 @@ class AnalysisEvents:
             tree.insert('', 'end', values=values, tags=(tag,))
     # ---------- View 接口方法（供 AuditPresenter 调用）----------
 
-
     # _update_filter_options 已移入 table_events.py（优先级更高的 MRO 位置）
     # 在那里统一处理全部下拉框，包括 material_category（基于 full_audit_data）
-
