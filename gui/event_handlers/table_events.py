@@ -862,48 +862,58 @@ class TableEvents:
             lines = ["(无数据显示)", f"行ID:{item}"]
         info = "\n".join(lines)
 
-        # 成本换算器（简化版，直接用偏差金额/偏差数量）
+        # 成本换算器（增强版，带调试输出）
         try:
-            # 获取偏差金额
+            print("[DEBUG] 进入成本换算器")
+            # 1. 获取偏差金额
             dev_amount_val = None
-            for key in ["deviation_amount", "偏差金额"]:
+            for key in ["偏差金额", "deviation_amount", "偏差金额(含税)"]:
                 val = data.get(key)
-                if val and str(val).strip() not in ("0", "-", ""):
+                print(f"[DEBUG] 尝试键 {key} 值 = {val}")
+                if val is not None and str(val).strip() not in ("", "0", "-"):
                     try:
                         dev_amount_val = float(str(val).replace(",", ""))
+                        print(f"[DEBUG] 成功获取偏差金额 = {dev_amount_val}")
                         break
-                    except:
+                    except Exception as ex:
+                        print(f"[DEBUG] 转换失败: {ex}")
                         continue
-            if dev_amount_val and abs(dev_amount_val) > 0.001:
-                # 获取数量偏差（实际-定额）
+            if dev_amount_val is None or abs(dev_amount_val) <= 0.001:
+                info += "\n💰 偏差金额：无有效金额数据"
+            else:
+                # 2. 获取数量偏差
                 dev_qty_val = None
-                for key in ["偏差数量", "数量偏差", "dev_qty"]:
+                for key in ["偏差数量", "数量偏差", "dev_qty", "材料偏差"]:
                     val = data.get(key)
-                    if val:
+                    print(f"[DEBUG] 尝试键 {key} 值 = {val}")
+                    if val is not None:
                         try:
                             dev_qty_val = float(val)
                             if abs(dev_qty_val) > 0.0001:
+                                print(f"[DEBUG] 成功获取数量偏差 = {dev_qty_val}")
                                 break
-                        except:
+                        except Exception as ex:
+                            print(f"[DEBUG] 转换失败: {ex}")
                             continue
-                if dev_qty_val and abs(dev_qty_val) > 0.0001:
-                    # 单价 = 偏差金额绝对值 / 偏差数量绝对值
+                # 3. 获取单位
+                unit_name = ""
+                for key in ["单位", "组件单位", "unit"]:
+                    val = data.get(key)
+                    if val and str(val) not in ("nan", "None", ""):
+                        unit_name = str(val)
+                        print(f"[DEBUG] 获取单位 = {unit_name}")
+                        break
+                if not unit_name:
+                    unit_name = "单位"
+                if dev_qty_val is not None and abs(dev_qty_val) > 0.0001:
                     unit_price = abs(dev_amount_val) / abs(dev_qty_val)
-                    # 单位
-                    unit_name = ""
-                    for key in ["单位", "组件单位", "unit"]:
-                        val = data.get(key)
-                        if val and str(val) not in ("nan", "None", ""):
-                            unit_name = str(val)
-                            break
-                    if not unit_name:
-                        unit_name = "单位"
                     sign_icon = "↑" if dev_amount_val > 0 else "↓"
-                    # 直接显示
                     info += f"\n💰 偏差金额：¥{dev_amount_val:,.2f} {sign_icon} ≈ {abs(dev_qty_val):.1f} {unit_name}（单价 ¥{unit_price:.2f}/{unit_name}）"
                 else:
-                    info += f"\n💰 偏差金额：¥{dev_amount_val:,.2f}（数量偏差为0或缺失）"
+                    info += f"\n💰 偏差金额：¥{dev_amount_val:,.2f}（数量偏差为0或缺失，无法换算实物量）"
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             info += f"\n⚠️ 成本换算失败：{e}"
 
         text.insert("1.0", info)

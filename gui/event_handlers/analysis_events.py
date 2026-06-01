@@ -550,6 +550,9 @@ class AnalysisEvents:
                 else:
                     audit_df['数量偏差'] = 0.0
                 audit_df['偏差金额'] = (audit_df['数量偏差'] * audit_df['_unit_price']).round(2)
+                # 确保"偏差数量"列存在（卡片成本换算器依赖此列名）
+                if '偏差数量' not in audit_df.columns and '数量偏差' in audit_df.columns:
+                    audit_df['偏差数量'] = audit_df['数量偏差']
                 # _unit_price 保留，供成本换算器使用
             else:
                 audit_df['偏差金额'] = 0.0
