@@ -2922,7 +2922,7 @@ class ZPP011Beautiful(EventsMixIn):
 
             RuleConfigDialog(self, rules_path, on_rules_changed_callback=on_rules_changed)
         except Exception as e:
-            from tkinter import messagebox
+            from tkinter import messagebox, filedialog, filedialog
             messagebox.showerror("错误", f"打开规则配置失败: {e}")
 
     def _show_benefit_report(self):
@@ -2964,22 +2964,33 @@ class ZPP011Beautiful(EventsMixIn):
             self.root.destroy()
 
     def _generate_full_report(self):
-        """调用 ppt_generator 基于当前分析结果生成 PPT 报告"""
+        """生成详细分析报告（PPT）"""
         if self.audit_data is None or self.audit_data.empty:
             messagebox.showinfo("提示", "请先完成分析并加载审核数据")
             return
         # 获取本次分析对应的 Excel 文件路径
         excel_path = getattr(self, '_analysis_output_path', None)
         if not excel_path or not os.path.exists(excel_path):
-            messagebox.showwarning("提示", "未找到分析结果 Excel，请重新分析或手动生成")
-            return
-        from ppt_generator import run_ppt_generation
-        output_dir = self.output_dir.get() or os.path.expanduser("~/Documents/ZPP011分析报告")
-        os.makedirs(output_dir, exist_ok=True)
-        output_path = os.path.join(output_dir, f"ZPP011偏差分析报告_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pptx")
-        success = run_ppt_generation(excel_path, output_path, log_cb=self.log)
-        if success:
-            if messagebox.askyesno("生成成功", f"PPT 已生成：\n{output_path}\n是否立即打开？"):
-                os.startfile(output_path)
-        else:
-            messagebox.showerror("生成失败", "PPT 生成失败，请查看日志")
+            # 尝试让用户手动选择
+            excel_path = filedialog.askopenfilename(
+                title="请选择分析结果 Excel 文件",
+                filetypes=[("Excel 文件", "*.xlsx"), ("所有文件", "*.*")]
+            )
+            if not excel_path:
+                return
+        try:
+            from ppt_generator import run_ppt_generation
+            output_dir = self.output_dir.get() or os.path.expanduser("~/Documents/ZPP011分析报告")
+            os.makedirs(output_dir, exist_ok=True)
+            output_path = os.path.join(output_dir, f"ZPP011偏差分析报告_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pptx")
+            self.log(f"开始生成 PPT 报告：{output_path}", "info")
+            success = run_ppt_generation(excel_path, output_path, log_cb=self.log)
+            if success:
+                if messagebox.askyesno("生成成功", f"PPT 已生成：\n{output_path}\n是否立即打开？"):
+                    os.startfile(output_path)
+            else:
+                messagebox.showerror("生成失败", "PPT 生成失败，请查看日志")
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("错误", f"生成报告失败：{e}")
