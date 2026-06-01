@@ -654,12 +654,24 @@ class TableEvents:
                 else:
                     audit_source_val = ""  # 未经过审核的行，来源应为空
 
-            order_no_val = ""
+            # 订单类型（优先取 row 中已保留的列，其次从 dev_df 来源推断）
+            order_type_val = str(row.get("订单类型", "")).strip()
+            if not order_type_val or order_type_val in ("", "nan", "NaN", "None"):
+                # 根据流程订单号前缀推断（100xxxx=ZP01, 200xxxx=ZP02 等）
+                _ono = str(row.get("流程订单", row.get("订单号", ""))).strip()
+                if _ono.startswith("100"):
+                    order_type_val = "ZP01"
+                elif _ono.startswith("200"):
+                    order_type_val = "ZP02"
+                elif _ono.startswith("300"):
+                    order_type_val = "ZP03"
+                else:
+                    order_type_val = ""
 
+            order_no_val = ""
             for _col in ["流程订单", "订单号", "订单编号"]:
                 if _col in row.index and pd.notna(row.get(_col)):
                     order_no_val = str(row.get(_col))
-
                     break
 
             item = self.audit_tree.insert(
@@ -675,7 +687,8 @@ class TableEvents:
                     str(row.get("订单日期", ""))[:10]
                     if pd.notna(row.get("订单日期"))
                     else "",  # order_date
-                    order_no_val,  # order_no
+                    order_type_val,  # order_type（订单类型，如 ZP01）
+                    order_no_val,  # order_no（流程订单号）
                     mat_category,  # material_category（物料大类在物料号前）
                     str(row.get("物料编码", row.get("组件物料号", ""))),  # code
                     mat_desc[:30],  # name
@@ -1257,8 +1270,20 @@ class TableEvents:
                 else:
                     audit_source_val = ""  # 未经过审核的行，来源应为空
 
-            # 流程订单
+            # 订单类型（优先取 row 中已保留的列，其次从订单号前缀推断）
+            order_type_val = str(row.get("订单类型", "")).strip()
+            if not order_type_val or order_type_val in ("", "nan", "NaN", "None"):
+                _ono = str(row.get("流程订单", row.get("订单号", ""))).strip()
+                if _ono.startswith("100"):
+                    order_type_val = "ZP01"
+                elif _ono.startswith("200"):
+                    order_type_val = "ZP02"
+                elif _ono.startswith("300"):
+                    order_type_val = "ZP03"
+                else:
+                    order_type_val = ""
 
+            # 流程订单
             order_no_val = ""
 
             for _col in ["流程订单", "订单号", "订单编号"]:
@@ -1312,7 +1337,8 @@ class TableEvents:
                     str(row.get("订单日期", ""))[:10]
                     if pd.notna(row.get("订单日期"))
                     else "",  # order_date
-                    order_no_val,  # order_no
+                    order_type_val,  # order_type（订单类型，如 ZP01）
+                    order_no_val,  # order_no（流程订单号）
                     mat_category_val,  # material_category（物料大类在物料号前）
                     code_val,  # code
                     name_val,  # name
