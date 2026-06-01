@@ -1088,39 +1088,65 @@ class TableEvents:
             if not _lines:
                 _lines = ["（无数据显示）", f"行ID：{item}"]
 
-            # ── 成本换算器 ──
+            # ── 成本换算器（增强版，优先使用材料偏差）──
             try:
-                _dev_amt_raw = data.get("deviation_amount", "0")
-                if _dev_amt_raw and str(_dev_amt_raw).strip() not in ("0", "-", ""):
-                    _dev_amt_clean = str(_dev_amt_raw).replace(",", "")
-                    _dev_amt_val = float(_dev_amt_clean) if _dev_amt_clean else 0
-                    if abs(_dev_amt_val) > 0.001:
-                        _excel_row = int(data.get("excel_row", 0))
-                        _unit_price = 0.0
-                        _unit_name = ""
-                        if self.audit_data is not None and _excel_row > 0:
-                            _er_mask = self.audit_data["excel_row"].astype(str) == str(_excel_row)
-                            if _er_mask.any():
-                                _rd = self.audit_data[_er_mask].iloc[0]
-                                for _pc in ("_unit_price", "单价", "_单价"):
-                                    if _pc in _rd.index:
-                                        try:
-                                            _unit_price = float(_rd[_pc] or 0)
-                                            break
-                                        except Exception:
-                                            pass
-                                for _uc in ("组件单位", "单位"):
-                                    if _uc in _rd.index:
-                                        _unit_name = str(_rd[_uc] or "")
-                                        break
-                        if _unit_price > 0.001:
-                            _est_qty = abs(_dev_amt_val) / _unit_price
-                            _ud = _unit_name if _unit_name else "单位"
-                            _lines.append(f"💰 偏差¥{_dev_amt_val:,.2f} ≈ {_est_qty:.1f} {_ud}（单价¥{_unit_price:.2f}/{_ud})")
-                        else:
-                            _lines.append(f"💰 偏差金额：¥{_dev_amt_val:,.2f}（无单价数据）")
+                # 1. 获取偏差金额
+                dev_amount_val = None
+                for key in ["偏差金额", "deviation_amount", "偏差金额(含税)"]:
+                    val = data.get(key)
+                    if val is not None and str(val).strip() not in ("", "0", "-"):
+                        try:
+                            dev_amount_val = float(str(val).replace(",", ""))
+                            break
+                        except Exception:
+                            continue
+                if dev_amount_val is None or abs(dev_amount_val) <= 0.001:
+                    _lines.append("💰 偏差金额：无有效金额数据")
+                else:
+                    # 2. 获取数量偏差：优先用"材料偏差"，其次用"实际-定额"
+                    dev_qty_val = None
+                    # 尝试从"材料偏差"列获取
+                    for _k in ("材料偏差", "偏差数量", "数量偏差"):
+                        _v = data.get(_k)
+                        if _v is not None:
+                            try:
+                                dev_qty_val = float(_v)
+                                if abs(dev_qty_val) > 0.0001:
+                                    break
+                            except Exception:
+                                pass
+                    # 如果还没有，用实际-定额计算
+                    if dev_qty_val is None:
+                        _actual = data.get("actual")
+                        _quota = data.get("quota")
+                        if _actual is not None and _quota is not None:
+                            try:
+                                dev_qty_val = float(_actual) - float(_quota)
+                            except Exception:
+                                pass
+                    # 3. 获取单位
+                    unit_name = ""
+                    for _k in ("unit", "单位", "组件单位"):
+                        _v = data.get(_k)
+                        if _v and str(_v).strip() not in ("nan", "None", ""):
+                            unit_name = str(_v).strip()
+                            break
+                    if not unit_name:
+                        unit_name = "单位"
+                    if dev_qty_val is not None and abs(dev_qty_val) > 0.0001:
+                        unit_price = abs(dev_amount_val) / abs(dev_qty_val)
+                        sign_icon = "↑" if dev_amount_val > 0 else "↓"
+                        _lines.append(
+                            f"💰 偏差金额：¥{dev_amount_val:,.2f} {sign_icon} "
+                            f"≈ {abs(dev_qty_val):.1f} {unit_name}"
+                            f"（单价¥{unit_price:.2f}/{unit_name}）"
+                        )
+                    else:
+                        _lines.append(f"💰 偏差金额：¥{dev_amount_val:,.2f}（数量偏差为0或缺失，无法换算实物量）")
             except Exception as _ce:
-                self.log(f"成本换算器出错：{_ce}", "warn")
+                import traceback as _tb
+                _tb.print_exc()
+                _lines.append(f"⚠️ 成本换算失败：{_ce}")
 
             info = "\n".join(_lines)
 
