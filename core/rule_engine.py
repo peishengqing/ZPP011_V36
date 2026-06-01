@@ -1,11 +1,27 @@
 # core/rule_engine.py
 import json
+import ast
+import operator as op
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from core.logger import get_logger
 
 logger = get_logger("RuleEngine")
+
+# 允许的字段白名单
+ALLOWED_FIELDS = {
+    'dev_rate', 'deviation_amount', 'remark', 'remark_status', 'is_alt',
+    '定额', '实际', '偏差率(%)', '备注', '备注原因'
+}
+
+# 允许的运算符映射
+OP_MAP = {
+    '>=': op.ge, '>': op.gt, '==': op.eq, '!=': op.ne,
+    '<': op.lt, '<=': op.le,
+    'contains': lambda a, b: b in str(a) if a is not None else False,
+    'empty': lambda a, _: not str(a).strip() if a is not None else True
+}
 
 
 class RuleEngine:
@@ -131,6 +147,70 @@ class RuleEngine:
     def get_all_rules(self) -> Dict:
         return self.rules.copy()
 
+    def test_condition(self, condition: dict, test_data: dict) -> tuple[bool, dict]:
+        """
+        测试规则，返回 (是否匹配, 执行的动作)
+        
+        Args:
+            condition: 条件字典，如 {"field": "dev_rate", "op": ">=", "value": 10}
+            test_data: 测试数据字典
+            
+        Returns:
+            (是否匹配, 执行的动作字典)
+        """
+        if not condition:
+            return False, {}
+        
+        # 处理组合条件
+        if "operator" in condition:
+            op_type = condition["operator"].lower()
+            if op_type not in ("and", "or"):
+                return False, {}
+            sub_results = []
+            for sub in condition.get("conditions", []):
+                matched, _ = self.test_condition(sub, test_data)
+                sub_results.append(matched)
+            match = all(sub_results) if op_type == "and" else any(sub_results)
+            return match, {}
+        
+        # 单条件
+        field = condition.get("field")
+        op_name = condition.get("op")
+        value = condition.get("value")
+        
+        if field not in ALLOWED_FIELDS:
+            return False, {"error": f"字段 '{field}' 不在白名单中"}
+        
+        actual = test_data.get(field)
+        
+        # 空值检查
+        if op_name == "empty":
+            match = (actual is None) or (str(actual).strip() == "")
+            return match, {"field": field, "actual": actual}
+        
+        # 包含检查
+        if op_name == "contains":
+            match = str(value) in str(actual) if actual is not None else False
+            return match, {"field": field, "actual": actual, "expected": value}
+        
+        # 数值比较
+        try:
+            left = float(actual) if actual is not None else 0.0
+            right = float(value)
+        except (TypeError, ValueError):
+            return False, {"field": field, "error": f"无法转换为数值: {actual}"}
+        
+        op_func = OP_MAP.get(op_name)
+        if not op_func:
+            return False, {"field": field, "error": f"不支持的运算符: {op_name}"}
+        
+        match = op_func(left, right)
+        return match, {"field": field, "actual": actual, "expected": right, "match": match}
+
+    def reload_rules(self):
+        """热重载规则"""
+        self.reload()
+
     def get_s01_rules(self) -> dict:
         """返回所有以 's01.' 或 'inventory.' 开头的规则配置"""
         return {k: v for k, v in self.rules.items() if k.startswith('s01.') or k.startswith('inventory.')}
@@ -176,3 +256,60 @@ class RuleEngine:
 
         # 全部通过
         return ('none', '')
+# ==================== 安全条件解析器（任务卡025）====================
+
+import operator as op
+from typing import Dict, Any
+
+# 允许的字段白名单
+ALLOWED_FIELDS = {
+    'dev_rate', 'deviation_amount', 'remark', 'remark_status', 'is_alt'
+}
+
+# 允许的运算符映射
+OP_MAP = {
+    '>=': op.ge, '>': op.gt, '==': op.eq, '!=': op.ne,
+    '<': op.lt, '<=': op.le,
+    'contains': lambda a, b: b in str(a) if a is not None else False,
+    'empty': lambda a, _: not str(a).strip() if a is not None else True
+}
+
+def safe_eval_condition(condition: Dict[str, Any], row_data: Dict[str, Any]) -> bool:
+    """
+    安全评估结构化条件
+    单条件: {"field": "dev_rate", "op": ">=", "value": 10}
+    组合条件: {"operator": "and", "conditions": [...]}
+    """
+    if "operator" in condition:
+        op_type = condition["operator"].lower()
+        if op_type not in ("and", "or"):
+            raise ValueError(f"不支持的组合操作符: {op_type}")
+        results = [safe_eval_condition(sub, row_data) for sub in condition["conditions"]]
+        return all(results) if op_type == "and" else any(results)
+
+    field = condition.get("field")
+    op_name = condition.get("op")
+    value = condition.get("value")
+
+    if field not in ALLOWED_FIELDS:
+        raise ValueError(f"字段 '{field}' 不在白名单中")
+
+    actual = row_data.get(field)
+
+    if op_name == "empty":
+        return (actual is None) or (str(actual).strip() == "")
+
+    if op_name == "contains":
+        return str(value) in str(actual) if actual is not None else False
+
+    try:
+        left = float(actual) if actual is not None else 0.0
+        right = float(value)
+    except (TypeError, ValueError):
+        return False
+
+    op_func = OP_MAP.get(op_name)
+    if not op_func:
+        raise ValueError(f"不支持的运算符: {op_name}")
+
+    return op_func(left, right)
