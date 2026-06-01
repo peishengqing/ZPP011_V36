@@ -660,7 +660,7 @@ class AnalysisEvents:
     def _on_load_done(self, result_df):
         """异步加载成功回调：处理所有UI更新"""
         with open(r"C:\Users\Administrator\Desktop\zpp011_debug.txt", "a", encoding="utf-8") as _lf:
-            _lf.write(f"[TRACE] _on_load_done START: result_df={len(result_df) if result_df is not None else "None"} 行\n")
+            _lf.write(f"[TRACE] _on_load_done START: result_df={len(result_df) if result_df is not None else 'None'} 行\n")
         try:
             self.audit_data = result_df
             with open(r"C:\Users\Administrator\Desktop\zpp011_debug.txt", "a", encoding="utf-8") as _lf:
