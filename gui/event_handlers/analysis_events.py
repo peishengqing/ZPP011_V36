@@ -291,7 +291,7 @@ class AnalysisEvents:
             if error_type.lower() in raw_msg.lower():
                 reason = info.get('reason', '')
                 solution = info.get('solution', '')
-                return f"{reason}\n💡 {solution}" if solution else reason
+                return f"{reason}\n提示: {solution}" if solution else reason
         default = self._ERROR_MESSAGES.get('default', {})
         return default.get('reason', raw_msg)
 
