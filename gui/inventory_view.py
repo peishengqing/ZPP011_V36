@@ -422,7 +422,7 @@ class InventoryView(tk.Frame):
         """库存全检 - 弹出健康度报告窗口"""
         # 检查数据源
         if self.inventory_df is None or self.inventory_df.empty:
-            messagebox.showwarning("⚠️ 提示", "请先导入库存表")
+            messagebox.showwarning("提示", "请先导入库存表")
             return
 
         # 计算预警数据
