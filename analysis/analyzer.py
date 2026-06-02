@@ -106,16 +106,42 @@ def do_analysis_v2(
     check_cancel()
 
     src_file = input_file
+    
+    # 检查文件是否存在
+    if not os.path.exists(src_file):
+        error_msg = f"文件不存在: {src_file}"
+        _dprint(f"❌ {error_msg}")
+        report_progress(1, "错误：文件不存在", 0)
+        raise FileNotFoundError(error_msg)
+    
+    # 检查文件是否被占用
     try:
+        with open(src_file, 'r+b'):
+            pass
+    except PermissionError:
+        error_msg = f"文件被占用或无权限访问: {src_file}"
+        _dprint(f"❌ {error_msg}")
+        report_progress(1, "错误：文件被占用", 0)
+        raise PermissionError(error_msg)
+    except Exception as e:
+        _dprint(f"⚠ 文件访问检查失败（可能不影响读取）: {e}")
+    
+    try:
+        _dprint(f"[DEBUG] 开始读取Excel: {src_file}")
         df = pd.read_excel(src_file, sheet_name='Data')
         _dprint(f"[DEBUG do_analysis_v2] 读取Data表成功，{len(df)} 行")
         report_progress(1, "1/5 正在读取 Excel 文件", 10)
-        # 强制刷新输出
+        # 强制刷新输出（安全模式，忽略线程 stdout 不可用的情况）
         import sys
-        sys.stdout.flush()
+        try:
+            sys.stdout.flush()
+        except (OSError, ValueError):
+            pass
     except Exception as e:
-        _dprint(f"❌ 读取Excel失败: {e}")
-        raise
+        error_detail = f"读取Excel失败: {e}\n文件路径: {src_file}\n文件存在: {os.path.exists(src_file)}"
+        _dprint(f"❌ {error_detail}")
+        report_progress(1, f"错误: {str(e)[:50]}", 0)
+        raise Exception(error_detail)
     
 
     # ========== 追踪点1: 读取数据后（原始状态） ==========
