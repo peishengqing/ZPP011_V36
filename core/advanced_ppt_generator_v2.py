@@ -60,25 +60,53 @@ def _add_table(slide, left, top, width, headers, rows, col_widths=None):
     """通用表格添加函数 (修复列宽类型错误)"""
     n_rows = len(rows) + 1
     n_cols = len(headers)
-    row_h = Inches(0.45)
-    tbl_h = row_h * n_rows
+    
+    # ⚠️ 关键修复：所有数值必须是纯 int (EMU单位)
+    # 不管输入是什么类型，强制转为纯 int
+    
+    # 行高：0.45英寸 → EMU整数（纯 int）
+    row_h = int(0.45 * 914400)  # 411480 EMU (纯 int)
+    tbl_h = int(row_h * n_rows)  # 强制转纯 int
+    
+    # left, top, width 强制转纯 int
+    # 使用 try-except 处理各种可能的类型
+    try:
+        left = int(left)
+    except (TypeError, ValueError):
+        left = int(left.emus) if hasattr(left, 'emus') else left
+    
+    try:
+        top = int(top)
+    except (TypeError, ValueError):
+        top = int(top.emus) if hasattr(top, 'emus') else top
+    
+    try:
+        width = int(width)
+    except (TypeError, ValueError):
+        width = int(width.emus) if hasattr(width, 'emus') else width
+    
+    # 现在所有参数都是纯 int，调用 add_table
     table = slide.shapes.add_table(n_rows, n_cols, left, top, width, tbl_h).table
 
-    # ========== 列宽处理（强制转为整数 EMU）==========
+    # ========== 列宽处理（转为纯 int EMU）==========
     if col_widths:
         for i, w in enumerate(col_widths):
             try:
-                # 如果 w 是字符串，尝试转为浮点数
+                # 将英寸值转为纯 int (EMU)
+                # 关键：先转 float，乘以 914400，再转纯 int
                 if isinstance(w, str):
                     w = float(w)
-                # 计算 EMU 值（1英寸=914400 EMU），并转为整数
-                emu_value = int(w * 914400)
-                table.columns[i].width = emu_value
-                # 移除调试打印：print(f"[DEBUG] 列{i}宽度设置为: {emu_value} EMU (对应 {w} 英寸)")
+                
+                # 计算 EMU 值，并强制转纯 int
+                emu_val = int(w * 914400)  # w 现在是 int 或 float
+                
+                # ⚠️ 关键修复：确保赋值时是纯 int
+                table.columns[i].width = int(emu_val)  # 强制转纯 int
+                
             except Exception as e:
                 print(f"[ERROR] 列宽转换失败: {w}, 错误: {e}")
-                # 使用默认宽度
-                table.columns[i].width = int(1.5 * 914400)  # 默认1.5英寸
+                # 使用默认宽度（纯 int）
+                table.columns[i].width = int(1.5 * 914400)  # 1371600 EMU
     # ============================================
 
     # 表头
@@ -221,7 +249,7 @@ class AdvancedPPTGeneratorV2:
             card.fill.solid()
             card.fill.fore_color.rgb = RGBColor(255, 255, 255)
             card.line.color.rgb = RGBColor(210, 210, 210)
-            card.line.width = Pt(1)
+            card.line.width = 12700  # 1磅 = 12700 EMU
             # 左侧色条
             stripe = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, top, Inches(0.1), card_height)
             stripe.fill.solid()
@@ -247,21 +275,21 @@ class AdvancedPPTGeneratorV2:
         """添加图表页"""
         slide = self.prs.slides.add_slide(self.prs.slide_layouts[6])
         self._add_section_header(slide, title)
-        # 左侧可添加文字说明（可选）
-        # 右侧添加图表
-        chart_left = Inches(0.8)
-        chart_top = Inches(1.6)
-        chart_width = self.slide_width - Inches(1.6)
-        chart_height = Inches(4.8)
+        # 所有数值强制转 int (EMU)
+        chart_left = int(Inches(0.8))
+        chart_top = int(Inches(1.6))
+        chart_width = int(int(self.slide_width) - int(Inches(1.6)))
+        chart_height = int(Inches(4.8))
         self._add_chart(slide, chart_data, chart_left, chart_top, chart_width, chart_height)
 
     def add_table_slide(self, title: str, headers: List[str], rows: List[List], col_widths: List[float] = None):
         """添加表格页"""
         slide = self.prs.slides.add_slide(self.prs.slide_layouts[6])
         self._add_section_header(slide, title)
-        left = Inches(0.8)
-        top = Inches(1.6)
-        width = self.slide_width - Inches(1.6)
+        # 所有数值转为 int (EMU) 类型
+        left = int(Inches(0.8))       # 0.8英寸 → EMU整数
+        top = int(Inches(1.6))        # 1.6英寸 → EMU整数
+        width = int(self.slide_width) - int(Inches(1.6))  # 强行转int再减
         _add_table(slide, left, top, width, headers, rows, col_widths)
 
     def add_text_slide(self, title: str, content: List[str]):
@@ -383,9 +411,15 @@ def generate_advanced_report_v2(excel_path, output_path, log_cb=None):
         neg_amount = abs(summary[neg_amt_col].sum()) if neg_amt_col else 0
         net_amount = pos_amount - neg_amount
         # 备注覆盖率（加权）
-        rate_col = summary['备注覆盖率']
-        rates = rate_col.astype(str).str.replace('%', '').astype(float) / 100
-        weights = summary['总条数']
+        rate_col_name = next((c for c in ['备注覆盖率', '备注覆盖', '覆盖率'] if c in summary.columns), None)
+        if rate_col_name:
+            rate_col = summary[rate_col_name]
+            rates = rate_col.astype(str).str.replace('%', '').astype(float) / 100
+            weight_col = next((c for c in ['总条数', '记录数', '条数'] if c in summary.columns), None)
+            weights = summary[weight_col] if weight_col else pd.Series([1] * len(summary))
+        else:
+            rates = pd.Series([0])
+            weights = pd.Series([1] * len(summary))
         note_rate = (rates * weights).sum() / weights.sum() if weights.sum() > 0 else 0
         kpis = [
             ("总记录数", f"{total_rows:,}", PRIMARY_COLOR),
@@ -444,7 +478,7 @@ def generate_advanced_report_v2(excel_path, output_path, log_cb=None):
                                   col_widths=[3, 5])
 
         # 7. 替代料机制（如果有数据）
-        if alt is not None and not alt.empty:
+        if alt is not None and hasattr(alt, 'empty') and not alt.empty:
             alt_sample = alt.head(3)
             headers = ['物料A', '偏差A', '物料B', '偏差B', '净偏差']
             rows = []
