@@ -2,9 +2,15 @@
 # -*- coding: utf-8 -*-
 """ PPT 生成模块（GUI 错误日志版） """
 
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
+# matplotlib 可选依赖，用于图表生成
+try:
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    _matplotlib_available = True
+except ImportError:
+    _matplotlib_available = False
+    plt = None
 import pandas as pd
 import numpy as np
 import os

@@ -297,20 +297,26 @@ class AuditPresenter:
                     df = df[df[col_name].astype(str).str.contains(val, case=False, na=False)]
 
 
-        # 6) AI审核结果筛选（_on_filter_changed 迁移）
+        # 6) AI审核结果筛选（筛的是 audit_result / 审核结果 列）
         ai_result = filters.get('ai_result')
         if ai_result and ai_result != '全部':
-            remark_src_col = next((c for c in ['审核来源', 'audit_source'] if c in df.columns), None)
-            if remark_src_col:
+            src_col = next(
+                (c for c in ['审核结果', 'audit_result'] if c in df.columns), None
+            )
+            if src_col:
                 if ai_result == '合格':
-                    df = df[df[remark_src_col] == '审核合格']
+                    df = df[df[src_col] == '合格']
                 elif ai_result == '需改进':
-                    df = df[df[remark_src_col] == '审核待改进']
+                    df = df[df[src_col] == '需改进']
+                elif ai_result == '需补备注':
+                    df = df[df[src_col] == '需补备注']
                 elif ai_result == 'AI建议':
-                    df = df[df[remark_src_col].str.startswith('AI建议', na=False)]
+                    df = df[df[src_col].str.startswith('AI建议', na=False)]
                 elif ai_result == '未处理':
-                    ai_sources = {'审核合格', '审核待改进', 'AI建议', 'AI建议（小偏差）'}
-                    df = df[~(df[remark_src_col].isin(ai_sources) | df[remark_src_col].isna())]
+                    ai_sources = {'合格', '需改进', 'AI建议', 'AI建议（小偏差）'}
+                    df = df[~(df[src_col].isin(ai_sources) | df[src_col].isna())]
+                else:
+                    df = df[df[src_col] == ai_result]
 
 
         return df
@@ -351,11 +357,28 @@ class AuditPresenter:
             audit_data['组件物料号'].astype(str).str.startswith('600')
         )
         is_alt = audit_data['组件物料描述'].astype(str).str.strip().isin(alt_all_descs)
-        exclude_sources = ['人工填写', '自动填充', '替代料', 'AI审核合格', 'AI审核待改进', 'AI生成']
+        # 备注来源=AI审核 的行，如果备注过短也要重新审核
+        # 因此 is_already_processed 不再排除 AI审核 的来源
+        exclude_sources = ['人工填写', '自动填充', '替代料', 'AI生成']
         is_already_processed = audit_data['备注来源'].isin(exclude_sources)
-        
+
+        # 备注过短（<5个字）也纳入审核（含备注来源=AI审核的行）
+        remark_col = next((c for c in ['备注原因', '备注'] if c in audit_data.columns), None)
+        if remark_col:
+            is_too_short = audit_data[remark_col].astype(str).str.len() < 5
+            is_remark_na = audit_data[remark_col].isna() | (audit_data[remark_col].astype(str).str.strip() == '')
+        else:
+            is_too_short = False
+            is_remark_na = True
+
+        # 需要审核的行：
+        # 1. audit_result 为空（未审核过）
+        # 2. 或备注过短（<5字，无论 audit_result 是否有值）
+        has_audit_result = audit_data['audit_result'].notna() & (audit_data['audit_result'].astype(str).str.strip() != '')
+        needs_audit = (~has_audit_result) | is_too_short
+
         to_audit_mask = (
-            (audit_data['audit_result'].isna() | (audit_data['audit_result'] == '')) &
+            needs_audit &
             (~is_auto_fill) &
             (~is_alt) &
             (~is_already_processed)
@@ -390,8 +413,12 @@ class AuditPresenter:
             
             row = df_to_audit.loc[idx]
             remark = row[remark_col] if remark_col else ''
+            if pd.isna(remark):
+                remark = ''
             dev_rate_raw = row[rate_col] if rate_col else 0
             try:
+                if isinstance(dev_rate_raw, str):
+                    dev_rate_raw = dev_rate_raw.replace('%', '').strip()
                 dev_rate = float(dev_rate_raw or 0)
             except:
                 dev_rate = 0.0

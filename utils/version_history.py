@@ -14,6 +14,31 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v41.3",
+        "date": "2026-06-03",
+        "build_datetime": "2026-06-03 23:05:00",
+        "features": [],
+        "fixes": [
+            "🐛 修复 audit_batch_events.py 缩进错误导致批量操作无法使用",
+            "🐛 修复表格列顺序错乱（补充「备注来源」列）",
+            "🐛 修复 export_events.py 缺少 with_feedback 导入",
+            "🐛 修复 ppt_generator 依赖 matplotlib 缺失导致程序启动失败",
+            "🐛 修复 analyzer.py 文件名日期截断问题（结束日期缺少年份）",
+            "🐛 修复 analysis_events.py 列映射时覆盖已有列",
+            "🐛 重写 AI 审核规则，增加 5%≤偏差率<10%「需关注」分级，优化关键词与字数优先级",
+            "🐛 修复 AI 审核范围过窄（AI 审核过的短备注可重新审核）",
+            "🐛 修复排序与筛选冲突（_apply_sort_and_refresh 优先使用 filtered_data）"
+        ],
+        "optimizations": [
+            "⚡ 优化 matplotlib 导入方式，未安装时仅影响 PPT 生成功能"
+        ],
+        "notes": [
+            "📌 本版本为 v41.3 紧急修复版，解决了多个稳定性问题",
+            "📌 重写 AI 审核规则后需重新运行 AI 审核以获得更准确结果",
+            "📌 建议所有用户升级至此版本"
+        ]
+    },
+    {
         "version": "v41.2",
         "date": "2026-06-03",
         "build_datetime": "2026-06-03 14:50:00",

@@ -345,7 +345,11 @@ class BenefitReportDialog:
                 XL_CHART_TYPE.LINE, x, y, cx, cy, chart_data
             ).chart
             chart.has_legend = True
-            chart.value_axis.title.textframe.text = "万元"
+            try:
+                if hasattr(chart.value_axis, 'has_title') and chart.value_axis.has_title:
+                    chart.value_axis.title.text_frame.text = "万元"
+            except Exception:
+                pass  # 某些版本的 python-pptx 不支持坐标轴标题
             chart.value_axis.tick_labels.font.size = Pt(9)
             chart.category_axis.tick_labels.font.size = Pt(9)
             for series in chart.series:

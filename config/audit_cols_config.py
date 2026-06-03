@@ -22,13 +22,13 @@ AUDIT_COLS_CONFIG = [
     ("is_alt",           "替代料",      50,   "center"),
     ("status",            "状态",        55,   "center"),
     ("remark",            "备注",        80,   "w"),
+    ("remark_source",     "备注来源",     70,   "center"),
     ("batch_remark",      "批量备注",     90,   "w"),
     ("audit_result",       "审核结果",     80,   "center"),
     ("AI建议",            "AI建议",     120,   "w"),
     ("audit_status",       "审核状态",     60,   "center"),
     ("audit_source",       "审核来源",     70,   "center"),
     ("deviation_amount",   "偏差金额",     90,   "e"),
-    ("remark_check_status", "",             0,   "center"),
     ("remark_check_msg",   "校验提示",    150,   "w"),
 ]
 

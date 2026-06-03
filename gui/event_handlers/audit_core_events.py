@@ -86,14 +86,15 @@ class AuditCoreEvents:
 
 
 
-
         # 委托 Presenter 准备审核数据
+        try:
+            audit_indices = self.audit_presenter.run_ai_audit()
+        except Exception as _e:
+            self.log(f'AI审核准备失败: {_e}', 'error')
+            import traceback
+            traceback.print_exc()
+            return
 
-
-
-
-
-        audit_indices = self.audit_presenter.run_ai_audit()
 
 
 
@@ -447,12 +448,13 @@ class AuditCoreEvents:
 
 
                 self.audit_data.at[idx, '备注来源'] = 'AI审核'
+                self.audit_data.at[idx, 'audit_source'] = 'AI审核'
 
 
 
 
 
-                self.audit_data.at[idx, '审核来源'] = 'AI'
+                self.audit_data.at[idx, '审核来源'] = 'AI审核'
 
 
 
@@ -1119,9 +1121,12 @@ class AuditCoreEvents:
         if 'audit_result' not in self.audit_data.columns:
             self.log("自动结案跳过：缺少 audit_result 列", "warn")
             return
-        passed_mask = self.audit_data['audit_result'] == '通过'
+        passed_mask = (
+            (self.audit_data['audit_result'] == '通过') |
+            (self.audit_data['audit_result'] == '合格')
+        )
         if not passed_mask.any():
-            self.log("没有 AI 审核结果为'通过'的记录，跳过自动结案", "info")
+            self.log("没有 AI 审核结果为'通过/合格'的记录，跳过自动结案", "info")
             return
         count = passed_mask.sum()
         self.audit_data.loc[passed_mask, 'audit_status'] = '已审核'

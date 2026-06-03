@@ -293,7 +293,7 @@ def do_analysis_v2(
         date_min = df['订单开始日期'].min()
         date_max = df['订单开始日期'].max()
 
-    date_range = f"{pd.Timestamp(date_min).strftime('%Y%m%d')}-{pd.Timestamp(date_max).strftime('%m%d')}"
+    date_range = f"{pd.Timestamp(date_min).strftime('%Y%m%d')}-{pd.Timestamp(date_max).strftime('%Y%m%d')}"
     _dprint(f"[DEBUG do_analysis_v2] 日期范围：{date_range}")
     
 

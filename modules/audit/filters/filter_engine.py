@@ -229,21 +229,26 @@ class FilterEngine:
                 else:
                     df = df[temp == remark]
 
-        # 15. AI审核结果筛选
+        # 15. AI审核结果筛选（筛的是 audit_result / 审核结果 列）
         ai_result = filters.get('ai_result')
         if ai_result and ai_result != '全部':
             src_col = next(
-                (c for c in ['审核来源', 'audit_source'] if c in df.columns), None
+                (c for c in ['审核结果', 'audit_result'] if c in df.columns), None
             )
             if src_col:
                 if ai_result == '合格':
-                    df = df[df[src_col] == '审核合格']
+                    df = df[df[src_col] == '合格']
                 elif ai_result == '需改进':
-                    df = df[df[src_col] == '审核待改进']
+                    df = df[df[src_col] == '需改进']
+                elif ai_result == '需补备注':
+                    df = df[df[src_col] == '需补备注']
                 elif ai_result == 'AI建议':
                     df = df[df[src_col].str.startswith('AI建议', na=False)]
                 elif ai_result == '未处理':
-                    ai_sources = {'审核合格', '审核待改进', 'AI建议', 'AI建议（小偏差）'}
+                    ai_sources = {'合格', '需改进', 'AI建议', 'AI建议（小偏差）'}
                     df = df[~(df[src_col].isin(ai_sources) | df[src_col].isna())]
+                else:
+                    # 兜底：直接精确匹配
+                    df = df[df[src_col] == ai_result]
 
         return df

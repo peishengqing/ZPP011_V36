@@ -514,6 +514,14 @@ class AuditBatchEvents:
 
             remark = remark_var.get()
 
+            # 检查是否选择了备注内容
+            if not remark or remark == '——手动输入——':
+                messagebox.showwarning(
+                    _safe_for_gbk('提示'),
+                    _safe_for_gbk('请从下拉框选择备注内容，或选择"——手动输入——"后输入自定义备注')
+                )
+                return
+
 
 
 

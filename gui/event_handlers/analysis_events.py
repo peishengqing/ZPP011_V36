@@ -514,8 +514,38 @@ class AnalysisEvents:
                     break
             if not latest_file:
                 raise FileNotFoundError("未找到任何分析结果文件（已尝试多种命名格式）")
-        # 3. 读取
-        dev_df = pd.read_excel(latest_file, sheet_name='完整偏差明细')
+        # 3. 读取（动态获取工作表名称，避免硬编码导致的 Sheet 找不到错误）
+        try:
+            _xl = pd.ExcelFile(latest_file)
+            _sheet_names = _xl.sheet_names
+            # 优先匹配"完整偏差明细"，其次是包含"偏差明细"的，最后是包含"偏差"的
+            _target_sheet = None
+            for _s in _sheet_names:
+                if _s == '完整偏差明细':
+                    _target_sheet = _s
+                    break
+            if _target_sheet is None:
+                for _s in _sheet_names:
+                    if '偏差明细' in _s:
+                        _target_sheet = _s
+                        break
+            if _target_sheet is None:
+                for _s in _sheet_names:
+                    if '偏差' in _s:
+                        _target_sheet = _s
+                        break
+            if _target_sheet is None:
+                _target_sheet = _sheet_names[0]  # 兜底：使用第一个 sheet
+            print(f"[INFO] 动态选择工作表: {_target_sheet}")
+            dev_df = pd.read_excel(latest_file, sheet_name=_target_sheet)
+        except Exception as _e:
+            raise ValueError(f"读取 Excel 文件失败（文件：{latest_file}）：{_e}")
+        # 检查关键列是否存在
+        if '偏差率' not in dev_df.columns:
+            raise ValueError(
+                f"选定的工作表 '{_target_sheet}' 缺少'偏差率'列，"
+                f"可用列：{list(dev_df.columns)}"
+            )
         if dev_df.empty:
             raise ValueError("偏差明细工作表为空")
         # 4. 解析偏差率
@@ -573,7 +603,7 @@ class AnalysisEvents:
         else:
             audit_df['excel_row'] = range(2, len(audit_df) + 2)
             audit_df['原表行号'] = audit_df['excel_row']
-        # 列映射：如果源列存在则赋值，否则用默认值
+        # 列映射：如果目标列不存在，且源列存在则赋值，否则用默认值
         for dst, src, default in [
             ('组件物料号', '物料编码', ''),
             ('组件物料描述', '物料名称', ''),
@@ -583,10 +613,11 @@ class AnalysisEvents:
             ('数量-实际', '实际', 0),
             ('备注原因', '备注', ''),
         ]:
-            if src in audit_df.columns:
-                audit_df[dst] = audit_df[src]
-            else:
-                audit_df[dst] = default
+            if dst not in audit_df.columns:
+                if src in audit_df.columns:
+                    audit_df[dst] = audit_df[src]
+                else:
+                    audit_df[dst] = default
         audit_df['偏差率(%)'] = audit_df['偏差率数值'] * 100
         # 调试：对比 订单300354378+物料10000000 的数据
         _dbg_order = '流程订单' if '流程订单' in audit_df.columns else None

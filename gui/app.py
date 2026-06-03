@@ -395,6 +395,12 @@ class ZPP011Beautiful(EventsMixIn):
         history_menu.add_separator()
 
         history_menu.add_command(
+            label="📂 查看历史源码", command=self._open_source_backup
+        )
+
+        history_menu.add_separator()
+
+        history_menu.add_command(
             label="📊 管理看板", command=self._show_management_dashboard
         )
 

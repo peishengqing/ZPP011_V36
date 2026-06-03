@@ -6,13 +6,15 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import os
 import pandas as pd
-from ppt_generator import run_ppt_generation as _run_ppt
+try:
+    from ppt_generator import run_ppt_generation as _run_ppt
+    _ppt_available = True
+except ImportError:
+    _ppt_available = False
+    def _run_ppt(*args, **kwargs):
+        raise RuntimeError("PPT生成功能不可用：缺少 ppt_generator 依赖")
+
 from core.decorators import with_feedback
-from widgets import C
-from core.exporter import ExcelExporter
-import threading
-from datetime import datetime
-from openpyxl import Workbook, load_workbook
 
 def _safe_for_gbk(text):
     if not text: return text

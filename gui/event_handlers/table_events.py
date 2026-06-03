@@ -702,13 +702,13 @@ class TableEvents:
                     is_alt,  # is_alt
                     status,  # status
                     remark,  # remark
+                    note_src,  # remark_source
                     batch_remark[:30],  # batch_remark
                     audit_result_val,  # audit_result
                     str(row.get("AI建议", ""))[:50],  # AI建议
                     audit_status_val,  # audit_status
                     audit_source_val,  # audit_source
                     f"{row.get('偏差金额', 0):,.2f}",  # deviation_amount
-                    str(row.get("remark_check_status", "")),  # remark_check_status
                     str(row.get("remark_check_msg", "")),  # remark_check_msg
                 ),
             )
@@ -1410,13 +1410,13 @@ class TableEvents:
                     is_alt,  # is_alt
                     status,  # status
                     remark,  # remark
+                    str(row.get("备注来源", "")),  # remark_source
                     batch_remark,  # batch_remark
                     audit_result_val,  # audit_result
                     str(row.get("AI建议", ""))[:50],  # AI建议
                     audit_status_val,  # audit_status
                     audit_source_val,  # audit_source
                     f"{row.get('偏差金额', 0):,.2f}",  # deviation_amount
-                    str(row.get("remark_check_status", "")),  # remark_check_status
                     str(row.get("remark_check_msg", "")),  # remark_check_msg
                 ),
             )
@@ -2234,9 +2234,14 @@ class TableEvents:
         if self.audit_data is None or self.audit_data.empty:
             return
 
-        if not self.sort_columns:
-            self._refresh_audit_tree(self.audit_data)
+        base_df = (
+            self.filtered_data
+            if hasattr(self, "filtered_data") and self.filtered_data is not None
+            else self.audit_data
+        )
 
+        if not self.sort_columns:
+            self._refresh_audit_tree(base_df)
             return
 
         valid = []
@@ -2248,8 +2253,7 @@ class TableEvents:
                 valid.append((df_col, asc))
 
         if not valid:
-            self._refresh_audit_tree(self.audit_data)
-
+            self._refresh_audit_tree(base_df)
             return
 
         by = [col for col, _ in valid]

@@ -31,21 +31,25 @@ class AIClient:
         return True  # 默认Mock，确保AI审核始终可用
 
     def _get_mock_result(self, text, dev_rate):
-        if not text or str(text).strip() == "":
-            if abs(dev_rate) < 5:
-                return {"result": "合格", "suggestion": "小偏差(5%以内)，可接受，无需特别说明"}
-            elif dev_rate > 0:
-                return {"result": "需补备注", "suggestion": f"超耗{dev_rate:.1f}%，建议检查BOM用量或损耗率"}
-            else:
-                return {"result": "需补备注", "suggestion": f"少耗{abs(dev_rate):.1f}%，建议核实实际用量"}
-        remark_str = str(text).strip()
-        # 跳过 nan/NaN/None 等无效值（之前已在上方处理空文本，此处作为兜底）
+        remark_str = str(text).strip() if text is not None else ""
+        # 统一处理空值/NaN/None
         if remark_str in ('nan', 'NaN', 'None', 'none', ''):
-            return {"result": "需补备注", "suggestion": "未填写备注，建议填写偏差原因（超耗/少耗/替代/变更）"}
-        if len(remark_str) < 5:
-            return {"result": "需改进", "suggestion": "备注过短，建议补充详细原因"}
+            abs_rate = abs(dev_rate)
+            if abs_rate < 5:
+                return {"result": "合格", "suggestion": "小偏差(5%以内)，可接受，无需特别说明"}
+            elif abs_rate < 10:
+                return {"result": "需关注", "suggestion": f"偏差{abs_rate:.1f}%，建议确认原因"}
+            else:
+                if dev_rate > 0:
+                    return {"result": "需补备注", "suggestion": f"超耗{abs_rate:.1f}%，建议检查BOM用量或损耗率"}
+                else:
+                    return {"result": "需补备注", "suggestion": f"少耗{abs_rate:.1f}%，建议核实实际用量"}
+        # 优先检查是否含有关键词，含关键词即视为合格（不受字数限制）
         if any(kw in remark_str for kw in ["超耗", "少耗", "损耗", "替代", "变更"]):
             return {"result": "合格", "suggestion": "备注清晰"}
+        # 不含关键词时，检查字数是否过短
+        if len(remark_str) < 5:
+            return {"result": "需改进", "suggestion": "备注过短（小于5个字），建议补充详细原因"}
         return {"result": "需改进", "suggestion": "建议明确偏差原因（如超耗/少耗/替代/变更）"}
 
     def audit(self, text, dev_rate=0.0):
