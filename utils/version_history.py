@@ -14,6 +14,33 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v41.2",
+        "date": "2026-06-03",
+        "build_datetime": "2026-06-03 14:50:00",
+        "features": [
+            "✨ PPT报告V3（17页模板结构）：新增偏差率/预警等级分布/风险等级页面，支持偏差金额A/B双列分析，物料来源追溯，AI归因摘要",
+            "✨ 效益报告（8页完整版）：执行摘要、车间排行、物料排行、趋势分析、成本换算、改进建议、附录",
+            "✨ 规则配置界面：帮助菜单新增入口，RuleConfigDialog 支持正则匹配、优先级、颜色定制"
+        ],
+        "fixes": [
+            "🐛 GBK编码兜底：MessageBox 全量参数 `_safe_for_gbk` 包装，错误消息去除emoji/非GBK字符",
+            "🐛 Worker线程 `sys.stdout.flush` OSError崩溃（加try/except防护）",
+            "🐛 PPT生成 `line[0].isdigit()` 空字符串IndexError（4处，改为 `line and line[0].isdigit()`）",
+            "🐛 偏差率/偏差金额字符串无法格式化（加 `pd.to_numeric(..., errors='coerce')`）"
+        ],
+        "optimizations": [
+            "⚡ `_safe_for_gbk` 工具函数：strip非GBK字符 + encode('gbk','replace') 双重保险",
+            "⚡ 临时文件清理延后到程序退出时执行，减少运行干扰"
+        ],
+        "notes": [
+            "📌 PPT V3 修复 line[0].isdigit() 空字符串风险（line 672, 800, 979, 1022）",
+            "📌 规则配置支持正则表达式、优先级排序、颜色标记（红/黄/绿）",
+            "📌 本版本基于v41.0合并后的稳定版"
+        ]
+    },
+
+    
+    {
         "version": "v41.0",
         "date": "2026-06-01",
         "build_datetime": "2026-06-01 21:00:00",
