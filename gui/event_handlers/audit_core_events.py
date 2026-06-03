@@ -11,6 +11,20 @@ from widgets import C
 from core.auto_closer import AutoCloser
 
 
+def _safe_for_gbk(text):
+    if not text: return text
+    result = []
+    for c in text:
+        try:
+            c.encode('gbk')
+            result.append(c)
+        except UnicodeEncodeError:
+            pass
+    return ''.join(result)
+
+
+
+
 class AuditCoreEvents:
     """AI审核 + 自动结案核心事件"""
     def _run_ai_audit(self):
@@ -34,7 +48,7 @@ class AuditCoreEvents:
             if getattr(self, '_auto_chain_mode', False):
                 self.log("AI审核正在运行，跳过自动审核", "warn")
             else:
-                messagebox.showwarning("提示", "AI审核正在运行，请等待完成或点击取消")
+                messagebox.showwarning(_safe_for_gbk('提示'), _safe_for_gbk('AI审核正在运行，请等待完成或点击取消'))
 
 
 
@@ -55,7 +69,7 @@ class AuditCoreEvents:
             if getattr(self, '_auto_chain_mode', False):
                 self.log("自动审核跳过：没有审核数据", "warn")
             else:
-                messagebox.showwarning("警告", "没有审核数据，请先加载审核数据")
+                messagebox.showwarning(_safe_for_gbk('警告'), _safe_for_gbk('没有审核数据，请先加载审核数据'))
 
 
 
@@ -94,7 +108,7 @@ class AuditCoreEvents:
             if getattr(self, '_auto_chain_mode', False):
                 self.log("没有需要AI审核的行，跳过自动审核", "info")
             else:
-                messagebox.showinfo("提示", "没有需要AI审核的行")
+                messagebox.showinfo(_safe_for_gbk('提示'), _safe_for_gbk('没有需要AI审核的行'))
 
 
 
@@ -489,7 +503,7 @@ class AuditCoreEvents:
             if getattr(self, '_auto_chain_mode', False):
                 self.log(f"AI审核完成（自动模式），共处理 {len(popup_rows)} 条", "success")
             else:
-                messagebox.showinfo("完成", f"AI审核完成，共处理 {len(popup_rows)} 条记录")
+                messagebox.showinfo(_safe_for_gbk('完成'), _safe_for_gbk(f'AI审核完成，共处理 {len(popup_rows)} 条记录'))
 
 
 
@@ -556,7 +570,7 @@ class AuditCoreEvents:
 
 
 
-            messagebox.showinfo("已取消", "AI审核已被用户取消")
+            messagebox.showinfo(_safe_for_gbk('已取消'), _safe_for_gbk('AI审核已被用户取消'))
 
 
 
@@ -586,7 +600,7 @@ class AuditCoreEvents:
 
 
 
-            messagebox.showerror("AI审核失败", f"审核过程发生异常：\n{str(exc)}")
+            messagebox.showerror(_safe_for_gbk('AI审核失败'), _safe_for_gbk(f'审核过程发生异常：\n{str(exc)}'))
 
 
 
@@ -646,7 +660,7 @@ class AuditCoreEvents:
 
 
 
-            messagebox.showwarning("提示", "自动结案任务进行中，请勿重复操作")
+            messagebox.showwarning(_safe_for_gbk('提示'), _safe_for_gbk('自动结案任务进行中，请勿重复操作'))
 
 
 
@@ -664,7 +678,7 @@ class AuditCoreEvents:
 
 
 
-            messagebox.showwarning("警告", "没有数据可操作")
+            messagebox.showwarning(_safe_for_gbk('警告'), _safe_for_gbk('没有数据可操作'))
 
 
 
@@ -940,7 +954,7 @@ class AuditCoreEvents:
 
 
 
-        messagebox.showinfo("完成", msg)
+        messagebox.showinfo(_safe_for_gbk('完成'), _safe_for_gbk(msg))
 
 
 
@@ -1000,7 +1014,7 @@ class AuditCoreEvents:
 
 
 
-            messagebox.showwarning("已取消", "自动结案操作已取消，数据未变动。")
+            messagebox.showwarning(_safe_for_gbk('已取消'), _safe_for_gbk('自动结案操作已取消，数据未变动。'))
 
 
 
@@ -1018,7 +1032,7 @@ class AuditCoreEvents:
 
 
 
-            messagebox.showerror("错误", f"自动结案失败: {error}")
+            messagebox.showerror(_safe_for_gbk('错误'), _safe_for_gbk(f'自动结案失败: {error}'))
 
 
 
@@ -1082,7 +1096,7 @@ class AuditCoreEvents:
 
 
 
-            messagebox.showwarning("提示", "当前没有正在运行的自动结案任务")
+            messagebox.showwarning(_safe_for_gbk('提示'), _safe_for_gbk('当前没有正在运行的自动结案任务'))
 
     def _auto_audit_and_close(self):
         """分析完成后自动执行 AI 审核和自动结案（静默模式）"""

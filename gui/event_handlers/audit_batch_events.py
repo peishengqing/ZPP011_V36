@@ -8,6 +8,17 @@ import pandas as pd
 from core.decorators import with_feedback
 from widgets import C
 
+def _safe_for_gbk(text):
+    if not text: return text
+    result = []
+    for c in text:
+        try:
+            c.encode('gbk')
+            result.append(c)
+        except UnicodeEncodeError:
+            pass
+    return ''.join(result)
+
 
 class AuditBatchEvents:
     """批量操作 + 隔离区事件"""
@@ -35,7 +46,7 @@ class AuditBatchEvents:
 
 
 
-            messagebox.showwarning("提示", "请先选择要更改状态的行")
+            messagebox.showwarning(_safe_for_gbk("提示"), _safe_for_gbk("请先选择要更改状态的行"))
 
 
 
@@ -246,7 +257,7 @@ class AuditBatchEvents:
 
 
 
-            messagebox.showinfo("完成", f"已将 {len(selected)} 行状态更改为「{new_status}」")
+            messagebox.showinfo(_safe_for_gbk("完成"), _safe_for_gbk(f"已将 {len(selected)} 行状态更改为「{new_status}」"))
 
 
         # Audit log (Task 004)
@@ -333,7 +344,7 @@ class AuditBatchEvents:
 
 
 
-            messagebox.showwarning("提示", "请先选择要填写备注的行")
+            messagebox.showwarning(_safe_for_gbk("提示"), _safe_for_gbk("请先选择要填写备注的行"))
 
 
 
@@ -658,7 +669,7 @@ class AuditBatchEvents:
 
 
 
-            messagebox.showinfo("完成", f"已为 {count if count else len(selected)} 行填写备注 {label}")
+            messagebox.showinfo(_safe_for_gbk("完成"), _safe_for_gbk(f"已为 {count if count else len(selected)} 行填写备注 {label}"))
 
 
 
@@ -742,7 +753,7 @@ class AuditBatchEvents:
 
 
 
-                messagebox.showinfo("提示", "请先选中要添加备注的行（可多选）")
+                messagebox.showinfo(_safe_for_gbk("提示"), _safe_for_gbk("请先选中要添加备注的行（可多选）"))
 
 
 
@@ -1054,7 +1065,7 @@ class AuditBatchEvents:
 
 
 
-                        messagebox.showwarning("提示", "请输入备注内容")
+                        messagebox.showwarning(_safe_for_gbk("提示"), _safe_for_gbk("请输入备注内容"))
 
 
 
@@ -1198,7 +1209,7 @@ class AuditBatchEvents:
 
 
 
-                    messagebox.showwarning("警告", "无法定位选中行，请刷新重试")
+                    messagebox.showwarning(_safe_for_gbk("警告"), _safe_for_gbk("无法定位选中行，请刷新重试"))
 
 
 
@@ -1312,7 +1323,7 @@ class AuditBatchEvents:
 
 
 
-                messagebox.showinfo("完成", f"已为 {count} 行添加备注 {label}")
+                messagebox.showinfo(_safe_for_gbk("完成"), _safe_for_gbk(f"已为 {count} 行添加备注 {label}"))
 
 
         # Audit log (Task 004)
@@ -1380,7 +1391,7 @@ class AuditBatchEvents:
 
 
 
-            messagebox.showerror("错误", f"批量备注失败：{str(e)}")
+            messagebox.showerror(_safe_for_gbk("错误"), _safe_for_gbk(f"批量备注失败：{str(e)}"))
 
 
 
@@ -1512,7 +1523,7 @@ class AuditBatchEvents:
 
 
 
-                messagebox.showwarning("提示", "标签名称不能为空")
+                messagebox.showwarning(_safe_for_gbk("提示"), _safe_for_gbk("标签名称不能为空"))
 
 
 
@@ -1632,7 +1643,7 @@ class AuditBatchEvents:
 
 
 
-                messagebox.showinfo("提示", "请先选中要隔离的行")
+                messagebox.showinfo(_safe_for_gbk("提示"), _safe_for_gbk("请先选中要隔离的行"))
 
 
 
@@ -1716,7 +1727,7 @@ class AuditBatchEvents:
 
 
 
-            messagebox.showinfo("完成", f"已隔离 {count} 行")
+            messagebox.showinfo(_safe_for_gbk("完成"), _safe_for_gbk(f"已隔离 {count} 行"))
 
 
 
@@ -1746,7 +1757,7 @@ class AuditBatchEvents:
 
 
 
-            messagebox.showerror("错误", f"隔离操作失败：{str(e)}")
+            messagebox.showerror(_safe_for_gbk("错误"), _safe_for_gbk(f"隔离操作失败：{str(e)}"))
 
 
 
@@ -2022,7 +2033,7 @@ class AuditBatchEvents:
 
 
 
-                messagebox.showwarning("提示", "请先选择要恢复的行")
+                messagebox.showwarning(_safe_for_gbk("提示"), _safe_for_gbk("请先选择要恢复的行"))
 
 
 
@@ -2256,7 +2267,7 @@ class AuditBatchEvents:
 
 
 
-            messagebox.showinfo("完成", f"已恢复 {len(restored)} 条记录到审核表格")
+            messagebox.showinfo(_safe_for_gbk("完成"), _safe_for_gbk(f"已恢复 {len(restored)} 条记录到审核表格"))
 
 
 
@@ -2280,7 +2291,7 @@ class AuditBatchEvents:
 
 
 
-                messagebox.showinfo("提示", "隔离区已空")
+                messagebox.showinfo(_safe_for_gbk("提示"), _safe_for_gbk("隔离区已空"))
 
 
 
@@ -2292,7 +2303,7 @@ class AuditBatchEvents:
 
 
 
-            if messagebox.askyesno("确认", f"确定清空所有 {len(quarantine_list)} 条隔离记录？此操作不可恢复。"):
+            if messagebox.askyesno(_safe_for_gbk("确认"), _safe_for_gbk(f"确定清空所有 {len(quarantine_list)} 条隔离记录？此操作不可恢复。")):
 
 
 
@@ -2346,7 +2357,7 @@ class AuditBatchEvents:
 
 
 
-                messagebox.showwarning("提示", "没有可导出的数据")
+                messagebox.showwarning(_safe_for_gbk("提示"), _safe_for_gbk("没有可导出的数据"))
 
 
 
@@ -2436,7 +2447,7 @@ class AuditBatchEvents:
 
 
 
-                messagebox.showinfo("导出成功", f"已导出 {len(quarantine_list)} 条记录")
+                messagebox.showinfo(_safe_for_gbk("导出成功"), _safe_for_gbk(f"已导出 {len(quarantine_list)} 条记录"))
 
 
 
@@ -2448,7 +2459,7 @@ class AuditBatchEvents:
 
 
 
-                messagebox.showerror("导出失败", str(e))
+                messagebox.showerror(_safe_for_gbk("导出失败"), _safe_for_gbk(str(e)))
 
 
 
@@ -2556,7 +2567,7 @@ class AuditBatchEvents:
 
 
 
-            messagebox.showwarning("提示", "请先选择要移入隔离区的行")
+            messagebox.showwarning(_safe_for_gbk("提示"), _safe_for_gbk("请先选择要移入隔离区的行"))
 
 
 
@@ -2754,7 +2765,7 @@ class AuditBatchEvents:
 
 
 
-        messagebox.showinfo("完成", f"已移入隔离区 {len(selected)} 条记录。\n隔离区累计：{len(quarantine_list)} 条")
+        messagebox.showinfo(_safe_for_gbk("完成"), _safe_for_gbk(f"已移入隔离区 {len(selected)} 条记录。\n隔离区累计：{len(quarantine_list)} 条"))
 
 
 

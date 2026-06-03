@@ -14,6 +14,17 @@ import threading
 from datetime import datetime
 from openpyxl import Workbook, load_workbook
 
+def _safe_for_gbk(text):
+    if not text: return text
+    result = []
+    for c in text:
+        try:
+            c.encode('gbk')
+            result.append(c)
+        except UnicodeEncodeError:
+            pass
+    return ''.join(result)
+
 
 class ExportEvents:
     """导出、PPT生成、备份等事件"""
@@ -34,7 +45,7 @@ class ExportEvents:
         base = os.path.splitext(os.path.basename(excel_path))[0]
 
         if self.audit_data is None or self.audit_data.empty:
-            messagebox.showwarning("提示", "请先加载并分析数据后再生成 PPT！")
+            messagebox.showwarning(_safe_for_gbk("提示"), _safe_for_gbk("请先加载并分析数据后再生成 PPT！"))
 
             return
 
@@ -111,7 +122,7 @@ class ExportEvents:
 
         self.log(f"❌ PPT 生成失败：{msg}", "error")
 
-        messagebox.showerror("PPT 生成出错", msg)
+        messagebox.showerror(_safe_for_gbk("PPT 生成出错"), _safe_for_gbk(msg))
 
     def generate_excel_direct(self):
         """弹出另存为对话框，生成 Excel 分析表格"""
@@ -119,7 +130,7 @@ class ExportEvents:
         input_path = self.input_file.get()
 
         if not input_path or not os.path.exists(input_path):
-            messagebox.showerror("错误", "请先选择输入文件！")
+            messagebox.showerror(_safe_for_gbk("错误"), _safe_for_gbk("请先选择输入文件！"))
 
             return
 
@@ -241,7 +252,7 @@ class ExportEvents:
 
                 _msg = "表格已生成：" + _name + chr(10) + chr(10) + "是否立即打开？"
 
-                if messagebox.askyesno("生成成功", _msg):
+                if messagebox.askyesno(_safe_for_gbk("生成成功"), _safe_for_gbk(_msg)):
                     try:
                         os.startfile(result)
 
@@ -250,7 +261,7 @@ class ExportEvents:
                     except Exception as oe:
                         self.log(f"\u26a0\ufe0f 无法打开文件：{oe}", "warning")
 
-                        messagebox.showwarning("打开失败", f"无法打开文件：{oe}")
+                        messagebox.showwarning(_safe_for_gbk("打开失败"), _safe_for_gbk(f"无法打开文件：{oe}"))
 
             self.root.after(0, on_success)
 
@@ -281,7 +292,7 @@ class ExportEvents:
                 )
 
                 self.root.after(
-                    0, lambda: messagebox.showwarning("文件被占用", _warn_msg)
+                    0, lambda: messagebox.showwarning(_safe_for_gbk("文件被占用"), _safe_for_gbk(_warn_msg))
                 )
 
                 self.root.after(
@@ -296,7 +307,7 @@ class ExportEvents:
 
                 self.root.after(
                     0,
-                    lambda: messagebox.showerror("生成失败", f"生成表格时出错：{_err}"),
+                    lambda: messagebox.showerror(_safe_for_gbk("生成失败"), _safe_for_gbk(f"生成表格时出错：{_err}")),
                 )
 
                 self.root.after(
@@ -320,7 +331,7 @@ class ExportEvents:
         """Async export audit result (launcher)"""
 
         if self.audit_data is None or len(self.audit_data) == 0:
-            messagebox.showwarning("Tip", "No data to export")
+            messagebox.showwarning(_safe_for_gbk("Tip"), _safe_for_gbk("No data to export"))
 
             return
 
@@ -387,15 +398,13 @@ class ExportEvents:
         file_path = result.get("file_path", "")
 
         if file_path and os.path.exists(file_path):
-            if messagebox.askyesno(
-                "Success", f"Exported to:\n{file_path}\n\nOpen folder?"
-            ):
+            if messagebox.askyesno(_safe_for_gbk("Success"), _safe_for_gbk(f"Exported to:\n{file_path}\n\nOpen folder?")):
                 os.startfile(os.path.dirname(file_path))
 
             self.log(f"Audit result exported (async): {file_path}", "success")
 
         else:
-            messagebox.showinfo("Success", "Export completed!")
+            messagebox.showinfo(_safe_for_gbk("Success"), _safe_for_gbk("Export completed!"))
 
     def _on_export_error(self, error):
         """Export error callback"""
@@ -420,7 +429,7 @@ class ExportEvents:
                     except:
                         pass
 
-        messagebox.showerror("Error", f"Export failed: {error}")
+        messagebox.showerror(_safe_for_gbk("Error"), _safe_for_gbk(f"Export failed: {error}"))
 
         self.log(f"Export failed: {error}", "error")
 
@@ -444,19 +453,17 @@ class ExportEvents:
 
             self.log(f"✅ 审核记录已导出：{file_path}", "success")
 
-            messagebox.showinfo("导出成功", f"备份文件已保存到：\n{file_path}")
+            messagebox.showinfo(_safe_for_gbk("导出成功"), _safe_for_gbk(f"备份文件已保存到：\n{file_path}"))
 
         except FileNotFoundError:
             self.log("❌ 导出失败：审核数据库不存在", "error")
 
-            messagebox.showerror(
-                "导出失败", "审核数据库不存在，请先保存审核记录后再导出。"
-            )
+            messagebox.showerror(_safe_for_gbk("导出失败"), _safe_for_gbk("审核数据库不存在，请先保存审核记录后再导出。"))
 
         except Exception as e:
             self.log(f"❌ 导出失败：{e}", "error")
 
-            messagebox.showerror("导出失败", str(e))
+            messagebox.showerror(_safe_for_gbk("导出失败"), _safe_for_gbk(str(e)))
 
     def _import_audit_backup(self):
 
@@ -474,14 +481,12 @@ class ExportEvents:
 
             self.log("✅ 审核记录已从备份恢复，下次加载时生效", "success")
 
-            messagebox.showinfo(
-                "导入成功", "审核记录已恢复。\n重新加载数据时将自动匹配历史审核。"
-            )
+            messagebox.showinfo(_safe_for_gbk("导入成功"), _safe_for_gbk("审核记录已恢复。\n重新加载数据时将自动匹配历史审核。"))
 
         except Exception as e:
             self.log(f"❌ 导入失败：{e}", "error")
 
-            messagebox.showerror("导入失败", str(e))
+            messagebox.showerror(_safe_for_gbk("导入失败"), _safe_for_gbk(str(e)))
 
     # ── 版本日志已迁移到 utils/version_history.py ──────────
 
@@ -511,7 +516,7 @@ class ExportEvents:
         if hasattr(self, 'audit_logger'):
             self.audit_logger.export_csv_async(
                 output_path,
-                callback=lambda path, error: self.root.after(0, lambda: messagebox.showinfo("导出完成", f"审计日志已导出到：\n{path}"))
+                callback=lambda path, error: self.root.after(0, lambda: messagebox.showinfo(_safe_for_gbk("导出完成"), _safe_for_gbk(f"审计日志已导出到：\n{path}")))
             )
 
     def _export_log(self):
@@ -542,7 +547,7 @@ class ExportEvents:
             self.log(f"日志已导出：{os.path.basename(path)}", "success")
 
         except Exception as e:
-            messagebox.showerror("导出失败", str(e))
+            messagebox.showerror(_safe_for_gbk("导出失败"), _safe_for_gbk(str(e)))
 
     def _export_changelog(self):
         """导出版本日志"""
@@ -618,12 +623,12 @@ class ExportEvents:
 
             self.log(f"版本日志已导出：{os.path.basename(path)}", "success")
 
-            messagebox.showinfo("导出成功", f"版本日志已保存到：\n{path}")
+            messagebox.showinfo(_safe_for_gbk("导出成功"), _safe_for_gbk(f"版本日志已保存到：\n{path}"))
 
         except Exception as e:
             self.log(f"导出版本日志失败：{e}", "error")
 
-            messagebox.showerror("导出失败", str(e))
+            messagebox.showerror(_safe_for_gbk("导出失败"), _safe_for_gbk(str(e)))
 
     def _save_audit_back(self):
         """保存审核结果到原 Excel，同时同步到本地数据库"""
@@ -633,14 +638,14 @@ class ExportEvents:
         self.log("💾 正在保存审核结果...", "info")
 
         if self.audit_data is None or self.audit_data.empty:
-            messagebox.showwarning("提示", "没有审核数据可保存")
+            messagebox.showwarning(_safe_for_gbk("提示"), _safe_for_gbk("没有审核数据可保存"))
 
             return
 
         src_path = self.input_file.get()
 
         if not src_path or not os.path.exists(src_path):
-            messagebox.showerror("错误", "原始文件不存在，请先选择正确的输入文件")
+            messagebox.showerror(_safe_for_gbk("错误"), _safe_for_gbk("原始文件不存在，请先选择正确的输入文件"))
 
             return
 
@@ -664,9 +669,7 @@ class ExportEvents:
         except Exception as e:
             self.log(f"⚠ 备份失败：{e}", "warning")
 
-            if not messagebox.askyesno(
-                "备份失败", f"无法备份原文件：{e}\n是否不备份直接保存？"
-            ):
+            if not messagebox.askyesno(_safe_for_gbk("备份失败"), _safe_for_gbk(f"无法备份原文件：{e}\n是否不备份直接保存？")):
                 return
 
         # ── 3. 打开 Excel 写入审核结果 ──
@@ -685,9 +688,7 @@ class ExportEvents:
         except Exception as e:
             self.log(f"❌ 打开 Excel 失败：{e}", "error")
 
-            messagebox.showerror(
-                "保存失败", f"无法打开原始文件：\n{e}\n请关闭 Excel 后重试。"
-            )
+            messagebox.showerror(_safe_for_gbk("保存失败"), _safe_for_gbk(f"无法打开原始文件：\n{e}\n请关闭 Excel 后重试。"))
 
             return
 
@@ -721,10 +722,7 @@ class ExportEvents:
                 "error",
             )
 
-            messagebox.showerror(
-                "保存失败",
-                f"审核数据中缺少订单号列，无法定位原表行。\n实际列名: {list(self.audit_data.columns)[:10]}",
-            )
+            messagebox.showerror(_safe_for_gbk("保存失败"), _safe_for_gbk(f"审核数据中缺少订单号列，无法定位原表行。\n实际列名: {list(self.audit_data.columns)[:10]}",))
 
             return
 
@@ -783,10 +781,7 @@ class ExportEvents:
 
             self.log(f"❌ Excel 中缺少关键列：{', '.join(missing)}", "error")
 
-            messagebox.showerror(
-                "列匹配失败",
-                f"原始文件中未找到以下关键列：\n{', '.join(missing)}\n无法定位写入位置。",
-            )
+            messagebox.showerror(_safe_for_gbk("列匹配失败"), _safe_for_gbk(f"原始文件中未找到以下关键列：\n{', '.join(missing)}\n无法定位写入位置。",))
 
             return
 
@@ -890,9 +885,7 @@ class ExportEvents:
 
             self.log("❌ 文件被占用，无法保存。请关闭 Excel 后重试。", "error")
 
-            messagebox.showerror(
-                "保存失败", "文件被其他程序占用，请关闭 Excel 后重试。"
-            )
+            messagebox.showerror(_safe_for_gbk("保存失败"), _safe_for_gbk("文件被其他程序占用，请关闭 Excel 后重试。"))
 
             return
 
@@ -901,7 +894,7 @@ class ExportEvents:
 
             self.log(f"❌ 写入 Excel 失败：{e}", "error")
 
-            messagebox.showerror("保存失败", f"写入文件时出错：\n{e}")
+            messagebox.showerror(_safe_for_gbk("保存失败"), _safe_for_gbk(f"写入文件时出错：\n{e}"))
 
             return
 
@@ -941,12 +934,9 @@ class ExportEvents:
             "success",
         )
 
-        messagebox.showinfo(
-            "保存成功",
-            f"审核结果已写入原始文件 {saved_count} 行。\n"
+        messagebox.showinfo(_safe_for_gbk("保存成功"), _safe_for_gbk(f"审核结果已写入原始文件 {saved_count} 行。\n"
             f"新增列：审核状态 / 审核备注 / 审核人 / 审核时间\n"
-            f"原始备份：{backup_name}",
-        )
+            f"原始备份：{backup_name}",))
 
 
         # 记录审计日志（Task 004）
@@ -963,7 +953,7 @@ class ExportEvents:
         selected = self.audit_tree.selection()
 
         if not selected:
-            messagebox.showwarning("提示", "请先选择要导出的行")
+            messagebox.showwarning(_safe_for_gbk("提示"), _safe_for_gbk("请先选择要导出的行"))
 
             return
 
@@ -1005,12 +995,10 @@ class ExportEvents:
                     file_path, index=False, engine="openpyxl"
                 )
 
-            messagebox.showinfo(
-                "导出成功", f"已成功导出 {len(export_data)} 行数据到\n{file_path}"
-            )
+            messagebox.showinfo(_safe_for_gbk("导出成功"), _safe_for_gbk(f"已成功导出 {len(export_data)} 行数据到\n{file_path}"))
 
         except Exception as e:
-            messagebox.showerror("导出失败", f"导出时发生错误：{str(e)}")
+            messagebox.showerror(_safe_for_gbk("导出失败"), _safe_for_gbk(f"导出时发生错误：{str(e)}"))
 
     def _copy_wechat_draft(self):
         """将选中行生成微信草稿并复制到剪贴板"""
@@ -1018,7 +1006,7 @@ class ExportEvents:
         selected = self.audit_tree.selection()
 
         if not selected:
-            messagebox.showwarning("提示", "请先选择要生成草稿的行")
+            messagebox.showwarning(_safe_for_gbk("提示"), _safe_for_gbk("请先选择要生成草稿的行"))
 
             return
 
@@ -1064,6 +1052,4 @@ class ExportEvents:
 
         self.log(f"📋 已复制 {len(selected)} 条微信草稿到剪贴板", "info")
 
-        messagebox.showinfo(
-            "复制成功", f"已复制 {len(selected)} 条指令到剪贴板，可直接粘贴到微信"
-        )
+        messagebox.showinfo(_safe_for_gbk("复制成功"), _safe_for_gbk(f"已复制 {len(selected)} 条指令到剪贴板，可直接粘贴到微信"))

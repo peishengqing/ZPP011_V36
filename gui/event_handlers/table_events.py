@@ -11,6 +11,17 @@ from domain.alt_material.alt_manager import save_alt_pairs, load_alt_pairs
 from config import audit_cols_config as _col_cfg
 import traceback
 
+def _safe_for_gbk(text):
+    if not text: return text
+    result = []
+    for c in text:
+        try:
+            c.encode('gbk')
+            result.append(c)
+        except UnicodeEncodeError:
+            pass
+    return ''.join(result)
+
 
 class TableEvents:
     """表格展示、筛选、排序、双击卡片等事件"""
@@ -1698,7 +1709,7 @@ class TableEvents:
         vm = ViewManager()
         all_views = vm.list_views()
         if not all_views:
-            messagebox.showinfo("导出视图", "当前无保存的视图可导出")
+            messagebox.showinfo(_safe_for_gbk("导出视图"), _safe_for_gbk("当前无保存的视图可导出"))
             return
 
         # 多选对话框
@@ -1727,9 +1738,9 @@ class TableEvents:
             self.log(
                 f"已导出 {len(selected)} 个视图到 {os.path.basename(file_path)}", "info"
             )
-            messagebox.showinfo("导出成功", f"已导出 {len(selected)} 个视图")
+            messagebox.showinfo(_safe_for_gbk("导出成功"), _safe_for_gbk(f"已导出 {len(selected)} 个视图"))
         except Exception as e:
-            messagebox.showerror("导出失败", str(e))
+            messagebox.showerror(_safe_for_gbk("导出失败"), _safe_for_gbk(str(e)))
 
     def _import_views(self):
         """导入视图 JSON 文件"""
@@ -1748,13 +1759,13 @@ class TableEvents:
         try:
             data = vm.validate_import_file(file_path)
         except ValueError as e:
-            messagebox.showerror("导入失败", str(e))
+            messagebox.showerror(_safe_for_gbk("导入失败"), _safe_for_gbk(str(e)))
             return
 
         # 2. 批量预览 [豆包·10维]
         import_views_list = vm.get_import_views_list(data)
         if not import_views_list:
-            messagebox.showinfo("导入视图", "文件中无视图数据")
+            messagebox.showinfo(_safe_for_gbk("导入视图"), _safe_for_gbk("文件中无视图数据"))
             return
 
         # 检查同名
@@ -1771,9 +1782,7 @@ class TableEvents:
         overwrite = False
         conflict_names = [n for n in selected if n in existing]
         if conflict_names:
-            overwrite = messagebox.askyesno(
-                "同名视图", f"以下视图已存在：{', '.join(conflict_names)}\n是否覆盖？"
-            )
+            overwrite = messagebox.askyesno(_safe_for_gbk("同名视图"), _safe_for_gbk(f"以下视图已存在：{', '.join(conflict_names)}\n是否覆盖？"))
             if not overwrite:
                 # 移除同名项
                 selected = [n for n in selected if n not in conflict_names]
@@ -1784,9 +1793,9 @@ class TableEvents:
             imported = vm.import_views(selected, data, overwrite=overwrite)
             self.log(f"已导入 {len(imported)} 个视图：{', '.join(imported)}", "info")
             self._refresh_view_list()
-            messagebox.showinfo("导入成功", f"已导入 {len(imported)} 个视图")
+            messagebox.showinfo(_safe_for_gbk("导入成功"), _safe_for_gbk(f"已导入 {len(imported)} 个视图"))
         except Exception as e:
-            messagebox.showerror("导入失败", str(e))
+            messagebox.showerror(_safe_for_gbk("导入失败"), _safe_for_gbk(str(e)))
 
     def _multi_select_dialog(
         self, title: str, items: list, pre_check_conflicts: list = None
@@ -2496,7 +2505,7 @@ class TableEvents:
         # 获取当前数据（优先使用筛选后的数据）
         df = self.filtered_data if hasattr(self, 'filtered_data') and self.filtered_data is not None else self.audit_data
         if df is None or df.empty:
-            messagebox.showinfo("提示", "无数据")
+            messagebox.showinfo(_safe_for_gbk("提示"), _safe_for_gbk("无数据"))
             return
 
         # ===== 补丁1：列名兜底（模糊匹配单位列）=====
@@ -2506,7 +2515,7 @@ class TableEvents:
                 unit_col = c
                 break
         if not unit_col:
-            messagebox.showwarning("提示", "数据中未找到包含'单位'的列，无法按单位汇总")
+            messagebox.showwarning(_safe_for_gbk("提示"), _safe_for_gbk("数据中未找到包含'单位'的列，无法按单位汇总"))
             return
 
         # 确定定额、实际、偏差金额、偏差数量列
@@ -2538,7 +2547,7 @@ class TableEvents:
             )
 
         if not result_lines:
-            messagebox.showinfo("提示", "无有效分组数据")
+            messagebox.showinfo(_safe_for_gbk("提示"), _safe_for_gbk("无有效分组数据"))
             return
 
         # ===== 补丁3：模态窗口 + 依附主窗口 =====

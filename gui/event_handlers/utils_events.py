@@ -17,13 +17,24 @@ from copy import deepcopy
 from domain.alt_material.alt_manager import save_alt_pairs, load_alt_pairs
 import time, datetime, threading, traceback, json, csv, calendar
 
+def _safe_for_gbk(text):
+    if not text: return text
+    result = []
+    for c in text:
+        try:
+            c.encode('gbk')
+            result.append(c)
+        except UnicodeEncodeError:
+            pass
+    return ''.join(result)
+
 
 class UtilsEvents:
     """故事线、替代料、BOM、预检、树视图、断点等杂项事件"""
     def _show_storyline(self):
         """弹出故事线窗口（直接包含统计逻辑）"""
         if self.audit_data is None or self.audit_data.empty:
-            messagebox.showinfo("提示", "无数据生成故事线")
+            messagebox.showinfo(_safe_for_gbk("提示"), _safe_for_gbk("无数据生成故事线"))
             return
 
         lines = []
@@ -79,7 +90,7 @@ class UtilsEvents:
         def copy_to_clip():
             d.clipboard_clear()
             d.clipboard_append(text_content)
-            messagebox.showinfo("已复制", "故事线已复制到剪贴板")
+            messagebox.showinfo(_safe_for_gbk("已复制"), _safe_for_gbk("故事线已复制到剪贴板"))
 
         tk.Button(d, text="📋 复制到剪贴板", command=copy_to_clip,
                   bg="#4a90d9", fg="white", relief="flat", width=15).pack(pady=8)
@@ -88,7 +99,7 @@ class UtilsEvents:
     def _scan_remark_cleanup(self):
         """扫描备注数据并生成清洗建议（如存在）"""
         if self.audit_data is None or self.audit_data.empty:
-            messagebox.showinfo("提示", "无数据可扫描")
+            messagebox.showinfo(_safe_for_gbk("提示"), _safe_for_gbk("无数据可扫描"))
             return
         # 确定物料描述列
         mat_col = None
@@ -332,7 +343,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showinfo("提示", "未发现可清洗的备注，数据已很规范")
+            messagebox.showinfo(_safe_for_gbk("提示"), _safe_for_gbk("未发现可清洗的备注，数据已很规范"))
 
 
 
@@ -813,7 +824,7 @@ class UtilsEvents:
 
 
 
-                messagebox.showinfo("完成", f"已标准化 {cleaned} 条备注")
+                messagebox.showinfo(_safe_for_gbk("完成"), _safe_for_gbk(f"已标准化 {cleaned} 条备注"))
 
 
 
@@ -1197,7 +1208,7 @@ class UtilsEvents:
 
 
 
-                messagebox.showwarning("提示", "物料A和物料B都必须填写！")
+                messagebox.showwarning(_safe_for_gbk("提示"), _safe_for_gbk("物料A和物料B都必须填写！"))
 
 
 
@@ -1365,7 +1376,7 @@ class UtilsEvents:
 
 
 
-                messagebox.showwarning("提示", "物料A和物料B不能是同一个物料！")
+                messagebox.showwarning(_safe_for_gbk("提示"), _safe_for_gbk("物料A和物料B不能是同一个物料！"))
 
 
 
@@ -1557,7 +1568,7 @@ class UtilsEvents:
 
 
 
-                if not messagebox.askyesno("重复配对", msg):
+                if not messagebox.askyesno(_safe_for_gbk("重复配对"), _safe_for_gbk(msg)):
 
 
 
@@ -1581,7 +1592,7 @@ class UtilsEvents:
 
 
 
-                if not messagebox.askyesno("物料冲突", warn):
+                if not messagebox.askyesno(_safe_for_gbk("物料冲突"), _safe_for_gbk(warn)):
 
 
 
@@ -1635,7 +1646,7 @@ class UtilsEvents:
 
 
 
-                messagebox.showerror("错误", f"替代料添加失败：{e}")
+                messagebox.showerror(_safe_for_gbk("错误"), _safe_for_gbk(f"替代料添加失败：{e}"))
 
 
 
@@ -1653,7 +1664,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showinfo("提示", "替代料添加成功！")
+            messagebox.showinfo(_safe_for_gbk("提示"), _safe_for_gbk("替代料添加成功！"))
 
 
 
@@ -1719,7 +1730,7 @@ class UtilsEvents:
 
 
 
-                messagebox.showwarning("提示", "请先选择要删除的配对")
+                messagebox.showwarning(_safe_for_gbk("提示"), _safe_for_gbk("请先选择要删除的配对"))
 
 
 
@@ -1953,7 +1964,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showinfo("提示", "当前没有替代料配对可删除")
+            messagebox.showinfo(_safe_for_gbk("提示"), _safe_for_gbk("当前没有替代料配对可删除"))
 
 
 
@@ -2127,7 +2138,7 @@ class UtilsEvents:
 
 
 
-                messagebox.showwarning("提示", "请先选择要删除的配对")
+                messagebox.showwarning(_safe_for_gbk("提示"), _safe_for_gbk("请先选择要删除的配对"))
 
 
 
@@ -2481,13 +2492,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showinfo("提示",
-
-
-
-
-
-                f"未找到配置文件：\n{config_path}\n\n当前使用默认内置替代料数据。")
+            messagebox.showinfo(_safe_for_gbk("提示"), _safe_for_gbk(f"未找到配置文件：\n{config_path}\n\n当前使用默认内置替代料数据。"))
 
 
 
@@ -2541,7 +2546,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showerror("读取失败", f"无法解析 JSON 文件：\n{e}")
+            messagebox.showerror(_safe_for_gbk("读取失败"), _safe_for_gbk(f"无法解析 JSON 文件：\n{e}"))
 
 
 
@@ -2685,7 +2690,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showinfo("已复制", "JSON 内容已复制到剪贴板")
+            messagebox.showinfo(_safe_for_gbk("已复制"), _safe_for_gbk("JSON 内容已复制到剪贴板"))
 
 
 
@@ -2799,7 +2804,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showerror("读取失败", f"无法读取 BOM 文件：{e}")
+            messagebox.showerror(_safe_for_gbk("读取失败"), _safe_for_gbk(f"无法读取 BOM 文件：{e}"))
 
 
 
@@ -2871,7 +2876,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showerror("列缺失", f"未找到物料编码列（候选：{key_candidates}）\n当前列：{cols_str}")
+            messagebox.showerror(_safe_for_gbk("列缺失"), _safe_for_gbk(f"未找到物料编码列（候选：{key_candidates}）\n当前列：{cols_str}"))
 
 
 
@@ -3387,7 +3392,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showerror("保存失败", f"无法保存 BOM 数据：{e}")
+            messagebox.showerror(_safe_for_gbk("保存失败"), _safe_for_gbk(f"无法保存 BOM 数据：{e}"))
 
 
 
@@ -3807,7 +3812,7 @@ class UtilsEvents:
 
 
 
-                messagebox.showwarning("预检失败", "请先选择输入文件")
+                messagebox.showwarning(_safe_for_gbk("预检失败"), _safe_for_gbk("请先选择输入文件"))
 
 
 
@@ -4377,7 +4382,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showerror("预检错误", f"预检过程中发生错误：{str(e)}")
+            messagebox.showerror(_safe_for_gbk("预检错误"), _safe_for_gbk(f"预检过程中发生错误：{str(e)}"))
 
 
 
@@ -4781,7 +4786,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showinfo("导出成功", "已导出到：" + file_path)
+            messagebox.showinfo(_safe_for_gbk("导出成功"), _safe_for_gbk("已导出到：" + file_path))
 
 
 
@@ -4799,7 +4804,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showerror("导出失败", str(e))
+            messagebox.showerror(_safe_for_gbk("导出失败"), _safe_for_gbk(str(e)))
 
 
 
@@ -4835,7 +4840,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showwarning("提示", "没有可展示的数据")
+            messagebox.showwarning(_safe_for_gbk("提示"), _safe_for_gbk("没有可展示的数据"))
 
 
 
@@ -5141,7 +5146,7 @@ class UtilsEvents:
 
 
 
-            messagebox.showwarning("提示", "数据中未找到工厂列，无法生成树形视图")
+            messagebox.showwarning(_safe_for_gbk("提示"), _safe_for_gbk("数据中未找到工厂列，无法生成树形视图"))
 
 
 
@@ -6921,7 +6926,7 @@ class UtilsEvents:
 
 
 
-        self.root.after(0, lambda: messagebox.showerror(title, msg))
+        self.root.after(0, lambda: messagebox.showerror(_safe_for_gbk(title), _safe_for_gbk(msg)))
 
 
 
@@ -6951,7 +6956,7 @@ class UtilsEvents:
 
 
 
-        self.root.after(0, lambda: messagebox.showinfo(title, msg))
+        self.root.after(0, lambda: messagebox.showinfo(_safe_for_gbk(title), _safe_for_gbk(msg)))
 
 
 

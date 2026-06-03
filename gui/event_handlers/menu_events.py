@@ -7,6 +7,17 @@ import os, json
 from core.backup_manager import needs_upgrade, upgrade_audit_db
 from widgets import C
 
+def _safe_for_gbk(text):
+    if not text: return text
+    result = []
+    for c in text:
+        try:
+            c.encode('gbk')
+            result.append(c)
+        except UnicodeEncodeError:
+            pass
+    return ''.join(result)
+
 
 class MenuEvents:
     """菜单、关于、列宽锁定等事件"""
@@ -25,7 +36,7 @@ class MenuEvents:
             os.startfile(backup_dir)
 
         else:
-            messagebox.showinfo("提示", "还没有任何源码备份，请先执行打包操作")
+            messagebox.showinfo(_safe_for_gbk("提示"), _safe_for_gbk("还没有任何源码备份，请先执行打包操作"))
 
     # ── 多列联动排序 ─────────────────────────────────────────────
 
@@ -475,13 +486,10 @@ class MenuEvents:
             if not needs_upgrade():
                 return
 
-            choice = messagebox.askyesno(
-                "数据库需要升级",
-                "检测到旧版审核数据库（v36及之前），需要进行一次性升级。\n\n"
+            choice = messagebox.askyesno(_safe_for_gbk("数据库需要升级"), _safe_for_gbk("检测到旧版审核数据库（v36及之前），需要进行一次性升级。\n\n"
                 "「是」= 清空旧历史，重新开始（推荐）\n"
                 "「否」= 迁移旧记录到新表（保留历史）\n\n"
-                "此升级仅执行一次。",
-            )
+                "此升级仅执行一次。",))
 
             upgrade_audit_db(clear_old=(choice == True), log_cb=self.log)
 
