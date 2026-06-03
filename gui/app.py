@@ -427,6 +427,10 @@ class ZPP011Beautiful(EventsMixIn):
         )
 
         help_menu.add_command(
+            label="生成ZPP011完整报告(V3)", command=self._generate_zpp011_report_v3
+        )
+
+        help_menu.add_command(
             label="生成企业级报告(原版)", command=self._generate_enterprise_ppt
         )
 
@@ -2854,6 +2858,41 @@ class ZPP011Beautiful(EventsMixIn):
 
         finally:
             self.root.destroy()
+
+
+    def _generate_zpp011_report_v3(self):
+        """生成ZPP011完整报告(V3) - 基于24页模板的专业PPT"""
+        from core.ppt_report_generator_v3 import generate_zpp011_report_v3
+        from tkinter import filedialog, messagebox
+        from datetime import datetime
+        import os
+
+        if self.audit_data is None or self.audit_data.empty:
+            messagebox.showinfo("提示", "请先加载并审核数据！")
+            return
+        excel_path = getattr(self, '_analysis_output_path', None)
+        if not excel_path or not os.path.exists(excel_path):
+            excel_path = filedialog.askopenfilename(
+                title="选择审计数据 Excel 文件",
+                filetypes=[("Excel 文件", "*.xlsx")]
+            )
+            if not excel_path:
+                return
+        output_dir = self.output_dir.get() or os.path.expanduser("~/Documents/ZPP011报告生成")
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(
+            output_dir,
+            'ZPP011完整报告_V3_' + datetime.now().strftime("%Y%m%d_%H%M%S") + ".pptx"
+        )
+        try:
+            success = generate_zpp011_report_v3(excel_path, output_path, log_cb=self.log)
+            if success and messagebox.askyesno(
+                "生成成功",
+                '报告已生成：\n' + output_path + '\n是否立即打开？'
+            ):
+                os.startfile(output_path)
+        except Exception as e:
+            messagebox.showerror("错误", f"生成失败：{e}")
 
     def _generate_zpp011_report(self):
         """生成ZPP011偏差分析报告（基于企业级模板）"""
