@@ -1,0 +1,126 @@
+/* ZPP011 PySide6 主题样式 */
+/* 裴哥 | 2026-06-04 */
+
+QMainWindow {
+    background-color: #f0f0f0;
+}
+
+QTableView {
+    background-color: #ffffff;
+    alternate-background-color: #f9f9f9;
+    gridline-color: #d0d0d0;
+    font-size: 9pt;
+    selection-background-color: #3070c0;
+    selection-color: #ffffff;
+}
+
+QTableView::item {
+    padding: 3px 6px;
+    border-bottom: 1px solid #e8e8e8;
+}
+
+QTableView::item:selected {
+    background-color: #3070c0;
+    color: #ffffff;
+}
+
+QHeaderView::section {
+    background-color: #e2e8f0;
+    padding: 4px 6px;
+    border: 1px solid #c8d0d8;
+    font-weight: bold;
+    font-size: 9pt;
+}
+
+QToolBar {
+    background-color: #e8e8e8;
+    padding: 2px;
+    spacing: 4px;
+}
+
+QToolBar QPushButton {
+    padding: 4px 12px;
+    border: 1px solid #b0b0b0;
+    border-radius: 3px;
+    background-color: #f8f8f8;
+    font-size: 9pt;
+}
+
+QToolBar QPushButton:hover {
+    background-color: #dce8f8;
+    border-color: #3070c0;
+}
+
+QToolBar QPushButton:disabled {
+    color: #a0a0a0;
+    background-color: #f0f0f0;
+}
+
+QComboBox {
+    padding: 3px 8px;
+    border: 1px solid #b0b0b0;
+    border-radius: 3px;
+    background-color: #ffffff;
+    min-width: 120px;
+}
+
+QComboBox::drop-down {
+    border: none;
+}
+
+QComboBox QAbstractItemView::item {
+    padding: 4px;
+}
+
+QProgressBar {
+    border: 1px solid #b0b0b0;
+    border-radius: 3px;
+    background-color: #f0f0f0;
+    text-align: center;
+}
+
+QProgressBar::chunk {
+    background-color: #3070c0;
+    border-radius: 2px;
+}
+
+QStatusBar {
+    background-color: #e8e8e8;
+    padding: 2px;
+    font-size: 9pt;
+}
+
+QMenuBar {
+    background-color: #e8e8e8;
+}
+
+QMenuBar::item:selected {
+    background-color: #3070c0;
+    color: #ffffff;
+}
+
+QMenu {
+    background-color: #ffffff;
+    border: 1px solid #b0b0b0;
+}
+
+QMenu::item:selected {
+    background-color: #3070c0;
+    color: #ffffff;
+}
+
+QDialog QPushButton {
+    padding: 4px 16px;
+    border: 1px solid #b0b0b0;
+    border-radius: 3px;
+    background-color: #f8f8f8;
+    min-width: 80px;
+}
+
+QDialog QPushButton:hover {
+    background-color: #dce8f8;
+}
+
+QInputDialog {
+    font-size: 9pt;
+}

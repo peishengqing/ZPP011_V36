@@ -130,18 +130,36 @@ class RuleEngine:
         band = self.get_band(amount, "deviation_amount_bands")
         return band.get("color", "#ffffff") if band else "#ffffff"
 
+    # 兼容别名：测试和部分对话框可能调用 get_band_color
+    get_band_color = get_color_for_deviation_rate
+
     def check_auto_close_condition(self, row: Dict) -> bool:
+        """判断是否满足自动结案条件"""
         auto_close_cfg = self.rules.get("auto_close", {})
         if not auto_close_cfg.get("enabled", False):
             return False
         conditions = auto_close_cfg.get("conditions", [])
         for cond in conditions:
             field = cond.get("field")
-            op = cond.get("operator")
+            op    = cond.get("operator")
             expected = cond.get("value")
             actual = row.get(field)
             if not self._evaluate_condition(actual, op, expected):
                 return False
+        return True
+
+    def should_ai_audit(self, dev_rate: float, remark: str) -> bool:
+        """
+        判断该行是否需要 AI 审核
+        返回 True 表示需要 AI 建议，False 表示可跳过
+        """
+        # 已有备注且偏差率不高 → 跳过
+        if remark and remark.strip():
+            if abs(dev_rate) < 10:
+                return False
+        # 偏差率极低 → 跳过
+        if abs(dev_rate) < 1:
+            return False
         return True
 
     def get_all_rules(self) -> Dict:
