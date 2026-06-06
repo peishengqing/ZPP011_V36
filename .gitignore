@@ -1,64 +1,27 @@
-﻿
-# Python
+# Byte-compiled
 __pycache__/
 *.py[cod]
-*.pyo
-*.egg-info/
-*.egg
-.eggs/
+*$py.class
 
-# PyInstaller
-build/
-dist/
-
-# 打包 / 输出
-output/
-temp/
-发布包/
-
-# 虚拟环境
-venv/
+# Virtual environments
 .venv/
-env/
+venv/
 
-# 编辑器
-.vscode/
+# IDE
 .idea/
+.vscode/
 
-# 日志
+# Temp / logs
 *.log
+*.tmp
+temp/
 
-# 本地配置
-config/local_settings.py
-*.local
-
-# 大文件
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.ico
-*.icon
-*.exe
-*.dll
-
-# 临时脚本
-temp_*.py
-_patch_*.py
-
-# Office 临时文件
-~$*
-
-# 数据文件
+# Project specific
 *.xlsx
+*.xls
 *.pptx
-*.csv
+*.db
+.coverage
 
-# 审计数据库
-.zpp011_audit/
-
-# 备份目录
-dist_backup_*/
-backup_pre_*/
-
-*.spec
+# Windows reserved names
+nul

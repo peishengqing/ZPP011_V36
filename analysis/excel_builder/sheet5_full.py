@@ -37,6 +37,17 @@ def build_sheet5(df, report_progress, progress_idx=5):
     else:
         has_real_dev['_偏差金额'] = 0.0
 
+    # 备注列：优先取原始备注，其次取备注原因
+    def _get_remark(row):
+        for col in ['备注', '备注原因']:
+            val = row.get(col, '')
+            if pd.notna(val) and str(val).strip() != '':
+                return str(val)
+        return ''
+
+    has_real_dev = has_real_dev.copy()
+    has_real_dev['_备注'] = has_real_dev.apply(_get_remark, axis=1)
+
     dev_df = pd.DataFrame([{
         '订单日期': pd.Timestamp(r['订单开始日期']).strftime('%Y-%m-%d'),
         '订单类型': r['订单类型'] if '订单类型' in r and pd.notna(r['订单类型']) else '',
@@ -53,7 +64,7 @@ def build_sheet5(df, report_progress, progress_idx=5):
         '偏差数量': r['材料偏差'],
         '偏差率': f"{r[col_p]:.1f}%" if pd.notna(r[col_p]) else '',
         '偏差金额': round(r['_偏差金额'], 2) if isinstance(r['_偏差金额'], (int, float)) else 0,
-        '备注': str(r['备注原因']) if pd.notna(r['备注原因']) and r['备注原因'] != '' else '',
+        '备注': r['_备注'],
         '备注来源': r.get('_note_source', '人工填写'),
         '偏差区间': '正偏差' if r[col_p] > 0 else '负偏差',
     } for idx_r, (_, r) in enumerate(has_real_dev.iterrows())])

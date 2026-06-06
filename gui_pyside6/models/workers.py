@@ -1,228 +1,206 @@
 # -*- coding: utf-8 -*-
 """
-后台工作线程（分析、AI 审核等）
-裴哥 | 2026-06-04
+后台工作线程（分析、AI审核）
 """
-
-import os
 import traceback
-from typing import List, Optional, Dict, Any
 import pandas as pd
-
 from PySide6.QtCore import QThread, Signal
 
 from analysis.analyzer import do_analysis_v2
 from core.rule_engine import RuleEngine
 from core.ai_client import AIClient
-
-
-def _import_do_analysis():
-    from analysis.analyzer import do_analysis_v2
-    return do_analysis_v2
+from core.config_manager import ConfigManager
 
 
 class AnalysisWorker(QThread):
-    """
-    分析工作线程
-    信号:
-        progress(percent, step_name)
-        finished(output_path)
-        error(msg)
-        log(msg)
-    """
-    progress = Signal(int, str)   # percent, step_name
-    finished = Signal(str)         # output_path
-    error    = Signal(str)
-    log      = Signal(str)
+    progress = Signal(int, str)  # percent, step_name
+    finished = Signal(pd.DataFrame)  # df (不自动保存文件)
+    error = Signal(str)
+    log = Signal(str)           # 日志信号
 
-    def __init__(self,
-                 input_file: str,
-                 alt_pairs: List[list],
-                 start_date: Optional[str] = None,
-                 end_date: Optional[str] = None,
-                 material_search: Optional[str] = None,
-                 output_dir: Optional[str] = None):
+    def __init__(self, input_file, alt_pairs, start_date, end_date, material_search):
         super().__init__()
-        self.input_file      = input_file
-        self.alt_pairs       = alt_pairs
-        self.start_date      = start_date
-        self.end_date        = end_date
-        self.material_search  = material_search
-        self.output_dir      = output_dir if output_dir is not None else os.path.dirname(input_file)
-        self._cancel         = False
+        self.input_file = input_file
+        self.alt_pairs = alt_pairs
+        self.start_date = start_date
+        self.end_date = end_date
+        self.material_search = material_search
+        self._cancel = False
 
     def cancel(self):
         self._cancel = True
 
     def run(self):
         try:
-            do_analysis_v2 = _import_do_analysis()
+            self.log.emit("开始分析...")
+            # 读取替代料净偏差抵消配置
+            _cfg = ConfigManager()
+            _enable_net_offset = _cfg.get_net_offset_enabled()
+            self.log.emit(f"替代料净偏差抵消: {'开启' if _enable_net_offset else '关闭'}")
 
-            def progress_cb(step_idx: int, step_name: str, percent: float):
+            def progress_cb(step_idx, step_name, percent):
                 if self._cancel:
                     raise InterruptedError("用户取消")
-                self.progress.emit(int(percent), step_name)
-                self.log.emit(f"[分析] {step_name} {percent:.0f}%")
+                self.progress.emit(percent, step_name)
+                self.log.emit(f"{step_name} ({percent}%)")
 
-            output_path = do_analysis_v2(
-                input_file       = self.input_file,
-                output_dir       = self.output_dir,
-                alt_pairs        = self.alt_pairs,
-                progress_callback = progress_cb,
-                cancel_check     = lambda: self._cancel,
-                start_date       = self.start_date,
-                end_date         = self.end_date,
-                material_search  = self.material_search,
-                output_path      = None,
+            df = do_analysis_v2(
+                input_file=self.input_file,
+                output_dir=None,
+                alt_pairs=self.alt_pairs,
+                progress_callback=progress_cb,
+                cancel_check=lambda: self._cancel,
+                start_date=self.start_date,
+                end_date=self.end_date,
+                material_search=self.material_search,
+                output_path=None,
+                enable_net_offset=_enable_net_offset,
+                return_dataframe=True,  # 返回DataFrame，不自动保存文件
             )
-            if self._cancel:
-                return
-            self.finished.emit(output_path)
 
+            if self._cancel:
+                self.log.emit("分析已取消")
+                return  # 优雅退出，不发射错误信号
+
+            self.log.emit(f"分析完成，共 {len(df)} 行")
+            self.finished.emit(df)
         except InterruptedError:
-            self.error.emit("分析已取消")
+            # 用户取消，优雅退出
+            self.log.emit("分析已取消")
         except Exception as e:
-            self.error.emit(f"分析失败：{e}\n{traceback.format_exc()}")
+            # 1. 打印详细堆栈到控制台
+            traceback.print_exc()
+            # 2. 发射错误信号（包含堆栈信息）
+            self.log.emit(f"错误: {str(e)}")
+            self.error.emit(f"分析失败: {str(e)}\n{traceback.format_exc()}")
 
 
 class AIAuditWorker(QThread):
-    """
-    AI 审核工作线程
-    完全迁移自 analysis_events.py 中的 _run_ai_audit 逻辑
-    """
-    progress = Signal(int, int)      # current, total
-    finished = Signal(pd.DataFrame)  # 返回更新后的 DataFrame
-    error    = Signal(str)
-    log      = Signal(str)
+    progress = Signal(int, int)
+    finished = Signal(pd.DataFrame)
+    error = Signal(str)
+    log = Signal(str)
 
-    def __init__(self,
-                 audit_data: pd.DataFrame,
-                 rule_engine: RuleEngine,
-                 ai_client: AIClient):
+    def __init__(self, audit_data: pd.DataFrame, rule_engine: RuleEngine, ai_client: AIClient):
         super().__init__()
-        # 深拷贝，避免跨线程修改原始数据
-        self.audit_data   = audit_data.copy() if audit_data is not None else pd.DataFrame()
-        self.rule_engine  = rule_engine
-        self.ai_client    = ai_client
-        self._cancel      = False
+        self.audit_data = audit_data.copy()
+        self.rule_engine = rule_engine
+        self.ai_client = ai_client
+        self._cancel = False
 
     def cancel(self):
         self._cancel = True
 
     def run(self):
         try:
+            self.log.emit("AI审核开始...")
             total = len(self.audit_data)
-            updated = 0
-
+            self.log.emit(f"待审核记录: {total} 条")
+            processed = 0
             # 确保必要的列存在
-            for col in ['AI建议', 'audit_result', '备注原因', '备注来源']:
+            for col in ['AI建议', 'audit_result', '备注来源']:
                 if col not in self.audit_data.columns:
                     self.audit_data[col] = ''
+            
+            # 备注原因列可能叫 '备注原因' 或 '备注'
+            remark_col = None
+            for col in ['备注原因', '备注']:
+                if col in self.audit_data.columns:
+                    remark_col = col
+                    break
+            if remark_col is None:
+                raise ValueError("找不到备注列")
 
             for idx, row in self.audit_data.iterrows():
                 if self._cancel:
                     break
 
-                # 当前备注内容
-                remark = str(row.get('备注原因', '')).strip()
-                # 偏差率
-                dev_rate = row.get('偏差率(%)', 0)
-                if pd.isna(dev_rate):
-                    dev_rate = 0
+                # 获取偏差率（支持字符串和数字）
+                dev_rate_raw = row.get('偏差率(%)', 0)
                 try:
-                    dev_rate = float(str(dev_rate).replace('%', ''))
-                except (ValueError, TypeError):
+                    if isinstance(dev_rate_raw, str):
+                        dev_rate = float(dev_rate_raw.replace('%', ''))
+                    else:
+                        dev_rate = float(dev_rate_raw)
+                except:
                     dev_rate = 0.0
+                abs_rate = abs(dev_rate)
 
-                # 1. 规则引擎评估（决定是否需要 AI 建议）
-                should_ai = True
-                if self.rule_engine:
-                    try:
-                        should_ai = self.rule_engine.should_ai_audit(dev_rate, remark)
-                    except Exception:
-                        pass
-                if not should_ai:
-                    # 如果已有备注且偏差率不高，标记为合格
-                    if remark:
-                        self.audit_data.at[idx, 'audit_result'] = '合格'
-                        self.audit_data.at[idx, '备注来源']   = '已有备注'
-                    continue
+                # 获取备注内容
+                remark = str(row.get(remark_col, '')).strip()
+                if remark in ('nan', 'None', ''):
+                    remark = ''
 
-                # 2. 调用 AI 客户端生成建议
+                # 默认值
                 ai_suggestion = ''
-                try:
-                    if self.ai_client:
-                        ai_suggestion = self.ai_client.get_suggestion(row.to_dict())
-                    else:
-                        # mock 模式
-                        ai_suggestion = self._mock_suggestion(remark, dev_rate)
-                except Exception as e:
-                    self.log.emit(f"第{idx}行 AI 调用失败：{e}，使用规则生成")
-                    ai_suggestion = self._mock_suggestion(remark, dev_rate)
+                audit_result = ''
+                note_source = ''
 
-                # 3. 根据备注和偏差率更新审核结果
-                if remark:
-                    # 已有备注，根据备注内容智能判断
-                    if '替代料' in remark:
-                        audit_result = '合格（替代料）'
-                        note_source  = '替代料'
-                    elif '系统无定额' in remark:
-                        audit_result = '合格（系统无定额）'
-                        note_source  = '系统无定额'
-                    elif '已核实' in remark or '确认' in remark:
-                        audit_result = '合格'
-                        note_source  = '人工填写'
-                    else:
-                        audit_result = '需关注'
-                        note_source  = '人工填写'
+                # ---------- 关键词优先 ----------
+                keywords = ['替代料', '系统无定额', '已核实']
+                if remark and any(kw in remark for kw in keywords):
+                    audit_result = '合格'
+                    note_source = remark
                 else:
-                    # 无备注，根据偏差率给建议
-                    if abs(dev_rate) >= 30:
-                        audit_result = '需补备注（严重）'
-                        note_source  = 'AI审核'
-                    elif abs(dev_rate) >= 10:
-                        audit_result = '需补备注'
-                        note_source  = 'AI审核'
+                    if remark:
+                        # 有备注但不含关键词，检查长度
+                        if len(remark) < 5:
+                            audit_result = '需改进'
+                            note_source = '人工填写'
+                        else:
+                            audit_result = '合格'
+                            note_source = '人工填写'
                     else:
-                        audit_result = '需关注'
-                        note_source  = 'AI审核'
+                        # 备注为空，根据偏差率分级
+                        if abs_rate < 5:
+                            audit_result = '合格'
+                            note_source = 'AI审核'
+                        elif 5 <= abs_rate < 10:
+                            audit_result = '需关注'
+                            note_source = 'AI审核'
+                        else:
+                            audit_result = '需补备注'
+                            note_source = 'AI审核'
 
-                # 4. 更新 DataFrame
-                self.audit_data.at[idx, 'AI建议']     = ai_suggestion
+                # 生成 AI 建议（仅在需要时生成，但始终赋值）
+                if not remark or audit_result == '需改进':
+                    try:
+                        # 正确调用 AIClient.audit() 方法
+                        ai_result = self.ai_client.audit(remark, dev_rate)
+                        if isinstance(ai_result, dict):
+                            ai_suggestion = ai_result.get('suggestion', '')
+                        else:
+                            ai_suggestion = str(ai_result)
+                    except Exception:
+                        # AI调用失败时的降级建议
+                        if abs_rate >= 30:
+                            ai_suggestion = "严重超耗，请检查工艺或定额"
+                        elif abs_rate >= 10:
+                            ai_suggestion = "偏差较大，建议核查是否存在替代料或录入错误"
+                        elif abs_rate >= 5:
+                            ai_suggestion = "偏差需关注，请确认合理性"
+                        else:
+                            ai_suggestion = "偏差在正常范围内"
+                else:
+                    ai_suggestion = ''
+
+                self.audit_data.at[idx, 'AI建议'] = ai_suggestion
                 self.audit_data.at[idx, 'audit_result'] = audit_result
-                self.audit_data.at[idx, '备注来源']    = note_source
+                self.audit_data.at[idx, '备注来源'] = note_source
 
-                updated += 1
-                if updated % 10 == 0:
-                    self.progress.emit(updated, total)
-                    self.log.emit(f"AI 审核中 {updated}/{total}")
+                processed += 1
+                if processed % 10 == 0:
+                    self.progress.emit(processed, total)
+                    self.log.emit(f"AI审核进度: {processed}/{total}")
 
-            # 收尾进度
-            if total > 0:
-                self.progress.emit(total, total)
-            # 发送完成信号
-            self.finished.emit(self.audit_data)
-
-        except Exception as e:
-            self.error.emit(f"AI 审核失败：{e}\n{traceback.format_exc()}")
-
-    @staticmethod
-    def _mock_suggestion(remark_str: str, dev_rate: float) -> str:
-        """降级：根据规则生成简单建议（与 ai_client._get_mock_result 逻辑一致）"""
-        if remark_str in ('nan', 'NaN', 'None', 'none', ''):
-            abs_rate = abs(dev_rate)
-            if abs_rate < 5:
-                return f"小偏差({abs_rate:.1f}%)，可接受"
-            elif abs_rate < 10:
-                return f"偏差{abs_rate:.1f}%，建议确认原因"
+            if not self._cancel:
+                self.log.emit("AI审核完成")
+                self.finished.emit(self.audit_data)
             else:
-                if dev_rate > 0:
-                    return f"超耗{abs_rate:.1f}%，建议检查BOM用量"
-                else:
-                    return f"少耗{abs_rate:.1f}%，建议核实用量"
-        # 关键词判断
-        if any(kw in remark_str for kw in ["超耗", "少耗", "损耗", "替代", "变更"]):
-            return "备注清晰，关键词匹配"
-        if len(remark_str) < 5:
-            return "备注过短，建议补充详细原因"
-        return "建议明确偏差原因（如超耗/少耗/替代/变更）"
+                self.log.emit("AI审核已取消")
+        except Exception as e:
+            # 1. 打印详细堆栈到控制台
+            traceback.print_exc()
+            # 2. 发射错误信号（包含堆栈信息）
+            self.log.emit(f"AI审核错误: {str(e)}")
+            self.error.emit(f"AI审核失败: {str(e)}\n{traceback.format_exc()}")

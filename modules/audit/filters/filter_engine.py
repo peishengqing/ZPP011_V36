@@ -94,7 +94,7 @@ class FilterEngine:
                 df = df[df['偏差率(%)'] < -10]
             elif dev_rate == '<-20%':
                 df = df[df['偏差率(%)'] < -20]
-            elif dev_rate == '绝对值≥10%':
+            elif dev_rate == '绝对值>=10%':
                 df = df[df['偏差率(%)'].abs() >= 10]
 
         # 5. 金额范围

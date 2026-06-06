@@ -26,8 +26,6 @@ import traceback
 import shutil
 import sqlite3
 import zipfile
-import tkinter as tk
-from tkinter import scrolledtext, messagebox, filedialog, ttk
 
 # 模块化组件
 from storage import storage
@@ -45,6 +43,7 @@ from analysis.excel_builder.sheet8_reason_summary import build_sheet8
 from analysis.excel_builder.sheet9_reason_detail import build_sheet9
 from analysis.excel_builder.sheet10_trend import build_sheet10
 from analysis.excel_builder.write_sheet_util import write_sheet
+from analysis.net_offset import apply_net_offset
 
 
 # 通用工具函数
@@ -72,8 +71,14 @@ def do_analysis_v2(
         start_date=None,
         end_date=None,
         material_search=None,
-        output_path=None):
+        output_path=None,
+        enable_net_offset=True,
+        return_dataframe=False):
     _dprint("[DEBUG do_analysis_v2] 函数开始执行")
+
+    # output_dir 兜底，防止调用方传 None 导致 os.path.join 崩溃
+    if output_dir is None:
+        output_dir = os.path.dirname(input_file) or '.'
 
     # ========== 数值列追踪初始化 ==========
     _trace_log = os.path.join(os.environ.get('TEMP', '.'), 'zpp011_trace.log')
@@ -128,14 +133,20 @@ def do_analysis_v2(
     
     try:
         _dprint(f"[DEBUG] 开始读取Excel: {src_file}")
-        df = pd.read_excel(src_file, sheet_name='Data')
+        # 容错：优先读 'Data' 工作表，不存在则取第一个
+        xl = pd.ExcelFile(src_file)
+        _sheet = 'Data' if 'Data' in xl.sheet_names else xl.sheet_names[0]
+        if _sheet != 'Data':
+            _dprint(f"[WARN] 工作表 'Data' 不存在，改用 '{_sheet}'")
+        df = pd.read_excel(src_file, sheet_name=_sheet)
         _dprint(f"[DEBUG do_analysis_v2] 读取Data表成功，{len(df)} 行")
         report_progress(1, "1/5 正在读取 Excel 文件", 10)
         # 强制刷新输出（安全模式，忽略线程 stdout 不可用的情况）
         import sys
         try:
-            sys.stdout.flush()
-        except (OSError, ValueError):
+            if sys.stdout is not None:
+                sys.stdout.flush()
+        except (OSError, ValueError, AttributeError):
             pass
     except Exception as e:
         error_detail = f"读取Excel失败: {e}\n文件路径: {src_file}\n文件存在: {os.path.exists(src_file)}"
@@ -195,7 +206,11 @@ def do_analysis_v2(
     try:
         from openpyxl import load_workbook
         _wb = load_workbook(src_file, read_only=True, data_only=True)
-        _ws = _wb['Data']
+        # 容错：优先取 'Data' 工作表，不存在则取第一个
+        _sheet_names = _wb.sheetnames
+        _ws = _wb['Data'] if 'Data' in _sheet_names else _wb[_sheet_names[0]]
+        if 'Data' not in _sheet_names:
+            _dprint(f"[WARN] 工作表 'Data' 不存在，改用 '{_sheet_names[0]}'")
         _real_rows = []
         _rn = 0
         for _row in _ws:
@@ -472,6 +487,67 @@ def do_analysis_v2(
     # Sheet5（第五步抽取 → analysis/sheets/sheet5_full.py）
     dev_df = build_sheet5(df, report_progress)
 
+    # 补齐"是否替代料"列（与 UI 逻辑一致）
+    if '是否替代料' not in dev_df.columns and alt_pairs:
+        alt_codes = set()
+        for p in alt_pairs:
+            if isinstance(p, (list, tuple)) and len(p) >= 2:
+                if isinstance(p[0], (list, tuple)):
+                    alt_codes.add(str(p[0][1]).strip() if len(p[0]) > 1 else str(p[0][0]).strip())
+                    alt_codes.add(str(p[1][1]).strip() if len(p[1]) > 1 else str(p[1][0]).strip())
+                else:
+                    alt_codes.add(str(p[0]).strip())
+                    alt_codes.add(str(p[1]).strip())
+        code_col = None
+        for c in ['物料号', '物料编码', 'code', '组件物料号']:
+            if c in dev_df.columns:
+                code_col = c
+                break
+        if code_col:
+            dev_df['是否替代料'] = dev_df[code_col].astype(str).str.strip().isin(alt_codes)
+            dev_df['是否替代料'] = dev_df['是否替代料'].map({True: '是', False: '否'})
+        else:
+            dev_df['是否替代料'] = '否'
+
+    # ========== 替代料净偏差自动抵消 ==========
+    # 使用传入的 enable_net_offset 参数（由调用方根据配置决定）
+    if enable_net_offset and alt_pairs and len(alt_pairs) > 0:
+        _dprint("[净偏差抵消] 开始计算替代料净偏差...")
+        dev_df = apply_net_offset(dev_df, alt_pairs, enable=enable_net_offset)
+        _dprint(f"[净偏差抵消] 完成，影响行数: {len(dev_df[dev_df['净偏差金额'] != dev_df.get('偏差金额(含税)', dev_df.get('偏差金额', 0))])}")
+    else:
+        # 确保净偏差列存在（即使没有配对，也添加原始偏差金额作为净偏差）
+        dev_df['净偏差数量'] = pd.to_numeric(dev_df.get('偏差数量', 0), errors='coerce').round(2)
+        if '偏差金额(含税)' in dev_df.columns:
+            dev_df['净偏差金额'] = pd.to_numeric(dev_df['偏差金额(含税)'], errors='coerce').round(2)
+        elif '偏差金额' in dev_df.columns:
+            dev_df['净偏差金额'] = pd.to_numeric(dev_df['偏差金额'], errors='coerce').round(2)
+        else:
+            dev_df['净偏差金额'] = 0.0
+
+    # 调整列顺序：净偏差数量/净偏差金额移到偏差率后面、偏差金额前面
+    desired_order = []
+    for col in dev_df.columns:
+        desired_order.append(col)
+        if col == '偏差率':
+            desired_order.append('净偏差数量')
+            desired_order.append('净偏差金额')
+    # 去重（净偏差列已通过 desired_order 插入，移除末尾的）
+    seen = set()
+    ordered = []
+    for col in desired_order:
+        if col not in seen:
+            seen.add(col)
+            ordered.append(col)
+    dev_df = dev_df[ordered]
+    # 数值统一保留2位小数
+    for col in ['净偏差数量', '净偏差金额', '偏差数量', '偏差金额']:
+        if col in dev_df.columns:
+            dev_df[col] = pd.to_numeric(dev_df[col], errors='coerce').round(2)
+    # 保留"净偏差"列作为"净偏差金额"的别名（向后兼容）
+    if '净偏差金额' in dev_df.columns and '净偏差' not in dev_df.columns:
+            dev_df['净偏差'] = dev_df['净偏差金额']
+
     # ========== 追踪点3: build_sheet5 后 ==========
     _snapshot['after_sheet5'] = {
         '数量-实际': df['数量-实际'].describe().to_dict() if '数量-实际' in df.columns else 'NOT_FOUND',
@@ -516,14 +592,30 @@ def do_analysis_v2(
                 [8, 10, 10, 10, 10, 12, 14, 16, 12, 14, 16, 10, 14, 16, 12, 8])
 
     ws2 = wb.create_sheet('替代料明细')
-    headers2 = ['订单日期', '车间', '订单号', '物料A', '单位', '偏差A', '偏差率A',
-                '物料B', '偏差B', '偏差率B', '净偏差', '备注']
-    rows2 = [[r['订单日期'], r['车间'], r['订单号'], r['物料A'], r['单位'],
-              r['偏差A'], r.get('偏差率A', ''), r['物料B'], r['偏差B'],
-              r.get('偏差率B', ''), r.get('净偏差', ''), r['备注']]
-             for r in alt_df.to_dict('records')]
+    headers2 = ['订单日期', '车间', '订单号', '物料A编码', '物料A', '单位', '偏差A', '偏差率A',
+                '物料B编码', '物料B', '偏差B', '偏差率B', '净偏差数量', '净偏差金额', '备注']
+    rows2 = []
+    for r in alt_df.to_dict('records'):
+        material_a_name = str(r['物料A']).strip() if pd.notna(r.get('物料A')) else ''
+        material_b_name = str(r['物料B']).strip() if pd.notna(r.get('物料B')) else ''
+        code_a = ''
+        if material_a_name:
+            mask = df['组件物料描述'].astype(str).str.strip() == material_a_name
+            if mask.any():
+                code_a = str(df.loc[mask, '组件物料号'].iloc[0])
+        code_b = ''
+        if material_b_name:
+            mask = df['组件物料描述'].astype(str).str.strip() == material_b_name
+            if mask.any():
+                code_b = str(df.loc[mask, '组件物料号'].iloc[0])
+        rows2.append([
+            r['订单日期'], r['车间'], r['订单号'],
+            code_a, r['物料A'], r['单位'], r['偏差A'], r.get('偏差率A', ''),
+            code_b, r['物料B'], r['偏差B'], r.get('偏差率B', ''),
+            r.get('净偏差数量', ''), r.get('净偏差金额', ''), r['备注']
+        ])
     write_sheet(ws2, headers2, rows2,
-                [14, 10, 14, 30, 8, 12, 12, 30, 12, 12, 12, 20])
+                [14, 10, 14, 14, 28, 8, 12, 12, 14, 28, 12, 12, 12, 14, 20])
 
     ws3 = wb.create_sheet('无备注预警')
     headers3 = ['订单日期', '工厂', '车间', '物料名称', '物料类型', '单位',
@@ -547,14 +639,14 @@ def do_analysis_v2(
     ws5 = wb.create_sheet('完整偏差明细')
     headers5 = ['订单日期', '订单类型', '流程订单', '工厂', '车间', '物料类型', '原表行号',
                 '物料编码', '物料名称', '单位', '定额', '实际',
-                '偏差数量', '偏差率', '偏差金额', '是否替代料', '备注', '备注来源', '偏差区间']
+                '偏差数量', '偏差率', '偏差金额', '净偏差数量', '净偏差金额', '是否替代料', '备注', '备注来源', '偏差区间']
     rows5 = [[r['订单日期'], r.get('订单类型', ''), r.get('流程订单', ''), r['工厂'], r['车间'], r['物料类型'], r['原表行号'],
               r['物料编码'], r['物料名称'], r['单位'], r['定额'], r['实际'],
-              r['偏差数量'], r['偏差率'], r['偏差金额'],
-              '是' if r.get('_is_alt', False) else '否',
+              r['偏差数量'], r['偏差率'], r['偏差金额'], r.get('净偏差数量', ''), r.get('净偏差金额', ''),
+              r.get('是否替代料', '否'),
               r['备注'], r['备注来源'], r['偏差区间']] for r in dev_df.to_dict('records')]
     write_sheet(ws5, headers5, rows5,
-                [14, 10, 16, 10, 10, 10, 10, 16, 28, 8, 12, 12, 12, 10, 14, 20, 16, 10])
+                [14, 10, 16, 10, 10, 10, 10, 16, 28, 8, 12, 12, 12, 10, 14, 14, 12, 20, 16, 10])
 
     for i, r in enumerate(dev_df.to_dict('records'), 2):
         dev_qty = r['偏差数量']
@@ -564,9 +656,9 @@ def do_analysis_v2(
                 ws5.cell(row=i, column=j).fill = fill
         src = r['备注来源']
         if src == '替代料':
-            ws5.cell(row=i, column=15).fill = alt_fill
+            ws5.cell(row=i, column=17).fill = alt_fill  # 第17列 = 是否替代料
         elif src in ('系统无定额(广宣)', '自动填充'):
-            ws5.cell(row=i, column=15).fill = gx_fill
+            ws5.cell(row=i, column=17).fill = gx_fill  # 第17列 = 是否替代料
 
     ws6 = wb.create_sheet('异常预警')
     headers6 = ['订单开始日期', '订单号', '异常类型', '工厂', '车间',
@@ -619,7 +711,7 @@ def do_analysis_v2(
                          f'{pd.Timestamp(date_max).strftime("%Y-%m-%d")}）'))
     tc.font = Font(bold=True, size=12)
     tc.alignment = Alignment(horizontal='center')
-    headers7 = ['工厂', '车间', '多耗', '少耗', '净偏差', '原因数',
+    headers7 = ['工厂', '车间', '多耗', '少耗', '净偏差金额', '原因数',
                 '原料主要原因（Top5）', '包材主要原因（Top5）']
     for j, h in enumerate(headers7, 1):
         c = ws7.cell(row=2, column=j, value=h)
@@ -643,7 +735,7 @@ def do_analysis_v2(
 
     for i, r in enumerate(reason_summary_df.to_dict('records'), 3):
         for j, v in enumerate([r['工厂'], r['车间'], r['多耗'], r['少耗'],
-                               r['净偏差'], r['原因数']], 1):
+                               r.get('净偏差金额', r.get('净偏差', 0)), r['原因数']], 1):
             c = ws7.cell(row=i, column=j, value=v)
             c.border = border
             c.font = Font(size=11)
@@ -664,10 +756,10 @@ def do_analysis_v2(
 
     ws8 = wb.create_sheet('偏差原因分析')
     headers8 = ['工厂', '车间', '物料分类', '备注原因', '原始备注示例',
-                '涉及物料数', '多耗', '少耗', '净偏差', '涉及物料']
+                '涉及物料数', '多耗', '少耗', '净偏差金额', '涉及物料']
     rows8 = [[r['工厂'], r['车间'], r['物料分类'], r['备注原因'],
               r['原始备注示例'], r['涉及物料数'], r['多耗'], r['少耗'],
-              r['净偏差'], r['涉及物料']] for r in reason_analysis_df.to_dict('records')]
+              r.get('净偏差金额', r.get('净偏差', 0)), r['涉及物料']] for r in reason_analysis_df.to_dict('records')]
     write_sheet(ws8, headers8, rows8,
                 [14, 10, 10, 20, 25, 10, 14, 14, 14, 80])
 
@@ -724,6 +816,29 @@ def do_analysis_v2(
         ws_info.column_dimensions['B'].width = 62
 
     _dprint(f"[DEBUG do_analysis_v2] 准备保存到：{final_output_path}")
+    
+    # 如果不保存文件，直接返回 dev_df
+    if return_dataframe:
+        _dprint("[DEBUG do_analysis_v2] 不保存文件，直接返回 DataFrame")
+        # 保存追踪日志
+        try:
+            with open(_trace_log, 'a', encoding='utf-8') as f:
+                f.write(f"\n=== Trace Log {datetime.now()} ===\n")
+                f.write(f"Input file: {src_file}\n")
+                f.write(json.dumps(_snapshot, indent=2, ensure_ascii=False, default=str))
+                f.write('\n')
+            _dprint(f"[TRACE] 日志已保存到: {_trace_log}")
+        except Exception as e:
+            _dprint(f"[TRACE] 保存日志失败: {e}")
+        return dev_df
+    
+    # 否则保存文件
+    _out_dir = os.path.dirname(final_output_path)
+    if _out_dir:
+        os.makedirs(_out_dir, exist_ok=True)
+    # 为汇总统计预警列上色
+    _apply_warning_colors(wb)
+
     try:
         wb.save(final_output_path)
     except PermissionError as e:
@@ -738,9 +853,8 @@ def do_analysis_v2(
             f"  • 关闭 Excel 中打开的这个文件，然后重试\n"
             f"  • 或者换一个输出文件名（在弹出的另存为对话框中修改文件名）"
         ) from e
-    # 返回实际保存的路径
     _dprint(f"[DEBUG do_analysis_v2] 保存完成，返回：{final_output_path}")
-    # ========== 保存追踪日志 ==========
+    # 保存追踪日志
     try:
         with open(_trace_log, 'a', encoding='utf-8') as f:
             f.write(f"\n=== Trace Log {datetime.now()} ===\n")
@@ -752,6 +866,38 @@ def do_analysis_v2(
         _dprint(f"[TRACE] 保存日志失败: {e}")
 
     return final_output_path
+
+
+def _apply_warning_colors(wb):
+    """为汇总统计sheet的预警列添加颜色填充"""
+    try:
+        from openpyxl.styles import PatternFill
+        if '汇总统计' not in wb.sheetnames:
+            return
+        ws = wb['汇总统计']
+        warning_col = None
+        for cell in ws[1]:
+            if cell.value == '预警':
+                warning_col = cell.column
+                break
+        if warning_col is None:
+            return
+        red_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")
+        yellow_fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")
+        green_fill = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")
+        for row in range(2, ws.max_row + 1):
+            cell = ws.cell(row=row, column=warning_col)
+            value = str(cell.value).strip() if cell.value else ''
+            if '红色预警' in value:
+                cell.fill = red_fill
+            elif '黄色预警' in value:
+                cell.fill = yellow_fill
+            elif '绿色预警' in value:
+                cell.fill = green_fill
+    except Exception as e:
+        print(f"[WARN] 预警列上色失败: {e}")
+
+
 def _build_deviation_summary(dev_df, orig_df):
     """
     构建偏差金额汇总表（Sheet: 偏差金额分析）
