@@ -327,7 +327,7 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
         anomaly2_count = len(abnormal_df) if not abnormal_df.empty else 0
 
         high_freq_count = len(freq_loss_df)
-        high_freq_total = freq_loss_df['净偏差'].abs().sum() if not freq_loss_df.empty and '净偏差' in freq_loss_df.columns else 0
+        high_freq_total = freq_loss_df['净偏差金额'].abs().sum() if not freq_loss_df.empty and '净偏差金额' in freq_loss_df.columns else 0
 
         repeat_count = 0
         if not dev_detail_df.empty and '是否屡犯' in dev_detail_df.columns:
@@ -378,7 +378,7 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
                     '记录数': grp['总条数'].sum(),
                     '多耗': grp['正偏差数量'].sum(),
                     '少耗': abs(grp['负偏差数量'].sum()),
-                    '净偏差': grp['总数量'].sum(),
+                    '净偏差数量': grp['总数量'].sum(),
                     '备注率': f"{grp['总条数'].sum()/total_rows:.0%}" if total_rows else "N/A"
                 })
 
@@ -388,14 +388,14 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
             for (factory, workshop), grp in cause_analysis_df.groupby([_grp_factory_col, '车间']):
                 agg_grp = grp.groupby('备注原因').agg({
                     '涉及物料数': 'sum',
-                    '净偏差': 'sum'
+                    '净偏差金额': 'sum'
                 }).reset_index()
                 top5 = agg_grp.nlargest(5, '涉及物料数')
                 top5_lines = []
                 for idx, (_, row) in enumerate(top5.iterrows(), 1):
                     prefix = circled[idx-1] if idx <= len(circled) else f"{idx}."
                     top5_lines.append(
-                        f"{prefix} {row['备注原因']}（{int(row['涉及物料数'])}次，净偏差 {row['净偏差']:,.0f}）"
+                        f"{prefix} {row['备注原因']}（{int(row['涉及物料数'])}次，净偏差金额 {row.get('净偏差金额', row.get('净偏差', 0)):,.0f}）"
                     )
                 workshop_top5.append({
                     '工厂': factory,
@@ -628,8 +628,8 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
         set_slide_bg(slide3, C_BG)
         add_title_bar(slide3, '工厂维度统计')
         if factory_stats:
-            headers_fac = ['工厂', '记录数', '多耗', '少耗', '净偏差', '备注覆盖率']
-            rows_fac = [[s['工厂'], s['记录数'], s['多耗'], s['少耗'], s['净偏差'], s['备注率']] for s in factory_stats]
+            headers_fac = ['工厂', '记录数', '多耗', '少耗', '净偏差金额', '备注覆盖率']
+            rows_fac = [[s['工厂'], s['记录数'], s['多耗'], s['少耗'], s.get('净偏差金额', s.get('净偏差', 0)), s['备注率']] for s in factory_stats]
             add_table(slide3, Inches(0.8), Inches(1.8), Inches(9.7), headers_fac, rows_fac,
                       [Inches(2.5), Inches(1.2), Inches(1.5), Inches(1.5), Inches(1.5), Inches(1.5)])
         _log("  [PPT] 工厂维度完成")
@@ -711,7 +711,7 @@ def run_ppt_generation(excel_path, output_path, log_cb=None):
             add_title_bar(slide, f'{ws["工厂"]} · {ws["车间"]} 偏差原因 Top5')
             add_kpi_card(slide, Inches(0.5), Inches(1.6), f'{ws["多耗"]:,.1f}', '多耗', C_RED)
             add_kpi_card(slide, Inches(3.6), Inches(1.6), f'{ws["少耗"]:,.1f}', '少耗', C_GREEN)
-            add_kpi_card(slide, Inches(6.7), Inches(1.6), f'{ws["多耗"]+ws["少耗"]:,.1f}', '净偏差', C_ACCENT)
+            add_kpi_card(slide, Inches(6.7), Inches(1.6), f'{ws["多耗"]+ws["少耗"]:,.1f}', '净偏差金额', C_ACCENT)
             add_kpi_card(slide, Inches(9.8), Inches(1.6), f'{ws["原因数"]}', '原因数', C_PRIMARY)
             content_top = Inches(3.6)
             if ws['top5']:

@@ -1,9 +1,17 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-sheet1_summary.py — Sheet1 汇总统计（v36 抽取，未修改逻辑）
+sheet1_summary.py — Sheet1 汇总统计（v36 抽取，增加预警列颜色导出）
 """
 import pandas as pd
+
+# 尝试导入 openpyxl（用于颜色填充）
+try:
+    from openpyxl.styles import PatternFill
+    from openpyxl import load_workbook
+    HAS_OPENPYXL = True
+except ImportError:
+    HAS_OPENPYXL = False
 
 
 def build_sheet1(df, report_progress, progress_idx=1):
@@ -33,7 +41,7 @@ def build_sheet1(df, report_progress, progress_idx=1):
         neg_dev = grp[grp['材料偏差'] < 0]
         has_note = grp['备注原因'].notna() & (grp['备注原因'] != '')
         note_rate = has_note.sum() / len(grp) if len(grp) > 0 else 0
-        warning = '🔴' if note_rate == 0 else ('🟡' if note_rate < 0.3 else '🟢')
+        warning = '红色预警' if note_rate == 0 else ('黄色预警' if note_rate < 0.3 else '绿色预警')
         pos_amt = round(pos_dev['偏差金额(含税)'].sum(), 2) if len(pos_dev) > 0 else 0
         neg_amt = round(neg_dev['偏差金额(含税)'].sum(), 2) if len(neg_dev) > 0 else 0
         total_amt = round(grp['偏差金额(含税)'].sum(), 2)
@@ -61,3 +69,42 @@ def build_sheet1(df, report_progress, progress_idx=1):
     print(f"[DEBUG do_analysis_v2] Sheet1完成，{len(summary_df)} 行")
     report_progress(progress_idx, "Sheet1-汇总统计", 100)
     return summary_df
+
+
+def write_sheet1_with_colors(writer, summary_df):
+    """
+    将 summary_df 写入 writer，并为"预警"列添加颜色填充
+    参数:
+        writer: pd.ExcelWriter 对象（engine='openpyxl'）
+        summary_df: 汇总统计 DataFrame
+    """
+    summary_df.to_excel(writer, sheet_name='汇总统计', index=False)
+    if not HAS_OPENPYXL:
+        return
+    try:
+        workbook = writer.book
+        worksheet = workbook['汇总统计']
+        # 找到"预警"列的列号
+        warning_col = None
+        for col_idx, cell in enumerate(worksheet[1], 1):  # 第1行是表头
+            if cell.value == '预警':
+                warning_col = col_idx
+                break
+        if warning_col is None:
+            return
+        # 定义颜色
+        red_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")
+        yellow_fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")
+        green_fill = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")
+        # 遍历数据行（第2行开始）
+        for row in range(2, worksheet.max_row + 1):
+            cell = worksheet.cell(row, warning_col)
+            val = str(cell.value).strip()
+            if '红色预警' in val:
+                cell.fill = red_fill
+            elif '黄色预警' in val:
+                cell.fill = yellow_fill
+            elif '绿色预警' in val:
+                cell.fill = green_fill
+    except Exception as e:
+        print(f"[WARN] 汇总统计上色失败: {e}")

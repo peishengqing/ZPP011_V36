@@ -138,43 +138,63 @@ class MainWindow(QMainWindow):
         left_panel = QWidget()
         left_panel.setFixedWidth(360)
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setSpacing(10)
+        left_layout.setSpacing(6)
 
         # 1. 文件选择
-        file_group = QGroupBox("文件选择")
-        file_layout = QFormLayout(file_group)
+        file_group = QGroupBox("📁 文件选择")
+        file_layout = QVBoxLayout(file_group)
+        file_layout.setSpacing(4)
+
+        # 输入文件 — 横排
+        row1 = QHBoxLayout()
+        row1.addWidget(QLabel("输入:"))
         self.input_file_edit = QLineEdit()
         self.input_file_edit.setReadOnly(True)
+        row1.addWidget(self.input_file_edit, 1)
         browse_input_btn = QPushButton("浏览")
         browse_input_btn.clicked.connect(self._select_input_file)
-        file_layout.addRow("输入文件:", self.input_file_edit)
-        file_layout.addRow("", browse_input_btn)
+        row1.addWidget(browse_input_btn)
+        file_layout.addLayout(row1)
+
+        # 输出目录 — 横排
+        row2 = QHBoxLayout()
+        row2.addWidget(QLabel("输出:"))
         self.output_dir_edit = QLineEdit()
         self.output_dir_edit.setReadOnly(True)
+        row2.addWidget(self.output_dir_edit, 1)
         browse_output_btn = QPushButton("浏览")
         browse_output_btn.clicked.connect(self._select_output_dir)
-        file_layout.addRow("输出目录:", self.output_dir_edit)
-        file_layout.addRow("", browse_output_btn)
+        row2.addWidget(browse_output_btn)
+        file_layout.addLayout(row2)
+
         left_layout.addWidget(file_group)
 
         # 2. 日期范围
-        date_group = QGroupBox("日期范围（可选）")
-        date_layout = QFormLayout(date_group)
+        filter_group = QGroupBox("🔍 筛选选项（可选）")
+        filter_layout = QVBoxLayout(filter_group)
+        filter_layout.setSpacing(4)
+
+        # 日期 — 横排一行
+        date_row = QHBoxLayout()
+        date_row.addWidget(QLabel("开始:"))
         self.start_date_edit = QLineEdit()
         self.start_date_edit.setPlaceholderText("例：2026-04-01")
+        date_row.addWidget(self.start_date_edit, 1)
+        date_row.addWidget(QLabel("结束:"))
         self.end_date_edit = QLineEdit()
         self.end_date_edit.setPlaceholderText("例：2026-04-30")
-        date_layout.addRow("开始:", self.start_date_edit)
-        date_layout.addRow("结束:", self.end_date_edit)
-        left_layout.addWidget(date_group)
+        date_row.addWidget(self.end_date_edit, 1)
+        filter_layout.addLayout(date_row)
 
-        # 3. 物料搜索
-        search_group = QGroupBox("物料搜索（可选）")
-        search_layout = QVBoxLayout(search_group)
+        # 物料搜索
+        search_row = QHBoxLayout()
+        search_row.addWidget(QLabel("物料:"))
         self.material_search_edit = QLineEdit()
         self.material_search_edit.setPlaceholderText("编码/名称")
-        search_layout.addWidget(self.material_search_edit)
-        left_layout.addWidget(search_group)
+        search_row.addWidget(self.material_search_edit, 1)
+        filter_layout.addLayout(search_row)
+
+        left_layout.addWidget(filter_group)
 
         # 4. 替代料配对（升级版）
         alt_group = QGroupBox("替代料配对")

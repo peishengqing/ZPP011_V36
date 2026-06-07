@@ -42,7 +42,12 @@ class DryRunAnalyzer:
 
         # 1. 读取 Excel（只取 Data sheet）
         try:
-            df = pd.read_excel(input_path, sheet_name="Data")
+        # 容错：优先读 'Data' 工作表，不存在则取第一个
+        xl = pd.ExcelFile(input_path)
+        _sheet = 'Data' if 'Data' in xl.sheet_names else xl.sheet_names[0]
+        if _sheet != 'Data':
+            print(f"[WARN] 工作表 'Data' 不存在，改用 '{_sheet}'")
+        df = pd.read_excel(input_path, sheet_name=_sheet)
         except Exception as e:
             return {"error": f"读取 Excel 失败：{e}"}
 

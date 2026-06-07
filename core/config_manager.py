@@ -34,7 +34,10 @@ class ConfigManager:
         "last_export_dir": "",
         "filter_history": {},  # 上次使用的筛选条件
         "auto_save": True,
-        "theme": "default"
+        "theme": "default",
+        "analysis": {
+            "net_offset_enabled": True  # 替代料净偏差自动抵消（默认开启）
+        }
     }
 
     def __init__(self, config_path: Optional[Path] = None):
@@ -126,6 +129,16 @@ class ConfigManager:
         self.config = self.DEFAULT_CONFIG.copy()
         self._save()
         logger.info("配置已重置为默认")
+
+    # ========== 分析配置 ==========
+    def get_net_offset_enabled(self) -> bool:
+        """获取替代料净偏差抵消是否启用（默认开启）"""
+        return self.get('analysis.net_offset_enabled', True)
+
+    def set_net_offset_enabled(self, enabled: bool):
+        """设置替代料净偏差抵消开关"""
+        self.set('analysis.net_offset_enabled', bool(enabled))
+        logger.info(f"替代料净偏差抵消: {'开启' if enabled else '关闭'}")
 
     def save_window_geometry(self, root):
         """根据 tkinter 窗口保存位置和大小"""

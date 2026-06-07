@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
 """管理看板对话框 - PySide6 迁移版"""
+import matplotlib
+matplotlib.use("qtagg")
+import matplotlib.pyplot as plt
+plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
+plt.rcParams["axes.unicode_minus"] = False
 
 import json
 from pathlib import Path
@@ -65,48 +70,90 @@ class AnalysisWorker(QObject):
 
     def _analyze(self):
         audit_df = self.audit_df
+
+        # 兼容中英文列名
+        col_map = {}
+        for c in audit_df.columns:
+            c_lower = str(c).strip().lower()
+            if c in ("车间", "生产管理员描述", "workshop"):
+                col_map["workshop"] = c
+            elif c in ("偏差金额", "deviation_amount"):
+                col_map["deviation_amount"] = c
+            elif c in ("物料大类", "material_group"):
+                col_map["material_group"] = c
+            elif c in ("订单日期", "order_date"):
+                col_map["order_date"] = c
+            elif c_lower in ("车间", "生产管理员描述", "workshop"):
+                col_map["workshop"] = c
+            elif c_lower in ("偏差金额", "deviation_amount"):
+                col_map["deviation_amount"] = c
+            elif c_lower in ("物料大类", "material_group"):
+                col_map["material_group"] = c
+            elif c_lower in ("订单日期", "order_date"):
+                col_map["order_date"] = c
+
+        # 如果数据中无物料大类列，从物料编码前缀计算
+        mg_col = col_map.get("material_group")
+        if mg_col is None:
+            code_col = next((c for c in ("物料编码", "组件物料号", "code") if c in audit_df.columns), None)
+            if code_col:
+                mat_map = {
+                    "100": "原辅料", "200": "包材", "400": "食品辅料/半成品",
+                    "410": "饮料辅料/半成品", "500": "食品成品", "510": "饮料成品", "600": "促销品"
+                }
+                audit_df = audit_df.copy()
+                audit_df["material_group"] = audit_df[code_col].apply(
+                    lambda x: mat_map.get(str(x)[:3], "其他") if pd.notna(x) else "未知"
+                )
+                col_map["material_group"] = "material_group"
+            else:
+                audit_df["material_group"] = "未知"
+                col_map["material_group"] = "material_group"
+
         # material_df 预留，用于后续 AI 归因分析扩展
         self.progress.emit(30, "计算车间排名...")
         # 车间排名
-        if "workshop" in audit_df.columns and "deviation_amount" in audit_df.columns:
+        ws_col = col_map.get("workshop")
+        amt_col = col_map.get("deviation_amount")
+        if ws_col and amt_col:
             ws = (
-                audit_df.groupby("workshop", dropna=False)["deviation_amount"]
+                audit_df.groupby(ws_col, dropna=False)[amt_col]
                 .sum()
                 .sort_values(ascending=False)
             )
         else:
             ws = pd.Series(dtype=float)
+
         self.progress.emit(50, "计算物料大类排名...")
         # 物料大类排名
-        if (
-            "material_group" in audit_df.columns
-            and "deviation_amount" in audit_df.columns
-        ):
+        mg_col = col_map.get("material_group")
+        if mg_col and amt_col:
             mg = (
-                audit_df.groupby("material_group", dropna=False)[
-                    "deviation_amount"]
+                audit_df.groupby(mg_col, dropna=False)[amt_col]
                 .sum()
                 .sort_values(ascending=False)
             )
         else:
             mg = pd.Series(dtype=float)
+
         self.progress.emit(70, "计算时间趋势...")
         # 时间趋势
-        if "order_date" in audit_df.columns and "deviation_amount" in audit_df.columns:
-            audit_df["order_date"] = pd.to_datetime(
-                audit_df["order_date"], errors="coerce"
+        date_col = col_map.get("order_date")
+        if date_col and amt_col:
+            audit_df2 = audit_df.copy()
+            audit_df2[date_col] = pd.to_datetime(
+                audit_df2[date_col], errors="coerce"
             )
             trend = (
-                audit_df.groupby(audit_df["order_date"].dt.to_period("M"))[
-                    "deviation_amount"
-                ]
+                audit_df2.dropna(subset=[date_col]).groupby(audit_df2[date_col].dt.to_period("M"))[amt_col]
                 .sum()
                 .sort_index()
             )
         else:
             trend = pd.Series(dtype=float)
+
         self.progress.emit(90, "生成小结...")
-        summary = self._generate_summary(ws, mg, trend, audit_df)
+        summary = self._generate_summary(ws, mg, trend, audit_df, col_map)
         return {
             "workshop_rank": ws,
             "material_group_rank": mg,
@@ -115,7 +162,9 @@ class AnalysisWorker(QObject):
             "audit_df": audit_df,
         }
 
-    def _generate_summary(self, ws, mg, trend, audit_df):
+    def _generate_summary(self, ws, mg, trend, audit_df, col_map=None):
+        if col_map is None:
+            col_map = {}
         lines = []
         if not ws.empty:
             top_ws = ws.head(3)
@@ -129,9 +178,10 @@ class AnalysisWorker(QObject):
                 "物料大类偏差TOP3："
                 + "，".join([f"{k}({v:,.0f})" for k, v in top_mg.items()])
             )
+        amt_col = col_map.get("deviation_amount", "deviation_amount")
         total = (
-            audit_df["deviation_amount"].sum()
-            if "deviation_amount" in audit_df.columns
+            audit_df[amt_col].sum()
+            if amt_col in audit_df.columns
             else 0
         )
         lines.append(f"总偏差金额：{total:,.0f}")

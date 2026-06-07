@@ -1,21 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-批量操作对话框 (PySide6 版本)
-包含：批量改状态、批量填备注、批量导出
+批量操作对话框：批量改状态、批量填备注、批量导出
 """
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
-    QTextEdit, QPushButton, QMessageBox, QProgressBar,
-    QFileDialog, QCheckBox
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QTextEdit,
+    QPushButton, QProgressBar, QFileDialog, QMessageBox, QCheckBox
 )
-from PySide6.QtCore import Signal, QThread
-
+from PySide6.QtCore import Qt, QThread, Signal
 import pandas as pd
+import os
 
 
 class BatchChangeStatusDialog(QDialog):
-    """批量改状态对话框"""
-
     def __init__(self, parent, row_indices, audit_data, on_finished):
         super().__init__(parent)
         self.setWindowTitle("批量改状态")
@@ -52,24 +48,25 @@ class BatchChangeStatusDialog(QDialog):
         self.ok_btn.setEnabled(False)
         self.cancel_btn.setEnabled(False)
 
-        col_name = None
-        for candidate in ["审核状态", "audit_status"]:
-            if candidate in self.audit_data.columns:
-                col_name = candidate
+        # 查找状态列
+        status_col = None
+        for col in ['审核状态', 'audit_status']:
+            if col in self.audit_data.columns:
+                status_col = col
                 break
+        if status_col is None:
+            QMessageBox.critical(self, "错误", "未找到状态列")
+            self.reject()
+            return
 
-        if col_name:
-            for i, idx in enumerate(self.row_indices):
-                self.audit_data.at[idx, col_name] = new_status
-                self.progress.setValue(i + 1)
-
+        for i, idx in enumerate(self.row_indices):
+            self.audit_data.at[idx, status_col] = new_status
+            self.progress.setValue(i+1)
         self.on_finished(self.audit_data)
         self.accept()
 
 
 class BatchRemarkDialog(QDialog):
-    """批量填备注对话框"""
-
     def __init__(self, parent, row_indices, audit_data, on_finished):
         super().__init__(parent)
         self.setWindowTitle("批量填备注")
@@ -84,7 +81,6 @@ class BatchRemarkDialog(QDialog):
         self.remark_edit = QTextEdit()
         self.remark_edit.setPlaceholderText("输入备注内容...")
         layout.addWidget(self.remark_edit)
-        layout.addWidget(QLabel("提示：可勾选「追加」模式，保留原有备注"))
         self.append_cb = QCheckBox("追加模式（在原有备注后添加）")
         layout.addWidget(self.append_cb)
 
@@ -113,57 +109,54 @@ class BatchRemarkDialog(QDialog):
         self.cancel_btn.setEnabled(False)
 
         remark_col = None
-        for candidate in ["备注原因", "备注", "remark"]:
-            if candidate in self.audit_data.columns:
-                remark_col = candidate
+        for col in ['备注原因', '备注']:
+            if col in self.audit_data.columns:
+                remark_col = col
                 break
+        if remark_col is None:
+            QMessageBox.critical(self, "错误", "未找到备注列")
+            self.reject()
+            return
 
-        if remark_col:
-            for i, idx in enumerate(self.row_indices):
-                old = self.audit_data.at[idx, remark_col]
-                if pd.isna(old) or not str(old).strip():
-                    old = ""
-                if append and old:
-                    new_val = f"{old}；{new_remark}"
-                else:
-                    new_val = new_remark
-                self.audit_data.at[idx, remark_col] = new_val
-                self.progress.setValue(i + 1)
-
+        for i, idx in enumerate(self.row_indices):
+            old_remark = self.audit_data.at[idx, remark_col] if pd.notna(self.audit_data.at[idx, remark_col]) else ''
+            if append and old_remark:
+                new_val = f"{old_remark}；{new_remark}"
+            else:
+                new_val = new_remark
+            self.audit_data.at[idx, remark_col] = new_val
+            self.progress.setValue(i+1)
         self.on_finished(self.audit_data)
         self.accept()
 
 
 class BatchExportWorker(QThread):
-    """批量导出工作线程"""
     finished = Signal(str)
     error = Signal(str)
 
-    def __init__(self, audit_data, file_path):
+    def __init__(self, df, file_path):
         super().__init__()
-        self.audit_data = audit_data
+        self.df = df
         self.file_path = file_path
 
     def run(self):
         try:
-            self.audit_data.to_excel(self.file_path, index=False)
+            self.df.to_excel(self.file_path, index=False)
             self.finished.emit(self.file_path)
         except Exception as e:
             self.error.emit(str(e))
 
 
 class BatchExportDialog(QDialog):
-    """批量导出对话框"""
-
-    def __init__(self, parent, audit_data):
+    def __init__(self, parent, df):
         super().__init__(parent)
         self.setWindowTitle("批量导出")
         self.resize(400, 150)
-        self.audit_data = audit_data
+        self.df = df
         self.worker = None
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(f"将导出 {len(audit_data)} 条记录到 Excel"))
+        layout.addWidget(QLabel(f"将导出 {len(df)} 条记录到 Excel"))
         self.progress = QProgressBar()
         self.progress.setVisible(False)
         layout.addWidget(self.progress)
@@ -178,9 +171,7 @@ class BatchExportDialog(QDialog):
         layout.addLayout(btn_layout)
 
     def _export(self):
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "保存 Excel 文件", "batch_export.xlsx", "Excel files (*.xlsx)"
-        )
+        file_path, _ = QFileDialog.getSaveFileName(self, "保存 Excel 文件", "batch_export.xlsx", "Excel files (*.xlsx)")
         if not file_path:
             return
         self.progress.setVisible(True)
@@ -188,17 +179,17 @@ class BatchExportDialog(QDialog):
         self.ok_btn.setEnabled(False)
         self.cancel_btn.setEnabled(False)
 
-        self.worker = BatchExportWorker(self.audit_data, file_path)
+        self.worker = BatchExportWorker(self.df, file_path)
         self.worker.finished.connect(self._on_finished)
         self.worker.error.connect(self._on_error)
         self.worker.start()
 
     def _on_finished(self, file_path):
         self.progress.setVisible(False)
-        QMessageBox.information(self, "导出成功", f"已导出到 {file_path}")
+        QMessageBox.information(self, "成功", f"已导出到 {file_path}")
         self.accept()
 
     def _on_error(self, err):
         self.progress.setVisible(False)
-        QMessageBox.critical(self, "导出失败", err)
+        QMessageBox.critical(self, "错误", err)
         self.reject()

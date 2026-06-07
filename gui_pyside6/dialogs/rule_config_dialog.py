@@ -194,13 +194,14 @@ class ConditionRowWidget(QWidget):
 
 class RuleConfigDialog(QDialog):
     """规则配置对话框"""
-    def __init__(self, parent, rules_path, on_rules_changed_callback=None):
+    def __init__(self, parent, rules_path, config_manager, on_rules_changed_callback=None):
         super().__init__(parent)
         self.setWindowTitle("可视化规则配置")
         self.resize(1000, 750)
         self.setMinimumSize(800, 600)
 
         self.rules_path = rules_path
+        self.config_manager = config_manager
         self.on_rules_changed = on_rules_changed_callback
         self.rules = self._load_rules()
         self.current_index = None
@@ -322,6 +323,18 @@ class RuleConfigDialog(QDialog):
         self.test_result_label = QLabel("")
         test_layout.addWidget(self.test_result_label, row+1, 0, 1, 2)
         right_layout.addWidget(test_group)
+
+        # ========== 分析配置选项 ==========
+        analysis_group = QGroupBox("分析配置")
+        analysis_layout = QVBoxLayout(analysis_group)
+        
+        # 替代料净偏差自动抵消
+        self.net_offset_cb = QCheckBox("启用替代料净偏差自动抵消")
+        self.net_offset_cb.setChecked(self.config_manager.get_net_offset_enabled())
+        self.net_offset_cb.stateChanged.connect(self._on_net_offset_changed)
+        analysis_layout.addWidget(self.net_offset_cb)
+        
+        right_layout.addWidget(analysis_group)
 
         # 底部按钮
         btn_layout = QHBoxLayout()
@@ -607,6 +620,15 @@ class RuleConfigDialog(QDialog):
         self._refresh_rule_list()
         self.rule_list.setCurrentRow(self.current_index)
         self._load_rule_to_ui(self.rules[self.current_index])
+
+
+    def _on_net_offset_changed(self, state):
+        """保存替代料净偏差抵消配置到 ConfigManager"""
+        enabled = (state == Qt.Checked)
+        try:
+            self.config_manager.set_net_offset_enabled(enabled)
+        except Exception as e:
+            QMessageBox.warning(self, '配置保存失败', str(e))
 
     def _clear_edit_area(self):
         self.name_edit.clear()

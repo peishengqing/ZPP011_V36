@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-按单位汇总弹窗 (PySide6 版本)
+按单位汇总弹窗
 """
 import pandas as pd
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QPushButton, QMessageBox
@@ -39,7 +39,6 @@ class UnitSummaryDialog(QDialog):
             self.text_edit.setText("无法按单位汇总：未找到单位列")
             return
 
-        # 确定数值列
         quota_col = next((c for c in ['定额', '数量-定额', 'quota'] if c in df.columns), None)
         actual_col = next((c for c in ['实际', '数量-实际', 'actual'] if c in df.columns), None)
         amount_col = next((c for c in ['偏差金额', '偏差金额(含税)', 'deviation_amount'] if c in df.columns), None)
