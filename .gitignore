@@ -25,3 +25,8 @@ temp/
 
 # Windows reserved names
 nul
+"dist/" 
+"build/" 
+"*.exe" 
+"*.pkg" 
+"__pycache__/" 
