@@ -68,7 +68,7 @@ def main():
         "run_pyside6.py",          # 入口文件
         "--name", OUTPUT_NAME,
         "--onefile",
-        "--windowed",
+        "--console",
         "--clean",
         "--noconfirm",
     ]

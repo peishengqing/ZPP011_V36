@@ -1,0 +1,2 @@
+[console_scripts]
+zpp011 = run_pyside6:main

@@ -1,0 +1,17 @@
+# ZPP011 系统配置
+# 修改此文件后无需重启应用，配置加载器在首次调用时生效。
+
+alert:
+  # 偏差率绝对值超过此值触发预警
+  threshold_percent: 10.0
+  # 后台预警扫描间隔（秒）
+  scan_interval_seconds: 60
+  # 仅监控替代料物料（True=仅替代料，False=全部物料）
+  only_alt_materials: true
+
+ppt:
+  # PPT 报告中定义预警的阈值
+  alert_threshold_percent: 10.0
+
+analysis:
+  # 保留扩展位

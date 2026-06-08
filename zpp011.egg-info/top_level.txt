@@ -1,0 +1,5 @@
+analysis
+core
+domain
+gui_pyside6
+run_pyside6

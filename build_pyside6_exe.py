@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""打包 PySide6 版本的 EXE（v42.0 预览版 - 修复版）"""
+"""打包 PySide6 版本的 EXE（v42.1 功能迭代版）"""
 import sys
 import os
 
@@ -20,10 +20,16 @@ if os.path.isfile(os.path.join("config", "template.pptx")):
     add_data_opts.append(f"--add-data={os.path.join('config', 'template.pptx')};config")
 
 if __name__ == "__main__":
+    # 检测是否要调试模式（带控制台）
+    import sys as _sys
+    debug_mode = '--debug' in _sys.argv
+    exe_name = "ZPP011偏差分析器_v42.1"
+    window_mode = "--windowed" if not debug_mode else "--console"
+
     opts = [
-        "gui_pyside6/main_window.py",
-        "--name=ZPP011偏差分析器_v42.1_预警看板",
-        "--windowed",
+        "run_pyside6.py",
+        f"--name={exe_name}",
+        window_mode,
         "--onefile",
         "--noconfirm",
         "--clean",
@@ -36,28 +42,46 @@ if __name__ == "__main__":
         "--hidden-import=PySide6.QtWidgets",
         "--hidden-import=PySide6.QtCharts",
         "--hidden-import=PySide6.QtPrintSupport",
-        # PySide6 插件（Qt 平台插件等关键 DLL）
+        # PySide6 插件
         "--collect-all=pyside6",
         # 业务模块隐藏导入
+        "--hidden-import=gui_pyside6.main_window",
         "--hidden-import=gui_pyside6.models.data_frame_model",
         "--hidden-import=gui_pyside6.models.workers",
+        "--hidden-import=gui_pyside6.widgets.filter_panel",
+        "--hidden-import=gui_pyside6.widgets.toast",
         "--hidden-import=gui_pyside6.dialogs.import_wizard_dialog",
         "--hidden-import=gui_pyside6.dialogs.rule_config_dialog",
         "--hidden-import=gui_pyside6.dialogs.drill_down_dialog",
         "--hidden-import=gui_pyside6.dialogs.settings_dialog",
         "--hidden-import=gui_pyside6.dialogs.alert_dialog",
+        "--hidden-import=gui_pyside6.dialogs.unit_summary_dialog",
+        "--hidden-import=gui_pyside6.dialogs.dashboard_dialog",
+        "--hidden-import=gui_pyside6.dialogs.history_compare_dialog",
+        "--hidden-import=gui_pyside6.dialogs.batch_operations_dialog",
         "--hidden-import=core.alert_monitor",
         "--hidden-import=core.rule_engine",
         "--hidden-import=core.audit_logger",
+        "--hidden-import=core.config_manager",
+        "--hidden-import=core.ai_client",
+        "--hidden-import=core.read_status",
+        "--hidden-import=core.fingerprint",
+        "--hidden-import=core.change_detector",
+        "--hidden-import=analysis.analyzer",
+        "--hidden-import=analysis.net_offset",
         "--hidden-import=analysis.bom_diff",
+        "--hidden-import=analysis.excel_builder.sheet5_full",
+        "--hidden-import=modules.audit.filters.filter_engine",
+        "--hidden-import=domain.alt_material.alt_manager",
         "--hidden-import=utils.excel_helper",
+        "--hidden-import=utils.version_history",
         # numpy/pandas 后端
         "--hidden-import=numpy.core._methods",
         "--hidden-import=numpy.lib.format",
         "--hidden-import=pandas._libs.tslibs.np_datetime",
     ])
     print("=" * 60)
-    print("开始打包 PySide6 EXE（console 模式）")
+    print("开始打包 PySide6 EXE")
     print("=" * 60)
     for o in opts:
         print(" ", o)

@@ -193,8 +193,9 @@ class DashboardDialog(QDialog):
 
     drill_down_signal = Signal(str, str)  # (维度类型, 维度值)
 
-    def __init__(self, audit_df, material_df, parent=None):
+    def __init__(self, audit_df, material_df, parent=None, main_window=None):
         super().__init__(parent)
+        self.main_window = main_window
         self.audit_df = audit_df
         self.material_df = material_df
         self.analysis_result = None
@@ -225,6 +226,14 @@ class DashboardDialog(QDialog):
         self.tabs.addTab(self.tab_rank, "排名")
         self.tabs.addTab(self.tab_trend, "趋势")
         self.tabs.addTab(self.tab_summary, "小结")
+        # 工厂对比页签（如果有主窗口且有多工厂数据）
+        if self.main_window and hasattr(self.main_window, 'analysis_controller'):
+            factory_data = self.main_window.analysis_controller.factory_data
+            if factory_data and len(factory_data) > 1:
+                self.tab_factory = QWidget()
+                self._create_factory_comparison_tab(self.tab_factory, factory_data)
+                self.tabs.addTab(self.tab_factory, "🏭 工厂对比")
+        
         layout.addWidget(self.tabs)
         # 排名页
         self._init_rank_tab()
@@ -337,6 +346,72 @@ class DashboardDialog(QDialog):
 
     def _on_ai_analysis(self):
         QMessageBox.information(self, "AI 归因", "AI 归因分析功能开发中...")
+
+
+    def _create_factory_comparison_tab(self, widget, factory_data):
+        """创建工厂对比页签"""
+        layout = QVBoxLayout(widget)
+        
+        # 计算各工厂的偏差总额和平均偏差率
+        stats = []
+        for factory, df in factory_data.items():
+            # 偏差总额
+            amount_col = None
+            for col in ['偏差金额(含税)', '偏差金额']:
+                if col in df.columns:
+                    amount_col = col
+                    break
+            
+            if amount_col and amount_col in df.columns:
+                total_dev = df[amount_col].fillna(0).sum()
+            else:
+                total_dev = 0
+            
+            # 平均偏差率
+            rate_col = None
+            for col in ['偏差率(%)', '偏差率']:
+                if col in df.columns:
+                    rate_col = col
+                    break
+            
+            if rate_col and rate_col in df.columns:
+                avg_rate = df[rate_col].fillna(0).mean()
+            else:
+                avg_rate = 0
+            
+            stats.append((factory, total_dev, avg_rate))
+        
+        # 使用 QTableWidget 显示
+        table = QTableWidget()
+        table.setRowCount(len(stats))
+        table.setColumnCount(3)
+        table.setHorizontalHeaderLabels(["工厂", "偏差总额(元)", "平均偏差率(%)"])
+        
+        for i, (fac, total, avg) in enumerate(stats):
+            table.setItem(i, 0, QTableWidgetItem(str(fac)))
+            table.setItem(i, 1, QTableWidgetItem(f"{total:,.2f}"))
+            table.setItem(i, 2, QTableWidgetItem(f"{avg:.2f}"))
+        
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        layout.addWidget(table)
+        
+        # 添加简单柱状图（需要 matplotlib，如果未安装则跳过）
+        try:
+            import matplotlib.pyplot as plt
+            from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+            
+            fig, ax = plt.subplots(figsize=(6, 4))
+            factories = [s[0] for s in stats]
+            totals = [s[1] for s in stats]
+            
+            ax.bar(factories, totals, color='steelblue')
+            ax.set_title('各工厂偏差总额对比')
+            ax.set_ylabel('金额(元)')
+            
+            canvas = FigureCanvas(fig)
+            layout.addWidget(canvas)
+        except ImportError:
+            pass
 
     def get_analysis_result(self):
         return self.analysis_result

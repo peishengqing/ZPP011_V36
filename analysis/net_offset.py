@@ -9,7 +9,7 @@
 import pandas as pd
 
 
-def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True) -> pd.DataFrame:
+def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True, group_key: list = None) -> pd.DataFrame:
     """
     支持替代料组净偏差计算（一对多、多对多）
     基于替代料配对构建物料组（并查集），在同一订单内对组内所有物料偏差求和作为净偏差。
@@ -18,6 +18,7 @@ def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True) -> 
         df: 必须包含列: 订单日期, 流程订单, 物料编码, 偏差数量, 偏差金额(含税)
         alt_pairs: 替代料配对列表
         enable: 是否启用净偏差抵消
+        group_key: 分组键列表 [日期列名, 订单列名]，默认 ['订单日期', '流程订单']
     返回:
         添加了 '净偏差数量' 和 '净偏差金额' 列的 DataFrame
     """
@@ -90,8 +91,11 @@ def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True) -> 
         return df
 
     # ---------- 按订单分组计算组内净偏差 ----------
-    date_col = '订单日期' if '订单日期' in df.columns else '订单开始日期'
-    df['_key'] = df[date_col].astype(str) + '|' + df['流程订单'].astype(str)
+    if group_key is None:
+        group_key = ['订单日期', '流程日期']
+    date_col = group_key[0] if group_key[0] in df.columns else ('订单开始日期' if '订单开始日期' in df.columns else group_key[0])
+    order_col = group_key[1] if len(group_key) > 1 and group_key[1] in df.columns else '流程订单'
+    df['_key'] = df[date_col].astype(str) + '|' + df[order_col].astype(str)
 
     for key, group in df.groupby('_key'):
         # 收集该订单内所有物料编码及对应的行索引

@@ -108,7 +108,11 @@ class AIAuditWorker(QThread):
                     break
 
                 # 获取偏差率（支持字符串和数字）
-                dev_rate_raw = row.get('偏差率(%)', 0)
+                dev_rate_raw = 0
+                for c in ['偏差率', '偏差率(%)']:
+                    if c in row:
+                        dev_rate_raw = row[c]
+                        break
                 try:
                     if isinstance(dev_rate_raw, str):
                         dev_rate = float(dev_rate_raw.replace('%', ''))

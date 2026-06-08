@@ -1,0 +1,87 @@
+Metadata-Version: 2.4
+Name: zpp011
+Version: 0.1.0
+Summary: 生产偏差分析器
+License: MIT
+Project-URL: Homepage, https://github.com/peige/zpp011
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: PySide6>=6.5
+Requires-Dist: pandas>=2.0
+Requires-Dist: openpyxl>=3.0
+Requires-Dist: python-pptx>=0.6
+Requires-Dist: matplotlib>=3.5
+Requires-Dist: requests>=2.28
+
+# ZPP011 偏差分析器
+
+SAP 生产订单偏差自动分析工具，用于食品/饮料行业生产偏差审核与管理。
+
+## 功能特点
+
+- 📊 **偏差分析**：自动读取 SAP 导出 Excel，计算定额与实际偏差，生成汇总报表
+- 🤖 **AI 智能审核**：自动为偏差行生成备注建议，支持批量审核
+- 📋 **审核管理**：支持备注标准化、批量备注、自动结案
+- 📈 **PPT 报告生成**：一键生成分工厂多耗/少耗 Top10 报告（含环形饼图+柱状图）
+- 🎨 **筛选栏重构**：侧边栏多维度筛选（工厂、车间、偏差率、替代料等）
+- 💾 **配置外部化**：阈值、颜色、路径可通过 `~/.zpp011_audit/config.json` 自定义
+
+## 系统要求
+
+- Windows 10 / 11
+- Python 3.8+
+- SAP 导出 Excel 文件（含 `Data` 工作表）
+
+## 安装与运行
+
+### 方式一：运行源码
+
+```bash
+git clone https://github.com/peishengqing/ZPP011_V36.git
+cd ZPP011_V36
+pip install -r requirements.txt
+python main.py
+```
+
+### 方式二：使用打包 exe
+
+从 Releases 下载最新 ZPP011偏差分析器_v39.x_xxx.exe，双击运行。
+
+## 配置文件
+
+- 用户配置：`~/.zpp011_audit/config.json`（自动生成，可手动修改）
+- 替代料配对：`~/.zpp011_audit/alt_pairs.json`
+- 规则文件：`config/system/rules.json`
+
+## 使用说明
+
+1. 选择 SAP 导出的 Excel 文件（需包含 Data 工作表）
+2. 点击"分析"，生成偏差明细
+3. 在审核表格中查看偏差>10% 的记录
+4. 使用侧边栏筛选（工厂、车间、偏差率、替代料等）
+5. 执行 AI 审核或批量备注
+6. 保存审核结果到原 Excel 和数据库
+7. 生成 PPT 报告
+
+## 版本历史
+
+详见 changelog.json
+
+## 常见问题
+
+**Q: 提示"Worksheet named 'Data' not found"**
+A: 请确保选择的 Excel 文件包含名为 Data 的工作表（SAP 导出的标准格式）。
+
+**Q: 分析进度卡在"替代料明细"**
+A: 数据量大时需等待 10-30 秒，属于正常性能瓶颈，后续版本将优化。
+
+**Q: 侧边栏不显示**
+A: 检查 config/defaults.json 中 features.new_filter_panel 是否为 true。
+
+## 许可证
+
+内部使用，未开源。
+
+## 作者
+
+裴盛清

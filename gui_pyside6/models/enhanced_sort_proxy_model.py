@@ -9,6 +9,7 @@
 """
 
 from PySide6.QtCore import Qt, QSortFilterProxyModel, QModelIndex
+from PySide6.QtGui import QColor
 from enum import Enum
 from typing import List, Tuple, Dict, Optional
 
@@ -170,3 +171,36 @@ class EnhancedSortProxyModel(QSortFilterProxyModel):
 
         # 所有排序列都相等：保持稳定排序
         return left.row() < right.row()
+
+    def _is_alert_row(self, source_row: int) -> bool:
+        """检查某行是否为预警行（偏差率 > 10%）"""
+        source_model = self.sourceModel()
+        if not source_model:
+            return False
+        # 查找偏差率列
+        rate_col = None
+        for col in range(source_model.columnCount()):
+            col_name = source_model.headerData(col, Qt.Horizontal, Qt.DisplayRole)
+            if col_name in ('偏差率(%)', '偏差率'):
+                rate_col = col
+                break
+        if rate_col is None:
+            return False
+        idx = source_model.index(source_row, rate_col)
+        rate_str = source_model.data(idx, Qt.DisplayRole)
+        try:
+            rate = float(rate_str.replace('%', '').strip())
+            return abs(rate) > 10
+        except:
+            return False
+
+    def data(self, index, role=Qt.DisplayRole):
+        """重写 data 方法，为预警行添加浅红色背景"""
+        if not index.isValid():
+            return None
+        source_index = self.mapToSource(index)
+        if not source_index.isValid():
+            return None
+        if role == Qt.BackgroundRole and self._is_alert_row(source_index.row()):
+            return QColor(255, 200, 200)  # 浅红
+        return self.sourceModel().data(source_index, role)

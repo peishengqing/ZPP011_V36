@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 ZPP011 偏差分析核心逻辑（v36 抽取）
@@ -60,6 +60,19 @@ def _dprint(*args, **kwargs):
         print(*args, **kwargs)
     except (OSError, UnicodeEncodeError):
         pass
+
+
+def infer_material_type(code):
+    """根据物料编码前缀推断物料类型"""
+    if not isinstance(code, str):
+        return '未知'
+    code = code.strip()
+    if code.startswith('20'):
+        return '包材'
+    elif code.startswith('30'):
+        return '原料'
+    else:
+        return '其他'
 
 
 def do_analysis_v2(
@@ -334,6 +347,9 @@ def do_analysis_v2(
     no_auto_mask = raw_mat_mask & small_dev_mask
 
     gx_auto_fill = gx_mask & no_note_mask & ~no_auto_mask
+    # 确保备注原因为对象类型，防止空值列被推断为 float64
+    if '备注原因' in df.columns and df['备注原因'].dtype != object:
+        df['备注原因'] = df['备注原因'].astype(object)
     df.loc[gx_auto_fill, '备注原因'] = '系统无定额'
 
     tape_mask = df['组件物料描述'].str.contains('透明胶带', na=False)
@@ -513,7 +529,7 @@ def do_analysis_v2(
     # 使用传入的 enable_net_offset 参数（由调用方根据配置决定）
     if enable_net_offset and alt_pairs and len(alt_pairs) > 0:
         _dprint("[净偏差抵消] 开始计算替代料净偏差...")
-        dev_df = apply_net_offset(dev_df, alt_pairs, enable=enable_net_offset)
+        dev_df = apply_net_offset(dev_df, alt_pairs, enable=enable_net_offset, group_key=['订单日期', '流程订单'])
         _dprint(f"[净偏差抵消] 完成，影响行数: {len(dev_df[dev_df['净偏差金额'] != dev_df.get('偏差金额(含税)', dev_df.get('偏差金额', 0))])}")
     else:
         # 确保净偏差列存在（即使没有配对，也添加原始偏差金额作为净偏差）
@@ -818,6 +834,29 @@ def do_analysis_v2(
     _dprint(f"[DEBUG do_analysis_v2] 准备保存到：{final_output_path}")
     
     # 如果不保存文件，直接返回 dev_df
+    # ===== 确保 PT 报告所需列存在 =====
+    # 1. 车间列
+    if '车间' not in dev_df.columns:
+        # 可选：根据订单号前缀推断车间（示例：订单号以 'WX' 开头为无锡车间）
+        # 如果没有映射规则，直接填充默认值
+        dev_df['车间'] = '未知车间'
+    
+    # 2. 物料类型列
+    if '物料类型' not in dev_df.columns:
+        # 根据物料编码前缀简单映射（可自定义）
+        dev_df['物料类型'] = dev_df['物料编码'].apply(infer_material_type)
+    
+    # 3. 周列（如果订单日期存在）
+    if '订单日期' in dev_df.columns and '周' not in dev_df.columns:
+        dev_df['订单日期'] = pd.to_datetime(dev_df['订单日期'], errors='coerce')
+        dev_df['周'] = dev_df['订单日期'].dt.strftime('%Y-W%W')
+    
+    # 4. 替代料组列（若净偏差计算已生成则保留，否则创建空列）
+    if '替代料组' not in dev_df.columns:
+        dev_df['替代料组'] = ''
+
+    report_progress(5, "5/5 分析完成", 100)
+
     if return_dataframe:
         _dprint("[DEBUG do_analysis_v2] 不保存文件，直接返回 DataFrame")
         # 保存追踪日志

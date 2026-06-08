@@ -3,6 +3,7 @@
 DataFrame Model 和 Proxy Model
 支持 pandas DataFrame 与 QTableView 的数据绑定、排序、筛选、编辑等
 """
+import numpy as np
 import pandas as pd
 from datetime import datetime
 from PySide6.QtCore import QAbstractTableModel, QSortFilterProxyModel, Qt, Signal, QModelIndex
@@ -16,6 +17,8 @@ class DataFrameModel(QAbstractTableModel):
         super().__init__()
         self._data = pd.DataFrame()
         self._original_data = pd.DataFrame()
+        self._data_cache = []  # 新增：缓存二维列表
+        self._display_columns = []  # 记录列顺序
         if data is not None:
             self.setDataFrame(data)
 
@@ -32,17 +35,46 @@ class DataFrameModel(QAbstractTableModel):
         self._data = self._data[cols]
         
         self._original_data = self._data.copy()
+        self._build_cache()  # 新增：构建缓存
         self.endResetModel()
         self.dataChanged.emit()
+
+    def _build_cache(self):
+        """将 DataFrame 转换为 Python 原生类型的二维列表，大幅提升 data() 速度"""
+        if self._data.empty:
+            self._data_cache = []
+            self._display_columns = []
+            return
+
+        self._display_columns = list(self._data.columns)
+        # 逐行转换：将 pandas Series 转为 list，并处理 NaN
+        self._data_cache = []
+        for idx in range(len(self._data)):
+            row = self._data.iloc[idx]
+            row_list = []
+            for col in self._display_columns:
+                val = row[col]
+                # 处理缺失值
+                if pd.isna(val):
+                    row_list.append("")
+                else:
+                    # 保留原始类型，但确保数值是 Python 原生类型
+                    if isinstance(val, (np.integer, np.int64, np.int32)):
+                        row_list.append(int(val))
+                    elif isinstance(val, (np.floating, np.float64, np.float32)):
+                        row_list.append(float(val))
+                    else:
+                        row_list.append(val)
+            self._data_cache.append(row_list)
 
     def getDataFrame(self) -> pd.DataFrame:
         return self._data
 
     def rowCount(self, parent=QModelIndex()):
-        return len(self._data)
+        return len(self._data_cache)
 
     def columnCount(self, parent=QModelIndex()):
-        return len(self._data.columns)
+        return len(self._display_columns)
 
     def data(self, index, role=Qt.DisplayRole):
         if not index.isValid():
@@ -50,53 +82,58 @@ class DataFrameModel(QAbstractTableModel):
         row = index.row()
         col = index.column()
         
+        # 边界检查（使用缓存）
+        if row < 0 or row >= len(self._data_cache) or col < 0 or col >= len(self._display_columns):
+            return None
+        
         # 第一列显示已读/未读图标
         if col == 0:
             if role == Qt.DisplayRole:
-                read_val = self._data.iloc[row].get('_read', 0)
+                read_val = self._data_cache[row][0]
                 return '✅' if read_val else '🔘'
             elif role == Qt.TextAlignmentRole:
                 return Qt.AlignCenter
             elif role == Qt.ToolTipRole:
-                read_val = self._data.iloc[row].get('_read', 0)
+                read_val = self._data_cache[row][0]
                 return '已读' if read_val else '未读'
             return None
         
-        # 其余列：需要偏移1位（因为第0列是 _read）
-        # 找到 _read 列在 DataFrame 中的实际位置
-        try:
-            read_col_idx = list(self._data.columns).index('_read')
-        except ValueError:
-            read_col_idx = -1  # _read 列不存在
+        # 其余列：从缓存读取
+        if role == Qt.DisplayRole or role == Qt.EditRole:
+            val = self._data_cache[row][col]
+            # 偏差率列：显示时加 % 后缀
+            col_name = self._display_columns[col]
+            if '偏差率' in col_name and val != "":
+                try:
+                    return f"{float(val):.2f}%"
+                except (ValueError, TypeError):
+                    return str(val)
+            # 格式化浮点数
+            if isinstance(val, float):
+                if abs(val) >= 1000:
+                    return f"{val:,.2f}"
+                return f"{val:.2f}"
+            return str(val) if val != "" else ""
         
-        # 表格列 col 对应 DataFrame 的列 (col 如果 _read 在第0列)
-        # 如果 _read 在第0列，那么表格列1 → DataFrame列1，表格列2 → DataFrame列2...
-        # 如果 _read 不在第0列，需要动态计算
-        if read_col_idx == 0:
-            df_col = col  # 不需要偏移
-        else:
-            # _read 不在第0列，表格列0显示 _read，表格列1显示DataFrame列0...
-            df_col = col - 1 if col >= 1 else read_col_idx
+        elif role == Qt.TextAlignmentRole:
+            # 根据缓存中的类型判断对齐方式
+            val = self._data_cache[row][col]
+            if isinstance(val, (int, float)):
+                return Qt.AlignRight | Qt.AlignVCenter
+            return Qt.AlignLeft | Qt.AlignVCenter
         
-        if 0 <= row < len(self._data) and 0 <= df_col < len(self._data.columns):
-            value = self._data.iloc[row, df_col]
-            if role == Qt.DisplayRole or role == Qt.EditRole:
-                return str(value) if pd.notna(value) else ""
-            elif role == Qt.TextAlignmentRole:
-                if pd.api.types.is_numeric_dtype(self._data.dtypes.iloc[col]):
-                    return Qt.AlignRight | Qt.AlignVCenter
-                return Qt.AlignLeft | Qt.AlignVCenter
-            elif role == Qt.BackgroundRole:
-                # 预警列上色
-                col_name = self._data.columns[col]
-                if col_name == '预警':
-                    val = str(value).strip()
-                    if '🔴' in val or val == '红色预警':
-                        return Qt.GlobalColor.red
-                    elif '🟡' in val or val == '黄色预警':
-                        return Qt.GlobalColor.yellow
-                    elif '🟢' in val or val == '绿色预警':
-                        return Qt.QColor(144, 238, 144)  # 浅绿
+        elif role == Qt.BackgroundRole:
+            # 预警列上色
+            col_name = self._display_columns[col]
+            if col_name == '预警':
+                val = str(self._data_cache[row][col]).strip()
+                if '🔴' in val or val == '红色预警':
+                    return Qt.GlobalColor.red
+                elif '🟡' in val or val == '黄色预警':
+                    return Qt.GlobalColor.yellow
+                elif '🟢' in val or val == '绿色预警':
+                    return Qt.QColor(144, 238, 144)  # 浅绿
+        
         return None
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):
@@ -144,34 +181,85 @@ class DataFrameModel(QAbstractTableModel):
         if role == Qt.EditRole:
             row = index.row()
             col = index.column()
-            col_name = self._data.columns[col]
+            col_name = self._display_columns[col]
             # 只允许备注列
             if col_name not in ('备注', '备注原因'):
                 return False
             try:
-                self._data.iloc[row, col] = value
+                # 更新 DataFrame
+                self._data.iloc[row, self._data.columns.get_loc(col_name)] = value
+                # 更新缓存
+                self._data_cache[row][col] = value
                 self.dataChanged.emit(index, index)
                 return True
             except Exception:
                 return False
         return False
+    def _get_deviation_rate(self, row):
+        """从缓存中获取当前行的偏差率（百分比数值）"""
+        # 查找偏差率列索引
+        rate_col = None
+        for i, col in enumerate(self._display_columns):
+            if col in ('偏差率(%)', '偏差率'):
+                rate_col = i
+                break
+        if rate_col is None:
+            return 0.0
+        val = self._data_cache[row][rate_col]
+        if isinstance(val, (int, float)):
+            return float(val)
+        # 如果缓存中是带%的字符串（兜底）
+        if isinstance(val, str) and '%' in val:
+            try:
+                return float(val.replace('%', '').strip())
+            except:
+                return 0.0
+        return 0.0
+
+    def _is_warning_column(self, col_name):
+        """检查列是否为预警列"""
+        return col_name in ('偏差率(%)', '偏差率')
+
 
     def sort(self, column, order=Qt.AscendingOrder):
+        """排序：支持百分比列数值排序"""
         self.beginResetModel()
-        # 跳过状态列（column 0 是 _read 列，不可排序）
+        
+        # 第0列是状态列，不排序
         if column == 0:
             self.endResetModel()
             return
-        # 列索引偏移：表格列1对应DataFrame列0，列2对应列1，以此类推
-        actual_col = column - 1
+        
+        # 表格列和DataFrame列的映射（第0列是_read）
+        actual_col = column  # DataFrame的第0列就是_read，表格第0列也是_read
         if actual_col < 0 or actual_col >= len(self._data.columns):
             self.endResetModel()
             return
+
         col_name = self._data.columns[actual_col]
         ascending = (order == Qt.AscendingOrder)
-        self._data = self._data.sort_values(by=col_name, ascending=ascending)
+        
+        print(f"[DEBUG sort] column={column}, actual_col={actual_col}, col_name={col_name!r}, ascending={ascending}")
+
+        # 百分比列特殊处理：去掉%转数字排序
+        if '%' in str(col_name):
+            # 转换为数值
+            numeric_vals = pd.to_numeric(
+                self._data[col_name].astype(str).str.replace('%', '').str.strip(),
+                errors='coerce'
+            )
+            # 按数值排序
+            sort_key = numeric_vals.argsort(kind='mergesort')
+            self._data = self._data.iloc[sort_key].copy()
+            if not ascending:
+                self._data = self._data.iloc[::-1].copy()
+        else:
+            self._data = self._data.sort_values(by=col_name, ascending=ascending).copy()
+
         self.endResetModel()
         self.layoutChanged.emit()
+
+
 
 
 class AuditProxyModel(QSortFilterProxyModel):
@@ -182,14 +270,11 @@ class AuditProxyModel(QSortFilterProxyModel):
         super().__init__(parent)
         self._filters = {}       # 列索引 -> 筛选文本（顶部筛选行，保留兼容）
         self._custom_filters = {}  # 自定义筛选条件（侧边栏）
+        self._alert_threshold = 10.0  # 预警阈值，默认10%
 
     def sort(self, column, order=Qt.AscendingOrder):
-        """将排序请求转发给源模型"""
-        src = self.sourceModel()
-        if src:
-            src.sort(column, order)
-        # 刷新筛选（保持筛选条件不丢失）
-        self.invalidateFilter()
+        """代理模型排序：交给父类用 lessThan() 处理"""
+        super().sort(column, order)
 
     # ------------------------------------------------------------------ #
     # 顶部筛选行接口（保留兼容）
@@ -278,7 +363,7 @@ class AuditProxyModel(QSortFilterProxyModel):
                 if not matched:
                     return False
 
-            # 2. 偏差率范围（绝对值>=10%）
+            # 2. 偏差率范围（绝对值>=阈值）
             if '_dev_rate_abs_ge_10' in self._custom_filters:
                 rate_col = self._get_rate_column(df)
                 if rate_col:
@@ -290,7 +375,8 @@ class AuditProxyModel(QSortFilterProxyModel):
                             rate = float(rate_raw)
                     except (ValueError, TypeError):
                         rate = 0
-                    if abs(rate) < 10:
+                    threshold = getattr(self, '_alert_threshold', 10.0)
+                    if abs(rate) < threshold:
                         return False
 
             if '_dev_rate_range' in self._custom_filters:
@@ -368,6 +454,10 @@ class AuditProxyModel(QSortFilterProxyModel):
                 return col
         return None
 
+    def set_alert_threshold(self, threshold):
+        """动态设置预警阈值"""
+        self._alert_threshold = threshold
+
     def _check_rate_range(self, rate_raw, range_str):
         try:
             if isinstance(rate_raw, str):
@@ -405,9 +495,17 @@ class AuditProxyModel(QSortFilterProxyModel):
     def lessThan(self, left, right):
         left_data = self.sourceModel().data(left, Qt.DisplayRole)
         right_data = self.sourceModel().data(right, Qt.DisplayRole)
+        col_name = self.sourceModel().headerData(left.column(), Qt.Horizontal)
         try:
-            left_num = float(left_data)
-            right_num = float(right_data)
-            return left_num < right_num
+            # 去掉 % 和逗号，再尝试数值比较
+            left_str = str(left_data).replace('%', '').replace(',', '').strip()
+            right_str = str(right_data).replace('%', '').replace(',', '').strip()
+            left_num = float(left_str)
+            right_num = float(right_str)
+            result = left_num < right_num
+            print(f"[DEBUG lessThan] col={col_name}, {left_data!r} vs {right_data!r} -> {left_num} < {right_num} = {result}")
+            return result
         except (ValueError, TypeError):
-            return str(left_data) < str(right_data)
+            result = str(left_data) < str(right_data)
+            print(f"[DEBUG lessThan fallback] col={col_name}, {left_data!r} vs {right_data!r} -> str={result}")
+            return result

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 ZPP011 PySide6 启动入口
 裴哥 | 2026-06-04
@@ -44,8 +44,8 @@ from gui_pyside6.main_window import MainWindow
 def main():
     # 高 DPI 支持（PySide6 >= 6.5 自动处理，无需手动设置）
     # 保留这两行是为了兼容旧版本，在新版本中无效果也不会报错
-    QCoreApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-    QCoreApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    # QCoreApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)  # Qt 6 已默认支持
+    # QCoreApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)  # Qt 6 已默认支持
 
     app = QApplication(sys.argv)
     app.setApplicationName("ZPP011")
@@ -68,3 +68,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

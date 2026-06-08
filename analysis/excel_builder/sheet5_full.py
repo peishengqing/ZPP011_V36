@@ -63,6 +63,7 @@ def build_sheet5(df, report_progress, progress_idx=5):
         '实际': r['数量-实际'],
         '偏差数量': r['材料偏差'],
         '偏差率': f"{r[col_p]:.1f}%" if pd.notna(r[col_p]) else '',
+        '偏差率(%)': round(float(r[col_p]), 2) if pd.notna(r[col_p]) else 0.0,
         '偏差金额': round(r['_偏差金额'], 2) if isinstance(r['_偏差金额'], (int, float)) else 0,
         '备注': r['_备注'],
         '备注来源': r.get('_note_source', '人工填写'),
