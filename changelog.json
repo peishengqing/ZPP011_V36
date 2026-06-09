@@ -3,6 +3,49 @@
     "author": "裴盛清",
     "versions": [
         {
+            "version": "v42.6",
+            "release_date": "2026-06-08",
+            "build_datetime": "2026-06-08 22:35:00",
+            "features": [
+                "✨ MVVM 架构重构：View-Model 统一状态管理（analysis_vm.py），消除 self.audit_data 冗余",
+                "✨ 多工厂支持：工厂下拉选择、数据隔离、工厂对比标签页（dashboard_dialog.py）",
+                "✨ 预警监控系统（60秒后台扫描 + 预警看板 + 右键标记已读 + 双击跳转）",
+                "✨ 预警规则配置对话框：阈值可调、仅替代料过滤、动态生效",
+                "✨ PPT 生成器专业版美化：匹配 24 页商业报告模板（#0A1F3D 深色风格 + 卡片布局）",
+                "✨ 配置外置：config.yaml + config_loader.py，支持点号路径热重载",
+                "✨ 偏差率列双列共存（字符串列/数值列），同时满足展示和计算需求",
+                "✨ 替代料配对表放大查看功能 + 独立大窗口控件",
+                "✨ 自定义浅蓝色标题栏（#1976d2），替换原生 Windows 标题栏",
+                "✨ 加载对话框（loading_dialog.py）、增强 Toast 提示",
+                "✨ 分析引擎新增4列（车间、物料类型、周、替代料组），净偏差 offset 参数优化",
+                "✨ 备注覆盖率分析深度优化",
+                "✨ 单元测试框架（35个测试全部通过）：fingerprint、read_status、net_offset、analyzer、data_service"
+            ],
+            "fixes": [
+                "🐛 AI 审核 Worker 永不启动：差一行 self.ai_worker.start()，移出日志回调死锁",
+                "🐛 QAbstractItemView 导入缺失导致 NameError",
+                "🐛 AlertMonitor 缺少 isRunning() 方法导致 closeEvent 崩溃",
+                "🐛 偏差率为空字符串无法计算 mean（add astype(object) + numeric fallback）",
+                "🐛 PPT 生成器空 DataFrame 崩溃（6 处边界防护）",
+                "🐛 Build 过程中 SIGKILL（资源限制，容错处理）",
+                "🐛 数据重复行去重（工厂ID隔离确保多工厂正确）",
+                "🐛 临时脚本清理（删除 48 个修复脚本，项目整洁）",
+                "🐛 MessageBox GBK 编码崩溃（safe_for_gbk 全量覆盖）"
+            ],
+            "optimizations": [
+                "⚡ PPT 生成器直接内存 DataFrame 生成，跳过中间 Excel 文件",
+                "⚡ PyInstaller 打包流程优化（build_pyside6.py 自动备份 + 防丢失）",
+                "⚡ 筛选面板增强：排序/合计/替代料分组更流畅",
+                "⚡ 备注覆盖率分析性能优化",
+                "⚡ 左侧面板布局优化，减少垂直空间占用"
+            ],
+            "notes": [
+                "📌 本版本基于 v39.x 合并后的稳定版 + PySide6 迁移 v42.0 预览版",
+                "📌 打包时 matplotlib 已排除以减小体积（不影响 PPT 生成）",
+                "📌 35 个单元测试已回归通过"
+            ]
+        },
+        {
             "version": "v41.2",
             "release_date": "2026-06-03",
             "build_datetime": "2026-06-03 14:50:00",

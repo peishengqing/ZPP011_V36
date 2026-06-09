@@ -56,9 +56,18 @@ def main():
     font = QFont("Microsoft YaHei", 9)
     app.setFont(font)
 
-    # Fusion 样式
+    # Fusion 样式 + 自定义 QSS 样式表
     if "Fusion" in QStyleFactory.keys():
         app.setStyle(QStyleFactory.create("Fusion"))
+
+    # 加载现代化 QSS 样式表
+    qss_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gui_pyside6", "modern_style.qss")
+    if os.path.exists(qss_path):
+        with open(qss_path, "r", encoding="utf-8") as f:
+            app.setStyleSheet(f.read())
+        print("✅ 现代化样式已加载")
+    else:
+        print("⚠️ 样式文件不存在: " + qss_path)
 
     win = MainWindow()
     win.show()
