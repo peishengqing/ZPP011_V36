@@ -1,28 +1,33 @@
 # -*- coding: utf-8 -*-
-"""左侧面板组件：文件选择、日期范围、替代料配对、数据预览"""
+"""左侧面板组件：文件选择、工厂选择、日期、物料、替代料配对、数据预览"""
 from PySide6.QtWidgets import (
-    QGroupBox, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QTableWidget, QComboBox, QFileDialog, QMessageBox
+    QWidget, QGroupBox, QVBoxLayout, QHBoxLayout,
+    QLabel, QLineEdit, QPushButton, QTableWidget,
+    QComboBox,
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QAction
 
 
 class LeftPanelComponent:
-    """左侧面板组件：文件选择、工厂筛选、日期、替代料、预览"""
+    """左侧面板组件：创建并返回 self.left_panel"""
 
     def __init__(self, main_window):
         self.mw = main_window
-        self.left_panel = None
-        self.filter_panel = None
-        self._setup_left_panel()
+        self.left_panel = self._create_panel()
 
-    def _setup_left_panel(self):
-        """创建左侧面板"""
-        self.left_panel = QGroupBox("📁 文件选择")
-        left_layout = QVBoxLayout(self.left_panel)
-        left_layout.setSpacing(6)
+    def _create_panel(self):
+        panel = QWidget()
+        panel.setFixedWidth(360)
+        layout = QVBoxLayout(panel)
+        layout.setSpacing(6)
 
-        # 1. 输入文件 — 横排
+        # 1. 文件选择
+        file_group = QGroupBox("📁 文件选择")
+        file_layout = QVBoxLayout(file_group)
+        file_layout.setSpacing(4)
+
+        # 输入文件
         row1 = QHBoxLayout()
         row1.addWidget(QLabel("输入:"))
         self.mw.input_file_edit = QLineEdit()
@@ -31,18 +36,18 @@ class LeftPanelComponent:
         browse_input_btn = QPushButton("浏览")
         browse_input_btn.clicked.connect(self.mw._select_input_file)
         row1.addWidget(browse_input_btn)
-        left_layout.addLayout(row1)
+        file_layout.addLayout(row1)
 
-        # 2. 工厂选择（分析完成后才启用）
+        # 工厂选择
         factory_group = QGroupBox("🏭 工厂选择")
         factory_layout = QVBoxLayout(factory_group)
         self.mw.factory_combo = QComboBox()
         self.mw.factory_combo.setEnabled(False)
         self.mw.factory_combo.currentTextChanged.connect(self.mw._on_factory_changed)
         factory_layout.addWidget(self.mw.factory_combo)
-        left_layout.addWidget(factory_group)
+        file_layout.addWidget(factory_group)
 
-        # 3. 输出目录 — 横排
+        # 输出目录
         row2 = QHBoxLayout()
         row2.addWidget(QLabel("输出:"))
         self.mw.output_dir_edit = QLineEdit()
@@ -51,13 +56,15 @@ class LeftPanelComponent:
         browse_output_btn = QPushButton("浏览")
         browse_output_btn.clicked.connect(self.mw._select_output_dir)
         row2.addWidget(browse_output_btn)
-        left_layout.addLayout(row2)
+        file_layout.addLayout(row2)
 
+        layout.addWidget(file_group)
+
+        # 2. 筛选选项
         filter_group = QGroupBox("🔍 筛选选项（可选）")
         filter_layout = QVBoxLayout(filter_group)
         filter_layout.setSpacing(4)
 
-        # 日期 — 横排一行
         date_row = QHBoxLayout()
         date_row.addWidget(QLabel("开始:"))
         self.mw.start_date_edit = QLineEdit()
@@ -69,7 +76,6 @@ class LeftPanelComponent:
         date_row.addWidget(self.mw.end_date_edit, 1)
         filter_layout.addLayout(date_row)
 
-        # 物料搜索
         search_row = QHBoxLayout()
         search_row.addWidget(QLabel("物料:"))
         self.mw.material_search_edit = QLineEdit()
@@ -77,12 +83,9 @@ class LeftPanelComponent:
         search_row.addWidget(self.mw.material_search_edit, 1)
         filter_layout.addLayout(search_row)
 
-        left_layout.addWidget(filter_group)
+        layout.addWidget(filter_group)
 
-        left_layout.addStretch()
-
-    def setup_alt_pairs(self, left_layout):
-        """设置替代料配对面板"""
+        # 3. 替代料配对
         alt_group = QGroupBox("替代料配对")
         alt_layout = QVBoxLayout(alt_group)
         self.mw.alt_count_label = QLabel("共 0 对")
@@ -116,7 +119,6 @@ class LeftPanelComponent:
         zoom_btn.clicked.connect(self.mw._zoom_alt_table)
         sort_btn = QPushButton("排序")
         sort_btn.clicked.connect(self.mw._sort_alt_pairs)
-
         alt_btn_layout.addWidget(add_btn)
         alt_btn_layout.addWidget(del_btn)
         alt_btn_layout.addWidget(reset_btn)
@@ -126,13 +128,15 @@ class LeftPanelComponent:
         alt_btn_layout.addWidget(zoom_btn)
         alt_layout.addLayout(alt_btn_layout)
 
-        left_layout.addWidget(alt_group)
+        layout.addWidget(alt_group)
 
-    def setup_preview(self, left_layout):
-        """设置数据预览区"""
+        # 4. 数据预览
         preview_group = QGroupBox("数据预览")
         preview_layout = QVBoxLayout(preview_group)
         self.mw.preview_label = QLabel("未选择文件")
         self.mw.preview_label.setWordWrap(True)
         preview_layout.addWidget(self.mw.preview_label)
-        left_layout.addWidget(preview_group)
+        layout.addWidget(preview_group)
+
+        layout.addStretch()
+        return panel
