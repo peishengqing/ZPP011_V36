@@ -5,6 +5,7 @@
 """
 
 import pandas as pd
+import traceback
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QMessageBox, QApplication
 from core.rule_engine import RuleEngine
@@ -142,6 +143,7 @@ class AuditController(QObject):
             status_bar_callback(f"已复制上一行备注：{prev_remark[:30]}", 3000)
             return True
         except Exception as e:
+            traceback.print_exc()
             status_bar_callback(f"复制失败: {e}", 3000)
             return False
 
@@ -150,18 +152,46 @@ class AuditController(QObject):
         try:
             df = source_model.getDataFrame()
 
+            # 确保 _read 列存在
+            if '_read' not in df.columns:
+                df['_read'] = 0
+
+            # 如果没有 data_id，尝试用关键列生成（格式匹配 data_service）
+            if 'data_id' not in df.columns:
+                if '工厂' in df.columns:
+                    df['data_id'] = (
+                        df['工厂'].astype(str) + '|' +
+                        df['订单日期'].astype(str) + '|' +
+                        df['流程订单'].astype(str) + '|' +
+                        df['物料编码'].astype(str)
+                    )
+                elif all(c in df.columns for c in ['订单日期', '流程订单', '物料编码']):
+                    df['data_id'] = (
+                        df['订单日期'].astype(str) + "|" +
+                        df['流程订单'].astype(str) + "|" +
+                        df['物料编码'].astype(str)
+                    )
+
             for row in rows:
                 if row < len(df):
                     df.at[df.index[row], '_read'] = is_read
-                    data_id = df.iloc[row]['data_id']
+                    # 安全取 data_id
+                    data_id = df.iloc[row].get('data_id')
+                    if not data_id:
+                        if '工厂' in df.columns:
+                            data_id = f"{df.iloc[row].get('工厂')}|{df.iloc[row].get('订单日期')}|{df.iloc[row].get('流程订单')}|{df.iloc[row].get('物料编码')}"
+                        elif all(c in df.columns for c in ['订单日期', '流程订单', '物料编码']):
+                            data_id = f"{df.iloc[row].get('订单日期')}|{df.iloc[row].get('流程订单')}|{df.iloc[row].get('物料编码')}"
                     fingerprint = df.iloc[row].get('fingerprint', '')
-                    save_read_status(data_id, is_read, fingerprint)
+                    if data_id:
+                        save_read_status(data_id, is_read, fingerprint)
 
             source_model.setDataFrame(df)
             self.audit_data = df
             self.audit_data_changed.emit(df)
             status_bar_callback(f"已批量标记为{'已读' if is_read else '未读'}", 2000)
         except Exception as e:
+            traceback.print_exc()
             status_bar_callback(f"批量标记失败: {e}", 3000)
 
     # ------------------- 其他 -------------------

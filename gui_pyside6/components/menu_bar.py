@@ -62,6 +62,10 @@ class MenuBarComponent:
         dashboard_action = QAction("管理看板", self.mw)
         dashboard_action.triggered.connect(self.mw._open_dashboard)
         history_menu.addAction(dashboard_action)
+        history_menu.addSeparator()
+        source_action = QAction("历史源码", self.mw)
+        source_action.triggered.connect(self.mw._open_source_backup)
+        history_menu.addAction(source_action)
 
         # 帮助菜单
         help_menu = menubar.addMenu("帮助")

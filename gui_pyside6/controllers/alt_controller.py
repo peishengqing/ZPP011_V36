@@ -5,6 +5,7 @@
 """
 
 import json
+import traceback
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QGroupBox,
@@ -101,6 +102,7 @@ class AltController(QObject):
                 # Excel 导入使用 ImportWizard，由主窗口处理
                 return False
         except Exception as e:
+            traceback.print_exc()
             if parent_widget:
                 QMessageBox.critical(parent_widget, "错误", f"导入失败: {e}")
             return False
@@ -112,6 +114,7 @@ class AltController(QObject):
                 json.dump(self.alt_pairs, f, indent=2, ensure_ascii=False)
             return True
         except Exception as e:
+            traceback.print_exc()
             return False
 
     # ------------------- 辅助方法（供界面使用） -------------------

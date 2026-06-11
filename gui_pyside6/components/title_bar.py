@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """标题栏组件"""
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel
+from utils.version_history import get_current_version
 
 
 class TitleBarComponent(QWidget):
@@ -21,7 +22,7 @@ class TitleBarComponent(QWidget):
         )
         icon_label = QLabel("🏭")
         icon_label.setStyleSheet("font-size: 20px;")
-        title_label = QLabel("云南达利ZPP011生产偏差分析器 v42.7")
+        title_label = QLabel(f"云南达利ZPP011生产偏差分析器 {get_current_version()}")
         title_label.setStyleSheet("color: white; font-size: 16px; font-weight: bold;")
 
         layout.addWidget(maker_label)

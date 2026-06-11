@@ -72,7 +72,7 @@ def save_read_status(data_id: str, is_read: int, fingerprint: str):
     conn.execute("""
         INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, read_time, user)
         VALUES (?, ?, ?, ?, ?)
-    """, (data_id, is_read, fingerprint, datetime.now().isoformat(), 'default'))
+    """, (str(data_id), int(is_read), str(fingerprint), datetime.now().isoformat(), 'default'))
     conn.commit()
     conn.close()
 

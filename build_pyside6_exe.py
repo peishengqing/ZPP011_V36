@@ -22,9 +22,59 @@ if os.path.isfile(os.path.join("config", "template.pptx")):
 if __name__ == "__main__":
     # 检测是否要调试模式（带控制台）
     import sys as _sys
+    from utils.version_history import get_current_version
     debug_mode = '--debug' in _sys.argv
-    exe_name = "ZPP011偏差分析器_v42.1"
+    exe_name = f"ZPP011偏差分析器_{get_current_version()}"
     window_mode = "--windowed" if not debug_mode else "--console"
+
+    # ── 自动备份源码 ──
+    import zipfile
+    from datetime import datetime
+
+    backup_base = os.path.join(os.path.expanduser("~"), ".zpp011_audit", "source_backups")
+    os.makedirs(backup_base, exist_ok=True)
+
+    version = get_current_version()
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    zip_name = f"zpp011_source_{version}_{ts}.zip"
+    zip_path = os.path.join(backup_base, zip_name)
+
+    # 要备份的目录和文件
+    backup_items = [
+        "analysis", "core", "domain", "modules", "utils",
+        "gui_pyside6", "gui_pyside6/components", "gui_pyside6/controllers",
+        "gui_pyside6/dialogs", "gui_pyside6/models", "gui_pyside6/services",
+        "gui_pyside6/viewmodels", "gui_pyside6/widgets",
+        "config", "config/system", "config/prompts",
+        "CHANGELOG_v42.1.md", "changelog.json", "README.md",
+        "run_pyside6.py", "ZPP011_技术蓝图_v11.0.md",
+    ]
+    files_to_add = []
+    for item in backup_items:
+        if os.path.isdir(item):
+            for root, dirs, filenames in os.walk(item):
+                for fn in filenames:
+                    fp = os.path.join(root, fn)
+                    an = os.path.relpath(fp, os.path.dirname(os.path.abspath(__file__)))
+                    files_to_add.append((fp, an))
+        elif os.path.isfile(item):
+            files_to_add.append((item, item))
+
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for fp, an in files_to_add:
+            zf.write(fp, an)
+
+    print(f"[备份] 源码已备份到: {zip_path}")
+    print(f"[备份] 共 {len(files_to_add)} 个文件")
+
+    # 只保留最近 20 个备份
+    existing = sorted(
+        [f for f in os.listdir(backup_base) if f.endswith('.zip')],
+        reverse=True
+    )
+    for old in existing[20:]:
+        os.remove(os.path.join(backup_base, old))
+        print(f"[备份] 清理旧备份: {old}")
 
     opts = [
         "run_pyside6.py",

@@ -98,14 +98,14 @@ class DataService(QObject):
 
     def _add_data_id_and_fingerprint(self, df: pd.DataFrame) -> pd.DataFrame:
         try:
-            # 检查是否有工厂列
-            if '工厂' in df.columns:
-                df['data_id'] = df['工厂'].astype(str) + '|' + df['订单日期'].astype(str) + '|' + df['流程订单'].astype(str) + '|' + df['物料编码'].astype(str)
-            else:
-                df['data_id'] = df['订单日期'].astype(str) + '|' + df['流程订单'].astype(str) + '|' + df['物料编码'].astype(str)
+            df['data_id'] = df['订单日期'].astype(str) + '|' + df['流程订单'].astype(str) + '|' + df['物料编码'].astype(str)
+            print(f'[DEBUG data_service] data_id 示例: {df["data_id"].iloc[0]}')
+            print(f'[DEBUG data_service] 可用列: {list(df.columns)[:20]}')
         except Exception as e:
             self.log(f"创建data_id失败: {e}", "error")
+            import traceback; traceback.print_exc()
             df['data_id'] = df.index.astype(str)
+            print(f'[DEBUG data_service] data_id 创建失败，用索引回退')
 
         try:
             df['fingerprint'] = df.apply(
@@ -125,20 +125,29 @@ class DataService(QObject):
             status_map = load_read_status(data_ids)
         except Exception as e:
             self.log(f"加载历史状态失败: {e}", "error")
+            import traceback; traceback.print_exc()
             status_map = {}
 
         read_list = []
+        matched_count = 0
+        fp_mismatch_count = 0
         for _, row in df.iterrows():
             did = row['data_id']
             fp = row['fingerprint']
             if did in status_map:
+                matched_count += 1
                 hist_read, hist_fp = status_map[did]
-                if hist_fp == fp:
+                if str(hist_fp) == str(fp):
                     read_list.append(hist_read)
                 else:
+                    fp_mismatch_count += 1
                     read_list.append(0)
             else:
                 read_list.append(0)
+        print(f'[DEBUG _restore_read_status] 总行数={len(df)}, 匹配={matched_count}, 指纹不匹配={fp_mismatch_count}, status_map大小={len(status_map)}')
+        if matched_count > 0:
+            print(f'[DEBUG _restore_read_status] 示例 data_id: {data_ids[0]}')
+            print(f'[DEBUG _restore_read_status] DB中有该ID: {data_ids[0] in status_map}')
         df['_read'] = read_list
         return df
 

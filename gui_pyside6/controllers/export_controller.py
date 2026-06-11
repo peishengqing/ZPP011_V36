@@ -3,6 +3,7 @@
 导出控制器 — 负责表格导出、Excel导出、PPT生成
 """
 import os
+import traceback
 from datetime import datetime
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QMessageBox, QFileDialog
@@ -29,6 +30,7 @@ class ExportController(QObject):
                 self.log_message.emit(f"已导出当前表格到 {file_path}", "info")
                 return True
             except Exception as e:
+                traceback.print_exc()
                 QMessageBox.critical(parent_widget, "错误", f"导出失败: {e}")
                 self.log_message.emit(f"导出失败: {e}", "error")
         return False
@@ -66,15 +68,16 @@ class ExportController(QObject):
                 self.log_message.emit(f"已导出完整Excel到 {save_path}", "info")
                 return True
             except Exception as e:
+                traceback.print_exc()
                 QMessageBox.critical(parent_widget, "错误", f"导出失败: {e}")
                 self.log_message.emit(f"导出失败: {e}", "error")
                 return False
         except Exception as e:
-            error_msg = f"导出完整Excel失败: {e}"
-            self.log_message.emit(error_msg, "error")
-            QMessageBox.critical(parent_widget, "导出失败",
-                 f"导出完整Excel过程中发生错误：\n{e}\n\n请检查磁盘空间或文件是否被占用。")
+            traceback.print_exc()
+            QMessageBox.critical(parent_widget, "错误", f"导出完整Excel失败: {e}")
+            self.log_message.emit(f"导出完整Excel失败: {e}", "error")
             return False
+
     def _export_full_analysis_excel(self, save_path, analysis_params, parent_widget):
         """使用缓存的分析参数重新生成完整多Sheet Excel"""
         try:
@@ -110,6 +113,7 @@ class ExportController(QObject):
             self.log_message.emit(f"已导出完整分析报告到 {save_path}", "info")
             return True
         except Exception as e:
+            traceback.print_exc()
             QMessageBox.critical(parent_widget, "错误", f"导出完整报告失败: {e}")
             self.log_message.emit(f"导出完整报告失败: {e}", "error")
             return False
@@ -153,6 +157,7 @@ class ExportController(QObject):
                 QMessageBox.warning(parent_widget, "生成失败", "PPT生成返回失败，请查看日志")
                 return False
         except Exception as e:
+            traceback.print_exc()
             if log_cb:
                 log_cb(f"PPT生成失败: {e}", "error")
             QMessageBox.critical(parent_widget, "错误", f"生成失败: {e}")
@@ -198,6 +203,7 @@ class ExportController(QObject):
                 QMessageBox.warning(parent_widget, "生成失败", "专业版报告生成返回失败，请查看日志")
                 return False
         except Exception as e:
+            traceback.print_exc()
             if log_cb:
                 log_cb(f"专业版报告生成失败: {e}", "error")
             QMessageBox.critical(parent_widget, "错误", f"生成失败: {e}")

@@ -141,7 +141,9 @@ class ConfigManager:
         logger.info(f"替代料净偏差抵消: {'开启' if enabled else '关闭'}")
 
     def save_window_geometry(self, root):
-        """根据 tkinter 窗口保存位置和大小"""
+        """根据 tkinter 窗口保存位置和大小（仅限 tkinter 环境）"""
+        if not hasattr(root, 'update_idletasks'):
+            return  # PySide6 环境，不适用
         root.update_idletasks()
         geometry = root.geometry()  # 格式 "widthxheight+x+y"
         parts = geometry.replace('+', 'x').split('x')
@@ -155,7 +157,9 @@ class ConfigManager:
             self.set('window.maximized', maximized)
 
     def apply_window_geometry(self, root):
-        """将配置应用到 tkinter 窗口"""
+        """将配置应用到 tkinter 窗口（仅限 tkinter 环境）"""
+        if not hasattr(root, 'geometry'):
+            return  # PySide6 环境，不适用
         w = self.get('window.width', 1200)
         h = self.get('window.height', 800)
         x = self.get('window.x')

@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 ZPP011 PySide6 启动入口
 裴哥 | 2026-06-04
@@ -15,7 +15,7 @@ def global_exception_hook(exc_type, exc_value, exc_tb):
     """捕获未处理的异常，同时输出到控制台和弹窗"""
     # 1. 打印详细堆栈到控制台
     traceback.print_exception(exc_type, exc_value, exc_tb)
-    
+
     # 2. 弹出错误对话框
     try:
         from PySide6.QtWidgets import QMessageBox, QApplication
@@ -23,8 +23,8 @@ def global_exception_hook(exc_type, exc_value, exc_tb):
         app = QApplication.instance()
         if app is not None:
             QMessageBox.critical(
-                None, 
-                "严重错误", 
+                None,
+                "严重错误",
                 f"程序发生未捕获的异常:\n\n{str(exc_value)}\n\n详细错误信息已输出到控制台。"
             )
     except Exception:
@@ -49,7 +49,8 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("ZPP011")
-    app.setApplicationVersion("v42.0")
+    from utils.version_history import get_current_version
+    app.setApplicationVersion(get_current_version())
     app.setOrganizationName("云南达利食品有限公司")
 
     # 设置字体（中文友好）
@@ -61,13 +62,13 @@ def main():
         app.setStyle(QStyleFactory.create("Fusion"))
 
     # 加载现代化 QSS 样式表
-    qss_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gui_pyside6", "modern_style.qss")
+    qss_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gui_pyside6", "style.qss")
     if os.path.exists(qss_path):
         with open(qss_path, "r", encoding="utf-8") as f:
             app.setStyleSheet(f.read())
-        print("✅ 现代化样式已加载")
+        print("[OK] 现代化样式已加载")
     else:
-        print("⚠️ 样式文件不存在: " + qss_path)
+        print("[WARN] 样式文件不存在: " + qss_path)
 
     win = MainWindow()
     win.show()
@@ -77,4 +78,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

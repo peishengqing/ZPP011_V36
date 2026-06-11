@@ -28,9 +28,12 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QComboBox,
     QAbstractItemView,
+    QMessageBox,
+    QTableWidgetItem,
+    QMenu,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QShortcut, QKeySequence, QAction
 
 # 导入组件
 from gui_pyside6.components.menu_bar import MenuBarComponent
@@ -43,6 +46,7 @@ from gui_pyside6.models.data_frame_model import DataFrameModel, AuditProxyModel
 from gui_pyside6.widgets.loading_dialog import LoadingDialog
 from gui_pyside6.widgets.filter_panel import FilterPanel
 from gui_pyside6.dialogs.unit_summary_dialog import UnitSummaryDialog
+from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.rule_config_dialog import RuleConfigDialog
 from gui_pyside6.dialogs.dashboard_dialog import DashboardDialog
 from gui_pyside6.dialogs.history_compare_dialog import HistoryCompareDialog
@@ -61,12 +65,20 @@ from core.config_manager import ConfigManager
 # 导入已读/未读状态管理模块
 from core.fingerprint import calc_fingerprint
 from core.read_status import load_read_status, record_deviation_change
+from gui_pyside6.services.data_service import DataService
+from utils.version_history import get_current_version
+
+# 导入控制器和服务
+from gui_pyside6.controllers.analysis_controller import AnalysisController
+from gui_pyside6.controllers.audit_controller import AuditController
+from gui_pyside6.controllers.export_controller import ExportController
+from gui_pyside6.controllers.alt_controller import AltController
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("ZPP011 生产偏差分析器 v42.7 (PySide6)")
+        self.setWindowTitle(f"ZPP011 生产偏差分析器 {get_current_version()} (PySide6)")
         self.resize(1200, 800)
         self.show()
 
@@ -80,6 +92,18 @@ class MainWindow(QMainWindow):
         self._analysis_params = {}
         self.loading_dialog = None
         self.sort_columns = []
+        self._countdown_seconds = 0
+        self._countdown_timer = None
+
+        # ============================================
+        # 创建控制器（顺序重要）
+        # ============================================
+        self.analysis_controller = AnalysisController(self)
+        self.audit_controller = AuditController(self)
+        self.export_controller = ExportController(self)
+        self.alt_controller = AltController(self)
+        self.data_service = DataService(self.alt_controller)
+        self.data_service.log_signal.connect(self._on_data_service_log)
 
         # ============================================
         # 创建组件（顺序重要：必须在使用前创建）
@@ -95,6 +119,33 @@ class MainWindow(QMainWindow):
         # 初始化 UI 引用
         self.left_panel = self.left_panel_component.left_panel
         self.filter_panel = None
+        self.progress_bar = self.main_table.progress_bar
+        self.progress_label = self.main_table.progress_label
+        self.stat_total = self.main_table.stat_total
+        self.stat_high = self.main_table.stat_high
+        self.stat_need_note = self.main_table.stat_need_note
+        self.stat_ok = self.main_table.stat_ok
+        self.table_view = self.main_table.table_view
+        self.summary_quota = self.main_table.summary_quota
+        self.summary_actual = self.main_table.summary_actual
+        self.lock_btn = self.main_table.lock_btn
+        self.fullscreen_btn = self.main_table.fullscreen_btn
+        self.progress_group = self.main_table.progress_group
+        self.action_group = self.main_table.action_group
+        self.progress_bar = self.main_table.progress_bar
+        self.progress_label = self.main_table.progress_label
+        self.stat_total = self.main_table.stat_total
+        self.stat_high = self.main_table.stat_high
+        self.stat_need_note = self.main_table.stat_need_note
+        self.stat_ok = self.main_table.stat_ok
+        self.table_view = self.main_table.table_view
+        self.summary_quota = self.main_table.summary_quota
+        self.summary_actual = self.main_table.summary_actual
+        self.summary_amount = self.main_table.summary_amount
+        self.summary_qty = self.main_table.summary_qty
+        self.start_btn = self.main_table.start_btn
+        self.cancel_btn = self.main_table.cancel_btn
+        self.log_group = self.bottom_bar.log_group
 
         # 组装主布局
         self._assemble_layout()
@@ -103,24 +154,24 @@ class MainWindow(QMainWindow):
         self._refresh_alt_view()
 
         # 全局快捷键
-        QShortcut(QApplication.QKeySequence("F5"), self).activated.connect(
+        QShortcut(QKeySequence("F5"), self).activated.connect(
             self._start_analysis
         )
-        QShortcut(QApplication.QKeySequence("F6"), self).activated.connect(
+        QShortcut(QKeySequence("F6"), self).activated.connect(
             lambda: self.export_controller.export_current_table(
                 self.view_model.df, self
             )
         )
-        QShortcut(QApplication.QKeySequence("F7"), self).activated.connect(
+        QShortcut(QKeySequence("F7"), self).activated.connect(
             self._show_benefit_report
         )
-        QShortcut(QApplication.QKeySequence("Ctrl+B"), self).activated.connect(
+        QShortcut(QKeySequence("Ctrl+B"), self).activated.connect(
             lambda: self._batch_mark_selected_read(1)
         )
-        QShortcut(QApplication.QKeySequence("Ctrl+D"), self).activated.connect(
+        QShortcut(QKeySequence("Ctrl+D"), self).activated.connect(
             self._copy_previous_remark
         )
-        QShortcut(QApplication.QKeySequence("F11"), self).activated.connect(
+        QShortcut(QKeySequence("F11"), self).activated.connect(
             self._toggle_table_fullscreen
         )
 
@@ -133,6 +184,7 @@ class MainWindow(QMainWindow):
 
         # 工厂数据缓存
         self.factory_data = {}
+        self.factory_combo = QComboBox()
 
         # 预警监控
         from core.config_loader import config
@@ -144,6 +196,21 @@ class MainWindow(QMainWindow):
             only_alt=config.get("alert.only_alt_materials", True),
         )
         self.alert_monitor.alert_triggered.connect(self._on_new_alerts)
+
+        # 初始化输出目录
+        self.output_dir_edit = QLineEdit()
+        self.output_dir_edit.setReadOnly(True)
+
+        # 初始化日期编辑控件
+        self.start_date_edit = QLineEdit()
+        self.end_date_edit = QLineEdit()
+        
+        # 初始化物料搜索
+        self.material_search_edit = QLineEdit()
+        
+        # 初始化替代料表格和计数标签
+        self.alt_table = None
+        self.alt_count_label = None
 
         # 初始化表格模型
         self._init_table_model()
@@ -174,7 +241,7 @@ class MainWindow(QMainWindow):
         )
         icon_label = QLabel("🏭")
         icon_label.setStyleSheet("font-size: 20px;")
-        title_label = QLabel("云南达利ZPP011生产偏差分析器 v42.7")
+        title_label = QLabel(f"云南达利ZPP011生产偏差分析器 {get_current_version()}")
         title_label.setStyleSheet("color: white; font-size: 16px; font-weight: bold;")
 
         header_layout.addWidget(maker_label)
@@ -252,6 +319,17 @@ class MainWindow(QMainWindow):
         self.main_table.refresh_net_btn.clicked.connect(self._recalculate_net_offset)
         self.main_table.table_view.doubleClicked.connect(self._on_cell_double_clicked)
 
+        # 连接控制器信号
+        self.analysis_controller.analysis_started.connect(self._on_analysis_ui_start)
+        self.analysis_controller.progress_updated.connect(self._on_analysis_progress_ui)
+        self.analysis_controller.log_message.connect(self.log)
+        self.analysis_controller.analysis_finished.connect(self._on_analysis_finished_ui)
+        self.analysis_controller.analysis_error.connect(self._on_analysis_error_ui)
+        self.audit_controller.progress_started.connect(self._on_ai_ui_start)
+        self.audit_controller.progress_updated.connect(self._on_ai_progress_ui)
+        self.audit_controller.progress_finished.connect(self._on_ai_finished_ui)
+        self.audit_controller.progress_error.connect(self._on_ai_error_ui)
+
     # -----------------------------------------------------------
     # 业务方法（原有方法，保持向后兼容）
     # -----------------------------------------------------------
@@ -302,9 +380,8 @@ class MainWindow(QMainWindow):
         self.start_btn.setEnabled(False)
         self._countdown_seconds = 0
         self._current_step = "准备中"
-        if not hasattr(self, "_countdown_timer"):
-            self._countdown_timer = QTimer(self)
-            self._countdown_timer.timeout.connect(self._update_countdown)
+        self._countdown_timer = QTimer(self)
+        self._countdown_timer.timeout.connect(self._update_countdown)
         self._countdown_timer.start(1000)
 
     def _on_analysis_progress_ui(self, percent, step_name):
@@ -338,9 +415,9 @@ class MainWindow(QMainWindow):
         try:
             if "偏差率" in df.columns:
                 df["偏差率"] = pd.to_numeric(df["偏差率"], errors="coerce")
-            processed_df = self.data_service.preprocess_audit_data(
-                df, self.view_model.df
-            )
+            
+            # 通过 data_service 预处理：创建 data_id、恢复已读状态、计算指纹等
+            processed_df = self.data_service.preprocess_audit_data(df)
             self.source_model.setDataFrame(processed_df)
             self.view_model.df = processed_df
             self._analysis_params = self.analysis_controller.get_analysis_params()
@@ -354,12 +431,35 @@ class MainWindow(QMainWindow):
             )
             df.to_excel(temp_path, sheet_name="完整偏差明细", index=False)
             self._analysis_output_path = temp_path
+            
+            # 刷新表格显示
+            self.table_view.resizeColumnsToContents()
+            self.table_view.setColumnWidth(0, 35)
+            
             self.statusBar().showMessage(f"分析完成，共加载 {len(df)} 条记录")
         except Exception as e:
             QMessageBox.critical(self, "错误", f"加载结果失败: {e}")
 
         if not self.alert_monitor.isRunning():
             self.alert_monitor.start()
+
+    def _on_analysis_error_ui(self, error_msg):
+        if self.loading_dialog:
+            self.loading_dialog.accept()
+            self.loading_dialog = None
+        self._stop_countdown()
+        self.progress_bar.setVisible(False)
+        self.progress_label.setText("错误")
+        QMessageBox.critical(self, "错误", error_msg)
+
+    def _on_analysis_cancelled_ui(self):
+        if self.loading_dialog:
+            self.loading_dialog.accept()
+            self.loading_dialog = None
+        self.progress_bar.setVisible(False)
+        self.progress_label.setText("已取消")
+        self.start_btn.setEnabled(True)
+        self.log("分析已取消", "info")
 
     def _on_new_alerts(self, alerts_df):
         """收到新预警，弹窗询问是否查看"""
@@ -372,19 +472,16 @@ class MainWindow(QMainWindow):
             QMessageBox.Yes,
         )
         if reply == QMessageBox.Yes:
-            current_df = self.view_model.df
-            if (
-                current_df is not None
-                and not current_df.empty
-                and "偏差率(%)" in current_df.columns
-            ):
-                if "是否替代料" in current_df.columns:
-                    all_alerts = current_df[
-                        (current_df["偏差率(%)"].abs() > 10)
-                        & (current_df["是否替代料"] == "是")
-                    ].copy()
-                else:
-                    all_alerts = current_df[current_df["偏差率(%)"].abs() > 10].copy()
+            try:
+                current_df = self.view_model.df
+                if current_df is not None and not current_df.empty and "偏差率(%)" in current_df.columns:
+                    if "是否替代料" in current_df.columns:
+                        all_alerts = current_df[
+                            (current_df["偏差率(%)"].abs() > 10)
+                            & (current_df["是否替代料"] == "是")
+                        ].copy()
+                    else:
+                        all_alerts = current_df[current_df["偏差率(%)"].abs() > 10].copy()
 
                 if all_alerts.empty:
                     QMessageBox.information(self, "提示", "没有替代料预警记录")
@@ -409,6 +506,8 @@ class MainWindow(QMainWindow):
 
                 dialog = AlertDialog(all_alerts, self)
                 dialog.exec()
+            except Exception as e:
+                QMessageBox.critical(self, "错误", f"显示预警失败: {e}")
 
     def _on_analysis_error_ui(self, error_msg):
         if self.loading_dialog:
@@ -416,16 +515,8 @@ class MainWindow(QMainWindow):
             self.loading_dialog = None
         self._stop_countdown()
         self.progress_bar.setVisible(False)
-        self.start_btn.setEnabled(True)
         self.progress_label.setText("错误")
-        toast("❌ 分析失败，请查看日志", "error", parent=self)
         QMessageBox.critical(self, "错误", error_msg)
-
-    def _on_analysis_cancelled_ui(self):
-        self.progress_bar.setVisible(False)
-        self.progress_label.setText("已取消")
-        self.start_btn.setEnabled(True)
-        self.log("分析已取消", "info")
 
     # ------------------- AI 审核 UI 回调 -------------------
     def _on_ai_ui_start(self):
@@ -619,6 +710,8 @@ class MainWindow(QMainWindow):
     # ------------------- 替代料配对 -------------------
     def _refresh_alt_view(self):
         """刷新左侧替代料表格（从 controller 获取数据）"""
+        if self.alt_table is None:
+            return
         pairs = self.alt_controller.get_pairs()
         self.alt_table.setRowCount(0)
         for idx, (a, b) in enumerate(pairs):
@@ -637,7 +730,8 @@ class MainWindow(QMainWindow):
             item_b.setToolTip(b_tip)
             item_b.setData(Qt.UserRole, idx)
             self.alt_table.setItem(row, 2, item_b)
-        self.alt_count_label.setText(f"共 {len(pairs)} 对")
+        if self.alt_count_label is not None:
+            self.alt_count_label.setText(f"共 {len(pairs)} 对")
         self.alt_table.resizeColumnsToContents()
         self.alt_table.setColumnWidth(0, max(80, self.alt_table.columnWidth(0)))
         self.alt_table.setColumnWidth(2, max(80, self.alt_table.columnWidth(2)))
@@ -958,12 +1052,27 @@ class MainWindow(QMainWindow):
         dialog.drill_down_signal.connect(self._on_drill_down)
         dialog.exec()
 
+    def _open_source_backup(self):
+        """打开历史源码备份目录"""
+        import os
+        from PySide6.QtWidgets import QMessageBox
+        backup_dir = os.path.join(
+            os.path.expanduser("~"), ".zpp011_audit", "source_backups"
+        )
+        if os.path.exists(backup_dir):
+            os.startfile(backup_dir)
+        else:
+            QMessageBox.information(self, "提示", "还没有任何源码备份，请先执行打包操作")
+
     def _on_factory_changed(self, factory_name):
         """切换工厂，更新表格数据"""
         if not factory_name:
             return
         df = self.analysis_controller.factory_data.get(factory_name)
         if df is not None:
+            # 通过 data_service 预处理
+            processed_df = self.data_service.preprocess_audit_data(df)
+            
             if self.source_model is None:
                 from gui_pyside6.models.data_frame_model import DataFrameModel
                 from gui_pyside6.models.audit_proxy_model import AuditProxyModel
@@ -972,11 +1081,11 @@ class MainWindow(QMainWindow):
                 self.proxy_model = AuditProxyModel()
                 self.proxy_model.setSourceModel(self.source_model)
                 self.table_view.setModel(self.proxy_model)
-            self.source_model.setDataFrame(df)
-            self.view_model.df = df
+            self.source_model.setDataFrame(processed_df)
+            self.view_model.df = processed_df
             self._update_summary()
-            self._update_stat_cards(df)
-            self.filter_panel.update_options(df)
+            self._update_stat_cards(processed_df)
+            self.filter_panel.update_options(processed_df)
             self.statusBar().showMessage(f"已切换到工厂：{factory_name}", 2000)
         else:
             self.statusBar().showMessage(f"工厂 {factory_name} 数据为空", 2000)
@@ -1053,7 +1162,7 @@ class MainWindow(QMainWindow):
         title_row.addStretch()
         about_layout.addLayout(title_row)
 
-        ver_label = QLabel("PySide6 迁移版 v42.7")
+        ver_label = QLabel(f"PySide6 迁移版 {get_current_version()}")
         ver_label.setStyleSheet("color: #A8C8E8; font-size: 13px; padding-left: 36px;")
         about_layout.addWidget(ver_label)
 
@@ -1354,8 +1463,11 @@ class MainWindow(QMainWindow):
 
     def _stop_countdown(self):
         """停止倒计时"""
-        if hasattr(self, "_countdown_timer"):
-            self._countdown_timer.stop()
+        if hasattr(self, "_countdown_timer") and self._countdown_timer is not None:
+            try:
+                self._countdown_timer.stop()
+            except Exception:
+                pass
 
     def _format_elapsed(self):
         """格式化耗时"""
@@ -1402,7 +1514,6 @@ class MainWindow(QMainWindow):
     def _generate_advanced_report(self):
         """生成详细分析报告(专业版) - 直接从内存DataFrame生成"""
         from core.advanced_ppt_generator_v3 import generate_advanced_report_v3
-        from PySide6.QtWidgets import QMessageBox
 
         if self.view_model.df is None or self.view_model.df.empty:
             QMessageBox.warning(self, "提示", "无数据，请先完成分析")
