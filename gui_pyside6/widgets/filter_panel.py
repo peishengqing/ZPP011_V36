@@ -87,13 +87,16 @@ class FilterPanel(QWidget):
         self.dev_rate_combo = QComboBox()
         self.dev_rate_combo.addItems(["全部", "绝对值>=10%", ">10%", ">20%", ">30%", "<-10%", "<-20%", "<-30%"])
         self.audit_status_combo = QComboBox()
-        self.audit_status_combo.addItems(["全部", "未审核", "已审核", "需补备注", "已备注"])
+        self.audit_status_combo.addItems(["全部", "合格", "需关注", "需改进", "需补备注"])
         self.remark_empty_combo = QComboBox()
         self.remark_empty_combo.addItems(["全部", "是", "否"])
         self.read_status_combo = QComboBox()
         self.read_status_combo.addItems(["全部", "已读", "未读"])
+        self.remark_source_combo = QComboBox()
+        self.remark_source_combo.addItems(["全部", "AI审核", "人工填写"])
         dev_layout.addRow("偏差率范围:", self.dev_rate_combo)
-        dev_layout.addRow("审核状态:", self.audit_status_combo)
+        dev_layout.addRow("审核结果:", self.audit_status_combo)
+        dev_layout.addRow("备注来源:", self.remark_source_combo)
         dev_layout.addRow("备注为空:", self.remark_empty_combo)
         dev_layout.addRow("已读/未读:", self.read_status_combo)
         content_layout.addWidget(dev_group)
@@ -139,6 +142,7 @@ class FilterPanel(QWidget):
         self.order_type_combo.currentIndexChanged.connect(self._emit_filter)
         self.read_status_combo.currentIndexChanged.connect(self._emit_filter)
         self.material_code_edit.textChanged.connect(self._emit_filter)
+        self.remark_source_combo.currentIndexChanged.connect(self._emit_filter)
 
         self._data = None
         self._col_map = {}
@@ -206,7 +210,8 @@ class FilterPanel(QWidget):
         self._col_map['车间'] = self._find_column(['车间', '生产管理员描述', 'workshop'])
         self._col_map['物料类型'] = self._find_column(['物料类型', '物料大类', 'material_category'])
         self._col_map['替代料'] = self._find_column(['是否替代料', '替代料', 'is_alt'])
-        self._col_map['审核状态'] = self._find_column(['审核状态', 'audit_status'])
+        self._col_map['审核结果'] = self._find_column(['审核结果', 'audit_result'])
+        self._col_map['备注来源'] = self._find_column(['备注来源', '备注来源'])
         self._col_map['备注原因'] = self._find_column(['备注原因', '备注'])
         self._col_map['偏差率(%)'] = self._find_column(['偏差率(%)', '偏差率'])
         self._col_map['日期'] = self._find_column(['订单日期', '订单开始日期', '日期'])
@@ -312,9 +317,12 @@ class FilterPanel(QWidget):
                 filters['_dev_rate_abs_ge_10'] = True
             else:
                 filters['_dev_rate_range'] = rate_range
-        status_col = self._col_map.get('审核状态')
+        status_col = self._col_map.get('审核结果')
         if status_col and self.audit_status_combo.currentText() != "全部":
             filters[status_col] = self.audit_status_combo.currentText()
+        remark_source_col = self._col_map.get('备注来源')
+        if remark_source_col and self.remark_source_combo.currentText() != "全部":
+            filters[remark_source_col] = self.remark_source_combo.currentText()
         remark_col = self._col_map.get('备注原因')
         if remark_col and self.remark_empty_combo.currentText() != "全部":
             filters['_remark_empty'] = (self.remark_empty_combo.currentText() == '是')
@@ -357,6 +365,7 @@ class FilterPanel(QWidget):
         self.remark_empty_combo.setCurrentIndex(0)
         self.order_type_combo.setCurrentIndex(0)
         self.read_status_combo.setCurrentIndex(0)
+        self.remark_source_combo.setCurrentIndex(0)
         self.material_code_edit.clear()
         # 重置日期为数据最小/最大日期
         self._reset_date_range()

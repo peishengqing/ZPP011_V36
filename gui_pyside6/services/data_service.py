@@ -5,10 +5,11 @@
 """
 
 import pandas as pd
+import numpy as np
 from PySide6.QtCore import QObject, Signal
 
 from core.fingerprint import calc_fingerprint
-from core.read_status import load_read_status, record_deviation_change
+from core.read_status import load_read_status, load_audit_results, record_deviation_change
 from core.change_detector import detect_changes
 
 
@@ -28,6 +29,9 @@ class DataService(QObject):
         if df is None or df.empty:
             return df
         try:
+            # ── 首步：清理脏列 ──
+            df = self._clean_columns(df)
+
             # 确保数值列是数值类型（防止字符串导致聚合报错）
             rate_col = None
             for c in ['偏差率(%)', '偏差率']:
@@ -53,6 +57,22 @@ class DataService(QObject):
             if previous_df is not None and not previous_df.empty:
                 self._detect_and_notify_changes(previous_df, df)
             df = self._reorder_columns(df)
+            # 统一审核结果列名
+            if '审核结果' in df.columns and 'audit_result' in df.columns:
+                # 两列都有 → 用新数据(audit_result)覆盖旧列(审核结果)，删英文列
+                df = df.drop(columns=['审核结果'])
+                df = df.rename(columns={'audit_result': '审核结果'})
+            elif '审核结果' in df.columns:
+                # 只有中文列，删掉英文列（如果有残留）
+                df = df.drop(columns=['audit_result'], errors='ignore')
+            elif 'audit_result' in df.columns:
+                df = df.rename(columns={'audit_result': '审核结果'})
+            # 再次确保没有重复列名
+            dup = df.columns[df.columns.duplicated(keep='first')]
+            if len(dup) > 0:
+                df = df.loc[:, ~df.columns.duplicated(keep='first')]
+            # 从 DB 恢复审核结果（覆盖重新分析产生的空值）
+            df = self._restore_audit_results(df)
             if self.alt_controller:
                 pass  # 净偏差计算已在 analyzer.py 中完成
             return df
@@ -61,6 +81,18 @@ class DataService(QObject):
             import traceback
             traceback.print_exc()
             return df
+
+    def _clean_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """清理重复列：保留第一个出现的，删除后续同名列"""
+        # 1. 去掉空的替代料组列（保留 _替代料组）
+        if '替代料组' in df.columns and '_替代料组' in df.columns:
+            df = df.drop(columns=['替代料组'])
+        # 2. 强制去重（保留第一个）
+        dup_cols = df.columns[df.columns.duplicated()].unique()
+        if len(dup_cols) > 0:
+            df = df.loc[:, ~df.columns.duplicated(keep='first')]
+            self.log(f"已清理重复列: {list(dup_cols)}", "warning")
+        return df
 
     def _normalize_alt_flag(self, df: pd.DataFrame) -> pd.DataFrame:
         if "是否替代料" in df.columns:
@@ -149,6 +181,44 @@ class DataService(QObject):
             print(f'[DEBUG _restore_read_status] 示例 data_id: {data_ids[0]}')
             print(f'[DEBUG _restore_read_status] DB中有该ID: {data_ids[0] in status_map}')
         df['_read'] = read_list
+        return df
+
+    def _restore_audit_results(self, df: pd.DataFrame) -> pd.DataFrame:
+        """从 DB 恢复审核结果（审核结果、AI建议、备注来源）"""
+        try:
+            data_ids = df['data_id'].tolist()
+            audit_map = load_audit_results(data_ids)
+        except Exception as e:
+            self.log(f"加载审核结果失败: {e}", "error")
+            return df
+
+        if not audit_map:
+            return df
+
+        restored = 0
+        for col, key in [('审核结果', 'audit_result'), ('AI建议', 'ai_suggestion'), ('备注来源', 'note_source')]:
+            if col not in df.columns:
+                df[col] = ''
+            col_idx = df.columns.get_loc(col)
+            # 处理重复列名（get_loc 可能返回数组）
+            if isinstance(col_idx, (list, slice, np.ndarray)):
+                col_idx = col_idx[0] if hasattr(col_idx, '__getitem__') else int(col_idx)
+            for i in range(len(df)):
+                did = df.iloc[i].get('data_id', '')
+                if did in audit_map:
+                    saved_val = audit_map[did].get(key, '')
+                    current_val = df.iloc[i, col_idx]
+                    try:
+                        is_empty = pd.isna(current_val) or str(current_val).strip() == ''
+                    except Exception:
+                        is_empty = False
+                    if is_empty and saved_val:
+                        df.iloc[i, col_idx] = saved_val
+                        if key == 'audit_result' and saved_val:
+                            restored += 1
+
+        if restored > 0:
+            self.log(f"从数据库恢复了 {restored} 条审核结果", "info")
         return df
 
     def _detect_and_notify_changes(self, old_df: pd.DataFrame, new_df: pd.DataFrame):

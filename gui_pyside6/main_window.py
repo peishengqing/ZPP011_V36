@@ -319,6 +319,9 @@ class MainWindow(QMainWindow):
         self.main_table.refresh_net_btn.clicked.connect(self._recalculate_net_offset)
         self.main_table.table_view.doubleClicked.connect(self._on_cell_double_clicked)
 
+        # Ctrl+C 复制选中单元格
+        self._install_table_copy_handler()
+
         # 连接控制器信号
         self.analysis_controller.analysis_started.connect(self._on_analysis_ui_start)
         self.analysis_controller.progress_updated.connect(self._on_analysis_progress_ui)
@@ -1547,28 +1550,173 @@ class MainWindow(QMainWindow):
             self.log(f"专业版报告生成失败: {e}", "error")
             QMessageBox.critical(self, "错误", f"生成失败: {e}")
 
+    # ------------------- 表格复制 -------------------
+    def _install_table_copy_handler(self):
+        """安装 Ctrl+C 复制选中单元格的事件过滤器"""
+        tv = self.main_table.table_view
+        tv.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        """事件过滤器：处理 Ctrl+C 复制表格选中区域"""
+        from PySide6.QtCore import QEvent
+        from PySide6.QtGui import QKeyEvent
+        if obj is self.main_table.table_view and event.type() == QEvent.KeyPress:
+            key_event = event
+            if key_event.matches(QKeySequence.Copy):
+                self._copy_selected_cells()
+                return True
+        return super().eventFilter(obj, event)
+
+    def _copy_selected_cells(self):
+        """将表格选中区域复制到剪贴板（TSV 格式，兼容 Excel）"""
+        tv = self.main_table.table_view
+        model = tv.model()
+        selection = tv.selectionModel()
+        indexes = selection.selectedIndexes()
+
+        if not indexes:
+            return
+
+        # 按 (row, col) 组织选中的单元格
+        cells = {}
+        min_row, max_row = float('inf'), -1
+        min_col, max_col = float('inf'), -1
+        for idx in indexes:
+            r, c = idx.row(), idx.column()
+            cells[(r, c)] = idx.data(Qt.DisplayRole) or ""
+            min_row = min(min_row, r)
+            max_row = max(max_row, r)
+            min_col = min(min_col, c)
+            max_col = max(max_col, c)
+
+        # 构建 TSV 文本（Tab 分隔，Excel 可直接粘贴）
+        lines = []
+        for r in range(min_row, max_row + 1):
+            row_vals = []
+            for c in range(min_col, max_col + 1):
+                row_vals.append(str(cells.get((r, c), "")))
+            lines.append("\t".join(row_vals))
+
+        QApplication.clipboard().setText("\n".join(lines))
+        rows = max_row - min_row + 1
+        cols = max_col - min_col + 1
+        self.statusBar().showMessage(f"已复制 {rows} 行 × {cols} 列", 2000)
+
     def _on_cell_double_clicked(self, index):
-        """双击切换已读/未读状态"""
+        """双击弹出明细对话框"""
         try:
-            if index.column() == 0 and self.proxy_model and self.source_model:
+            if self.proxy_model and self.source_model:
                 source_index = self.proxy_model.mapToSource(index)
                 row = source_index.row()
                 df = self.source_model.getDataFrame()
                 if row < len(df):
-                    data_id = df.iloc[row]["data_id"]
-                    current_read = df.iloc[row].get("_read", 0)
-                    new_read = 1 - current_read
-                    df.at[df.index[row], "_read"] = new_read
-                    self.source_model.setDataFrame(df)
-                    from core.read_status import save_read_status
-
-                    fingerprint = df.iloc[row].get("fingerprint", "")
-                    save_read_status(data_id, new_read, fingerprint)
-                    self.statusBar().showMessage(
-                        f"已标记为{'已读' if new_read else '未读'}", 2000
-                    )
+                    row_data = df.iloc[row]
+                    self._show_row_detail(row_data)
         except Exception as e:
-            self.log(f"双击切换状态失败: {e}", "error")
+            self.log(f"双击弹窗失败: {e}", "error")
+
+    def _show_row_detail(self, row_data):
+        """弹出单行明细对话框"""
+        from PySide6.QtWidgets import (
+            QDialog, QVBoxLayout, QFormLayout, QLabel, QDialogButtonBox,
+            QGroupBox, QTextEdit,
+        )
+        from PySide6.QtCore import Qt
+
+        # ── 列名模糊匹配 ──
+        def _val(*keys):
+            """按优先级查找列值，支持带空格列名"""
+            for k in keys:
+                # 精确匹配
+                if k in row_data.index:
+                    v = row_data[k]
+                    if not (v is None or (pd.isna(v) if not isinstance(v, str) else False)):
+                        return v
+                # 带前后空格的匹配
+                for col in row_data.index:
+                    if col.strip() == k:
+                        v = row_data[col]
+                        if not (v is None or (pd.isna(v) if not isinstance(v, str) else False)):
+                            return v
+            return ""
+
+        dialog = QDialog(self)
+        mat_code = _val("物料编码", "物料号")
+        mat_name = _val("物料描述", "物料名称", "物料")
+        dialog.setWindowTitle(f"明细 - {mat_code} {mat_name}")
+        dialog.setMinimumWidth(520)
+        layout = QVBoxLayout(dialog)
+
+        def _mk_label(text=""):
+            """创建可选中复制的标签"""
+            lbl = QLabel(str(text))
+            lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            return lbl
+
+        # ── 基本信息 ──
+        gb1 = QGroupBox("基本信息")
+        fl1 = QFormLayout(gb1)
+        basic_fields = [
+            ("工厂", ["工厂", "工厂名称"]),
+            ("车间", ["车间"]),
+            ("订单日期", ["订单日期"]),
+            ("流程订单", ["流程订单"]),
+            ("物料编码", ["物料编码", "物料号"]),
+            ("物料描述", ["物料描述", "物料名称"]),
+            ("物料大类", ["物料大类", "物料类型"]),
+        ]
+        for label, keys in basic_fields:
+            fl1.addRow(f"{label}：", _mk_label(_val(*keys)))
+        layout.addWidget(gb1)
+
+        # ── 偏差数据 ──
+        gb2 = QGroupBox("偏差数据")
+        fl2 = QFormLayout(gb2)
+        dev_fields = [
+            ("定额用量", ["定额"]),
+            ("实际用量", ["实际"]),
+            ("偏差数量", ["偏差数量"]),
+            ("偏差率", ["偏差率", "偏差率(%)"]),
+            ("偏差金额", ["偏差金额"]),
+            ("总偏差金额(含税)", ["总偏差金额(含税)", "偏差金额"]),
+            ("审核结果", ["审核结果", "audit_result"]),
+        ]
+        for label, keys in dev_fields:
+            val = _val(*keys)
+            display = str(val)
+            if "偏差率" in label and val:
+                try:
+                    display = f"{float(val):.2f}%"
+                except Exception:
+                    pass
+            fl2.addRow(f"{label}：", _mk_label(display))
+        layout.addWidget(gb2)
+
+        # ── 备注 / AI 建议 ──
+        gb3 = QGroupBox("备注与建议")
+        fl3 = QFormLayout(gb3)
+
+        remark_label = _mk_label(_val("备注原因", "备注"))
+        remark_label.setWordWrap(True)
+        fl3.addRow("备注：", remark_label)
+
+        ai_label = _mk_label(_val("AI建议"))
+        ai_label.setWordWrap(True)
+        ai_label.setStyleSheet("color: #0056b3;")
+        fl3.addRow("AI建议：", ai_label)
+
+        remark_src = _val("备注来源")
+        if remark_src:
+            fl3.addRow("来源：", _mk_label(remark_src))
+
+        layout.addWidget(gb3)
+
+        # ── 按钮 ──
+        btn = QDialogButtonBox(QDialogButtonBox.Ok)
+        btn.accepted.connect(dialog.accept)
+        layout.addWidget(btn)
+
+        dialog.exec()
 
 
 if __name__ == "__main__":

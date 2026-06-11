@@ -21,7 +21,6 @@ from config.paths import (
 from config.constants import (
     APP_NAME,
     APP_NAME_EN,
-    VERSION,
     BUILD_DATE,
     WINDOW_TITLE,
     WINDOW_WIDTH,
@@ -57,7 +56,6 @@ __all__ = [
     # constants
     'APP_NAME',
     'APP_NAME_EN',
-    'VERSION',
     'BUILD_DATE',
     'WINDOW_TITLE',
     'WINDOW_WIDTH',

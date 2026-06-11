@@ -54,8 +54,11 @@ class DataFrameModel(QAbstractTableModel):
             row_list = []
             for col in self._display_columns:
                 val = row[col]
+                # 如果是 Series（重复索引导致），取第一个值
+                if isinstance(val, pd.Series):
+                    val = val.iloc[0] if len(val) > 0 else None
                 # 处理缺失值
-                if pd.isna(val):
+                if val is None or (isinstance(val, float) and pd.isna(val)):
                     row_list.append("")
                 else:
                     # 保留原始类型，但确保数值是 Python 原生类型

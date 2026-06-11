@@ -91,17 +91,47 @@ class AIAuditWorker(QThread):
     def cancel(self):
         self._cancel = True
 
+    def _save_audit_results(self):
+        """将审核结果批量保存到 SQLite"""
+        try:
+            from core.read_status import save_audit_results_batch
+            # 确定列名
+            result_col = '审核结果' if '审核结果' in self.audit_data.columns else 'audit_result'
+            records = []
+            for _, row in self.audit_data.iterrows():
+                did = row.get('data_id', '')
+                if not did:
+                    continue
+                ar = row.get(result_col, '')
+                ai = row.get('AI建议', '')
+                ns = row.get('备注来源', '')
+                fp = row.get('fingerprint', '')
+                # 只保存有内容的记录
+                if ar or ai or ns:
+                    records.append({
+                        'data_id': str(did),
+                        'audit_result': str(ar) if ar else '',
+                        'ai_suggestion': str(ai) if ai else '',
+                        'note_source': str(ns) if ns else '',
+                        'fingerprint': str(fp) if fp else '',
+                    })
+            if records:
+                save_audit_results_batch(records)
+                self.log.emit(f"已保存 {len(records)} 条审核结果到数据库")
+        except Exception as e:
+            self.log.emit(f"保存审核结果失败: {e}")
+
     def run(self):
         try:
             self.log.emit("AI审核开始...")
             total = len(self.audit_data)
             self.log.emit(f"待审核记录: {total} 条")
-            processed = 0
+
             # 确保必要的列存在
             for col in ['AI建议', 'audit_result', '备注来源']:
                 if col not in self.audit_data.columns:
                     self.audit_data[col] = ''
-            
+
             # 备注原因列可能叫 '备注原因' 或 '备注'
             remark_col = None
             for col in ['备注原因', '备注']:
@@ -111,100 +141,136 @@ class AIAuditWorker(QThread):
             if remark_col is None:
                 raise ValueError("找不到备注列")
 
+            # ── 第一轮：本地分类（瞬间完成）──
+            ai_queue = []  # [(idx, context, dev_rate)] 需要调用 AI 的行
+
             for idx, row in self.audit_data.iterrows():
                 if self._cancel:
                     break
 
-                # 获取偏差率（支持字符串和数字）
-                dev_rate_raw = 0
-                for c in ['偏差率', '偏差率(%)']:
-                    if c in row:
-                        dev_rate_raw = row[c]
-                        break
-                try:
-                    if isinstance(dev_rate_raw, str):
-                        dev_rate = float(dev_rate_raw.replace('%', ''))
-                    else:
-                        dev_rate = float(dev_rate_raw)
-                except:
-                    dev_rate = 0.0
-                abs_rate = abs(dev_rate)
-
-                # 获取备注内容
+                dev_rate = self._parse_dev_rate(row)
                 remark = str(row.get(remark_col, '')).strip()
                 if remark in ('nan', 'None', ''):
                     remark = ''
 
-                # 默认值
-                ai_suggestion = ''
-                audit_result = ''
-                note_source = ''
-
-                # ---------- 关键词优先 ----------
-                keywords = ['替代料', '系统无定额', '已核实']
-                if remark and any(kw in remark for kw in keywords):
-                    audit_result = '合格'
-                    note_source = remark
-                else:
-                    if remark:
-                        # 有备注但不含关键词，检查长度
-                        if len(remark) < 5:
-                            audit_result = '需改进'
-                            note_source = '人工填写'
-                        else:
-                            audit_result = '合格'
-                            note_source = '人工填写'
+                # 关键词优先 → 本地判定
+                if remark and any(kw in remark for kw in ['替代料', '系统无定额', '已核实']):
+                    self.audit_data.at[idx, 'audit_result'] = '合格'
+                    self.audit_data.at[idx, '备注来源'] = remark
+                    self.audit_data.at[idx, 'AI建议'] = ''
+                elif remark:
+                    if len(remark) < 5:
+                        self.audit_data.at[idx, 'audit_result'] = '需改进'
+                        self.audit_data.at[idx, '备注来源'] = '人工填写'
                     else:
-                        # 备注为空，根据偏差率分级
-                        if abs_rate < 5:
-                            audit_result = '合格'
-                            note_source = 'AI审核'
-                        elif 5 <= abs_rate < 10:
-                            audit_result = '需关注'
-                            note_source = 'AI审核'
-                        else:
-                            audit_result = '需补备注'
-                            note_source = 'AI审核'
-
-                # 生成 AI 建议（仅在需要时生成，但始终赋值）
-                if not remark or audit_result == '需改进':
-                    try:
-                        # 正确调用 AIClient.audit() 方法
-                        ai_result = self.ai_client.audit(remark, dev_rate)
-                        if isinstance(ai_result, dict):
-                            ai_suggestion = ai_result.get('suggestion', '')
-                        else:
-                            ai_suggestion = str(ai_result)
-                    except Exception:
-                        # AI调用失败时的降级建议
-                        if abs_rate >= 30:
-                            ai_suggestion = "严重超耗，请检查工艺或定额"
-                        elif abs_rate >= 10:
-                            ai_suggestion = "偏差较大，建议核查是否存在替代料或录入错误"
-                        elif abs_rate >= 5:
-                            ai_suggestion = "偏差需关注，请确认合理性"
-                        else:
-                            ai_suggestion = "偏差在正常范围内"
+                        self.audit_data.at[idx, 'audit_result'] = '合格'
+                        self.audit_data.at[idx, '备注来源'] = '人工填写'
+                        self.audit_data.at[idx, 'AI建议'] = ''
                 else:
-                    ai_suggestion = ''
+                    abs_rate = abs(dev_rate)
+                    if abs_rate < 5:
+                        self.audit_data.at[idx, 'audit_result'] = '合格'
+                    elif abs_rate < 10:
+                        self.audit_data.at[idx, 'audit_result'] = '需关注'
+                    else:
+                        self.audit_data.at[idx, 'audit_result'] = '需补备注'
+                    self.audit_data.at[idx, '备注来源'] = 'AI审核'
 
-                self.audit_data.at[idx, 'AI建议'] = ai_suggestion
-                self.audit_data.at[idx, 'audit_result'] = audit_result
-                self.audit_data.at[idx, '备注来源'] = note_source
+                # 收集需要 AI 建议的行
+                current_result = self.audit_data.at[idx, 'audit_result']
+                if not remark or current_result == '需改进':
+                    context = {
+                        "remark": remark,
+                        "物料编码": str(row.get("物料编码", "")),
+                        "物料描述": str(row.get("物料描述", "") or row.get("物料名称", "")),
+                        "物料大类": str(row.get("物料大类", "") or row.get("物料类型", "") or row.get("组件物料类型描述", "")),
+                        "工厂": str(row.get("工厂", "") or row.get("工厂名称", "")),
+                        "车间": str(row.get("车间", "")),
+                        "流程订单": str(row.get("流程订单", "") or row.get("生产订单", "")),
+                        "偏差金额": float(row.get("偏差金额", 0) or row.get("总偏差金额(含税)", 0) or 0),
+                        "偏差数量": float(row.get("偏差数量", 0) or 0),
+                        "dev_rate": dev_rate,
+                    }
+                    ai_queue.append((idx, context, dev_rate))
+                else:
+                    self.audit_data.at[idx, 'AI建议'] = ''
 
-                processed += 1
-                if processed % 10 == 0:
-                    self.progress.emit(processed, total)
-                    self.log.emit(f"AI审核进度: {processed}/{total}")
+            local_done = total - len(ai_queue)
+            self.log.emit(f"本地分类完成: {local_done} 条，待 AI 生成建议: {len(ai_queue)} 条")
+
+            # ── 第二轮：批量 AI 调用 ──
+            BATCH_SIZE = 15
+            ai_total = len(ai_queue)
+
+            if ai_total == 0:
+                self.progress.emit(total, total)
+                self.log.emit("全部记录已本地分类完成，无需调用 AI")
+            else:
+                ai_processed = 0
+                self.progress.emit(0, ai_total)
+
+                for batch_start in range(0, ai_total, BATCH_SIZE):
+                    if self._cancel:
+                        break
+
+                    batch_end = min(batch_start + BATCH_SIZE, ai_total)
+                    batch_items = []
+                    batch_idxs = []
+                    for i in range(batch_start, batch_end):
+                        idx, ctx, dr = ai_queue[i]
+                        batch_items.append({"context": ctx, "dev_rate": dr})
+                        batch_idxs.append(idx)
+
+                self.log.emit(f"AI批量审核: {ai_processed}/{ai_total} (本轮 {len(batch_items)} 条)")
+                try:
+                    results = self.ai_client.audit_batch(batch_items)
+                except Exception as e:
+                    # 批量失败 → 直接用 Mock 降级，不再逐条调 API（浪费时间）
+                    self.log.emit(f"批量调用失败({str(e)[:60]})，降级 Mock")
+                    results = []
+                    for item in batch_items:
+                        dr = item["dev_rate"]
+                        abs_r = abs(dr)
+                        if abs_r >= 30:
+                            results.append({"result": "需补备注", "suggestion": "严重超耗，请检查工艺或定额"})
+                        elif abs_r >= 10:
+                            results.append({"result": "需补备注", "suggestion": "偏差较大，建议核查替代料或录入错误"})
+                        elif abs_r >= 5:
+                            results.append({"result": "需关注", "suggestion": "偏差需关注，请确认合理性"})
+                        else:
+                            results.append({"result": "合格", "suggestion": "偏差在正常范围内"})
+
+                for j, (idx, result) in enumerate(zip(batch_idxs, results)):
+                    if isinstance(result, dict):
+                        self.audit_data.at[idx, 'AI建议'] = result.get('suggestion', '')
+                    else:
+                        self.audit_data.at[idx, 'AI建议'] = str(result)
+
+                ai_processed = batch_end
+                self.progress.emit(ai_processed, ai_total)
+                self.log.emit(f"AI审核进度: {ai_processed}/{ai_total}")
 
             if not self._cancel:
+                if 'audit_result' in self.audit_data.columns or '审核结果' in self.audit_data.columns:
+                    self._save_audit_results()
                 self.log.emit("AI审核完成")
                 self.finished.emit(self.audit_data)
             else:
                 self.log.emit("AI审核已取消")
         except Exception as e:
-            # 1. 打印详细堆栈到控制台
             traceback.print_exc()
-            # 2. 发射错误信号（包含堆栈信息）
             self.log.emit(f"AI审核错误: {str(e)}")
             self.error.emit(f"AI审核失败: {str(e)}\n{traceback.format_exc()}")
+
+    def _parse_dev_rate(self, row):
+        """从行数据解析偏差率"""
+        for c in ['偏差率', '偏差率(%)']:
+            if c in row:
+                raw = row[c]
+                try:
+                    if isinstance(raw, str):
+                        return float(raw.replace('%', ''))
+                    return float(raw)
+                except Exception:
+                    pass
+        return 0.0

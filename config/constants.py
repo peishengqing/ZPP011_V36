@@ -13,7 +13,8 @@ BUILD_DATE = "2026-05"
 # ============================================================
 # 窗口配置
 # ============================================================
-WINDOW_TITLE = f"{APP_NAME} {VERSION}"
+# WINDOW_TITLE 在运行时由 main_window 动态设置，此处仅作占位
+WINDOW_TITLE = APP_NAME
 WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 700
 WINDOW_MIN_WIDTH = 900
