@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QTableWidgetItem,
     QMenu,
+    QSizePolicy,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer
 from PySide6.QtGui import QFont, QShortcut, QKeySequence, QAction
@@ -81,7 +82,6 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"ZPP011 生产偏差分析器 {get_current_version()} (PySide6)")
         self.resize(1200, 800)
-        self.show()
 
         # 状态变量
         self._audit_df = None
@@ -217,6 +217,9 @@ class MainWindow(QMainWindow):
         # 初始化表格模型
         self._init_table_model()
 
+        # 所有组件初始化完成后才显示窗口，避免布局反复重算
+        self.show()
+
     # -----------------------------------------------------------
     # 布局组装
     # -----------------------------------------------------------
@@ -271,9 +274,9 @@ class MainWindow(QMainWindow):
         self.filter_panel.filter_changed.connect(self._on_filter_panel_changed)
 
         # 右侧内容
-        right_splitter = QSplitter(Qt.Horizontal)
-        right_splitter.setSizes([260, 740])
-        right_splitter.addWidget(self.filter_panel)
+        self.right_splitter = QSplitter(Qt.Horizontal)
+        self.right_splitter.setSizes([260, 740])
+        self.right_splitter.addWidget(self.filter_panel)
 
         right_container = QWidget()
         right_container_layout = QVBoxLayout(right_container)
@@ -283,11 +286,12 @@ class MainWindow(QMainWindow):
         right_container_layout.addWidget(self.main_table.progress_group)
         right_container_layout.addWidget(self.main_table.action_group)
         right_container_layout.addWidget(self.stats_cards)
-        right_container_layout.addWidget(self.main_table.audit_group)
+        self.audit_group = self.main_table.audit_group
+        right_container_layout.addWidget(self.audit_group, 1)
         right_container_layout.addWidget(self.bottom_bar.log_group)
 
-        right_splitter.addWidget(right_container)
-        body_layout.addWidget(right_splitter, 1)
+        self.right_splitter.addWidget(right_container)
+        body_layout.addWidget(self.right_splitter, 1)
 
         main_layout.addWidget(body_widget, 1)
 
@@ -831,13 +835,36 @@ class MainWindow(QMainWindow):
 
     def _toggle_table_fullscreen(self):
         """切换审核表格全屏模式"""
-        full = self.fullscreen_btn.isChecked()
+        full = not getattr(self, '_is_fullscreen', False)
+        self._is_fullscreen = full
+        self.fullscreen_btn.setChecked(full)
         if full:
             self.left_panel.setVisible(False)
             self.progress_group.setVisible(False)
             self.action_group.setVisible(False)
             self.log_group.setVisible(False)
             self.filter_panel.setVisible(False)
+
+            # 强制触发布局重算
+            QApplication.processEvents()
+            self.right_splitter.updateGeometry()
+
+            # 限制表格最大显示21行，确保合计行可见
+            row_height = self.table_view.verticalHeader().defaultSectionSize() or 28
+            header_height = self.table_view.horizontalHeader().height() or 30
+            max_height = row_height * 21 + header_height
+            self.table_view.setMaximumHeight(max_height)
+
+            # 确保水平滚动条显式可见
+            hbar = self.table_view.horizontalScrollBar()
+            hbar.show()
+            self.table_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+
+            # 强制更新合计行可见性
+            self.audit_group.updateGeometry()
+            self.table_view.update()
+            self.audit_group.update()
+
             self.fullscreen_btn.setText("⛶ 退出全屏")
             self.statusBar().showMessage("全屏模式 (F11 退出)", 3000)
         else:
@@ -846,6 +873,14 @@ class MainWindow(QMainWindow):
             self.action_group.setVisible(True)
             self.log_group.setVisible(True)
             self.filter_panel.setVisible(True)
+
+            # 移除表格高度限制
+            self.table_view.setMaximumHeight(16777215)
+
+            # 退出全屏后强制刷新
+            QApplication.processEvents()
+            self.table_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+
             self.fullscreen_btn.setText("⛶ 全屏")
             self.statusBar().showMessage("已退出全屏", 2000)
 

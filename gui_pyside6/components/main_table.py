@@ -86,7 +86,7 @@ class MainTableComponent:
 
         # 行高 28px
         self.table_view.verticalHeader().setDefaultSectionSize(28)
-        audit_layout.addWidget(self.table_view, 1)
+        audit_layout.addWidget(self.table_view)
 
         # 合计行
         summary_layout = QHBoxLayout()
@@ -113,4 +113,8 @@ class MainTableComponent:
         self.fullscreen_btn.setCheckable(True)
         self.fullscreen_btn.clicked.connect(self.mw._toggle_table_fullscreen)
         summary_layout.addWidget(self.fullscreen_btn)
+        self.summary_layout = summary_layout
         audit_layout.addLayout(summary_layout)
+
+        # 固定合计行高度，确保始终可见
+        self.summary_layout.setContentsMargins(4, 4, 4, 4)
