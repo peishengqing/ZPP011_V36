@@ -852,7 +852,7 @@ class MainWindow(QMainWindow):
             self.right_splitter.updateGeometry()
 
             # 固定合计行高度，确保不被挤压
-            self.audit_group.summary_layout.setFixedHeight(40)
+            self.main_table.summary_container.setFixedHeight(60)
 
             # 确保滚动条显示
             hbar = self.table_view.horizontalScrollBar()
@@ -869,8 +869,8 @@ class MainWindow(QMainWindow):
             self.log_group.setVisible(True)
             self.filter_panel.setVisible(True)
 
-            # 恢复合计行动态高度
-            self.audit_group.summary_layout.setFixedHeight(-1)
+            # 恢复合计行默认高度
+            self.main_table.summary_container.setFixedHeight(40)
             
             self.fullscreen_btn.setText("⛶ 全屏")
             self.statusBar().showMessage("已退出全屏", 2000)
