@@ -21,7 +21,15 @@ temp/
 *.xls
 *.pptx
 *.db
+
+# Coverage
 .coverage
+.coverage.*
+htmlcov/
+
+# Debug / temp files
+debug_cols.txt
+peige_code_indented.txt
 
 # Windows reserved names
 nul
