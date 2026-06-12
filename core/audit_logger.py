@@ -1,10 +1,17 @@
-import sqlite3, threading, queue, json, csv, time, getpass
+import sqlite3, threading, queue, json, csv, time, getpass, os
 from datetime import datetime, timedelta
 
+def _get_default_db_path():
+    """返回 ~/.zpp011_audit/audit_log.db，确保目录存在"""
+    app_dir = os.path.join(os.path.expanduser("~"), ".zpp011_audit")
+    os.makedirs(app_dir, exist_ok=True)
+    return os.path.join(app_dir, "audit_log.db")
+
+
 class AuditLogger:
-    def __init__(self, db_path="audit_log.db", max_queue_size=1000):
-        self.db_path = db_path
-        self.queue = queue.Queue(maxsize=max_queue_size)
+    def __init__(self, db_path=None, max_queue_size=1000):
+        self.db_path = db_path or _get_default_db_path()
+        self._app_dir = os.path.dirname(self.db_path)
         self.worker = threading.Thread(target=self._worker, daemon=True)
         self.worker.start()
         self._init_db()
@@ -44,7 +51,8 @@ class AuditLogger:
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """, item)
             except Exception as e:
-                with open("audit_fallback.log", "a") as f:
+                fallback = os.path.join(self._app_dir, "audit_fallback.log")
+                with open(fallback, "a") as f:
                     f.write(f"{item} | error: {e}\n")
 
     def log(self, action, material_code=None, old_value=None, new_value=None, source='manual', extra=None):
@@ -54,7 +62,8 @@ class AuditLogger:
         try:
             self.queue.put_nowait((timestamp, username, material_code, action, old_value, new_value, source, extra_json))
         except queue.Full:
-            with open("audit_fallback.log", "a", encoding='utf-8') as f:
+            fallback = os.path.join(self._app_dir, "audit_fallback.log")
+            with open(fallback, "a", encoding='utf-8') as f:
                 f.write(f"{timestamp},{username},{material_code},{action},{old_value},{new_value},{source},{extra_json}\n")
 
     def shutdown(self):
