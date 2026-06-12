@@ -838,49 +838,40 @@ class MainWindow(QMainWindow):
         full = not getattr(self, '_is_fullscreen', False)
         self._is_fullscreen = full
         self.fullscreen_btn.setChecked(full)
+        
         if full:
+            # 隐藏侧边元素
             self.left_panel.setVisible(False)
             self.progress_group.setVisible(False)
             self.action_group.setVisible(False)
             self.log_group.setVisible(False)
             self.filter_panel.setVisible(False)
 
-            # 强制触发布局重算
+            # 强制布局刷新
             QApplication.processEvents()
             self.right_splitter.updateGeometry()
 
-            # 限制表格最大显示21行，确保合计行可见
-            row_height = self.table_view.verticalHeader().defaultSectionSize() or 28
-            header_height = self.table_view.horizontalHeader().height() or 30
-            max_height = row_height * 21 + header_height
-            self.table_view.setMaximumHeight(max_height)
+            # 固定合计行高度，确保不被挤压
+            self.audit_group.summary_layout.setFixedHeight(40)
 
-            # 确保水平滚动条显式可见
+            # 确保滚动条显示
             hbar = self.table_view.horizontalScrollBar()
             hbar.show()
             self.table_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-
-            # 强制更新合计行可见性
-            self.audit_group.updateGeometry()
-            self.table_view.update()
-            self.audit_group.update()
-
+            
             self.fullscreen_btn.setText("⛶ 退出全屏")
             self.statusBar().showMessage("全屏模式 (F11 退出)", 3000)
         else:
+            # 恢复所有元素
             self.left_panel.setVisible(True)
             self.progress_group.setVisible(True)
             self.action_group.setVisible(True)
             self.log_group.setVisible(True)
             self.filter_panel.setVisible(True)
 
-            # 移除表格高度限制
-            self.table_view.setMaximumHeight(16777215)
-
-            # 退出全屏后强制刷新
-            QApplication.processEvents()
-            self.table_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-
+            # 恢复合计行动态高度
+            self.audit_group.summary_layout.setFixedHeight(-1)
+            
             self.fullscreen_btn.setText("⛶ 全屏")
             self.statusBar().showMessage("已退出全屏", 2000)
 
