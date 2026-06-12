@@ -34,7 +34,19 @@ if __name__ == "__main__":
             print(f"❌ 版本号 {version} 已打包过！请先更新 version_history.py 版本号再打包。")
             print(f"   发现已有文件: {existing[0]}")
             sys.exit(1)
-    print(f"✅ 版本号 {version} 未发现重复，继续打包")
+
+    # ── 版本日志检查：打包前必须更新日志 ──
+    from utils.version_history import VERSION_HISTORY
+    latest = VERSION_HISTORY[0] if VERSION_HISTORY else {}
+    has_log = bool(latest.get("features") or latest.get("fixes") or
+                   latest.get("optimizations") or latest.get("notes"))
+    if not has_log:
+        print(f"❌ 版本 {version} 没有版本日志！请在 version_history.py 中填写变更记录再打包。")
+        sys.exit(1)
+    if latest.get("version") != version:
+        print(f"❌ 版本号不一致！version_history.py 最新条目为 {latest.get('version')}，当前读取为 {version}")
+        sys.exit(1)
+    print(f"✅ 版本号 {version} 验证通过，版本日志已更新，继续打包")
 
     window_mode = "--windowed" if not debug_mode else "--console"
 
