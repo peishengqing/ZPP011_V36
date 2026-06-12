@@ -330,6 +330,7 @@ class MainWindow(QMainWindow):
         self.analysis_controller.progress_updated.connect(self._on_analysis_progress_ui)
         self.analysis_controller.log_message.connect(self.log)
         self.analysis_controller.analysis_finished.connect(self._on_analysis_finished_ui)
+        self.stats_cards.card_clicked.connect(self._on_stats_card_clicked)
         self.analysis_controller.analysis_error.connect(self._on_analysis_error_ui)
         self.audit_controller.progress_started.connect(self._on_ai_ui_start)
         self.audit_controller.progress_updated.connect(self._on_ai_progress_ui)
@@ -1262,6 +1263,31 @@ class MainWindow(QMainWindow):
             self.stats_cards.refresh(df)
         except Exception:
             pass
+
+    def _on_stats_card_clicked(self, card_type: str):
+        """处理统计卡片点击事件"""
+        if card_type == "anomaly":
+            try:
+                df = self.source_model.getDataFrame() if self.source_model else None
+                if df is not None and not df.empty:
+                    # 统计异常条数
+                    rate_col = next((c for c in ['偏差率(%)', '偏差率', 'dev_rate'] if c in df.columns), None)
+                    if rate_col:
+                        rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
+                        alt_col = next((c for c in ['是否替代料', 'is_alt', '_替代料组', '替代料组'] if c in df.columns), None)
+                        if alt_col and alt_col in df.columns:
+                            if alt_col in ['是否替代料', 'is_alt']:
+                                is_alt = df[alt_col].astype(str).str.strip().isin(['是', 'True', 'true', '1'])
+                                mask = (~is_alt) & (rates.abs() > 30)
+                            else:
+                                has_alt = df[alt_col].notna() & (df[alt_col].astype(str).str.strip() != '')
+                                mask = (~has_alt) & (rates.abs() > 30)
+                        else:
+                            mask = rates.abs() > 30
+                        count = int(mask.sum())
+                        self.statusBar().showMessage(f"🔴 真异常 {count} 条（已排除替代料）", 5000)
+            except Exception:
+                pass
 
     def _update_summary(self):
         """更新底部合计行（定额、实际、偏差金额、偏差数量）"""

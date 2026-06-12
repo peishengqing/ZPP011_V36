@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QFrame,
     QLabel, QSizePolicy,
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QEvent
 from PySide6.QtGui import QFont
 import pandas as pd
 
@@ -59,6 +59,7 @@ class StatsCardsWidget(QWidget):
         super().__init__(parent)
         self.setVisible(False)  # 初始隐藏，有数据再显示
         self._build_ui()
+        self._click_card = None  # 记录哪个卡片被点击
 
     def _build_ui(self):
         self.setObjectName("statsCardsWidget")
@@ -88,6 +89,10 @@ class StatsCardsWidget(QWidget):
         self.card_alt = _make_card(self, "--", "替代料", "#9c27b0",
                                     "替代料配对组数 + 净偏差抵消总金额")
 
+        # 给可点击的卡片安装事件过滤器
+        self.card_anomaly.installEventFilter(self)
+        self.card_anomaly.setProperty("cardType", "anomaly")
+
         cards_layout.addWidget(self.card_pass)
         cards_layout.addWidget(self.card_unread)
         cards_layout.addWidget(self.card_anomaly)
@@ -99,6 +104,16 @@ class StatsCardsWidget(QWidget):
         main_layout.setContentsMargins(4, 4, 4, 2)
         main_layout.addLayout(title_layout)
         main_layout.addLayout(cards_layout)
+
+    # ── 事件处理 ──
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.MouseButtonPress:
+            card_type = obj.property("cardType")
+            if card_type:
+                self.card_clicked.emit(card_type)
+                return True
+        return super().eventFilter(obj, event)
 
     # ── 公开方法 ──
 
