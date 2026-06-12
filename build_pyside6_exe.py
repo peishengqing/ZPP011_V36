@@ -24,7 +24,18 @@ if __name__ == "__main__":
     import sys as _sys
     from utils.version_history import get_current_version
     debug_mode = '--debug' in _sys.argv
-    exe_name = f"ZPP011偏差分析器_{get_current_version()}"
+    version = get_current_version()
+    exe_name = f"ZPP011偏差分析器_{version}"
+
+    # ── 版本号检查：防止重复打包 ──
+    if os.path.isdir("dist"):
+        existing = [f for f in os.listdir("dist") if f.startswith(exe_name) and f.endswith(".exe")]
+        if existing:
+            print(f"❌ 版本号 {version} 已打包过！请先更新 version_history.py 版本号再打包。")
+            print(f"   发现已有文件: {existing[0]}")
+            sys.exit(1)
+    print(f"✅ 版本号 {version} 未发现重复，继续打包")
+
     window_mode = "--windowed" if not debug_mode else "--console"
 
     # ── 自动备份源码 ──
@@ -34,7 +45,6 @@ if __name__ == "__main__":
     backup_base = os.path.join(os.path.expanduser("~"), ".zpp011_audit", "source_backups")
     os.makedirs(backup_base, exist_ok=True)
 
-    version = get_current_version()
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     zip_name = f"zpp011_source_{version}_{ts}.zip"
     zip_path = os.path.join(backup_base, zip_name)
