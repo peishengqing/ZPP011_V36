@@ -45,6 +45,7 @@ from gui_pyside6.components.bottom_bar import BottomBarComponent
 from gui_pyside6.models.data_frame_model import DataFrameModel, AuditProxyModel
 from gui_pyside6.widgets.loading_dialog import LoadingDialog
 from gui_pyside6.widgets.filter_panel import FilterPanel
+from gui_pyside6.widgets.stats_cards import StatsCardsWidget
 from gui_pyside6.dialogs.unit_summary_dialog import UnitSummaryDialog
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.rule_config_dialog import RuleConfigDialog
@@ -111,6 +112,7 @@ class MainWindow(QMainWindow):
         self.menu_bar = MenuBarComponent(self)
         self.left_panel_component = LeftPanelComponent(self)
         self.main_table = MainTableComponent(self)
+        self.stats_cards = StatsCardsWidget(self)
         self.bottom_bar = BottomBarComponent(self)
 
         # 连接按钮信号
@@ -280,6 +282,7 @@ class MainWindow(QMainWindow):
         # 添加主表格区和底部栏
         right_container_layout.addWidget(self.main_table.progress_group)
         right_container_layout.addWidget(self.main_table.action_group)
+        right_container_layout.addWidget(self.stats_cards)
         right_container_layout.addWidget(self.main_table.audit_group)
         right_container_layout.addWidget(self.bottom_bar.log_group)
 
@@ -861,7 +864,9 @@ class MainWindow(QMainWindow):
             pass
 
         self.source_model.dataChanged.connect(self._update_summary)
+        self.source_model.dataChanged.connect(self._refresh_stats_cards)
         self.proxy_model.layoutChanged.connect(self._update_summary)
+        self.proxy_model.layoutChanged.connect(self._refresh_stats_cards)
         
         # 连接表头排序信号
         self.table_view.horizontalHeader().sortIndicatorChanged.connect(
@@ -1249,6 +1254,14 @@ class MainWindow(QMainWindow):
             idx = cols.get_loc(filter_key)
             self.proxy_model.setFilter(idx, filter_value)
             self.statusBar().showMessage(f"已下钻至物料类型：{filter_value}", 3000)
+
+    def _refresh_stats_cards(self):
+        """刷新统计卡片（从 source_model 取数据计算）"""
+        try:
+            df = self.source_model.getDataFrame() if self.source_model else None
+            self.stats_cards.refresh(df)
+        except Exception:
+            pass
 
     def _update_summary(self):
         """更新底部合计行（定额、实际、偏差金额、偏差数量）"""
