@@ -249,6 +249,20 @@ class AIClient:
         parts.append("")
         parts.append(f"当前备注：{remark}")
 
+        # ── 历史高频原因参考 ──
+        try:
+            mat_code = context.get("物料编码", "")
+            factory = context.get("工厂", "") or context.get("工厂名称", "")
+            workshop = context.get("车间", "")
+            if mat_code:
+                from core.history_freq import format_history_hint
+                hint = format_history_hint(mat_code, factory, workshop)
+                if hint:
+                    parts.append("")
+                    parts.append(hint)
+        except Exception:
+            pass
+
         parts.append("")
         parts.append("请输出 JSON：")
 

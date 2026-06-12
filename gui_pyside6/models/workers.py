@@ -118,6 +118,12 @@ class AIAuditWorker(QThread):
             if records:
                 save_audit_results_batch(records)
                 self.log.emit(f"已保存 {len(records)} 条审核结果到数据库")
+            # ── 同步更新历史频率库 ──
+            try:
+                from core.history_freq import batch_update
+                batch_update(self.audit_data)
+            except Exception:
+                pass  # 频率更新失败不影响主流程
         except Exception as e:
             self.log.emit(f"保存审核结果失败: {e}")
 
