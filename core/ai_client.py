@@ -20,7 +20,7 @@ logger = logging.getLogger("AIClient")
 # ── Agnes AI 配置 ──────────────────────────────────────
 AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1"
 AGNES_MODEL = "agnes-2.0-flash"
-AGNES_API_KEY = "sk-yAilgF0x3rcHAj2iQ4hicFikjEtMAl2ITytkyiyj8Dx0FWAe"
+AGNES_API_KEY = ""  # 不硬编码！通过 'ai.api_key' 配置项或环境变量 AGNES_API_KEY 设置
 
 # RPM 限制：20次/分钟 → 调用间隔至少 3.0 秒
 MIN_CALL_INTERVAL = 3.0
@@ -69,7 +69,7 @@ class AIClient:
         return self._config
 
     def _get_api_key(self):
-        """获取 API Key：优先配置文件，其次代码默认值，最后环境变量"""
+        """获取 API Key：优先配置文件，其次环境变量，未配置时降级 Mock"""
         cfg = self._load_config()
         if cfg:
             try:
@@ -82,7 +82,8 @@ class AIClient:
         env_key = os.environ.get("AGNES_API_KEY", "")
         if env_key:
             return env_key
-        return AGNES_API_KEY   # 代码默认值
+        logger.warning("未配置 AI API Key，使用 Mock 降级模式")
+        return ""
 
     def _use_real_ai(self):
         """判断是否使用真实 AI"""
