@@ -862,6 +862,11 @@ class MainWindow(QMainWindow):
 
         self.source_model.dataChanged.connect(self._update_summary)
         self.proxy_model.layoutChanged.connect(self._update_summary)
+        
+        # 连接表头排序信号
+        self.table_view.horizontalHeader().sortIndicatorChanged.connect(
+            self._on_sort_indicator_changed
+        )
 
         self.table_view.resizeColumnsToContents()
         self.table_view.setColumnWidth(0, 35)
@@ -1263,7 +1268,7 @@ class MainWindow(QMainWindow):
         amount_col = next(
             (
                 c
-                for c in ["净偏差", "偏差金额(含税)", "偏差金额", "deviation_amount"]
+                for c in ["净偏差金额", "净偏差", "偏差金额(含税)", "偏差金额", "deviation_amount"]
                 if c in df.columns
             ),
             None,
@@ -1282,7 +1287,7 @@ class MainWindow(QMainWindow):
             qty_sum = 0
         self.summary_quota.setText(f"定额: {quota_sum:,.2f}")
         self.summary_actual.setText(f"实际: {actual_sum:,.2f}")
-        if amount_col == "净偏差":
+        if amount_col in ("净偏差", "净偏差金额"):
             self.summary_amount.setText(f"净偏差(抵消后): {amount_sum:,.2f}")
         else:
             self.summary_amount.setText(f"偏差金额: {amount_sum:,.2f}")

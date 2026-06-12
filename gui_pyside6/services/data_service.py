@@ -87,7 +87,11 @@ class DataService(QObject):
         # 1. 去掉空的替代料组列（保留 _替代料组）
         if '替代料组' in df.columns and '_替代料组' in df.columns:
             df = df.drop(columns=['替代料组'])
-        # 2. 强制去重（保留第一个）
+        # 2. 去掉冗余的净偏差列（如果有单独的"净偏差"列，保留净偏差数量和净偏差金额）
+        if '净偏差' in df.columns:
+            df = df.drop(columns=['净偏差'])
+            self.log("已删除冗余列：净偏差", "info")
+        # 3. 强制去重（保留第一个）
         dup_cols = df.columns[df.columns.duplicated()].unique()
         if len(dup_cols) > 0:
             df = df.loc[:, ~df.columns.duplicated(keep='first')]

@@ -173,6 +173,9 @@ class AltController(QObject):
     # ------------------- 放大窗口 -------------------
     def show_zoom_window(self, parent_widget, refresh_alt_view_callback=None):
         """显示放大窗口，支持右键删除"""
+        # 保存主窗口状态，防止对话框打开/关闭后窗口位置或滚动条异常
+        saved_geo = parent_widget.saveGeometry() if parent_widget else None
+        
         dialog = QDialog(parent_widget)
         dialog.setWindowTitle("替代料配对详情")
         dialog.resize(900, 600)
@@ -181,11 +184,14 @@ class AltController(QObject):
         table = QTableWidget()
         table.setColumnCount(3)
         table.setHorizontalHeaderLabels(["物料A", "", "物料B"])
-        table.horizontalHeader().setStretchLastSection(True)
+        table.horizontalHeader().setStretchLastSection(False)
         table.setAlternatingRowColors(True)
         table.setEditTriggers(QTableWidget.NoEditTriggers)
         table.setSelectionBehavior(QTableWidget.SelectRows)
         table.setContextMenuPolicy(Qt.CustomContextMenu)
+        # 确保缩放窗口有滚动条
+        table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
 
         # 刷新表格内容的函数
         def refresh_zoom_table():
@@ -238,6 +244,10 @@ class AltController(QObject):
         layout.addWidget(close_btn)
 
         dialog.exec()
+        
+        # 恢复主窗口状态（解决对话框关闭后窗口位置错乱的问题）
+        if saved_geo:
+            parent_widget.restoreGeometry(saved_geo)
 
     def _delete_from_zoom(self, pair_idx, refresh_callback, parent_widget):
         """从放大窗口删除配对"""

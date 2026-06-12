@@ -251,3 +251,38 @@ QComboBox QAbstractItemView::item:selected {
     background-color: #0078d7;
     color: #ffffff;
 }
+
+/* ========== Calendar Widget ========== */
+QCalendarWidget {
+    background-color: #ffffff;
+    color: #333333;
+}
+QCalendarWidget QToolButton {
+    color: #333333;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 3px;
+    padding: 4px 8px;
+    margin: 2px;
+    min-width: 60px;
+}
+QCalendarWidget QToolButton:hover {
+    background-color: #e2e6ea;
+}
+QCalendarWidget QMenu {
+    background-color: #ffffff;
+    color: #333333;
+}
+QCalendarWidget QSpinBox {
+    color: #333333;
+    background-color: #ffffff;
+}
+QCalendarWidget QTableView {
+    color: #333333;
+    background-color: #ffffff;
+    selection-background-color: #0078d7;
+    selection-color: #ffffff;
+}
+QCalendarWidget QTableView::item:hover {
+    background-color: #e6f3ff;
+}

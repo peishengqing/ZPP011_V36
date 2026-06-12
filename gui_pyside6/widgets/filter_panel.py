@@ -74,10 +74,14 @@ class FilterPanel(QWidget):
         self.order_type_combo.addItem("全部")
         self.material_code_edit = QLineEdit()
         self.material_code_edit.setPlaceholderText("输入编码，逗号分隔多选")
+        # 物料名称模糊筛选
+        self.material_name_edit = QLineEdit()
+        self.material_name_edit.setPlaceholderText("输入名称，逗号分隔多选")
         material_layout.addRow("物料类型:", self.category_combo)
         material_layout.addRow("替代料:", self.alt_combo)
         material_layout.addRow("订单类型:", self.order_type_combo)
         material_layout.addRow("物料编码:", self.material_code_edit)
+        material_layout.addRow("物料名称:", self.material_name_edit)
         content_layout.addWidget(material_group)
 
         # 偏差与审核
@@ -143,6 +147,7 @@ class FilterPanel(QWidget):
         self.read_status_combo.currentIndexChanged.connect(self._emit_filter)
         self.material_code_edit.textChanged.connect(self._emit_filter)
         self.remark_source_combo.currentIndexChanged.connect(self._emit_filter)
+        self.material_name_edit.textChanged.connect(self._emit_filter)
 
         self._data = None
         self._col_map = {}
@@ -262,6 +267,16 @@ class FilterPanel(QWidget):
             combo.clear()
             combo.addItem("全部")
 
+    def _update_material_name_list(self):
+        """更新物料名称多选列表"""
+        name_col = self._find_column(['物料描述', '物料名称', '物料'])
+        self.material_name_list.clear()
+        if name_col and self._data is not None:
+            values = self._data[name_col].dropna().unique()
+            values = sorted([str(v) for v in values if str(v) != ''])
+            for val in values:
+                self.material_name_list.addItem(QListWidgetItem(val))
+
     def _reset_date_range(self):
         """将日期控件重置为数据的最小/最大日期"""
         if self._data_min_date:
@@ -311,6 +326,10 @@ class FilterPanel(QWidget):
         material_code_text = self.material_code_edit.text().strip()
         if material_code_text:
             filters['_material_code'] = material_code_text
+        # 物料名称模糊搜索（逗号分隔多选，OR匹配）
+        material_name_text = self.material_name_edit.text().strip()
+        if material_name_text:
+            filters['_material_names'] = material_name_text
         if self.dev_rate_combo.currentText() != "全部":
             rate_range = self.dev_rate_combo.currentText()
             if rate_range == "绝对值>=10%":
@@ -330,6 +349,12 @@ class FilterPanel(QWidget):
             filters['_read_status'] = self.read_status_combo.currentText()
         if self._date_filters:
             filters.update(self._date_filters)
+        
+        # 物料名称多选筛选
+        material_name_text = self.material_name_edit.text().strip()
+        if material_name_text:
+            filters['_material_names'] = material_name_text
+        
         return filters
 
     # ------------------------------------------------------------------ #
@@ -367,6 +392,7 @@ class FilterPanel(QWidget):
         self.read_status_combo.setCurrentIndex(0)
         self.remark_source_combo.setCurrentIndex(0)
         self.material_code_edit.clear()
+        self.material_name_edit.clear()
         # 重置日期为数据最小/最大日期
         self._reset_date_range()
         self._emit_filter()

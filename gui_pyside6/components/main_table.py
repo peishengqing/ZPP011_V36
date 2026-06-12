@@ -75,7 +75,7 @@ class MainTableComponent:
         self.table_view.horizontalHeader().sortIndicatorChanged.connect(
             self.mw._on_sort_indicator_changed
         )
-        self.table_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.table_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.table_view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.table_view.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table_view.customContextMenuRequested.connect(self.mw._show_context_menu)

@@ -366,6 +366,22 @@ class AuditProxyModel(QSortFilterProxyModel):
                 if not matched:
                     return False
 
+            # 1.7 物料名称模糊搜索（逗号分隔多选，子串匹配 OR）
+            if '_material_names' in self._custom_filters:
+                raw = self._custom_filters['_material_names']
+                if raw:
+                    if isinstance(raw, str):
+                        queries = [q.strip().lower() for q in raw.split(',') if q.strip()]
+                    else:
+                        queries = [str(q).lower() for q in raw]
+                    if queries:
+                        name_col = self._find_material_name_column(df)
+                        if name_col:
+                            row_name = str(row_data.get(name_col, '')).lower()
+                            matched = any(q in row_name for q in queries)
+                            if not matched:
+                                return False
+
             # 2. 偏差率范围（绝对值>=阈值）
             if '_dev_rate_abs_ge_10' in self._custom_filters:
                 rate_col = self._get_rate_column(df)
@@ -453,6 +469,12 @@ class AuditProxyModel(QSortFilterProxyModel):
 
     def _get_material_code_column(self, df):
         for col in ['物料号', '物料编码', 'code', '组件物料号']:
+            if col in df.columns:
+                return col
+        return None
+
+    def _find_material_name_column(self, df):
+        for col in ['物料描述', '物料名称', '物料']:
             if col in df.columns:
                 return col
         return None
