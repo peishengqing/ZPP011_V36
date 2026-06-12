@@ -176,9 +176,6 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("F11"), self).activated.connect(
             self._toggle_table_fullscreen
         )
-        QShortcut(QKeySequence("F12"), self).activated.connect(
-            self._toggle_table_fullscreen
-        )
 
         self.statusBar().showMessage("就绪")
 
@@ -838,48 +835,53 @@ class MainWindow(QMainWindow):
 
     def _toggle_table_fullscreen(self):
         """切换审核表格全屏模式"""
-        # 基于当前可见性判断，避免按钮 checked 状态与 F11/F12 不同步
-        currently_fullscreen = self.log_group.isVisible() and self.progress_group.isVisible() and self.action_group.isVisible()
-        full = not currently_fullscreen
-        
+        full = not getattr(self, '_is_fullscreen', False)
+        self._is_fullscreen = full
+        self.fullscreen_btn.setChecked(full)
         if full:
-            # 进入全屏：隐藏侧边元素
             self.left_panel.setVisible(False)
             self.progress_group.setVisible(False)
             self.action_group.setVisible(False)
             self.log_group.setVisible(False)
             self.filter_panel.setVisible(False)
 
-            # 强制布局刷新
+            # 强制触发布局重算
             QApplication.processEvents()
             self.right_splitter.updateGeometry()
 
-            # 扩大合计行高度，确保不被表格挤压
-            self.main_table.summary_container.setFixedHeight(60)
+            # 限制表格最大显示21行，确保合计行可见
+            row_height = self.table_view.verticalHeader().defaultSectionSize() or 28
+            header_height = self.table_view.horizontalHeader().height() or 30
+            max_height = row_height * 21 + header_height
+            self.table_view.setMaximumHeight(max_height)
 
-            # 确保滚动条显示
+            # 确保水平滚动条显式可见
             hbar = self.table_view.horizontalScrollBar()
             hbar.show()
             self.table_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-            
+
+            # 强制更新合计行可见性
+            self.audit_group.updateGeometry()
+            self.table_view.update()
+            self.audit_group.update()
+
             self.fullscreen_btn.setText("⛶ 退出全屏")
-            self.statusBar().showMessage("全屏模式 (F11/F12 退出)", 3000)
+            self.statusBar().showMessage("全屏模式 (F11 退出)", 3000)
         else:
-            # 退出全屏：恢复所有元素
             self.left_panel.setVisible(True)
             self.progress_group.setVisible(True)
             self.action_group.setVisible(True)
             self.log_group.setVisible(True)
             self.filter_panel.setVisible(True)
 
-            # 恢复合计行默认高度
-            self.main_table.summary_container.setFixedHeight(40)
-            
-            # 强制布局刷新
+            # 移除表格高度限制
+            self.table_view.setMaximumHeight(16777215)
+
+            # 退出全屏后强制刷新
             QApplication.processEvents()
-            
+            self.table_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+
             self.fullscreen_btn.setText("⛶ 全屏")
-            self.statusBar().showMessage("已退出全屏", 2000)
             self.statusBar().showMessage("已退出全屏", 2000)
 
     # ------------------- 数据加载与表格 -------------------
