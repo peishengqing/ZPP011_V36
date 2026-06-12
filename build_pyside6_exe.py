@@ -68,7 +68,7 @@ if __name__ == "__main__":
         "gui_pyside6/dialogs", "gui_pyside6/models", "gui_pyside6/services",
         "gui_pyside6/viewmodels", "gui_pyside6/widgets",
         "config", "config/system", "config/prompts",
-        "CHANGELOG_v42.1.md", "changelog.json", "README.md",
+        "CHANGELOG.md", "README.md",
         "run_pyside6.py", "ZPP011_技术蓝图_v11.0.md",
     ]
     files_to_add = []
