@@ -14,6 +14,34 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.9",
+        "date": "2026-06-12",
+        "build_datetime": "2026-06-12 20:20:00",
+        "features": [
+            "✦ 打包前自动验证版本号不重复：dist 已有同版本 exe 则报错退出",
+            "✦ 版本号统一：删除 config/version.json，完全以 version_history.py 为准",
+            "✦ 打包 --clean 参数移除：dist 已有 exe 保留不被清空",
+        ],
+        "fixes": [
+            "🔧 修复 .gitignore 引号包裹导致 dist/build/*.exe 忽略无效",
+            "🔧 修复 requirements.txt 缺少 PySide6/requests/matplotlib 导致安装后无法运行",
+            "🔧 修复 core/ai_client.py 硬编码 API Key 安全风险（改走环境变量/配置）",
+            "🔧 修复 audit_logger.py 默认 db_path 为相对路径导致 audit_log.db 出现在项目根目录",
+            "🔧 修复 version.json 版本号漂移（v42.5→v42.8）",
+        ],
+        "optimizations": [
+            "⚡ 项目清理：删除 services/ 整包（7 个无人调用的 Service 类，1013 行死代码）",
+            "⚡ 项目清理：从 Git 历史彻底抹除 dist/build 大文件（200MB+）及所有 fix/patch 一次性脚本",
+            "⚡ 项目清理：删除根目录 audit_log.db、config/version.json 等孤儿文件",
+            "⚡ 创建 CHANGELOG.md：涵盖 v42.1~v42.9 完整版本日志",
+        ],
+        "notes": [
+            "📌 本版本为 v42.8 后的项目健康度优化版，零功能新增，仅清理和技术债务",
+            "📌 config/version.json 已删除，版本号仅由 utils/version_history.py 管理",
+            "📌 打包需先更新 version_history.py 版本号，否则脚本会拒绝执行",
+        ]
+    },
+    {
         "version": "v42.8",
         "date": "2026-06-11",
         "build_datetime": "2026-06-11 22:45:00",
