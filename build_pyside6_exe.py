@@ -82,7 +82,8 @@ if __name__ == "__main__":
         window_mode,
         "--onefile",
         "--noconfirm",
-        "--clean",
+        # --clean 注释掉：保留 dist 已有 exe 不被清空
+        # "--clean",
     ]
     opts.extend(add_data_opts)
     opts.extend([
