@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """主表格区组件：进度条、操作按钮、统计卡片、偏差明细表格"""
-        from PySide6.QtWidgets import (
-            QGroupBox, QVBoxLayout, QHBoxLayout, QLabel,
-            QPushButton, QProgressBar, QTableView, QHeaderView, QWidget,
-        )
+from PySide6.QtWidgets import (
+    QGroupBox, QVBoxLayout, QHBoxLayout, QLabel,
+    QPushButton, QProgressBar, QTableView, QHeaderView, QWidget,
+    QSizePolicy,
+)
 from PySide6.QtCore import Qt
 
 
@@ -114,13 +115,11 @@ class MainTableComponent:
         self.fullscreen_btn.clicked.connect(self.mw._toggle_table_fullscreen)
         summary_layout.addWidget(self.fullscreen_btn)
         self.summary_layout = summary_layout
-        audit_layout.addLayout(summary_layout)
 
         # 合计行外层的容器，用于控制高度
         self.summary_container = QWidget()
-        self.summary_container.setLayout(summary_layout)
         audit_layout.addWidget(self.summary_container)
-        self.summary_layout = summary_layout
+        self.summary_container.setLayout(summary_layout)
 
         # 合计行容器固定高度策略
         self.summary_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
