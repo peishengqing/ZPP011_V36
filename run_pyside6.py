@@ -61,14 +61,8 @@ def main():
     if "Fusion" in QStyleFactory.keys():
         app.setStyle(QStyleFactory.create("Fusion"))
 
-    # 加载现代化 QSS 样式表
-    qss_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gui_pyside6", "style.qss")
-    if os.path.exists(qss_path):
-        with open(qss_path, "r", encoding="utf-8") as f:
-            app.setStyleSheet(f.read())
-        print("[OK] 现代化样式已加载")
-    else:
-        print("[WARN] 样式文件不存在: " + qss_path)
+    # 注意：app 级别不加载 style.qss，因为暗色主题由 MainWindow._load_dark_theme() 内部管控
+    # 如果未来需要 app 级全局样式，可以在此加载 light_theme.qss 作为基准
 
     win = MainWindow()
     win.show()

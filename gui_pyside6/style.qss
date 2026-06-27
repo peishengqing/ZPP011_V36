@@ -206,12 +206,13 @@ QScrollBar::handle {
 QScrollBar::handle:hover {
     background-color: #a0a0a0;
 }
-/* 禁用状态 — 保持可见，用更浅的颜色 */
+/* 禁用状态 — 保持可见 */
 QScrollBar:disabled {
-    background-color: #f5f5f5;
+    background-color: #f0f0f0;
 }
 QScrollBar::handle:disabled {
-    background-color: #e0e0e0;
+    background-color: #d0d0d0;
+    border: 1px solid #b0b0b0;
 }
 QScrollBar::add-line, QScrollBar::sub-line {
     width: 0px;

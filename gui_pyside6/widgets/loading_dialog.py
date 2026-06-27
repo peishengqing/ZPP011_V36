@@ -20,24 +20,14 @@ class LoadingDialog(QDialog):
 
         self.label = QLabel(message)
         self.label.setAlignment(Qt.AlignCenter)
-        self.label.setStyleSheet("font-size: 14px; font-weight: bold; color: #2B5EA7;")
+        self.label.setObjectName("loadingLabel")
         layout.addWidget(self.label)
 
         self.progress = QProgressBar()
         self.progress.setRange(0, 0)  # 无限进度条
         self.progress.setFixedHeight(6)
         self.progress.setTextVisible(False)
-        self.progress.setStyleSheet("""
-            QProgressBar {
-                border: none;
-                background-color: #E0E0E0;
-                border-radius: 3px;
-            }
-            QProgressBar::chunk {
-                background-color: #2B5EA7;
-                border-radius: 3px;
-            }
-        """)
+        self.progress.setObjectName("loadingProgress")
         layout.addWidget(self.progress)
 
         # 居中显示

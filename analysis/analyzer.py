@@ -459,36 +459,25 @@ def do_analysis_v2(
     alt_df, alt_order_mat = build_sheet2(df, cleaned_pairs, report_progress)
     check_cancel()
 
-    # 构建所有替代料物料描述集合（用于强制标记）
-    alt_materials_set = set()
-    for pair in cleaned_pairs:
-        a_desc, b_desc = pair  # cleaned_pairs 已经是 (描述, 描述) 的列表
-        alt_materials_set.add(a_desc)
-        alt_materials_set.add(b_desc)
-
+    # 基于 Sheet2 结果构建订单级替代料标记集合（仅同订单内出现配对物料才标记）
     alt_order_mat = set()
     for _, r in alt_df.iterrows():
         alt_order_mat.add((str(r['订单号']), str(r['物料A'])))
         alt_order_mat.add((str(r['订单号']), str(r['物料B'])))
 
-    # 原有的订单级替代料标记（基于 alt_order_mat）
+    # 订单级替代料标记（基于 alt_order_mat，仅同订单内同时存在配对物料才标记）
     for idx_r, r in df.iterrows():
         key = (str(r['流程订单']), str(r['组件物料描述']))
         if key in alt_order_mat:
             df.at[idx_r, '_note_source'] = '替代料'
 
-    # 新增：强制标记所有在 alt_materials_set 中的物料行为替代料
-    mask_alt_material = df['组件物料描述'].isin(alt_materials_set)
-    df.loc[mask_alt_material, '_note_source'] = '替代料'
-
     # 更新标准原因
     df.loc[df['_note_source'] == '替代料', '标准原因'] = '替代料'
 
-    # 重新计算 _is_alt 标志（满足任意条件即标记）
+    # 重新计算 _is_alt 标志（仅基于订单级匹配，同一订单内同时存在配对物料才标记）
     report_progress(4, "4/5 正在匹配替代料信息", 70)
     _order_alt = df.apply(lambda r: (str(r['流程订单']), str(r['组件物料描述'])) in alt_order_mat, axis=1)
-    _mat_alt = df['组件物料描述'].isin(alt_materials_set)
-    df['_is_alt'] = _order_alt | _mat_alt
+    df['_is_alt'] = _order_alt
 
     check_cancel()
 
@@ -654,15 +643,17 @@ def do_analysis_v2(
 
     ws5 = wb.create_sheet('完整偏差明细')
     headers5 = ['订单日期', '订单类型', '流程订单', '工厂', '车间', '物料类型', '原表行号',
+                '产品物料号码', '产品物料描述',
                 '物料编码', '物料名称', '单位', '定额', '实际',
                 '偏差数量', '偏差率', '偏差金额', '净偏差数量', '净偏差金额', '是否替代料', '备注', '备注来源', '偏差区间']
     rows5 = [[r['订单日期'], r.get('订单类型', ''), r.get('流程订单', ''), r['工厂'], r['车间'], r['物料类型'], r['原表行号'],
+              r.get('产品物料号码', ''), r.get('产品物料描述', ''),
               r['物料编码'], r['物料名称'], r['单位'], r['定额'], r['实际'],
               r['偏差数量'], r['偏差率'], r['偏差金额'], r.get('净偏差数量', ''), r.get('净偏差金额', ''),
               r.get('是否替代料', '否'),
               r['备注'], r['备注来源'], r['偏差区间']] for r in dev_df.to_dict('records')]
     write_sheet(ws5, headers5, rows5,
-                [14, 10, 16, 10, 10, 10, 10, 16, 28, 8, 12, 12, 12, 10, 14, 14, 12, 20, 16, 10])
+                [14, 10, 16, 10, 10, 10, 10, 18, 30, 16, 28, 8, 12, 12, 12, 10, 14, 14, 12, 20, 16, 10])
 
     for i, r in enumerate(dev_df.to_dict('records'), 2):
         dev_qty = r['偏差数量']
@@ -672,14 +663,14 @@ def do_analysis_v2(
                 ws5.cell(row=i, column=j).fill = fill
         src = r['备注来源']
         if src == '替代料':
-            ws5.cell(row=i, column=17).fill = alt_fill  # 第17列 = 是否替代料
+            ws5.cell(row=i, column=20).fill = alt_fill  # 第20列 = 是否替代料
         elif src in ('系统无定额(广宣)', '自动填充'):
-            ws5.cell(row=i, column=17).fill = gx_fill  # 第17列 = 是否替代料
+            ws5.cell(row=i, column=20).fill = gx_fill  # 第20列 = 是否替代料
 
     ws6 = wb.create_sheet('异常预警')
-    headers6 = ['订单开始日期', '订单号', '异常类型', '工厂', '车间',
+    headers6 = ['订单开始日期', '订单类型', '订单号', '异常类型', '工厂', '车间',
                 '原表行号', '物料编码', '物料名称', '单位', '定额', '实际',
-                '偏差数量', '偏差率', '备注', '处理建议', '替代料']
+                '偏差数量', '净偏差数量', '净偏差金额', '偏差率', '备注', '处理建议', '替代料']
     for j, h in enumerate(headers6, 1):
         c = ws6.cell(row=1, column=j, value=h)
         c.font = header_font
@@ -704,10 +695,10 @@ def do_analysis_v2(
     for r in anomaly_df.to_dict('records'):
         fill = anomaly_fills.get(r['row_type'], anomaly_fills['异常1'])
         row_vals = [
-            r['订单开始日期'], r['流程订单'], r['异常类型'], r['工厂'], r['车间'],
+            r['订单开始日期'], r['订单类型'], r['流程订单'], r['异常类型'], r['工厂'], r['车间'],
             r['原表行号'], r['物料编码'], r['物料名称'], r['单位'],
-            r['定额'], r['实际'], r['偏差数量'], r['偏差率'],
-            r.get('备注', ''), r.get('处理建议', ''), r.get('替代料', '否')]
+            r['定额'], r['实际'], r['偏差数量'], r.get('净偏差数量', ''), r.get('净偏差金额', ''),
+            r['偏差率'], r.get('备注', ''), r.get('处理建议', ''), r.get('替代料', '否')]
         for j, v in enumerate(row_vals, 1):
             c = ws6.cell(row=r_row, column=j, value=v)
             c.font = data_font
@@ -715,7 +706,7 @@ def do_analysis_v2(
             c.alignment = center
             c.fill = fill
         r_row += 1
-    for j, w in enumerate([14, 18, 10, 10, 10, 10, 16, 28, 8, 12, 12, 12, 10, 16, 30, 10], 1):
+    for j, w in enumerate([14, 10, 18, 10, 10, 10, 10, 16, 28, 8, 12, 12, 12, 12, 14, 10, 30, 30, 10], 1):
         ws6.column_dimensions[get_column_letter(j)].width = w
     check_cancel()
 

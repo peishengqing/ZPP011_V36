@@ -71,6 +71,11 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
                 rows_b = grp[grp[code_col].astype(str).str.contains(mat_b_desc, na=False, regex=False)]
             if len(rows_a) > 0 and len(rows_b) > 0:
                 a, b = rows_a.iloc[0], rows_b.iloc[0]
+                # 计算净偏差数量/金额（取A和B的合计；此时df中尚无净偏差列，直接用偏差数量/金额）
+                qty_a = a.get('偏差数量', 0)
+                qty_b = b.get('偏差数量', 0)
+                amt_a = a.get('偏差金额', a.get('偏差金额(含税)', 0))
+                amt_b = b.get('偏差金额', b.get('偏差金额(含税)', 0))
                 alt_rows.append({
                     '订单日期': pd.Timestamp(a['订单开始日期']).strftime('%Y-%m-%d'),
                     '车间': a['车间'],
@@ -83,6 +88,8 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
                     '偏差B': b['材料偏差'],
                     '偏差率B': b[col_p],
                     '净偏差': round(float(a['材料偏差']) + float(b['材料偏差']), 2),
+                    '净偏差数量': round(float(qty_a) + float(qty_b), 2),
+                    '净偏差金额': round(float(amt_a) + float(amt_b), 2),
                     '备注': '替代料',
                     '标准原因': a.get('标准原因', ''),
                 })

@@ -24,12 +24,7 @@ class Toast(QWidget):
         self.duration = duration
         bg, fg = self.COLORS.get(level, self.COLORS['info'])
 
-        self.setStyleSheet(f"""
-            background-color: {bg};
-            color: {fg};
-            border-radius: 6px;
-            padding: 10px 20px;
-        """)
+        self.setObjectName("toastWidget")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 10, 16, 10)
         label = QLabel(message)

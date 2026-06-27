@@ -16,18 +16,7 @@ def _make_card(parent, value_text, label_text, color: str, tooltip: str) -> QFra
     """创建单张卡片"""
     card = QFrame(parent)
     card.setObjectName("statsCard")
-    card.setStyleSheet(f"""
-        QFrame#statsCard {{
-            background-color: {color}18;
-            border: 1px solid {color}40;
-            border-radius: 8px;
-            padding: 8px 14px;
-        }}
-        QFrame#statsCard:hover {{
-            background-color: {color}28;
-            border: 1px solid {color}60;
-        }}
-    """)
+    card.setProperty("class", "statsCard")
     card.setToolTip(tooltip)
     card.setCursor(Qt.PointingHandCursor)
     card.setMinimumWidth(120)
@@ -37,12 +26,12 @@ def _make_card(parent, value_text, label_text, color: str, tooltip: str) -> QFra
     layout.setSpacing(2)
 
     val_label = QLabel(str(value_text))
-    val_label.setStyleSheet(f"color: {color}; font-size: 20px; font-weight: bold;")
+    val_label.setProperty("class", "statsCardVal")
     val_label.setAlignment(Qt.AlignCenter)
     layout.addWidget(val_label)
 
     desc_label = QLabel(label_text)
-    desc_label.setStyleSheet("color: #8899aa; font-size: 11px;")
+    desc_label.setProperty("class", "statsCardDesc")
     desc_label.setAlignment(Qt.AlignCenter)
     layout.addWidget(desc_label)
 
@@ -69,7 +58,7 @@ class StatsCardsWidget(QWidget):
         title_layout.setContentsMargins(4, 0, 4, 0)
 
         title = QLabel("📊 本次分析概览")
-        title.setStyleSheet("font-size: 13px; font-weight: bold; color: #ccddee;")
+        title.setProperty("class", "statsCardTitle")
         title_layout.addWidget(title)
         title_layout.addStretch()
 

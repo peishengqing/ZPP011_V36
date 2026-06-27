@@ -144,6 +144,10 @@ def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True, gro
     df['净偏差数量'] = df['净偏差数量'].round(2)
     df['净偏差金额'] = df['净偏差金额'].round(2)
 
+    # 更新"是否替代料"列：_替代料组非空的即为替代料
+    if '_替代料组' in df.columns:
+        df['是否替代料'] = df['_替代料组'].notna().map({True: '是', False: '否'})
+
     # 保留"净偏差"列作为"净偏差金额"的别名（向后兼容）
     if '净偏差金额' in df.columns and '净偏差' not in df.columns:
         df['净偏差'] = df['净偏差金额']

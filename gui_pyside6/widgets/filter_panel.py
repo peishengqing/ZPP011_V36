@@ -23,7 +23,7 @@ class FilterPanel(QWidget):
         self._data_max_date = None
         self.setMaximumWidth(280)
         self.setMinimumWidth(32)
-        self.setStyleSheet("background-color: #f8f9fa; border-right: 1px solid #dee2e6;")
+        self.setObjectName("filterPanel")
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -35,7 +35,7 @@ class FilterPanel(QWidget):
         self.collapse_btn.setFixedSize(24, 24)
         self.collapse_btn.clicked.connect(self._toggle_collapse)
         title_label = QLabel("筛选条件")
-        title_label.setStyleSheet("font-weight: bold;")
+        title_label.setObjectName("filterTitleLabel")
         title_bar.addWidget(self.collapse_btn)
         title_bar.addWidget(title_label)
         title_bar.addStretch()
@@ -370,11 +370,14 @@ class FilterPanel(QWidget):
         start = self.start_date_edit.date()
         end = self.end_date_edit.date()
 
-        # 判断用户是否选择了有效日期（与最小值不同表示用户修改过）
+        # 获取最小/最大日期
         min_date = self.start_date_edit.minimumDate()
-        if start != min_date:
+        max_date = self.end_date_edit.maximumDate()
+        
+        # 判断用户是否选择了有效日期（与最小值不同表示用户修改过）
+        if min_date.isValid() and start.isValid() and start != min_date:
             self._date_filters['_date_start'] = start.toString("yyyy-MM-dd")
-        if end != min_date:
+        if max_date.isValid() and end.isValid() and end != min_date:
             self._date_filters['_date_end'] = end.toString("yyyy-MM-dd")
 
         self._emit_filter()

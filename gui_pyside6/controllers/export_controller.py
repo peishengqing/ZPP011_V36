@@ -5,12 +5,12 @@
 import os
 import traceback
 from datetime import datetime
-from PySide6.QtCore import QObject, Signal
-from PySide6.QtWidgets import QMessageBox, QFileDialog
+from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtWidgets import QMessageBox, QFileDialog, QProgressDialog
 
 
 class ExportController(QObject):
-    log_message = Signal(str)
+    log_message = Signal(str, str)           # (msg, level)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -35,8 +35,9 @@ class ExportController(QObject):
                 self.log_message.emit(f"导出失败: {e}", "error")
         return False
 
-    def export_full_excel(self, audit_data, current_input_file, analysis_params, parent_widget):
-        """导出完整Excel（可选择多Sheet完整报告）"""
+    def export_full_excel(self, audit_data, current_input_file, analysis_params,
+                          parent_widget, cache_path=None):
+        """导出完整Excel（可选择多Sheet完整报告，支持缓存秒传）"""
         try:
             if audit_data is None or audit_data.empty:
                 QMessageBox.warning(parent_widget, "提示", "无数据，请先进行分析")
@@ -54,17 +55,22 @@ class ExportController(QObject):
                 reply = QMessageBox.question(
                     parent_widget, "导出选项",
                     "是否生成完整多Sheet分析报告（含汇总统计、预警颜色等）？\n\n"
-                    "点击「是」→ 生成完整多Sheet Excel（需重新分析，较慢）\n"
+                    "点击「是」→ 生成完整多Sheet Excel（缓存命中则秒传，否则重新分析）\n"
                     "点击「否」→ 仅导出当前表格数据（快速）",
                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No
                 )
                 if reply == QMessageBox.Yes:
-                    return self._export_full_analysis_excel(save_path, analysis_params, parent_widget)
+                    return self._export_full_analysis_excel(
+                        save_path, analysis_params, parent_widget, cache_path
+                    )
 
             # 仅导出当前表格数据
             try:
                 audit_data.to_excel(save_path, sheet_name='完整偏差明细', index=False)
-                QMessageBox.information(parent_widget, "成功", f"已导出到 {save_path}")
+                if QMessageBox.question(
+                    parent_widget, "导出成功", f"文件已导出到：\n{save_path}\n是否打开？"
+                ) == QMessageBox.Yes:
+                    os.startfile(save_path)
                 self.log_message.emit(f"已导出完整Excel到 {save_path}", "info")
                 return True
             except Exception as e:
@@ -78,21 +84,54 @@ class ExportController(QObject):
             self.log_message.emit(f"导出完整Excel失败: {e}", "error")
             return False
 
-    def _export_full_analysis_excel(self, save_path, analysis_params, parent_widget):
-        """使用缓存的分析参数重新生成完整多Sheet Excel"""
+    def _export_full_analysis_excel(self, save_path, analysis_params, parent_widget,
+                                      cache_path=None):
+        """使用缓存的分析参数重新生成完整多Sheet Excel（优先使用缓存）"""
+        import shutil
+        import os
+
+        # ---- 缓存命中：直接复制，秒传 ----
+        if cache_path and os.path.exists(cache_path):
+            try:
+                shutil.copy2(cache_path, save_path)
+                if QMessageBox.question(
+                    parent_widget, "导出成功",
+                    f"完整分析报告已导出到\n{save_path}\n\n"
+                    "（使用缓存，秒传完成）\n\n"
+                    "包含Sheet:\n"
+                    "📋 分析说明 · 汇总统计(带预警颜色)\n"
+                    "完整偏差明细 · 替代料明细 · 无备注预警\n"
+                    "中间地带明细 · 异常预警 · 偏差金额分析\n"
+                    "偏差原因汇总 · 偏差原因分析 · 趋势分析\n\n"
+                    "是否立即打开？"
+                ) == QMessageBox.Yes:
+                    os.startfile(save_path)
+                self.log_message.emit(f"已导出完整分析报告到 {save_path} (缓存)", "info")
+                return True
+            except Exception as e:
+                self.log_message.emit(f"缓存复制失败，回退重新分析: {e}", "warning")
+
         try:
+            from PySide6.QtWidgets import QApplication
+
             progress_dlg = QProgressDialog("正在重新分析生成完整报告...", "取消", 0, 100, parent_widget)
             progress_dlg.setWindowTitle("导出中")
             progress_dlg.setWindowModality(Qt.WindowModal)
+            progress_dlg.setMinimumDuration(0)  # 立即显示
             progress_dlg.show()
+            QApplication.processEvents()  # 强制刷新UI，防止进度条不出来
 
             from analysis.analyzer import do_analysis_v2
             result = do_analysis_v2(
                 input_file=analysis_params['input_file'],
                 output_dir=None,
                 alt_pairs=analysis_params['alt_pairs'],
-                progress_callback=lambda step_idx, step_name, percent: progress_dlg.setValue(percent),
-                cancel_check=lambda *args: progress_dlg.wasCanceled(),
+                progress_callback=lambda step_idx, step_name, percent: (
+                    progress_dlg.setValue(percent),
+                    progress_dlg.setLabelText(f"{step_name} ({percent}%)"),
+                    QApplication.processEvents(),  # 保持UI响应，防止"无响应"→被系统杀死
+                )[0],
+                cancel_check=lambda *args: (QApplication.processEvents(), progress_dlg.wasCanceled())[1],
                 start_date=analysis_params.get('start_date'),
                 end_date=analysis_params.get('end_date'),
                 material_search=analysis_params.get('material_search'),
@@ -100,16 +139,27 @@ class ExportController(QObject):
                 enable_net_offset=True,
                 return_dataframe=False,
             )
+            progress_dlg.setValue(100)
             progress_dlg.close()
-            QMessageBox.information(
-                parent_widget, "成功",
+
+            # 回存缓存：如果后台缓存还没生成完，这次的结果也可以缓存
+            if cache_path and not os.path.exists(cache_path):
+                try:
+                    shutil.copy2(save_path, cache_path)
+                except Exception:
+                    pass  # 静默失败，不影响导出
+
+            if QMessageBox.question(
+                parent_widget, "导出成功",
                 f"完整分析报告已导出到\n{save_path}\n\n"
                 "包含Sheet:\n"
                 "📋 分析说明 · 汇总统计(带预警颜色)\n"
                 "完整偏差明细 · 替代料明细 · 无备注预警\n"
                 "中间地带明细 · 异常预警 · 偏差金额分析\n"
-                "偏差原因汇总 · 偏差原因分析 · 趋势分析"
-            )
+                "偏差原因汇总 · 偏差原因分析 · 趋势分析\n\n"
+                "是否立即打开？"
+            ) == QMessageBox.Yes:
+                os.startfile(save_path)
             self.log_message.emit(f"已导出完整分析报告到 {save_path}", "info")
             return True
         except Exception as e:

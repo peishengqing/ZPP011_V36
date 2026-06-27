@@ -69,6 +69,8 @@ class AnalysisController(QObject):
 
     def _on_finished(self, df):
         """分析完成回调：按工厂拆分数据"""
+        if self.worker:
+            self.worker.wait()                         # 等待底层线程完全退出
         self.worker = None
         
         # 按工厂拆分

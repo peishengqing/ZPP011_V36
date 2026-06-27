@@ -42,6 +42,7 @@ def build_sheet6(df, alt_order_mat, report_progress, progress_idx=6):
         is_alt = key in alt_order_mat
         anomaly_rows.append({
             '订单开始日期': pd.Timestamp(r['订单开始日期']).strftime('%Y-%m-%d'),
+            '订单类型': r['订单类型'] if '订单类型' in r and pd.notna(r['订单类型']) else '',
             '流程订单': r['流程订单'],
             '异常类型': '异常1',
             '工厂': r['工厂名称'],
@@ -53,6 +54,8 @@ def build_sheet6(df, alt_order_mat, report_progress, progress_idx=6):
             '定额': r['数量-定额'],
             '实际': r['数量-实际'],
             '偏差数量': r['材料偏差'],
+            '净偏差数量': r['材料偏差'],
+            '净偏差金额': round(r.get('偏差金额(含税)', r.get('偏差金额', 0)), 2) if pd.notna(r.get('偏差金额(含税)', r.get('偏差金额', 0))) else 0,
             '偏差率': f"{r[col_p]:.1f}%" if pd.notna(r[col_p]) else '',
             '备注': '系统无定额',
             '异常说明': '有定额但系统标记为"系统无定额"，请确认是否实际有定额',
@@ -67,6 +70,7 @@ def build_sheet6(df, alt_order_mat, report_progress, progress_idx=6):
         is_alt = key in alt_order_mat
         anomaly_rows.append({
             '订单开始日期': pd.Timestamp(r['订单开始日期']).strftime('%Y-%m-%d'),
+            '订单类型': r['订单类型'] if '订单类型' in r and pd.notna(r['订单类型']) else '',
             '流程订单': r['流程订单'],
             '异常类型': '异常2',
             '工厂': r['工厂名称'],
@@ -78,6 +82,8 @@ def build_sheet6(df, alt_order_mat, report_progress, progress_idx=6):
             '定额': r['数量-定额'],
             '实际': r['数量-实际'],
             '偏差数量': r['材料偏差'],
+            '净偏差数量': r['材料偏差'],
+            '净偏差金额': round(r.get('偏差金额(含税)', r.get('偏差金额', 0)), 2) if pd.notna(r.get('偏差金额(含税)', r.get('偏差金额', 0))) else 0,
             '偏差率': f"{r[col_p]:.1f}%" if pd.notna(r[col_p]) else '',
             '备注': '',
             '异常说明': '有定额但实际未投料，且未填备注，请人工判断是否为替代料',
@@ -92,6 +98,7 @@ def build_sheet6(df, alt_order_mat, report_progress, progress_idx=6):
         is_alt = key in alt_order_mat
         anomaly_rows.append({
             '订单开始日期': pd.Timestamp(r['订单开始日期']).strftime('%Y-%m-%d'),
+            '订单类型': r['订单类型'] if '订单类型' in r and pd.notna(r['订单类型']) else '',
             '流程订单': r['流程订单'],
             '异常类型': '异常3',
             '工厂': r['工厂名称'],
@@ -103,6 +110,8 @@ def build_sheet6(df, alt_order_mat, report_progress, progress_idx=6):
             '定额': r['数量-定额'],
             '实际': r['数量-实际'],
             '偏差数量': r['材料偏差'],
+            '净偏差数量': r['材料偏差'],
+            '净偏差金额': round(r.get('偏差金额(含税)', r.get('偏差金额', 0)), 2) if pd.notna(r.get('偏差金额(含税)', r.get('偏差金额', 0))) else 0,
             '偏差率': f"{r[col_p]:.1f}%" if pd.notna(r[col_p]) else '',
             '备注': str(r['备注原因']),
             '异常说明': '有定额但未投料，已填备注，请确认备注是否准确',
@@ -117,6 +126,7 @@ def build_sheet6(df, alt_order_mat, report_progress, progress_idx=6):
         is_alt = key in alt_order_mat
         anomaly_rows.append({
             '订单开始日期': pd.Timestamp(r['订单开始日期']).strftime('%Y-%m-%d'),
+            '订单类型': r['订单类型'] if '订单类型' in r and pd.notna(r['订单类型']) else '',
             '流程订单': r['流程订单'],
             '异常类型': '异常4',
             '工厂': r['工厂名称'],
@@ -128,6 +138,8 @@ def build_sheet6(df, alt_order_mat, report_progress, progress_idx=6):
             '定额': r['数量-定额'],
             '实际': r['数量-实际'],
             '偏差数量': r['材料偏差'],
+            '净偏差数量': r['材料偏差'],
+            '净偏差金额': round(r.get('偏差金额(含税)', r.get('偏差金额', 0)), 2) if pd.notna(r.get('偏差金额(含税)', r.get('偏差金额', 0))) else 0,
             '偏差率': f"{r[col_p]:.1f}%" if pd.notna(r[col_p]) else '',
             '备注': str(r['备注原因']) if pd.notna(r['备注原因']) and r['备注原因'] != '' else '',
             '标准原因': r.get('标准原因', ''),
@@ -140,6 +152,7 @@ def build_sheet6(df, alt_order_mat, report_progress, progress_idx=6):
     for idx_r, r in anomaly5.iterrows():
         anomaly_rows.append({
             '订单开始日期': pd.Timestamp(r['订单开始日期']).strftime('%Y-%m-%d'),
+            '订单类型': r['订单类型'] if '订单类型' in r and pd.notna(r['订单类型']) else '',
             '流程订单': r['流程订单'],
             '异常类型': '异常5',
             '工厂': r['工厂名称'],
@@ -151,6 +164,8 @@ def build_sheet6(df, alt_order_mat, report_progress, progress_idx=6):
             '定额': r['数量-定额'],
             '实际': r['数量-实际'],
             '偏差数量': r['材料偏差'],
+            '净偏差数量': r['材料偏差'],
+            '净偏差金额': round(r.get('偏差金额(含税)', r.get('偏差金额', 0)), 2) if pd.notna(r.get('偏差金额(含税)', r.get('偏差金额', 0))) else 0,
             '偏差率': f"{r[col_p]:.1f}%" if pd.notna(r[col_p]) else '',
             '备注': str(r['备注原因']) if pd.notna(r['备注原因']) and r['备注原因'] != '' else '',
             '标准原因': r.get('标准原因', ''),

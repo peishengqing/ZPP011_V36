@@ -11,10 +11,16 @@ class BottomBarComponent:
         self._create_widgets()
 
     def _create_widgets(self):
-        """创建运行日志控件"""
         self.log_group = QGroupBox("运行日志")
+        self.log_group.setObjectName("logGroup")
         log_layout = QVBoxLayout(self.log_group)
+        log_layout.setContentsMargins(0, 4, 0, 4)
+        log_layout.setSpacing(0)
+
         self.mw.log_text = QTextEdit()
         self.mw.log_text.setReadOnly(True)
-        self.mw.log_text.setFixedHeight(400)
+        self.mw.log_text.setObjectName("logTextEdit")
+        self.mw.log_text.setMinimumHeight(100)
+        self.mw.log_text.setMaximumHeight(260)
+
         log_layout.addWidget(self.mw.log_text)

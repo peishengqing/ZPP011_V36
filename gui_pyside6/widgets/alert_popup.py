@@ -35,24 +35,7 @@ class AlertPopup(QWidget):
         self._start_auto_close()
 
     def _set_stylesheet(self):
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #fff3cd;
-                border: 2px solid #ffc107;
-                border-radius: 8px;
-            }
-            QLabel#title { color: #856404; font-weight: bold; }
-            QLabel#subtitle { color: #856404; font-size: 11pt; }
-            QPushButton {
-                background-color: #ffc107;
-                color: #333;
-                border: none;
-                padding: 6px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #e0a800; }
-        """)
+        self.setObjectName("alertPopup")
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -75,7 +58,7 @@ class AlertPopup(QWidget):
         self.detail = QTextEdit()
         self.detail.setReadOnly(True)
         self.detail.setMaximumHeight(120)
-        self.detail.setStyleSheet("background-color: white; border: 1px solid #ddd; border-radius: 4px; padding: 4px;")
+        self.detail.setObjectName("alertDetail")
         lines = []
         cols = [c for c in ['物料编码', '物料名称', '偏差率(%)', '偏差率'] if c in self.alerts_df.columns]
         rate_col = '偏差率(%)' if '偏差率(%)' in self.alerts_df.columns else ('偏差率' if '偏差率' in self.alerts_df.columns else None)
