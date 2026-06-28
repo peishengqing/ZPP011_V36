@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QFileDialog,
     QHeaderView, QDialog, QDialogButtonBox, QSplitter,
     QComboBox, QAbstractItemView, QMessageBox, QTableWidgetItem,
-    QMenu, QSizePolicy,
+    QMenu, QSizePolicy, QGroupBox, QFormLayout,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer
 from PySide6.QtGui import QFont, QShortcut, QKeySequence, QAction
@@ -122,22 +122,12 @@ class MainWindow(QMainWindow):
         # UI 引用（必须在 _setup_connections 之前赋值）
         self.left_panel = self.left_panel_component.left_panel
         self.filter_panel = self.filter_panel  # Already created above
-        # Legacy widgets (used by various methods)
-        self.input_file_edit = QLineEdit(self)
-        self.input_file_edit.setPlaceholderText("📁 点击'浏览'选文件")
-        self.input_file_edit.setObjectName("inputFileEdit")
-        self.input_file_edit.setReadOnly(True)
-        self.input_file_edit.setToolTip("选择文件后将在此显示完整路径")
+        # 注意：input_file_edit / output_dir_edit 已由 LeftPanelComponent 创建，
+        # 不要在这里重复创建，否则会覆盖布局中的控件引用
+        # preview_label 也由 LeftPanelComponent 创建
 
-        self.output_dir_edit = QLineEdit(self)
-        self.output_dir_edit.setPlaceholderText("请选择输出目录...")
-        self.output_dir_edit.setObjectName("outputDirEdit")
-        self.output_dir_edit.setReadOnly(True)
-
-        self.preview_label = QLabel("请选择文件")
-        self.preview_label.setObjectName("previewLabel")
-
-        # 标题栏是子控件，不是顶层窗口，不需要 setWindowFlags        self.progress_bar = self.main_table.progress_bar
+        # 标题栏是子控件，不是顶层窗口，不需要 setWindowFlags
+        self.progress_bar = self.main_table.progress_bar
         self.progress_label = self.main_table.progress_label
         # 无统计卡片相关变量
         # self.stat_total = ... 已删除
@@ -168,10 +158,16 @@ class MainWindow(QMainWindow):
         # 组装布局（必须在 show 之前）
         self._assemble_layout()
 
-        # 加载暗色主题（在所有组件创建和布局组装之后，show 之前）
-        self._is_dark_theme = True  # 跟踪当前主题状态
-        self._load_dark_theme()
-        self.title_bar.set_theme_dark()  # 设置按钮文字为"亮色"
+        # 加载亮色主题（默认亮色）
+        self._is_dark_theme = False
+        qss_path = os.path.join(os.path.dirname(__file__), "light_theme.qss")
+        if os.path.exists(qss_path):
+            with open(qss_path, "r", encoding="utf-8") as f:
+                QApplication.instance().setStyleSheet(f.read())
+        self.title_bar.set_theme_light()  # 设置按钮文字为"暗色"
+
+        # 刷新替代料配对视图（加载已保存的配对到表格）
+        self._refresh_alt_view()
 
         # 所有组件初始化完成后才显示窗口
         self.show()
@@ -300,9 +296,30 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self._v_splitter, 1)
 
         self.body_splitter.addWidget(right_container)
-        self.body_splitter.setSizes([260, 280, 940])
+        self.body_splitter.setSizes([360, 0, 1000])
 
         main_layout.addWidget(self.body_splitter, 1)
+
+        # 4. 底部状态栏（28px，仿 Tkinter 旧版深蓝状态栏）
+        status_bar = QWidget()
+        status_bar.setObjectName("statusBar")
+        status_bar.setFixedHeight(28)
+        status_layout = QHBoxLayout(status_bar)
+        status_layout.setContentsMargins(8, 0, 8, 0)
+        status_layout.setSpacing(6)
+
+        # 左侧蓝色竖条
+        accent = QWidget()
+        accent.setFixedWidth(3)
+        accent.setObjectName("statusAccentBar")
+        status_layout.addWidget(accent)
+
+        self.status_label = QLabel("就绪 — 选择输入文件后点击「开始分析」")
+        self.status_label.setObjectName("statusLabel")
+        status_layout.addWidget(self.status_label)
+        status_layout.addStretch()
+
+        main_layout.addWidget(status_bar)
 
     def _setup_connections(self):
         self.main_table.start_btn.clicked.connect(self._start_analysis)
@@ -736,9 +753,6 @@ class MainWindow(QMainWindow):
             self.alt_table.setItem(row, 2, item_b)
         if self.alt_count_label is not None:
             self.alt_count_label.setText(f"共 {len(pairs)} 对")
-        self.alt_table.resizeColumnsToContents()
-        self.alt_table.setColumnWidth(0, max(80, self.alt_table.columnWidth(0)))
-        self.alt_table.setColumnWidth(2, max(80, self.alt_table.columnWidth(2)))
 
     def _on_alt_pairs_changed(self):
         self._refresh_alt_view()
@@ -1267,8 +1281,13 @@ class MainWindow(QMainWindow):
                 if row < len(df):
                     row_data = df.iloc[row]
                     self._show_row_detail(row_data)
+                else:
+                    self.log(f"双击弹窗: row={row} 超出范围 len={len(df)}", "warn")
+            else:
+                self.log(f"双击弹窗失败: proxy_model={self.proxy_model}, source_model={self.source_model}", "error")
         except Exception as e:
-            self.log(f"双击弹窗失败: {e}", "error")
+            import traceback
+            self.log(f"双击弹窗失败: {e}\n{traceback.format_exc()}", "error")
 
     def _show_row_detail(self, row_data):
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QLabel, QDialogButtonBox
