@@ -7,6 +7,7 @@
 """
 
 import pandas as pd
+import numpy as np
 
 
 def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True, group_key: list = None) -> pd.DataFrame:
@@ -22,6 +23,41 @@ def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True, gro
     返回:
         添加了 '净偏差数量' 和 '净偏差金额' 列的 DataFrame
     """
+    # 内部函数：计算净偏差率 = 净偏差数量 / 定额 * 100
+    # 替代料组使用组内总定额计算统一净偏差率
+    def _calc_net_rate(df):
+        quota_col = None
+        for c in ['数量-定额', '定额']:
+            if c in df.columns:
+                quota_col = c
+                break
+        if not quota_col:
+            df['净偏差率(%)'] = 0.0
+            return df
+
+        # 先按每行自己的定额计算（非替代料行用此值）
+        df['净偏差率(%)'] = (pd.to_numeric(df['净偏差数量'], errors='coerce').fillna(0) /
+                           pd.to_numeric(df[quota_col], errors='coerce').replace(0, np.nan) * 100).fillna(0).round(2)
+
+        # 替代料组：按 (订单 + 组) 维度重新计算统一净偏差率
+        # 与净偏差数量的"按订单"计算保持一致，避免跨订单聚合导致净偏差率被压成≈0%
+        if '_替代料组' in df.columns:
+            # 解析订单维度列名（与 apply_net_offset 主流程一致，兼容提前返回路径中尚未定义 date_col/order_col 的情况）
+            _dcol = '订单日期' if '订单日期' in df.columns else ('订单开始日期' if '订单开始日期' in df.columns else None)
+            _ocol = '流程订单' if '流程订单' in df.columns else None
+            group_cols = [c for c in (_dcol, _ocol, '_替代料组') if c]
+            # 组内总定额
+            group_quota = df.groupby(group_cols)[quota_col].transform(lambda x: pd.to_numeric(x, errors='coerce').fillna(0).sum())
+            # 组内净偏差数量（同一订单同组所有行相同，取首行即可）
+            group_net_qty = df.groupby(group_cols)['净偏差数量'].transform('first')
+            # 重新计算组净偏差率
+            group_rate = (pd.to_numeric(group_net_qty, errors='coerce').fillna(0) /
+                         group_quota.replace(0, np.nan) * 100).fillna(0).round(2)
+            # 只更新替代料组内的行
+            is_alt = df['_替代料组'].notna()
+            df.loc[is_alt, '净偏差率(%)'] = group_rate[is_alt]
+        return df
+
     # 不启用时直接返回原 df
     if not enable:
         if '净偏差数量' not in df.columns:
@@ -33,6 +69,7 @@ def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True, gro
                 df['净偏差金额'] = df['偏差金额']
             else:
                 df['净偏差金额'] = 0
+        _calc_net_rate(df)
         return df
 
     if df.empty or not alt_pairs:
@@ -43,6 +80,7 @@ def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True, gro
             df['净偏差金额'] = df['偏差金额']
         else:
             df['净偏差金额'] = 0
+        _calc_net_rate(df)
         return df
 
     df = df.copy()
@@ -110,6 +148,9 @@ def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True, gro
             present = [m for m in members if m in code_to_indices]
             if not present:
                 continue
+            # 只有同一订单内同时存在2个及以上配对物料时，才算替代料
+            if len(present) < 2:
+                continue
             total_qty = 0
             total_amt = 0
             for code in present:
@@ -127,6 +168,9 @@ def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True, gro
             # 数量净偏差为0时强制金额为0
             if total_qty == 0:
                 total_amt = 0
+            # 强制净偏差金额符号与净偏差数量一致（不同物料单价不同可能导致符号相反）
+            elif total_amt != 0:
+                total_amt = abs(total_amt) * (1 if total_qty > 0 else -1)
             group_net[root] = (total_qty, total_amt)
 
         # 将净偏差写回该组内的所有行
@@ -143,6 +187,9 @@ def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True, gro
     # 数值格式化：保留2位小数，避免浮点精度问题
     df['净偏差数量'] = df['净偏差数量'].round(2)
     df['净偏差金额'] = df['净偏差金额'].round(2)
+
+    # 计算净偏差率 = 净偏差数量 / 定额 * 100
+    _calc_net_rate(df)
 
     # 更新"是否替代料"列：_替代料组非空的即为替代料
     if '_替代料组' in df.columns:

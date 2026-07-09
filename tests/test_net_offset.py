@@ -26,9 +26,10 @@ class TestApplyNetOffset:
         })
         result = apply_net_offset(df, [('A', 'B')], group_key=['订单日期', '流程订单'])
         assert '净偏差金额' in result.columns
-        # A(100) + B(-80) = 20
-        assert result['净偏差金额'].iloc[0] == 20.0
-        assert result['净偏差金额'].iloc[1] == 20.0
+        # 净偏差金额符号跟随净偏差数量：净偏差数量 = 10 + (-20) = -10 (负)
+        # → 金额 = -|100 + (-80)| = -20.0（两行同组，值相同）
+        assert result['净偏差金额'].iloc[0] == -20.0
+        assert result['净偏差金额'].iloc[1] == -20.0
 
     def test_no_offset_when_disabled(self):
         """当 enable=False 时，净偏差 = 原偏差金额"""

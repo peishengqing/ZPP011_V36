@@ -71,6 +71,10 @@ class MenuBarComponent:
         rule_action.triggered.connect(self.mw._open_rule_config)
         audit_menu.addAction(rule_action)
 
+        alert_action = QAction("🔔 替代料看板", self.mw)
+        alert_action.triggered.connect(self.mw._show_alert_dashboard)
+        audit_menu.addAction(alert_action)
+
         # 工具菜单
         tools_menu = menubar.addMenu("工具")
         import_action = QAction("模板导入向导", self.mw)

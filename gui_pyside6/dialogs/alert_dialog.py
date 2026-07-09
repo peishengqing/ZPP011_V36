@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-预警看板对话框 - 仅显示替代料预警，支持标记已读、导出、双击跳转
+替代料看板对话框 - 仅显示替代料预警，支持标记已读、导出、双击跳转
 """
 
 import pandas as pd
@@ -10,16 +10,16 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QPoint
 from gui_pyside6.models.data_frame_model import DataFrameModel
-from core.read_status import save_read_status
+from core.read_status import save_read_status, save_read_status_batch
 from gui_pyside6.widgets.toast import toast
 
 
 class AlertDialog(QDialog):
-    """预警看板对话框 - 替代料偏差预警，支持标记已读"""
+    """替代料看板对话框 - 替代料偏差预警，支持标记已读"""
 
     def __init__(self, alerts_df, main_window, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("实时预警看板 - 替代料偏差预警")
+        self.setWindowTitle("实时替代料看板 - 替代料偏差预警")
         self.resize(1200, 600)
         self.main_window = main_window
         self.original_df = alerts_df.copy()
@@ -73,16 +73,18 @@ class AlertDialog(QDialog):
         # ---- 表格 ----
         self.table_view = QTableView()
         self.table_view.setAlternatingRowColors(True)
-        self.table_view.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table_view.setSelectionBehavior(QAbstractItemView.SelectItems)
         self.table_view.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.table_view.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table_view.customContextMenuRequested.connect(self.show_context_menu)
         self.table_view.doubleClicked.connect(self.on_double_click)
         self.table_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table_view.setSortingEnabled(False)
+        self.table_view.setSortingEnabled(True)  # 允许点击列头排序
         self.table_view.horizontalHeader().setStretchLastSection(True)
         self.table_view.verticalHeader().setVisible(False)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
+        # 安装 Ctrl+C 复制事件过滤器
+        self.table_view.installEventFilter(self)
         layout.addWidget(self.table_view)
 
         # ---- 底部按钮 ----
@@ -166,9 +168,10 @@ class AlertDialog(QDialog):
             return
         row = index.row()
 
-        # 检查当前行是否在选中范围内，如果不是则只选这一行
+        # 兼容 SelectItems 模式：从所有选中索引提取唯一行号
         selection_model = self.table_view.selectionModel()
-        selected_rows = [idx.row() for idx in selection_model.selectedRows()]
+        selected_indexes = selection_model.selectedIndexes()
+        selected_rows = list(set(idx.row() for idx in selected_indexes))
         # 如果右键的行不在选中范围内，清空选择只选这一行
         if row not in selected_rows:
             self.table_view.clearSelection()
@@ -187,10 +190,12 @@ class AlertDialog(QDialog):
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
 
     def _mark_selected_rows_read(self, rows):
-        """标记所有选中行为已读"""
+        """标记所有选中行为已读（右键菜单）"""
         df = self.source_model.getDataFrame()
         if df is None:
             return
+        records = []
+        changed_ids = set()
         count = 0
         for r in rows:
             if r >= len(df):
@@ -204,22 +209,30 @@ class AlertDialog(QDialog):
                     data_id = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
             if not data_id:
                 continue
-            self._sync_main_df(data_id, 1)
-            if hasattr(self, 'original_df') and 'data_id' in self.original_df.columns:
-                orig_mask = self.original_df['data_id'] == data_id
-                if orig_mask.any():
-                    self.original_df.loc[orig_mask, '_read'] = 1
-                    if '状态' in self.original_df.columns:
-                        self.original_df.loc[orig_mask, '状态'] = '✓ 已读'
-                    count += 1
+            ok, already, fingerprint = self._sync_main_df(data_id, 1)
+            if ok and not already:
+                records.append((data_id, 1, fingerprint))
+                changed_ids.add(data_id)
+                count += 1
+        if records:
+            save_read_status_batch(records)
+        self._refresh_main_table_once()
+        if changed_ids and hasattr(self, 'original_df') and 'data_id' in self.original_df.columns:
+            orig_mask = self.original_df['data_id'].isin(changed_ids)
+            if orig_mask.any():
+                self.original_df.loc[orig_mask, '_read'] = 1
+                if '状态' in self.original_df.columns:
+                    self.original_df.loc[orig_mask, '状态'] = '✓ 已读'
         self._apply_filter()
         toast(f"✅ 已标记 {count} 条为已读", parent=self)
 
     def _mark_selected_rows_unread(self, rows):
-        """标记所有选中行为未读"""
+        """标记所有选中行为未读（右键菜单）"""
         df = self.source_model.getDataFrame()
         if df is None:
             return
+        records = []
+        changed_ids = set()
         count = 0
         for r in rows:
             if r >= len(df):
@@ -233,23 +246,33 @@ class AlertDialog(QDialog):
                     data_id = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
             if not data_id:
                 continue
-            self._sync_main_df(data_id, 0)
-            if hasattr(self, 'original_df') and 'data_id' in self.original_df.columns:
-                orig_mask = self.original_df['data_id'] == data_id
-                if orig_mask.any():
-                    self.original_df.loc[orig_mask, '_read'] = 0
-                    if '状态' in self.original_df.columns:
-                        self.original_df.loc[orig_mask, '状态'] = '○ 未读'
-                    count += 1
+            ok, already, fingerprint = self._sync_main_df(data_id, 0)
+            if ok and not already:
+                records.append((data_id, 0, fingerprint))
+                changed_ids.add(data_id)
+                count += 1
+        if records:
+            save_read_status_batch(records)
+        self._refresh_main_table_once()
+        if changed_ids and hasattr(self, 'original_df') and 'data_id' in self.original_df.columns:
+            orig_mask = self.original_df['data_id'].isin(changed_ids)
+            if orig_mask.any():
+                self.original_df.loc[orig_mask, '_read'] = 0
+                if '状态' in self.original_df.columns:
+                    self.original_df.loc[orig_mask, '状态'] = '○ 未读'
         self._apply_filter()
         toast(f"⭕ 已标记 {count} 条为未读", parent=self)
 
     def _sync_main_df(self, data_id, read_value):
-        """同步主表格的已读状态，返回 (success, already_status)"""
+        """同步主表内存中的已读状态（仅改内存，不做落盘和 UI 重建）
+
+        在循环内调用，避免逐行重建主表模型（setDataFrame 会重建全量缓存，开销大）。
+        落盘与 UI 重建由调用方在循环外统一做一次。
+        返回 (success, already_status, fingerprint)
+        """
         main_df = self.main_window.view_model.df
         if main_df is None:
-            print(f"[DEBUG _sync_main_df] main_df is None, data_id={data_id}")
-            return False, False
+            return False, False, ''
 
         # 确保主表有 data_id（不覆盖已有的 data_id，避免和 data_service 格式不一致）
         if 'data_id' not in main_df.columns:
@@ -267,12 +290,11 @@ class AlertDialog(QDialog):
                     main_df['物料编码'].astype(str)
                 )
             else:
-                print(f"[DEBUG _sync_main_df] main_df 缺少日期/订单/物料列")
-                return False, False
+                return False, False, ''
             self.main_window.view_model.df = main_df
 
         if 'data_id' not in main_df.columns:
-            return False, False
+            return False, False, ''
 
         if '_read' not in main_df.columns:
             main_df['_read'] = 0
@@ -280,21 +302,26 @@ class AlertDialog(QDialog):
 
         mask = main_df['data_id'] == data_id
         if not mask.any():
-            print(f"[DEBUG _sync_main_df] data_id={data_id} 在主表中未找到")
-            return False, False
-
+            return False, False, ''
         idx = main_df[mask].index[0]
         current_val = main_df.at[idx, '_read']
         if current_val == read_value:
-            return True, True  # 已经是目标状态
+            return True, True, ''  # 已经是目标状态
         main_df.at[idx, '_read'] = read_value
         fingerprint = main_df.at[idx, 'fingerprint'] if 'fingerprint' in main_df.columns else ''
-        save_read_status(data_id, int(read_value), fingerprint)
         self.main_window.view_model.df = main_df
-        # 刷新主表格显示
+        return True, False, fingerprint
+
+    def _refresh_main_table_once(self):
+        """循环外统一重建主表（只调用一次，避免逐行重建，大幅提升连续标记性能）"""
+        main_df = self.main_window.view_model.df
+        if main_df is None:
+            return
         if hasattr(self.main_window, 'source_model') and self.main_window.source_model:
             self.main_window.source_model.setDataFrame(main_df)
-        return True, False
+            # setDataFrame 会重排列（_read 移到第0列），按列名恢复显隐，避免列错位丢失
+            if hasattr(self.main_window, '_apply_column_visibility_by_name'):
+                self.main_window._apply_column_visibility_by_name()
 
     def mark_row_read(self, view_row):
         """标记当前行为已读"""
@@ -314,10 +341,13 @@ class AlertDialog(QDialog):
             toast("无法定位记录，标记失败", 'error', parent=self)
             return
 
-        ok, already = self._sync_main_df(data_id, 1)
+        ok, already, fingerprint = self._sync_main_df(data_id, 1)
         if already:
             toast("该记录已是已读状态", parent=self)
         elif ok:
+            # 单行标记：落盘一次 + 重建主表一次
+            save_read_status(data_id, 1, fingerprint)
+            self._refresh_main_table_once()
             pass  # 不弹 toast，避免刷屏
 
         # 更新 original_df
@@ -350,11 +380,12 @@ class AlertDialog(QDialog):
             toast("无法定位记录，标记失败", 'error', parent=self)
             return
 
-        ok, already = self._sync_main_df(data_id, 0)
+        ok, already, fingerprint = self._sync_main_df(data_id, 0)
         if already:
             toast("该记录已是未读状态", parent=self)
         elif ok:
-            pass
+            save_read_status(data_id, 0, fingerprint)
+            self._refresh_main_table_once()
 
         if hasattr(self, 'original_df') and 'data_id' in self.original_df.columns:
             orig_mask = self.original_df['data_id'] == data_id
@@ -377,12 +408,9 @@ class AlertDialog(QDialog):
             toast("请先选中要标记的行", 'info', parent=self)
             return
 
-        selected_indexes = selection_model.selectedRows()
-        print(f"[DEBUG batch_mark_read] selected_indexes 数量: {len(selected_indexes)}")
-        for i, idx in enumerate(selected_indexes):
-            print(f"[DEBUG batch_mark_read]  选中行 {i}: row={idx.row()}, col={idx.column()}")
-
-        selected_rows = [index.row() for index in selected_indexes]
+        # 兼容 SelectItems 模式：从所有选中索引提取唯一行号
+        selected_indexes = selection_model.selectedIndexes()
+        selected_rows = sorted(set(idx.row() for idx in selected_indexes))
         if not selected_rows:
             toast("请先选中要标记的行", 'info', parent=self)
             return
@@ -392,45 +420,44 @@ class AlertDialog(QDialog):
             toast("没有可标记的记录", 'info', parent=self)
             return
 
-        count = 0
+        records = []          # [(data_id, is_read, fingerprint), ...] 待落盘
+        changed_ids = set()   # 实际发生状态变化的 data_id（用于 original_df 向量化更新）
+
         for row in selected_rows:
-            print(f"[DEBUG batch_mark_read] 处理行 {row}, df长度={len(df)}")
             if row >= len(df):
-                print(f"[DEBUG batch_mark_read]  行号越界，跳过")
                 continue
             data_id = df.iloc[row].get('data_id')
-            print(f"[DEBUG batch_mark_read]  data_id={data_id}")
             if not data_id:
                 rs = df.iloc[row]
                 if '工厂' in df.columns:
                     data_id = f"{rs.get('工厂','')}|{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
                 else:
                     data_id = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
-                print(f"[DEBUG batch_mark_read]  拼接 data_id={data_id}")
             if not data_id:
-                print(f"[DEBUG batch_mark_read]  data_id 为空，跳过")
                 continue
 
-            ok, already = self._sync_main_df(data_id, 1)
-            print(f"[DEBUG batch_mark_read]  _sync_main_df 返回: ok={ok}, already={already}")
+            # 循环内：只改主表内存，不落盘、不重建
+            ok, already, fingerprint = self._sync_main_df(data_id, 1)
+            if ok and not already:
+                records.append((data_id, 1, fingerprint))
+                changed_ids.add(data_id)
+                count += 1
 
-            # 更新 original_df
-            if hasattr(self, 'original_df') and 'data_id' in self.original_df.columns:
-                orig_mask = self.original_df['data_id'] == data_id
-                if orig_mask.any():
-                    self.original_df.loc[orig_mask, '_read'] = 1
-                    if '状态' in self.original_df.columns:
-                        self.original_df.loc[orig_mask, '状态'] = '✓ 已读'
-                    count += 1
-                    print(f"[DEBUG batch_mark_read]  已更新 original_df, count={count}")
-                else:
-                    print(f"[DEBUG batch_mark_read]  original_df 中未找到 data_id 匹配")
-            else:
-                print(f"[DEBUG batch_mark_read]  original_df 无 data_id 列")
+        # 循环外统一：批量落盘一次 + 重建主表一次（关键性能优化）
+        if records:
+            save_read_status_batch(records)
+        self._refresh_main_table_once()
+
+        # original_df 向量化更新（一次到位，避免逐行）
+        if changed_ids and hasattr(self, 'original_df') and 'data_id' in self.original_df.columns:
+            orig_mask = self.original_df['data_id'].isin(changed_ids)
+            if orig_mask.any():
+                self.original_df.loc[orig_mask, '_read'] = 1
+                if '状态' in self.original_df.columns:
+                    self.original_df.loc[orig_mask, '状态'] = '✓ 已读'
 
         self._apply_filter()
         toast(f"✅ 已批量标记 {count} 条为已读", parent=self)
-        print(f"[DEBUG batch_mark_read] 完成，共标记 {count} 条")
 
     def batch_mark_unread(self):
         """批量标记选中行为未读"""
@@ -442,10 +469,9 @@ class AlertDialog(QDialog):
             toast("请先选中要标记的行", 'info', parent=self)
             return
 
-        selected_indexes = selection_model.selectedRows()
-        print(f"[DEBUG batch_mark_unread] selected_indexes 数量: {len(selected_indexes)}")
-
-        selected_rows = [index.row() for index in selected_indexes]
+        # 兼容 SelectItems 模式：从所有选中索引提取唯一行号
+        selected_indexes = selection_model.selectedIndexes()
+        selected_rows = sorted(set(idx.row() for idx in selected_indexes))
         if not selected_rows:
             toast("请先选中要标记的行", 'info', parent=self)
             return
@@ -455,7 +481,9 @@ class AlertDialog(QDialog):
             toast("没有可标记的记录", 'info', parent=self)
             return
 
-        count = 0
+        records = []
+        changed_ids = set()
+
         for row in selected_rows:
             if row >= len(df):
                 continue
@@ -469,18 +497,25 @@ class AlertDialog(QDialog):
             if not data_id:
                 continue
 
-            self._sync_main_df(data_id, 0)
-            if hasattr(self, 'original_df') and 'data_id' in self.original_df.columns:
-                orig_mask = self.original_df['data_id'] == data_id
-                if orig_mask.any():
-                    self.original_df.loc[orig_mask, '_read'] = 0
-                    if '状态' in self.original_df.columns:
-                        self.original_df.loc[orig_mask, '状态'] = '○ 未读'
-                    count += 1
+            ok, already, fingerprint = self._sync_main_df(data_id, 0)
+            if ok and not already:
+                records.append((data_id, 0, fingerprint))
+                changed_ids.add(data_id)
+                count += 1
+
+        if records:
+            save_read_status_batch(records)
+        self._refresh_main_table_once()
+
+        if changed_ids and hasattr(self, 'original_df') and 'data_id' in self.original_df.columns:
+            orig_mask = self.original_df['data_id'].isin(changed_ids)
+            if orig_mask.any():
+                self.original_df.loc[orig_mask, '_read'] = 0
+                if '状态' in self.original_df.columns:
+                    self.original_df.loc[orig_mask, '状态'] = '○ 未读'
 
         self._apply_filter()
         toast(f"⭕ 已批量标记 {count} 条为未读", parent=self)
-        print(f"[DEBUG batch_mark_unread] 完成，共标记 {count} 条")
 
     def toggle_fullscreen(self):
         if self.isFullScreen():
@@ -502,3 +537,42 @@ class AlertDialog(QDialog):
             except (AttributeError, Exception):
                 pass
             self.accept()
+
+    # -----------------------------------------------------------
+    # 复制选中单元格
+    # -----------------------------------------------------------
+    def eventFilter(self, obj, event):
+        from PySide6.QtCore import QEvent
+        from PySide6.QtGui import QKeySequence
+        if obj is self.table_view and event.type() == QEvent.KeyPress:
+            if event.matches(QKeySequence.Copy):
+                self._copy_selected_cells()
+                return True
+        return super().eventFilter(obj, event)
+
+    def _copy_selected_cells(self):
+        from PySide6.QtWidgets import QApplication
+        selection = self.table_view.selectionModel()
+        if not selection or not selection.hasSelection():
+            return
+        indexes = selection.selectedIndexes()
+        cells = {}
+        min_row, max_row = float('inf'), -1
+        min_col, max_col = float('inf'), -1
+        for idx in indexes:
+            r, c = idx.row(), idx.column()
+            val = idx.data(Qt.DisplayRole) or ""
+            cells[(r, c)] = str(val).replace("\n", " ").replace("\r", "")
+            min_row = min(min_row, r)
+            max_row = max(max_row, r)
+            min_col = min(min_col, c)
+            max_col = max(max_col, c)
+        if max_row < 0:
+            return
+        lines = []
+        for r in range(min_row, max_row + 1):
+            row_vals = []
+            for c in range(min_col, max_col + 1):
+                row_vals.append(cells.get((r, c), ""))
+            lines.append("\t".join(row_vals))
+        QApplication.clipboard().setText("\n".join(lines))

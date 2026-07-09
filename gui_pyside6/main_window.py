@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QHeaderView, QDialog, QDialogButtonBox, QSplitter,
     QComboBox, QAbstractItemView, QMessageBox, QTableWidgetItem,
     QMenu, QSizePolicy, QGroupBox, QFormLayout,
+    QListWidget, QListWidgetItem, QScrollArea, QGridLayout, QCheckBox,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer
 from PySide6.QtGui import QFont, QShortcut, QKeySequence, QAction
@@ -44,7 +45,7 @@ from gui_pyside6.dialogs.import_wizard_dialog import ImportWizard
 from gui_pyside6.dialogs.benefit_report_dialog import BenefitReportDialog
 from gui_pyside6.dialogs.health_check_dialog import HealthCheckDialog
 from gui_pyside6.viewmodels.analysis_vm import AnalysisViewModel
-from core.alert_monitor import AlertMonitor
+from core.alert_monitor import AlertMonitor, filter_alt_alerts
 from domain.alt_material.alt_manager import (
     load_alt_pairs,
     save_alt_pairs,
@@ -55,7 +56,7 @@ from core.config_manager import ConfigManager
 from core.fingerprint import calc_fingerprint
 from core.read_status import load_read_status, record_deviation_change
 from gui_pyside6.services.data_service import DataService
-from utils.version_history import get_current_version
+from utils.version_history import get_current_version, VERSION_HISTORY, APP_NAME, AUTHOR
 
 from gui_pyside6.controllers.analysis_controller import AnalysisController
 from gui_pyside6.controllers.audit_controller import AuditController
@@ -85,6 +86,8 @@ class MainWindow(QMainWindow):
         self.sort_columns = []
         self._countdown_seconds = 0
         self._countdown_timer = None
+        # 按"列名"记录需要隐藏的列（避免 setDataFrame 重排列后索引错位导致列丢失）
+        self._hidden_column_names = set()
 
         # 控制器
         self.analysis_controller = AnalysisController(self)
@@ -122,10 +125,7 @@ class MainWindow(QMainWindow):
         # UI 引用（必须在 _setup_connections 之前赋值）
         self.left_panel = self.left_panel_component.left_panel
         self.filter_panel = self.filter_panel  # Already created above
-        # 注意：input_file_edit / output_dir_edit 已由 LeftPanelComponent 创建，
-        # 不要在这里重复创建，否则会覆盖布局中的控件引用
-        # preview_label 也由 LeftPanelComponent 创建
-
+        # input_file_edit / output_dir_edit / preview_label 由 LeftPanelComponent 创建
         # 标题栏是子控件，不是顶层窗口，不需要 setWindowFlags
         self.progress_bar = self.main_table.progress_bar
         self.progress_label = self.main_table.progress_label
@@ -158,18 +158,16 @@ class MainWindow(QMainWindow):
         # 组装布局（必须在 show 之前）
         self._assemble_layout()
 
-        # 加载亮色主题（默认亮色）
+        # 加载亮色主题（在所有组件创建和布局组装之后，show 之前）
         self._is_dark_theme = False
         qss_path = os.path.join(os.path.dirname(__file__), "light_theme.qss")
         if os.path.exists(qss_path):
             with open(qss_path, "r", encoding="utf-8") as f:
                 QApplication.instance().setStyleSheet(f.read())
-        self.title_bar.set_theme_light()  # 设置按钮文字为"暗色"
-
-        # 刷新替代料配对视图（加载已保存的配对到表格）
-        self._refresh_alt_view()
+        self.title_bar.set_theme_light()
 
         # 所有组件初始化完成后才显示窗口
+        self._refresh_alt_view()
         self.show()
 
         self.title_bar.theme_toggled.connect(self._toggle_theme)
@@ -247,6 +245,12 @@ class MainWindow(QMainWindow):
             lambda: self.export_controller.export_current_table(self.view_model.df, self)
         )
 
+        self.action_btn_export_full = QPushButton("📋 完整报告")
+        self.action_btn_export_full.setCursor(Qt.PointingHandCursor)
+        self.action_btn_export_full.setObjectName("actionBtnExportFull")
+        self.action_btn_export_full.setProperty("class", "actionBtn")
+        self.action_btn_export_full.clicked.connect(self._on_export_full_excel)
+
         self.action_btn_ppt = QPushButton("📈 PPT")
         self.action_btn_ppt.setCursor(Qt.PointingHandCursor)
         self.action_btn_ppt.setObjectName("actionBtnPpt")
@@ -261,6 +265,7 @@ class MainWindow(QMainWindow):
         action_layout.addWidget(self.action_btn_ai)
         action_layout.addWidget(spacer2)
         action_layout.addWidget(self.action_btn_excel)
+        action_layout.addWidget(self.action_btn_export_full)
         action_layout.addWidget(self.action_btn_ppt)
         action_layout.addStretch()
         action_layout.addWidget(shortcut_hint)
@@ -285,40 +290,44 @@ class MainWindow(QMainWindow):
 
         # 垂直分割器：表格 + 日志
         self._v_splitter = QSplitter(Qt.Vertical)
-        self._v_splitter.setChildrenCollapsible(False)
+        self._v_splitter.setChildrenCollapsible(True)
         self._v_splitter.addWidget(self.main_table.audit_widget)
         self._v_splitter.addWidget(self.log_group)
         self._v_splitter.setSizes([500, 140])
         self._v_splitter.setStretchFactor(0, 7)
         self._v_splitter.setStretchFactor(1, 3)
+        # 记录日志面板是否被用户手动展开
+        self._log_user_expanded = False
+        self._log_saved_sizes = [500, 140]
+        # 复用单个定时器
+        self._log_auto_timer = QTimer(self)
+        self._log_auto_timer.setSingleShot(True)
+        self._log_auto_timer.timeout.connect(self._auto_collapse_log)
 
-        # 组合
+        # 组合：分割器(stretch) + 合计栏(固定在底部，不被挤出)
         right_layout.addWidget(self._v_splitter, 1)
+        right_layout.addWidget(self.main_table.summary_container, 0)
 
         self.body_splitter.addWidget(right_container)
-        self.body_splitter.setSizes([360, 0, 1000])
+        self.body_splitter.setSizes([260, 280, 940])
 
         main_layout.addWidget(self.body_splitter, 1)
 
-        # 4. 底部状态栏（28px，仿 Tkinter 旧版深蓝状态栏）
+        # 底部状态栏
         status_bar = QWidget()
         status_bar.setObjectName("statusBar")
         status_bar.setFixedHeight(28)
         status_layout = QHBoxLayout(status_bar)
         status_layout.setContentsMargins(8, 0, 8, 0)
         status_layout.setSpacing(6)
-
-        # 左侧蓝色竖条
         accent = QWidget()
         accent.setFixedWidth(3)
         accent.setObjectName("statusAccentBar")
         status_layout.addWidget(accent)
-
         self.status_label = QLabel("就绪 — 选择输入文件后点击「开始分析」")
         self.status_label.setObjectName("statusLabel")
         status_layout.addWidget(self.status_label)
         status_layout.addStretch()
-
         main_layout.addWidget(status_bar)
 
     def _setup_connections(self):
@@ -358,6 +367,9 @@ class MainWindow(QMainWindow):
         self.audit_controller.progress_finished.connect(self._on_ai_finished_ui)
         self.audit_controller.progress_error.connect(self._on_ai_error_ui)
         self.alt_controller.data_changed.connect(self._on_alt_pairs_changed)
+
+        # 筛选面板信号
+        self.filter_panel.filter_changed.connect(self._on_filter_panel_changed)
 
     def _on_title_factory_selected(self, factory_name):
         self._on_factory_changed(factory_name)
@@ -408,12 +420,16 @@ class MainWindow(QMainWindow):
         self.loading_dialog.show()
         QApplication.processEvents()
 
+        dev_threshold = getattr(self.filter_panel, 'dev_threshold_spin', None)
+        dev_threshold_val = dev_threshold.value() if dev_threshold is not None else 1.0
+
         self.analysis_controller.start_analysis(
             self.current_input_file,
             self.alt_controller.get_pairs(),
             "",
             "",
             "",
+            dev_threshold_val,
         )
 
     def _on_analysis_ui_start(self):
@@ -447,7 +463,8 @@ class MainWindow(QMainWindow):
 
         factory_list = self.analysis_controller.get_factory_list()
         if factory_list:
-            self._on_factory_changed(factory_list[0])
+            # 默认显示全部工厂，不按工厂拆分
+            self._on_factory_changed('全部')
 
         try:
             processed_df = self.view_model.df
@@ -507,12 +524,19 @@ class MainWindow(QMainWindow):
             self._cache_worker.start()
 
             self._set_column_widths()
-            self.statusBar().showMessage(f"分析完成，共加载 {len(df)} 条记录")
+            self.statusBar().showMessage(f"分析完成，共加载 {len(processed_df)} 行 × {len(processed_df.columns)} 列")
+            # 更新左侧"数据预览"卡片（文字统计，使用与表格一致的预处理后 df）
+            if hasattr(self, 'preview_label') and self.preview_label:
+                self.preview_label.setText(self._format_preview_stats(processed_df))
+            if hasattr(self, 'left_panel') and hasattr(self.left_panel, 'preview_group'):
+                self.left_panel.preview_group.expand()
             self.main_table.summary_container.setVisible(True)
             self._update_summary()
             self.main_table.summary_container.raise_()
             self.main_table.summary_container.repaint()
             QApplication.processEvents()
+            # 分析完成后5秒自动折叠日志面板
+            self._log_auto_timer.start(5000)
         except Exception as e:
             QMessageBox.critical(self, "错误", f"加载结果失败: {e}")
 
@@ -565,6 +589,7 @@ class MainWindow(QMainWindow):
 
         processed_df = self.data_service.preprocess_audit_data(updated_df, self.view_model.df)
         self.source_model.setDataFrame(processed_df)
+        self._apply_column_visibility_by_name()
         self.view_model.df = processed_df
         self.progress_bar.setVisible(False)
         self.progress_label.setText("就绪")
@@ -583,18 +608,23 @@ class MainWindow(QMainWindow):
         count = len(alerts_df)
         reply = QMessageBox.question(
             self, "⚠️ 预警通知",
-            f"发现 {count} 条新超阈值偏差（替代料），是否查看明细？",
+            f"发现 {count} 条新替代料预警（含差异/超阈值），是否查看明细？",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
         )
         if reply == QMessageBox.Yes:
             try:
-                current_df = self.view_model.df
-                if current_df is not None and not current_df.empty and "偏差率(%)" in current_df.columns:
-                    all_alerts = current_df[current_df["偏差率(%)"].abs() > 10].copy()
-                if all_alerts.empty:
+                # 直接用 AlertMonitor 传过来的 alerts_df，已经过滤过替代料了
+                all_alerts = alerts_df.copy()
+                if all_alerts is None or all_alerts.empty:
                     QMessageBox.information(self, "提示", "没有替代料预警记录")
                     return
-                required_cols = [c for c in ["订单日期", "流程订单", "物料编码", "物料名称", "车间", "定额", "实际", "偏差数量", "净偏差数量", "净偏差金额", "备注原因", "_read"] if c in all_alerts.columns]
+                # 只保留关键列，避免显示乱七八糟
+                required_cols = [c for c in [
+                    "订单日期", "流程订单", "物料编码", "物料描述", "物料名称",
+                    "车间", "定额", "实际", "偏差数量", "偏差率(%)",
+                    "净偏差数量", "净偏差金额", "净偏差率(%)", "备注", "备注原因", "备注来源",
+                    "_read"
+                ] if c in all_alerts.columns]
                 all_alerts = all_alerts[required_cols]
                 if "_read" in all_alerts.columns:
                     all_alerts["状态"] = all_alerts["_read"].map({0: "未读", 1: "已读"})
@@ -603,6 +633,41 @@ class MainWindow(QMainWindow):
                 dialog.exec()
             except Exception as e:
                 QMessageBox.critical(self, "错误", f"显示预警失败: {e}")
+
+    def _show_alert_dashboard(self):
+        """手动打开替代料看板"""
+        try:
+            df = self.view_model.df
+            if df is None or df.empty:
+                QMessageBox.information(self, "提示", "暂无数据，请先分析")
+                return
+            if "偏差率(%)" not in df.columns:
+                QMessageBox.information(self, "提示", "当前数据无偏差率列")
+                return
+            # 筛选替代料：有差异 或 偏差率超阈值 都进看板
+            threshold = getattr(self.alert_monitor, 'threshold', 10)
+            if "是否替代料" in df.columns:
+                alerts_df = filter_alt_alerts(df, threshold)
+            else:
+                alerts_df = df[df["偏差率(%)"].abs() > threshold]
+            if alerts_df.empty:
+                QMessageBox.information(self, "提示", "没有替代料预警记录")
+                return
+            # 只保留关键列
+            required_cols = [c for c in [
+                "订单日期", "流程订单", "物料编码", "物料描述", "物料名称",
+                "车间", "定额", "实际", "偏差数量", "偏差率(%)",
+                "净偏差数量", "净偏差金额", "净偏差率(%)", "备注", "备注原因", "备注来源",
+                "_read"
+            ] if c in alerts_df.columns]
+            alerts_df = alerts_df[required_cols]
+            if "_read" in alerts_df.columns:
+                alerts_df["状态"] = alerts_df["_read"].map({0: "未读", 1: "已读"})
+                alerts_df = alerts_df[["状态"] + [c for c in alerts_df.columns if c != "状态"]]
+            dialog = AlertDialog(alerts_df, self)
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"打开替代料看板失败: {e}")
 
     def _update_all_summary(self):
         """恢复整体合计"""
@@ -707,9 +772,11 @@ class MainWindow(QMainWindow):
                 target = "Data" if "Data" in sheets else sheets[0]
                 df = pd.read_excel(file_path, sheet_name=target)
                 basename = os.path.basename(file_path)
-                self.preview_label.setText(f"{basename}\n总行数：{len(df)} 行\n列数：{len(df.columns)} 列")
+                if hasattr(self, 'preview_label') and self.preview_label:
+                    self.preview_label.setText(self._format_preview_stats(df))
             except Exception as e:
-                self.preview_label.setText(f"读取失败：{e}")
+                if hasattr(self, 'preview_label') and self.preview_label:
+                    self.preview_label.setText(f"读取失败：{e}")
 
     def _select_output_dir(self):
         dir_path = QFileDialog.getExistingDirectory(self, "选择输出目录")
@@ -717,6 +784,39 @@ class MainWindow(QMainWindow):
             self.output_dir_edit.setText(dir_path)
             # 只显示最后一级目录名，避免路径过长
             self.output_dir_edit.setToolTip(dir_path)
+
+    def _format_preview_stats(self, df):
+        """根据 DataFrame 生成数据预览统计文字（列数只算可见列）"""
+        factory_col = None
+        for cand in ['工厂名称', '工厂', 'plant']:
+            if cand in df.columns:
+                factory_col = cand
+                break
+        # 列数 = 总列数 - 隐藏列数（按列名匹配）
+        total_cols = len(df.columns)
+        hidden_count = sum(1 for c in df.columns if c in self._hidden_column_names)
+        visible_cols = total_cols - hidden_count
+        # 再剔除当前被拖成 0 宽（挤没）的列，使预览与实际可见列一致
+        model = self.table_view.model() if hasattr(self, 'table_view') else None
+        if model is not None:
+            try:
+                for col in range(model.columnCount()):
+                    if self.table_view.columnWidth(col) <= 1:
+                        visible_cols -= 1
+            except Exception:
+                pass
+
+        lines = [f"总行数：{len(df)} 行"]
+        if factory_col:
+            food = int((df[factory_col].astype(str).str.contains('食品')).sum())
+            drink = int((df[factory_col].astype(str).str.contains('饮料')).sum())
+            other = len(df) - food - drink
+            lines.append(f"食品厂：{food} 行")
+            lines.append(f"饮料厂：{drink} 行")
+            if other > 0:
+                lines.append(f"其他：{other} 行")
+        lines.append(f"列数：{visible_cols} 列")
+        return "\n".join(lines)
 
     def _open_output_dir(self):
         dir_path = self.output_dir_edit.text()
@@ -817,11 +917,11 @@ class MainWindow(QMainWindow):
         header = self.table_view.horizontalHeader()
         if locked:
             header.setSectionResizeMode(QHeaderView.Fixed)
-            self.lock_btn.setText("🔓 解锁列宽")
+            self.lock_btn.setText("🔓")
             self.statusBar().showMessage("列宽已锁定", 2000)
         else:
             header.setSectionResizeMode(QHeaderView.Interactive)
-            self.lock_btn.setText("🔒 锁定列宽")
+            self.lock_btn.setText("🔒")
             self.statusBar().showMessage("列宽已解锁，可拖拽调整", 2000)
 
     def _toggle_table_fullscreen(self):
@@ -847,6 +947,108 @@ class MainWindow(QMainWindow):
             QApplication.processEvents()
             self.statusBar().showMessage("已退出全屏", 2000)
 
+    def _show_column_hide_dialog(self):
+        """显示隐藏列对话框（按列名记录显隐，避免列重排后错位丢失）"""
+        model = self.table_view.model()
+        if not model:
+            return
+        col_count = model.columnCount()
+        if col_count == 0:
+            return
+
+        # 收集 (列索引, 列名) —— 列名用于稳定记录显隐状态
+        cols_info = []
+        for col in range(col_count):
+            hdr = model.headerData(col, Qt.Horizontal)
+            name = str(hdr).replace('\n', '') if hdr else f"列{col}"
+            cols_info.append((col, name))
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("隐藏/显示列")
+        dialog.setMinimumWidth(380)
+        layout = QVBoxLayout(dialog)
+
+        hint = QLabel("勾选要显示的列，取消勾选则隐藏；标「（已隐藏）」的列当前未显示：")
+        layout.addWidget(hint)
+
+        # 快捷按钮：一键恢复全部 / 全部隐藏
+        btn_row = QHBoxLayout()
+        btn_show_all = QPushButton("恢复全部显示")
+        btn_hide_all = QPushButton("全部隐藏")
+        btn_row.addWidget(btn_show_all)
+        btn_row.addWidget(btn_hide_all)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        # 复选框列表（滚动区域）；隐藏的列追加「（已隐藏）」标记便于辨认
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(4, 4, 4, 4)
+
+        checkboxes = []
+        for idx, (col, name) in enumerate(cols_info):
+            # 真实可见性：既认 setColumnHidden，也认“宽度被拖成 0”的挤没列
+            is_hidden = self._is_column_effectively_hidden(col)
+            label = f"{idx + 1}. {name}（已隐藏）" if is_hidden else f"{idx + 1}. {name}"
+            cb = QCheckBox(label)
+            cb.setChecked(not is_hidden)
+            checkboxes.append((col, name, cb))
+            scroll_layout.addWidget(cb)
+        scroll_layout.addStretch()
+        scroll.setWidget(scroll_content)
+        layout.addWidget(scroll)
+
+        # 确定按钮
+        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btn_box.accepted.connect(dialog.accept)
+        btn_box.rejected.connect(dialog.reject)
+        layout.addWidget(btn_box)
+
+        # 快捷按钮：恢复全部显示 / 全部隐藏（按列名清空/填满隐藏集合）
+        btn_show_all.clicked.connect(lambda: [cb.setChecked(True) for _, _, cb in checkboxes])
+        btn_hide_all.clicked.connect(lambda: [cb.setChecked(False) for _, _, cb in checkboxes])
+
+        if dialog.exec() == QDialog.Accepted:
+            # 记录被取消勾选（即要隐藏）的列名
+            self._hidden_column_names = {
+                name for _, name, cb in checkboxes if not cb.isChecked()
+            }
+            self._apply_column_visibility_by_name()
+            # 被勾选（要显示）的列若被拖成 0 宽，恢复默认宽度（像 Excel 取消隐藏）
+            for col, name, cb in checkboxes:
+                if cb.isChecked():
+                    self._ensure_column_visible_width(col, name)
+            self._save_column_widths()  # 持久化显隐状态：手动显示/隐藏都记住
+            self.statusBar().showMessage("列显示已更新", 2000)
+
+    def _is_column_effectively_hidden(self, col):
+        """列是否实际不可见：被 setColumnHidden 或宽度被拖成 0 都算"""
+        if self.table_view.isColumnHidden(col):
+            return True
+        try:
+            return self.table_view.columnWidth(col) <= 1
+        except Exception:
+            return False
+
+    def _ensure_column_visible_width(self, col, name):
+        """若列宽被拖成 0（挤没），恢复一个合理的默认宽度"""
+        if self.table_view.columnWidth(col) <= 1:
+            self._apply_default_width(col, name)
+            if self.table_view.columnWidth(col) <= 1:
+                self.table_view.setColumnWidth(col, 120)
+
+    def _apply_column_visibility_by_name(self):
+        """按列名设置列的显隐状态（不受列重排 / 模型重置影响）"""
+        model = self.table_view.model()
+        if not model:
+            return
+        for col in range(model.columnCount()):
+            hdr = model.headerData(col, Qt.Horizontal)
+            name = str(hdr).replace('\n', '') if hdr else ''
+            self.table_view.setColumnHidden(col, name in self._hidden_column_names)
+
     def _on_left_panel_visibility_changed(self, visible: bool):
         """左侧面板显隐时的回调"""
         pass
@@ -870,6 +1072,9 @@ class MainWindow(QMainWindow):
         self.table_view.horizontalHeader().sortIndicatorChanged.connect(self._on_sort_indicator_changed)
         self._set_column_widths()
         self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        # 表头2行显示：自动换行
+        self.table_view.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)
+        self.table_view.setWordWrap(True)
         self.lock_btn.setChecked(False)
         self.log("Table model initialized", "info")
 
@@ -886,6 +1091,27 @@ class MainWindow(QMainWindow):
     def log(self, msg, level="info"):
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.log_text.append(f"[{timestamp}] {msg}")
+        # 定时器尚未初始化时只记录日志，不触发折叠
+        if not hasattr(self, '_log_auto_timer') or not self._log_auto_timer:
+            return
+        # 有新日志时自动展开日志面板，5秒后自动折叠
+        self._log_auto_timer.stop()
+        # 如果日志面板已折叠，展开它
+        sizes = self._v_splitter.sizes()
+        if len(sizes) >= 2 and sizes[1] < 30:
+            self._v_splitter.setSizes(self._log_saved_sizes if self._log_saved_sizes else [500, 140])
+            QApplication.processEvents()
+        # 重启5秒倒计时
+        self._log_auto_timer.start(5000)
+
+    def _auto_collapse_log(self):
+        """自动折叠日志面板（通过设置分割器大小，而非setVisible）"""
+        sizes = self._v_splitter.sizes()
+        if len(sizes) >= 2 and sizes[1] > 30:
+            self._log_saved_sizes = sizes
+        total = sum(sizes) if sizes else 640
+        self._v_splitter.setSizes([total, 0])
+        QApplication.processEvents()
 
     # -----------------------------------------------------------
     # 数据相关
@@ -895,20 +1121,94 @@ class MainWindow(QMainWindow):
         model = self.table_view.model()
         if not model:
             return
+
+        # 优先从配置文件恢复用户保存的列宽与隐藏状态
+        saved_widths, saved_hidden = self._load_column_widths()
+        # 恢复隐藏集合（按列名），再按名应用显隐
+        self._hidden_column_names = set(saved_hidden) if saved_hidden else set()
+        self._apply_column_visibility_by_name()
+
+        if saved_widths:
+            for col in range(model.columnCount()):
+                col_name = model.headerData(col, Qt.Horizontal)
+                if col_name:
+                    col_name = str(col_name).replace('\n', '')
+                    if col_name in saved_widths:
+                        self.table_view.setColumnWidth(col, saved_widths[col_name])
+                        continue
+                # 没有保存过的列用默认逻辑
+                self._apply_default_width(col, col_name)
+            return
+
+        # 无配置文件时用默认逻辑
         self.table_view.resizeColumnsToContents()
         self.table_view.setColumnWidth(0, 35)
         for col in range(1, model.columnCount()):
             col_name = model.headerData(col, Qt.Horizontal) if hasattr(model, 'headerData') else ''
-            if isinstance(col_name, str):
-                if '名称' in col_name or '描述' in col_name or col_name == '物料':
-                    if self.table_view.columnWidth(col) < 200:
-                        self.table_view.setColumnWidth(col, 200)
-                elif '编码' in col_name or '号' in col_name or '订单' in col_name:
-                    if self.table_view.columnWidth(col) < 120:
-                        self.table_view.setColumnWidth(col, 120)
-                elif '备注' in col_name or '原因' in col_name:
-                    if self.table_view.columnWidth(col) < 150:
-                        self.table_view.setColumnWidth(col, 150)
+            self._apply_default_width(col, col_name)
+
+    def _apply_default_width(self, col, col_name):
+        """对单列应用默认宽度逻辑"""
+        if isinstance(col_name, str):
+            if '名称' in col_name or '描述' in col_name or col_name == '物料':
+                if self.table_view.columnWidth(col) < 200:
+                    self.table_view.setColumnWidth(col, 200)
+            elif '编码' in col_name or '号' in col_name or '订单' in col_name:
+                if self.table_view.columnWidth(col) < 120:
+                    self.table_view.setColumnWidth(col, 120)
+            elif '备注' in col_name or '原因' in col_name:
+                if self.table_view.columnWidth(col) < 150:
+                    self.table_view.setColumnWidth(col, 150)
+
+    def _get_config_path(self):
+        """获取列宽配置文件路径"""
+        config_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config')
+        os.makedirs(config_dir, exist_ok=True)
+        return os.path.join(config_dir, 'column_widths.json')
+
+    def _save_column_widths(self):
+        """保存当前列宽与隐藏状态到配置文件（隐藏按列名记录，可手动在对话框中恢复显示）"""
+        model = self.table_view.model()
+        if not model:
+            return
+        config = {}
+        for col in range(model.columnCount()):
+            col_name = model.headerData(col, Qt.Horizontal)
+            if col_name:
+                col_name = str(col_name).replace('\n', '')
+                config[col_name] = {
+                    'width': self.table_view.columnWidth(col),
+                    'hidden': col_name in self._hidden_column_names,
+                }
+        try:
+            import json
+            with open(self._get_config_path(), 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            self.log(f"保存列宽失败: {e}", "warning")
+
+    def _load_column_widths(self):
+        """从配置文件加载列宽与隐藏状态。返回 (widths_dict, hidden_set)。"""
+        try:
+            import json
+            path = self._get_config_path()
+            if os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f:
+                    raw = json.load(f)
+                widths = {}
+                hidden = set()
+                for k, v in raw.items():
+                    if isinstance(v, dict):
+                        widths[k] = v.get('width', 100)
+                        if v.get('hidden'):
+                            hidden.add(k)
+                    else:
+                        # 兼容旧格式（纯宽度数值）
+                        widths[k] = v
+                return widths, hidden
+        except Exception as e:
+            self.log(f"加载列宽失败: {e}", "warning")
+        return None, set()
 
     def _on_filter_panel_changed(self, filters: dict):
         if self.proxy_model is None or self.view_model.df is None:
@@ -961,6 +1261,7 @@ class MainWindow(QMainWindow):
             else:
                 df_sorted = df.sort_values(by=cols, ascending=asc, na_position="last")
             self.source_model.setDataFrame(df_sorted)
+            self._apply_column_visibility_by_name()
 
     # -----------------------------------------------------------
     # 工厂切换
@@ -968,7 +1269,21 @@ class MainWindow(QMainWindow):
     def _on_factory_changed(self, factory_name):
         if not factory_name:
             return
-        df = self.analysis_controller.factory_data.get(factory_name)
+        if factory_name == '全部':
+            # 显示全部工厂数据
+            all_data = self.analysis_controller.factory_data.get('全部')
+            if all_data is None:
+                # 合并所有工厂数据
+                all_parts = []
+                for f, g in self.analysis_controller.factory_data.items():
+                    all_parts.append(g)
+                if all_parts:
+                    import pandas as pd
+                    all_data = pd.concat(all_parts, ignore_index=True)
+                    self.analysis_controller.factory_data['全部'] = all_data
+            df = all_data
+        else:
+            df = self.analysis_controller.factory_data.get(factory_name)
         if df is not None:
             processed_df = self.data_service.preprocess_audit_data(df)
             if self.source_model is None:
@@ -977,9 +1292,9 @@ class MainWindow(QMainWindow):
                 self.proxy_model.setSourceModel(self.source_model)
                 self.table_view.setModel(self.proxy_model)
             self.source_model.setDataFrame(processed_df)
+            self._apply_column_visibility_by_name()
             self.view_model.df = processed_df
             self._update_summary()
-            # self._update_stat_cards(processed_df)  # 已删除
             self.filter_panel.update_options(processed_df)
             self.statusBar().showMessage(f"已切换到工厂：{factory_name}", 2000)
         else:
@@ -1008,7 +1323,7 @@ class MainWindow(QMainWindow):
         if self.view_model.df is None or self.view_model.df.empty:
             self.summary_quota.setText("配额: 0.00")
             self.summary_actual.setText("实际: 0.00")
-            self.summary_amount.setText("偏差金额: 0.00")
+            self.summary_amount.setText("偏差率: 0.00%")
             self.summary_qty.setText("偏差量: 0.00")
             return
         df = self.view_model.df
@@ -1017,6 +1332,7 @@ class MainWindow(QMainWindow):
         actual_col = next((c for c in ["实际", "数量-实际", "actual"] if c in df.columns), None)
         rate_col = next((c for c in ["偏差率(%)", "偏差率"] if c in df.columns), None)
         qty_col = next((c for c in ["偏差数量", "数量偏差", "dev_qty"] if c in df.columns), None)
+        net_rate_col = next((c for c in ["净偏差率(%)", "净偏差率"] if c in df.columns), None)
 
         quota_sum = df[quota_col].fillna(0).sum() if quota_col else 0
         actual_sum = df[actual_col].fillna(0).sum() if actual_col else 0
@@ -1027,7 +1343,6 @@ class MainWindow(QMainWindow):
             avg_rate = rates.mean()
             rate_str = f"{avg_rate:.2f}%"
         else:
-            # 如果没有偏差率列，用 (实际-配额)/配额 计算
             if actual_col and quota_col:
                 avg_rate = ((df[actual_col].fillna(0) - df[quota_col].fillna(0)) / df[quota_col].fillna(0).replace(0, float('nan'))).mean()
                 rate_str = f"{avg_rate:.2f}%"
@@ -1035,24 +1350,27 @@ class MainWindow(QMainWindow):
                 rate_str = "0.00%"
                 avg_rate = 0
 
+        # 净偏差率平均值
+        if net_rate_col:
+            net_rates = pd.to_numeric(df[net_rate_col], errors='coerce').fillna(0)
+            net_rate_str = f"{net_rates.mean():.2f}%"
+        else:
+            net_rate_str = ""
+
         # 偏差量汇总
         if qty_col:
             qty_sum = df[qty_col].fillna(0).sum()
-            avg_qty = pd.to_numeric(df[qty_col], errors='coerce').fillna(0).mean()
         elif actual_col and quota_col:
             qty_sum = (df[actual_col].fillna(0) - df[quota_col].fillna(0)).sum()
-            avg_qty = qty_sum / max(len(df), 1)
         else:
             qty_sum = 0
-            avg_qty = 0
-
-        # 平均偏差（实际-配额 的平均）
-        avg_dev = actual_sum - quota_sum if (actual_col and quota_col) else 0
-        avg_dev_per_row = avg_dev / max(len(df), 1) if df is not None and len(df) > 0 else 0
 
         self.summary_quota.setText(f"配额: {quota_sum:,.2f}")
         self.summary_actual.setText(f"实际: {actual_sum:,.2f}")
-        self.summary_amount.setText(f"偏差率: {rate_str}")
+        if net_rate_str:
+            self.summary_amount.setText(f"偏差率: {rate_str} | 净偏差率: {net_rate_str}")
+        else:
+            self.summary_amount.setText(f"偏差率: {rate_str}")
         self.summary_qty.setText(f"偏差量: {qty_sum:,.2f}")
 
     def _update_selection_summary(self, col_sums: dict):
@@ -1105,14 +1423,168 @@ class MainWindow(QMainWindow):
     # _update_stat_cards 已删除（统计卡片不再使用）
 
     def _on_export_full_excel(self):
-        """点击「导出完整Excel」时延迟取数，避免 lambda 绑死旧值"""
-        self.export_controller.export_full_excel(
-            self.view_model.df,
-            self.current_input_file,
-            self._analysis_params,
-            self,
-            self._full_analysis_cache_path,
+        """点击「导出完整Excel」— 完整逻辑内联，不依赖 export_controller"""
+        import shutil
+        from datetime import datetime
+        from PySide6.QtWidgets import QFileDialog, QProgressDialog, QApplication
+
+        audit_data = self.view_model.df
+        if audit_data is None or audit_data.empty:
+            QMessageBox.warning(self, "提示", "无数据，请先进行分析")
+            return
+
+        # 1. 选择保存路径
+        default_name = f"ZPP011偏差分析最终版_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        save_path, _ = QFileDialog.getSaveFileName(
+            self, "保存完整Excel文件", default_name, "Excel files (*.xlsx)"
         )
+        if not save_path:
+            return
+
+        analysis_params = self._analysis_params
+        current_input_file = self.current_input_file
+        cache_path = self._full_analysis_cache_path
+
+        # 检查参数是否有效
+        has_valid_params = (
+            analysis_params
+            and isinstance(analysis_params, dict)
+            and analysis_params.get('input_file')
+            and current_input_file
+        )
+
+        # 2. 如果有有效参数，询问是否生成完整多Sheet
+        if has_valid_params:
+            reply = QMessageBox.question(
+                self, "导出选项",
+                "是否生成完整多Sheet分析报告（含汇总统计、预警颜色等）？\n\n"
+                "点击「是」→ 生成完整多Sheet Excel（缓存命中则秒传，否则重新分析）\n"
+                "点击「否」→ 仅导出当前表格数据（快速）",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes
+            )
+            if reply == QMessageBox.Yes:
+                self._export_full_analysis_inline(
+                    save_path, analysis_params, cache_path
+                )
+                return
+
+        # 3. 仅导出当前表格数据
+        try:
+            audit_data.to_excel(save_path, sheet_name='完整偏差明细', index=False)
+            if QMessageBox.question(
+                self, "导出成功", f"文件已导出到：\n{save_path}\n是否打开？"
+            ) == QMessageBox.Yes:
+                os.startfile(save_path)
+            self.log(f"已导出完整Excel到 {save_path}", "info")
+        except Exception as e:
+            traceback.print_exc()
+            QMessageBox.critical(self, "错误", f"导出失败: {e}")
+            self.log(f"导出失败: {e}", "error")
+
+    def _export_full_analysis_inline(self, save_path, analysis_params, cache_path):
+        """生成完整多Sheet Excel（优先使用缓存）"""
+        import shutil
+        from PySide6.QtWidgets import QApplication, QProgressDialog
+
+        # 缓存命中：直接复制
+        if cache_path and os.path.exists(cache_path):
+            try:
+                shutil.copy2(cache_path, save_path)
+                if QMessageBox.question(
+                    self, "导出成功",
+                    f"完整分析报告已导出到\n{save_path}\n\n"
+                    "（使用缓存，秒传完成）\n\n"
+                    "包含Sheet:\n"
+                    "📋 分析说明 · 汇总统计(带预警颜色)\n"
+                    "完整偏差明细 · 替代料明细 · 无备注预警\n"
+                    "中间地带明细 · 异常预警 · 偏差金额分析\n"
+                    "偏差原因汇总 · 偏差原因分析 · 趋势分析\n\n"
+                    "是否立即打开？"
+                ) == QMessageBox.Yes:
+                    os.startfile(save_path)
+                self.log(f"已导出完整分析报告到 {save_path} (缓存)", "info")
+                return
+            except PermissionError:
+                QMessageBox.critical(
+                    self, "文件被占用",
+                    f"目标文件被占用，无法写入：\n{save_path}\n\n"
+                    "请先关闭正在打开该文件的 Excel，然后重试。"
+                )
+                self.log(f"导出失败：文件被占用 {save_path}", "error")
+                return
+            except Exception as e:
+                QMessageBox.warning(
+                    self, "缓存复制失败",
+                    f"缓存复制失败：{e}\n\n将重新分析生成报告。"
+                )
+                self.log(f"缓存复制失败，回退重新分析: {e}", "warning")
+
+        # 导出前检查目标文件是否可写
+        try:
+            test_f = open(save_path, 'a')
+            test_f.close()
+        except (PermissionError, OSError):
+            QMessageBox.critical(
+                self, "文件被占用",
+                f"目标文件被占用，无法写入：\n{save_path}\n\n"
+                "请先关闭正在打开该文件的 Excel，然后重试。"
+            )
+            self.log(f"导出失败：文件被占用 {save_path}", "error")
+            return
+
+        # 重新分析生成
+        try:
+            progress_dlg = QProgressDialog("正在重新分析生成完整报告...", "取消", 0, 100, self)
+            progress_dlg.setWindowTitle("导出中")
+            progress_dlg.setWindowModality(Qt.WindowModal)
+            progress_dlg.setMinimumDuration(0)
+            progress_dlg.show()
+            QApplication.processEvents()
+
+            from analysis.analyzer import do_analysis_v2
+            do_analysis_v2(
+                input_file=analysis_params['input_file'],
+                output_dir=None,
+                alt_pairs=analysis_params['alt_pairs'],
+                progress_callback=lambda step_idx, step_name, percent: (
+                    progress_dlg.setValue(percent),
+                    progress_dlg.setLabelText(f"{step_name} ({percent}%)"),
+                    QApplication.processEvents(),
+                )[0],
+                cancel_check=lambda *args: (QApplication.processEvents(), progress_dlg.wasCanceled())[1],
+                start_date=analysis_params.get('start_date'),
+                end_date=analysis_params.get('end_date'),
+                material_search=analysis_params.get('material_search'),
+                output_path=save_path,
+                enable_net_offset=True,
+                return_dataframe=False,
+            )
+            progress_dlg.setValue(100)
+            progress_dlg.close()
+
+            # 回存缓存
+            if cache_path and not os.path.exists(cache_path):
+                try:
+                    shutil.copy2(save_path, cache_path)
+                except Exception:
+                    pass
+
+            if QMessageBox.question(
+                self, "导出成功",
+                f"完整分析报告已导出到\n{save_path}\n\n"
+                "包含Sheet:\n"
+                "📋 分析说明 · 汇总统计(带预警颜色)\n"
+                "完整偏差明细 · 替代料明细 · 无备注预警\n"
+                "中间地带明细 · 异常预警 · 偏差金额分析\n"
+                "偏差原因汇总 · 偏差原因分析 · 趋势分析\n\n"
+                "是否立即打开？"
+            ) == QMessageBox.Yes:
+                os.startfile(save_path)
+            self.log(f"已导出完整分析报告到 {save_path}", "info")
+        except Exception as e:
+            traceback.print_exc()
+            QMessageBox.critical(self, "错误", f"导出完整报告失败: {e}")
+            self.log(f"导出完整报告失败: {e}", "error")
 
     # -----------------------------------------------------------
     # 净偏差
@@ -1134,6 +1606,7 @@ class MainWindow(QMainWindow):
             self.view_model.df = df
             if self.source_model is not None:
                 self.source_model.setDataFrame(df)
+                self._apply_column_visibility_by_name()
                 self.proxy_model.invalidate()
             self._on_view_model_data_changed()
             if not silent:
@@ -1144,6 +1617,7 @@ class MainWindow(QMainWindow):
             self.view_model.df = new_df
             if self.source_model is not None:
                 self.source_model.setDataFrame(new_df)
+                self._apply_column_visibility_by_name()
                 self.proxy_model.invalidate()
             self._on_view_model_data_changed()
             if not silent:
@@ -1376,6 +1850,7 @@ class MainWindow(QMainWindow):
             if self.view_model.df is not None:
                 processed_df = self.data_service.preprocess_audit_data(self.view_model.df, self.view_model.df)
                 self.source_model.setDataFrame(processed_df)
+                self._apply_column_visibility_by_name()
                 self.view_model.df = processed_df
         dialog = RuleConfigDialog(self, rules_path, self.config_manager, on_rules_changed)
         dialog.exec()
@@ -1392,21 +1867,23 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def _show_about(self):
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QPushButton, QFrame
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QPushButton, QFrame, QTextBrowser
         dialog = QDialog(self)
         dialog.setWindowTitle(f"关于 - ZPP011 v{get_current_version()}")
-        dialog.setMinimumSize(680, 520)
+        dialog.setMinimumSize(680, 560)
         dialog.setObjectName("aboutDialog")
         main_layout = QVBoxLayout(dialog)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
+
+        # 顶部信息区
         info_frame = QFrame()
         info_frame.setObjectName("aboutInfoFrame")
         info_layout = QVBoxLayout(info_frame)
-        info_layout.setContentsMargins(28, 24, 28, 20)
+        info_layout.setContentsMargins(28, 24, 28, 16)
         title_row = QHBoxLayout()
-        icon_label = QLabel("🏭")
-        title_label = QLabel(f"ZPP011 生产偏差分析器 v{get_current_version()}")
+        icon_label = QLabel("\U0001F3ED")
+        title_label = QLabel(f"{APP_NAME} v{get_current_version()}")
         title_label.setObjectName("aboutTitle")
         title_row.addWidget(icon_label)
         title_row.addWidget(title_label)
@@ -1414,10 +1891,26 @@ class MainWindow(QMainWindow):
         desc_label = QLabel("功能：偏差分析 · AI审核 · 规则配置 · 批量操作")
         desc_label.setObjectName("aboutDesc")
         info_layout.addWidget(desc_label)
-        author_label = QLabel("制作人：裴盛清 | 云南达利食品")
+        author_label = QLabel(f"制作人：{AUTHOR} | 云南达利食品")
         author_label.setObjectName("aboutAuthor")
         info_layout.addWidget(author_label)
         main_layout.addWidget(info_frame)
+
+        # 版本日志区
+        log_label = QLabel("📜 版本日志")
+        log_label.setObjectName("aboutSectionLabel")
+        log_label.setStyleSheet("font-size: 13px; font-weight: bold; padding: 8px 28px 4px;")
+        main_layout.addWidget(log_label)
+
+        log_browser = QTextBrowser()
+        log_browser.setObjectName("versionLogBrowser")
+        log_browser.setOpenExternalLinks(False)
+        log_browser.setStyleSheet("border: none; background-color: #fafbfc; padding: 8px;")
+        html = self._build_version_log_html()
+        log_browser.setHtml(html)
+        main_layout.addWidget(log_browser, 1)
+
+        # 底部按钮
         btn_frame = QFrame()
         btn_frame.setObjectName("aboutBtnFrame")
         btn_layout = QHBoxLayout(btn_frame)
@@ -1429,6 +1922,29 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(close_btn)
         main_layout.addWidget(btn_frame)
         dialog.exec()
+
+    def _build_version_log_html(self):
+        """生成版本日志 HTML"""
+        html_parts = ["<style>"
+                      "body { font-family: 'Microsoft YaHei', sans-serif; font-size: 12px; color: #1f2328; }"
+                      ".ver { font-weight: bold; color: #0969da; font-size: 13px; margin-top: 12px; }"
+                      ".date { color: #656d76; font-size: 11px; margin-left: 8px; }"
+                      ".section { color: #1f2328; font-weight: 600; margin-top: 6px; }"
+                      "ul { margin: 2px 0 6px 0; padding-left: 20px; }"
+                      "li { margin: 2px 0; }"
+                      "</style>"]
+        for i, v in enumerate(VERSION_HISTORY):
+            ver = v.get("version", "")
+            date = v.get("date", "")
+            html_parts.append(f'<div class="ver">{ver}<span class="date">{date}</span></div>')
+            for section_key, section_title in [("features", "✦ 新功能"), ("fixes", "🔧 修复"), ("optimizations", "⚡ 优化"), ("notes", "📌 说明")]:
+                items = v.get(section_key, [])
+                if items:
+                    html_parts.append(f'<div class="section">{section_title}</div><ul>')
+                    for item in items:
+                        html_parts.append(f'<li>{item}</li>')
+                    html_parts.append('</ul>')
+        return "".join(html_parts)
 
     def _show_import_wizard(self):
         dialog = ImportWizard(self)
@@ -1442,7 +1958,12 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def _show_dashboard(self):
-        dialog = DashboardDialog(self)
+        audit_df = self.view_model.df
+        if audit_df is None or audit_df.empty:
+            QMessageBox.warning(self, "提示", "无数据，请先进行分析")
+            return
+        # material_df 暂无独立来源，传 None（DashboardDialog 内部仅预留）
+        dialog = DashboardDialog(audit_df, None, parent=self, main_window=self)
         dialog.exec()
 
     def _show_source_backup(self):
@@ -1484,13 +2005,15 @@ class MainWindow(QMainWindow):
 
     def _toggle_alt_panel(self):
         if hasattr(self, "_alt_panel_shown") and self._alt_panel_shown:
-            self.left_panel.left_panel.setVisible(False)
+            self.left_panel.setVisible(False)
             self._alt_panel_shown = False
         else:
-            self.left_panel.left_panel.setVisible(True)
+            self.left_panel.setVisible(True)
             self._alt_panel_shown = True
 
     def closeEvent(self, event):
+        # 保存列宽配置
+        self._save_column_widths()
         if self.analysis_controller.worker and self.analysis_controller.worker.isRunning():
             self.analysis_controller.cancel()
         if self.audit_controller.ai_worker and self.audit_controller.ai_worker.isRunning():
