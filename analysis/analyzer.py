@@ -86,7 +86,8 @@ def do_analysis_v2(
         material_search=None,
         output_path=None,
         enable_net_offset=True,
-        return_dataframe=False):
+        return_dataframe=False,
+        dev_rate_threshold=1.0):
     _dprint("[DEBUG do_analysis_v2] 函数开始执行")
 
     # output_dir 兜底，防止调用方传 None 导致 os.path.join 崩溃
@@ -386,7 +387,7 @@ def do_analysis_v2(
             _after = df[_col].dtype
             if _before != _after:
                 print(f"[数值保护-计算前] 列 [{_col}] 已转换: {_before} → {_after}")
-    
+
     # ========== 偏差金额计算（优先使用含税金额直接相减） ==========
     if '金额-实际(含税)' in df.columns and '金额-定额(含税)' in df.columns:
         # 方法1：直接相减（推荐，最准确）
@@ -490,29 +491,41 @@ def do_analysis_v2(
     check_cancel()
 
     # Sheet5（第五步抽取 → analysis/sheets/sheet5_full.py）
-    dev_df = build_sheet5(df, report_progress)
+    dev_df = build_sheet5(df, report_progress, threshold=dev_rate_threshold)
 
-    # 补齐"是否替代料"列（与 UI 逻辑一致）
-    if '是否替代料' not in dev_df.columns and alt_pairs:
-        alt_codes = set()
-        for p in alt_pairs:
-            if isinstance(p, (list, tuple)) and len(p) >= 2:
-                if isinstance(p[0], (list, tuple)):
-                    alt_codes.add(str(p[0][1]).strip() if len(p[0]) > 1 else str(p[0][0]).strip())
-                    alt_codes.add(str(p[1][1]).strip() if len(p[1]) > 1 else str(p[1][0]).strip())
-                else:
-                    alt_codes.add(str(p[0]).strip())
-                    alt_codes.add(str(p[1]).strip())
-        code_col = None
-        for c in ['物料号', '物料编码', 'code', '组件物料号']:
+    # 补齐"是否替代料"列
+    # 优先使用 _is_alt 标志（已做订单级匹配：同一订单内同时存在配对物料才标记）
+    if '_is_alt' in df.columns:
+        # 构建 (流程订单, 组件物料描述) -> _is_alt 的映射
+        _alt_map = {}
+        for _, r in df.iterrows():
+            key = (str(r.get('流程订单', '')), str(r.get('组件物料描述', '')))
+            _alt_map[key] = _alt_map.get(key, False) or bool(r.get('_is_alt', False))
+        # dev_df 中物料名称对应 df 中的组件物料描述
+        dev_df['是否替代料'] = dev_df.apply(
+            lambda r: _alt_map.get((str(r.get('流程订单', '')), str(r.get('物料名称', ''))), False),
+            axis=1
+        ).map({True: '是', False: '否'})
+    elif '是否替代料' not in dev_df.columns and alt_pairs:
+        # 回退：仅在 dev_df 上做订单级匹配
+        alt_order_mat = set()
+        for _, r in alt_df.iterrows():
+            alt_order_mat.add((str(r['订单号']), str(r['物料A'])))
+            alt_order_mat.add((str(r['订单号']), str(r['物料B'])))
+        name_col = None
+        for c in ['物料名称', '物料描述', '组件物料描述']:
             if c in dev_df.columns:
-                code_col = c
+                name_col = c
                 break
-        if code_col:
-            dev_df['是否替代料'] = dev_df[code_col].astype(str).str.strip().isin(alt_codes)
-            dev_df['是否替代料'] = dev_df['是否替代料'].map({True: '是', False: '否'})
+        if name_col:
+            dev_df['是否替代料'] = dev_df.apply(
+                lambda r: (str(r.get('流程订单', '')), str(r.get(name_col, ''))) in alt_order_mat,
+                axis=1
+            ).map({True: '是', False: '否'})
         else:
             dev_df['是否替代料'] = '否'
+    elif '是否替代料' not in dev_df.columns:
+        dev_df['是否替代料'] = '否'
 
     # ========== 替代料净偏差自动抵消 ==========
     # 使用传入的 enable_net_offset 参数（由调用方根据配置决定）
@@ -530,6 +543,18 @@ def do_analysis_v2(
         else:
             dev_df['净偏差金额'] = 0.0
 
+        # 计算净偏差率
+        quota_col = None
+        for c in ['数量-定额', '定额']:
+            if c in dev_df.columns:
+                quota_col = c
+                break
+        if quota_col:
+            dev_df['净偏差率(%)'] = (pd.to_numeric(dev_df['净偏差数量'], errors='coerce').fillna(0) /
+                               pd.to_numeric(dev_df[quota_col], errors='coerce').replace(0, np.nan) * 100).fillna(0).round(2)
+        else:
+            dev_df['净偏差率(%)'] = 0.0
+
     # 调整列顺序：净偏差数量/净偏差金额移到偏差率后面、偏差金额前面
     desired_order = []
     for col in dev_df.columns:
@@ -537,6 +562,7 @@ def do_analysis_v2(
         if col == '偏差率':
             desired_order.append('净偏差数量')
             desired_order.append('净偏差金额')
+            desired_order.append('净偏差率(%)')
     # 去重（净偏差列已通过 desired_order 插入，移除末尾的）
     seen = set()
     ordered = []
@@ -546,12 +572,25 @@ def do_analysis_v2(
             ordered.append(col)
     dev_df = dev_df[ordered]
     # 数值统一保留2位小数
-    for col in ['净偏差数量', '净偏差金额', '偏差数量', '偏差金额']:
+    for col in ['净偏差数量', '净偏差金额', '净偏差率(%)', '偏差数量', '偏差金额']:
         if col in dev_df.columns:
             dev_df[col] = pd.to_numeric(dev_df[col], errors='coerce').round(2)
     # 保留"净偏差"列作为"净偏差金额"的别名（向后兼容）
     if '净偏差金额' in dev_df.columns and '净偏差' not in dev_df.columns:
             dev_df['净偏差'] = dev_df['净偏差金额']
+
+    # 补充净偏差率（apply_net_offset 可能已返回，此处确保存在）
+    if '净偏差率(%)' not in dev_df.columns:
+        quota_col = None
+        for c in ['数量-定额', '定额']:
+            if c in dev_df.columns:
+                quota_col = c
+                break
+        if quota_col:
+            dev_df['净偏差率(%)'] = (pd.to_numeric(dev_df['净偏差数量'], errors='coerce').fillna(0) /
+                               pd.to_numeric(dev_df[quota_col], errors='coerce').replace(0, np.nan) * 100).fillna(0).round(2)
+        else:
+            dev_df['净偏差率(%)'] = 0.0
 
     # ========== 追踪点3: build_sheet5 后 ==========
     _snapshot['after_sheet5'] = {
@@ -562,8 +601,18 @@ def do_analysis_v2(
 
     check_cancel()
 
+    # 构建净偏差查找表：(流程订单, 物料编码) -> (净偏差数量, 净偏差金额)
+    net_offset_map = {}
+    if '净偏差数量' in dev_df.columns:
+        for _, dr in dev_df.iterrows():
+            key = (str(dr.get('流程订单', '')), str(dr.get('物料编码', '')))
+            net_offset_map[key] = (
+                dr.get('净偏差数量', None),
+                dr.get('净偏差金额', None)
+            )
+
     # Sheet6（第五步抽取 → analysis/sheets/sheet6_anomaly.py）
-    anomaly_df = build_sheet6(df, alt_order_mat, report_progress)
+    anomaly_df = build_sheet6(df, alt_order_mat, report_progress, net_offset_map=net_offset_map)
     check_cancel()
 
     # Sheet7（第五步抽取 → analysis/sheets/sheet7_amount.py）
@@ -598,7 +647,7 @@ def do_analysis_v2(
 
     ws2 = wb.create_sheet('替代料明细')
     headers2 = ['订单日期', '车间', '订单号', '物料A编码', '物料A', '单位', '偏差A', '偏差率A',
-                '物料B编码', '物料B', '偏差B', '偏差率B', '净偏差数量', '净偏差金额', '备注']
+                '物料B编码', '物料B', '偏差B', '偏差率B', '净偏差数量', '净偏差金额', '净偏差率', '备注']
     rows2 = []
     for r in alt_df.to_dict('records'):
         material_a_name = str(r['物料A']).strip() if pd.notna(r.get('物料A')) else ''
@@ -617,10 +666,10 @@ def do_analysis_v2(
             r['订单日期'], r['车间'], r['订单号'],
             code_a, r['物料A'], r['单位'], r['偏差A'], r.get('偏差率A', ''),
             code_b, r['物料B'], r['偏差B'], r.get('偏差率B', ''),
-            r.get('净偏差数量', ''), r.get('净偏差金额', ''), r['备注']
+            r.get('净偏差数量', ''), r.get('净偏差金额', ''), r.get('净偏差率', ''), r['备注']
         ])
     write_sheet(ws2, headers2, rows2,
-                [14, 10, 14, 14, 28, 8, 12, 12, 14, 28, 12, 12, 12, 14, 20])
+                [14, 10, 14, 14, 28, 8, 12, 12, 14, 28, 12, 12, 12, 14, 12, 20])
 
     ws3 = wb.create_sheet('无备注预警')
     headers3 = ['订单日期', '工厂', '车间', '物料名称', '物料类型', '单位',
@@ -645,15 +694,16 @@ def do_analysis_v2(
     headers5 = ['订单日期', '订单类型', '流程订单', '工厂', '车间', '物料类型', '原表行号',
                 '产品物料号码', '产品物料描述',
                 '物料编码', '物料名称', '单位', '定额', '实际',
-                '偏差数量', '偏差率', '偏差金额', '净偏差数量', '净偏差金额', '是否替代料', '备注', '备注来源', '偏差区间']
+                '偏差数量', '偏差率', '偏差金额', '净偏差数量', '净偏差金额', '净偏差率', '是否替代料', '备注', '备注来源', '偏差区间']
     rows5 = [[r['订单日期'], r.get('订单类型', ''), r.get('流程订单', ''), r['工厂'], r['车间'], r['物料类型'], r['原表行号'],
               r.get('产品物料号码', ''), r.get('产品物料描述', ''),
               r['物料编码'], r['物料名称'], r['单位'], r['定额'], r['实际'],
               r['偏差数量'], r['偏差率'], r['偏差金额'], r.get('净偏差数量', ''), r.get('净偏差金额', ''),
+              r.get('净偏差率', ''),
               r.get('是否替代料', '否'),
               r['备注'], r['备注来源'], r['偏差区间']] for r in dev_df.to_dict('records')]
     write_sheet(ws5, headers5, rows5,
-                [14, 10, 16, 10, 10, 10, 10, 18, 30, 16, 28, 8, 12, 12, 12, 10, 14, 14, 12, 20, 16, 10])
+                [14, 10, 16, 10, 10, 10, 10, 18, 30, 16, 28, 8, 12, 12, 12, 10, 14, 14, 12, 10, 20, 16, 10])
 
     for i, r in enumerate(dev_df.to_dict('records'), 2):
         dev_qty = r['偏差数量']
@@ -663,14 +713,15 @@ def do_analysis_v2(
                 ws5.cell(row=i, column=j).fill = fill
         src = r['备注来源']
         if src == '替代料':
-            ws5.cell(row=i, column=20).fill = alt_fill  # 第20列 = 是否替代料
+            ws5.cell(row=i, column=21).fill = alt_fill  # 第21列 = 是否替代料
         elif src in ('系统无定额(广宣)', '自动填充'):
-            ws5.cell(row=i, column=20).fill = gx_fill  # 第20列 = 是否替代料
+            ws5.cell(row=i, column=21).fill = gx_fill  # 第21列 = 是否替代料
 
     ws6 = wb.create_sheet('异常预警')
     headers6 = ['订单开始日期', '订单类型', '订单号', '异常类型', '工厂', '车间',
-                '原表行号', '物料编码', '物料名称', '单位', '定额', '实际',
-                '偏差数量', '净偏差数量', '净偏差金额', '偏差率', '备注', '处理建议', '替代料']
+                '原表行号', '产品物料号码', '产品物料描述', '物料编码', '物料名称',
+                '单位', '定额', '实际',
+                '偏差数量', '净偏差数量', '净偏差金额', '净偏差率', '偏差率', '备注', '处理建议', '替代料']
     for j, h in enumerate(headers6, 1):
         c = ws6.cell(row=1, column=j, value=h)
         c.font = header_font
@@ -696,8 +747,11 @@ def do_analysis_v2(
         fill = anomaly_fills.get(r['row_type'], anomaly_fills['异常1'])
         row_vals = [
             r['订单开始日期'], r['订单类型'], r['流程订单'], r['异常类型'], r['工厂'], r['车间'],
-            r['原表行号'], r['物料编码'], r['物料名称'], r['单位'],
+            r['原表行号'],
+            r.get('产品物料号码', ''), r.get('产品物料描述', ''),
+            r['物料编码'], r['物料名称'], r['单位'],
             r['定额'], r['实际'], r['偏差数量'], r.get('净偏差数量', ''), r.get('净偏差金额', ''),
+            r.get('净偏差率', ''),
             r['偏差率'], r.get('备注', ''), r.get('处理建议', ''), r.get('替代料', '否')]
         for j, v in enumerate(row_vals, 1):
             c = ws6.cell(row=r_row, column=j, value=v)
@@ -706,7 +760,7 @@ def do_analysis_v2(
             c.alignment = center
             c.fill = fill
         r_row += 1
-    for j, w in enumerate([14, 10, 18, 10, 10, 10, 10, 16, 28, 8, 12, 12, 12, 12, 14, 10, 30, 30, 10], 1):
+    for j, w in enumerate([14, 10, 18, 10, 10, 10, 10, 16, 28, 8, 12, 12, 12, 12, 14, 10, 30, 10, 30, 10], 1):
         ws6.column_dimensions[get_column_letter(j)].width = w
     check_cancel()
 
@@ -868,6 +922,18 @@ def do_analysis_v2(
         os.makedirs(_out_dir, exist_ok=True)
     # 为汇总统计预警列上色
     _apply_warning_colors(wb)
+
+    # 设置标签栏占更大比例，确保所有Sheet标签可见
+    for ws in wb.worksheets:
+        ws.sheet_view.tabSelected = False
+    wb.active = 0  # 默认打开第一个Sheet（分析说明）
+    if wb.worksheets:
+        wb.worksheets[0].sheet_view.tabSelected = True
+    # 标签栏占水平滚动条的 90%（默认 60%），确保所有标签可见
+    if wb.views:
+        wb.views[0].tabRatio = 900
+        wb.views[0].activeTab = 0
+        wb.views[0].showSheetTabs = True
 
     try:
         wb.save(final_output_path)

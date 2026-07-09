@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 
 
-def build_sheet5(df, report_progress, progress_idx=5):
+def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
     """
     构建 Sheet5 完整偏差明细 DataFrame
     参数:
@@ -24,7 +24,7 @@ def build_sheet5(df, report_progress, progress_idx=5):
     for col in ["材料偏差", "偏差率(%)", "偏差金额", "偏差金额(含税)", "数量-实际", "数量-定额"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-    has_real_dev = df[(df[col_p] < -1) | (df[col_p] > 1)].copy()
+    has_real_dev = df[df[col_p].abs() >= threshold].copy()
 
     # 计算偏差金额（含税）
     if '单价' in has_real_dev.columns and has_real_dev['单价'].notna().any():

@@ -43,7 +43,7 @@ class DataService(QObject):
                 if df[rate_col].dtype == object:
                     df[rate_col] = df[rate_col].astype(str).str.replace('%', '', regex=False)
                 df[rate_col] = pd.to_numeric(df[rate_col], errors='coerce').fillna(0.0)
-            for num_col in ['定额', '实际', '偏差数量', '偏差金额', '偏差金额(含税)', '净偏差金额']:
+            for num_col in ['定额', '实际', '偏差数量', '偏差金额', '偏差金额(含税)', '净偏差数量', '净偏差金额', '净偏差率(%)']:
                 if num_col in df.columns:
                     df[num_col] = pd.to_numeric(df[num_col], errors='coerce').fillna(0.0)
 
@@ -73,6 +73,8 @@ class DataService(QObject):
                 df = df.loc[:, ~df.columns.duplicated(keep='first')]
             # 从 DB 恢复审核结果（覆盖重新分析产生的空值）
             df = self._restore_audit_results(df)
+            # 新增：计算净偏差率（净偏差数量 / 定额）
+            df = self._compute_net_deviation_rate(df)
             if self.alt_controller:
                 pass  # 净偏差计算已在 analyzer.py 中完成
             return df
@@ -88,10 +90,14 @@ class DataService(QObject):
         if '替代料组' in df.columns and '_替代料组' in df.columns:
             df = df.drop(columns=['替代料组'])
         # 2. 去掉冗余的净偏差列（如果有单独的"净偏差"列，保留净偏差数量和净偏差金额）
-        if '净偏差' in df.columns:
+        if '净偏差' in df.columns and '净偏差数量' not in df.columns and '净偏差金额' not in df.columns:
             df = df.drop(columns=['净偏差'])
-            self.log("已删除冗余列：净偏差", "info")
-        # 3. 强制去重（保留第一个）
+            self.log("已删除冗余列：净偏差（无净偏差数量/金额时）", "info")
+        # 3. 去掉重复的偏差率列（保留数值格式的"偏差率(%)"，删除字符串格式的"偏差率"）
+        if '偏差率' in df.columns and '偏差率(%)' in df.columns:
+            df = df.drop(columns=['偏差率'])
+            self.log("已删除冗余列：偏差率（保留偏差率(%)）", "info")
+        # 4. 强制去重（保留第一个）
         dup_cols = df.columns[df.columns.duplicated()].unique()
         if len(dup_cols) > 0:
             df = df.loc[:, ~df.columns.duplicated(keep='first')]
@@ -111,32 +117,16 @@ class DataService(QObject):
                 return "否"
             df["是否替代料"] = df["是否替代料"].apply(_norm_alt)
         else:
-            if self.alt_controller and self.alt_controller.get_pairs():
-                alt_codes = set()
-                for a, b in self.alt_controller.get_pairs():
-                    if isinstance(a, (list, tuple)) and len(a) > 1:
-                        alt_codes.add(str(a[1]).strip())
-                    if isinstance(b, (list, tuple)) and len(b) > 1:
-                        alt_codes.add(str(b[1]).strip())
-                code_col = None
-                for c in ['物料号', '物料编码', 'code', '组件物料号']:
-                    if c in df.columns:
-                        code_col = c
-                        break
-                if code_col:
-                    df['是否替代料'] = df[code_col].astype(str).str.strip().isin(alt_codes)
-                    df['是否替代料'] = df['是否替代料'].map({True: '是', False: '否'})
-                else:
-                    df['是否替代料'] = '否'
-            else:
-                df['是否替代料'] = '否'
+            # 没有是否替代料列时，默认为否（不做简单编码匹配，避免误标）
+            df['是否替代料'] = '否'
         return df
 
     def _add_data_id_and_fingerprint(self, df: pd.DataFrame) -> pd.DataFrame:
         try:
             df['data_id'] = df['订单日期'].astype(str) + '|' + df['流程订单'].astype(str) + '|' + df['物料编码'].astype(str)
             print(f'[DEBUG data_service] data_id 示例: {df["data_id"].iloc[0]}')
-            print(f'[DEBUG data_service] 可用列: {list(df.columns)[:20]}')
+            print(f'[DEBUG data_service] 可用列: {list(df.columns)}')
+            print(f'[DEBUG data_service] 净偏差数量={("净偏差数量" in df.columns)}, 净偏差金额={("净偏差金额" in df.columns)}, 定额={("定额" in df.columns)}')
         except Exception as e:
             self.log(f"创建data_id失败: {e}", "error")
             import traceback; traceback.print_exc()
@@ -225,6 +215,56 @@ class DataService(QObject):
             self.log(f"从数据库恢复了 {restored} 条审核结果", "info")
         return df
 
+    def _compute_net_deviation_rate(self, df: pd.DataFrame) -> pd.DataFrame:
+        """计算净偏差率（净偏差数量 / 定额 或 净偏差金额 / 偏差金额）—— 行级计算（仅作兜底）"""
+        try:
+            # 关键：分析阶段 apply_net_offset 已计算正确的净偏差率（含替代料组级统一值）。
+            # 若列已存在，直接保留，避免被行级重算覆盖（覆盖会导致同组净偏差率不一致）。
+            if '净偏差率(%)' in df.columns and df['净偏差率(%)'].notna().any():
+                self.log("净偏差率(%) 已存在（来自分析结果），保留原值，跳过行级重算", "debug")
+                return df
+
+            net_qty_col = None
+            for c in ['净偏差数量', 'net_qty', '净偏差']:
+                if c in df.columns:
+                    net_qty_col = c
+                    break
+            net_amt_col = None
+            for c in ['净偏差金额', 'net_amt']:
+                if c in df.columns:
+                    net_amt_col = c
+                    break
+            quota_col = None
+            for c in ['配额', '定额', '数量-定额']:
+                if c in df.columns:
+                    quota_col = c
+                    break
+            amt_col = None
+            for c in ['偏差金额(含税)', '偏差金额']:
+                if c in df.columns:
+                    amt_col = c
+                    break
+
+            if net_qty_col and quota_col:
+                net_vals = pd.to_numeric(df[net_qty_col], errors='coerce').fillna(0)
+                quota_vals = pd.to_numeric(df[quota_col], errors='coerce').replace(0, float('nan'))
+                df['净偏差率(%)'] = (net_vals / quota_vals * 100).round(2)
+                df['净偏差率(%)'] = df['净偏差率(%)'].replace([np.inf, -np.inf], np.nan).fillna(0)
+                self.log(f"已计算净偏差率（{net_qty_col}/{quota_col}×100%），非零值={df['净偏差率(%)'].abs().gt(0).sum()}条", "info")
+            elif net_amt_col and amt_col:
+                net_vals = pd.to_numeric(df[net_amt_col], errors='coerce').fillna(0)
+                amt_vals = pd.to_numeric(df[amt_col], errors='coerce').replace(0, float('nan'))
+                df['净偏差率(%)'] = (net_vals / amt_vals * 100).round(2)
+                df['净偏差率(%)'] = df['净偏差率(%)'].replace([np.inf, -np.inf], np.nan).fillna(0)
+                self.log(f"已计算净偏差率（{net_amt_col}/{amt_col}×100%）", "info")
+            else:
+                self.log(f"缺少计算净偏差率的列（净偏差数量={net_qty_col}, 定额={quota_col}, 净偏差金额={net_amt_col}, 偏差金额={amt_col}）", "debug")
+        except Exception as e:
+            self.log(f"计算净偏差率失败: {e}", "error")
+            import traceback
+            traceback.print_exc()
+        return df
+
     def _detect_and_notify_changes(self, old_df: pd.DataFrame, new_df: pd.DataFrame):
         old_snapshot = {}
         try:
@@ -293,10 +333,11 @@ class DataService(QObject):
                     break
             if amt_col and rate_col:
                 cols = [c for c in cols if c != rate_col]
+                # 偏差率移到偏差金额后面
                 amt_idx = cols.index(amt_col)
                 cols.insert(amt_idx + 1, rate_col)
                 df = df[cols]
-                self.log(f"已调整列顺序：{rate_col} 移到 {amt_col} 后面", "info")
+                self.log(f"已调整列顺序：偏差率及净偏差列移到偏差金额后面", "info")
         except Exception as e:
             self.log(f"列重排序失败: {e}", "error")
         return df

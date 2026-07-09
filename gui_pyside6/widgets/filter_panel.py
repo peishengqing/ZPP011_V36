@@ -6,7 +6,8 @@
 """
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout,
-    QComboBox, QPushButton, QLabel, QDateEdit, QLineEdit
+    QComboBox, QPushButton, QLabel, QDateEdit, QLineEdit, QScrollArea,
+    QDoubleSpinBox, QListWidget, QListWidgetItem
 )
 from PySide6.QtCore import Signal, Qt, QDate
 from datetime import datetime
@@ -46,6 +47,22 @@ class FilterPanel(QWidget):
         content_layout = QVBoxLayout(self.content_widget)
         content_layout.setContentsMargins(8, 8, 8, 8)
         content_layout.setSpacing(12)
+
+        # 分析参数（阈值调整属于分析阶段，修改后需重新分析生效）
+        param_group = QGroupBox("分析参数")
+        param_layout = QFormLayout(param_group)
+        param_layout.setSpacing(8)
+        self.dev_threshold_spin = QDoubleSpinBox()
+        self.dev_threshold_spin.setRange(0.0, 50.0)
+        self.dev_threshold_spin.setSingleStep(0.5)
+        self.dev_threshold_spin.setValue(1.0)
+        self.dev_threshold_spin.setSuffix("%")
+        self.dev_threshold_spin.setToolTip("仅纳入偏差率绝对值 ≥ 此阈值的工单进入主表；调为 0% 可显示全部明细。修改后重新分析生效。")
+        param_layout.addRow("偏差率纳入阈值:", self.dev_threshold_spin)
+        note_label = QLabel("提示：调整阈值后需重新分析生效")
+        note_label.setStyleSheet("color: #888888; font-size: 10px;")
+        param_layout.addRow("", note_label)
+        content_layout.addWidget(param_group)
 
         # 基础信息
         basic_group = QGroupBox("基础信息")
@@ -98,10 +115,19 @@ class FilterPanel(QWidget):
         self.read_status_combo.addItems(["全部", "已读", "未读"])
         self.remark_source_combo = QComboBox()
         self.remark_source_combo.addItems(["全部", "AI审核", "人工填写"])
+        self.zero_qty_combo = QComboBox()
+        self.zero_qty_combo.addItems(["全部", "定额为0", "实际为0", "定额/实际为0", "定额/实际非0"])
+        self.remark_search_edit = QLineEdit()
+        self.remark_search_edit.setPlaceholderText("输入备注关键词，逗号分隔多选")
+        self.remark_not_edit = QLineEdit()
+        self.remark_not_edit.setPlaceholderText("排除包含这些关键词的备注，逗号分隔")
         dev_layout.addRow("偏差率范围:", self.dev_rate_combo)
         dev_layout.addRow("审核结果:", self.audit_status_combo)
         dev_layout.addRow("备注来源:", self.remark_source_combo)
+        dev_layout.addRow("备注搜索:", self.remark_search_edit)
+        dev_layout.addRow("备注不为:", self.remark_not_edit)
         dev_layout.addRow("备注为空:", self.remark_empty_combo)
+        dev_layout.addRow("零值筛选:", self.zero_qty_combo)
         dev_layout.addRow("已读/未读:", self.read_status_combo)
         content_layout.addWidget(dev_group)
 
@@ -114,11 +140,13 @@ class FilterPanel(QWidget):
         self.start_date_edit.setDisplayFormat("yyyy-MM-dd")
         self.start_date_edit.setSpecialValueText("未选择")
         self.start_date_edit.setDate(QDate.currentDate().addMonths(-1))
+        self.start_date_edit.setEnabled(True)
         self.end_date_edit = QDateEdit()
         self.end_date_edit.setCalendarPopup(True)
         self.end_date_edit.setDisplayFormat("yyyy-MM-dd")
         self.end_date_edit.setSpecialValueText("未选择")
         self.end_date_edit.setDate(QDate.currentDate())
+        self.end_date_edit.setEnabled(True)
         date_layout.addRow("开始日期:", self.start_date_edit)
         date_layout.addRow("结束日期:", self.end_date_edit)
         self.date_filter_btn = QPushButton("筛选")
@@ -132,12 +160,22 @@ class FilterPanel(QWidget):
         content_layout.addWidget(reset_btn, alignment=Qt.AlignCenter)
 
         content_layout.addStretch()
-        main_layout.addWidget(self.content_widget)
+
+        # 用 QScrollArea 包裹内容区，窗口矮时可滚动
+        self._scroll_area = QScrollArea()
+        self._scroll_area.setWidget(self.content_widget)
+        self._scroll_area.setWidgetResizable(True)
+        self._scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._scroll_area.setFrameShape(QScrollArea.NoFrame)
+        main_layout.addWidget(self._scroll_area)
 
         # 连接实时筛选信号（非日期）
         self.factory_combo.currentIndexChanged.connect(self._emit_filter)
         self.workshop_combo.currentIndexChanged.connect(self._emit_filter)
         self.process_order_edit.textChanged.connect(self._emit_filter)
+        self.process_order_edit.editingFinished.connect(self._emit_filter)
+        self.process_order_edit.returnPressed.connect(self._emit_filter)
         self.category_combo.currentIndexChanged.connect(self._emit_filter)
         self.alt_combo.currentIndexChanged.connect(self._emit_filter)
         self.dev_rate_combo.currentIndexChanged.connect(self._emit_filter)
@@ -146,12 +184,26 @@ class FilterPanel(QWidget):
         self.order_type_combo.currentIndexChanged.connect(self._emit_filter)
         self.read_status_combo.currentIndexChanged.connect(self._emit_filter)
         self.material_code_edit.textChanged.connect(self._emit_filter)
+        self.material_code_edit.editingFinished.connect(self._emit_filter)
+        self.material_code_edit.returnPressed.connect(self._emit_filter)
         self.remark_source_combo.currentIndexChanged.connect(self._emit_filter)
         self.material_name_edit.textChanged.connect(self._emit_filter)
+        self.material_name_edit.editingFinished.connect(self._emit_filter)
+        self.material_name_edit.returnPressed.connect(self._emit_filter)
+        self.zero_qty_combo.currentIndexChanged.connect(self._emit_filter)
+        self.remark_search_edit.textChanged.connect(self._emit_filter)
+        self.remark_search_edit.editingFinished.connect(self._emit_filter)
+        self.remark_search_edit.returnPressed.connect(self._emit_filter)
+        self.remark_not_edit.textChanged.connect(self._emit_filter)
+        self.remark_not_edit.editingFinished.connect(self._emit_filter)
+        self.remark_not_edit.returnPressed.connect(self._emit_filter)
 
         self._data = None
         self._col_map = {}
         self._date_filters = {}
+        # 记录用户已选的日期（即便数据刷新也不清空），保证日期筛选可用
+        self._user_start_date = None
+        self._user_end_date = None
 
     # ------------------------------------------------------------------ #
     # 折叠/展开
@@ -245,6 +297,15 @@ class FilterPanel(QWidget):
         # 重置日期为数据范围
         self._reset_date_range()
 
+        # 关键修复：数据刷新（标记已读/改备注/切工厂等会触发 set_data）时，
+        # 不能清空用户已设置的日期区间，否则日期筛选会被悄悄丢弃、"用不了"。
+        # 仅当用户此前选过日期且本次数据非空时，恢复其选择并保持生效。
+        if self._user_start_date is not None and df is not None and not df.empty:
+            self.start_date_edit.setDate(self._user_start_date)
+            self.end_date_edit.setDate(
+                self._user_end_date if self._user_end_date is not None else self._user_start_date)
+            self._date_filters = self._compute_date_filters()
+
     def update_options(self, df: pd.DataFrame):
         self.set_data(df)
 
@@ -299,6 +360,10 @@ class FilterPanel(QWidget):
 
         self._date_filters = {}
 
+        # 确保日期控件始终可用（防止被外部或样式意外禁用）
+        self.start_date_edit.setEnabled(True)
+        self.end_date_edit.setEnabled(True)
+
     # ------------------------------------------------------------------ #
     # 筛选条件获取
     # ------------------------------------------------------------------ #
@@ -347,6 +412,16 @@ class FilterPanel(QWidget):
             filters['_remark_empty'] = (self.remark_empty_combo.currentText() == '是')
         if self.read_status_combo.currentText() != "全部":
             filters['_read_status'] = self.read_status_combo.currentText()
+        if self.zero_qty_combo.currentText() != "全部":
+            filters['_zero_qty'] = self.zero_qty_combo.currentText()
+        # 备注关键词搜索（逗号分隔多选，OR匹配）
+        remark_search_text = self.remark_search_edit.text().strip()
+        if remark_search_text:
+            filters['_remark_search'] = remark_search_text
+        # 备注不为（排除包含这些关键词的备注，逗号分隔多选，OR匹配）
+        remark_not_text = self.remark_not_edit.text().strip()
+        if remark_not_text:
+            filters['_remark_not'] = remark_not_text
         if self._date_filters:
             filters.update(self._date_filters)
         
@@ -364,22 +439,28 @@ class FilterPanel(QWidget):
         filters = self.get_filters()
         self.filter_changed.emit(filters)
 
-    def _emit_date_filter(self):
-        """日期筛选：用户点击"筛选"按钮时触发"""
-        self._date_filters = {}
+    def _compute_date_filters(self):
+        """根据当前日期控件值计算日期筛选条件字典（可能为空）。
+        同时记录用户选择，供 set_data 数据刷新后保留日期区间。"""
         start = self.start_date_edit.date()
         end = self.end_date_edit.date()
+        self._user_start_date = start
+        self._user_end_date = end
+        date_filters = {}
+        # 仅当用户调整了日期（与数据范围不同）才加入筛选，避免无意义全量过滤
+        if self._data_min_date is not None:
+            if (start.year(), start.month(), start.day()) != (
+                    self._data_min_date.year, self._data_min_date.month, self._data_min_date.day):
+                date_filters['_date_start'] = start.toString("yyyy-MM-dd")
+        if self._data_max_date is not None:
+            if (end.year(), end.month(), end.day()) != (
+                    self._data_max_date.year, self._data_max_date.month, self._data_max_date.day):
+                date_filters['_date_end'] = end.toString("yyyy-MM-dd")
+        return date_filters
 
-        # 获取最小/最大日期
-        min_date = self.start_date_edit.minimumDate()
-        max_date = self.end_date_edit.maximumDate()
-        
-        # 判断用户是否选择了有效日期（与最小值不同表示用户修改过）
-        if min_date.isValid() and start.isValid() and start != min_date:
-            self._date_filters['_date_start'] = start.toString("yyyy-MM-dd")
-        if max_date.isValid() and end.isValid() and end != min_date:
-            self._date_filters['_date_end'] = end.toString("yyyy-MM-dd")
-
+    def _emit_date_filter(self):
+        """日期筛选：用户点击"筛选"按钮时触发"""
+        self._date_filters = self._compute_date_filters()
         self._emit_filter()
 
     def reset_filters(self):
@@ -394,8 +475,13 @@ class FilterPanel(QWidget):
         self.order_type_combo.setCurrentIndex(0)
         self.read_status_combo.setCurrentIndex(0)
         self.remark_source_combo.setCurrentIndex(0)
+        self.zero_qty_combo.setCurrentIndex(0)
         self.material_code_edit.clear()
         self.material_name_edit.clear()
+        self.remark_search_edit.clear()
+        self.remark_not_edit.clear()
         # 重置日期为数据最小/最大日期
+        self._user_start_date = None
+        self._user_end_date = None
         self._reset_date_range()
         self._emit_filter()

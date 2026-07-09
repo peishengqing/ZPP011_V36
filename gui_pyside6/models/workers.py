@@ -18,13 +18,14 @@ class AnalysisWorker(QThread):
     error = Signal(str)
     log = Signal(str)           # 日志信号
 
-    def __init__(self, input_file, alt_pairs, start_date, end_date, material_search):
+    def __init__(self, input_file, alt_pairs, start_date, end_date, material_search, dev_rate_threshold=1.0):
         super().__init__()
         self.input_file = input_file
         self.alt_pairs = alt_pairs
         self.start_date = start_date
         self.end_date = end_date
         self.material_search = material_search
+        self.dev_rate_threshold = dev_rate_threshold
         self._cancel = False
 
     def cancel(self):
@@ -56,6 +57,7 @@ class AnalysisWorker(QThread):
                 output_path=None,
                 enable_net_offset=_enable_net_offset,
                 return_dataframe=True,  # 返回DataFrame，不自动保存文件
+                dev_rate_threshold=self.dev_rate_threshold,
             )
 
             if self._cancel:

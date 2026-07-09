@@ -189,6 +189,7 @@ class AltController(QObject):
         table.setEditTriggers(QTableWidget.NoEditTriggers)
         table.setSelectionBehavior(QTableWidget.SelectRows)
         table.setContextMenuPolicy(Qt.CustomContextMenu)
+        table.setSortingEnabled(True)
         # 确保缩放窗口有滚动条
         table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)

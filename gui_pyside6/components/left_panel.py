@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-"""左侧面板组件 — 暗色主题 260px 设计
-包含：文件选择 + 筛选选项（日期范围、物料搜索）+ 替代料配对 + 数据预览
-筛选条件由右侧 FilterPanel 独立管理，负责工厂/车间/物料类型等详细筛选
+"""左侧面板组件 — 卡片式 360px 设计
+包含：文件选择 + 替代料配对 + 数据预览
+筛选条件由右侧 FilterPanel 独立管理，负责工厂/车间/物料类型/日期等详细筛选
 """
 from PySide6.QtWidgets import (
     QWidget, QGroupBox, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTableWidget,
-    QComboBox, QDateEdit, QSizePolicy, QHeaderView,
+    QHeaderView,
 )
-from PySide6.QtCore import Qt, QDate
+from PySide6.QtCore import Qt, QObject, QEvent
 
 
 class LeftPanelComponent:
@@ -26,53 +26,47 @@ class LeftPanelComponent:
         layout.setSpacing(10)
         layout.setContentsMargins(8, 8, 8, 8)
 
-        # 1. 文件选择卡
+        # 1. 文件选择组
         self.file_group = self._create_card("📁 文件选择", True)
         self._build_file_selection(self.file_group.body_layout)
         layout.addWidget(self.file_group.container)
 
-        # 2. 筛选选项卡
-        self.filter_group = self._create_card("📅 筛选选项", True)
-        self._build_filter_options(self.filter_group.body_layout)
-        layout.addWidget(self.filter_group.container)
-
-        # 3. 替代料管理卡
+        # 3. 替代料管理组
         self.alt_group = self._create_card("🔧 替代料配对", True)
         self._build_alternative_materials(self.alt_group.body_layout)
         layout.addWidget(self.alt_group.container)
 
-        # 4. 数据预览卡
-        self.preview_group = self._create_card("📊 数据预览", False)
-        self.preview_label = QLabel("未选择文件")
-        self.preview_label.setStyleSheet("color: #ffffff; font-size: 11px; padding: 8px;")
-        self.mw.preview_label = self.preview_label
-        self.preview_group.body_layout.addWidget(self.preview_label)
+        # 4. 数据预览组（文字统计：显示行数/列数），默认展开
+        self.preview_group = self._create_card("📊 数据预览", True)
+        self.mw.preview_label = QLabel("")
+        self.mw.preview_label.setObjectName("previewLabel")
+        self.mw.preview_label.setStyleSheet("font-size: 11px; padding: 8px; line-height: 1.6;")
+        self.mw.preview_label.setWordWrap(True)
+        self.preview_group.body_layout.addWidget(self.mw.preview_label)
         layout.addWidget(self.preview_group.container)
 
         layout.addStretch()
         return panel
 
     def _create_card(self, title: str, expanded: bool):
-        """创建卡片式可折叠分组（仿 Tkinter 旧版 card() 样式）
-        白底 + 1px 边框 + 顶部 3px 蓝色条纹
-        """
+        """创建卡片式分组"""
         container = QWidget()
         container.setObjectName("cardContainer")
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # 顶部蓝色条纹（3px）
+        # 顶部蓝色条纹
         stripe = QWidget()
-        stripe.setFixedHeight(3)
         stripe.setObjectName("cardStripe")
+        stripe.setFixedHeight(3)
         layout.addWidget(stripe)
 
         # 头部（可点击）
         header = QWidget()
         header.setObjectName("cardHeader")
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(12, 8, 12, 8)
+        header_layout.setContentsMargins(12, 10, 12, 10)
 
         title_label = QLabel(title)
         title_label.setObjectName("cardTitle")
@@ -89,20 +83,36 @@ class LeftPanelComponent:
         body = QWidget()
         body.setObjectName("cardBody")
         body_layout = QVBoxLayout(body)
-        body_layout.setContentsMargins(12, 10, 12, 10)
-        body_layout.setSpacing(8)
+        body_layout.setContentsMargins(12, 12, 12, 12)
+        body_layout.setSpacing(10)
 
         if not expanded:
             body.setVisible(False)
             arrow_btn.setText("▶")
 
-        # 连接折叠逻辑
+        # 连接折叠逻辑：箭头按钮点击 + header 区域点击
         def toggle_state():
             is_visible = body.isVisible()
             body.setVisible(not is_visible)
             arrow_btn.setText("▶" if is_visible else "▼")
 
-        header.mousePressEvent = lambda e: toggle_state()  # type: ignore
+        arrow_btn.clicked.connect(toggle_state)
+
+        # header 整个区域可点击（用 eventFilter 拦截 mousePress）
+        class HeaderEventFilter(QObject):
+            def __init__(self_inner, callback):
+                super().__init__()
+                self_inner._cb = callback
+
+            def eventFilter(self_inner, obj, e):  # noqa: N802 — Qt override
+                if e.type() == QEvent.Type.MouseButtonPress:
+                    if e.button() == Qt.MouseButton.LeftButton:
+                        self_inner._cb()
+                return super().eventFilter(obj, e)
+
+        header_filter = HeaderEventFilter(toggle_state)
+        header.installEventFilter(header_filter)
+
         layout.addWidget(header)
         layout.addWidget(body)
 
@@ -111,6 +121,9 @@ class LeftPanelComponent:
         group = CardGroup()
         group.container = container
         group.body_layout = body_layout
+        group.body = body
+        group.arrow_btn = arrow_btn
+        group.expand = lambda: (body.setVisible(True), arrow_btn.setText("▼"))
         return group
 
     def _build_file_selection(self, layout: QVBoxLayout):
@@ -120,12 +133,12 @@ class LeftPanelComponent:
         input_row.setSpacing(6)
 
         input_field = QLineEdit(self.mw)
+        input_field.setPlaceholderText("📁 点击'浏览'选文件")
         input_field.setMinimumWidth(150)
         input_field.setObjectName("inputFileEdit")
         input_field.setReadOnly(True)
-        input_field.setPlaceholderText("📁 点击'浏览'选文件")
         self.mw.input_file_edit = input_field
-        
+
         browse_btn = QPushButton("浏览")
         browse_btn.setObjectName("browseBtn")
         browse_btn.clicked.connect(self.mw._select_input_file)
@@ -135,6 +148,7 @@ class LeftPanelComponent:
 
         input_label = QLabel("输入")
         input_label.setObjectName("filterLabel")
+        input_label.setStyleSheet("color: #ffffff; font-size: 11px; margin-bottom: 4px;")
         layout.addWidget(input_label)
         layout.addLayout(input_row)
 
@@ -147,7 +161,7 @@ class LeftPanelComponent:
         output_field.setObjectName("outputDirEdit")
         output_field.setReadOnly(True)
         self.mw.output_dir_edit = output_field
-        
+
         output_browse_btn = QPushButton("浏览")
         output_browse_btn.setObjectName("browseBtn")
         output_browse_btn.clicked.connect(self.mw._select_output_dir)
@@ -160,62 +174,6 @@ class LeftPanelComponent:
         output_label.setStyleSheet("color: #ffffff; font-size: 11px; margin-bottom: 4px;")
         layout.addWidget(output_label)
         layout.addLayout(output_row)
-
-    def _build_filter_options(self, layout: QVBoxLayout):
-        """构建筛选选项表单（偏差分析日期范围 + 物料搜索）"""
-        # 日期范围
-        date_label = QLabel("日期范围")
-        date_label.setObjectName("filterLabel")
-        date_label.setStyleSheet("color: #ffffff; font-size: 11px; margin-bottom: 4px;")
-        layout.addWidget(date_label)
-
-        date_row = QHBoxLayout()
-        date_row.setSpacing(2)
-
-        self.mw.start_date_edit = QDateEdit()
-        self.mw.start_date_edit.setCalendarPopup(True)
-        self.mw.start_date_edit.setDisplayFormat("yyyy-MM-dd")
-        self.mw.start_date_edit.setObjectName("startDateEdit")
-        self.mw.start_date_edit.setDate(QDate.currentDate().addMonths(-1))
-        self.mw.start_date_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-
-        sep_label = QLabel("-")
-        sep_label.setObjectName("dateSep")
-        sep_label.setFixedWidth(8)
-        sep_label.setAlignment(Qt.AlignCenter)
-
-        self.mw.end_date_edit = QDateEdit()
-        self.mw.end_date_edit.setCalendarPopup(True)
-        self.mw.end_date_edit.setDisplayFormat("yyyy-MM-dd")
-        self.mw.end_date_edit.setObjectName("endDateEdit")
-        self.mw.end_date_edit.setDate(QDate.currentDate())
-        self.mw.end_date_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-
-        date_row.addWidget(self.mw.start_date_edit)
-        date_row.addWidget(sep_label)
-        date_row.addWidget(self.mw.end_date_edit)
-        layout.addLayout(date_row)
-
-        # 物料搜索
-        search_label = QLabel("物料搜索")
-        search_label.setObjectName("searchLabel")
-        search_label.setStyleSheet("color: #ffffff; font-size: 11px; margin: 10px 0 4px 0;")
-        layout.addWidget(search_label)
-
-        search_row = QHBoxLayout()
-        search_row.setSpacing(6)
-
-        self.mw.material_code_edit = QLineEdit()
-        self.mw.material_code_edit.setPlaceholderText("编码")
-        self.mw.material_code_edit.setObjectName("materialCodeEdit")
-
-        self.mw.material_name_edit = QLineEdit()
-        self.mw.material_name_edit.setPlaceholderText("名称")
-        self.mw.material_name_edit.setObjectName("materialNameEdit")
-
-        search_row.addWidget(self.mw.material_code_edit)
-        search_row.addWidget(self.mw.material_name_edit)
-        layout.addLayout(search_row)
 
     def _build_alternative_materials(self, layout: QVBoxLayout):
         """构建替代料管理表单"""
@@ -243,6 +201,7 @@ class LeftPanelComponent:
         self.mw.alt_table.setDragDropMode(QTableWidget.InternalMove)
         self.mw.alt_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.mw.alt_table.setAlternatingRowColors(True)
+        # 不再内联设置样式，由 QSS 主题统一控制
         self.mw.alt_table.setMinimumHeight(100)
         self.mw.alt_table.setMaximumHeight(150)
         layout.addWidget(self.mw.alt_table)
@@ -274,7 +233,7 @@ class LeftPanelComponent:
         btn_layout2.addStretch()
         layout.addLayout(btn_layout2)
 
-    def _create_input_row(self, parent_layout: QVBoxLayout, label_text: str, 
+    def _create_input_row(self, parent_layout: QVBoxLayout, label_text: str,
                          placeholder: str, has_browse: bool = False) -> QWidget:
         """创建 label + 输入框行"""
         container = QWidget()

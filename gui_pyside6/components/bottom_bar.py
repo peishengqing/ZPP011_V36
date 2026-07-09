@@ -20,7 +20,7 @@ class BottomBarComponent:
         self.mw.log_text = QTextEdit()
         self.mw.log_text.setReadOnly(True)
         self.mw.log_text.setObjectName("logTextEdit")
-        self.mw.log_text.setMinimumHeight(100)
+        self.mw.log_text.setMinimumHeight(0)
         self.mw.log_text.setMaximumHeight(260)
 
         log_layout.addWidget(self.mw.log_text)

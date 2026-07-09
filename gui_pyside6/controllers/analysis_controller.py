@@ -28,7 +28,7 @@ class AnalysisController(QObject):
         self.factory_data = {}  # {工厂名: DataFrame}
         self.current_factory = None  # 当前选中的工厂
 
-    def start_analysis(self, input_file, alt_pairs, start_date, end_date, material_search):
+    def start_analysis(self, input_file, alt_pairs, start_date, end_date, material_search, dev_rate_threshold=1.0):
         """启动分析线程"""
         if self.worker and self.worker.isRunning():
             self.log_message.emit("分析任务已在运行", "warning")
@@ -41,11 +41,12 @@ class AnalysisController(QObject):
             'start_date': start_date,
             'end_date': end_date,
             'material_search': material_search,
+            'dev_rate_threshold': dev_rate_threshold,
         }
 
         self.analysis_started.emit()
         self.worker = AnalysisWorker(
-            input_file, alt_pairs, start_date, end_date, material_search
+            input_file, alt_pairs, start_date, end_date, material_search, dev_rate_threshold
         )
         self.worker.progress.connect(self.progress_updated)
         self.worker.finished.connect(self._on_finished)

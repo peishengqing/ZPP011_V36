@@ -104,18 +104,18 @@ class DataFrameModel(QAbstractTableModel):
         # 其余列：从缓存读取
         if role == Qt.DisplayRole or role == Qt.EditRole:
             val = self._data_cache[row][col]
-            # 偏差率列：显示时加 % 后缀
+            # 偏差率列：显示时加 % 后缀（匹配 偏差率(%)、净偏差率(%)、净偏差率 等）
             col_name = self._display_columns[col]
             if '偏差率' in col_name and val != "":
                 try:
-                    return f"{float(val):.2f}%"
+                    return f"{float(val):.3f}%"
                 except (ValueError, TypeError):
                     return str(val)
             # 格式化浮点数
             if isinstance(val, float):
                 if abs(val) >= 1000:
-                    return f"{val:,.2f}"
-                return f"{val:.2f}"
+                    return f"{val:,.3f}"
+                return f"{val:.3f}"
             return str(val) if val != "" else ""
         
         elif role == Qt.TextAlignmentRole:
@@ -151,19 +151,44 @@ class DataFrameModel(QAbstractTableModel):
                 except ValueError:
                     read_col_idx = -1
                 
+                header_text = None
                 if read_col_idx == 0:
                     # _read 在第0列，不需要偏移
                     if section < len(self._data.columns):
-                        return str(self._data.columns[section])
+                        header_text = str(self._data.columns[section])
                 else:
                     # _read 不在第0列，需要偏移
                     data_cols = [c for c in self._data.columns if c != '_read']
                     if section - 1 < len(data_cols):
-                        return str(data_cols[section - 1])
-                return str(section)
+                        header_text = str(data_cols[section - 1])
+                if header_text is None:
+                    return str(section)
+                # 将长表头分成2行显示
+                return self._wrap_header(header_text)
             else:
                 return str(self._data.index[section] + 1)
         return None
+
+    def _wrap_header(self, text):
+        """将长表头文字分成2行，在合适位置插入换行符"""
+        if not text or len(text) <= 4:
+            return text
+        # 已经有括号的，在括号前换行
+        if '(' in text and not text.startswith('('):
+            idx = text.index('(')
+            return text[:idx].rstrip() + '\n' + text[idx:]
+        # 含"-"的（如 数量-定额），在"-"前换行
+        if '-' in text and not text.startswith('-'):
+            idx = text.index('-')
+            return text[:idx].rstrip() + '\n' + text[idx:]
+        # 含"金额"的较长短名，在"金额"前换行
+        if '金额' in text and len(text) > 4:
+            idx = text.index('金额')
+            if idx > 0:
+                return text[:idx].rstrip() + '\n' + text[idx:]
+        # 一般长文本，从中间断开
+        mid = len(text) // 2
+        return text[:mid] + '\n' + text[mid:]
 
     def flags(self, index):
         if not index.isValid():
@@ -241,8 +266,6 @@ class DataFrameModel(QAbstractTableModel):
 
         col_name = self._data.columns[actual_col]
         ascending = (order == Qt.AscendingOrder)
-        
-        print(f"[DEBUG sort] column={column}, actual_col={actual_col}, col_name={col_name!r}, ascending={ascending}")
 
         # 百分比列特殊处理：去掉%转数字排序
         if '%' in str(col_name):
@@ -259,6 +282,8 @@ class DataFrameModel(QAbstractTableModel):
         else:
             self._data = self._data.sort_values(by=col_name, ascending=ascending).copy()
 
+        # 重排后必须重建显示缓存（data() 读的是缓存，否则排序后界面不刷新）
+        self._build_cache()
         self.endResetModel()
         self.layoutChanged.emit()
 
@@ -305,6 +330,7 @@ class AuditProxyModel(QSortFilterProxyModel):
         """
         self._custom_filters = filters
         self.invalidateFilter()
+        self.layoutChanged.emit()
 
     # ------------------------------------------------------------------ #
     # 核心过滤逻辑
@@ -337,18 +363,20 @@ class AuditProxyModel(QSortFilterProxyModel):
                 if row_val != str(value).strip():
                     return False
 
-            # 1.5 物料编码模糊搜索（支持逗号分隔多值，OR匹配）
+            # 1.5 物料编码模糊搜索（支持逗号分隔多值，跨多个编码列 OR 匹配）
             if '_material_code' in self._custom_filters:
-                code_col = self._get_material_code_column(df)
-                if code_col:
+                code_cols = self._get_material_code_columns(df)
+                if code_cols:
                     raw_query = str(self._custom_filters['_material_code']).lower()
-                    row_code = str(row_data.get(code_col, '')).lower()
-                    # 按逗号分隔，每个值为一个独立条件（OR关系）
                     queries = [q.strip() for q in raw_query.split(',') if q.strip()]
                     matched = False
                     for q in queries:
-                        if q in row_code:
-                            matched = True
+                        for col in code_cols:
+                            row_val = str(row_data.get(col, '')).lower()
+                            if q in row_val:
+                                matched = True
+                                break
+                        if matched:
                             break
                     if not matched:
                         return False
@@ -424,6 +452,87 @@ class AuditProxyModel(QSortFilterProxyModel):
                     if self._custom_filters['_remark_empty'] != is_empty:
                         return False
 
+            # 4.1 备注关键词搜索（逗号分隔多选，OR匹配）
+            if '_remark_search' in self._custom_filters:
+                raw = self._custom_filters['_remark_search']
+                if raw:
+                    if isinstance(raw, str):
+                        queries = [q.strip().lower() for q in raw.split(',') if q.strip()]
+                    else:
+                        queries = [str(q).lower() for q in raw]
+                    if queries:
+                        remark_col = self._find_remark_column(df)
+                        if remark_col:
+                            row_remark = str(row_data.get(remark_col, '')).lower()
+                            matched = any(q in row_remark for q in queries)
+                            if not matched:
+                                return False
+
+            # 4.2 备注不为（排除包含这些关键词的备注，逗号分隔多选，OR匹配）
+            if '_remark_not' in self._custom_filters:
+                raw = self._custom_filters['_remark_not']
+                if raw:
+                    if isinstance(raw, str):
+                        queries = [q.strip().lower() for q in raw.split(',') if q.strip()]
+                    else:
+                        queries = [str(q).lower() for q in raw]
+                    if queries:
+                        remark_col = self._find_remark_column(df)
+                        if remark_col:
+                            row_remark = str(row_data.get(remark_col, '')).lower()
+                            matched = any(q in row_remark for q in queries)
+                            if matched:
+                                return False
+
+            # 4.5 零值筛选（定额为0 / 实际为0 / 定额/实际为0 / 定额/实际非0）
+            if '_zero_qty' in self._custom_filters:
+                zero_mode = self._custom_filters['_zero_qty']
+                qty_col = None
+                for c in ['数量-定额', '定额']:
+                    if c in df.columns:
+                        qty_col = c
+                        break
+                actual_col = None
+                for c in ['数量-实际', '实际']:
+                    if c in df.columns:
+                        actual_col = c
+                        break
+
+                def _to_float_safe(v):
+                    """安全转浮点数，失败返回0"""
+                    try:
+                        f = float(v)
+                        return f if not pd.isna(f) else 0.0
+                    except (ValueError, TypeError):
+                        return 0.0
+
+                if zero_mode == '定额为0':
+                    if qty_col:
+                        val = _to_float_safe(row_data.get(qty_col, 0))
+                        if abs(val) > 0.001:
+                            return False
+                    else:
+                        return False  # 没有定额列，无法筛选
+                elif zero_mode == '实际为0':
+                    if actual_col:
+                        val = _to_float_safe(row_data.get(actual_col, 0))
+                        if abs(val) > 0.001:
+                            return False
+                    else:
+                        return False
+                elif zero_mode == '定额/实际为0':
+                    # 定额=0 且 实际=0 才保留
+                    qty_val = _to_float_safe(row_data.get(qty_col, 0)) if qty_col else 0.0
+                    actual_val = _to_float_safe(row_data.get(actual_col, 0)) if actual_col else 0.0
+                    if abs(qty_val) > 0.001 or abs(actual_val) > 0.001:
+                        return False
+                elif zero_mode == '定额/实际非0':
+                    # 定额≠0 且 实际≠0 才保留
+                    qty_val = _to_float_safe(row_data.get(qty_col, 0)) if qty_col else 0.0
+                    actual_val = _to_float_safe(row_data.get(actual_col, 0)) if actual_col else 0.0
+                    if abs(qty_val) <= 0.001 or abs(actual_val) <= 0.001:
+                        return False
+
             # 4. 日期范围
             if '_date_start' in self._custom_filters or '_date_end' in self._custom_filters:
                 date_col = self._get_date_column(df)
@@ -468,13 +577,24 @@ class AuditProxyModel(QSortFilterProxyModel):
         return None
 
     def _get_material_code_column(self, df):
+        """返回第一个命中的物料编码列（保持向后兼容）"""
         for col in ['物料号', '物料编码', 'code', '组件物料号']:
             if col in df.columns:
                 return col
         return None
 
+    def _get_material_code_columns(self, df):
+        """返回所有候选的物料编码列（用于跨列模糊匹配）"""
+        return [c for c in df.columns if c in ('物料号', '物料编码', 'code', '组件物料号')]
+
     def _find_material_name_column(self, df):
         for col in ['物料描述', '物料名称', '物料']:
+            if col in df.columns:
+                return col
+        return None
+
+    def _find_remark_column(self, df):
+        for col in ['备注原因', '备注']:
             if col in df.columns:
                 return col
         return None

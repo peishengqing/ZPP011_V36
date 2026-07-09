@@ -95,6 +95,24 @@ def save_read_status(data_id: str, is_read: int, fingerprint: str):
     conn.close()
 
 
+def save_read_status_batch(records):
+    """
+    批量保存已读状态（一次连接、一次提交，避免逐行开库）
+
+    records: [(data_id, is_read, fingerprint), ...]
+    """
+    if not records:
+        return
+    conn = _get_conn()
+    now = datetime.now().isoformat()
+    conn.executemany("""
+        INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, read_time, user)
+        VALUES (?, ?, ?, ?, ?)
+    """, [(str(did), int(is_read), str(fp), now, 'default') for did, is_read, fp in records])
+    conn.commit()
+    conn.close()
+
+
 # ── 审核结果持久化 ─────────────────────────────────────
 
 def load_audit_results(data_ids: List[str]) -> Dict[str, Dict[str, str]]:

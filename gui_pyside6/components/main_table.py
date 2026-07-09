@@ -135,57 +135,70 @@ class MainTableComponent:
 
         # 合计行（单行）
         summary_layout = QHBoxLayout()
-        summary_layout.setContentsMargins(4, 4, 4, 4)
+        summary_layout.setContentsMargins(4, 0, 4, 0)
+        summary_layout.setSpacing(4)
 
-        self.summary_quota = QLabel("配额: 0.00")
-        self.summary_actual = QLabel("实际: 0.00")
-        self.summary_amount = QLabel("偏差金额: 0.00")
-        self.summary_qty = QLabel("偏差量: 0.00")
-        for lbl in [self.summary_quota, self.summary_actual, self.summary_amount, self.summary_qty]:
+        self.summary_quota = QLabel("定额: 0")
+        self.summary_actual = QLabel("实际: 0")
+        self.summary_amount = QLabel("偏差金额: 0")
+        self.summary_qty = QLabel("偏差量: 0")
+        self.summary_net_rate = QLabel("净偏差率: 0.00%")
+        for lbl in [self.summary_quota, self.summary_actual, self.summary_amount, self.summary_qty, self.summary_net_rate]:
             lbl.setObjectName("summaryLabel")
+            lbl.setMinimumWidth(0)
         summary_layout.addWidget(self.summary_quota)
         summary_layout.addWidget(self.summary_actual)
         summary_layout.addWidget(self.summary_amount)
         summary_layout.addWidget(self.summary_qty)
+        summary_layout.addWidget(self.summary_net_rate)
         summary_layout.addStretch()
 
         self.unit_summary_btn = QPushButton("单位汇总")
         self.unit_summary_btn.setObjectName("unitSummaryBtn")
         self.unit_summary_btn.clicked.connect(self.mw._show_unit_summary)
+        self.unit_summary_btn.setMaximumWidth(80)
         summary_layout.addWidget(self.unit_summary_btn)
 
-        self.lock_btn = QPushButton("🔒 锁定列宽")
+        self.lock_btn = QPushButton("🔒")
         self.lock_btn.setCheckable(True)
         self.lock_btn.setObjectName("lockBtn")
+        self.lock_btn.setToolTip("锁定/解锁列宽")
+        self.lock_btn.setMaximumWidth(32)
         self.lock_btn.clicked.connect(self.mw._toggle_column_lock)
         summary_layout.addWidget(self.lock_btn)
 
-        self.fullscreen_btn = QPushButton("⛶ 全屏")
+        self.fullscreen_btn = QPushButton("⛶")
         self.fullscreen_btn.setCheckable(True)
         self.fullscreen_btn.setObjectName("fullscreenBtn")
+        self.fullscreen_btn.setToolTip("全屏")
+        self.fullscreen_btn.setMaximumWidth(32)
         self.fullscreen_btn.clicked.connect(self.mw._toggle_table_fullscreen)
         summary_layout.addWidget(self.fullscreen_btn)
+
+        self.col_hide_btn = QPushButton("👁")
+        self.col_hide_btn.setObjectName("colHideBtn")
+        self.col_hide_btn.setToolTip("隐藏列")
+        self.col_hide_btn.setMaximumWidth(32)
+        self.col_hide_btn.clicked.connect(self.mw._show_column_hide_dialog)
+        summary_layout.addWidget(self.col_hide_btn)
 
         self.summary_container = QWidget()
         self.summary_container.setObjectName("summaryContainer")
         self.summary_container.setLayout(summary_layout)
-        self.summary_container.setFixedHeight(32)
-        self.summary_container.setMinimumHeight(32)
+        self.summary_container.setFixedHeight(28)
+        self.summary_container.setMinimumHeight(28)
+        self.summary_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        # 组装
+        # 组装：表格区（不含合计栏，合计栏由 main_window 固定在底部）
         audit_layout = QVBoxLayout()
         audit_layout.setContentsMargins(0, 0, 0, 0)
         audit_layout.setSpacing(0)
 
-        # 进度 + 操作 - 完全删除这些控件
-        # 表格 + 合计
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
         main_layout.addWidget(self.table_view, 1)
-        main_layout.addWidget(self.summary_container, 0)
 
-        # 最终组装
         audit_layout.addLayout(main_layout, 1)
 
         self.audit_widget = QWidget()

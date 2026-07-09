@@ -62,11 +62,13 @@ class AlertPopup(QWidget):
         lines = []
         cols = [c for c in ['物料编码', '物料名称', '偏差率(%)', '偏差率'] if c in self.alerts_df.columns]
         rate_col = '偏差率(%)' if '偏差率(%)' in self.alerts_df.columns else ('偏差率' if '偏差率' in self.alerts_df.columns else None)
+        net_rate_col = '净偏差率(%)' if '净偏差率(%)' in self.alerts_df.columns else ('净偏差率' if '净偏差率' in self.alerts_df.columns else None)
         for _, row in self.alerts_df.head(5).iterrows():
             code = row.get('物料编码', '')
             name = row.get('物料名称', '')
             rate = row[rate_col] if rate_col else ''
-            lines.append(f"• {code} {name}  偏差率: {rate}%")
+            net_rate = row[net_rate_col] if net_rate_col else ''
+            lines.append(f"• {code} {name}  偏差率: {rate}%  净偏差率: {net_rate}%")
         self.detail.setPlainText("\n".join(lines))
         layout.addWidget(self.detail)
 

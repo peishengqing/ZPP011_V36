@@ -25,18 +25,12 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
     print("[DEBUG do_analysis_v2] 开始生成Sheet2")
 
     # ---------- 兼容性转换：将配对中的物料提取为描述字符串 ----------
-    # 由于替代料明细表中匹配的是“物料描述”，我们需要将配对中的物料转换为描述字符串。
-    # 原始逻辑中，alt_pairs 中的元素是物料描述字符串（如“核桃仁头二路”）。
-    # 但现在存储的可能是三元组 (factory, code, name)，我们需要提取 name 作为描述。
-    # 同时，为了兼容旧格式，如果已经是字符串则直接使用。
     converted_pairs = []
     for a, b in alt_pairs:
         def get_desc(item):
             if isinstance(item, (list, tuple)):
-                # 如果是三元组 (factory, code, name)，取 name（最后一个元素）
                 if len(item) == 3:
                     return str(item[2]) if item[2] else ''
-                # 如果是二元组 (code, name)，取 name
                 elif len(item) == 2:
                     return str(item[1]) if item[1] else ''
                 else:
@@ -51,53 +45,93 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
             print(f"[警告] 跳过无效替代料配对: {a} ↔ {b}")
 
     col_p = '偏差率(%)'
+    code_col = next((c for c in df.columns if c in ('组件物料编码', '组件物料号')), None)
     alt_rows = []
 
+    def _match_rows(grp, desc):
+        """三级匹配：精确 → 包含 → 编码，返回匹配的行"""
+        if not desc:
+            return grp.iloc[0:0]
+        # 第一级：精确匹配
+        rows = grp[grp['组件物料描述'] == desc]
+        if len(rows) > 0:
+            return rows
+        # 第二级：包含匹配
+        rows = grp[grp['组件物料描述'].str.contains(desc, na=False, regex=False)]
+        if len(rows) > 0:
+            return rows
+        # 第三级：编码匹配
+        if code_col:
+            rows = grp[grp[code_col].astype(str).str.contains(desc, na=False, regex=False)]
+            if len(rows) > 0:
+                return rows
+        return grp.iloc[0:0]
+
+    group_seq = 0  # 替代料组序号
+
     for order, grp in df.groupby('流程订单'):
+        # 按物料A分组，处理1对多的情况
+        a_to_bs = {}
         for mat_a_desc, mat_b_desc in converted_pairs:
-            # 三级匹配：精确 → 包含 → 编码
-            rows_a = grp[grp['组件物料描述'] == mat_a_desc]
-            rows_b = grp[grp['组件物料描述'] == mat_b_desc]
-            # 第二级：包含匹配
-            if len(rows_a) == 0 and mat_a_desc:
-                rows_a = grp[grp['组件物料描述'].str.contains(mat_a_desc, na=False, regex=False)]
-            if len(rows_b) == 0 and mat_b_desc:
-                rows_b = grp[grp['组件物料描述'].str.contains(mat_b_desc, na=False, regex=False)]
-            # 第三级：用组件物料编码/物料号匹配（仅在该列存在时使用）
-            code_col = next((c for c in grp.columns if c in ('组件物料编码', '组件物料号')), None)
-            if len(rows_a) == 0 and mat_a_desc and code_col:
-                rows_a = grp[grp[code_col].astype(str).str.contains(mat_a_desc, na=False, regex=False)]
-            if len(rows_b) == 0 and mat_b_desc and code_col:
-                rows_b = grp[grp[code_col].astype(str).str.contains(mat_b_desc, na=False, regex=False)]
-            if len(rows_a) > 0 and len(rows_b) > 0:
-                a, b = rows_a.iloc[0], rows_b.iloc[0]
-                # 计算净偏差数量/金额（取A和B的合计；此时df中尚无净偏差列，直接用偏差数量/金额）
-                qty_a = a.get('偏差数量', 0)
-                qty_b = b.get('偏差数量', 0)
-                amt_a = a.get('偏差金额', a.get('偏差金额(含税)', 0))
-                amt_b = b.get('偏差金额', b.get('偏差金额(含税)', 0))
+            a_to_bs.setdefault(mat_a_desc, []).append(mat_b_desc)
+
+        for mat_a_desc, mat_b_descs in a_to_bs.items():
+            rows_a = _match_rows(grp, mat_a_desc)
+            if len(rows_a) == 0:
+                continue
+            a = rows_a.iloc[0]
+
+            # 找到所有匹配的物料B
+            b_list = []
+            for mat_b_desc in mat_b_descs:
+                rows_b = _match_rows(grp, mat_b_desc)
+                if len(rows_b) > 0:
+                    b_list.append(rows_b.iloc[0])
+
+            if not b_list:
+                continue
+
+            # 提取A的数值
+            qty_a = a.get('材料偏差', a.get('偏差数量', 0))
+            amt_a = a.get('偏差金额(含税)', a.get('偏差金额', 0))
+
+            # 计算整个替代料组的净偏差（A只算一次 + 所有B）
+            total_qty_b = sum(float(b.get('材料偏差', b.get('偏差数量', 0))) for b in b_list)
+            total_amt_b = sum(float(b.get('偏差金额(含税)', b.get('偏差金额', 0))) for b in b_list)
+            net_qty = round(float(qty_a) + total_qty_b, 2)
+            net_amt = round(float(amt_a) + total_amt_b, 2)
+
+            # 替代料组标识
+            group_seq += 1
+            group_id = f"ALT_{order}_{group_seq}"
+
+            # 每个B一行，共享同一净偏差值（A只算一次）
+            for b in b_list:
                 alt_rows.append({
                     '订单日期': pd.Timestamp(a['订单开始日期']).strftime('%Y-%m-%d'),
                     '车间': a['车间'],
                     '订单号': order,
+                    '替代料组': group_id,
+                    '物料A编码': a.get('组件物料编码', a.get('组件物料号', '')),
                     '物料A': a['组件物料描述'],
                     '单位': a['组件单位'] if pd.notna(a['组件单位']) else '',
                     '偏差A': a['材料偏差'],
                     '偏差率A': a[col_p],
+                    '物料B编码': b.get('组件物料编码', b.get('组件物料号', '')),
                     '物料B': b['组件物料描述'],
                     '偏差B': b['材料偏差'],
                     '偏差率B': b[col_p],
-                    '净偏差': round(float(a['材料偏差']) + float(b['材料偏差']), 2),
-                    '净偏差数量': round(float(qty_a) + float(qty_b), 2),
-                    '净偏差金额': round(float(amt_a) + float(amt_b), 2),
-                    '备注': '替代料',
+                    '净偏差': net_qty,
+                    '净偏差数量': net_qty,
+                    '净偏差金额': net_amt,
+                    '净偏差率': f"{(net_qty / a['数量-定额'] * 100):.1f}%" if a.get('数量-定额', 0) != 0 else '',
+                    '备注': '替代料' if len(b_list) == 1 else '替代料(1对多)',
                     '标准原因': a.get('标准原因', ''),
                 })
 
     alt_df = pd.DataFrame(alt_rows)
     print(f"[DEBUG do_analysis_v2] Sheet2完成，{len(alt_df)} 行")
     if len(alt_df) == 0 and len(converted_pairs) > 0:
-        # 调试：打印前5个配对和df中的描述
         print(f"[DEBUG] 配对数: {len(converted_pairs)}, 前3个: {converted_pairs[:3]}")
         sample_descs = list(set(df['组件物料描述'].dropna()))[:5]
         print(f"[DEBUG] df物料描述样本: {sample_descs}")
@@ -107,6 +141,10 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
     alt_order_mat = set()
     for _, r in alt_df.iterrows():
         alt_order_mat.add((str(r['订单号']), str(r['物料A'])))
-        alt_order_mat.add((str(r['订单号']), str(r['物料B'])))
+        # 1对多时物料B可能含 " + "，需要拆开
+        for b_name in str(r['物料B']).split(' + '):
+            b_name = b_name.strip()
+            if b_name:
+                alt_order_mat.add((str(r['订单号']), b_name))
 
     return alt_df, alt_order_mat
