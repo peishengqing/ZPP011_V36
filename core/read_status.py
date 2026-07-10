@@ -34,7 +34,11 @@ def _get_conn():
     # 自动迁移：添加实际数量基线列（方案A：审核后变更检测只盯实际数量）
     _migrate_add_column(conn, 'read_status', 'snapshot_qty', 'REAL DEFAULT NULL')
     # 自动迁移：添加备注原因基线列（方案A：审核后变更检测同时盯备注原因）
-    _migrate_add_column(conn, 'read_status', 'snapshot_note', 'TEXT DEFAULT ""')
+    _migrate_add_column(conn, 'read_status', 'snapshot_note', 'TEXT DEFAULT NULL')
+    # 兼容：旧版迁移可能用空字符串作默认值，导致旧记录被误判为「已建空备注基线」；
+    # 这里把空字符串统一洗成 NULL，走静默建基线逻辑，不再报警。
+    conn.execute("UPDATE read_status SET snapshot_note = NULL WHERE snapshot_note = ''")
+    conn.commit()
 
     # 偏差变动历史表
     conn.execute("""
@@ -53,6 +57,7 @@ def _get_conn():
         )
     """)
     # 自动迁移：deviation_history 增加通用文本值列（方案A：同时记录实际数量/备注原因变动）
+    _migrate_add_column(conn, 'deviation_history', 'field', 'TEXT DEFAULT NULL')
     _migrate_add_column(conn, 'deviation_history', 'old_value', 'TEXT DEFAULT ""')
     _migrate_add_column(conn, 'deviation_history', 'new_value', 'TEXT DEFAULT ""')
 
@@ -80,7 +85,7 @@ def load_read_status(data_ids: List[str]) -> Dict[str, Tuple]:
     批量加载已读状态
     返回: {data_id: (is_read, fingerprint, snapshot_qty, snapshot_note)}
         snapshot_qty 为审核时保存的实际数量基线；None 表示旧记录（基线未初始化）
-        snapshot_note 为审核时保存的备注原因基线；'' 表示旧记录（基线未初始化）
+        snapshot_note 为审核时保存的备注原因基线；None 表示旧记录（基线未初始化）
     """
     if not data_ids:
         return {}
