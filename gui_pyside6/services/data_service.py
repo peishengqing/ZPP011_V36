@@ -9,7 +9,7 @@ import numpy as np
 from PySide6.QtCore import QObject, Signal
 
 from core.fingerprint import calc_fingerprint
-from core.read_status import load_read_status, load_audit_results, record_deviation_change, get_deviation_history
+from core.read_status import load_read_status, load_audit_results, record_deviation_change, get_deviation_history, save_snapshot_qty
 from core.change_detector import detect_changes
 from core.quarantine_manager import get_quarantined_ids
 
@@ -148,6 +148,13 @@ class DataService(QObject):
         return df
 
     def _restore_read_status(self, df: pd.DataFrame) -> pd.DataFrame:
+        """恢复已读状态 + 审核后变更检测（方案A：只盯实际数量）。
+
+        基线策略：
+        - 历史记录有 snapshot_qty（审核时保存的实际数量）→ 与当前实际数量比对；
+        - 历史记录无 snapshot_qty（旧记录/基线未初始化）→ 用当前数量静默建立基线，不报警（旧记录静默迁移）；
+        - 实际数量被改动 → 回退未读 + 行红标 + deviation_history 留痕 + 弹变动提醒。
+        """
         try:
             data_ids = df['data_id'].tolist()
             status_map = load_read_status(data_ids)
@@ -156,38 +163,77 @@ class DataService(QObject):
             import traceback; traceback.print_exc()
             status_map = {}
 
+        real_col = self._find_real_qty_col(df)
         read_list = []
         matched_count = 0
-        fp_mismatch_count = 0
-        changed_indices = []   # 收集被改动（指纹不一致）行的位置
+        changed_count = 0
+        changed_indices = []   # 收集实际数量被改动（vs 审核时基线）行的位置
         for idx, row in df.iterrows():
             did = row['data_id']
-            fp = row['fingerprint']
+            cur_qty = self._safe_qty(row.get(real_col)) if real_col else None
             if did in status_map:
                 matched_count += 1
-                hist_read, hist_fp = status_map[did]
-                if str(hist_fp) == str(fp):
+                hist_read, hist_fp, hist_snap = status_map[did]
+                if hist_snap is None:
+                    # 旧记录（基线未初始化）→ 用当前数量静默建立基线，不报警（旧记录静默迁移）
+                    try:
+                        save_snapshot_qty(did, cur_qty)
+                    except Exception:
+                        pass
+                    read_list.append(hist_read)
+                elif cur_qty is None:
+                    # 无法取得数量，保守保留已读状态
+                    read_list.append(hist_read)
+                elif abs(float(hist_snap) - float(cur_qty)) < 1e-6:
+                    # 实际数量未变 → 正常
                     read_list.append(hist_read)
                 else:
-                    # 指纹不一致 → 审核后数据被私自修改
-                    fp_mismatch_count += 1
+                    # 实际数量被改动 → 审核后数据被私自修改
+                    changed_count += 1
                     read_list.append(0)  # 强制回退未读，避免假审批
                     changed_indices.append(idx)
-                    self._record_post_audit_change(did, hist_fp, row)
+                    self._record_post_audit_change(did, hist_snap, cur_qty)
             else:
                 read_list.append(0)
-        print(f'[DEBUG _restore_read_status] 总行数={len(df)}, 匹配={matched_count}, 指纹不匹配={fp_mismatch_count}, status_map大小={len(status_map)}')
-        if matched_count > 0:
-            print(f'[DEBUG _restore_read_status] 示例 data_id: {data_ids[0]}')
-            print(f'[DEBUG _restore_read_status] DB中有该ID: {data_ids[0] in status_map}')
+        print(f'[DEBUG _restore_read_status] 总行数={len(df)}, 匹配={matched_count}, 数量被改={changed_count}, status_map大小={len(status_map)}')
         df['_read'] = read_list
         # 审核后变更标记列（供卡片计数 / 行红标 / 点击过滤使用）
         df['_post_audit_changed'] = 0
         if changed_indices:
             df.loc[changed_indices, '_post_audit_changed'] = 1
-            self.log(f"⚠️ 发现 {len(changed_indices)} 条已审核记录被修改，已强制设为未读并留痕", "warning")
+            self.log(f"⚠️ 发现 {len(changed_indices)} 条已审核记录的实际数量被修改，已强制设为未读并留痕", "warning")
             self.log_signal.emit(f"变动提醒|{len(changed_indices)}", "alert")
         return df
+
+    @staticmethod
+    def _find_real_qty_col(df: pd.DataFrame):
+        """探测实际数量列名（不同 SAP 导出可能不同）
+
+        注意：analyzer 输出的主表把「数量-实际」重命名为「实际」，故必须同时覆盖两者。
+        """
+        candidates = ['数量-实际', '实际', '实际数量', '数量 - 实际', 'actual',
+                      '实际收货数量', '已收货数量', '收货数量', '实际领用数量', '实收数量']
+        for c in candidates:
+            if c in df.columns:
+                return c
+        # 模糊兜底：含 '实际' 且含 '数量'
+        for c in df.columns:
+            s = str(c)
+            if '实际' in s and '数量' in s:
+                return c
+        return None
+
+    @staticmethod
+    def _safe_qty(v):
+        """把单元格值安全转成 float，失败/空返回 None"""
+        try:
+            if v is None:
+                return None
+            if isinstance(v, float) and pd.isna(v):
+                return None
+            return float(v)
+        except (ValueError, TypeError):
+            return None
 
     def _restore_quarantine_status(self, df: pd.DataFrame) -> pd.DataFrame:
         """水合隔离区状态：从 SQLite 读取当前隔离的 data_id 集合，给主表加 _quarantined 列。
@@ -205,39 +251,18 @@ class DataService(QObject):
             df.loc[df['data_id'].isin(qids), '_quarantined'] = 1
         return df
 
-    def _decode_fingerprint(self, fp: str):
-        """解码指纹字符串 '金额|率' → (amount, rate)"""
+    def _record_post_audit_change(self, data_id: str, old_qty, new_qty):
+        """记录审核后实际数量变动（方案A：只盯实际数量；带去重避免反复重导刷库）"""
         try:
-            parts = str(fp).split('|')
-            if len(parts) == 2:
-                return float(parts[0]), float(parts[1])
-        except Exception:
-            pass
-        return 0.0, 0.0
-
-    def _record_post_audit_change(self, data_id: str, old_fp: str, row):
-        """记录审核后数据变动（带去重：同 data_id 最新记录数值未变则跳过，避免反复重导刷库）"""
-        try:
-            old_amt, old_rate = self._decode_fingerprint(old_fp)
-            try:
-                new_amt = float(row.get('偏差金额(含税)', row.get('偏差金额', 0)))
-            except (ValueError, TypeError):
-                new_amt = 0.0
-            try:
-                new_rate = float(row.get('偏差率(%)', 0))
-            except (ValueError, TypeError):
-                new_rate = 0.0
-            # 去重：取该 data_id 最新一条历史，若新值一致则不重复记录
             try:
                 history = get_deviation_history(data_id)
             except Exception:
                 history = []
             if history:
                 latest = history[0]  # 已按 change_time DESC
-                if (abs(float(latest.get('new_amount') or 0) - new_amt) < 1e-6 and
-                        abs(float(latest.get('new_rate') or 0) - new_rate) < 1e-6):
+                if abs(float(latest.get('new_qty') or 0) - float(new_qty or 0)) < 1e-6:
                     return  # 同一变更已记录，跳过
-            record_deviation_change(data_id, old_amt, new_amt, old_rate, new_rate, "审核后数据被修改")
+            record_deviation_change(data_id, '实际数量', old_qty, new_qty, "审核后数据被修改")
         except Exception as e:
             self.log(f"记录变动历史失败: {e}", "error")
 
@@ -330,46 +355,38 @@ class DataService(QObject):
         return df
 
     def _detect_and_notify_changes(self, old_df: pd.DataFrame, new_df: pd.DataFrame):
+        """同会话重新分析时，比对已审核记录的实际数量是否变动（方案A：只盯实际数量）"""
         old_snapshot = {}
         try:
+            real_col_old = self._find_real_qty_col(old_df)
             for _, row in old_df.iterrows():
                 if self._is_record_audited(row):
-                    did = f"{row['订单日期']}|{row['流程订单']}|{row['物料编码']}"
-                    old_snapshot[did] = (
-                        row.get('偏差金额(含税)', row.get('偏差金额', 0)),
-                        row.get('偏差率(%)', 0)
-                    )
+                    did = row['data_id']
+                    old_snapshot[did] = self._safe_qty(row.get(real_col_old))
         except Exception as e:
             self.log(f"构建旧快照失败: {e}", "error")
 
-        new_audited = []
+        real_col_new = self._find_real_qty_col(new_df)
+        changes = []
         try:
             for _, row in new_df.iterrows():
                 if self._is_record_audited(row):
-                    new_audited.append({
-                        'data_id': row['data_id'],
-                        'amount': row.get('偏差金额(含税)', row.get('偏差金额', 0)),
-                        'rate': row.get('偏差率(%)', 0)
-                    })
-        except Exception as e:
-            self.log(f"构建新快照失败: {e}", "error")
-
-        changes = []
-        try:
-            changes = detect_changes(old_snapshot, new_audited)
+                    did = row['data_id']
+                    if did in old_snapshot:
+                        old_q = old_snapshot[did]
+                        new_q = self._safe_qty(row.get(real_col_new))
+                        if old_q is not None and new_q is not None and abs(old_q - new_q) >= 1e-6:
+                            changes.append((did, old_q, new_q))
         except Exception as e:
             self.log(f"检测变动失败: {e}", "error")
 
         if changes:
             try:
-                for ch in changes:
-                    record_deviation_change(
-                        ch['data_id'], ch['old_amount'], ch['new_amount'],
-                        ch['old_rate'], ch['new_rate'], "重新分析数据变动"
-                    )
+                for did, old_q, new_q in changes:
+                    record_deviation_change(did, '实际数量', old_q, new_q, "重新分析数据变动")
             except Exception as e:
                 self.log(f"记录变动失败: {e}", "error")
-            self.log(f"发现 {len(changes)} 条已审核记录发生数值变动，已强制设为'未读'", "warning")
+            self.log(f"发现 {len(changes)} 条已审核记录的实际数量发生变动，已强制设为'未读'", "warning")
             self.log_signal.emit(f"变动提醒|{len(changes)}", "alert")
 
     def _is_record_audited(self, row):
@@ -417,3 +434,20 @@ class DataService(QObject):
             need_note = (df['备注原因'].isna() | (df['备注原因'] == '')).sum()
         ok = total - need_note
         return total, high, need_note, ok
+
+
+def snapshot_qty_for(df: pd.DataFrame, data_id) -> float:
+    """取某 data_id 当前实际数量（用于审核时建立变更检测基线）；找不到返回 None"""
+    col = DataService._find_real_qty_col(df)
+    if col is None or 'data_id' not in df.columns:
+        return None
+    try:
+        sel = df.loc[df['data_id'] == data_id, col]
+        if len(sel) == 0:
+            return None
+        v = sel.iloc[0]
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return None
+        return float(v)
+    except Exception:
+        return None

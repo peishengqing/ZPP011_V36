@@ -31,12 +31,17 @@ def _get_conn():
     _migrate_add_column(conn, 'read_status', 'audit_result', 'TEXT DEFAULT ""')
     _migrate_add_column(conn, 'read_status', 'ai_suggestion', 'TEXT DEFAULT ""')
     _migrate_add_column(conn, 'read_status', 'note_source', 'TEXT DEFAULT ""')
+    # 自动迁移：添加实际数量基线列（方案A：审核后变更检测只盯实际数量）
+    _migrate_add_column(conn, 'read_status', 'snapshot_qty', 'REAL DEFAULT NULL')
 
     # 偏差变动历史表
     conn.execute("""
         CREATE TABLE IF NOT EXISTS deviation_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             data_id TEXT NOT NULL,
+            field TEXT,
+            old_qty REAL,
+            new_qty REAL,
             old_amount REAL,
             new_amount REAL,
             old_rate REAL,
@@ -65,10 +70,11 @@ def init_db():
 
 # ── 已读状态 ──────────────────────────────────────────
 
-def load_read_status(data_ids: List[str]) -> Dict[str, Tuple[int, str]]:
+def load_read_status(data_ids: List[str]) -> Dict[str, Tuple]:
     """
     批量加载已读状态
-    返回: {data_id: (is_read, fingerprint)}
+    返回: {data_id: (is_read, fingerprint, snapshot_qty)}
+        snapshot_qty 为审核时保存的实际数量基线；None 表示旧记录（基线未初始化）
     """
     if not data_ids:
         return {}
@@ -76,21 +82,23 @@ def load_read_status(data_ids: List[str]) -> Dict[str, Tuple[int, str]]:
     conn = _get_conn()
     placeholders = ','.join(['?' for _ in data_ids])
     cur = conn.execute(
-        f"SELECT data_id, is_read, fingerprint FROM read_status WHERE data_id IN ({placeholders})",
+        f"SELECT data_id, is_read, fingerprint, snapshot_qty FROM read_status WHERE data_id IN ({placeholders})",
         data_ids
     )
-    result = {row[0]: (row[1], row[2]) for row in cur.fetchall()}
+    result = {row[0]: (row[1], row[2], row[3]) for row in cur.fetchall()}
     conn.close()
     return result
 
 
-def save_read_status(data_id: str, is_read: int, fingerprint: str):
-    """保存已读状态"""
+def save_read_status(data_id: str, is_read: int, fingerprint: str, snapshot_qty=None):
+    """保存已读状态（snapshot_qty=审核时实际数量基线，用于方案A变更检测）"""
     conn = _get_conn()
     conn.execute("""
-        INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, read_time, user)
-        VALUES (?, ?, ?, ?, ?)
-    """, (str(data_id), int(is_read), str(fingerprint), datetime.now().isoformat(), 'default'))
+        INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, snapshot_qty, read_time, user)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (str(data_id), int(is_read), str(fingerprint),
+          None if snapshot_qty is None else float(snapshot_qty),
+          datetime.now().isoformat(), 'default'))
     conn.commit()
     conn.close()
 
@@ -99,18 +107,39 @@ def save_read_status_batch(records):
     """
     批量保存已读状态（一次连接、一次提交，避免逐行开库）
 
-    records: [(data_id, is_read, fingerprint), ...]
+    records: [(data_id, is_read, fingerprint)] 或 [(data_id, is_read, fingerprint, snapshot_qty)]
     """
     if not records:
         return
     conn = _get_conn()
     now = datetime.now().isoformat()
+    norm = []
+    for rec in records:
+        did = rec[0]
+        is_read = rec[1]
+        fp = rec[2] if len(rec) > 2 else ''
+        snap = rec[3] if len(rec) > 3 else None
+        norm.append((str(did), int(is_read), str(fp),
+                     None if snap is None else float(snap), now, 'default'))
     conn.executemany("""
-        INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, read_time, user)
-        VALUES (?, ?, ?, ?, ?)
-    """, [(str(did), int(is_read), str(fp), now, 'default') for did, is_read, fp in records])
+        INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, snapshot_qty, read_time, user)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, norm)
     conn.commit()
     conn.close()
+
+
+def save_snapshot_qty(data_id: str, snapshot_qty):
+    """延迟初始化/更新实际数量基线（方案A：首次遇到旧记录时用当前数量建立基线）"""
+    try:
+        conn = _get_conn()
+        conn.execute("""
+            UPDATE read_status SET snapshot_qty = ? WHERE data_id = ?
+        """, (None if snapshot_qty is None else float(snapshot_qty), str(data_id)))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 
 # ── 审核结果持久化 ─────────────────────────────────────
@@ -180,14 +209,18 @@ def save_audit_results_batch(records: List[Dict[str, str]]):
 
 # ── 偏差变动历史 ───────────────────────────────────────
 
-def record_deviation_change(data_id: str, old_amount: float, new_amount: float,
-                            old_rate: float, new_rate: float, reason: str = "重新分析"):
-    """记录偏差变动历史"""
+def record_deviation_change(data_id: str, field: str, old_qty: float, new_qty: float, reason: str = "审核后数据被修改"):
+    """记录审核后/重新分析的数据变动历史（方案A：只盯实际数量）
+
+    field: 变动字段名（如 '实际数量'）
+    old_qty/new_qty: 变动前后的实际数量
+    """
     conn = _get_conn()
     conn.execute("""
-        INSERT INTO deviation_history (data_id, old_amount, new_amount, old_rate, new_rate, change_time, change_reason)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (data_id, old_amount, new_amount, old_rate, new_rate, datetime.now().isoformat(), reason))
+        INSERT INTO deviation_history (data_id, field, old_qty, new_qty, change_time, change_reason)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (str(data_id), str(field), float(old_qty or 0), float(new_qty or 0),
+          datetime.now().isoformat(), reason))
     conn.commit()
     conn.close()
 
@@ -203,7 +236,7 @@ def get_deviation_history(data_id: str = None) -> List[Dict]:
     else:
         cur = conn.execute("SELECT * FROM deviation_history ORDER BY change_time DESC LIMIT 100")
 
-    columns = ['id', 'data_id', 'old_amount', 'new_amount', 'old_rate', 'new_rate', 'change_time', 'change_reason']
+    columns = ['id', 'data_id', 'field', 'old_qty', 'new_qty', 'old_amount', 'new_amount', 'old_rate', 'new_rate', 'change_time', 'change_reason']
     result = [dict(zip(columns, row)) for row in cur.fetchall()]
     conn.close()
     return result
