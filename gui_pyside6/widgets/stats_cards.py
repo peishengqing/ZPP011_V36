@@ -42,7 +42,7 @@ class StatsCardsWidget(QWidget):
     """4 张统计卡片：AI通过率 / 未读 / 真异常 / 替代料"""
 
     # 点击某张卡片时发出的信号，携带卡片标识
-    card_clicked = Signal(str)  # "anomaly" | "unread" | "alt"
+    card_clicked = Signal(str)  # "anomaly" | "unread" | "alt" | "changed" | "quarantine"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -79,18 +79,23 @@ class StatsCardsWidget(QWidget):
                                     "替代料配对组数 + 净偏差抵消总金额")
         self.card_changed = _make_card(self, "--", "审核后变更", "#e53935",
                                         "已审核记录被私自修改的次数（数量/金额/率变动）")
+        self.card_quarantine = _make_card(self, "--", "隔离区", "#f9a825",
+                                           "疑难待处理、暂存隔离区的数据条数（点击仅显示隔离行）")
 
         # 给可点击的卡片安装事件过滤器
         self.card_anomaly.installEventFilter(self)
         self.card_anomaly.setProperty("cardType", "anomaly")
         self.card_changed.installEventFilter(self)
         self.card_changed.setProperty("cardType", "changed")
+        self.card_quarantine.installEventFilter(self)
+        self.card_quarantine.setProperty("cardType", "quarantine")
 
         cards_layout.addWidget(self.card_pass)
         cards_layout.addWidget(self.card_unread)
         cards_layout.addWidget(self.card_anomaly)
         cards_layout.addWidget(self.card_alt)
         cards_layout.addWidget(self.card_changed)
+        cards_layout.addWidget(self.card_quarantine)
         cards_layout.addStretch()
 
         # ── 组装 ──
@@ -123,6 +128,7 @@ class StatsCardsWidget(QWidget):
         self._update_anomaly(df)
         self._update_alt(df)
         self._update_changed(df)
+        self._update_quarantine(df)
 
     # ── 内部计算 ──
 
@@ -232,6 +238,14 @@ class StatsCardsWidget(QWidget):
             return
         cnt = int((df['_post_audit_changed'] == 1).sum())
         self._set_card_value(self.card_changed, str(cnt) if cnt else "0")
+
+    def _update_quarantine(self, df: pd.DataFrame):
+        """隔离区：_quarantined 列为 1 的条数"""
+        if '_quarantined' not in df.columns:
+            self._set_card_value(self.card_quarantine, "--")
+            return
+        cnt = int((df['_quarantined'] == 1).sum())
+        self._set_card_value(self.card_quarantine, str(cnt) if cnt else "0")
 
     @staticmethod
     def _set_card_value(card: QFrame, text: str):

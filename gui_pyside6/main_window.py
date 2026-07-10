@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QFileDialog,
     QHeaderView, QDialog, QDialogButtonBox, QSplitter,
-    QComboBox, QAbstractItemView, QMessageBox, QTableWidgetItem,
+    QComboBox, QAbstractItemView, QMessageBox, QInputDialog, QTableWidgetItem,
     QMenu, QSizePolicy, QGroupBox, QFormLayout,
     QListWidget, QListWidgetItem, QScrollArea, QGridLayout, QCheckBox,
 )
@@ -38,6 +38,8 @@ from gui_pyside6.widgets.filter_panel import FilterPanel
 from gui_pyside6.widgets.stats_cards import StatsCardsWidget
 from gui_pyside6.dialogs.unit_summary_dialog import UnitSummaryDialog
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
+from gui_pyside6.dialogs.quarantine_dialog import QuarantineDialog
+from core.quarantine_manager import add_quarantine, remove_quarantine
 from gui_pyside6.dialogs.rule_config_dialog import RuleConfigDialog
 from gui_pyside6.dialogs.dashboard_dialog import DashboardDialog
 from gui_pyside6.dialogs.history_compare_dialog import HistoryCompareDialog
@@ -267,6 +269,14 @@ class MainWindow(QMainWindow):
         action_layout.addWidget(self.action_btn_excel)
         action_layout.addWidget(self.action_btn_export_full)
         action_layout.addWidget(self.action_btn_ppt)
+
+        self.action_btn_quarantine = QPushButton("⚠️ 隔离区")
+        self.action_btn_quarantine.setCursor(Qt.PointingHandCursor)
+        self.action_btn_quarantine.setObjectName("actionBtnQuarantine")
+        self.action_btn_quarantine.setProperty("class", "actionBtn")
+        self.action_btn_quarantine.clicked.connect(self._open_quarantine_dialog)
+        action_layout.addWidget(self.action_btn_quarantine)
+
         action_layout.addStretch()
         action_layout.addWidget(shortcut_hint)
 
@@ -1092,7 +1102,7 @@ class MainWindow(QMainWindow):
         self.filter_panel.update_options(df)
 
     def _on_stats_card_clicked(self, card_type: str):
-        """统计卡片点击：切换对应筛选（审核后变更卡可过滤变更行）"""
+        """统计卡片点击：切换对应筛选（审核后变更 / 隔离区卡可过滤对应行）"""
         proxy = self.proxy_model
         if proxy is None or self.view_model.df is None:
             return
@@ -1106,6 +1116,22 @@ class MainWindow(QMainWindow):
                 msg = "已过滤：仅显示审核后变更的记录"
             proxy.setCustomFilters(current)
             self.statusBar().showMessage(msg, 3000)
+        elif card_type == 'quarantine':
+            if current.get('_quarantined_only'):
+                current.pop('_quarantined_only', None)
+                msg = "已显示全部记录"
+            else:
+                current['_quarantined_only'] = True
+                msg = "已过滤：仅显示隔离区记录"
+            proxy.setCustomFilters(current)
+            self.statusBar().showMessage(msg, 3000)
+        elif card_type == 'anomaly':
+            df = self.view_model.df
+            rate_col = next((c for c in ['偏差率(%)', '偏差率', 'dev_rate'] if c in df.columns), None)
+            if rate_col:
+                rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
+                count = int((rates.abs() > 30).sum())
+                self.statusBar().showMessage(f"🔴 真异常 {count} 条（已排除替代料）", 5000)
 
     def log(self, msg, level="info"):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -1323,20 +1349,6 @@ class MainWindow(QMainWindow):
     # 统计与合计
     # -----------------------------------------------------------
     # _refresh_stats_cards 已删除（stats_cards 不再使用）
-
-    def _on_stats_card_clicked(self, card_type: str):
-        if card_type == "anomaly":
-            try:
-                df = self.source_model.getDataFrame() if self.source_model else None
-                if df is not None and not df.empty:
-                    rate_col = next((c for c in ['偏差率(%)', '偏差率', 'dev_rate'] if c in df.columns), None)
-                    if rate_col:
-                        rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
-                        mask = rates.abs() > 30
-                        count = int(mask.sum())
-                        self.statusBar().showMessage(f"🔴 真异常 {count} 条（已排除替代料）", 5000)
-            except Exception:
-                pass
 
     def _update_summary(self):
         if self.view_model.df is None or self.view_model.df.empty:
@@ -1686,6 +1698,21 @@ class MainWindow(QMainWindow):
         batch_export = menu.addAction("批量导出")
         batch_export.triggered.connect(lambda: self._batch_export_wrapper(selected_rows))
         menu.addSeparator()
+        # 隔离区：按选中行是否已隔离显示不同操作
+        already_q = False
+        if self.view_model.df is not None and '_quarantined' in self.view_model.df.columns:
+            try:
+                first_id = self.view_model.df.iloc[selected_rows[0]].get('data_id')
+                already_q = bool(first_id) and int(self.view_model.df.loc[self.view_model.df['data_id'] == first_id, '_quarantined'].iloc[0]) == 1
+            except Exception:
+                already_q = False
+        if already_q:
+            q_action = menu.addAction("↩ 取消隔离（选中行）")
+            q_action.triggered.connect(lambda: self._set_quarantine(selected_rows, False))
+        else:
+            q_action = menu.addAction("⚠️ 移入隔离区（选中行）")
+            q_action.triggered.connect(lambda: self._set_quarantine(selected_rows, True))
+        menu.addSeparator()
         copy_region_action = menu.addAction("复制选中区域")
         copy_region_action.triggered.connect(self.copy_selected_cells)
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
@@ -1693,6 +1720,51 @@ class MainWindow(QMainWindow):
     def _batch_export_wrapper(self, rows):
         df_subset = self.view_model.df.iloc[rows].copy()
         self.audit_controller.batch_export(rows, df_subset, self)
+
+    def _set_quarantine(self, rows, flag: bool):
+        """右键菜单：将选中行移入/移出隔离区，并同步主表与卡片"""
+        df = self.view_model.df
+        if df is None or 'data_id' not in df.columns:
+            return
+        ids = set()
+        for r in rows:
+            if r >= len(df):
+                continue
+            uid = df.iloc[r].get('data_id')
+            if uid:
+                ids.add(str(uid))
+        if not ids:
+            return
+        if flag:
+            reason, ok = QInputDialog.getText(self, "移入隔离区", "填写疑难原因（可选）：")
+            if not ok:
+                return
+            for uid in ids:
+                add_quarantine(uid, reason)
+        else:
+            for uid in ids:
+                remove_quarantine(uid)
+        df.loc[df['data_id'].isin(ids), '_quarantined'] = 1 if flag else 0
+        self.view_model.df = df
+        if self.source_model:
+            self.source_model.setDataFrame(df)
+            if hasattr(self, '_apply_column_visibility_by_name'):
+                self._apply_column_visibility_by_name()
+        self.stats_cards.refresh(df)
+        toast(f"{'⚠️ 已移入隔离区' if flag else '↩ 已取消隔离'} {len(ids)} 条", parent=self)
+
+    def _open_quarantine_dialog(self):
+        """顶部按钮：打开隔离区弹窗"""
+        df = self.view_model.df
+        if df is None or '_quarantined' not in df.columns:
+            QMessageBox.information(self, "隔离区", "暂无数据，无法打开隔离区")
+            return
+        qdf = df[df['_quarantined'] == 1].copy().reset_index(drop=True)
+        if qdf.empty:
+            QMessageBox.information(self, "隔离区", "隔离区当前为空")
+            return
+        dlg = QuarantineDialog(qdf, self, self)
+        dlg.exec_()
 
     # -----------------------------------------------------------
     # 表格复制

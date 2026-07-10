@@ -21,6 +21,7 @@ class DataFrameModel(QAbstractTableModel):
         self._data_cache = []  # 新增：缓存二维列表
         self._display_columns = []  # 记录列顺序
         self._changed_rows = set()  # 审核后变更行（位置索引集合，用于整行红标）
+        self._quarantined_rows = set()  # 隔离区行（位置索引集合，用于整行黄标）
         if data is not None:
             self.setDataFrame(data)
 
@@ -47,16 +48,25 @@ class DataFrameModel(QAbstractTableModel):
             self._data_cache = []
             self._display_columns = []
             self._changed_rows = set()
+            self._quarantined_rows = set()
             return
 
         self._display_columns = list(self._data.columns)
         # 计算审核后变更行集合（供整行红标使用）
         self._changed_rows = set()
+        self._quarantined_rows = set()
         if '_post_audit_changed' in self._data.columns:
             for i in range(len(self._data)):
                 try:
                     if self._data.iloc[i]['_post_audit_changed'] == 1:
                         self._changed_rows.add(i)
+                except Exception:
+                    pass
+        if '_quarantined' in self._data.columns:
+            for i in range(len(self._data)):
+                try:
+                    if self._data.iloc[i]['_quarantined'] == 1:
+                        self._quarantined_rows.add(i)
                 except Exception:
                     pass
         # 逐行转换：将 pandas Series 转为 list，并处理 NaN
@@ -138,9 +148,12 @@ class DataFrameModel(QAbstractTableModel):
             return Qt.AlignLeft | Qt.AlignVCenter
         
         elif role == Qt.BackgroundRole:
-            # 审核后变更行：整行浅红标记
+            # 审核后变更行：整行浅红标记（优先）
             if row in self._changed_rows:
                 return QColor(255, 205, 205)
+            # 隔离区行：整行浅黄标记
+            if row in self._quarantined_rows:
+                return QColor(255, 248, 200)
             # 预警列上色
             col_name = self._display_columns[col]
             if col_name == '预警':
@@ -461,6 +474,11 @@ class AuditProxyModel(QSortFilterProxyModel):
             # 3.5 审核后变更行过滤
             if '_changed_only' in self._custom_filters:
                 if row_data.get('_post_audit_changed', 0) != 1:
+                    return False
+
+            # 3.6 隔离区行过滤
+            if '_quarantined_only' in self._custom_filters:
+                if row_data.get('_quarantined', 0) != 1:
                     return False
 
             # 4. 备注为空

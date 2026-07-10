@@ -11,6 +11,7 @@ from PySide6.QtCore import QObject, Signal
 from core.fingerprint import calc_fingerprint
 from core.read_status import load_read_status, load_audit_results, record_deviation_change, get_deviation_history
 from core.change_detector import detect_changes
+from core.quarantine_manager import get_quarantined_ids
 
 
 class DataService(QObject):
@@ -54,6 +55,7 @@ class DataService(QObject):
             df = self._normalize_alt_flag(df)
             df = self._add_data_id_and_fingerprint(df)
             df = self._restore_read_status(df)
+            df = self._restore_quarantine_status(df)
             if previous_df is not None and not previous_df.empty:
                 self._detect_and_notify_changes(previous_df, df)
             df = self._reorder_columns(df)
@@ -185,6 +187,22 @@ class DataService(QObject):
             df.loc[changed_indices, '_post_audit_changed'] = 1
             self.log(f"⚠️ 发现 {len(changed_indices)} 条已审核记录被修改，已强制设为未读并留痕", "warning")
             self.log_signal.emit(f"变动提醒|{len(changed_indices)}", "alert")
+        return df
+
+    def _restore_quarantine_status(self, df: pd.DataFrame) -> pd.DataFrame:
+        """水合隔离区状态：从 SQLite 读取当前隔离的 data_id 集合，给主表加 _quarantined 列。
+
+        引用模式——只存 data_id，实际数据实时从主表读取；因此主表数量被改（如500->550）
+        后重新导入，隔离行会自动同步为新值，无需额外同步代码。
+        """
+        try:
+            qids = get_quarantined_ids()
+        except Exception as e:
+            self.log(f"加载隔离区状态失败: {e}", "error")
+            qids = set()
+        df['_quarantined'] = 0
+        if qids and 'data_id' in df.columns:
+            df.loc[df['data_id'].isin(qids), '_quarantined'] = 1
         return df
 
     def _decode_fingerprint(self, fp: str):
