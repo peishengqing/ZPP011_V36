@@ -9,7 +9,7 @@ import numpy as np
 from PySide6.QtCore import QObject, Signal
 
 from core.fingerprint import calc_fingerprint
-from core.read_status import load_read_status, load_audit_results, record_deviation_change, get_deviation_history, save_snapshot_qty
+from core.read_status import load_read_status, load_audit_results, record_deviation_change, get_deviation_history, save_snapshot
 from core.change_detector import detect_changes
 from core.quarantine_manager import get_quarantined_ids
 
@@ -148,12 +148,12 @@ class DataService(QObject):
         return df
 
     def _restore_read_status(self, df: pd.DataFrame) -> pd.DataFrame:
-        """恢复已读状态 + 审核后变更检测（方案A：只盯实际数量）。
+        """恢复已读状态 + 审核后变更检测（方案A：只盯实际数量 + 备注原因）。
 
         基线策略：
-        - 历史记录有 snapshot_qty（审核时保存的实际数量）→ 与当前实际数量比对；
-        - 历史记录无 snapshot_qty（旧记录/基线未初始化）→ 用当前数量静默建立基线，不报警（旧记录静默迁移）；
-        - 实际数量被改动 → 回退未读 + 行红标 + deviation_history 留痕 + 弹变动提醒。
+        - 历史记录有 snapshot_qty / snapshot_note（审核时保存的基线）→ 与当前比对；
+        - 历史记录无基线（旧记录/基线未初始化）→ 用当前值静默建立基线，不报警（旧记录静默迁移）；
+        - 实际数量 或 备注原因 被改动 → 回退未读 + 行红标 + deviation_history 留痕 + 弹变动提醒。
         """
         try:
             data_ids = df['data_id'].tolist()
@@ -164,44 +164,49 @@ class DataService(QObject):
             status_map = {}
 
         real_col = self._find_real_qty_col(df)
+        remark_col = self._find_remark_col(df)
         read_list = []
         matched_count = 0
         changed_count = 0
-        changed_indices = []   # 收集实际数量被改动（vs 审核时基线）行的位置
+        changed_indices = []   # 收集审核后基线被改动（实际数量/备注原因）行的位置
         for idx, row in df.iterrows():
             did = row['data_id']
             cur_qty = self._safe_qty(row.get(real_col)) if real_col else None
+            cur_note = self._norm_note(row.get(remark_col)) if remark_col else ''
             if did in status_map:
                 matched_count += 1
-                hist_read, hist_fp, hist_snap = status_map[did]
-                if hist_snap is None:
-                    # 旧记录（基线未初始化）→ 用当前数量静默建立基线，不报警（旧记录静默迁移）
+                hist_read, hist_fp, hist_snap, hist_note = status_map[did]
+                # 旧记录（数量基线或备注基线未初始化）→ 用当前值静默建立基线，不报警（旧记录静默迁移）
+                if hist_snap is None or hist_note is None:
                     try:
-                        save_snapshot_qty(did, cur_qty)
+                        save_snapshot(did, cur_qty, cur_note)
                     except Exception:
                         pass
                     read_list.append(hist_read)
-                elif cur_qty is None:
-                    # 无法取得数量，保守保留已读状态
-                    read_list.append(hist_read)
-                elif abs(float(hist_snap) - float(cur_qty)) < 1e-6:
-                    # 实际数量未变 → 正常
-                    read_list.append(hist_read)
-                else:
-                    # 实际数量被改动 → 审核后数据被私自修改
+                    continue
+                # 两基线都已初始化 → 比对
+                qty_changed = (cur_qty is not None) and (abs(float(hist_snap) - float(cur_qty)) >= 1e-6)
+                note_changed = (self._norm_note(hist_note) != cur_note)
+                if qty_changed or note_changed:
+                    # 审核后数据被私自修改（实际数量 或 备注原因）
                     changed_count += 1
                     read_list.append(0)  # 强制回退未读，避免假审批
                     changed_indices.append(idx)
-                    self._record_post_audit_change(did, hist_snap, cur_qty)
+                    if qty_changed:
+                        self._record_post_audit_change(did, hist_snap, cur_qty, '实际数量')
+                    if note_changed:
+                        self._record_post_audit_change(did, hist_note, cur_note, '备注原因')
+                else:
+                    read_list.append(hist_read)
             else:
                 read_list.append(0)
-        print(f'[DEBUG _restore_read_status] 总行数={len(df)}, 匹配={matched_count}, 数量被改={changed_count}, status_map大小={len(status_map)}')
+        print(f'[DEBUG _restore_read_status] 总行数={len(df)}, 匹配={matched_count}, 基线被改={changed_count}, status_map大小={len(status_map)}')
         df['_read'] = read_list
         # 审核后变更标记列（供卡片计数 / 行红标 / 点击过滤使用）
         df['_post_audit_changed'] = 0
         if changed_indices:
             df.loc[changed_indices, '_post_audit_changed'] = 1
-            self.log(f"⚠️ 发现 {len(changed_indices)} 条已审核记录的实际数量被修改，已强制设为未读并留痕", "warning")
+            self.log(f"⚠️ 发现 {len(changed_indices)} 条已审核记录的实际数量/备注原因被修改，已强制设为未读并留痕", "warning")
             self.log_signal.emit(f"变动提醒|{len(changed_indices)}", "alert")
         return df
 
@@ -235,6 +240,27 @@ class DataService(QObject):
         except (ValueError, TypeError):
             return None
 
+    @staticmethod
+    def _find_remark_col(df: pd.DataFrame):
+        """探测备注原因列名（不同 SAP 导出可能不同）"""
+        candidates = ['备注原因', '备注', '审核备注', '偏差备注', 'remark']
+        for c in candidates:
+            if c in df.columns:
+                return c
+        return None
+
+    @staticmethod
+    def _norm_note(v):
+        """把备注值规范化为可比对的字符串；空/NaN/None → ''"""
+        if v is None:
+            return ''
+        if isinstance(v, float) and pd.isna(v):
+            return ''
+        s = str(v).strip()
+        if s.lower() in ('nan', 'none', 'nat', ''):
+            return ''
+        return s
+
     def _restore_quarantine_status(self, df: pd.DataFrame) -> pd.DataFrame:
         """水合隔离区状态：从 SQLite 读取当前隔离的 data_id 集合，给主表加 _quarantined 列。
 
@@ -251,18 +277,17 @@ class DataService(QObject):
             df.loc[df['data_id'].isin(qids), '_quarantined'] = 1
         return df
 
-    def _record_post_audit_change(self, data_id: str, old_qty, new_qty):
-        """记录审核后实际数量变动（方案A：只盯实际数量；带去重避免反复重导刷库）"""
+    def _record_post_audit_change(self, data_id: str, old_val, new_val, field: str):
+        """记录审核后变动（方案A：实际数量 或 备注原因；带去重避免反复重导刷库）"""
         try:
             try:
                 history = get_deviation_history(data_id)
             except Exception:
                 history = []
-            if history:
-                latest = history[0]  # 已按 change_time DESC
-                if abs(float(latest.get('new_qty') or 0) - float(new_qty or 0)) < 1e-6:
-                    return  # 同一变更已记录，跳过
-            record_deviation_change(data_id, '实际数量', old_qty, new_qty, "审核后数据被修改")
+            for h in history:
+                if h.get('field') == field and str(h.get('new_value')) == str(new_val):
+                    return  # 同一字段同一变更已记录，跳过
+            record_deviation_change(data_id, field, old_val, new_val, "审核后数据被修改")
         except Exception as e:
             self.log(f"记录变动历史失败: {e}", "error")
 
@@ -355,38 +380,46 @@ class DataService(QObject):
         return df
 
     def _detect_and_notify_changes(self, old_df: pd.DataFrame, new_df: pd.DataFrame):
-        """同会话重新分析时，比对已审核记录的实际数量是否变动（方案A：只盯实际数量）"""
-        old_snapshot = {}
+        """同会话重新分析时，比对已审核记录的实际数量 与 备注原因 是否变动（方案A）"""
+        old_qty = {}
+        old_note = {}
         try:
             real_col_old = self._find_real_qty_col(old_df)
+            remark_col_old = self._find_remark_col(old_df)
             for _, row in old_df.iterrows():
                 if self._is_record_audited(row):
                     did = row['data_id']
-                    old_snapshot[did] = self._safe_qty(row.get(real_col_old))
+                    old_qty[did] = self._safe_qty(row.get(real_col_old))
+                    old_note[did] = self._norm_note(row.get(remark_col_old)) if remark_col_old else ''
         except Exception as e:
             self.log(f"构建旧快照失败: {e}", "error")
 
         real_col_new = self._find_real_qty_col(new_df)
-        changes = []
+        remark_col_new = self._find_remark_col(new_df)
+        changes = []  # (did, old_val, new_val, field)
         try:
             for _, row in new_df.iterrows():
                 if self._is_record_audited(row):
                     did = row['data_id']
-                    if did in old_snapshot:
-                        old_q = old_snapshot[did]
+                    if did in old_qty:
+                        old_q = old_qty[did]
                         new_q = self._safe_qty(row.get(real_col_new))
                         if old_q is not None and new_q is not None and abs(old_q - new_q) >= 1e-6:
-                            changes.append((did, old_q, new_q))
+                            changes.append((did, old_q, new_q, '实际数量'))
+                    if did in old_note:
+                        new_n = self._norm_note(row.get(remark_col_new)) if remark_col_new else ''
+                        if old_note[did] != new_n:
+                            changes.append((did, old_note[did], new_n, '备注原因'))
         except Exception as e:
             self.log(f"检测变动失败: {e}", "error")
 
         if changes:
             try:
-                for did, old_q, new_q in changes:
-                    record_deviation_change(did, '实际数量', old_q, new_q, "重新分析数据变动")
+                for did, old_v, new_v, field in changes:
+                    record_deviation_change(did, field, old_v, new_v, "重新分析数据变动")
             except Exception as e:
                 self.log(f"记录变动失败: {e}", "error")
-            self.log(f"发现 {len(changes)} 条已审核记录的实际数量发生变动，已强制设为'未读'", "warning")
+            self.log(f"发现 {len(changes)} 条已审核记录的实际数量/备注原因发生变动，已强制设为'未读'", "warning")
             self.log_signal.emit(f"变动提醒|{len(changes)}", "alert")
 
     def _is_record_audited(self, row):
@@ -451,3 +484,17 @@ def snapshot_qty_for(df: pd.DataFrame, data_id) -> float:
         return float(v)
     except Exception:
         return None
+
+
+def snapshot_note_for(df: pd.DataFrame, data_id) -> str:
+    """取某 data_id 当前备注原因（用于审核时建立变更检测基线）；找不到返回 ''"""
+    col = DataService._find_remark_col(df)
+    if col is None or 'data_id' not in df.columns:
+        return ''
+    try:
+        sel = df.loc[df['data_id'] == data_id, col]
+        if len(sel) == 0:
+            return ''
+        return DataService._norm_note(sel.iloc[0])
+    except Exception:
+        return ''
