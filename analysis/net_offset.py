@@ -151,26 +151,43 @@ def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True, gro
             # 只有同一订单内同时存在2个及以上配对物料时，才算替代料
             if len(present) < 2:
                 continue
-            total_qty = 0
-            total_amt = 0
+            total_qty = 0.0
+            raw_amt = 0.0
+            weights = []  # (|偏差数量|, |单位偏差单价|) —— 用于组内加权平均单价
             for code in present:
                 for idx in code_to_indices[code]:
-                    total_qty += df.at[idx, '偏差数量'] if pd.notna(df.at[idx, '偏差数量']) else 0
+                    dq = df.at[idx, '偏差数量']
+                    dq = pd.to_numeric(dq, errors='coerce')
+                    if pd.isna(dq):
+                        dq = 0.0
+                    total_qty += dq
+                    # 原始偏差金额（仅作兜底）
+                    damt = None
                     for col in ['偏差金额(含税)', '偏差金额']:
                         if col in df.columns:
                             try:
                                 v = pd.to_numeric(df.at[idx, col], errors='coerce')
                                 if pd.notna(v):
-                                    total_amt += v
-                                break
+                                    damt = v
+                                    break
                             except Exception:
                                 pass
-            # 数量净偏差为0时强制金额为0
+                    if damt is not None:
+                        raw_amt += damt
+                        # 以 |偏差数量| 为权重收集 |单位偏差单价|：
+                        # 替代料部分抵消时，金额应随数量一起缩小，而不是把各行偏差金额直接相加
+                        if abs(dq) > 1e-9:
+                            weights.append((abs(dq), abs(damt / dq)))
+            # 净偏差金额 = 净偏差数量 × 组内加权平均单价（金额跟着数量走）
             if total_qty == 0:
-                total_amt = 0
-            # 强制净偏差金额符号与净偏差数量一致（不同物料单价不同可能导致符号相反）
-            elif total_amt != 0:
-                total_amt = abs(total_amt) * (1 if total_qty > 0 else -1)
+                total_amt = 0.0
+            elif weights:
+                wsum = sum(w for w, _ in weights)
+                avg_price = sum(w * p for w, p in weights) / wsum
+                total_amt = total_qty * avg_price
+            else:
+                # 无法计算加权平均单价时退回原始合计（保持符号与数量一致）
+                total_amt = abs(raw_amt) * (1 if total_qty > 0 else -1) if raw_amt != 0 else 0.0
             group_net[root] = (total_qty, total_amt)
 
         # 将净偏差写回该组内的所有行
