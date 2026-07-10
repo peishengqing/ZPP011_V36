@@ -9,7 +9,7 @@ import numpy as np
 from PySide6.QtCore import QObject, Signal
 
 from core.fingerprint import calc_fingerprint
-from core.read_status import load_read_status, load_audit_results, record_deviation_change
+from core.read_status import load_read_status, load_audit_results, record_deviation_change, get_deviation_history
 from core.change_detector import detect_changes
 
 
@@ -157,7 +157,8 @@ class DataService(QObject):
         read_list = []
         matched_count = 0
         fp_mismatch_count = 0
-        for _, row in df.iterrows():
+        changed_indices = []   # 收集被改动（指纹不一致）行的位置
+        for idx, row in df.iterrows():
             did = row['data_id']
             fp = row['fingerprint']
             if did in status_map:
@@ -166,8 +167,11 @@ class DataService(QObject):
                 if str(hist_fp) == str(fp):
                     read_list.append(hist_read)
                 else:
+                    # 指纹不一致 → 审核后数据被私自修改
                     fp_mismatch_count += 1
-                    read_list.append(0)
+                    read_list.append(0)  # 强制回退未读，避免假审批
+                    changed_indices.append(idx)
+                    self._record_post_audit_change(did, hist_fp, row)
             else:
                 read_list.append(0)
         print(f'[DEBUG _restore_read_status] 总行数={len(df)}, 匹配={matched_count}, 指纹不匹配={fp_mismatch_count}, status_map大小={len(status_map)}')
@@ -175,7 +179,49 @@ class DataService(QObject):
             print(f'[DEBUG _restore_read_status] 示例 data_id: {data_ids[0]}')
             print(f'[DEBUG _restore_read_status] DB中有该ID: {data_ids[0] in status_map}')
         df['_read'] = read_list
+        # 审核后变更标记列（供卡片计数 / 行红标 / 点击过滤使用）
+        df['_post_audit_changed'] = 0
+        if changed_indices:
+            df.loc[changed_indices, '_post_audit_changed'] = 1
+            self.log(f"⚠️ 发现 {len(changed_indices)} 条已审核记录被修改，已强制设为未读并留痕", "warning")
+            self.log_signal.emit(f"变动提醒|{len(changed_indices)}", "alert")
         return df
+
+    def _decode_fingerprint(self, fp: str):
+        """解码指纹字符串 '金额|率' → (amount, rate)"""
+        try:
+            parts = str(fp).split('|')
+            if len(parts) == 2:
+                return float(parts[0]), float(parts[1])
+        except Exception:
+            pass
+        return 0.0, 0.0
+
+    def _record_post_audit_change(self, data_id: str, old_fp: str, row):
+        """记录审核后数据变动（带去重：同 data_id 最新记录数值未变则跳过，避免反复重导刷库）"""
+        try:
+            old_amt, old_rate = self._decode_fingerprint(old_fp)
+            try:
+                new_amt = float(row.get('偏差金额(含税)', row.get('偏差金额', 0)))
+            except (ValueError, TypeError):
+                new_amt = 0.0
+            try:
+                new_rate = float(row.get('偏差率(%)', 0))
+            except (ValueError, TypeError):
+                new_rate = 0.0
+            # 去重：取该 data_id 最新一条历史，若新值一致则不重复记录
+            try:
+                history = get_deviation_history(data_id)
+            except Exception:
+                history = []
+            if history:
+                latest = history[0]  # 已按 change_time DESC
+                if (abs(float(latest.get('new_amount') or 0) - new_amt) < 1e-6 and
+                        abs(float(latest.get('new_rate') or 0) - new_rate) < 1e-6):
+                    return  # 同一变更已记录，跳过
+            record_deviation_change(data_id, old_amt, new_amt, old_rate, new_rate, "审核后数据被修改")
+        except Exception as e:
+            self.log(f"记录变动历史失败: {e}", "error")
 
     def _restore_audit_results(self, df: pd.DataFrame) -> pd.DataFrame:
         """从 DB 恢复审核结果（审核结果、AI建议、备注来源）"""

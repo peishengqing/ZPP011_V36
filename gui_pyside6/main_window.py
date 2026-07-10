@@ -35,7 +35,7 @@ from gui_pyside6.models.data_frame_model import DataFrameModel, AuditProxyModel
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.widgets.loading_dialog import LoadingDialog
 from gui_pyside6.widgets.filter_panel import FilterPanel
-# from gui_pyside6.widgets.stats_cards import StatsCardsWidget  # 已删除
+from gui_pyside6.widgets.stats_cards import StatsCardsWidget
 from gui_pyside6.dialogs.unit_summary_dialog import UnitSummaryDialog
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.rule_config_dialog import RuleConfigDialog
@@ -87,7 +87,7 @@ class MainWindow(QMainWindow):
         self._countdown_seconds = 0
         self._countdown_timer = None
         # 按"列名"记录需要隐藏的列（避免 setDataFrame 重排列后索引错位导致列丢失）
-        self._hidden_column_names = set()
+        self._hidden_column_names = {'_post_audit_changed'}  # 内部变更标记列默认隐藏
 
         # 控制器
         self.analysis_controller = AnalysisController(self)
@@ -118,7 +118,7 @@ class MainWindow(QMainWindow):
         self.title_bar = TitleBarWidget(get_current_version(), self)
         self.left_panel_component = LeftPanelComponent(self)
         self.main_table = MainTableComponent(self)
-        # 统计卡片已删除，不初始化
+        self.stats_cards = StatsCardsWidget(self)  # 统计卡片（审核概览 + 变更感知）
         self.bottom_bar = BottomBarComponent(self)
         self.filter_panel = FilterPanel(self)
 
@@ -271,6 +271,7 @@ class MainWindow(QMainWindow):
         action_layout.addWidget(shortcut_hint)
 
         main_layout.addWidget(action_bar)
+        main_layout.addWidget(self.stats_cards)
 
         # 3. 主体区域（侧栏 + 数据表格+日志）
         self.body_splitter = QSplitter(Qt.Horizontal)
@@ -359,8 +360,7 @@ class MainWindow(QMainWindow):
         self.export_controller.log_message.connect(self.log)
         self.audit_controller.log_message.connect(self.log)
         self.analysis_controller.analysis_finished.connect(self._on_analysis_finished_ui)
-        # stats_cards 已删除，不初始化也不连接
-        # self.stats_cards.card_clicked.connect(self._on_stats_card_clicked)
+        self.stats_cards.card_clicked.connect(self._on_stats_card_clicked)
         self.analysis_controller.analysis_error.connect(self._on_analysis_error_ui)
         self.audit_controller.progress_started.connect(self._on_ai_ui_start)
         self.audit_controller.progress_updated.connect(self._on_ai_progress_ui)
@@ -961,6 +961,8 @@ class MainWindow(QMainWindow):
         for col in range(col_count):
             hdr = model.headerData(col, Qt.Horizontal)
             name = str(hdr).replace('\n', '') if hdr else f"列{col}"
+            if name == '_post_audit_changed':  # 内部变更标记列，不在显隐对话框列出
+                continue
             cols_info.append((col, name))
 
         dialog = QDialog(self)
@@ -1041,6 +1043,7 @@ class MainWindow(QMainWindow):
 
     def _apply_column_visibility_by_name(self):
         """按列名设置列的显隐状态（不受列重排 / 模型重置影响）"""
+        self._hidden_column_names.add('_post_audit_changed')  # 内部变更标记列始终隐藏
         model = self.table_view.model()
         if not model:
             return
@@ -1085,8 +1088,24 @@ class MainWindow(QMainWindow):
             self.filter_panel.update_options(pd.DataFrame())
             return
         self._update_summary()
-        # self._update_stat_cards(df)  # 已删除
+        self.stats_cards.refresh(df)
         self.filter_panel.update_options(df)
+
+    def _on_stats_card_clicked(self, card_type: str):
+        """统计卡片点击：切换对应筛选（审核后变更卡可过滤变更行）"""
+        proxy = self.proxy_model
+        if proxy is None or self.view_model.df is None:
+            return
+        current = dict(getattr(proxy, '_custom_filters', {}))
+        if card_type == 'changed':
+            if current.get('_changed_only'):
+                current.pop('_changed_only', None)
+                msg = "已显示全部记录"
+            else:
+                current['_changed_only'] = True
+                msg = "已过滤：仅显示审核后变更的记录"
+            proxy.setCustomFilters(current)
+            self.statusBar().showMessage(msg, 3000)
 
     def log(self, msg, level="info"):
         timestamp = datetime.now().strftime("%H:%M:%S")

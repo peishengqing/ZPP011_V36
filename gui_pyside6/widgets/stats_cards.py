@@ -77,15 +77,20 @@ class StatsCardsWidget(QWidget):
                                         "非替代料中偏差率 > 30% 的条数")
         self.card_alt = _make_card(self, "--", "替代料", "#9c27b0",
                                     "替代料配对组数 + 净偏差抵消总金额")
+        self.card_changed = _make_card(self, "--", "审核后变更", "#e53935",
+                                        "已审核记录被私自修改的次数（数量/金额/率变动）")
 
         # 给可点击的卡片安装事件过滤器
         self.card_anomaly.installEventFilter(self)
         self.card_anomaly.setProperty("cardType", "anomaly")
+        self.card_changed.installEventFilter(self)
+        self.card_changed.setProperty("cardType", "changed")
 
         cards_layout.addWidget(self.card_pass)
         cards_layout.addWidget(self.card_unread)
         cards_layout.addWidget(self.card_anomaly)
         cards_layout.addWidget(self.card_alt)
+        cards_layout.addWidget(self.card_changed)
         cards_layout.addStretch()
 
         # ── 组装 ──
@@ -117,6 +122,7 @@ class StatsCardsWidget(QWidget):
         self._update_unread(df)
         self._update_anomaly(df)
         self._update_alt(df)
+        self._update_changed(df)
 
     # ── 内部计算 ──
 
@@ -218,6 +224,14 @@ class StatsCardsWidget(QWidget):
             text = f"{n_groups}组"
 
         self._set_card_value(self.card_alt, text)
+
+    def _update_changed(self, df: pd.DataFrame):
+        """审核后变更：_post_audit_changed 列为 1 的条数"""
+        if '_post_audit_changed' not in df.columns:
+            self._set_card_value(self.card_changed, "--")
+            return
+        cnt = int((df['_post_audit_changed'] == 1).sum())
+        self._set_card_value(self.card_changed, str(cnt) if cnt else "0")
 
     @staticmethod
     def _set_card_value(card: QFrame, text: str):
