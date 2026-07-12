@@ -9,7 +9,9 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QPoint
 from gui_pyside6.models.data_frame_model import DataFrameModel
-from core.quarantine_manager import remove_quarantine
+from core.quarantine_manager import remove_quarantine, get_quarantine_records
+from core.read_status import save_read_status
+from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
 from gui_pyside6.widgets.toast import toast
 
 _HIDDEN_INTERNAL = ['_read', 'data_id', '_quarantined', '_post_audit_changed', 'fingerprint']
@@ -22,6 +24,8 @@ class QuarantineDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("隔离区 - 疑难数据暂存")
         self.resize(1200, 600)
+        # 允许最大化/最小化（Windows 上最大化按钮需与最小化成对才稳定显示）
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.main_window = main_window
         self.setup_ui()
         self.set_data(quarantine_df)
@@ -68,6 +72,14 @@ class QuarantineDialog(QDialog):
         df = df.copy()
         if "_read" not in df.columns:
             df["_read"] = 0
+        # 回填隔离原因（存于 quarantine_manager 的 SQLite，主表不存副本）
+        try:
+            recs = get_quarantine_records()
+            reason_map = {str(r['uid']): (r.get('reason') or '') for r in recs}
+            df['隔离原因'] = df['data_id'].astype(str).map(reason_map).fillna('')
+        except Exception:
+            df['隔离原因'] = ''
+
         self.source_model = DataFrameModel()
         self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
@@ -86,6 +98,9 @@ class QuarantineDialog(QDialog):
         if not selected_rows:
             selected_rows = [index.row()]
         menu = QMenu()
+        mark_read_action = menu.addAction("✓ 设为已读并移出隔离区")
+        mark_read_action.triggered.connect(lambda: self._mark_read_and_remove(selected_rows))
+        menu.addSeparator()
         restore_action = menu.addAction("↩ 取消隔离（选中行）")
         restore_action.triggered.connect(lambda: self._restore_rows(selected_rows))
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
@@ -121,6 +136,56 @@ class QuarantineDialog(QDialog):
             self.main_window.stats_cards.refresh(self.main_window.view_model.df)
         self._refresh_self()
         toast(f"↩ 已取消隔离 {count} 条", parent=self)
+
+    def _mark_read_and_remove(self, rows):
+        """隔离区右键：设为已读 + 移出隔离区
+
+        设为已读 = 标记已读并建立变更检测基线（实际数量 + 备注原因），
+        与主表右键「标记为已读」保持同一套逻辑；同时移出隔离区。
+        """
+        df = self.source_model.getDataFrame()
+        if df is None:
+            return
+        ids = set()
+        fp_map = {}
+        qty_map = {}
+        note_map = {}
+        for r in rows:
+            if r >= len(df):
+                continue
+            uid = df.iloc[r].get('data_id')
+            if not uid:
+                continue
+            uid = str(uid)
+            ids.add(uid)
+            fp_map[uid] = df.iloc[r].get('fingerprint', '') if 'fingerprint' in df.columns else ''
+            qty_map[uid] = snapshot_qty_for(df, uid)
+            note_map[uid] = snapshot_note_for(df, uid)
+        if not ids:
+            return
+        for uid in ids:
+            save_read_status(uid, 1, fp_map.get(uid, ''),
+                             snapshot_qty=qty_map.get(uid), snapshot_note=note_map.get(uid))
+            remove_quarantine(uid)
+        count = len(ids)
+        # 回写主表内存：已读 + 移出隔离区
+        if self.main_window and hasattr(self.main_window, 'view_model'):
+            main_df = self.main_window.view_model.df
+            if main_df is not None and 'data_id' in main_df.columns:
+                mask = main_df['data_id'].isin(ids)
+                if '_read' in main_df.columns:
+                    main_df.loc[mask, '_read'] = 1
+                if '_quarantined' in main_df.columns:
+                    main_df.loc[mask, '_quarantined'] = 0
+                self.main_window.view_model.df = main_df
+                if hasattr(self.main_window, 'source_model') and self.main_window.source_model:
+                    self.main_window.source_model.setDataFrame(main_df)
+                    if hasattr(self.main_window, '_apply_column_visibility_by_name'):
+                        self.main_window._apply_column_visibility_by_name()
+        if self.main_window and hasattr(self.main_window, 'stats_cards'):
+            self.main_window.stats_cards.refresh(self.main_window.view_model.df)
+        self._refresh_self()
+        toast(f"✓ 已设为已读并移出隔离区 {count} 条", parent=self)
 
     def batch_restore(self):
         selection_model = self.table_view.selectionModel()

@@ -22,6 +22,7 @@ class DataService(QObject):
     def __init__(self, alt_controller=None, parent=None):
         super().__init__(parent)
         self.alt_controller = alt_controller
+        self.last_audit_changes = []  # 审核后变更详情，供弹窗展示/导出
 
     def log(self, msg, level="info"):
         self.log_signal.emit(msg, level)
@@ -165,6 +166,7 @@ class DataService(QObject):
 
         real_col = self._find_real_qty_col(df)
         remark_col = self._find_remark_col(df)
+        self.last_audit_changes = []  # 每次重新加载都重置变更详情
         read_list = []
         matched_count = 0
         changed_count = 0
@@ -194,8 +196,21 @@ class DataService(QObject):
                     changed_indices.append(idx)
                     if qty_changed:
                         self._record_post_audit_change(did, hist_snap, cur_qty, '实际数量')
+                        self.last_audit_changes.append({
+                            'data_id': did, 'field': '实际数量',
+                            'workshop': row.get('车间'),
+                            'material_name': row.get('物料名称') or row.get('物料描述') or '',
+                            'old_value': float(hist_snap) if hist_snap is not None else None,
+                            'new_value': cur_qty})
                     if note_changed:
                         self._record_post_audit_change(did, hist_note, cur_note, '备注原因')
+                        self.last_audit_changes.append({
+                            'data_id': did, 'field': '备注原因',
+                            'workshop': row.get('车间'),
+                            'material_name': row.get('物料名称') or row.get('物料描述') or '',
+                            'old_value': self._norm_note(hist_note),
+                            'new_value': cur_note})
+
                 else:
                     read_list.append(hist_read)
             else:
@@ -396,11 +411,16 @@ class DataService(QObject):
 
         real_col_new = self._find_real_qty_col(new_df)
         remark_col_new = self._find_remark_col(new_df)
+        new_wk = {}  # did -> 车间
+        new_name = {}  # did -> 物料名称
         changes = []  # (did, old_val, new_val, field)
+        self.last_audit_changes = []  # 重置
         try:
             for _, row in new_df.iterrows():
                 if self._is_record_audited(row):
                     did = row['data_id']
+                    new_wk[did] = row.get('车间')
+                    new_name[did] = row.get('物料名称') or row.get('物料描述') or ''
                     if did in old_qty:
                         old_q = old_qty[did]
                         new_q = self._safe_qty(row.get(real_col_new))
@@ -420,6 +440,13 @@ class DataService(QObject):
             except Exception as e:
                 self.log(f"记录变动失败: {e}", "error")
             self.log(f"发现 {len(changes)} 条已审核记录的实际数量/备注原因发生变动，已强制设为'未读'", "warning")
+            # 把同会话检测到的变更也统一格式存入 last_audit_changes
+            for did, old_v, new_v, field in changes:
+                self.last_audit_changes.append({
+                    'data_id': did, 'field': field,
+                    'workshop': new_wk.get(did),
+                    'material_name': new_name.get(did) or '',
+                    'old_value': old_v, 'new_value': new_v})
             self.log_signal.emit(f"变动提醒|{len(changes)}", "alert")
 
     def _is_record_audited(self, row):

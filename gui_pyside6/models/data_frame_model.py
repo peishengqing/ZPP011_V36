@@ -481,6 +481,11 @@ class AuditProxyModel(QSortFilterProxyModel):
                 if row_data.get('_quarantined', 0) != 1:
                     return False
 
+            # 3.7 无标记行过滤（既非审核后变更、也非隔离区）
+            if '_plain_only' in self._custom_filters:
+                if row_data.get('_post_audit_changed', 0) == 1 or row_data.get('_quarantined', 0) == 1:
+                    return False
+
             # 4. 备注为空
             if '_remark_empty' in self._custom_filters:
                 remark_col = self._get_remark_column(df)

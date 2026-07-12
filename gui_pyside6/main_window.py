@@ -16,12 +16,12 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QFileDialog,
     QHeaderView, QDialog, QDialogButtonBox, QSplitter,
-    QComboBox, QAbstractItemView, QMessageBox, QInputDialog, QTableWidgetItem,
+    QComboBox, QAbstractItemView, QMessageBox, QInputDialog, QTableWidgetItem, QTableWidget,
     QMenu, QSizePolicy, QGroupBox, QFormLayout,
     QListWidget, QListWidgetItem, QScrollArea, QGridLayout, QCheckBox,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer
-from PySide6.QtGui import QFont, QShortcut, QKeySequence, QAction
+from PySide6.QtGui import QFont, QFontMetrics, QShortcut, QKeySequence, QAction
 
 # 导入组件
 from gui_pyside6.components.menu_bar import MenuBarComponent
@@ -170,7 +170,7 @@ class MainWindow(QMainWindow):
 
         # 所有组件初始化完成后才显示窗口
         self._refresh_alt_view()
-        self.show()
+        self.showMaximized()
 
         self.title_bar.theme_toggled.connect(self._toggle_theme)
 
@@ -218,6 +218,14 @@ class MainWindow(QMainWindow):
         action_layout.setContentsMargins(8, 4, 8, 4)
         action_layout.setSpacing(6)
 
+        self.action_btn_left_panel = QPushButton("☰ 隐藏左侧栏")
+        self.action_btn_left_panel.setCheckable(True)
+        self.action_btn_left_panel.setChecked(True)
+        self.action_btn_left_panel.setCursor(Qt.PointingHandCursor)
+        self.action_btn_left_panel.setObjectName("actionBtnLeftPanel")
+        self.action_btn_left_panel.setProperty("class", "actionBtn")
+        self.action_btn_left_panel.clicked.connect(self._toggle_left_panel)
+
         self.action_btn_filter = QPushButton("☰ 隐藏筛选")
         self.action_btn_filter.setCheckable(True)
         self.action_btn_filter.setChecked(True)
@@ -262,6 +270,7 @@ class MainWindow(QMainWindow):
         shortcut_hint = QLabel("F5:分析 | F6:导出 | F7:效益 | F11:全屏")
         shortcut_hint.setObjectName("shortcutHint")
 
+        action_layout.addWidget(self.action_btn_left_panel)
         action_layout.addWidget(self.action_btn_filter)
         action_layout.addWidget(self.action_btn_analyze)
         action_layout.addWidget(self.action_btn_ai)
@@ -276,6 +285,20 @@ class MainWindow(QMainWindow):
         self.action_btn_quarantine.setProperty("class", "actionBtn")
         self.action_btn_quarantine.clicked.connect(self._open_quarantine_dialog)
         action_layout.addWidget(self.action_btn_quarantine)
+
+        self.action_btn_audit_changes = QPushButton("📝 变动提醒")
+        self.action_btn_audit_changes.setCursor(Qt.PointingHandCursor)
+        self.action_btn_audit_changes.setObjectName("actionBtnAuditChanges")
+        self.action_btn_audit_changes.setProperty("class", "actionBtn")
+        self.action_btn_audit_changes.clicked.connect(self._show_audit_changes_dialog)
+        action_layout.addWidget(self.action_btn_audit_changes)
+
+        self.action_btn_alt_board = QPushButton("🔔 替代料看板")
+        self.action_btn_alt_board.setCursor(Qt.PointingHandCursor)
+        self.action_btn_alt_board.setObjectName("actionBtnAltBoard")
+        self.action_btn_alt_board.setProperty("class", "actionBtn")
+        self.action_btn_alt_board.clicked.connect(self._show_alert_dashboard)
+        action_layout.addWidget(self.action_btn_alt_board)
 
         action_layout.addStretch()
         action_layout.addWidget(shortcut_hint)
@@ -413,10 +436,235 @@ class MainWindow(QMainWindow):
     # -----------------------------------------------------------
     def _on_data_service_log(self, msg, level):
         if level == "alert" and msg.startswith("变动提醒|"):
-            count = msg.split("|")[1]
-            QMessageBox.information(self, "变动提醒", f"发现 {count} 条已审核记录发生变动，已强制设为'未读'。")
+            self._show_audit_changes_dialog()
         else:
             self.log(msg, level)
+
+    def _show_audit_changes_dialog(self):
+        # 顶部工具栏：显示已审核记录变更明细（alert 与手动点击均复用）。
+        changes = getattr(self.data_service, 'last_audit_changes', [])
+        if not changes:
+            QMessageBox.information(self, "变动提醒", "暂无已审核记录变动。")
+            return
+        count = len(changes)
+        # 自定义对话框：表格展示全部变更明细 + 筛选/搜索/排序/复制/双击定位 + 手动导出
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"变动提醒（{count} 条）")
+        dlg.resize(1100, 600)
+        # 允许最大化/最小化（Windows 上最大化按钮需与最小化成对才稳定显示）
+        dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowMinMaxButtonsHint)
+        layout = QVBoxLayout(dlg)
+
+        # 工具栏：字段筛选 + 关键字搜索
+        tool_bar = QHBoxLayout()
+        tool_bar.addWidget(QLabel("字段:"))
+        field_combo = QComboBox()
+        field_combo.addItems(["全部字段", "实际数量", "备注原因"])
+        tool_bar.addWidget(field_combo)
+        tool_bar.addSpacing(12)
+        tool_bar.addWidget(QLabel("搜索:"))
+        search_edit = QLineEdit()
+        search_edit.setPlaceholderText("日期 / 车间 / 流程订单 / 物料编码 / 物料名称")
+        tool_bar.addWidget(search_edit, 1)
+        layout.addLayout(tool_bar)
+
+        tip = QLabel(f"发现 {count} 条已审核记录的实际数量/备注原因发生变动，已强制设为'未读'。\n（表格可排序/筛选/搜索，右键复制单元格或整行，双击定位到主表对应行）")
+        tip.setWordWrap(True)
+        layout.addWidget(tip)
+
+        table = QTableWidget(dlg)
+        cols = ["日期", "车间", "流程订单", "物料编码", "物料名称", "变更字段", "旧值", "新值"]
+        table.setColumnCount(len(cols))
+        table.setHorizontalHeaderLabels(cols)
+        table.setRowCount(len(changes))
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        table.setSelectionMode(QAbstractItemView.SingleSelection)
+        table.verticalHeader().setVisible(False)
+        for i, c in enumerate(changes):
+            did = str(c.get('data_id', ''))
+            parts = did.split('|')
+            date = parts[0] if len(parts) > 0 else ''
+            order = parts[1] if len(parts) > 1 else ''
+            mat = parts[2] if len(parts) > 2 else ''
+            wk = c.get('workshop', '') or ''
+            old_v = c.get('old_value', '')
+            new_v = c.get('new_value', '')
+            table.setItem(i, 0, QTableWidgetItem(date))
+            table.setItem(i, 1, QTableWidgetItem(str(wk)))
+            table.setItem(i, 2, QTableWidgetItem(order))
+            table.setItem(i, 3, QTableWidgetItem(mat))
+            table.setItem(i, 4, QTableWidgetItem(str(c.get('material_name', '') or '')))
+            table.setItem(i, 5, QTableWidgetItem(str(c.get('field', ''))))
+            table.setItem(i, 6, QTableWidgetItem('' if old_v is None else str(old_v)))
+            table.setItem(i, 7, QTableWidgetItem('' if new_v is None else str(new_v)))
+        # 列宽：短列按内容自适应，旧值/新值两列拉伸撑满（避免加列后过窄或长文本截断）
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeToContents)
+        # 物料名称列：限制最大宽度，内容过长时整列自动缩小字号填充，避免撑爆或截断
+        name_col = 4
+        name_max_w = 200
+        name_cur_w = table.columnWidth(name_col)
+        if name_cur_w > name_max_w:
+            table.setColumnWidth(name_col, name_max_w)
+            header.setSectionResizeMode(name_col, QHeaderView.Fixed)
+            base_font = table.font()
+            fm = QFontMetrics(base_font)
+            pad = 12
+            avail = name_max_w - pad
+            max_text_w = 0
+            for r in range(table.rowCount()):
+                it = table.item(r, name_col)
+                if it:
+                    max_text_w = max(max_text_w, fm.horizontalAdvance(it.text()))
+            if max_text_w > avail:
+                ps = base_font.pointSizeF() or 9.0
+                new_size = max(7.0, ps * avail / max_text_w)
+                shrink_font = QFont(base_font)
+                shrink_font.setPointSizeF(new_size)
+                for r in range(table.rowCount()):
+                    it = table.item(r, name_col)
+                    if it:
+                        it.setFont(shrink_font)
+        header.setSectionResizeMode(6, QHeaderView.Stretch)  # 旧值
+        header.setSectionResizeMode(7, QHeaderView.Stretch)  # 新值
+        table.setSortingEnabled(True)
+        layout.addWidget(table)
+
+        # 右键：复制单元格 / 复制整行
+        _ctx_index = [None]  # 记录右键所在的单元格，避免整行选中导致取错列
+
+        def _copy_cell():
+            idx = _ctx_index[0]
+            if idx is None or not idx.isValid():
+                idxs = table.selectedIndexes()
+                idx = idxs[0] if idxs else None
+            if idx is not None and idx.isValid():
+                QApplication.clipboard().setText(str(idx.data() or ''))
+                toast("已复制单元格", parent=dlg)
+
+        def _copy_row():
+            r = table.currentRow()
+            if r < 0:
+                return
+            vals = []
+            for cc in range(table.columnCount()):
+                it = table.item(r, cc)
+                vals.append(it.text() if it else '')
+            QApplication.clipboard().setText('\t'.join(vals))
+            toast("已复制整行", parent=dlg)
+
+        def _on_context(pos):
+            _ctx_index[0] = table.indexAt(pos)
+            menu = QMenu()
+            a_cell = menu.addAction("复制单元格")
+            a_row = menu.addAction("复制整行")
+            act = menu.exec_(table.viewport().mapToGlobal(pos))
+            if act == a_cell:
+                _copy_cell()
+            elif act == a_row:
+                _copy_row()
+
+        table.setContextMenuPolicy(Qt.CustomContextMenu)
+        table.customContextMenuRequested.connect(_on_context)
+
+        # 过滤（字段筛选 + 关键字搜索）
+        def _apply_filter():
+            kw = search_edit.text().strip().lower()
+            fsel = field_combo.currentText()
+            for r in range(table.rowCount()):
+                show = True
+                if fsel != "全部字段" and table.item(r, 5).text() != fsel:
+                    show = False
+                if show and kw:
+                    hay = ' '.join(table.item(r, cc).text().lower() for cc in (0, 1, 2, 3, 4))
+                    if kw not in hay:
+                        show = False
+                table.setRowHidden(r, not show)
+
+        search_edit.textChanged.connect(_apply_filter)
+        field_combo.currentTextChanged.connect(_apply_filter)
+
+        # 双击定位到主表对应行（按当前行单元格重建 data_id，排序后仍正确）
+        def _on_double(idx):
+            r = idx.row()
+            if r < 0:
+                return
+            d = table.item(r, 0).text()
+            o = table.item(r, 2).text()
+            m = table.item(r, 3).text()
+            did = '|'.join([d, o, m])
+            if self._locate_row_in_main_table(did):
+                dlg.accept()
+
+        table.doubleClicked.connect(_on_double)
+
+        btn_box = QDialogButtonBox(dlg)
+        export_btn = QPushButton("导出Excel并打开")
+        ok_btn = QPushButton("确定")
+        btn_box.addButton(export_btn, QDialogButtonBox.ActionRole)
+        btn_box.addButton(ok_btn, QDialogButtonBox.AcceptRole)
+        layout.addWidget(btn_box)
+
+        def _export():
+            try:
+                tmp_dir = os.path.join(os.path.expanduser("~"), "AppData", "Local", "Temp", "zpp011_audit_changes")
+                os.makedirs(tmp_dir, exist_ok=True)
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                path = os.path.join(tmp_dir, f"audit_changes_{ts}.xlsx")
+                rows = []
+                for c in changes:
+                    did = str(c.get('data_id', ''))
+                    parts = did.split('|')
+                    rows.append({
+                        '日期': parts[0] if len(parts) > 0 else '',
+                        '车间': c.get('workshop', '') or '',
+                        '流程订单': parts[1] if len(parts) > 1 else '',
+                        '物料编码': parts[2] if len(parts) > 2 else '',
+                        '物料名称': c.get('material_name', '') or '',
+                        '变更字段': c.get('field', ''),
+                        '旧值': '' if c.get('old_value') is None else c.get('old_value'),
+                        '新值': '' if c.get('new_value') is None else c.get('new_value'),
+                    })
+                pd.DataFrame(rows).to_excel(path, index=False)
+                if os.name == "nt" and os.path.exists(path):
+                    os.startfile(path)
+                else:
+                    opener = 'open' if sys.platform == 'darwin' else 'xdg-open'
+                    subprocess.Popen([opener, path])
+                toast(f"已导出并打开：{path}", parent=dlg)
+            except Exception as e:
+                QMessageBox.warning(dlg, "导出失败", f"导出失败：{e}")
+
+        export_btn.clicked.connect(_export)
+        ok_btn.clicked.connect(dlg.accept)
+        dlg.exec()
+
+    def _locate_row_in_main_table(self, data_id):
+        """变动提醒弹窗双击某行时，定位并选中主表对应行（经 proxy_model 映射）"""
+        try:
+            if self.source_model is None:
+                return False
+            df = self.source_model.getDataFrame()
+            if df is None or 'data_id' not in df.columns:
+                return False
+            matches = df.index[df['data_id'].astype(str) == str(data_id)].tolist()
+            if not matches:
+                toast("主表中未找到该记录", parent=self)
+                return False
+            src_row = matches[0]
+            src_idx = self.source_model.index(src_row, 0)
+            proxy = self.table_view.model()
+            proxy_idx = proxy.mapFromSource(src_idx) if hasattr(proxy, 'mapFromSource') else src_idx
+            self.table_view.selectRow(proxy_idx.row())
+            self.table_view.scrollTo(proxy_idx)
+            self.table_view.setFocus()
+            self.activateWindow()
+            self.raise_()
+            return True
+        except Exception as e:
+            self.log(f"定位主表失败: {e}", "error")
+            return False
 
     def _start_analysis(self):
         if not self.current_input_file:
@@ -1111,18 +1359,22 @@ class MainWindow(QMainWindow):
             if current.get('_changed_only'):
                 current.pop('_changed_only', None)
                 msg = "已显示全部记录"
+                self.filter_panel.set_color_filter('all')
             else:
                 current['_changed_only'] = True
                 msg = "已过滤：仅显示审核后变更的记录"
+                self.filter_panel.set_color_filter('changed')
             proxy.setCustomFilters(current)
             self.statusBar().showMessage(msg, 3000)
         elif card_type == 'quarantine':
             if current.get('_quarantined_only'):
                 current.pop('_quarantined_only', None)
                 msg = "已显示全部记录"
+                self.filter_panel.set_color_filter('all')
             else:
                 current['_quarantined_only'] = True
                 msg = "已过滤：仅显示隔离区记录"
+                self.filter_panel.set_color_filter('quarantine')
             proxy.setCustomFilters(current)
             self.statusBar().showMessage(msg, 3000)
         elif card_type == 'anomaly':
@@ -1258,6 +1510,12 @@ class MainWindow(QMainWindow):
     def _on_filter_panel_changed(self, filters: dict):
         if self.proxy_model is None or self.view_model.df is None:
             return
+        # 记录生效的筛选条件，方便排查"有数据但表格空白"等问题
+        active = {k: v for k, v in filters.items() if v not in (None, '', [], {})}
+        if active:
+            self.log(f"[筛选] 当前条件: {active}", "debug")
+        else:
+            self.log("[筛选] 条件已清空", "debug")
         self.proxy_model.setCustomFilters(filters)
         self._update_summary()
 
@@ -2075,6 +2333,17 @@ class MainWindow(QMainWindow):
             subprocess.Popen(["xdg-open", backup_dir])
         
         QMessageBox.information(self, "已打开", f"已打开源码备份目录:\n{backup_dir}")
+
+    def _toggle_left_panel(self):
+        """切换左侧栏（文件选择 / 替代料配对 / 数据预览）的显示与隐藏"""
+        if self.left_panel.isVisible():
+            self.left_panel.setVisible(False)
+            self.action_btn_left_panel.setText("☰ 显示左侧栏")
+            self.action_btn_left_panel.setChecked(False)
+        else:
+            self.left_panel.setVisible(True)
+            self.action_btn_left_panel.setText("☰ 隐藏左侧栏")
+            self.action_btn_left_panel.setChecked(True)
 
     def _toggle_filter_panel(self):
         """切换右侧筛选面板（FilterPanel）的显示/隐藏"""

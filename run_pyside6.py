@@ -65,7 +65,7 @@ def main():
     # 如果未来需要 app 级全局样式，可以在此加载 light_theme.qss 作为基准
 
     win = MainWindow()
-    win.show()
+    win.showMaximized()
 
     sys.exit(app.exec())
 

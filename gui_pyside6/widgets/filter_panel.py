@@ -9,9 +9,17 @@ from PySide6.QtWidgets import (
     QComboBox, QPushButton, QLabel, QDateEdit, QLineEdit, QScrollArea,
     QDoubleSpinBox, QListWidget, QListWidgetItem
 )
-from PySide6.QtCore import Signal, Qt, QDate
+from PySide6.QtCore import Signal, Qt, QDate, QEvent
+from PySide6.QtGui import QColor, QPixmap, QIcon
 from datetime import datetime
 import pandas as pd
+
+
+def _color_icon(rgb):
+    """生成纯色小图标，用于筛选下拉里直观显示颜色标记"""
+    pix = QPixmap(14, 14)
+    pix.fill(QColor(*rgb))
+    return QIcon(pix)
 
 
 class FilterPanel(QWidget):
@@ -129,6 +137,16 @@ class FilterPanel(QWidget):
         dev_layout.addRow("备注为空:", self.remark_empty_combo)
         dev_layout.addRow("零值筛选:", self.zero_qty_combo)
         dev_layout.addRow("已读/未读:", self.read_status_combo)
+        # 颜色标记筛选（与表格行背景色对应）
+        self.color_combo = QComboBox()
+        self.color_combo.addItem("全部")
+        self.color_combo.addItem("审核后变更（浅红）")
+        self.color_combo.addItem("隔离区（浅黄）")
+        self.color_combo.addItem("无标记（空白）")
+        self.color_combo.setItemIcon(1, _color_icon((255, 205, 205)))
+        self.color_combo.setItemIcon(2, _color_icon((255, 248, 200)))
+        self.color_combo.setItemIcon(3, _color_icon((235, 235, 235)))
+        dev_layout.addRow("颜色标记:", self.color_combo)
         content_layout.addWidget(dev_group)
 
         # 日期范围
@@ -183,6 +201,7 @@ class FilterPanel(QWidget):
         self.remark_empty_combo.currentIndexChanged.connect(self._emit_filter)
         self.order_type_combo.currentIndexChanged.connect(self._emit_filter)
         self.read_status_combo.currentIndexChanged.connect(self._emit_filter)
+        self.color_combo.currentIndexChanged.connect(self._emit_filter)
         self.material_code_edit.textChanged.connect(self._emit_filter)
         self.material_code_edit.editingFinished.connect(self._emit_filter)
         self.material_code_edit.returnPressed.connect(self._emit_filter)
@@ -204,6 +223,23 @@ class FilterPanel(QWidget):
         # 记录用户已选的日期（即便数据刷新也不清空），保证日期筛选可用
         self._user_start_date = None
         self._user_end_date = None
+
+        # 滚轮保护：在筛选面板内滚动滚轮时，不要误改筛选条件
+        for _w in (self.dev_threshold_spin, self.factory_combo, self.workshop_combo,
+                   self.category_combo, self.alt_combo, self.order_type_combo,
+                   self.dev_rate_combo, self.audit_status_combo, self.remark_empty_combo,
+                   self.read_status_combo, self.remark_source_combo, self.zero_qty_combo,
+                   self.color_combo, self.start_date_edit, self.end_date_edit):
+            _w.installEventFilter(self)
+
+    # ------------------------------------------------------------------ #
+    # 事件过滤（滚轮保护）
+    # ------------------------------------------------------------------ #
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Wheel:
+            if isinstance(obj, (QComboBox, QDoubleSpinBox, QDateEdit)):
+                return True
+        return super().eventFilter(obj, event)
 
     # ------------------------------------------------------------------ #
     # 折叠/展开
@@ -289,13 +325,21 @@ class FilterPanel(QWidget):
             except Exception:
                 pass
 
+        # 更新动态下拉前屏蔽信号，避免触发中间态筛选条件把表格刷空
+        for _c in (self.factory_combo, self.workshop_combo, self.category_combo, self.order_type_combo):
+            _c.blockSignals(True)
         self._update_combo(self.factory_combo, self._col_map.get('工厂'))
         self._update_combo(self.workshop_combo, self._col_map.get('车间'))
         self._update_combo(self.category_combo, self._col_map.get('物料类型'))
         self._update_combo(self.order_type_combo, self._col_map.get('订单类型'))
+        for _c in (self.factory_combo, self.workshop_combo, self.category_combo, self.order_type_combo):
+            _c.blockSignals(False)
 
         # 重置日期为数据范围
         self._reset_date_range()
+
+        # 数据/选项更新后统一发射一次最终筛选条件，确保 proxy 只拿到最终状态
+        self._emit_filter()
 
         # 关键修复：数据刷新（标记已读/改备注/切工厂等会触发 set_data）时，
         # 不能清空用户已设置的日期区间，否则日期筛选会被悄悄丢弃、"用不了"。
@@ -327,16 +371,6 @@ class FilterPanel(QWidget):
         else:
             combo.clear()
             combo.addItem("全部")
-
-    def _update_material_name_list(self):
-        """更新物料名称多选列表"""
-        name_col = self._find_column(['物料描述', '物料名称', '物料'])
-        self.material_name_list.clear()
-        if name_col and self._data is not None:
-            values = self._data[name_col].dropna().unique()
-            values = sorted([str(v) for v in values if str(v) != ''])
-            for val in values:
-                self.material_name_list.addItem(QListWidgetItem(val))
 
     def _reset_date_range(self):
         """将日期控件重置为数据的最小/最大日期"""
@@ -414,6 +448,14 @@ class FilterPanel(QWidget):
             filters['_read_status'] = self.read_status_combo.currentText()
         if self.zero_qty_combo.currentText() != "全部":
             filters['_zero_qty'] = self.zero_qty_combo.currentText()
+        # 颜色标记筛选：与表格行背景色对应
+        color_sel = self.color_combo.currentText()
+        if color_sel == "审核后变更（浅红）":
+            filters['_changed_only'] = True
+        elif color_sel == "隔离区（浅黄）":
+            filters['_quarantined_only'] = True
+        elif color_sel == "无标记（空白）":
+            filters['_plain_only'] = True
         # 备注关键词搜索（逗号分隔多选，OR匹配）
         remark_search_text = self.remark_search_edit.text().strip()
         if remark_search_text:
@@ -424,12 +466,6 @@ class FilterPanel(QWidget):
             filters['_remark_not'] = remark_not_text
         if self._date_filters:
             filters.update(self._date_filters)
-        
-        # 物料名称多选筛选
-        material_name_text = self.material_name_edit.text().strip()
-        if material_name_text:
-            filters['_material_names'] = material_name_text
-        
         return filters
 
     # ------------------------------------------------------------------ #
@@ -463,6 +499,21 @@ class FilterPanel(QWidget):
         self._date_filters = self._compute_date_filters()
         self._emit_filter()
 
+    def set_color_filter(self, mode: str):
+        """程序控制颜色标记筛选（与统计卡片联动）。mode: 'all'/'changed'/'quarantine'/'plain'"""
+        mapping = {
+            'all': 0,
+            'changed': 1,
+            'quarantine': 2,
+            'plain': 3,
+        }
+        idx = mapping.get(mode, 0)
+        if self.color_combo.currentIndex() != idx:
+            self.color_combo.setCurrentIndex(idx)
+        else:
+            # 索引相同也要发一次，确保 proxy 与 UI 一致
+            self._emit_filter()
+
     def reset_filters(self):
         self.factory_combo.setCurrentIndex(0)
         self.workshop_combo.setCurrentIndex(0)
@@ -476,6 +527,7 @@ class FilterPanel(QWidget):
         self.read_status_combo.setCurrentIndex(0)
         self.remark_source_combo.setCurrentIndex(0)
         self.zero_qty_combo.setCurrentIndex(0)
+        self.color_combo.setCurrentIndex(0)
         self.material_code_edit.clear()
         self.material_name_edit.clear()
         self.remark_search_edit.clear()
