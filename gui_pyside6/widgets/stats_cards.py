@@ -85,6 +85,8 @@ class StatsCardsWidget(QWidget):
         # 给可点击的卡片安装事件过滤器
         self.card_anomaly.installEventFilter(self)
         self.card_anomaly.setProperty("cardType", "anomaly")
+        self.card_unread.installEventFilter(self)
+        self.card_unread.setProperty("cardType", "unread")
         self.card_changed.installEventFilter(self)
         self.card_changed.setProperty("cardType", "changed")
         self.card_quarantine.installEventFilter(self)

@@ -1384,6 +1384,17 @@ class MainWindow(QMainWindow):
                 rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
                 count = int((rates.abs() > 30).sum())
                 self.statusBar().showMessage(f"🔴 真异常 {count} 条（已排除替代料）", 5000)
+        elif card_type == 'unread':
+            if current.get('_read_status') == '未读':
+                current.pop('_read_status', None)
+                msg = "已显示全部记录"
+                self.filter_panel.set_read_status_filter('全部')
+            else:
+                current['_read_status'] = '未读'
+                msg = "已过滤：仅显示未读记录"
+                self.filter_panel.set_read_status_filter('未读')
+            proxy.setCustomFilters(current)
+            self.statusBar().showMessage(msg, 3000)
 
     def log(self, msg, level="info"):
         timestamp = datetime.now().strftime("%H:%M:%S")

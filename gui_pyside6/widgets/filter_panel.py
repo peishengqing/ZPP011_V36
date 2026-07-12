@@ -514,6 +514,15 @@ class FilterPanel(QWidget):
             # 索引相同也要发一次，确保 proxy 与 UI 一致
             self._emit_filter()
 
+    def set_read_status_filter(self, status: str):
+        """程序控制已读/未读筛选（与统计卡片联动）。status: '全部'/'已读'/'未读'"""
+        mapping = {"全部": 0, "已读": 1, "未读": 2}
+        idx = mapping.get(status, 0)
+        if self.read_status_combo.currentIndex() != idx:
+            self.read_status_combo.setCurrentIndex(idx)
+        else:
+            self._emit_filter()
+
     def reset_filters(self):
         self.factory_combo.setCurrentIndex(0)
         self.workshop_combo.setCurrentIndex(0)
