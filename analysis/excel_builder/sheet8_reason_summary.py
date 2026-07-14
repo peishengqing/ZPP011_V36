@@ -36,17 +36,27 @@ def build_sheet8(df, report_progress, progress_idx=8):
     reason_summary = []
 
     for (factory, ws_name), ws_grp in has_reason.groupby(['工厂名称', '车间']):
-        mat_reasons = ws_grp.groupby(['物料分类', '组件物料描述', '_std_reason']).agg(
+        # 物料级合计：多耗/少耗按物料跨所有原因汇总（不再只看单一原因）
+        mat_reasons = ws_grp.groupby(['物料分类', '组件物料描述']).agg(
             次数=('材料偏差', 'count'),
             多耗=('材料偏差', lambda x: x[x > 0].sum()),
             少耗=('材料偏差', lambda x: abs(x[x < 0].sum())),
             单位=('组件单位', lambda x: x.mode().iloc[0] if len(x.mode()) > 0 else ''),
-            示例备注=('备注原因', lambda x: x.dropna().iloc[0] if len(x.dropna()) > 0 else ''),
         ).reset_index()
         mat_reasons['总偏差'] = mat_reasons['多耗'] + mat_reasons['少耗']
+        # 主导原因：取绝对偏差最大的那条原因作为标签，并带其示例备注
+        reason_grp = ws_grp.groupby(['组件物料描述', '_std_reason']).agg(
+            主导_多耗=('材料偏差', lambda x: x[x > 0].sum()),
+            主导_少耗=('材料偏差', lambda x: abs(x[x < 0].sum())),
+            示例备注=('备注原因', lambda x: x.dropna().iloc[0] if len(x.dropna()) > 0 else ''),
+        ).reset_index()
+        reason_grp['主导_合计'] = reason_grp['主导_多耗'] + reason_grp['主导_少耗']
+        dom = reason_grp.sort_values('主导_合计', ascending=False).drop_duplicates(
+            subset=['组件物料描述'], keep='first')
+        dom = dom[['组件物料描述', '_std_reason', '示例备注']].rename(
+            columns={'_std_reason': '主导原因'})
+        mat_reasons = mat_reasons.merge(dom, on='组件物料描述', how='left')
         mat_reasons = mat_reasons.sort_values('总偏差', ascending=False)
-        # 同一物料只保留总偏差最大的原因，避免 Top5 被同一物料多次占据
-        mat_reasons = mat_reasons.drop_duplicates(subset=['物料分类', '组件物料描述'], keep='first')
 
         def fmt_top(grp_df, label):
             result = ''
@@ -58,7 +68,7 @@ def build_sheet8(df, report_progress, progress_idx=8):
                 if mr['少耗'] > 0:
                     parts.append(f"少耗{mr['少耗']:.1f}{unit}")
                 dev_str = f"（{'，'.join(parts)}）" if parts else ''
-                std_r = mr['_std_reason']
+                std_r = mr['主导原因']
                 ex = str(mr['示例备注'])[:15] if pd.notna(mr['示例备注']) and str(mr['示例备注']).strip() != '' else ''
                 result += f"{mr['组件物料描述']}{dev_str} — {std_r}（例：{ex}…，{mr['次数']}次）\n"
             return result.rstrip('\n') or '无'
