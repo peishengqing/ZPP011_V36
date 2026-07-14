@@ -8,10 +8,11 @@ import json
 import traceback
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QFormLayout, QGroupBox,
+    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox,
     QLineEdit, QDialogButtonBox, QMessageBox, QTableWidget,
-    QTableWidgetItem, QMenu, QPushButton
+    QTableWidgetItem, QMenu, QPushButton, QLabel
 )
+from PySide6.QtGui import QColor
 from PySide6.QtCore import Qt
 
 from domain.alt_material.alt_manager import load_alt_pairs, save_alt_pairs, DEFAULT_ALT_PAIRS
@@ -181,6 +182,25 @@ class AltController(QObject):
         dialog.resize(900, 600)
         layout = QVBoxLayout(dialog)
 
+        # ---- 查找栏：按物料号（A/B 编码）查找配对 ----
+        search_row = QHBoxLayout()
+        search_lbl = QLabel("查找:")
+        search_edit = QLineEdit()
+        search_edit.setPlaceholderText("输入物料号查找（匹配 A/B 编码）")
+        find_btn = QPushButton("查找")
+        next_btn = QPushButton("下一个")
+        clear_btn = QPushButton("清除")
+        search_row.addWidget(search_lbl)
+        search_row.addWidget(search_edit, 1)
+        search_row.addWidget(find_btn)
+        search_row.addWidget(next_btn)
+        search_row.addWidget(clear_btn)
+
+        match_rows = []
+        match_idx = [0]
+        status_label = QLabel("")
+        status_label.setStyleSheet("color: #888; font-size: 11px; padding: 2px 4px;")
+
         table = QTableWidget()
         table.setColumnCount(3)
         table.setHorizontalHeaderLabels(["物料A", "", "物料B"])
@@ -219,6 +239,70 @@ class AltController(QObject):
 
         refresh_zoom_table()
 
+        # ---- 查找逻辑：按物料号（编码）在 A/B 两列中匹配 ----
+        def _norm(s):
+            return str(s if s is not None else '').strip().lower()
+
+        def _clear_highlight():
+            for r in range(table.rowCount()):
+                for c in range(3):
+                    it = table.item(r, c)
+                    if it:
+                        it.setBackground(Qt.transparent)
+
+        def do_search():
+            text = _norm(search_edit.text())
+            _clear_highlight()
+            match_rows.clear()
+            if not text:
+                status_label.setText("")
+                return
+            for r in range(table.rowCount()):
+                a_item = table.item(r, 0)
+                if not a_item:
+                    continue
+                orig = a_item.data(Qt.UserRole)
+                if orig is None or orig >= len(self.alt_pairs):
+                    continue
+                a, b = self.alt_pairs[orig]
+                code_a = a[1] if isinstance(a, (list, tuple)) and len(a) > 1 else ''
+                code_b = b[1] if isinstance(b, (list, tuple)) and len(b) > 1 else ''
+                if text in _norm(code_a) or text in _norm(code_b):
+                    match_rows.append(r)
+                    for c in range(3):
+                        it = table.item(r, c)
+                        if it:
+                            it.setBackground(QColor(255, 235, 130))
+            if match_rows:
+                match_idx[0] = 0
+                _select_match()
+            else:
+                status_label.setText("未找到匹配的配对")
+
+        def _select_match():
+            r = match_rows[match_idx[0]]
+            table.selectRow(r)
+            table.scrollToItem(table.item(r, 0))
+            status_label.setText("匹配 %d/%d 条" % (match_idx[0] + 1, len(match_rows)))
+
+        def goto_next():
+            if not match_rows:
+                return
+            match_idx[0] = (match_idx[0] + 1) % len(match_rows)
+            _select_match()
+
+        def clear_search():
+            search_edit.clear()
+            match_rows.clear()
+            match_idx[0] = 0
+            _clear_highlight()
+            status_label.setText("")
+
+        find_btn.clicked.connect(do_search)
+        next_btn.clicked.connect(goto_next)
+        clear_btn.clicked.connect(clear_search)
+        search_edit.returnPressed.connect(do_search)
+
         def on_context_menu(pos):
             item = table.itemAt(pos)
             if not item:
@@ -238,7 +322,9 @@ class AltController(QObject):
             menu.exec_(table.viewport().mapToGlobal(pos))
 
         table.customContextMenuRequested.connect(on_context_menu)
+        layout.addWidget(search_row)
         layout.addWidget(table)
+        layout.addWidget(status_label)
 
         close_btn = QPushButton("关闭")
         close_btn.clicked.connect(dialog.accept)
