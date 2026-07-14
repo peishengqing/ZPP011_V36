@@ -30,7 +30,7 @@ class FilterPanel(QWidget):
         self._expanded = True
         self._data_min_date = None
         self._data_max_date = None
-        self.setMaximumWidth(280)
+        self.setMaximumWidth(320)
         self.setMinimumWidth(32)
         self.setObjectName("filterPanel")
 
@@ -282,11 +282,11 @@ class FilterPanel(QWidget):
         w.setInputMethodHints(Qt.ImhPreferLatin)  # 编辑时优先拉丁输入，避免中文 IME 吞数字
         w.setToolTip(tooltip)
         cal_btn = QPushButton("选择")
-        cal_btn.setFixedWidth(45)
+        cal_btn.setFixedWidth(38)
         cal_btn.setToolTip("选择日期")
         cal_btn.clicked.connect(lambda: self._popup_calendar(w))
         clear_btn = QPushButton("清除")
-        clear_btn.setFixedWidth(45)
+        clear_btn.setFixedWidth(38)
         clear_btn.setToolTip("清除（不限制日期）")
         clear_btn.clicked.connect(lambda: w.setDate(w.minimumDate()))
         h = QHBoxLayout()
