@@ -447,7 +447,10 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "变动提醒", "暂无已审核记录变动。")
             return
         count = len(changes)
-        # 自定义对话框：表格展示全部变更明细 + 筛选/搜索/排序/复制/双击定位 + 手动导出
+        MAX_DISPLAY = 3000
+        display_changes = changes if count <= MAX_DISPLAY else changes[:MAX_DISPLAY]
+        display_len = len(display_changes)
+        # 自定义对话框：表格展示变更明细 + 筛选/搜索/排序/复制/双击定位 + 手动导出
         dlg = QDialog(self)
         dlg.setWindowTitle(f"变动提醒（{count} 条）")
         dlg.resize(1100, 600)
@@ -468,7 +471,8 @@ class MainWindow(QMainWindow):
         tool_bar.addWidget(search_edit, 1)
         layout.addLayout(tool_bar)
 
-        tip = QLabel(f"发现 {count} 条已审核记录的实际数量/备注原因发生变动，已强制设为'未读'。\n（表格可排序/筛选/搜索，右键复制单元格或整行，双击定位到主表对应行）")
+        extra = f"（仅显示前 {display_len} 条，共 {count} 条；导出按钮可导出全部）" if count > display_len else ""
+        tip = QLabel(f"发现 {count} 条已审核记录的实际数量/备注原因发生变动，已强制设为'未读'。\n（表格可排序/筛选/搜索，右键复制单元格或整行，双击定位到主表对应行）{extra}")
         tip.setWordWrap(True)
         layout.addWidget(tip)
 
@@ -476,12 +480,12 @@ class MainWindow(QMainWindow):
         cols = ["日期", "车间", "流程订单", "物料编码", "物料名称", "变更字段", "旧值", "新值"]
         table.setColumnCount(len(cols))
         table.setHorizontalHeaderLabels(cols)
-        table.setRowCount(len(changes))
+        table.setRowCount(display_len)
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         table.setSelectionBehavior(QAbstractItemView.SelectRows)
         table.setSelectionMode(QAbstractItemView.SingleSelection)
         table.verticalHeader().setVisible(False)
-        for i, c in enumerate(changes):
+        for i, c in enumerate(display_changes):
             did = str(c.get('data_id', ''))
             parts = did.split('|')
             date = parts[0] if len(parts) > 0 else ''
@@ -498,16 +502,18 @@ class MainWindow(QMainWindow):
             table.setItem(i, 5, QTableWidgetItem(str(c.get('field', ''))))
             table.setItem(i, 6, QTableWidgetItem('' if old_v is None else str(old_v)))
             table.setItem(i, 7, QTableWidgetItem('' if new_v is None else str(new_v)))
-        # 列宽：短列按内容自适应，旧值/新值两列拉伸撑满（避免加列后过窄或长文本截断）
+        # 列宽：手动设定固定/拉伸，避免 ResizeToContents 在大量行时逐行测量导致卡顿
         header = table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.ResizeToContents)
-        # 物料名称列：限制最大宽度，内容过长时整列自动缩小字号填充，避免撑爆或截断
+        fixed_widths = {0: 100, 1: 90, 2: 100, 3: 110, 4: 200, 5: 90}
+        for col, w in fixed_widths.items():
+            header.setSectionResizeMode(col, QHeaderView.Fixed)
+            table.setColumnWidth(col, w)
         name_col = 4
         name_max_w = 200
-        name_cur_w = table.columnWidth(name_col)
-        if name_cur_w > name_max_w:
-            table.setColumnWidth(name_col, name_max_w)
-            header.setSectionResizeMode(name_col, QHeaderView.Fixed)
+        header.setSectionResizeMode(6, QHeaderView.Stretch)  # 旧值
+        header.setSectionResizeMode(7, QHeaderView.Stretch)  # 新值
+        # 仅在小数据量时做逐行字号缩放（大数据量跳过，避免逐行 QFontMetrics 卡顿）
+        if display_len <= 2000:
             base_font = table.font()
             fm = QFontMetrics(base_font)
             pad = 12
@@ -526,8 +532,6 @@ class MainWindow(QMainWindow):
                     it = table.item(r, name_col)
                     if it:
                         it.setFont(shrink_font)
-        header.setSectionResizeMode(6, QHeaderView.Stretch)  # 旧值
-        header.setSectionResizeMode(7, QHeaderView.Stretch)  # 新值
         table.setSortingEnabled(True)
         layout.addWidget(table)
 
