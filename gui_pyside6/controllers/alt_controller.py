@@ -198,6 +198,7 @@ class AltController(QObject):
 
         match_rows = []
         match_idx = [0]
+        sort_state = {'col': None, 'asc': True}
         status_label = QLabel("")
         status_label.setStyleSheet("color: #888; font-size: 11px; padding: 2px 4px;")
 
@@ -228,6 +229,21 @@ class AltController(QObject):
                 groups[factory].append((idx, a, b))
             for factory in order:
                 items = groups[factory]
+                # 组内排序：只对该工厂段内的配对行排序，标题行固定不参与
+                sc = sort_state['col']
+                if sc is not None:
+                    def _skey(t, _sc=sc):
+                        _, a, b = t
+                        if _sc == 0:
+                            v = a[1] if isinstance(a, (list, tuple)) and len(a) > 1 else ''
+                        else:
+                            v = b[1] if isinstance(b, (list, tuple)) and len(b) > 1 else ''
+                        s = str(v).strip()
+                        try:
+                            return (0, int(s), '')
+                        except (ValueError, TypeError):
+                            return (1, 0, s.lower())
+                    items = sorted(items, key=_skey, reverse=not sort_state['asc'])
                 # 分组标题行（跨 3 列，UserRole=-1 标记为标题）
                 r = table.rowCount()
                 table.insertRow(r)
@@ -259,6 +275,23 @@ class AltController(QObject):
             table.setColumnWidth(2, max(80, table.columnWidth(2)))
 
         refresh_zoom_table()
+
+        # ---- 组内排序：点列头（物料A/物料B）按编码排序，标题行固定 ----
+        def on_header_clicked(col):
+            if col not in (0, 2):
+                return
+            if sort_state['col'] == col:
+                sort_state['asc'] = not sort_state['asc']
+            else:
+                sort_state['col'] = col
+                sort_state['asc'] = True
+            table.horizontalHeader().setSortIndicatorShown(True)
+            table.horizontalHeader().setSortIndicator(
+                col, Qt.AscendingOrder if sort_state['asc'] else Qt.DescendingOrder)
+            refresh_zoom_table()
+
+        table.horizontalHeader().setSectionsClickable(True)
+        table.horizontalHeader().sectionClicked.connect(on_header_clicked)
 
         # ---- 查找逻辑：按物料号（编码）在 A/B 两列中匹配 ----
         def _norm(s):
