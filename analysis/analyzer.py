@@ -783,7 +783,7 @@ def do_analysis_v2(
                          f'{pd.Timestamp(date_max).strftime("%Y-%m-%d")}）'))
     tc.font = Font(bold=True, size=12)
     tc.alignment = Alignment(horizontal='center')
-    headers7 = ['工厂', '车间', '多耗', '少耗', '净偏差金额', '原因数',
+    headers7 = ['工厂', '车间', '多耗', '少耗', '净偏差数量', '原因数',
                 '原料主要原因（Top5）', '包材主要原因（Top5）']
     for j, h in enumerate(headers7, 1):
         c = ws7.cell(row=2, column=j, value=h)
@@ -807,7 +807,7 @@ def do_analysis_v2(
 
     for i, r in enumerate(reason_summary_df.to_dict('records'), 3):
         for j, v in enumerate([r['工厂'], r['车间'], r['多耗'], r['少耗'],
-                               r.get('净偏差金额', r.get('净偏差', 0)), r['原因数']], 1):
+                               r.get('净偏差数量', 0), r['原因数']], 1):
             c = ws7.cell(row=i, column=j, value=v)
             c.border = border
             c.font = Font(size=11)
@@ -828,10 +828,10 @@ def do_analysis_v2(
 
     ws8 = wb.create_sheet('偏差原因分析')
     headers8 = ['工厂', '车间', '物料分类', '备注原因', '原始备注示例',
-                '涉及物料数', '多耗', '少耗', '净偏差金额', '涉及物料']
+                '涉及物料数', '多耗', '少耗', '净偏差数量', '涉及物料']
     rows8 = [[r['工厂'], r['车间'], r['物料分类'], r['备注原因'],
               r['原始备注示例'], r['涉及物料数'], r['多耗'], r['少耗'],
-              r.get('净偏差金额', r.get('净偏差', 0)), r['涉及物料']] for r in reason_analysis_df.to_dict('records')]
+              r.get('净偏差数量', 0), r['涉及物料']] for r in reason_analysis_df.to_dict('records')]
     write_sheet(ws8, headers8, rows8,
                 [14, 10, 10, 20, 25, 10, 14, 14, 14, 80])
 
