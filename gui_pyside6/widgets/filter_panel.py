@@ -129,6 +129,9 @@ class FilterPanel(QWidget):
         self.remark_empty_combo.addItems(["全部", "是", "否"])
         self.read_status_combo = QComboBox()
         self.read_status_combo.addItems(["全部", "已读", "未读"])
+        # 默认只看「未读」，与替代料看板一致，减少已读记录干扰；
+        # 此时信号尚未连接（连接在后面），不会触发筛选，加载数据后由 _emit_filter 应用。
+        self.read_status_combo.setCurrentIndex(2)
         self.remark_source_combo = QComboBox()
         self.remark_source_combo.addItems(["全部", "AI审核", "人工填写"])
         self.zero_qty_combo = QComboBox()
