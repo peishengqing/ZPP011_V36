@@ -41,7 +41,12 @@ def build_sheet1(df, report_progress, progress_idx=1):
         neg_dev = grp[grp['材料偏差'] < 0]
         has_note = grp['备注原因'].notna() & (grp['备注原因'] != '')
         note_rate = has_note.sum() / len(grp) if len(grp) > 0 else 0
-        warning = '红色预警' if note_rate == 0 else ('黄色预警' if note_rate < 0.3 else '绿色预警')
+        # ③ 预警改为反映真实偏差风险：超 ±10% 行占比（排除无定额假性偏差）
+        #    备注覆盖率仍保留为独立信息列，预警不再只看备注是否填写
+        grp_valid = grp[~grp['_no_quota']] if '_no_quota' in grp.columns else grp
+        over_cnt = (grp_valid['偏差率(%)'].abs() > 10).sum() if len(grp_valid) > 0 else 0
+        risk_rate = over_cnt / len(grp_valid) if len(grp_valid) > 0 else 0
+        warning = '红色预警' if risk_rate >= 0.1 else ('黄色预警' if risk_rate >= 0.03 else '绿色预警')
         pos_amt = round(pos_dev['偏差金额(含税)'].sum(), 2) if len(pos_dev) > 0 else 0
         neg_amt = round(neg_dev['偏差金额(含税)'].sum(), 2) if len(neg_dev) > 0 else 0
         total_amt = round(grp['偏差金额(含税)'].sum(), 2)

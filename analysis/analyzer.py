@@ -352,6 +352,8 @@ def do_analysis_v2(
         return '原材料'
 
     df['物料分类'] = df.apply(classify_material, axis=1)
+    # ① 无定额标志：数量-定额==0 时偏差率无意义（SAP 填成假性 ±100%），用于区分假性偏差
+    df['_no_quota'] = (df['数量-定额'] == 0)
     df['组件物料号_str'] = df['组件物料号'].astype(str)
 
     gx_mask = df['组件物料号_str'].str.startswith('6')
@@ -370,6 +372,11 @@ def do_analysis_v2(
     tape_mask = df['组件物料描述'].str.contains('透明胶带', na=False)
     tape_auto_fill = tape_mask & no_note_mask & ~no_auto_mask
     df.loc[tape_auto_fill, '备注原因'] = '系统无定额'
+
+    # ② 扩展：全部包材 + 数量-定额==0 + 无备注 → 统一标"系统无定额"
+    # （原逻辑仅覆盖广宣(6开头)/透明胶带，漏掉纸箱、箱码、罐子等包材）
+    pkg_no_quota_mask = (df['物料分类'] == '包材') & (df['数量-定额'] == 0) & no_note_mask
+    df.loc[pkg_no_quota_mask, '备注原因'] = '系统无定额'
 
     # ========== 数值列保护（自动填充后） ==========
     _numeric_cols = ['数量-定额', '数量-实际', '材料偏差', '偏差率(%)',
@@ -753,6 +760,10 @@ def do_analysis_v2(
         c.font = Font(size=10, bold=True, color='FF000000')
         c.alignment = center
         ws6.column_dimensions[get_column_letter(k)].width = 10
+    # ④ 阈值说明：主表明细 ±10%（业务口径）；异常预警 ±5%（重点排查口径）
+    note_c = ws6.cell(row=2, column=7,
+                      value='阈值说明：主表明细±10%（业务口径）；异常预警±5%（重点排查口径）')
+    note_c.font = Font(size=9, italic=True, color='666666')
     r_row = 3
     for r in anomaly_df.to_dict('records'):
         fill = anomaly_fills.get(r['row_type'], anomaly_fills['异常1'])

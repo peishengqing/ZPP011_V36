@@ -20,6 +20,12 @@ def build_sheet6(df, alt_order_mat, report_progress, progress_idx=6, net_offset_
     """
     report_progress(progress_idx, "Sheet6-异常预警", 0)
 
+    # ① 无定额标志缺省保护（独立测试时可能无该列）
+    if '_no_quota' not in df.columns:
+        df['_no_quota'] = False
+    else:
+        df['_no_quota'] = df['_no_quota'].fillna(False).astype(bool)
+
     col_p = '偏差率(%)'
     dyn_thresh = 5.0
 
@@ -32,9 +38,10 @@ def build_sheet6(df, alt_order_mat, report_progress, progress_idx=6, net_offset_
                   (~(df['备注原因'].notna() & (df['备注原因'] != '')))].copy()
     anomaly3 = df[(df['数量-定额'] > 0) & (df['数量-实际'] == 0) &
                   (df['备注原因'].notna()) & (df['备注原因'] != '')].copy()
-    anomaly4 = df[(df['物料分类'] == '包材') & (df[col_p] < 0)].copy()
-    anomaly5 = df[df['_is_alt'] & (df[col_p].notna()) & (
-        abs(df[col_p]) > dyn_thresh)].copy()
+    # ① 排除无定额（数量-定额==0）的假性 ±100% 偏差，避免刷屏
+    anomaly4 = df[(df['物料分类'] == '包材') & (df[col_p] < 0) & (~df['_no_quota'])].copy()
+    anomaly5 = df[df['_is_alt'] & (df[col_p].notna()) & (abs(df[col_p]) > dyn_thresh) & (
+        ~df['_no_quota'])].copy()
 
     def _get_product_no(r):
         return str(r.get('产品物料号码', '')) if pd.notna(r.get('产品物料号码', '')) else ''
