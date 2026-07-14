@@ -145,6 +145,34 @@ def save_read_status_batch(records):
     conn.close()
 
 
+def mark_read_batch(data_ids, snapshot_map):
+    """
+    批量把已审核记录标记为已读，并同步更新 snapshot 基线，避免下次重复提醒。
+
+    data_ids: 需要标记的 data_id 列表
+    snapshot_map: {data_id: (snapshot_qty, snapshot_note)}
+    """
+    if not data_ids:
+        return
+    conn = _get_conn()
+    now = datetime.now().isoformat()
+    for did in data_ids:
+        snap_qty, snap_note = snapshot_map.get(did, (None, None))
+        # 兼容：可能之前未进表，先插入骨架再更新，确保不覆盖 fingerprint/audit_result
+        conn.execute("""
+            INSERT OR IGNORE INTO read_status (data_id, is_read, read_time, user)
+            VALUES (?, 0, ?, 'default')
+        """, (str(did), now))
+        conn.execute("""
+            UPDATE read_status SET is_read = 1, snapshot_qty = ?, snapshot_note = ?, read_time = ?
+            WHERE data_id = ?
+        """, (None if snap_qty is None else float(snap_qty),
+              '' if snap_note is None else str(snap_note),
+              now, str(did)))
+    conn.commit()
+    conn.close()
+
+
 def save_snapshot(data_id: str, snapshot_qty, snapshot_note=None):
     """延迟初始化/更新基线（方案A：首次遇到旧记录时用当前实际数量+备注原因建立基线）"""
     try:

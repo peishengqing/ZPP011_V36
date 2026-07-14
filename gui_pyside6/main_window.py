@@ -601,8 +601,10 @@ class MainWindow(QMainWindow):
 
         btn_box = QDialogButtonBox(dlg)
         export_btn = QPushButton("导出Excel并打开")
+        mark_read_btn = QPushButton("全部标记为已读（不再提醒）")
         ok_btn = QPushButton("确定")
         btn_box.addButton(export_btn, QDialogButtonBox.ActionRole)
+        btn_box.addButton(mark_read_btn, QDialogButtonBox.ActionRole)
         btn_box.addButton(ok_btn, QDialogButtonBox.AcceptRole)
         layout.addWidget(btn_box)
 
@@ -636,7 +638,21 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.warning(dlg, "导出失败", f"导出失败：{e}")
 
+        def _mark_all_read():
+            try:
+                df = self.source_model.getDataFrame() if self.source_model else None
+                if df is None or df.empty:
+                    QMessageBox.warning(dlg, "提示", "主表数据为空，无法标记已读。")
+                    return
+                n = self.data_service.mark_changes_as_read(changes, df)
+                if n > 0:
+                    toast(f"已把 {n} 条记录标记为已读，下次不再提醒", parent=dlg)
+                dlg.accept()
+            except Exception as e:
+                QMessageBox.warning(dlg, "标记失败", f"标记已读失败：{e}")
+
         export_btn.clicked.connect(_export)
+        mark_read_btn.clicked.connect(_mark_all_read)
         ok_btn.clicked.connect(dlg.accept)
         dlg.exec()
 

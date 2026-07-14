@@ -306,7 +306,39 @@ class DataService(QObject):
         except Exception as e:
             self.log(f"记录变动历史失败: {e}", "error")
 
-    def _restore_audit_results(self, df: pd.DataFrame) -> pd.DataFrame:
+    def mark_changes_as_read(self, changes: list, df: pd.DataFrame):
+        """
+        把本次弹窗里的变动记录一次性标记为已读，并用当前主表最新值重建 snapshot 基线，
+        避免下次重新加载时再次弹窗提醒。
+        """
+        if not changes:
+            return 0
+        try:
+            from core.read_status import mark_read_batch
+            qty_col = self._find_real_qty_col(df)
+            note_col = self._find_remark_col(df)
+            dids = set()
+            snapshot_map = {}
+            for c in changes:
+                did = str(c.get('data_id', ''))
+                if not did or did in dids:
+                    continue
+                dids.add(did)
+                rows = df[df['data_id'].astype(str) == did]
+                if rows.empty:
+                    snap_qty = None
+                    snap_note = ''
+                else:
+                    row = rows.iloc[0]
+                    snap_qty = row.get(qty_col) if qty_col else None
+                    snap_note = self._norm_note(row.get(note_col)) if note_col else ''
+                snapshot_map[did] = (snap_qty, snap_note)
+            mark_read_batch(list(dids), snapshot_map)
+            self.last_audit_changes = []  # 当前会话不再重复弹窗
+            return len(dids)
+        except Exception as e:
+            self.log(f"批量标记已读失败: {e}", "error")
+            return 0
         """从 DB 恢复审核结果（审核结果、AI建议、备注来源）"""
         try:
             data_ids = df['data_id'].tolist()
