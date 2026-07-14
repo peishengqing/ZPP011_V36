@@ -30,7 +30,7 @@ class FilterPanel(QWidget):
         self._expanded = True
         self._data_min_date = None
         self._data_max_date = None
-        self.setMaximumWidth(320)
+        self.setMaximumWidth(380)
         self.setMinimumWidth(32)
         self.setObjectName("filterPanel")
 
