@@ -45,6 +45,8 @@ def build_sheet8(df, report_progress, progress_idx=8):
         ).reset_index()
         mat_reasons['总偏差'] = mat_reasons['多耗'] + mat_reasons['少耗']
         mat_reasons = mat_reasons.sort_values('总偏差', ascending=False)
+        # 同一物料只保留总偏差最大的原因，避免 Top5 被同一物料多次占据
+        mat_reasons = mat_reasons.drop_duplicates(subset=['物料分类', '组件物料描述'], keep='first')
 
         def fmt_top(grp_df, label):
             result = ''
