@@ -26,6 +26,10 @@ def build_sheet9(df, report_progress, progress_idx=9):
         df['备注原因'] != '') & (df['材料偏差'] != 0)].copy()
     has_reason['_std_reason'] = has_reason['备注原因'].apply(standardize_remark)
 
+    # ⑤ 预计算各车间的偏差数量绝对值合计，作为"占车间偏差比%"的分母
+    ws_dev_abs = has_reason.groupby(['工厂名称', '车间'])['材料偏差'].apply(
+        lambda s: s.abs().sum()).to_dict()
+
     reason_analysis = []
     for (factory, ws_name, mat_cat, std_reason), grp in has_reason.groupby(
             ['工厂名称', '车间', '物料分类', '_std_reason']):
@@ -36,6 +40,17 @@ def build_sheet9(df, report_progress, progress_idx=9):
             if pd.notna(x) and str(x).strip():
                 _reasons.add(str(x))
         ex_remarks = '；'.join(sorted(_reasons)[:3])
+        dev_abs = abs(total_dev)
+        denom = ws_dev_abs.get((factory, ws_name), 0)
+        ratio_pct = round(dev_abs / denom * 100, 2) if denom else 0.0
+        orders = set()
+        for x in grp['流程订单']:
+            if pd.notna(x):
+                try:
+                    f = float(x)
+                    orders.add(str(int(f)) if f == int(f) else str(f))
+                except (ValueError, TypeError):
+                    orders.add(str(x))
         reason_analysis.append({
             '工厂': factory,
             '车间': ws_name,
@@ -43,9 +58,11 @@ def build_sheet9(df, report_progress, progress_idx=9):
             '备注原因': std_reason,
             '原始备注示例': ex_remarks,
             '涉及物料数': len(set(str(x) for x in grp['组件物料描述'] if pd.notna(x))),
+            '涉及订单数': len(orders),
             '多耗': round(grp[grp['材料偏差'] > 0]['材料偏差'].sum(), 2),
             '少耗': round(abs(grp[grp['材料偏差'] < 0]['材料偏差'].sum()), 2),
             '净偏差数量': round(total_dev, 2),
+            '占车间偏差比%': ratio_pct,
             '涉及物料': '、'.join(sorted(set(str(x) for x in grp['组件物料描述'] if pd.notna(x)))),
         })
 
