@@ -322,7 +322,7 @@ class AltController(QObject):
             menu.exec_(table.viewport().mapToGlobal(pos))
 
         table.customContextMenuRequested.connect(on_context_menu)
-        layout.addWidget(search_row)
+        layout.addLayout(search_row)
         layout.addWidget(table)
         layout.addWidget(status_label)
 
