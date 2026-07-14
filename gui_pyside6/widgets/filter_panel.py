@@ -269,9 +269,10 @@ class FilterPanel(QWidget):
     # 折叠/展开
     # ------------------------------------------------------------------ #
     def _make_date_field(self, tooltip):
-        # 构建带「选日期 / 清除」按钮的日期输入控件，绕开 specialValueText 下键盘输入不可靠的问题
+        # 构建带「选择日期 / 清除」按钮的日期输入控件，绕开 specialValueText 下键盘输入不可靠的问题
         w = QDateEdit()
-        w.setCalendarPopup(True)
+        w.setCalendarPopup(False)  # 关闭 QDateEdit 自带的下拉箭头，避免与自定义按钮重复
+        w.setButtonSymbols(QDateEdit.NoButtons)  # 同时隐藏上下箭头，只作为纯文本显示框
         w.setDisplayFormat("yyyy-MM-dd")
         w.setSpecialValueText("未选择")
         w.setMinimumDate(QDate(2000, 1, 1))
@@ -280,12 +281,12 @@ class FilterPanel(QWidget):
         w.setReadOnly(False)
         w.setInputMethodHints(Qt.ImhPreferLatin)  # 编辑时优先拉丁输入，避免中文 IME 吞数字
         w.setToolTip(tooltip)
-        cal_btn = QPushButton("📅")
-        cal_btn.setFixedWidth(30)
+        cal_btn = QPushButton("选择")
+        cal_btn.setFixedWidth(45)
         cal_btn.setToolTip("选择日期")
         cal_btn.clicked.connect(lambda: self._popup_calendar(w))
-        clear_btn = QPushButton("✕")
-        clear_btn.setFixedWidth(28)
+        clear_btn = QPushButton("清除")
+        clear_btn.setFixedWidth(45)
         clear_btn.setToolTip("清除（不限制日期）")
         clear_btn.clicked.connect(lambda: w.setDate(w.minimumDate()))
         h = QHBoxLayout()
