@@ -154,6 +154,20 @@ def do_analysis_v2(
             _dprint(f"[WARN] 工作表 'Data' 不存在，改用 '{_sheet}'")
         df = pd.read_excel(src_file, sheet_name=_sheet)
         _dprint(f"[DEBUG do_analysis_v2] 读取Data表成功，{len(df)} 行")
+
+        # 校验：必须为原始 SAP 导出文件，而非分析报告
+        _required_cols = ['订单开始日期', '数量-定额', '数量-实际']
+        _missing = [c for c in _required_cols if c not in df.columns]
+        if _missing:
+            error_msg = (
+                f"文件缺少原始 SAP 数据所需列：{', '.join(_missing)}\n"
+                f"当前工作表：{_sheet}，列名：{list(df.columns)}\n"
+                "请确认选择的是 SAP 原始导出文件（如 ZPP011_YYYYMMDD.xlsx），而不是分析报告。"
+            )
+            _dprint(f"❌ {error_msg}")
+            report_progress(1, f"错误：缺少列 {_missing[0]}", 0)
+            raise ValueError(error_msg)
+
         report_progress(1, "1/5 正在读取 Excel 文件", 10)
         # 强制刷新输出（安全模式，忽略线程 stdout 不可用的情况）
         import sys
