@@ -22,6 +22,7 @@ class DataFrameModel(QAbstractTableModel):
         self._display_columns = []  # 记录列顺序
         self._changed_rows = set()  # 审核后变更行（位置索引集合，用于整行红标）
         self._quarantined_rows = set()  # 隔离区行（位置索引集合，用于整行黄标）
+        self._substitute_rows = set()  # 替代料/非耗用行（实际=0 且 定额>0，整行浅蓝标）
         if data is not None:
             self.setDataFrame(data)
 
@@ -49,12 +50,14 @@ class DataFrameModel(QAbstractTableModel):
             self._display_columns = []
             self._changed_rows = set()
             self._quarantined_rows = set()
+            self._substitute_rows = set()
             return
 
         self._display_columns = list(self._data.columns)
         # 计算审核后变更行集合（供整行红标使用）
         self._changed_rows = set()
         self._quarantined_rows = set()
+        self._substitute_rows = set()
         if '_post_audit_changed' in self._data.columns:
             for i in range(len(self._data)):
                 try:
@@ -67,6 +70,28 @@ class DataFrameModel(QAbstractTableModel):
                 try:
                     if self._data.iloc[i]['_quarantined'] == 1:
                         self._quarantined_rows.add(i)
+                except Exception:
+                    pass
+        # 替代料/非耗用检测：实际=0 且 定额>0（偏差率恒为 -100%）
+        _sub_actual_col = None
+        for c in ['数量-实际', '实际']:
+            if c in self._data.columns:
+                _sub_actual_col = c
+                break
+        _sub_qty_col = None
+        for c in ['数量-定额', '定额']:
+            if c in self._data.columns:
+                _sub_qty_col = c
+                break
+        if _sub_actual_col and _sub_qty_col:
+            for i in range(len(self._data)):
+                try:
+                    a = self._data.iloc[i][_sub_actual_col]
+                    q = self._data.iloc[i][_sub_qty_col]
+                    a = 0.0 if pd.isna(a) else float(a)
+                    q = 0.0 if pd.isna(q) else float(q)
+                    if abs(a) <= 0.001 and q > 0.001:
+                        self._substitute_rows.add(i)
                 except Exception:
                     pass
         # 逐行转换：将 pandas Series 转为 list，并处理 NaN
@@ -122,6 +147,20 @@ class DataFrameModel(QAbstractTableModel):
                 read_val = self._data_cache[row][0]
                 return '已读' if read_val else '未读'
             return None
+
+        # 替代料/非耗用行：鼠标悬停显示检测依据与备注原因
+        if role == Qt.ToolTipRole and row in self._substitute_rows:
+            remark = ''
+            for c in ['备注原因', '备注']:
+                if c in self._display_columns:
+                    try:
+                        ridx = self._display_columns.index(c)
+                        rv = self._data_cache[row][ridx]
+                        remark = '' if rv is None else str(rv)
+                    except Exception:
+                        remark = ''
+                    break
+            return f"疑似替代料/非耗用：实际=0，定额>0（偏差率 -100%）\n备注原因：{remark if remark.strip() else '（无）'}"
         
         # 其余列：从缓存读取
         if role == Qt.DisplayRole or role == Qt.EditRole:
@@ -154,6 +193,9 @@ class DataFrameModel(QAbstractTableModel):
             # 隔离区行：整行浅黄标记
             if row in self._quarantined_rows:
                 return QColor(255, 248, 200)
+            # 替代料/非耗用行：整行浅蓝标记（实际=0 且 定额>0）
+            if row in self._substitute_rows:
+                return QColor(205, 230, 255)
             # 预警列上色
             col_name = self._display_columns[col]
             if col_name == '预警':
@@ -381,6 +423,14 @@ class AuditProxyModel(QSortFilterProxyModel):
                 return True
             row_data = df.iloc[source_row]
 
+            def _to_float_safe(v):
+                """安全转浮点数，失败返回0"""
+                try:
+                    f = float(v)
+                    return f if not pd.isna(f) else 0.0
+                except (ValueError, TypeError):
+                    return 0.0
+
             # 1. 精确列筛选（工厂、车间、替代料等）
             for col_name, value in self._custom_filters.items():
                 if col_name.startswith('_'):   # 特殊筛选条件，稍后处理
@@ -541,14 +591,6 @@ class AuditProxyModel(QSortFilterProxyModel):
                         actual_col = c
                         break
 
-                def _to_float_safe(v):
-                    """安全转浮点数，失败返回0"""
-                    try:
-                        f = float(v)
-                        return f if not pd.isna(f) else 0.0
-                    except (ValueError, TypeError):
-                        return 0.0
-
                 if zero_mode == '定额为0':
                     if qty_col:
                         val = _to_float_safe(row_data.get(qty_col, 0))
@@ -575,6 +617,38 @@ class AuditProxyModel(QSortFilterProxyModel):
                     actual_val = _to_float_safe(row_data.get(actual_col, 0)) if actual_col else 0.0
                     if abs(qty_val) <= 0.001 or abs(actual_val) <= 0.001:
                         return False
+
+            # 4.5 偏差数量符号筛选（大于0 / 等于0 / 小于0）
+            if '_dev_qty_sign' in self._custom_filters and '偏差数量' in df.columns:
+                sign = self._custom_filters['_dev_qty_sign']
+                dq = _to_float_safe(row_data.get('偏差数量', 0))
+                if sign == 'gt0':
+                    if dq <= 0.001:
+                        return False
+                elif sign == 'eq0':
+                    if abs(dq) > 0.001:
+                        return False
+                elif sign == 'lt0':
+                    if dq >= -0.001:
+                        return False
+
+            # 4.6 替代料/非耗用筛查（实际=0 且 定额>0）
+            if '_substitute_only' in self._custom_filters:
+                sub_actual_col = None
+                for c in ['数量-实际', '实际']:
+                    if c in df.columns:
+                        sub_actual_col = c
+                        break
+                sub_qty_col = None
+                for c in ['数量-定额', '定额']:
+                    if c in df.columns:
+                        sub_qty_col = c
+                        break
+                a_val = _to_float_safe(row_data.get(sub_actual_col, 0)) if sub_actual_col else 1.0
+                q_val = _to_float_safe(row_data.get(sub_qty_col, 0)) if sub_qty_col else 0.0
+                # 命中条件：实际≈0 且 定额>0
+                if not (abs(a_val) <= 0.001 and q_val > 0.001):
+                    return False
 
             # 4. 日期范围
             if '_date_start' in self._custom_filters or '_date_end' in self._custom_filters:

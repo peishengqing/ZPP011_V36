@@ -92,10 +92,10 @@ class DataService(QObject):
         # 1. 去掉空的替代料组列（保留 _替代料组）
         if '替代料组' in df.columns and '_替代料组' in df.columns:
             df = df.drop(columns=['替代料组'])
-        # 2. 去掉冗余的净偏差列（如果有单独的"净偏差"列，保留净偏差数量和净偏差金额）
-        if '净偏差' in df.columns and '净偏差数量' not in df.columns and '净偏差金额' not in df.columns:
+        # 2. 去掉冗余的"净偏差"列（已废弃，净偏差数量/金额/率仍保留）
+        if '净偏差' in df.columns and '净偏差金额' in df.columns:
             df = df.drop(columns=['净偏差'])
-            self.log("已删除冗余列：净偏差（无净偏差数量/金额时）", "info")
+            self.log("已删除冗余列：净偏差（净偏差金额已存在）", "info")
         # 3. 去掉重复的偏差率列（保留数值格式的"偏差率(%)"，删除字符串格式的"偏差率"）
         if '偏差率' in df.columns and '偏差率(%)' in df.columns:
             df = df.drop(columns=['偏差率'])
@@ -354,7 +354,7 @@ class DataService(QObject):
                 return df
 
             net_qty_col = None
-            for c in ['净偏差数量', 'net_qty', '净偏差']:
+            for c in ['净偏差数量', 'net_qty']:
                 if c in df.columns:
                     net_qty_col = c
                     break

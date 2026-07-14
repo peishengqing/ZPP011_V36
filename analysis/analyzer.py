@@ -575,9 +575,6 @@ def do_analysis_v2(
     for col in ['净偏差数量', '净偏差金额', '净偏差率(%)', '偏差数量', '偏差金额']:
         if col in dev_df.columns:
             dev_df[col] = pd.to_numeric(dev_df[col], errors='coerce').round(2)
-    # 保留"净偏差"列作为"净偏差金额"的别名（向后兼容）
-    if '净偏差金额' in dev_df.columns and '净偏差' not in dev_df.columns:
-            dev_df['净偏差'] = dev_df['净偏差金额']
 
     # 补充净偏差率（apply_net_offset 可能已返回，此处确保存在）
     if '净偏差率(%)' not in dev_df.columns:

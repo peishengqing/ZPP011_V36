@@ -45,14 +45,14 @@ def build_sheet9(df, report_progress, progress_idx=9):
             '涉及物料数': len(set(str(x) for x in grp['组件物料描述'] if pd.notna(x))),
             '多耗': round(grp[grp['材料偏差'] > 0]['材料偏差'].sum(), 2),
             '少耗': round(abs(grp[grp['材料偏差'] < 0]['材料偏差'].sum()), 2),
-            '净偏差': round(total_dev, 2),
+            '净偏差金额': round(total_dev, 2),
             '涉及物料': '、'.join(sorted(set(str(x) for x in grp['组件物料描述'] if pd.notna(x)))),
         })
 
     reason_analysis_df = pd.DataFrame(reason_analysis)
     if not reason_analysis_df.empty:
         reason_analysis_df = reason_analysis_df.sort_values(
-            ['工厂', '车间', '物料分类', '净偏差'], ascending=[True, True, True, False])
+            ['工厂', '车间', '物料分类', '净偏差金额'], ascending=[True, True, True, False])
 
     report_progress(progress_idx, "Sheet9-原因分析", 100)
     return reason_analysis_df

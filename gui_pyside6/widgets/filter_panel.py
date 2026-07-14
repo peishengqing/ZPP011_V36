@@ -67,7 +67,24 @@ class FilterPanel(QWidget):
         self.dev_threshold_spin.setSuffix("%")
         self.dev_threshold_spin.setToolTip("仅纳入偏差率绝对值 ≥ 此阈值的工单进入主表；调为 0% 可显示全部明细。修改后重新分析生效。")
         param_layout.addRow("偏差率纳入阈值:", self.dev_threshold_spin)
-        note_label = QLabel("提示：调整阈值后需重新分析生效")
+        # 分析日期范围（重新分析生效）：控制 do_analysis_v2 的 start_date/end_date
+        self.analysis_start_date_edit = QDateEdit()
+        self.analysis_start_date_edit.setCalendarPopup(True)
+        self.analysis_start_date_edit.setDisplayFormat("yyyy-MM-dd")
+        self.analysis_start_date_edit.setSpecialValueText("未选择")
+        self.analysis_start_date_edit.setMinimumDate(QDate(2000, 1, 1))
+        self.analysis_start_date_edit.setDate(self.analysis_start_date_edit.minimumDate())
+        self.analysis_start_date_edit.setToolTip("分析起始日期（重新分析生效）。留空=从最早数据开始。修改后点「分析」生效。")
+        self.analysis_end_date_edit = QDateEdit()
+        self.analysis_end_date_edit.setCalendarPopup(True)
+        self.analysis_end_date_edit.setDisplayFormat("yyyy-MM-dd")
+        self.analysis_end_date_edit.setSpecialValueText("未选择")
+        self.analysis_end_date_edit.setMinimumDate(QDate(2000, 1, 1))
+        self.analysis_end_date_edit.setDate(self.analysis_end_date_edit.minimumDate())
+        self.analysis_end_date_edit.setToolTip("分析截止日期（重新分析生效）。留空=到最新数据为止。修改后点「分析」生效。")
+        param_layout.addRow("分析起始日:", self.analysis_start_date_edit)
+        param_layout.addRow("分析截止日:", self.analysis_end_date_edit)
+        note_label = QLabel("提示：阈值与日期修改后需重新点「分析」生效")
         note_label.setStyleSheet("color: #888888; font-size: 10px;")
         param_layout.addRow("", note_label)
         content_layout.addWidget(param_group)
@@ -130,6 +147,14 @@ class FilterPanel(QWidget):
         self.remark_not_edit = QLineEdit()
         self.remark_not_edit.setPlaceholderText("排除包含这些关键词的备注，逗号分隔")
         dev_layout.addRow("偏差率范围:", self.dev_rate_combo)
+        self.dev_qty_combo = QComboBox()
+        self.dev_qty_combo.addItems(["全部", "大于0", "等于0", "小于0"])
+        dev_layout.addRow("偏差数量:", self.dev_qty_combo)
+        # 替代料/非耗用筛查：纯数值检测（实际=0 且 定额>0），与已有"是否替代料"列无关
+        self.substitute_combo = QComboBox()
+        self.substitute_combo.addItems(["全部", "疑似替代料（实际0·定额>0）"])
+        self.substitute_combo.setToolTip("实际耗用为 0、但定额大于 0 的行——多为替代料/未耗用，偏差率恒为 -100%。这是 ZPP011 重点排查对象。")
+        dev_layout.addRow("替代料筛查:", self.substitute_combo)
         dev_layout.addRow("审核结果:", self.audit_status_combo)
         dev_layout.addRow("备注来源:", self.remark_source_combo)
         dev_layout.addRow("备注搜索:", self.remark_search_edit)
@@ -143,9 +168,11 @@ class FilterPanel(QWidget):
         self.color_combo.addItem("审核后变更（浅红）")
         self.color_combo.addItem("隔离区（浅黄）")
         self.color_combo.addItem("无标记（空白）")
+        self.color_combo.addItem("替代料/非耗用（浅蓝）")
         self.color_combo.setItemIcon(1, _color_icon((255, 205, 205)))
         self.color_combo.setItemIcon(2, _color_icon((255, 248, 200)))
         self.color_combo.setItemIcon(3, _color_icon((235, 235, 235)))
+        self.color_combo.setItemIcon(4, _color_icon((205, 230, 255)))
         dev_layout.addRow("颜色标记:", self.color_combo)
         content_layout.addWidget(dev_group)
 
@@ -197,6 +224,8 @@ class FilterPanel(QWidget):
         self.category_combo.currentIndexChanged.connect(self._emit_filter)
         self.alt_combo.currentIndexChanged.connect(self._emit_filter)
         self.dev_rate_combo.currentIndexChanged.connect(self._emit_filter)
+        self.dev_qty_combo.currentIndexChanged.connect(self._emit_filter)
+        self.substitute_combo.currentIndexChanged.connect(self._emit_filter)
         self.audit_status_combo.currentIndexChanged.connect(self._emit_filter)
         self.remark_empty_combo.currentIndexChanged.connect(self._emit_filter)
         self.order_type_combo.currentIndexChanged.connect(self._emit_filter)
@@ -227,9 +256,10 @@ class FilterPanel(QWidget):
         # 滚轮保护：在筛选面板内滚动滚轮时，不要误改筛选条件
         for _w in (self.dev_threshold_spin, self.factory_combo, self.workshop_combo,
                    self.category_combo, self.alt_combo, self.order_type_combo,
-                   self.dev_rate_combo, self.audit_status_combo, self.remark_empty_combo,
+                   self.dev_rate_combo, self.dev_qty_combo, self.audit_status_combo, self.remark_empty_combo,
                    self.read_status_combo, self.remark_source_combo, self.zero_qty_combo,
-                   self.color_combo, self.start_date_edit, self.end_date_edit):
+                   self.color_combo, self.substitute_combo, self.start_date_edit, self.end_date_edit,
+                   self.analysis_start_date_edit, self.analysis_end_date_edit):
             _w.installEventFilter(self)
 
     # ------------------------------------------------------------------ #
@@ -448,6 +478,17 @@ class FilterPanel(QWidget):
             filters['_read_status'] = self.read_status_combo.currentText()
         if self.zero_qty_combo.currentText() != "全部":
             filters['_zero_qty'] = self.zero_qty_combo.currentText()
+        # 偏差数量筛选：大于0 / 等于0 / 小于0
+        dev_qty_sel = self.dev_qty_combo.currentText()
+        if dev_qty_sel == "大于0":
+            filters['_dev_qty_sign'] = 'gt0'
+        elif dev_qty_sel == "等于0":
+            filters['_dev_qty_sign'] = 'eq0'
+        elif dev_qty_sel == "小于0":
+            filters['_dev_qty_sign'] = 'lt0'
+        # 替代料筛查（纯数值：实际=0 且 定额>0）
+        if self.substitute_combo.currentText() != "全部":
+            filters['_substitute_only'] = True
         # 颜色标记筛选：与表格行背景色对应
         color_sel = self.color_combo.currentText()
         if color_sel == "审核后变更（浅红）":
@@ -456,6 +497,8 @@ class FilterPanel(QWidget):
             filters['_quarantined_only'] = True
         elif color_sel == "无标记（空白）":
             filters['_plain_only'] = True
+        elif color_sel == "替代料/非耗用（浅蓝）":
+            filters['_substitute_only'] = True
         # 备注关键词搜索（逗号分隔多选，OR匹配）
         remark_search_text = self.remark_search_edit.text().strip()
         if remark_search_text:
@@ -506,6 +549,7 @@ class FilterPanel(QWidget):
             'changed': 1,
             'quarantine': 2,
             'plain': 3,
+            'substitute': 4,
         }
         idx = mapping.get(mode, 0)
         if self.color_combo.currentIndex() != idx:
@@ -530,6 +574,8 @@ class FilterPanel(QWidget):
         self.category_combo.setCurrentIndex(0)
         self.alt_combo.setCurrentIndex(0)
         self.dev_rate_combo.setCurrentIndex(0)
+        self.dev_qty_combo.setCurrentIndex(0)
+        self.substitute_combo.setCurrentIndex(0)
         self.audit_status_combo.setCurrentIndex(0)
         self.remark_empty_combo.setCurrentIndex(0)
         self.order_type_combo.setCurrentIndex(0)

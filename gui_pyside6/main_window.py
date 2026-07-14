@@ -681,11 +681,27 @@ class MainWindow(QMainWindow):
         dev_threshold = getattr(self.filter_panel, 'dev_threshold_spin', None)
         dev_threshold_val = dev_threshold.value() if dev_threshold is not None else 1.0
 
+        # 读取"分析参数"组里的分析日期范围（留空=全部）。修复：此前写死为空导致日期控制失效。
+        def _qdate_or_empty(edit):
+            try:
+                if edit.date() == edit.minimumDate():
+                    return ""
+            except Exception:
+                return ""
+            return edit.date().toString("yyyy-MM-dd")
+
+        fp = self.filter_panel
+        if hasattr(fp, 'analysis_start_date_edit'):
+            start_date = _qdate_or_empty(fp.analysis_start_date_edit)
+            end_date = _qdate_or_empty(fp.analysis_end_date_edit)
+        else:
+            start_date, end_date = "", ""
+
         self.analysis_controller.start_analysis(
             self.current_input_file,
             self.alt_controller.get_pairs(),
-            "",
-            "",
+            start_date,
+            end_date,
             "",
             dev_threshold_val,
         )
