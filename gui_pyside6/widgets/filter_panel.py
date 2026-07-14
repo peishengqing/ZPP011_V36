@@ -7,7 +7,7 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout,
     QComboBox, QPushButton, QLabel, QDateEdit, QLineEdit, QScrollArea,
-    QDoubleSpinBox, QListWidget, QListWidgetItem
+    QDoubleSpinBox, QListWidget, QListWidgetItem, QDialog, QCalendarWidget
 )
 from PySide6.QtCore import Signal, Qt, QDate, QEvent
 from PySide6.QtGui import QColor, QPixmap, QIcon
@@ -68,22 +68,13 @@ class FilterPanel(QWidget):
         self.dev_threshold_spin.setToolTip("仅纳入偏差率绝对值 ≥ 此阈值的工单进入主表；调为 0% 可显示全部明细。修改后重新分析生效。")
         param_layout.addRow("偏差率纳入阈值:", self.dev_threshold_spin)
         # 分析日期范围（重新分析生效）：控制 do_analysis_v2 的 start_date/end_date
-        self.analysis_start_date_edit = QDateEdit()
-        self.analysis_start_date_edit.setCalendarPopup(True)
-        self.analysis_start_date_edit.setDisplayFormat("yyyy-MM-dd")
-        self.analysis_start_date_edit.setSpecialValueText("未选择")
-        self.analysis_start_date_edit.setMinimumDate(QDate(2000, 1, 1))
-        self.analysis_start_date_edit.setDate(self.analysis_start_date_edit.minimumDate())
-        self.analysis_start_date_edit.setToolTip("分析起始日期（重新分析生效）。留空=从最早数据开始。修改后点「分析」生效。")
-        self.analysis_end_date_edit = QDateEdit()
-        self.analysis_end_date_edit.setCalendarPopup(True)
-        self.analysis_end_date_edit.setDisplayFormat("yyyy-MM-dd")
-        self.analysis_end_date_edit.setSpecialValueText("未选择")
-        self.analysis_end_date_edit.setMinimumDate(QDate(2000, 1, 1))
-        self.analysis_end_date_edit.setDate(self.analysis_end_date_edit.minimumDate())
-        self.analysis_end_date_edit.setToolTip("分析截止日期（重新分析生效）。留空=到最新数据为止。修改后点「分析」生效。")
-        param_layout.addRow("分析起始日:", self.analysis_start_date_edit)
-        param_layout.addRow("分析截止日:", self.analysis_end_date_edit)
+        # 分析日期：QDateEdit + 📅选日期按钮 + ✕清除按钮，规避 specialValueText 下键盘输入不可靠
+        self.analysis_start_date_edit, sd_container = self._make_date_field(
+            "分析起始日期（重新分析生效）。留空=从最早数据开始。修改后点「分析」生效。")
+        self.analysis_end_date_edit, ed_container = self._make_date_field(
+            "分析截止日期（重新分析生效）。留空=到最新数据为止。修改后点「分析」生效。")
+        param_layout.addRow("分析起始日:", sd_container)
+        param_layout.addRow("分析截止日:", ed_container)
         note_label = QLabel("提示：阈值与日期修改后需重新点「分析」生效")
         note_label.setStyleSheet("color: #888888; font-size: 10px;")
         param_layout.addRow("", note_label)
@@ -269,11 +260,61 @@ class FilterPanel(QWidget):
         if event.type() == QEvent.Wheel:
             if isinstance(obj, (QComboBox, QDoubleSpinBox, QDateEdit)):
                 return True
+        elif event.type() == QEvent.FocusIn:
+            if isinstance(obj, QDateEdit):
+                obj.selectAll()
         return super().eventFilter(obj, event)
 
     # ------------------------------------------------------------------ #
     # 折叠/展开
     # ------------------------------------------------------------------ #
+    def _make_date_field(self, tooltip):
+        # 构建带「选日期 / 清除」按钮的日期输入控件，绕开 specialValueText 下键盘输入不可靠的问题
+        w = QDateEdit()
+        w.setCalendarPopup(True)
+        w.setDisplayFormat("yyyy-MM-dd")
+        w.setSpecialValueText("未选择")
+        w.setMinimumDate(QDate(2000, 1, 1))
+        w.setMaximumDate(QDate(2099, 12, 31))
+        w.setDate(w.minimumDate())
+        w.setReadOnly(False)
+        w.setInputMethodHints(Qt.ImhPreferLatin)  # 编辑时优先拉丁输入，避免中文 IME 吞数字
+        w.setToolTip(tooltip)
+        cal_btn = QPushButton("📅")
+        cal_btn.setFixedWidth(30)
+        cal_btn.setToolTip("选择日期")
+        cal_btn.clicked.connect(lambda: self._popup_calendar(w))
+        clear_btn = QPushButton("✕")
+        clear_btn.setFixedWidth(28)
+        clear_btn.setToolTip("清除（不限制日期）")
+        clear_btn.clicked.connect(lambda: w.setDate(w.minimumDate()))
+        h = QHBoxLayout()
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(2)
+        h.addWidget(w, 1)
+        h.addWidget(cal_btn)
+        h.addWidget(clear_btn)
+        container = QWidget()
+        container.setLayout(h)
+        return w, container
+
+    def _popup_calendar(self, target_edit):
+        # 自定义日历弹窗：点击 📅 时弹出，避免某些 PySide6 版本 QDateEdit.showPopup 不可用的问题
+        dlg = QDialog(self)
+        dlg.setWindowTitle("选择日期")
+        dlg.setModal(True)
+        v = QVBoxLayout(dlg)
+        cal = QCalendarWidget()
+        cur = target_edit.date()
+        cal.setSelectedDate(cur if cur > target_edit.minimumDate() else QDate.currentDate())
+        cal.setMinimumDate(target_edit.minimumDate())
+        cal.setMaximumDate(target_edit.maximumDate())
+        v.addWidget(cal)
+        btn = QPushButton("确定")
+        v.addWidget(btn)
+        btn.clicked.connect(lambda: (target_edit.setDate(cal.selectedDate()), dlg.accept()))
+        dlg.exec()
+
     def _toggle_collapse(self):
         self._expanded = not self._expanded
         if self._expanded:
