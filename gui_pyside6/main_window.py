@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QFileDialog,
     QHeaderView, QDialog, QDialogButtonBox, QSplitter,
     QComboBox, QAbstractItemView, QMessageBox, QInputDialog, QTableWidgetItem, QTableWidget,
-    QMenu, QSizePolicy, QGroupBox, QFormLayout,
+    QMenu, QSizePolicy, QGroupBox, QFormLayout, QProgressDialog,
     QListWidget, QListWidgetItem, QScrollArea, QGridLayout, QCheckBox,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer
@@ -485,6 +485,12 @@ class MainWindow(QMainWindow):
         table.setSelectionBehavior(QAbstractItemView.SelectRows)
         table.setSelectionMode(QAbstractItemView.SingleSelection)
         table.verticalHeader().setVisible(False)
+        # 进度提示：数据量大时显示进度条，避免界面假死（小数据因 minimumDuration 不闪）
+        progress = QProgressDialog("正在加载变更明细...", None, 0, display_len, self)
+        progress.setWindowTitle("加载变动提醒")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(300)
+        progress.setValue(0)
         for i, c in enumerate(display_changes):
             did = str(c.get('data_id', ''))
             parts = did.split('|')
@@ -502,6 +508,10 @@ class MainWindow(QMainWindow):
             table.setItem(i, 5, QTableWidgetItem(str(c.get('field', ''))))
             table.setItem(i, 6, QTableWidgetItem('' if old_v is None else str(old_v)))
             table.setItem(i, 7, QTableWidgetItem('' if new_v is None else str(new_v)))
+            if (i + 1) % 200 == 0:
+                progress.setValue(i + 1)
+                QApplication.processEvents()
+        progress.setValue(display_len)
         # 列宽：手动设定固定/拉伸，避免 ResizeToContents 在大量行时逐行测量导致卡顿
         header = table.horizontalHeader()
         fixed_widths = {0: 100, 1: 90, 2: 100, 3: 110, 4: 200, 5: 90}
