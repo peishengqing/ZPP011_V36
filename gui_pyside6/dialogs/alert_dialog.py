@@ -39,7 +39,6 @@ class AlertDialog(QDialog):
 
         self.btn_all = QPushButton("全部")
         self.btn_all.setCheckable(True)
-        self.btn_all.setChecked(True)
         self.btn_all.clicked.connect(lambda: self._set_filter("all"))
         filter_layout.addWidget(self.btn_all)
 
@@ -87,6 +86,9 @@ class AlertDialog(QDialog):
         # 安装 Ctrl+C 复制事件过滤器
         self.table_view.installEventFilter(self)
         layout.addWidget(self.table_view)
+
+        # 默认打开时显示未读
+        self._set_filter("unread")
 
         # ---- 底部按钮 ----
         btn_layout = QHBoxLayout()
