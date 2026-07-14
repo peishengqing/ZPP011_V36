@@ -1905,6 +1905,25 @@ class MainWindow(QMainWindow):
     # -----------------------------------------------------------
     # 净偏差
     # -----------------------------------------------------------
+    def _sync_alt_pairs_for_full_report(self):
+        """重算净偏差后，把当前替代料配对同步给完整报告并失效旧缓存，
+        保证「加料 → 刷新净偏差 → 导出完整报告」三者一致。
+
+        背景：完整报告导出(_export_full_analysis_inline)优先复制上次分析生成的缓存，
+        或重跑分析时使用 analysis_params['alt_pairs']（上次「分析」快照）。
+        仅改内存 df 不会更新这两者，导致新增的替代料不进完整报告。"""
+        # 1. 同步最新配对到完整报告所用分析参数（导出读取的就是它）
+        if isinstance(self._analysis_params, dict):
+            self._analysis_params['alt_pairs'] = list(self.alt_controller.get_pairs())
+        # 2. 失效完整报告缓存（否则下次导出直接复制不含新料的旧缓存）
+        cp = getattr(self, '_full_analysis_cache_path', None)
+        if cp and os.path.exists(cp):
+            try:
+                os.remove(cp)
+            except OSError:
+                pass
+        self._full_analysis_cache_path = None
+
     def _recalculate_net_offset(self, silent=False):
         df = self.view_model.df
         if df is None or df.empty:
@@ -1925,6 +1944,7 @@ class MainWindow(QMainWindow):
                 self._apply_column_visibility_by_name()
                 self.proxy_model.invalidate()
             self._on_view_model_data_changed()
+            self._sync_alt_pairs_for_full_report()
             if not silent:
                 self.statusBar().showMessage("净偏差已重置为原始值", 2000)
             return
@@ -1936,6 +1956,7 @@ class MainWindow(QMainWindow):
                 self._apply_column_visibility_by_name()
                 self.proxy_model.invalidate()
             self._on_view_model_data_changed()
+            self._sync_alt_pairs_for_full_report()
             if not silent:
                 self.statusBar().showMessage("净偏差已重新计算", 2000)
         except Exception as e:
