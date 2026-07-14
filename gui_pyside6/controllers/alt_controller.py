@@ -209,30 +209,51 @@ class AltController(QObject):
         table.setEditTriggers(QTableWidget.NoEditTriggers)
         table.setSelectionBehavior(QTableWidget.SelectRows)
         table.setContextMenuPolicy(Qt.CustomContextMenu)
-        table.setSortingEnabled(True)
+        # 关闭排序：放大窗口按工厂分组显示，标题行参与排序会错位
+        table.setSortingEnabled(False)
         # 确保缩放窗口有滚动条
         table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
 
-        # 刷新表格内容的函数
+        # 刷新表格内容：按工厂分组，每组一个标题行 + 该工厂配对
         def refresh_zoom_table():
             table.setRowCount(0)
+            groups = {}
+            order = []
             for idx, (a, b) in enumerate(self.alt_pairs):
-                a_display, a_tip = self.format_material_short(a)
-                b_display, b_tip = self.format_material_short(b)
-                row = table.rowCount()
-                table.insertRow(row)
-                item_a = QTableWidgetItem(a_display)
-                item_a.setToolTip(a_tip)
-                item_a.setData(Qt.UserRole, idx)
-                table.setItem(row, 0, item_a)
-                arrow_item = QTableWidgetItem(" ↔ ")
-                arrow_item.setFlags(Qt.NoItemFlags)
-                table.setItem(row, 1, arrow_item)
-                item_b = QTableWidgetItem(b_display)
-                item_b.setToolTip(b_tip)
-                item_b.setData(Qt.UserRole, idx)
-                table.setItem(row, 2, item_b)
+                factory = a[0] if isinstance(a, (list, tuple)) and len(a) > 0 else ''
+                if factory not in groups:
+                    groups[factory] = []
+                    order.append(factory)
+                groups[factory].append((idx, a, b))
+            for factory in order:
+                items = groups[factory]
+                # 分组标题行（跨 3 列，UserRole=-1 标记为标题）
+                r = table.rowCount()
+                table.insertRow(r)
+                title = QTableWidgetItem("工厂 %s（%d 对）" % (factory or "未知", len(items)))
+                title.setFlags(Qt.NoItemFlags)
+                title.setData(Qt.UserRole, -1)
+                title.setBackground(QColor(70, 70, 72))
+                title.setForeground(QColor(255, 255, 255))
+                table.setItem(r, 0, title)
+                table.setSpan(r, 0, 1, 3)
+                for idx, a, b in items:
+                    a_display, a_tip = self.format_material_short(a)
+                    b_display, b_tip = self.format_material_short(b)
+                    row = table.rowCount()
+                    table.insertRow(row)
+                    item_a = QTableWidgetItem(a_display)
+                    item_a.setToolTip(a_tip)
+                    item_a.setData(Qt.UserRole, idx)
+                    table.setItem(row, 0, item_a)
+                    arrow_item = QTableWidgetItem(" ↔ ")
+                    arrow_item.setFlags(Qt.NoItemFlags)
+                    table.setItem(row, 1, arrow_item)
+                    item_b = QTableWidgetItem(b_display)
+                    item_b.setToolTip(b_tip)
+                    item_b.setData(Qt.UserRole, idx)
+                    table.setItem(row, 2, item_b)
             table.resizeColumnsToContents()
             table.setColumnWidth(0, max(80, table.columnWidth(0)))
             table.setColumnWidth(2, max(80, table.columnWidth(2)))
@@ -248,6 +269,8 @@ class AltController(QObject):
                 for c in range(3):
                     it = table.item(r, c)
                     if it:
+                        if it.data(Qt.UserRole) == -1:
+                            continue  # 标题行背景保持不变
                         it.setBackground(Qt.transparent)
 
         def do_search():
@@ -262,7 +285,7 @@ class AltController(QObject):
                 if not a_item:
                     continue
                 orig = a_item.data(Qt.UserRole)
-                if orig is None or orig >= len(self.alt_pairs):
+                if orig is None or orig < 0 or orig >= len(self.alt_pairs):
                     continue
                 a, b = self.alt_pairs[orig]
                 code_a = a[1] if isinstance(a, (list, tuple)) and len(a) > 1 else ''
@@ -312,7 +335,7 @@ class AltController(QObject):
             if not idx_item:
                 return
             pair_idx = idx_item.data(Qt.UserRole)
-            if pair_idx is None or pair_idx >= len(self.alt_pairs):
+            if pair_idx is None or pair_idx < 0 or pair_idx >= len(self.alt_pairs):
                 return
             menu = QMenu()
             delete_action = menu.addAction("删除此配对")
