@@ -756,6 +756,7 @@ class MainWindow(QMainWindow):
         self._analysis_start_ts = time.perf_counter()
         self._current_step = "准备中"
         self.main_table.reset_step_icons()
+        self.main_table.set_progress_visible(True)  # 分析开始自动展开进度面板
         self.timer_lbl.setText("⏱ 00:00")
         if self._countdown_timer is None:
             self._countdown_timer = QTimer(self)

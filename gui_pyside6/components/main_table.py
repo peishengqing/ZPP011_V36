@@ -90,14 +90,38 @@ class MainTableComponent:
         self._create_widgets()
 
     def _create_widgets(self):
-        # 分析进度
-        self.progress_group = QGroupBox("⚡ 分析进度")
+        # 分析进度（可折叠：标题栏 + 内容容器）
+        self.progress_group = QWidget()
         self.progress_group.setObjectName("statsGroup")
-        self.progress_group.setMinimumHeight(150)
+        self.progress_group.setMinimumHeight(34)
         self.progress_group.setMaximumHeight(170)
-        progress_layout = QVBoxLayout(self.progress_group)
+        self._progress_hidden = False
+
+        # 标题栏
+        progress_title_layout = QHBoxLayout()
+        progress_title_layout.setContentsMargins(8, 4, 8, 4)
+        progress_title = QLabel("⚡ 分析进度")
+        progress_title.setProperty("class", "statsCardTitle")
+        progress_title_layout.addWidget(progress_title)
+        progress_title_layout.addStretch()
+
+        self.progress_toggle_btn = QToolButton(self.progress_group)
+        self.progress_toggle_btn.setCheckable(True)
+        self.progress_toggle_btn.setChecked(True)
+        self.progress_toggle_btn.setText("隐藏")
+        self.progress_toggle_btn.setToolTip("隐藏分析进度")
+        self.progress_toggle_btn.setStyleSheet(
+            "QToolButton { border: none; color: #666; font-size: 12px; padding: 2px 6px; }\n"
+            "QToolButton:hover { color: #333; background: #eee; }")
+        self.progress_toggle_btn.toggled.connect(self._toggle_progress)
+        progress_title_layout.addWidget(self.progress_toggle_btn)
+
+        # 内容容器（可隐藏）
+        self.progress_content = QWidget()
+        self.progress_content.setObjectName("progressContent")
+        progress_layout = QVBoxLayout(self.progress_content)
         progress_layout.setSpacing(8)
-        progress_layout.setContentsMargins(8, 12, 8, 8)
+        progress_layout.setContentsMargins(8, 4, 8, 8)
 
         # 步骤图标行（v31 经典：一排图标，当前步骤高亮）
         self.step_icons = []
@@ -157,6 +181,13 @@ class MainTableComponent:
         self.progress_bar = QProgressBar()
         self.progress_bar.setObjectName("progressBar")
         progress_layout.addWidget(self.progress_bar)
+
+        # 组装进度面板
+        progress_main = QVBoxLayout(self.progress_group)
+        progress_main.setContentsMargins(0, 0, 0, 0)
+        progress_main.setSpacing(0)
+        progress_main.addLayout(progress_title_layout)
+        progress_main.addWidget(self.progress_content)
 
 
         # 表格
@@ -246,6 +277,24 @@ class MainTableComponent:
 
         self.audit_widget = QWidget()
         self.audit_widget.setLayout(audit_layout)
+
+    # ------------------------------------------------------------------ #
+    # 分析进度面板折叠
+    # ------------------------------------------------------------------ #
+    def _toggle_progress(self, visible):
+        """标题栏折叠按钮：折叠/展开分析进度内容区"""
+        self._progress_hidden = not visible
+        self.progress_content.setVisible(visible)
+        self.progress_toggle_btn.setText("隐藏" if visible else "显示")
+        self.progress_toggle_btn.setToolTip("隐藏分析进度" if visible else "显示分析进度")
+
+    def set_progress_visible(self, visible: bool):
+        """外部（如开始分析时）强制展开/折叠进度面板，并同步按钮状态"""
+        self._progress_hidden = not visible
+        self.progress_content.setVisible(visible)
+        self.progress_toggle_btn.setChecked(visible)
+        self.progress_toggle_btn.setText("隐藏" if visible else "显示")
+        self.progress_toggle_btn.setToolTip("隐藏分析进度" if visible else "显示分析进度")
 
     # ------------------------------------------------------------------ #
     # 分析进度步骤图标
