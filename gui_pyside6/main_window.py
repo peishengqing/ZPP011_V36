@@ -666,10 +666,22 @@ class MainWindow(QMainWindow):
 
         def _mark_all_read():
             try:
-                df = self.source_model.getDataFrame() if self.source_model else None
+                df = None
+                if self.source_model:
+                    df = self.source_model.getDataFrame()
+                # 兜底：source_model 为空时改用 view_model.df（分析结果）
                 if df is None or df.empty:
-                    QMessageBox.warning(dlg, "提示", "主表数据为空，无法标记已读。")
-                    return
+                    df = getattr(self.view_model, 'df', None)
+                    if df is not None and not df.empty:
+                        self.log("source_model 为空，使用 view_model.df 作为已读快照", "warning")
+                # 仍空：用变动记录里的 data_id 构造最小 DataFrame，保证能标记为已读
+                if df is None or df.empty:
+                    data_ids = list(dict.fromkeys([str(c.get('data_id', '')) for c in changes if c.get('data_id')]))
+                    if not data_ids:
+                        QMessageBox.warning(dlg, "提示", "变动记录无有效 data_id，无法标记已读。")
+                        return
+                    df = pd.DataFrame({'data_id': data_ids})
+                    self.log("主表数据为空，以最小 data_id 列标记变动已读（不保存当前值快照）", "warning")
                 n = self.data_service.mark_changes_as_read(changes, df)
                 if n > 0:
                     toast(f"已把 {n} 条记录标记为已读，下次不再提醒", parent=dlg)
