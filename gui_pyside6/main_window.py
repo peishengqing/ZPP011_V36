@@ -865,7 +865,8 @@ class MainWindow(QMainWindow):
     def _on_analysis_error_ui(self, error_msg):
         self._stop_countdown()
         self.progress_bar.setVisible(False)
-        self.progress_label.setText("❌ 错误")
+        self.progress_label.setText("❌ 错误（可重试）")
+        self.start_btn.setEnabled(True)
         self.main_table.reset_step_icons()
         QMessageBox.critical(self, "错误", error_msg)
 
