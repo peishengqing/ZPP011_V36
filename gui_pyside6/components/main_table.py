@@ -139,6 +139,13 @@ class MainTableComponent:
             step_row.addWidget(btn)
         step_row.addStretch()
 
+        # 分析进度状态文字（与图标同一行，放在图标与计时器之间）
+        self.progress_label = QLabel("就绪")
+        self.progress_label.setObjectName("progressLabel")
+        self.progress_label.setStyleSheet("color: #888780; font-size: 12px; font-weight: bold; padding-left: 8px;")
+        self.progress_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        step_row.addWidget(self.progress_label)
+
         # 计时器放在步骤图标同一行右侧
         self.timer_lbl = QLabel("⏱ 00:00")
         self.timer_lbl.setObjectName("timerLabel")
@@ -149,11 +156,8 @@ class MainTableComponent:
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setObjectName("progressBar")
-        self.progress_label = QLabel("就绪")
-        self.progress_label.setObjectName("progressLabel")
-        self.progress_label.setAlignment(Qt.AlignCenter)
         progress_layout.addWidget(self.progress_bar)
-        progress_layout.addWidget(self.progress_label)
+
 
         # 表格
         self.table_view = QTableView()
