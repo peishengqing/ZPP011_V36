@@ -89,6 +89,13 @@ class MenuBarComponent:
         alt_action.triggered.connect(self.mw._toggle_alt_panel)
         tools_menu.addAction(alt_action)
 
+        tools_menu.addSeparator()
+        monitor_action = QAction("监控文件夹自动加载", self.mw)
+        monitor_action.setCheckable(True)
+        monitor_action.setObjectName("monitor_action")
+        monitor_action.triggered.connect(self.mw._toggle_folder_monitor)
+        tools_menu.addAction(monitor_action)
+
         # 历史菜单
         history_menu = menubar.addMenu("历史")
         compare_action = QAction("历史对比", self.mw)

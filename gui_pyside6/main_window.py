@@ -124,6 +124,15 @@ class MainWindow(QMainWindow):
         self.bottom_bar = BottomBarComponent(self)
         self.filter_panel = FilterPanel(self)
 
+        # 文件夹监控自动加载（SAP 导出半自动：监控目录有新 Excel 则自动加载）
+        self._monitor_dir = r"E:\ZPP011导出文件原数据"
+        self._monitor_enabled = False
+        self._monitor_timer = QTimer(self)
+        self._monitor_timer.setInterval(2000)  # 每 2 秒扫描一次
+        self._monitor_timer.timeout.connect(self._scan_monitor_dir)
+        self._monitor_last_size = {}   # path -> 上次文件大小（用于判定文件写完）
+        self._monitor_loaded = set()   # (path, mtime, size) 已自动加载的文件指纹
+
         # UI 引用（必须在 _setup_connections 之前赋值）
         self.left_panel = self.left_panel_component.left_panel
         self.filter_panel = self.filter_panel  # Already created above
@@ -1130,6 +1139,70 @@ class MainWindow(QMainWindow):
             os.startfile(dir_path)
         else:
             QMessageBox.warning(self, "提示", "输出目录不存在")
+
+    # -----------------------------------------------------------
+    # 文件夹监控自动加载
+    # -----------------------------------------------------------
+    def _toggle_folder_monitor(self, checked):
+        """工具栏/菜单开关：监控 E:\ZPP011导出文件原数据 目录，发现新 Excel 自动加载。"""
+        self._monitor_enabled = checked
+        if checked:
+            # 开始监控：重置稳定性缓存，保留已加载指纹（同名文件重新导出仍可识别）
+            self._monitor_last_size = {}
+            if not os.path.isdir(self._monitor_dir):
+                toast(f"⚠️ 监控目录不存在：{self._monitor_dir}", "warning", parent=self)
+            else:
+                toast(f"👁 已开始监控文件夹：{self._monitor_dir}", "info", parent=self)
+            self._monitor_timer.start()
+        else:
+            self._monitor_timer.stop()
+            toast("⏹ 已停止监控文件夹", "info", parent=self)
+
+    def _scan_monitor_dir(self):
+        if not self._monitor_enabled:
+            return
+        d = self._monitor_dir
+        if not os.path.isdir(d):
+            return
+        try:
+            files = [os.path.join(d, f) for f in os.listdir(d)
+                     if f.lower().endswith((".xlsx", ".xls"))]
+        except Exception:
+            return
+        for fp in files:
+            try:
+                st = os.stat(fp)
+            except Exception:
+                continue
+            # 稳定性判定：与上次的 size 比较，连续两次相同且 >0 视为写完，避免读半截文件
+            prev = self._monitor_last_size.get(fp)
+            if prev is None:
+                self._monitor_last_size[fp] = st.st_size
+                continue
+            if prev != st.st_size:
+                self._monitor_last_size[fp] = st.st_size
+                continue
+            key = (fp, int(st.st_mtime), st.st_size)
+            if key in self._monitor_loaded:
+                continue
+            # 新稳定文件 -> 自动加载
+            self._monitor_loaded.add(key)
+            self._auto_load_from_monitor(fp)
+
+    def _auto_load_from_monitor(self, fp):
+        """监控到新文件：写入当前输入文件并触发分析加载（复用主流程）。"""
+        # 若分析正在后台跑，稍后重试（避免被 _start_analysis 的"已在运行"拦截）
+        if self.analysis_controller.worker and self.analysis_controller.worker.isRunning():
+            # 延迟 3 秒再试一次
+            QTimer.singleShot(3000, lambda: self._auto_load_from_monitor(fp))
+            return
+        self.current_input_file = fp
+        if hasattr(self, "input_file_edit") and self.input_file_edit:
+            self.input_file_edit.setText(os.path.basename(fp))
+            self.input_file_edit.setToolTip(fp)
+        toast(f"📥 监控到新文件，自动加载：{os.path.basename(fp)}", "info", parent=self)
+        self._start_analysis()
+
 
     # -----------------------------------------------------------
     # 替代料配对
