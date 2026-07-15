@@ -133,6 +133,13 @@ def do_analysis_v2(
         report_progress(1, "错误：文件不存在", 0)
         raise FileNotFoundError(error_msg)
     
+    # 拒绝 Excel 临时锁文件（~$ 开头），避免误把锁文件当成数据源
+    if os.path.basename(src_file).startswith("~$"):
+        error_msg = f"该文件是 Excel 临时锁文件，无法分析: {src_file}（请关闭 Excel 中对应的文件后重新选择）"
+        _dprint(f"❌ {error_msg}")
+        report_progress(1, "错误：Excel 临时锁文件", 0)
+        raise PermissionError(error_msg)
+
     # 检查文件是否被占用
     try:
         with open(src_file, 'r+b'):

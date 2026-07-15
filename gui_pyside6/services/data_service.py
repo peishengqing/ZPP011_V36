@@ -339,6 +339,8 @@ class DataService(QObject):
         except Exception as e:
             self.log(f"批量标记已读失败: {e}", "error")
             return 0
+
+    def _restore_audit_results(self, df: pd.DataFrame) -> pd.DataFrame:
         """从 DB 恢复审核结果（审核结果、AI建议、备注来源）"""
         try:
             data_ids = df['data_id'].tolist()

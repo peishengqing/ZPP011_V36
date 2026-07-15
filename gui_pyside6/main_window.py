@@ -1181,7 +1181,7 @@ class MainWindow(QMainWindow):
             return
         try:
             files = [os.path.join(d, f) for f in os.listdir(d)
-                     if f.lower().endswith((".xlsx", ".xls"))]
+                     if f.lower().endswith((".xlsx", ".xls")) and not os.path.basename(f).startswith("~$")]
         except Exception:
             return
         if not files:
@@ -1208,7 +1208,7 @@ class MainWindow(QMainWindow):
             return
         try:
             files = [os.path.join(d, f) for f in os.listdir(d)
-                     if f.lower().endswith((".xlsx", ".xls"))]
+                     if f.lower().endswith((".xlsx", ".xls")) and not os.path.basename(f).startswith("~$")]
         except Exception:
             return
         if not files:
