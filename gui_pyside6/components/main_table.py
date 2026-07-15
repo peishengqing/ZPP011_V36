@@ -138,6 +138,13 @@ class MainTableComponent:
             self.step_icons.append(btn)
             step_row.addWidget(btn)
         step_row.addStretch()
+
+        # 计时器放在步骤图标同一行右侧
+        self.timer_lbl = QLabel("⏱ 00:00")
+        self.timer_lbl.setObjectName("timerLabel")
+        self.timer_lbl.setStyleSheet("color: #888780; font-family: Consolas; font-size: 12px; font-weight: bold;")
+        step_row.addWidget(self.timer_lbl)
+
         progress_layout.addLayout(step_row)
 
         self.progress_bar = QProgressBar()
@@ -147,54 +154,6 @@ class MainTableComponent:
         self.progress_label.setAlignment(Qt.AlignCenter)
         progress_layout.addWidget(self.progress_bar)
         progress_layout.addWidget(self.progress_label)
-
-        # 操作按钮（v31 风格：彩色图标按钮 + 右侧计时器）
-        self.action_group = QGroupBox("")
-        self.action_group.setObjectName("actionGroup")
-        self.action_group.setMinimumHeight(42)
-        self.action_group.setMaximumHeight(52)
-        action_layout = QHBoxLayout(self.action_group)
-        action_layout.setContentsMargins(4, 4, 4, 4)
-        action_layout.setSpacing(6)
-
-        btn_common = "border: none; border-radius: 4px; padding: 5px 10px; font-family: 'Microsoft YaHei'; font-size: 12px; font-weight: bold;"
-
-        self.start_btn = QPushButton("▶  开始分析")
-        self.start_btn.setObjectName("startBtn")
-        self.start_btn.setStyleSheet(f"QPushButton {{ background-color: #1f6feb; color: white; {btn_common} }} QPushButton:hover {{ background-color: #388bfd; }} QPushButton:disabled {{ background-color: #555; }}")
-        self.cancel_btn = QPushButton("⏹ 取消")
-        self.cancel_btn.setObjectName("cancelBtn")
-        self.cancel_btn.setStyleSheet(f"QPushButton {{ background-color: #d29922; color: white; {btn_common} }} QPushButton:hover {{ background-color: #e3b341; }} QPushButton:disabled {{ background-color: #555; }}")
-        self.open_dir_btn = QPushButton("📂 打开目录")
-        self.open_dir_btn.setObjectName("openDirBtn")
-        self.open_dir_btn.setStyleSheet(f"QPushButton {{ background-color: #6e7781; color: white; {btn_common} }} QPushButton:hover {{ background-color: #8c959f; }}")
-        self.ppt_btn = QPushButton("📊 生成PPT")
-        self.ppt_btn.setObjectName("pptBtn")
-        self.ppt_btn.setStyleSheet(f"QPushButton {{ background-color: #6f42c1; color: white; {btn_common} }} QPushButton:hover {{ background-color: #8957e5; }}")
-        self.excel_btn = QPushButton("📋 导出Excel")
-        self.excel_btn.setObjectName("excelBtn")
-        self.excel_btn.setStyleSheet(f"QPushButton {{ background-color: #2a9d8f; color: white; {btn_common} }} QPushButton:hover {{ background-color: #3dbbae; }}")
-        self.export_full_btn = QPushButton("📦 完整Excel")
-        self.export_full_btn.setObjectName("exportFullBtn")
-        self.export_full_btn.setStyleSheet(f"QPushButton {{ background-color: #238636; color: white; {btn_common} }} QPushButton:hover {{ background-color: #2ea043; }}")
-        self.refresh_net_btn = QPushButton("🔄 重算")
-        self.refresh_net_btn.setObjectName("refreshNetBtn")
-        self.refresh_net_btn.setStyleSheet(f"QPushButton {{ background-color: #8957e5; color: white; {btn_common} }} QPushButton:hover {{ background-color: #a371f7; }}")
-
-        # 计时器
-        self.timer_lbl = QLabel("⏱ 00:00")
-        self.timer_lbl.setObjectName("timerLabel")
-        self.timer_lbl.setStyleSheet("color: #888780; font-family: Consolas; font-size: 12px; font-weight: bold;")
-
-        action_layout.addWidget(self.start_btn)
-        action_layout.addWidget(self.cancel_btn)
-        action_layout.addWidget(self.open_dir_btn)
-        action_layout.addWidget(self.ppt_btn)
-        action_layout.addWidget(self.excel_btn)
-        action_layout.addWidget(self.export_full_btn)
-        action_layout.addWidget(self.refresh_net_btn)
-        action_layout.addStretch()
-        action_layout.addWidget(self.timer_lbl)
 
         # 表格
         self.table_view = QTableView()

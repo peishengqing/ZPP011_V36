@@ -152,8 +152,8 @@ class MainWindow(QMainWindow):
         self.summary_actual = self.main_table.summary_actual
         self.summary_amount = self.main_table.summary_amount
         self.summary_qty = self.main_table.summary_qty
-        self.start_btn = self.main_table.start_btn
-        self.cancel_btn = self.main_table.cancel_btn
+        self.start_btn = self.action_btn_analyze   # 使用顶部工具栏分析按钮
+        # self.cancel_btn = self.main_table.cancel_btn  # 底部操作按钮已删除
         self.lock_btn = self.main_table.lock_btn
         self.fullscreen_btn = self.main_table.fullscreen_btn
         self.unit_summary_btn = self.main_table.unit_summary_btn
@@ -355,7 +355,6 @@ class MainWindow(QMainWindow):
         # v31 风格面板：分析进度（步骤图标 + 进度条）+ 彩色操作按钮（含 ⏱ 计时器）
         # 挂在表格下方、合计栏上方，还原 v31「底部分析进度面板」布局
         right_layout.addWidget(self.main_table.progress_group)   # ⚡ 分析进度
-        right_layout.addWidget(self.main_table.action_group)     # 彩色操作按钮 + 计时器
 
         # 组合：分割器(stretch) + 合计栏(固定在底部，不被挤出)
         right_layout.addWidget(self._v_splitter, 1)
@@ -390,25 +389,6 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(status_bar)
 
     def _setup_connections(self):
-        self.main_table.start_btn.clicked.connect(self._start_analysis)
-        self.main_table.cancel_btn.clicked.connect(self._cancel_analysis)
-        self.main_table.open_dir_btn.clicked.connect(self._open_output_dir)
-        self.main_table.ppt_btn.clicked.connect(
-            lambda: self.export_controller.generate_simple_ppt(
-                self.view_model.df,
-                self.analysis_output_path,
-                self.output_dir_edit.text().strip(),
-                self,
-                self.log,
-            )
-        )
-        self.main_table.excel_btn.clicked.connect(
-            lambda: self.export_controller.export_current_table(
-                self.view_model.df, self
-            )
-        )
-        self.main_table.export_full_btn.clicked.connect(self._on_export_full_excel)
-        self.main_table.refresh_net_btn.clicked.connect(self._recalculate_net_offset)
         self.main_table.table_view.doubleClicked.connect(self._on_cell_double_clicked)
         self._install_table_copy_handler()
 
