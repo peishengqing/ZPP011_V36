@@ -93,16 +93,17 @@ class MainTableComponent:
         # 分析进度
         self.progress_group = QGroupBox("⚡ 分析进度")
         self.progress_group.setObjectName("statsGroup")
-        self.progress_group.setMinimumHeight(110)
-        self.progress_group.setMaximumHeight(130)
+        self.progress_group.setMinimumHeight(165)
+        self.progress_group.setMaximumHeight(200)
         progress_layout = QVBoxLayout(self.progress_group)
-        progress_layout.setSpacing(6)
+        progress_layout.setSpacing(8)
+        progress_layout.setContentsMargins(8, 12, 8, 8)
 
         # 步骤图标行（v31 经典：一排图标，当前步骤高亮）
         self.step_icons = []
         step_row = QHBoxLayout()
-        step_row.setSpacing(4)
-        step_row.setContentsMargins(0, 0, 0, 0)
+        step_row.setSpacing(6)
+        step_row.setContentsMargins(0, 4, 0, 4)
         for idx, (name, icon) in enumerate(ANALYSIS_STEPS):
             btn = QToolButton()
             btn.setText(icon)
