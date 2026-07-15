@@ -13,6 +13,8 @@ from PySide6.QtCore import Signal, Qt, QDate, QEvent
 from PySide6.QtGui import QColor, QPixmap, QIcon
 from datetime import datetime
 import pandas as pd
+import json
+import os
 
 
 def _color_icon(rgb):
@@ -118,8 +120,10 @@ class FilterPanel(QWidget):
         self.material_name_edit.setEditable(True)
         self.material_name_edit.addItem("全部")
         self.material_name_edit.setCurrentText("")
-        self.material_name_edit.lineEdit().setPlaceholderText("输入名称，逗号分隔多选")
+        self.material_name_edit.lineEdit().setPlaceholderText("输入名称(逗号分隔多选)；下拉项在 config/material_name_presets.json 自定义")
         self.material_name_edit.setInsertPolicy(QComboBox.NoInsert)
+        # 下拉项由用户自定义维护（不自动灌入数据名称），见 _load_material_presets
+        self._material_presets = self._load_material_presets()
         material_layout.addRow("物料类型:", self.category_combo)
         material_layout.addRow("替代料:", self.alt_combo)
         material_layout.addRow("订单类型:", self.order_type_combo)
@@ -246,6 +250,8 @@ class FilterPanel(QWidget):
         self.material_name_edit.currentTextChanged.connect(self._emit_filter)
         self.material_name_edit.lineEdit().editingFinished.connect(self._emit_filter)
         self.material_name_edit.lineEdit().returnPressed.connect(self._emit_filter)
+        # 手输一个值并确认后，自动收进用户自定义下拉项（永久保留）
+        self.material_name_edit.lineEdit().editingFinished.connect(self._remember_material_preset)
         self.zero_qty_combo.currentIndexChanged.connect(self._emit_filter)
         self.remark_search_edit.textChanged.connect(self._emit_filter)
         self.remark_search_edit.editingFinished.connect(self._emit_filter)
@@ -466,24 +472,53 @@ class FilterPanel(QWidget):
             combo.clear()
             combo.addItem("全部")
 
+    def _preset_path(self):
+        """用户自定义物料名称下拉项配置文件路径（项目 config 目录）"""
+        return os.path.normpath(os.path.join(
+            os.path.dirname(__file__), "..", "..", "config", "material_name_presets.json"))
+
+    def _load_material_presets(self):
+        """读取用户自定义的物料名称下拉项；文件不存在或损坏则返回空列表。"""
+        try:
+            with open(self._preset_path(), "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                return [str(x).strip() for x in data if str(x).strip()]
+        except Exception:
+            pass
+        return []
+
+    def _save_material_presets(self):
+        """将用户自定义物料名称下拉项写回配置文件。"""
+        try:
+            p = self._preset_path()
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(self._material_presets, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _remember_material_preset(self):
+        """用户在框里手输并确认一个值时，自动收进下拉项（永久保留，方便下次直接选）。"""
+        text = self.material_name_edit.currentText().strip()
+        # 只收藏单个值：含逗号分隔的不收（那是一次性多选），已存在的跳过
+        if not text or (',' in text) or ('，' in text) or (text in self._material_presets):
+            return
+        self._material_presets.append(text)
+        self._save_material_presets()
+        # 刷新下拉项，保留当前输入文本（屏蔽信号避免额外触发筛选）
+        self.material_name_edit.blockSignals(True)
+        self._update_material_name_combo()
+        self.material_name_edit.blockSignals(False)
+
     def _update_material_name_combo(self):
-        """物料名称下拉：保留可编辑特性，用数据中不重复名称填充下拉选项（限制最多 300 个，避免过长）。"""
-        col_name = self._col_map.get('物料名称')
+        """物料名称下拉项来自用户自定义预设，不自动灌入数据中的名称（避免下拉过长难找）。"""
         current_text = self.material_name_edit.currentText()
-        if col_name and self._data is not None and col_name in self._data.columns:
-            values = self._data[col_name].dropna().astype(str)
-            values = values[values != '']
-            # 按出现频率降序，取前 300 个最常见物料名称，兼顾下拉速度与常用性
-            freq = values.value_counts()
-            top_values = freq.head(300).index.tolist()
-            self.material_name_edit.clear()
-            self.material_name_edit.addItem("全部")
-            self.material_name_edit.addItems(top_values)
-            self.material_name_edit.setCurrentText(current_text)
-        else:
-            self.material_name_edit.clear()
-            self.material_name_edit.addItem("全部")
-            self.material_name_edit.setCurrentText(current_text)
+        self.material_name_edit.clear()
+        self.material_name_edit.addItem("全部")
+        for name in self._material_presets:
+            self.material_name_edit.addItem(name)
+        self.material_name_edit.setCurrentText(current_text)
 
     def _reset_date_range(self):
         """将日期控件重置为数据的最小/最大日期"""
