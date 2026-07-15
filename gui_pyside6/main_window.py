@@ -143,6 +143,7 @@ class MainWindow(QMainWindow):
         # 标题栏是子控件，不是顶层窗口，不需要 setWindowFlags
         self.progress_bar = self.main_table.progress_bar
         self.progress_label = self.main_table.progress_label
+        self.timer_lbl = self.main_table.timer_lbl
         # 无统计卡片相关变量
         # self.stat_total = ... 已删除
         # self.stat_high = ... 已删除
@@ -766,6 +767,8 @@ class MainWindow(QMainWindow):
         self.start_btn.setEnabled(False)
         self._countdown_seconds = 0
         self._current_step = "准备中"
+        self.main_table.reset_step_icons()
+        self.timer_lbl.setText("⏱ 00:00")
         if self._countdown_timer is None:
             self._countdown_timer = QTimer(self)
             self._countdown_timer.timeout.connect(self._update_countdown)
@@ -774,18 +777,22 @@ class MainWindow(QMainWindow):
     def _on_analysis_progress_ui(self, percent, step_name):
         self.progress_bar.setValue(percent)
         self._current_step = step_name
+        self.main_table.update_step_icons(percent, step_name)
         m, s = divmod(self._countdown_seconds, 60)
-        self.progress_label.setText(f"{step_name} {percent}% | ⏱ {m:02d}:{s:02d}")
+        self.timer_lbl.setText(f"⏱ {m:02d}:{s:02d}")
+        self.progress_label.setText(f"{step_name}  {percent}%")
 
     def _on_analysis_finished_ui(self, df):
         if self.loading_dialog:
             self.loading_dialog.accept()
             self.loading_dialog = None
         self._stop_countdown()
+        self.progress_bar.setValue(100)
+        self.main_table.complete_step_icons()
         self.progress_bar.setVisible(False)
         self.start_btn.setEnabled(True)
         elapsed = self._format_elapsed()
-        self.progress_label.setText(f"完成 ({elapsed})")
+        self.progress_label.setText(f"✅ 完成 ({elapsed})")
         toast(f"✅ 分析完成，共 {len(df)} 条记录 ({elapsed})", "success", parent=self)
         self.statusBar().showMessage("分析完成，正在加载结果...")
 
@@ -877,7 +884,8 @@ class MainWindow(QMainWindow):
             self.loading_dialog = None
         self._stop_countdown()
         self.progress_bar.setVisible(False)
-        self.progress_label.setText("错误")
+        self.progress_label.setText("❌ 错误")
+        self.main_table.reset_step_icons()
         QMessageBox.critical(self, "错误", error_msg)
 
     def _on_ai_ui_start(self):
@@ -885,6 +893,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(True)
         self._countdown_seconds = 0
         self._current_step = "AI审核"
+        self.timer_lbl.setText("⏱ 00:00")
         if not hasattr(self, "_countdown_timer"):
             self._countdown_timer = QTimer(self)
             self._countdown_timer.timeout.connect(self._update_countdown)
@@ -894,7 +903,8 @@ class MainWindow(QMainWindow):
         percent = int(current / total * 100) if total else 0
         self.progress_bar.setValue(percent)
         m, s = divmod(self._countdown_seconds, 60)
-        self.progress_label.setText(f"AI审核: {current}/{total} | ⏱ {m:02d}:{s:02d}")
+        self.timer_lbl.setText(f"⏱ {m:02d}:{s:02d}")
+        self.progress_label.setText(f"AI审核: {current}/{total}")
 
     def _on_ai_finished_ui(self, updated_df):
         if self.loading_dialog:
@@ -903,7 +913,7 @@ class MainWindow(QMainWindow):
         self._stop_countdown()
         self.progress_bar.setVisible(False)
         elapsed = self._format_elapsed()
-        self.progress_label.setText(f"AI审核完成 ({elapsed})")
+        self.progress_label.setText(f"✅ AI审核完成 ({elapsed})")
         toast(f"✅ AI审核完成 ({elapsed})", "success", parent=self)
 
         if "AI建议" in updated_df.columns:
@@ -2380,7 +2390,7 @@ class MainWindow(QMainWindow):
     def _update_countdown(self):
         self._countdown_seconds += 1
         m, s = divmod(self._countdown_seconds, 60)
-        self.progress_label.setText(f"{self._current_step} | ⏱ {m:02d}:{s:02d}")
+        self.timer_lbl.setText(f"⏱ {m:02d}:{s:02d}")
 
     def _stop_countdown(self):
         if hasattr(self, "_countdown_timer") and self._countdown_timer is not None:

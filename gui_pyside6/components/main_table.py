@@ -3,9 +3,25 @@
 from PySide6.QtWidgets import (
     QGroupBox, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QProgressBar, QTableView, QHeaderView,
-    QWidget, QSizePolicy,
+    QWidget, QSizePolicy, QToolButton,
 )
 from PySide6.QtCore import Qt
+
+# 分析进度步骤图标（沿用 v31 经典布局：一排图标 + 进度条 + 状态文字）
+ANALYSIS_STEPS = [
+    ("预处理", "⚙"),
+    ("汇总统计", "📋"),
+    ("替代料明细", "🔄"),
+    ("无备注预警", "🚨"),
+    ("中间地带", "🖖"),
+    ("完整偏差", "📊"),
+    ("异常预警", "⚠"),
+    ("偏差金额", "💰"),
+    ("原因汇总", "📝"),
+    ("原因分析", "🔍"),
+    ("趋势分析", "📈"),
+    ("生成Excel", "💾"),
+]
 
 TABLE_STYLESHEET = """
 QTableView {
@@ -75,37 +91,95 @@ class MainTableComponent:
 
     def _create_widgets(self):
         # 分析进度
-        self.progress_group = QGroupBox("分析进度")
+        self.progress_group = QGroupBox("⚡ 分析进度")
         self.progress_group.setObjectName("statsGroup")
         progress_layout = QVBoxLayout(self.progress_group)
+        progress_layout.setSpacing(8)
+
+        # 步骤图标行（v31 经典：一排图标，当前步骤高亮）
+        self.step_icons = []
+        step_row = QHBoxLayout()
+        step_row.setSpacing(4)
+        step_row.setContentsMargins(0, 0, 0, 0)
+        for idx, (name, icon) in enumerate(ANALYSIS_STEPS):
+            btn = QToolButton()
+            btn.setText(icon)
+            btn.setToolTip(f"{idx + 1}. {name}")
+            btn.setProperty("step_idx", idx)
+            btn.setAutoRaise(True)
+            btn.setStyleSheet("""
+                QToolButton {
+                    color: #888780;
+                    background-color: #25242E;
+                    border: 1px solid #3A3847;
+                    border-radius: 4px;
+                    font-size: 14px;
+                    padding: 2px 4px;
+                    min-width: 26px;
+                    max-width: 26px;
+                    min-height: 26px;
+                    max-height: 26px;
+                }
+                QToolButton:hover { background-color: #35334A; }
+                QToolButton[active="true"] {
+                    color: #EAE8E4;
+                    background-color: #7F77DD;
+                    border-color: #7F77DD;
+                }
+                QToolButton[done="true"] {
+                    color: #7F77DD;
+                    background-color: #25242E;
+                    border-color: #7F77DD;
+                }
+            """)
+            self.step_icons.append(btn)
+            step_row.addWidget(btn)
+        step_row.addStretch()
+        progress_layout.addLayout(step_row)
+
         self.progress_bar = QProgressBar()
         self.progress_bar.setObjectName("progressBar")
         self.progress_label = QLabel("就绪")
         self.progress_label.setObjectName("progressLabel")
+        self.progress_label.setAlignment(Qt.AlignCenter)
         progress_layout.addWidget(self.progress_bar)
         progress_layout.addWidget(self.progress_label)
 
-        # 操作按钮
+        # 操作按钮（v31 风格：彩色图标按钮 + 右侧计时器）
         self.action_group = QGroupBox("")
         self.action_group.setObjectName("actionGroup")
         action_layout = QHBoxLayout(self.action_group)
         action_layout.setContentsMargins(4, 4, 4, 4)
         action_layout.setSpacing(6)
 
-        self.start_btn = QPushButton("开始分析")
+        btn_common = "border: none; border-radius: 4px; padding: 5px 10px; font-family: 'Microsoft YaHei'; font-size: 12px; font-weight: bold;"
+
+        self.start_btn = QPushButton("▶  开始分析")
         self.start_btn.setObjectName("startBtn")
-        self.cancel_btn = QPushButton("取消")
+        self.start_btn.setStyleSheet(f"QPushButton {{ background-color: #1f6feb; color: white; {btn_common} }} QPushButton:hover {{ background-color: #388bfd; }} QPushButton:disabled {{ background-color: #555; }}")
+        self.cancel_btn = QPushButton("⏹ 取消")
         self.cancel_btn.setObjectName("cancelBtn")
-        self.open_dir_btn = QPushButton("打开目录")
+        self.cancel_btn.setStyleSheet(f"QPushButton {{ background-color: #d29922; color: white; {btn_common} }} QPushButton:hover {{ background-color: #e3b341; }} QPushButton:disabled {{ background-color: #555; }}")
+        self.open_dir_btn = QPushButton("📂 打开目录")
         self.open_dir_btn.setObjectName("openDirBtn")
-        self.ppt_btn = QPushButton("生成PPT")
+        self.open_dir_btn.setStyleSheet(f"QPushButton {{ background-color: #6e7781; color: white; {btn_common} }} QPushButton:hover {{ background-color: #8c959f; }}")
+        self.ppt_btn = QPushButton("📊 生成PPT")
         self.ppt_btn.setObjectName("pptBtn")
-        self.excel_btn = QPushButton("导出Excel")
+        self.ppt_btn.setStyleSheet(f"QPushButton {{ background-color: #6f42c1; color: white; {btn_common} }} QPushButton:hover {{ background-color: #8957e5; }}")
+        self.excel_btn = QPushButton("📋 导出Excel")
         self.excel_btn.setObjectName("excelBtn")
-        self.export_full_btn = QPushButton("导出完整Excel")
+        self.excel_btn.setStyleSheet(f"QPushButton {{ background-color: #2a9d8f; color: white; {btn_common} }} QPushButton:hover {{ background-color: #3dbbae; }}")
+        self.export_full_btn = QPushButton("📦 完整Excel")
         self.export_full_btn.setObjectName("exportFullBtn")
-        self.refresh_net_btn = QPushButton("重算净偏差")
+        self.export_full_btn.setStyleSheet(f"QPushButton {{ background-color: #238636; color: white; {btn_common} }} QPushButton:hover {{ background-color: #2ea043; }}")
+        self.refresh_net_btn = QPushButton("🔄 重算")
         self.refresh_net_btn.setObjectName("refreshNetBtn")
+        self.refresh_net_btn.setStyleSheet(f"QPushButton {{ background-color: #8957e5; color: white; {btn_common} }} QPushButton:hover {{ background-color: #a371f7; }}")
+
+        # 计时器
+        self.timer_lbl = QLabel("⏱ 00:00")
+        self.timer_lbl.setObjectName("timerLabel")
+        self.timer_lbl.setStyleSheet("color: #888780; font-family: Consolas; font-size: 12px; font-weight: bold;")
 
         action_layout.addWidget(self.start_btn)
         action_layout.addWidget(self.cancel_btn)
@@ -115,6 +189,7 @@ class MainTableComponent:
         action_layout.addWidget(self.export_full_btn)
         action_layout.addWidget(self.refresh_net_btn)
         action_layout.addStretch()
+        action_layout.addWidget(self.timer_lbl)
 
         # 表格
         self.table_view = QTableView()
@@ -203,3 +278,47 @@ class MainTableComponent:
 
         self.audit_widget = QWidget()
         self.audit_widget.setLayout(audit_layout)
+
+    # ------------------------------------------------------------------ #
+    # 分析进度步骤图标
+    # ------------------------------------------------------------------ #
+    def reset_step_icons(self):
+        """分析开始前重置所有步骤图标。"""
+        for btn in self.step_icons:
+            btn.setProperty("active", False)
+            btn.setProperty("done", False)
+            self._refresh_step_btn_style(btn)
+
+    def update_step_icons(self, percent, current_step_name=""):
+        """根据进度百分比依次点亮步骤图标。"""
+        if not self.step_icons:
+            return
+        total = len(self.step_icons)
+        active_idx = min(int(percent / (100.0 / total)), total - 1)
+        for idx, btn in enumerate(self.step_icons):
+            if idx < active_idx:
+                btn.setProperty("active", False)
+                btn.setProperty("done", True)
+            elif idx == active_idx:
+                btn.setProperty("active", True)
+                btn.setProperty("done", False)
+            else:
+                btn.setProperty("active", False)
+                btn.setProperty("done", False)
+            self._refresh_step_btn_style(btn)
+
+    def complete_step_icons(self):
+        """分析完成后所有步骤图标标记为完成。"""
+        for btn in self.step_icons:
+            btn.setProperty("active", False)
+            btn.setProperty("done", True)
+            self._refresh_step_btn_style(btn)
+
+    @staticmethod
+    def _refresh_step_btn_style(btn):
+        """刷新动态属性样式。"""
+        style = btn.style()
+        if style:
+            style.unpolish(btn)
+            style.polish(btn)
+        btn.update()
