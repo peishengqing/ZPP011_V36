@@ -333,23 +333,28 @@ class MainWindow(QMainWindow):
 
         # 右侧：审核表格 + 日志面板
         right_container = QWidget()
-        # 设置触发「全局下拉滚动条」的最小高度：强制整个右侧内容高于常见窗口，
-        # 这样即使当前数据不多，右侧全局滚动条也能真正拖动。
-        right_container.setMinimumHeight(800)
         right_layout = QVBoxLayout(right_container)
         right_layout.setContentsMargins(6, 6, 6, 6)
-        right_layout.setSpacing(0)
+        right_layout.setSpacing(6)
 
-        # 垂直分割器：表格 + 日志；在全局滚动区内给一个固定高度，
-        # 使 right_container 整体高度超过视口，右侧全局滚动条才能真正拖动。
+        # 上半部分：本次分析概览 + 分析进度（用户可拖动，默认占较小空间）
+        top_panel = QWidget()
+        top_panel.setObjectName("topPanel")
+        top_layout = QVBoxLayout(top_panel)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(6)
+        top_layout.addWidget(self.stats_cards)                # 📊 本次分析概览
+        top_layout.addWidget(self.main_table.progress_group)  # ⚡ 分析进度
+        top_panel.setMaximumHeight(280)                       # 限制最大高度，不抢表格空间
+
+        # 垂直分割器：表格 + 日志；这里用 stretch 让表格区自适应窗口高度
         self._v_splitter = QSplitter(Qt.Vertical)
         self._v_splitter.setChildrenCollapsible(True)
-        self._v_splitter.setFixedHeight(400)
-        self._v_splitter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._v_splitter.addWidget(self.main_table.audit_widget)
         self._v_splitter.addWidget(self.log_group)
-        self._v_splitter.setSizes([250, 100])
-        # 分割器高度已被固定，不需要再 stretch 撑开滚动区
+        self._v_splitter.setSizes([500, 140])
+        self._v_splitter.setStretchFactor(0, 7)
+        self._v_splitter.setStretchFactor(1, 3)
         # 记录日志面板是否被用户手动展开
         self._log_user_expanded = False
         self._log_saved_sizes = [500, 140]
@@ -358,42 +363,23 @@ class MainWindow(QMainWindow):
         self._log_auto_timer.setSingleShot(True)
         self._log_auto_timer.timeout.connect(self._auto_collapse_log)
 
-        # 全局滚动区域：把「本次分析概览」+「分析进度」+「表格/日志」+「合计栏」全部包进去
-        right_layout.addWidget(self.stats_cards)                # 📊 本次分析概览
-        right_layout.addWidget(self.main_table.progress_group)  # ⚡ 分析进度
+        # 右侧整体垂直分割器：上面概览/进度，下面表格/日志
+        # 用户可拖动中间分隔线，把上面压扁以显示更多表格行
+        self._right_v_splitter = QSplitter(Qt.Vertical)
+        self._right_v_splitter.setChildrenCollapsible(True)
+        self._right_v_splitter.addWidget(top_panel)
+        self._right_v_splitter.addWidget(self._v_splitter)
+        self._right_v_splitter.setSizes([200, 600])
+        self._right_v_splitter.setStretchFactor(0, 0)
+        self._right_v_splitter.setStretchFactor(1, 1)
 
-        # 组合：分割器 + 合计栏依次堆叠（均不 stretch），使整体高度由内容决定，
-        # right_container 超出 QScrollArea 视口时全局滚动条生效。
-        right_layout.addWidget(self._v_splitter)
-        right_layout.addWidget(self.main_table.summary_container)
+        right_layout.addWidget(self._right_v_splitter, 1)
+        right_layout.addWidget(self.main_table.summary_container, 0)
 
-        # 全局下拉滚动条：把右侧整体包进滚动区，窗口高度不够时可滚动查看全部
-        right_scroll = QScrollArea()
-        right_scroll.setWidgetResizable(True)
-        right_scroll.setWidget(right_container)
-        right_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        right_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-        self.body_splitter.addWidget(right_scroll)
+        self.body_splitter.addWidget(right_container)
         self.body_splitter.setSizes([260, 360, 860])
 
         main_layout.addWidget(self.body_splitter, 1)
-
-        # 底部状态栏
-        status_bar = QWidget()
-        status_bar.setObjectName("statusBar")
-        status_bar.setFixedHeight(28)
-        status_layout = QHBoxLayout(status_bar)
-        status_layout.setContentsMargins(8, 0, 8, 0)
-        status_layout.setSpacing(6)
-        accent = QWidget()
-        accent.setFixedWidth(3)
-        accent.setObjectName("statusAccentBar")
-        status_layout.addWidget(accent)
-        self.status_label = QLabel("就绪 — 选择输入文件后点击「开始分析」")
-        self.status_label.setObjectName("statusLabel")
-        status_layout.addWidget(self.status_label)
-        status_layout.addStretch()
-        main_layout.addWidget(status_bar)
 
     def _setup_connections(self):
         self.main_table.table_view.doubleClicked.connect(self._on_cell_double_clicked)
