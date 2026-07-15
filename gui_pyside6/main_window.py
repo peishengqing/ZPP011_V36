@@ -331,6 +331,8 @@ class MainWindow(QMainWindow):
 
         # 右侧：审核表格 + 日志面板
         right_container = QWidget()
+        # 设置触发「全局下拉滚动条」的最小高度：窗口矮于此高度时右侧整体可滚动
+        right_container.setMinimumHeight(540)
         right_layout = QVBoxLayout(right_container)
         right_layout.setContentsMargins(6, 6, 6, 6)
         right_layout.setSpacing(0)
@@ -338,6 +340,7 @@ class MainWindow(QMainWindow):
         # 垂直分割器：表格 + 日志
         self._v_splitter = QSplitter(Qt.Vertical)
         self._v_splitter.setChildrenCollapsible(True)
+        self._v_splitter.setMinimumHeight(300)
         self._v_splitter.addWidget(self.main_table.audit_widget)
         self._v_splitter.addWidget(self.log_group)
         self._v_splitter.setSizes([500, 140])
@@ -360,7 +363,13 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self._v_splitter, 1)
         right_layout.addWidget(self.main_table.summary_container, 0)
 
-        self.body_splitter.addWidget(right_container)
+        # 全局下拉滚动条：把右侧整体包进滚动区，窗口高度不够时可滚动查看全部
+        right_scroll = QScrollArea()
+        right_scroll.setWidgetResizable(True)
+        right_scroll.setWidget(right_container)
+        right_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        right_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.body_splitter.addWidget(right_scroll)
         self.body_splitter.setSizes([260, 280, 940])
 
         main_layout.addWidget(self.body_splitter, 1)
