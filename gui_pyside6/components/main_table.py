@@ -93,8 +93,10 @@ class MainTableComponent:
         # 分析进度
         self.progress_group = QGroupBox("⚡ 分析进度")
         self.progress_group.setObjectName("statsGroup")
+        self.progress_group.setMinimumHeight(110)
+        self.progress_group.setMaximumHeight(130)
         progress_layout = QVBoxLayout(self.progress_group)
-        progress_layout.setSpacing(8)
+        progress_layout.setSpacing(6)
 
         # 步骤图标行（v31 经典：一排图标，当前步骤高亮）
         self.step_icons = []
@@ -148,6 +150,8 @@ class MainTableComponent:
         # 操作按钮（v31 风格：彩色图标按钮 + 右侧计时器）
         self.action_group = QGroupBox("")
         self.action_group.setObjectName("actionGroup")
+        self.action_group.setMinimumHeight(42)
+        self.action_group.setMaximumHeight(52)
         action_layout = QHBoxLayout(self.action_group)
         action_layout.setContentsMargins(4, 4, 4, 4)
         action_layout.setSpacing(6)
