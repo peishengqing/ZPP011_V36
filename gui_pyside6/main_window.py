@@ -333,21 +333,23 @@ class MainWindow(QMainWindow):
 
         # 右侧：审核表格 + 日志面板
         right_container = QWidget()
-        # 设置触发「全局下拉滚动条」的最小高度：窗口矮于此高度时右侧整体可滚动
-        right_container.setMinimumHeight(540)
+        # 设置触发「全局下拉滚动条」的最小高度：强制整个右侧内容高于常见窗口，
+        # 这样即使当前数据不多，右侧全局滚动条也能真正拖动。
+        right_container.setMinimumHeight(800)
         right_layout = QVBoxLayout(right_container)
         right_layout.setContentsMargins(6, 6, 6, 6)
         right_layout.setSpacing(0)
 
-        # 垂直分割器：表格 + 日志
+        # 垂直分割器：表格 + 日志；在全局滚动区内给一个固定高度，
+        # 使 right_container 整体高度超过视口，右侧全局滚动条才能真正拖动。
         self._v_splitter = QSplitter(Qt.Vertical)
         self._v_splitter.setChildrenCollapsible(True)
-        self._v_splitter.setMinimumHeight(300)
+        self._v_splitter.setFixedHeight(400)
+        self._v_splitter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._v_splitter.addWidget(self.main_table.audit_widget)
         self._v_splitter.addWidget(self.log_group)
-        self._v_splitter.setSizes([500, 140])
-        self._v_splitter.setStretchFactor(0, 7)
-        self._v_splitter.setStretchFactor(1, 3)
+        self._v_splitter.setSizes([250, 100])
+        # 分割器高度已被固定，不需要再 stretch 撑开滚动区
         # 记录日志面板是否被用户手动展开
         self._log_user_expanded = False
         self._log_saved_sizes = [500, 140]
@@ -360,9 +362,10 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.stats_cards)                # 📊 本次分析概览
         right_layout.addWidget(self.main_table.progress_group)  # ⚡ 分析进度
 
-        # 组合：分割器(stretch) + 合计栏(固定在底部，不被挤出)
-        right_layout.addWidget(self._v_splitter, 1)
-        right_layout.addWidget(self.main_table.summary_container, 0)
+        # 组合：分割器 + 合计栏依次堆叠（均不 stretch），使整体高度由内容决定，
+        # right_container 超出 QScrollArea 视口时全局滚动条生效。
+        right_layout.addWidget(self._v_splitter)
+        right_layout.addWidget(self.main_table.summary_container)
 
         # 全局下拉滚动条：把右侧整体包进滚动区，窗口高度不够时可滚动查看全部
         right_scroll = QScrollArea()

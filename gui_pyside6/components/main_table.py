@@ -93,8 +93,8 @@ class MainTableComponent:
         # 分析进度
         self.progress_group = QGroupBox("⚡ 分析进度")
         self.progress_group.setObjectName("statsGroup")
-        self.progress_group.setMinimumHeight(165)
-        self.progress_group.setMaximumHeight(200)
+        self.progress_group.setMinimumHeight(200)
+        self.progress_group.setMaximumHeight(220)
         progress_layout = QVBoxLayout(self.progress_group)
         progress_layout.setSpacing(8)
         progress_layout.setContentsMargins(8, 12, 8, 8)
