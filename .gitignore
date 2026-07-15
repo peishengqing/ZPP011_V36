@@ -40,3 +40,6 @@ build/
 *.exe
 *.pkg
 *.spec
+
+# SAP pull secrets (含生产凭证，切勿提交)
+tools/sap_pull_secret.json

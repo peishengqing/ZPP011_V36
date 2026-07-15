@@ -1,0 +1,13 @@
+{
+  "connection_name": "PS4",
+  "client": "800",
+  "user": "chqpei",
+  "tcode": "ZPP011",
+  "language": "ZH",
+  "out_dir": "E:\\ZPP011导出文件原数据",
+  "selection": {
+    "date_from_id": "wnd[0]/usr/ctxtS_BUDAT-LOW",
+    "date_to_id": "wnd[0]/usr/ctxtS_BUDAT-HIGH",
+    "execute_btn_id": "wnd[0]/tbar[1]/btn[8]"
+  }
+}
