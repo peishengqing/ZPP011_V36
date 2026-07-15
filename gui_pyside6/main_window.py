@@ -7,6 +7,7 @@ ZPP011 主窗口 (PySide6 迁移版)
 
 import sys
 import os
+import time
 from datetime import datetime
 import pandas as pd
 import numpy as np
@@ -86,6 +87,7 @@ class MainWindow(QMainWindow):
         self.sort_columns = []
         self._countdown_seconds = 0
         self._countdown_timer = None
+        self._analysis_start_ts = 0.0
         # 按"列名"记录需要隐藏的列（避免 setDataFrame 重排列后索引错位导致列丢失）
         self._hidden_column_names = {'_post_audit_changed'}  # 内部变更标记列默认隐藏
 
@@ -756,6 +758,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(True)
         self.start_btn.setEnabled(False)
         self._countdown_seconds = 0
+        self._analysis_start_ts = time.perf_counter()
         self._current_step = "准备中"
         self.main_table.reset_step_icons()
         self.timer_lbl.setText("⏱ 00:00")
@@ -768,7 +771,8 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(percent)
         self._current_step = step_name
         self.main_table.update_step_icons(percent, step_name)
-        m, s = divmod(self._countdown_seconds, 60)
+        elapsed = int(time.perf_counter() - getattr(self, "_analysis_start_ts", 0))
+        m, s = divmod(elapsed, 60)
         self.timer_lbl.setText(f"⏱ {m:02d}:{s:02d}")
         self.progress_label.setText(f"{step_name}  {percent}%")
 
@@ -876,6 +880,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.progress_bar.setVisible(True)
         self._countdown_seconds = 0
+        self._analysis_start_ts = time.perf_counter()
         self._current_step = "AI审核"
         self.timer_lbl.setText("⏱ 00:00")
         if not hasattr(self, "_countdown_timer"):
@@ -886,7 +891,8 @@ class MainWindow(QMainWindow):
     def _on_ai_progress_ui(self, current, total):
         percent = int(current / total * 100) if total else 0
         self.progress_bar.setValue(percent)
-        m, s = divmod(self._countdown_seconds, 60)
+        elapsed = int(time.perf_counter() - getattr(self, "_analysis_start_ts", 0))
+        m, s = divmod(elapsed, 60)
         self.timer_lbl.setText(f"⏱ {m:02d}:{s:02d}")
         self.progress_label.setText(f"AI审核: {current}/{total}")
 
@@ -2363,7 +2369,10 @@ class MainWindow(QMainWindow):
     # 工具函数
     # -----------------------------------------------------------
     def _update_countdown(self):
-        self._countdown_seconds += 1
+        # 用真实时间戳差值，比每秒累加更准，也不受 UI 阻塞影响
+        elapsed = int(time.perf_counter() - getattr(self, "_analysis_start_ts", 0))
+        if elapsed != self._countdown_seconds:
+            self._countdown_seconds = elapsed
         m, s = divmod(self._countdown_seconds, 60)
         self.timer_lbl.setText(f"⏱ {m:02d}:{s:02d}")
 
@@ -2375,7 +2384,8 @@ class MainWindow(QMainWindow):
                 pass
 
     def _format_elapsed(self):
-        m, s = divmod(self._countdown_seconds, 60)
+        elapsed = int(time.perf_counter() - getattr(self, "_analysis_start_ts", 0))
+        m, s = divmod(elapsed, 60)
         return f"{m:02d}:{s:02d}"
 
     def _show_benefit_report(self):
