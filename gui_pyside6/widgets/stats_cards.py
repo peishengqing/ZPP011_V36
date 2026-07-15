@@ -5,7 +5,7 @@
 """
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QFrame,
-    QLabel, QSizePolicy,
+    QLabel, QSizePolicy, QToolButton,
 )
 from PySide6.QtCore import Qt, Signal, QEvent
 from PySide6.QtGui import QFont
@@ -46,6 +46,7 @@ class StatsCardsWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._user_hidden = False  # 用户手动折叠卡片区
         self.setVisible(False)  # 初始隐藏，有数据再显示
         self._build_ui()
         self._click_card = None  # 记录哪个卡片被点击
@@ -62,8 +63,21 @@ class StatsCardsWidget(QWidget):
         title_layout.addWidget(title)
         title_layout.addStretch()
 
+        # 折叠/显示按钮
+        self.toggle_btn = QToolButton(self)
+        self.toggle_btn.setCheckable(True)
+        self.toggle_btn.setChecked(True)
+        self.toggle_btn.setText("隐藏")
+        self.toggle_btn.setToolTip("隐藏本次分析概览卡片")
+        self.toggle_btn.setStyleSheet("QToolButton { border: none; color: #666; font-size: 12px; padding: 2px 6px; }\n"
+                                      "QToolButton:hover { color: #333; background: #eee; }")
+        self.toggle_btn.toggled.connect(self._toggle_cards)
+        title_layout.addWidget(self.toggle_btn)
+
         # ── 卡片区 ──
-        cards_layout = QHBoxLayout()
+        self.cards_container = QWidget(self)
+        self.cards_container.setObjectName("statsCardsContainer")
+        cards_layout = QHBoxLayout(self.cards_container)
         cards_layout.setContentsMargins(0, 0, 0, 0)
         cards_layout.setSpacing(8)
         cards_layout.setAlignment(Qt.AlignLeft)
@@ -103,8 +117,16 @@ class StatsCardsWidget(QWidget):
         # ── 组装 ──
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(4, 4, 4, 2)
+        main_layout.setSpacing(4)
         main_layout.addLayout(title_layout)
-        main_layout.addLayout(cards_layout)
+        main_layout.addWidget(self.cards_container)
+
+    def _toggle_cards(self, visible):
+        """标题栏折叠按钮：折叠/显示卡片区"""
+        self._user_hidden = not visible
+        self.cards_container.setVisible(visible)
+        self.toggle_btn.setText("隐藏" if visible else "显示")
+        self.toggle_btn.setToolTip("隐藏本次分析概览卡片" if visible else "显示本次分析概览卡片")
 
     # ── 事件处理 ──
 
@@ -119,18 +141,24 @@ class StatsCardsWidget(QWidget):
     # ── 公开方法 ──
 
     def refresh(self, df: pd.DataFrame):
-        """根据 DataFrame 刷新所有卡片统计"""
+        """根据 DataFrame 刷新所有卡片统计；用户手动折叠后保留折叠状态"""
         if df is None or df.empty:
             self.setVisible(False)
             return
 
-        self.setVisible(True)
+        # 始终更新数值，再按用户折叠状态决定是否展示卡片区
         self._update_pass_rate(df)
         self._update_unread(df)
         self._update_anomaly(df)
         self._update_alt(df)
         self._update_changed(df)
         self._update_quarantine(df)
+
+        self.setVisible(True)
+        self.cards_container.setVisible(not self._user_hidden)
+        self.toggle_btn.setChecked(not self._user_hidden)
+        self.toggle_btn.setText("隐藏" if not self._user_hidden else "显示")
+        self.toggle_btn.setToolTip("隐藏本次分析概览卡片" if not self._user_hidden else "显示本次分析概览卡片")
 
     # ── 内部计算 ──
 

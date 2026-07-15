@@ -93,8 +93,8 @@ class MainTableComponent:
         # 分析进度
         self.progress_group = QGroupBox("⚡ 分析进度")
         self.progress_group.setObjectName("statsGroup")
-        self.progress_group.setMinimumHeight(200)
-        self.progress_group.setMaximumHeight(220)
+        self.progress_group.setMinimumHeight(150)
+        self.progress_group.setMaximumHeight(170)
         progress_layout = QVBoxLayout(self.progress_group)
         progress_layout.setSpacing(8)
         progress_layout.setContentsMargins(8, 12, 8, 8)
@@ -174,7 +174,7 @@ class MainTableComponent:
         self.table_view.customContextMenuRequested.connect(self.mw._show_context_menu)
         self.table_view.setSelectionMode(QTableView.ExtendedSelection)
         self.table_view.setSelectionBehavior(QTableView.SelectItems)
-        self.table_view.verticalHeader().setDefaultSectionSize(28)
+        self.table_view.verticalHeader().setDefaultSectionSize(24)
 
         # 合计行（单行）
         summary_layout = QHBoxLayout()

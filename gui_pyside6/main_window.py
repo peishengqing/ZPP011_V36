@@ -133,6 +133,8 @@ class MainWindow(QMainWindow):
         self._monitor_last_size = {}   # path -> 上次文件大小（用于判定文件写完）
         self._monitor_loaded = set()   # (path, mtime, size) 已自动加载的文件指纹
         self._monitor_pending = set()  # (path, mtime, size) 已排队等待加载（避免重复排队）
+        self._monitor_current_key = None  # 当前正在自动加载的文件指纹
+        self._monitor_auto_loading = False  # 是否正在由监控触发自动加载
         self._monitor_delay_ms = 5000  # 检测到新文件后延迟加载的毫秒数（等用户关闭自动打开的预览）
         self._monitor_busy_retry = 6   # 文件仍被占用时的重试次数
         self._monitor_busy_interval = 3000  # 被占用时每次重试间隔(ms)
@@ -349,7 +351,7 @@ class MainWindow(QMainWindow):
         top_layout.setSpacing(6)
         top_layout.addWidget(self.stats_cards)                # 📊 本次分析概览
         top_layout.addWidget(self.main_table.progress_group)  # ⚡ 分析进度
-        top_panel.setMaximumHeight(280)                       # 限制最大高度，不抢表格空间
+        top_panel.setMaximumHeight(240)                       # 限制最大高度，不抢表格空间
 
         # 垂直分割器：表格 + 日志；这里用 stretch 让表格区自适应窗口高度
         self._v_splitter = QSplitter(Qt.Vertical)
@@ -373,7 +375,7 @@ class MainWindow(QMainWindow):
         self._right_v_splitter.setChildrenCollapsible(True)
         self._right_v_splitter.addWidget(top_panel)
         self._right_v_splitter.addWidget(self._v_splitter)
-        self._right_v_splitter.setSizes([200, 600])
+        self._right_v_splitter.setSizes([150, 650])
         self._right_v_splitter.setStretchFactor(0, 0)
         self._right_v_splitter.setStretchFactor(1, 1)
 
@@ -770,6 +772,8 @@ class MainWindow(QMainWindow):
         self.progress_label.setText(f"{step_name}  {percent}%")
 
     def _on_analysis_finished_ui(self, df):
+        self._monitor_auto_loading = False
+        self._monitor_current_key = None
         self._stop_countdown()
         self.progress_bar.setValue(100)
         self.main_table.complete_step_icons()
@@ -865,6 +869,25 @@ class MainWindow(QMainWindow):
     def _on_analysis_error_ui(self, error_msg):
         self._stop_countdown()
         self.progress_bar.setVisible(False)
+        # 若是监控文件夹自动加载失败，不弹模态错误框，避免"未响应"；改为 toast + 日志，并允许重试
+        if getattr(self, "_monitor_auto_loading", False):
+            self._monitor_auto_loading = False
+            self.start_btn.setEnabled(True)
+            self.progress_label.setText("❌ 监控加载失败")
+            self.main_table.reset_step_icons()
+            # 从已加载指纹中移除，让监控下次扫描继续尝试
+            if self._monitor_current_key:
+                self._monitor_loaded.discard(self._monitor_current_key)
+                self._monitor_pending.discard(self._monitor_current_key)
+                self._monitor_current_key = None
+            _fn = os.path.basename(self.current_input_file or "新文件")
+            if "被占用" in error_msg or "锁文件" in error_msg:
+                toast(f"⚠️ 文件仍被占用，监控将自动重试：{_fn}", "warning", parent=self)
+                self.log(f"监控自动加载失败（将重试）：{error_msg}", "warning")
+            else:
+                toast(f"⚠️ 监控自动加载失败：{error_msg}", "warning", parent=self)
+                self.log(f"监控自动加载失败：{error_msg}", "error")
+            return
         self.progress_label.setText("❌ 错误（可重试）")
         self.start_btn.setEnabled(True)
         self.main_table.reset_step_icons()
@@ -1266,16 +1289,18 @@ class MainWindow(QMainWindow):
             toast(f"⚠️ 文件仍被占用，暂未加载：{os.path.basename(fp)}"
                   f"（关闭预览后将被自动重新检测）", "warning", parent=self)
             return
-        # 文件可用 -> 正式加载（记录指纹 + 移除排队）
+        # 文件可用 -> 正式加载（记录指纹 + 移除排队 + 标记为监控自动加载）
         self._monitor_pending.discard(key)
         self._monitor_loaded.add(key)
+        self._monitor_current_key = key
+        self._monitor_auto_loading = True
         self._auto_load_from_monitor(fp)
 
     def _auto_load_from_monitor(self, fp):
         """监控到新文件：写入当前输入文件并触发分析加载（复用主流程）。"""
         # 若分析正在后台跑，稍后重试（避免被 _start_analysis 的"已在运行"拦截）
         if self.analysis_controller.worker and self.analysis_controller.worker.isRunning():
-            # 延迟 3 秒再试一次
+            # 延迟 3 秒再试一次，期间仍视为监控自动加载
             QTimer.singleShot(3000, lambda: self._auto_load_from_monitor(fp))
             return
         self.current_input_file = fp
@@ -1283,6 +1308,7 @@ class MainWindow(QMainWindow):
             self.input_file_edit.setText(os.path.basename(fp))
             self.input_file_edit.setToolTip(fp)
         toast(f"📥 监控到新文件，自动加载：{os.path.basename(fp)}", "info", parent=self)
+        self._monitor_auto_loading = True
         self._start_analysis()
 
 
