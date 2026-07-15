@@ -351,6 +351,11 @@ class MainWindow(QMainWindow):
         self._log_auto_timer.setSingleShot(True)
         self._log_auto_timer.timeout.connect(self._auto_collapse_log)
 
+        # v31 风格面板：分析进度（步骤图标 + 进度条）+ 彩色操作按钮（含 ⏱ 计时器）
+        # 挂在表格下方、合计栏上方，还原 v31「底部分析进度面板」布局
+        right_layout.addWidget(self.main_table.progress_group)   # ⚡ 分析进度
+        right_layout.addWidget(self.main_table.action_group)     # 彩色操作按钮 + 计时器
+
         # 组合：分割器(stretch) + 合计栏(固定在底部，不被挤出)
         right_layout.addWidget(self._v_splitter, 1)
         right_layout.addWidget(self.main_table.summary_container, 0)
