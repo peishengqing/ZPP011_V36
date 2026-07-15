@@ -33,7 +33,6 @@ from gui_pyside6.components.bottom_bar import BottomBarComponent
 # 导入自定义模块
 from gui_pyside6.models.data_frame_model import DataFrameModel, AuditProxyModel
 from gui_pyside6.widgets.toast import toast
-from gui_pyside6.widgets.loading_dialog import LoadingDialog
 from gui_pyside6.widgets.filter_panel import FilterPanel
 from gui_pyside6.widgets.stats_cards import StatsCardsWidget
 from gui_pyside6.dialogs.unit_summary_dialog import UnitSummaryDialog
@@ -84,7 +83,6 @@ class MainWindow(QMainWindow):
         self._analysis_params = {}
         self._full_analysis_cache_path = None
         self._cache_worker = None
-        self.loading_dialog = None
         self.sort_columns = []
         self._countdown_seconds = 0
         self._countdown_timer = None
@@ -743,10 +741,6 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "提示", "分析任务已在后台运行")
             return
 
-        self.loading_dialog = LoadingDialog("正在分析数据，请稍候...", self)
-        self.loading_dialog.show()
-        QApplication.processEvents()
-
         dev_threshold = getattr(self.filter_panel, 'dev_threshold_spin', None)
         dev_threshold_val = dev_threshold.value() if dev_threshold is not None else 1.0
 
@@ -797,9 +791,6 @@ class MainWindow(QMainWindow):
         self.progress_label.setText(f"{step_name}  {percent}%")
 
     def _on_analysis_finished_ui(self, df):
-        if self.loading_dialog:
-            self.loading_dialog.accept()
-            self.loading_dialog = None
         self._stop_countdown()
         self.progress_bar.setValue(100)
         self.main_table.complete_step_icons()
@@ -893,9 +884,6 @@ class MainWindow(QMainWindow):
             self.alert_monitor.start()
 
     def _on_analysis_error_ui(self, error_msg):
-        if self.loading_dialog:
-            self.loading_dialog.accept()
-            self.loading_dialog = None
         self._stop_countdown()
         self.progress_bar.setVisible(False)
         self.progress_label.setText("❌ 错误")
@@ -921,9 +909,6 @@ class MainWindow(QMainWindow):
         self.progress_label.setText(f"AI审核: {current}/{total}")
 
     def _on_ai_finished_ui(self, updated_df):
-        if self.loading_dialog:
-            self.loading_dialog.accept()
-            self.loading_dialog = None
         self._stop_countdown()
         self.progress_bar.setVisible(False)
         elapsed = self._format_elapsed()
@@ -949,9 +934,6 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "完成", "AI审核已完成")
 
     def _on_ai_error_ui(self, error_msg):
-        if self.loading_dialog:
-            self.loading_dialog.accept()
-            self.loading_dialog = None
         self.progress_bar.setVisible(False)
         self.progress_label.setText("错误")
         QMessageBox.critical(self, "错误", error_msg)
@@ -1084,9 +1066,6 @@ class MainWindow(QMainWindow):
             self.audit_controller.cancel_ai_audit()
             cancelled = True
         if cancelled:
-            if self.loading_dialog:
-                self.loading_dialog.accept()
-                self.loading_dialog = None
             self.progress_bar.setVisible(False)
             self.progress_label.setText("已取消")
             self.start_btn.setEnabled(True)
