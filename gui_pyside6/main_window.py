@@ -126,12 +126,15 @@ class MainWindow(QMainWindow):
 
         # 文件夹监控自动加载（SAP 导出半自动：监控目录有新 Excel 则自动加载）
         self._monitor_dir = r"E:\ZPP011导出文件原数据"
-        self._monitor_enabled = False
+        self._monitor_enabled = True   # 默认开启
         self._monitor_timer = QTimer(self)
         self._monitor_timer.setInterval(2000)  # 每 2 秒扫描一次
         self._monitor_timer.timeout.connect(self._scan_monitor_dir)
         self._monitor_last_size = {}   # path -> 上次文件大小（用于判定文件写完）
         self._monitor_loaded = set()   # (path, mtime, size) 已自动加载的文件指纹
+        # 默认开启：以当前目录最新文件为基线（不立即分析），只监控「新导出」的文件
+        self._seed_monitor_baseline()
+        self._monitor_timer.start()
 
         # UI 引用（必须在 _setup_connections 之前赋值）
         self.left_panel = self.left_panel_component.left_panel
@@ -1157,6 +1160,33 @@ class MainWindow(QMainWindow):
         else:
             self._monitor_timer.stop()
             toast("⏹ 已停止监控文件夹", "info", parent=self)
+
+    def _seed_monitor_baseline(self):
+        """默认开启时调用：把当前目录里最新文件登记为基线，避免启动即触发一次分析，
+        之后只有比基线更新的导出文件才会被自动加载。"""
+        d = self._monitor_dir
+        if not os.path.isdir(d):
+            return
+        try:
+            files = [os.path.join(d, f) for f in os.listdir(d)
+                     if f.lower().endswith((".xlsx", ".xls"))]
+        except Exception:
+            return
+        if not files:
+            return
+        def _mtime(fp):
+            try:
+                return os.stat(fp).st_mtime
+            except Exception:
+                return 0
+        files.sort(key=_mtime, reverse=True)
+        fp = files[0]
+        try:
+            st = os.stat(fp)
+        except Exception:
+            return
+        self._monitor_last_size[fp] = st.st_size
+        self._monitor_loaded.add((fp, int(st.st_mtime), st.st_size))
 
     def _scan_monitor_dir(self):
         if not self._monitor_enabled:

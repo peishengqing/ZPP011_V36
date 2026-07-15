@@ -92,6 +92,7 @@ class MenuBarComponent:
         tools_menu.addSeparator()
         monitor_action = QAction("监控文件夹自动加载", self.mw)
         monitor_action.setCheckable(True)
+        monitor_action.setChecked(True)  # 默认开启
         monitor_action.setObjectName("monitor_action")
         monitor_action.triggered.connect(self.mw._toggle_folder_monitor)
         tools_menu.addAction(monitor_action)
