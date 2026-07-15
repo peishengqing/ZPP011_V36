@@ -152,7 +152,7 @@ class MainWindow(QMainWindow):
         self.summary_actual = self.main_table.summary_actual
         self.summary_amount = self.main_table.summary_amount
         self.summary_qty = self.main_table.summary_qty
-        self.start_btn = self.action_btn_analyze   # 使用顶部工具栏分析按钮
+        # self.start_btn 别名在工具栏创建后赋值（见下方 action_bar 构建末尾）
         # self.cancel_btn = self.main_table.cancel_btn  # 底部操作按钮已删除
         self.lock_btn = self.main_table.lock_btn
         self.fullscreen_btn = self.main_table.fullscreen_btn
@@ -313,6 +313,9 @@ class MainWindow(QMainWindow):
 
         action_layout.addStretch()
         action_layout.addWidget(shortcut_hint)
+
+        # 底部按钮行已删除，start_btn 别名指向顶部工具栏分析按钮（供分析起止启用/禁用）
+        self.start_btn = self.action_btn_analyze
 
         main_layout.addWidget(action_bar)
         main_layout.addWidget(self.stats_cards)
