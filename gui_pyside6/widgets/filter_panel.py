@@ -7,7 +7,8 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout,
     QComboBox, QPushButton, QLabel, QDateEdit, QLineEdit, QScrollArea,
-    QDoubleSpinBox, QListWidget, QListWidgetItem, QDialog, QCalendarWidget
+    QDoubleSpinBox, QListWidget, QListWidgetItem, QDialog, QCalendarWidget,
+    QSizePolicy, QMenu
 )
 from PySide6.QtCore import Signal, Qt, QDate, QEvent
 from PySide6.QtGui import QColor, QPixmap, QIcon
@@ -120,7 +121,9 @@ class FilterPanel(QWidget):
         self.material_name_edit.setEditable(True)
         self.material_name_edit.addItem("全部")
         self.material_name_edit.setCurrentText("")
-        self.material_name_edit.lineEdit().setPlaceholderText("输入名称(逗号分隔多选)；下拉项在 config/material_name_presets.json 自定义")
+        self.material_name_edit.lineEdit().setPlaceholderText("输入名称(逗号分隔多选)")
+        self.material_name_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.material_name_edit.setMinimumWidth(180)
         self.material_name_edit.setInsertPolicy(QComboBox.NoInsert)
         # 下拉项由用户自定义维护（不自动灌入数据名称），见 _load_material_presets
         self._material_presets = self._load_material_presets()
@@ -276,6 +279,56 @@ class FilterPanel(QWidget):
                    self.analysis_start_date_edit, self.analysis_end_date_edit,
                    self.material_name_edit):
             _w.installEventFilter(self)
+
+        # 输入框右键菜单改为中文（Qt 默认是英文 Undo/Redo/Cut/Copy/Paste/Delete/Select All）
+        self._setup_chinese_context_menus()
+
+    # ------------------------------------------------------------------ #
+    # 中文右键菜单（替换 QLineEdit / QComboBox lineEdit 的英文默认菜单）
+    # ------------------------------------------------------------------ #
+    def _setup_chinese_context_menus(self):
+        def attach(line_edit):
+            if line_edit is None:
+                return
+            line_edit.setContextMenuPolicy(Qt.CustomContextMenu)
+            line_edit.customContextMenuRequested.connect(
+                lambda pos, le=line_edit: self._show_chinese_edit_menu(pos, le)
+            )
+
+        for child in self.findChildren(QLineEdit):
+            attach(child)
+        for combo in self.findChildren(QComboBox):
+            if combo.isEditable() and combo.lineEdit() is not None:
+                attach(combo.lineEdit())
+
+    def _show_chinese_edit_menu(self, pos, line_edit):
+        menu = QMenu(self)
+        undo = menu.addAction("撤销")
+        redo = menu.addAction("重做")
+        menu.addSeparator()
+        cut = menu.addAction("剪切")
+        copy = menu.addAction("复制")
+        paste = menu.addAction("粘贴")
+        delete = menu.addAction("删除")
+        menu.addSeparator()
+        select_all = menu.addAction("全选")
+
+        undo.triggered.connect(line_edit.undo)
+        redo.triggered.connect(line_edit.redo)
+        cut.triggered.connect(line_edit.cut)
+        copy.triggered.connect(line_edit.copy)
+        paste.triggered.connect(line_edit.paste)
+        delete.triggered.connect(line_edit.del_)
+        select_all.triggered.connect(line_edit.selectAll)
+
+        # 禁用不可用的动作（与原生行为一致）
+        undo.setEnabled(line_edit.isUndoAvailable())
+        redo.setEnabled(line_edit.isRedoAvailable())
+        cut.setEnabled(line_edit.hasSelectedText())
+        copy.setEnabled(line_edit.hasSelectedText())
+        delete.setEnabled(line_edit.hasSelectedText())
+
+        menu.exec_(line_edit.mapToGlobal(pos))
 
     # ------------------------------------------------------------------ #
     # 事件过滤（滚轮保护）
