@@ -934,12 +934,18 @@ class MainWindow(QMainWindow):
 
     def _on_new_alerts(self, alerts_df):
         count = len(alerts_df)
-        reply = QMessageBox.question(
-            self, "⚠️ 预警通知",
-            f"发现 {count} 条新替代料预警（含差异/超阈值），是否查看明细？",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
-        )
-        if reply == QMessageBox.Yes:
+        # 先刷新一次事件队列，避免主线程因前面积压的 UI 更新被 Windows 标记为未响应
+        QApplication.processEvents()
+        box = QMessageBox(self)
+        box.setWindowTitle("⚠️ 预警通知")
+        box.setIcon(QMessageBox.Question)
+        box.setText(f"发现 {count} 条新替代料预警（含差异/超阈值），是否查看明细？")
+        yes_btn = box.addButton("是", QMessageBox.YesRole)
+        no_btn = box.addButton("否", QMessageBox.NoRole)
+        box.setDefaultButton(yes_btn)
+        box.exec()
+        if box.clickedButton() != yes_btn:
+            return
             try:
                 # 直接用 AlertMonitor 传过来的 alerts_df，已经过滤过替代料了
                 all_alerts = alerts_df.copy()
