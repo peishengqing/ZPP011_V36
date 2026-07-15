@@ -1144,7 +1144,7 @@ class MainWindow(QMainWindow):
     # 文件夹监控自动加载
     # -----------------------------------------------------------
     def _toggle_folder_monitor(self, checked):
-        """工具栏/菜单开关：监控 E:\ZPP011导出文件原数据 目录，发现新 Excel 自动加载。"""
+        """工具栏/菜单开关：监控 E:/ZPP011导出文件原数据 目录，发现新 Excel 自动加载。"""
         self._monitor_enabled = checked
         if checked:
             # 开始监控：重置稳定性缓存，保留已加载指纹（同名文件重新导出仍可识别）
@@ -1169,25 +1169,34 @@ class MainWindow(QMainWindow):
                      if f.lower().endswith((".xlsx", ".xls"))]
         except Exception:
             return
-        for fp in files:
+        if not files:
+            return
+        # 只盯「最新」文件：按 mtime 降序取第一个，避免 NTFS 下列出顺序不定导致加载到旧文件
+        def _mtime(fp):
             try:
-                st = os.stat(fp)
+                return os.stat(fp).st_mtime
             except Exception:
-                continue
-            # 稳定性判定：与上次的 size 比较，连续两次相同且 >0 视为写完，避免读半截文件
-            prev = self._monitor_last_size.get(fp)
-            if prev is None:
-                self._monitor_last_size[fp] = st.st_size
-                continue
-            if prev != st.st_size:
-                self._monitor_last_size[fp] = st.st_size
-                continue
-            key = (fp, int(st.st_mtime), st.st_size)
-            if key in self._monitor_loaded:
-                continue
-            # 新稳定文件 -> 自动加载
-            self._monitor_loaded.add(key)
-            self._auto_load_from_monitor(fp)
+                return 0
+        files.sort(key=_mtime, reverse=True)
+        fp = files[0]
+        try:
+            st = os.stat(fp)
+        except Exception:
+            return
+        # 稳定性判定：与上次的 size 比较，连续两次相同且 >0 视为写完，避免读半截文件
+        prev = self._monitor_last_size.get(fp)
+        if prev is None:
+            self._monitor_last_size[fp] = st.st_size
+            return
+        if prev != st.st_size:
+            self._monitor_last_size[fp] = st.st_size
+            return
+        key = (fp, int(st.st_mtime), st.st_size)
+        if key in self._monitor_loaded:
+            return
+        # 新稳定文件（且是当前目录最新）-> 自动加载
+        self._monitor_loaded.add(key)
+        self._auto_load_from_monitor(fp)
 
     def _auto_load_from_monitor(self, fp):
         """监控到新文件：写入当前输入文件并触发分析加载（复用主流程）。"""
