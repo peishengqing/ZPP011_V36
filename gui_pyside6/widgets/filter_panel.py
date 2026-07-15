@@ -35,8 +35,8 @@ class FilterPanel(QWidget):
         self._expanded = True
         self._data_min_date = None
         self._data_max_date = None
-        self.setMaximumWidth(540)
-        self.setMinimumWidth(540)
+        self.setMaximumWidth(360)
+        self.setMinimumWidth(360)
         self.setObjectName("filterPanel")
 
         main_layout = QVBoxLayout(self)
@@ -412,7 +412,7 @@ class FilterPanel(QWidget):
     def _toggle_collapse(self):
         self._expanded = not self._expanded
         if self._expanded:
-            self.setMaximumWidth(280)
+            self.setMaximumWidth(360)
             self.content_widget.setVisible(True)
             self.collapse_btn.setText("◀")
         else:
