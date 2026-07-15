@@ -30,8 +30,8 @@ class FilterPanel(QWidget):
         self._expanded = True
         self._data_min_date = None
         self._data_max_date = None
-        self.setMaximumWidth(480)
-        self.setMinimumWidth(360)
+        self.setMaximumWidth(540)
+        self.setMinimumWidth(420)
         self.setObjectName("filterPanel")
 
         main_layout = QVBoxLayout(self)
