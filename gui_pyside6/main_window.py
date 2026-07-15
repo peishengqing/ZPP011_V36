@@ -318,7 +318,6 @@ class MainWindow(QMainWindow):
         self.start_btn = self.action_btn_analyze
 
         main_layout.addWidget(action_bar)
-        main_layout.addWidget(self.stats_cards)
 
         # 3. 主体区域（侧栏 + 数据表格+日志）
         self.body_splitter = QSplitter(Qt.Horizontal)
@@ -355,9 +354,9 @@ class MainWindow(QMainWindow):
         self._log_auto_timer.setSingleShot(True)
         self._log_auto_timer.timeout.connect(self._auto_collapse_log)
 
-        # v31 风格面板：分析进度（步骤图标 + 进度条）+ 彩色操作按钮（含 ⏱ 计时器）
-        # 挂在表格下方、合计栏上方，还原 v31「底部分析进度面板」布局
-        right_layout.addWidget(self.main_table.progress_group)   # ⚡ 分析进度
+        # 全局滚动区域：把「本次分析概览」+「分析进度」+「表格/日志」+「合计栏」全部包进去
+        right_layout.addWidget(self.stats_cards)                # 📊 本次分析概览
+        right_layout.addWidget(self.main_table.progress_group)  # ⚡ 分析进度
 
         # 组合：分割器(stretch) + 合计栏(固定在底部，不被挤出)
         right_layout.addWidget(self._v_splitter, 1)
