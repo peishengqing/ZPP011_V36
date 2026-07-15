@@ -87,9 +87,6 @@ class AlertDialog(QDialog):
         self.table_view.installEventFilter(self)
         layout.addWidget(self.table_view)
 
-        # 默认打开时显示未读
-        self._set_filter("unread")
-
         # ---- 底部按钮 ----
         btn_layout = QHBoxLayout()
         export_btn = QPushButton("📎 导出 Excel")
@@ -156,6 +153,9 @@ class AlertDialog(QDialog):
         if 'data_id' in df.columns:
             col_idx = df.columns.get_loc('data_id')
             self.table_view.setColumnHidden(col_idx, True)
+
+        # 默认打开时显示未读
+        self._set_filter("unread")
 
     def export_excel(self):
         path, _ = QFileDialog.getSaveFileName(
