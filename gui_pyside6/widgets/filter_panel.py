@@ -113,9 +113,13 @@ class FilterPanel(QWidget):
         self.order_type_combo.addItem("全部")
         self.material_code_edit = QLineEdit()
         self.material_code_edit.setPlaceholderText("输入编码，逗号分隔多选")
-        # 物料名称模糊筛选
-        self.material_name_edit = QLineEdit()
-        self.material_name_edit.setPlaceholderText("输入名称，逗号分隔多选")
+        # 物料名称：使用可编辑下拉框，既保留手动输入（逗号分隔多选/模糊），又支持下拉选择数据中的物料名称
+        self.material_name_edit = QComboBox()
+        self.material_name_edit.setEditable(True)
+        self.material_name_edit.addItem("全部")
+        self.material_name_edit.setCurrentText("")
+        self.material_name_edit.lineEdit().setPlaceholderText("输入名称，逗号分隔多选")
+        self.material_name_edit.setInsertPolicy(QComboBox.NoInsert)
         material_layout.addRow("物料类型:", self.category_combo)
         material_layout.addRow("替代料:", self.alt_combo)
         material_layout.addRow("订单类型:", self.order_type_combo)
@@ -239,9 +243,9 @@ class FilterPanel(QWidget):
         self.material_code_edit.editingFinished.connect(self._emit_filter)
         self.material_code_edit.returnPressed.connect(self._emit_filter)
         self.remark_source_combo.currentIndexChanged.connect(self._emit_filter)
-        self.material_name_edit.textChanged.connect(self._emit_filter)
-        self.material_name_edit.editingFinished.connect(self._emit_filter)
-        self.material_name_edit.returnPressed.connect(self._emit_filter)
+        self.material_name_edit.currentTextChanged.connect(self._emit_filter)
+        self.material_name_edit.lineEdit().editingFinished.connect(self._emit_filter)
+        self.material_name_edit.lineEdit().returnPressed.connect(self._emit_filter)
         self.zero_qty_combo.currentIndexChanged.connect(self._emit_filter)
         self.remark_search_edit.textChanged.connect(self._emit_filter)
         self.remark_search_edit.editingFinished.connect(self._emit_filter)
@@ -263,7 +267,8 @@ class FilterPanel(QWidget):
                    self.dev_rate_combo, self.dev_qty_combo, self.audit_status_combo, self.remark_empty_combo,
                    self.read_status_combo, self.remark_source_combo, self.zero_qty_combo,
                    self.color_combo, self.substitute_combo, self.start_date_edit, self.end_date_edit,
-                   self.analysis_start_date_edit, self.analysis_end_date_edit):
+                   self.analysis_start_date_edit, self.analysis_end_date_edit,
+                   self.material_name_edit):
             _w.installEventFilter(self)
 
     # ------------------------------------------------------------------ #
@@ -396,6 +401,7 @@ class FilterPanel(QWidget):
         self._col_map['订单类型'] = self._find_column(['订单类型', 'order_type'])
         self._col_map['物料编码'] = self._find_column(['物料号', '物料编码', 'code', '组件物料号'])
         self._col_map['流程订单'] = self._find_column(['流程订单', 'process_order'])
+        self._col_map['物料名称'] = self._find_column(['物料名称', '物料描述', 'material_name', '组件物料描述'])
 
         # 记录数据中的最小/最大日期，用于重置
         self._data_min_date = None
@@ -411,13 +417,16 @@ class FilterPanel(QWidget):
                 pass
 
         # 更新动态下拉前屏蔽信号，避免触发中间态筛选条件把表格刷空
-        for _c in (self.factory_combo, self.workshop_combo, self.category_combo, self.order_type_combo):
+        for _c in (self.factory_combo, self.workshop_combo, self.category_combo, self.order_type_combo,
+                   self.material_name_edit):
             _c.blockSignals(True)
         self._update_combo(self.factory_combo, self._col_map.get('工厂'))
         self._update_combo(self.workshop_combo, self._col_map.get('车间'))
         self._update_combo(self.category_combo, self._col_map.get('物料类型'))
         self._update_combo(self.order_type_combo, self._col_map.get('订单类型'))
-        for _c in (self.factory_combo, self.workshop_combo, self.category_combo, self.order_type_combo):
+        self._update_material_name_combo()
+        for _c in (self.factory_combo, self.workshop_combo, self.category_combo, self.order_type_combo,
+                   self.material_name_edit):
             _c.blockSignals(False)
 
         # 重置日期为数据范围
@@ -456,6 +465,25 @@ class FilterPanel(QWidget):
         else:
             combo.clear()
             combo.addItem("全部")
+
+    def _update_material_name_combo(self):
+        """物料名称下拉：保留可编辑特性，用数据中不重复名称填充下拉选项（限制最多 300 个，避免过长）。"""
+        col_name = self._col_map.get('物料名称')
+        current_text = self.material_name_edit.currentText()
+        if col_name and self._data is not None and col_name in self._data.columns:
+            values = self._data[col_name].dropna().astype(str)
+            values = values[values != '']
+            # 按出现频率降序，取前 300 个最常见物料名称，兼顾下拉速度与常用性
+            freq = values.value_counts()
+            top_values = freq.head(300).index.tolist()
+            self.material_name_edit.clear()
+            self.material_name_edit.addItem("全部")
+            self.material_name_edit.addItems(top_values)
+            self.material_name_edit.setCurrentText(current_text)
+        else:
+            self.material_name_edit.clear()
+            self.material_name_edit.addItem("全部")
+            self.material_name_edit.setCurrentText(current_text)
 
     def _reset_date_range(self):
         """将日期控件重置为数据的最小/最大日期"""
@@ -511,7 +539,7 @@ class FilterPanel(QWidget):
         if material_code_text:
             filters['_material_code'] = material_code_text
         # 物料名称模糊搜索（逗号分隔多选，OR匹配）
-        material_name_text = self.material_name_edit.text().strip()
+        material_name_text = self.material_name_edit.currentText().strip()
         if material_name_text:
             filters['_material_names'] = material_name_text
         if self.dev_rate_combo.currentText() != "全部":
@@ -639,7 +667,7 @@ class FilterPanel(QWidget):
         self.zero_qty_combo.setCurrentIndex(0)
         self.color_combo.setCurrentIndex(0)
         self.material_code_edit.clear()
-        self.material_name_edit.clear()
+        self.material_name_edit.setCurrentIndex(0)
         self.remark_search_edit.clear()
         self.remark_not_edit.clear()
         # 重置日期为数据最小/最大日期
