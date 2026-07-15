@@ -116,7 +116,7 @@ class FilterPanel(QWidget):
         self.order_type_combo.addItem("全部")
         self.material_code_edit = QLineEdit()
         self.material_code_edit.setPlaceholderText("输入编码，逗号分隔多选")
-        # 物料名称：使用可编辑下拉框，既保留手动输入（逗号分隔多选/模糊），又支持下拉选择数据中的物料名称
+        # 物料名称：使用可编辑下拉框，内容完全由用户通过 config/material_name_presets.json 自定义
         self.material_name_edit = QComboBox()
         self.material_name_edit.setEditable(True)
         self.material_name_edit.addItem("全部")
@@ -125,13 +125,21 @@ class FilterPanel(QWidget):
         self.material_name_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.material_name_edit.setMinimumWidth(180)
         self.material_name_edit.setInsertPolicy(QComboBox.NoInsert)
-        # 下拉项由用户自定义维护（不自动灌入数据名称），见 _load_material_presets
+        # 下拉项由用户自定义维护（不自动灌入数据名称，也不自动收录手输值），见 _load_material_presets
         self._material_presets = self._load_material_presets()
+        # 编辑预设按钮：直接打开 JSON 文件让用户自己维护下拉项
+        self.edit_presets_btn = QPushButton("编辑")
+        self.edit_presets_btn.setToolTip("打开 config/material_name_presets.json 自定义下拉项")
+        self.edit_presets_btn.setMaximumWidth(50)
+        self.edit_presets_btn.clicked.connect(self._open_material_presets_editor)
+        material_name_row = QHBoxLayout()
+        material_name_row.addWidget(self.material_name_edit, 1)
+        material_name_row.addWidget(self.edit_presets_btn)
         material_layout.addRow("物料类型:", self.category_combo)
         material_layout.addRow("替代料:", self.alt_combo)
         material_layout.addRow("订单类型:", self.order_type_combo)
         material_layout.addRow("物料编码:", self.material_code_edit)
-        material_layout.addRow("物料名称:", self.material_name_edit)
+        material_layout.addRow("物料名称:", material_name_row)
         content_layout.addWidget(material_group)
 
         # 偏差与审核
@@ -253,8 +261,6 @@ class FilterPanel(QWidget):
         self.material_name_edit.currentTextChanged.connect(self._emit_filter)
         self.material_name_edit.lineEdit().editingFinished.connect(self._emit_filter)
         self.material_name_edit.lineEdit().returnPressed.connect(self._emit_filter)
-        # 手输一个值并确认后，自动收进用户自定义下拉项（永久保留）
-        self.material_name_edit.lineEdit().editingFinished.connect(self._remember_material_preset)
         self.zero_qty_combo.currentIndexChanged.connect(self._emit_filter)
         self.remark_search_edit.textChanged.connect(self._emit_filter)
         self.remark_search_edit.editingFinished.connect(self._emit_filter)
@@ -572,6 +578,19 @@ class FilterPanel(QWidget):
         for name in self._material_presets:
             self.material_name_edit.addItem(name)
         self.material_name_edit.setCurrentText(current_text)
+
+    def _open_material_presets_editor(self):
+        """打开物料名称预设文件让用户自己维护下拉项。"""
+        p = self._preset_path()
+        try:
+            if not os.path.exists(p):
+                os.makedirs(os.path.dirname(p), exist_ok=True)
+                with open(p, "w", encoding="utf-8") as f:
+                    json.dump([], f, ensure_ascii=False, indent=2)
+            os.startfile(p)
+        except Exception as e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "打开失败", f"无法打开预设文件：{e}")
 
     def _reset_date_range(self):
         """将日期控件重置为数据的最小/最大日期"""

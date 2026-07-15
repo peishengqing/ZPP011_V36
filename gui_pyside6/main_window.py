@@ -2564,10 +2564,11 @@ class MainWindow(QMainWindow):
             self.action_btn_filter.setChecked(False)
         else:
             self.filter_panel.setVisible(True)
-            self.filter_panel.setFixedWidth(280)
+            # 展开时给筛选面板足够宽度（700px），避免输入框/按钮被截断
+            self.filter_panel.setFixedWidth(700)
             prev_sizes = self.body_splitter.sizes()
             # left_panel | filter_panel | table_area
-            self.body_splitter.setSizes([prev_sizes[0], 280, prev_sizes[2]])
+            self.body_splitter.setSizes([prev_sizes[0], 700, prev_sizes[2]])
             self.action_btn_filter.setText("🔍 隐藏筛选")
             self.action_btn_filter.setChecked(True)
 
