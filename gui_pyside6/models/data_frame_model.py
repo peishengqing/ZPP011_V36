@@ -531,10 +531,26 @@ class AuditProxyModel(QSortFilterProxyModel):
                 if row_data.get('_quarantined', 0) != 1:
                     return False
 
-            # 3.7 无标记行过滤（既非审核后变更、也非隔离区）
+            # 3.7 无标记行过滤（无颜色标记：非浅红/非浅黄/非浅蓝）
             if '_plain_only' in self._custom_filters:
                 if row_data.get('_post_audit_changed', 0) == 1 or row_data.get('_quarantined', 0) == 1:
                     return False
+                # 同时排除浅蓝替代料/非耗用行（实际≈0 且 定额>0）
+                sub_actual_col = None
+                for c in ['数量-实际', '实际']:
+                    if c in df.columns:
+                        sub_actual_col = c
+                        break
+                sub_qty_col = None
+                for c in ['数量-定额', '定额']:
+                    if c in df.columns:
+                        sub_qty_col = c
+                        break
+                if sub_actual_col and sub_qty_col:
+                    a_val = _to_float_safe(row_data.get(sub_actual_col, 0))
+                    q_val = _to_float_safe(row_data.get(sub_qty_col, 0))
+                    if abs(a_val) <= 0.001 and q_val > 0.001:
+                        return False
 
             # 4. 备注为空
             if '_remark_empty' in self._custom_filters:
