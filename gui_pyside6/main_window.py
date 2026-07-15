@@ -365,7 +365,7 @@ class MainWindow(QMainWindow):
         right_scroll.setWidgetResizable(True)
         right_scroll.setWidget(right_container)
         right_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        right_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        right_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.body_splitter.addWidget(right_scroll)
         self.body_splitter.setSizes([260, 280, 940])
 
