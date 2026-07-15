@@ -17,6 +17,8 @@ import pandas as pd
 import json
 import os
 
+from gui_pyside6.dialogs.material_presets_dialog import MaterialPresetsDialog
+
 
 def _color_icon(rgb):
     """生成纯色小图标，用于筛选下拉里直观显示颜色标记"""
@@ -584,17 +586,15 @@ class FilterPanel(QWidget):
         self.material_name_edit.setCurrentText(current_text)
 
     def _open_material_presets_editor(self):
-        """打开物料名称预设文件让用户自己维护下拉项。"""
-        p = self._preset_path()
-        try:
-            if not os.path.exists(p):
-                os.makedirs(os.path.dirname(p), exist_ok=True)
-                with open(p, "w", encoding="utf-8") as f:
-                    json.dump([], f, ensure_ascii=False, indent=2)
-            os.startfile(p)
-        except Exception as e:
-            from PySide6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "打开失败", f"无法打开预设文件：{e}")
+        """弹窗管理物料名称下拉预设，无需手写 JSON。"""
+        dialog = MaterialPresetsDialog(
+            self,
+            presets=self._material_presets,
+            preset_path=self._preset_path(),
+        )
+        if dialog.exec() == QDialog.Accepted:
+            self._material_presets = dialog.get_presets()
+            self._update_material_name_combo()
 
     def _reset_date_range(self):
         """将日期控件重置为数据的最小/最大日期"""
