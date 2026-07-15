@@ -132,6 +132,10 @@ class MainWindow(QMainWindow):
         self._monitor_timer.timeout.connect(self._scan_monitor_dir)
         self._monitor_last_size = {}   # path -> 上次文件大小（用于判定文件写完）
         self._monitor_loaded = set()   # (path, mtime, size) 已自动加载的文件指纹
+        self._monitor_pending = set()  # (path, mtime, size) 已排队等待加载（避免重复排队）
+        self._monitor_delay_ms = 5000  # 检测到新文件后延迟加载的毫秒数（等用户关闭自动打开的预览）
+        self._monitor_busy_retry = 6   # 文件仍被占用时的重试次数
+        self._monitor_busy_interval = 3000  # 被占用时每次重试间隔(ms)
         # 默认开启：以当前目录最新文件为基线（不立即分析），只监控「新导出」的文件
         self._seed_monitor_baseline()
         self._monitor_timer.start()
@@ -1222,7 +1226,47 @@ class MainWindow(QMainWindow):
         key = (fp, int(st.st_mtime), st.st_size)
         if key in self._monitor_loaded:
             return
-        # 新稳定文件（且是当前目录最新）-> 自动加载
+        # 已在等待加载队列中，避免重复排队
+        if key in self._monitor_pending:
+            return
+        # 新稳定文件（且是当前目录最新）-> 延迟加载
+        # 延迟目的：下载工具常自动打开文件预览，用户还没关闭就被监控到，
+        # 立刻加载会因文件被占用而报「被占用」。延迟 5 秒给关闭窗口留时间，
+        # 即使仍被占用，_monitor_try_load 也会自动重试而不直接报错。
+        self._monitor_pending.add(key)
+        toast(f"📥 监控到新文件，{self._monitor_delay_ms // 1000} 秒后自动加载："
+              f"{os.path.basename(fp)}（若已自动打开请先关闭）", "info", parent=self)
+        QTimer.singleShot(self._monitor_delay_ms, lambda: self._monitor_try_load(fp, key))
+
+    def _monitor_file_busy(self, fp):
+        """检测文件是否被占用（与 analyzer 的占用判定一致：以 r+b 方式打开尝试）。"""
+        try:
+            with open(fp, "r+b"):
+                pass
+            return False
+        except PermissionError:
+            return True
+        except Exception:
+            return False
+
+    def _monitor_try_load(self, fp, key, attempt=0):
+        """延迟后真正加载：若文件仍被占用（预览窗口未关闭），自动重试若干次；
+        重试耗尽则放弃本次，等下次扫描重新触发，避免直接报「被占用」。"""
+        if not self._monitor_enabled:
+            self._monitor_pending.discard(key)
+            return
+        if self._monitor_file_busy(fp):
+            if attempt < self._monitor_busy_retry:
+                QTimer.singleShot(self._monitor_busy_interval,
+                                  lambda: self._monitor_try_load(fp, key, attempt + 1))
+                return
+            # 重试耗尽：移除排队标记，下次扫描会重新检测到该文件并再次尝试
+            self._monitor_pending.discard(key)
+            toast(f"⚠️ 文件仍被占用，暂未加载：{os.path.basename(fp)}"
+                  f"（关闭预览后将被自动重新检测）", "warning", parent=self)
+            return
+        # 文件可用 -> 正式加载（记录指纹 + 移除排队）
+        self._monitor_pending.discard(key)
         self._monitor_loaded.add(key)
         self._auto_load_from_monitor(fp)
 
