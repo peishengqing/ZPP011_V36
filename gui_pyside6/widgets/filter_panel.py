@@ -371,6 +371,8 @@ class FilterPanel(QWidget):
         w.setReadOnly(False)
         w.setInputMethodHints(Qt.ImhPreferLatin)  # 编辑时优先拉丁输入，避免中文 IME 吞数字
         w.setToolTip(tooltip)
+        w.setMaximumWidth(120)
+        w.setMinimumWidth(110)
         cal_btn = QPushButton("选择")
         cal_btn.setFixedWidth(38)
         cal_btn.setToolTip("选择日期")
@@ -382,9 +384,10 @@ class FilterPanel(QWidget):
         h = QHBoxLayout()
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(2)
-        h.addWidget(w, 1)
+        h.addWidget(w)
         h.addWidget(cal_btn)
         h.addWidget(clear_btn)
+        h.addStretch()
         container = QWidget()
         container.setLayout(h)
         return w, container
