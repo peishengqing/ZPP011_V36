@@ -116,6 +116,7 @@ class FilterPanel(QWidget):
         self.order_type_combo.addItem("全部")
         self.material_code_edit = QLineEdit()
         self.material_code_edit.setPlaceholderText("输入编码，逗号分隔多选")
+        self.material_code_edit.setMaximumWidth(320)
         # 物料名称：使用可编辑下拉框，内容完全由用户通过 config/material_name_presets.json 自定义
         self.material_name_edit = QComboBox()
         self.material_name_edit.setEditable(True)
@@ -124,6 +125,7 @@ class FilterPanel(QWidget):
         self.material_name_edit.lineEdit().setPlaceholderText("输入名称(逗号分隔多选)")
         self.material_name_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.material_name_edit.setMinimumWidth(180)
+        self.material_name_edit.setMaximumWidth(320)
         self.material_name_edit.setInsertPolicy(QComboBox.NoInsert)
         # 下拉项由用户自定义维护（不自动灌入数据名称，也不自动收录手输值），见 _load_material_presets
         self._material_presets = self._load_material_presets()
@@ -165,8 +167,10 @@ class FilterPanel(QWidget):
         self.zero_qty_combo.addItems(["全部", "定额为0", "实际为0", "定额/实际为0", "定额/实际非0"])
         self.remark_search_edit = QLineEdit()
         self.remark_search_edit.setPlaceholderText("输入备注关键词，逗号分隔多选")
+        self.remark_search_edit.setMaximumWidth(320)
         self.remark_not_edit = QLineEdit()
         self.remark_not_edit.setPlaceholderText("排除包含这些关键词的备注，逗号分隔")
+        self.remark_not_edit.setMaximumWidth(320)
         dev_layout.addRow("偏差率范围:", self.dev_rate_combo)
         self.dev_qty_combo = QComboBox()
         self.dev_qty_combo.addItems(["全部", "大于0", "等于0", "小于0"])
