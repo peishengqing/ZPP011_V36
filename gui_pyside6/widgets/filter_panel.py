@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout,
     QComboBox, QPushButton, QLabel, QDateEdit, QLineEdit, QScrollArea,
     QDoubleSpinBox, QListWidget, QListWidgetItem, QDialog, QCalendarWidget,
-    QSizePolicy, QMenu
+    QSizePolicy, QMenu, QCheckBox
 )
 from PySide6.QtCore import Signal, Qt, QDate, QEvent
 from PySide6.QtGui import QColor, QPixmap, QIcon
@@ -190,18 +190,29 @@ class FilterPanel(QWidget):
         dev_layout.addRow("备注为空:", self.remark_empty_combo)
         dev_layout.addRow("零值筛选:", self.zero_qty_combo)
         dev_layout.addRow("已读/未读:", self.read_status_combo)
-        # 颜色标记筛选（与表格行背景色对应）
-        self.color_combo = QComboBox()
-        self.color_combo.addItem("全部")
-        self.color_combo.addItem("审核后变更（浅红）")
-        self.color_combo.addItem("隔离区（浅黄）")
-        self.color_combo.addItem("无标记（空白）")
-        self.color_combo.addItem("替代料/非耗用（浅蓝）")
-        self.color_combo.setItemIcon(1, _color_icon((255, 205, 205)))
-        self.color_combo.setItemIcon(2, _color_icon((255, 248, 200)))
-        self.color_combo.setItemIcon(3, _color_icon((235, 235, 235)))
-        self.color_combo.setItemIcon(4, _color_icon((205, 230, 255)))
-        dev_layout.addRow("颜色标记:", self.color_combo)
+        # 颜色标记筛选（与表格行背景色对应）——复选框多选（OR）
+        self.color_checks = {}  # key -> QCheckBox
+        _color_items = [
+            ("_changed_only", "审核后变更", (255, 205, 205)),
+            ("_quarantined_only", "隔离区", (255, 248, 200)),
+            ("_substitute_only", "替代料/非耗用", (205, 230, 255)),
+            ("_plain_only", "无标记", (235, 235, 235)),
+        ]
+        color_check_layout = QVBoxLayout()
+        color_check_layout.setSpacing(4)
+        color_check_layout.setContentsMargins(0, 0, 0, 0)
+        for key, label, rgb in _color_items:
+            cb = QCheckBox(label)
+            cb.setIcon(_color_icon(rgb))
+            cb.stateChanged.connect(self._emit_filter)
+            self.color_checks[key] = cb
+            color_check_layout.addWidget(cb)
+        color_clear_btn = QPushButton("清空颜色")
+        color_clear_btn.setMaximumWidth(70)
+        color_clear_btn.setToolTip("取消所有颜色勾选")
+        color_clear_btn.clicked.connect(self._clear_color_checks)
+        color_check_layout.addWidget(color_clear_btn)
+        dev_layout.addRow("颜色标记:", color_check_layout)
         content_layout.addWidget(dev_group)
 
         # 日期范围
@@ -260,7 +271,6 @@ class FilterPanel(QWidget):
         self.remark_empty_combo.currentIndexChanged.connect(self._emit_filter)
         self.order_type_combo.currentIndexChanged.connect(self._emit_filter)
         self.read_status_combo.currentIndexChanged.connect(self._emit_filter)
-        self.color_combo.currentIndexChanged.connect(self._emit_filter)
         self.material_code_edit.textChanged.connect(self._emit_filter)
         self.material_code_edit.editingFinished.connect(self._emit_filter)
         self.material_code_edit.returnPressed.connect(self._emit_filter)
@@ -288,7 +298,7 @@ class FilterPanel(QWidget):
                    self.category_combo, self.alt_combo, self.order_type_combo,
                    self.dev_rate_combo, self.dev_qty_combo, self.audit_status_combo, self.remark_empty_combo,
                    self.read_status_combo, self.remark_source_combo, self.zero_qty_combo,
-                   self.color_combo, self.substitute_combo, self.start_date_edit, self.end_date_edit,
+                   self.substitute_combo, self.start_date_edit, self.end_date_edit,
                    self.analysis_start_date_edit, self.analysis_end_date_edit,
                    self.material_name_edit):
             _w.installEventFilter(self)
@@ -444,8 +454,8 @@ class FilterPanel(QWidget):
         return self.audit_status_combo
 
     @property
-    def color_cb(self):
-        return None
+    def color_checks_map(self):
+        return self.color_checks
 
     @property
     def material_entry(self):
@@ -687,16 +697,10 @@ class FilterPanel(QWidget):
         # 替代料筛查（纯数值：实际=0 且 定额>0）
         if self.substitute_combo.currentText() != "全部":
             filters['_substitute_only'] = True
-        # 颜色标记筛选：与表格行背景色对应
-        color_sel = self.color_combo.currentText()
-        if color_sel == "审核后变更（浅红）":
-            filters['_changed_only'] = True
-        elif color_sel == "隔离区（浅黄）":
-            filters['_quarantined_only'] = True
-        elif color_sel == "无标记（空白）":
-            filters['_plain_only'] = True
-        elif color_sel == "替代料/非耗用（浅蓝）":
-            filters['_substitute_only'] = True
+        # 颜色标记筛选：与表格行背景色对应（多选 OR，勾选的 key 全部加入 filter）
+        for key, cb in self.color_checks.items():
+            if cb.isChecked():
+                filters[key] = True
         # 备注关键词搜索（逗号分隔多选，OR匹配）
         remark_search_text = self.remark_search_edit.text().strip()
         if remark_search_text:
@@ -708,6 +712,14 @@ class FilterPanel(QWidget):
         if self._date_filters:
             filters.update(self._date_filters)
         return filters
+
+    def _clear_color_checks(self):
+        """取消所有颜色复选框的勾选"""
+        for cb in self.color_checks.values():
+            cb.blockSignals(True)
+            cb.setChecked(False)
+            cb.blockSignals(False)
+        self._emit_filter()
 
     # ------------------------------------------------------------------ #
     # 内部槽
@@ -741,20 +753,23 @@ class FilterPanel(QWidget):
         self._emit_filter()
 
     def set_color_filter(self, mode: str):
-        """程序控制颜色标记筛选（与统计卡片联动）。mode: 'all'/'changed'/'quarantine'/'plain'"""
+        """程序控制颜色标记筛选（与统计卡片联动）。mode: 'all'/'changed'/'quarantine'/'plain'/'substitute'"""
         mapping = {
-            'all': 0,
-            'changed': 1,
-            'quarantine': 2,
-            'plain': 3,
-            'substitute': 4,
+            'all': [],
+            'changed': ['_changed_only'],
+            'quarantine': ['_quarantined_only'],
+            'plain': ['_plain_only'],
+            'substitute': ['_substitute_only'],
         }
-        idx = mapping.get(mode, 0)
-        if self.color_combo.currentIndex() != idx:
-            self.color_combo.setCurrentIndex(idx)
-        else:
-            # 索引相同也要发一次，确保 proxy 与 UI 一致
-            self._emit_filter()
+        keys = mapping.get(mode, [])
+        for key, cb in self.color_checks.items():
+            target = key in keys
+            if cb.isChecked() != target:
+                cb.blockSignals(True)
+                cb.setChecked(target)
+                cb.blockSignals(False)
+        # 确保 proxy 与 UI 一致（即便没有变化也发一次）
+        self._emit_filter()
 
     def set_read_status_filter(self, status: str):
         """程序控制已读/未读筛选（与统计卡片联动）。status: '全部'/'已读'/'未读'"""
@@ -780,7 +795,7 @@ class FilterPanel(QWidget):
         self.read_status_combo.setCurrentIndex(0)
         self.remark_source_combo.setCurrentIndex(0)
         self.zero_qty_combo.setCurrentIndex(0)
-        self.color_combo.setCurrentIndex(0)
+        self._clear_color_checks()
         self.material_code_edit.clear()
         self.material_name_edit.setCurrentIndex(0)
         self.remark_search_edit.clear()
