@@ -470,8 +470,7 @@ class MainWindow(QMainWindow):
             return
         count = len(changes)
         MAX_DISPLAY = 3000
-        display_changes = changes if count <= MAX_DISPLAY else changes[:MAX_DISPLAY]
-        display_len = len(display_changes)
+        display_len = min(count, MAX_DISPLAY)
         # 自定义对话框：表格展示变更明细 + 筛选/搜索/排序/复制/双击定位 + 手动导出
         dlg = QDialog(self)
         dlg.setWindowTitle(f"变动提醒（{count} 条）")
@@ -502,70 +501,83 @@ class MainWindow(QMainWindow):
         cols = ["日期", "车间", "流程订单", "物料编码", "物料名称", "变更字段", "旧值", "新值"]
         table.setColumnCount(len(cols))
         table.setHorizontalHeaderLabels(cols)
-        table.setRowCount(display_len)
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        table.setSelectionMode(QAbstractItemView.SingleSelection)
+        table.setSelectionMode(QAbstractItemView.ExtendedSelection)  # 支持 Ctrl/Shift 多选，点击行即高亮选中
         table.verticalHeader().setVisible(False)
-        # 进度提示：数据量大时显示进度条，避免界面假死（小数据因 minimumDuration 不闪）
-        progress = QProgressDialog("正在加载变更明细...", None, 0, display_len, self)
-        progress.setWindowTitle("加载变动提醒")
-        progress.setWindowModality(Qt.WindowModal)
-        progress.setMinimumDuration(300)
-        progress.setValue(0)
-        for i, c in enumerate(display_changes):
-            did = str(c.get('data_id', ''))
-            parts = did.split('|')
-            date = parts[0] if len(parts) > 0 else ''
-            order = parts[1] if len(parts) > 1 else ''
-            mat = parts[2] if len(parts) > 2 else ''
-            wk = c.get('workshop', '') or ''
-            old_v = c.get('old_value', '')
-            new_v = c.get('new_value', '')
-            table.setItem(i, 0, QTableWidgetItem(date))
-            table.setItem(i, 1, QTableWidgetItem(str(wk)))
-            table.setItem(i, 2, QTableWidgetItem(order))
-            table.setItem(i, 3, QTableWidgetItem(mat))
-            table.setItem(i, 4, QTableWidgetItem(str(c.get('material_name', '') or '')))
-            table.setItem(i, 5, QTableWidgetItem(str(c.get('field', ''))))
-            table.setItem(i, 6, QTableWidgetItem('' if old_v is None else str(old_v)))
-            table.setItem(i, 7, QTableWidgetItem('' if new_v is None else str(new_v)))
-            if (i + 1) % 200 == 0:
-                progress.setValue(i + 1)
-                QApplication.processEvents()
-        progress.setValue(display_len)
-        # 列宽：手动设定固定/拉伸，避免 ResizeToContents 在大量行时逐行测量导致卡顿
-        header = table.horizontalHeader()
-        fixed_widths = {0: 100, 1: 90, 2: 100, 3: 110, 4: 200, 5: 90}
-        for col, w in fixed_widths.items():
-            header.setSectionResizeMode(col, QHeaderView.Fixed)
-            table.setColumnWidth(col, w)
-        name_col = 4
-        name_max_w = 200
-        header.setSectionResizeMode(6, QHeaderView.Stretch)  # 旧值
-        header.setSectionResizeMode(7, QHeaderView.Stretch)  # 新值
-        # 仅在小数据量时做逐行字号缩放（大数据量跳过，避免逐行 QFontMetrics 卡顿）
-        if display_len <= 2000:
-            base_font = table.font()
-            fm = QFontMetrics(base_font)
-            pad = 12
-            avail = name_max_w - pad
-            max_text_w = 0
-            for r in range(table.rowCount()):
-                it = table.item(r, name_col)
-                if it:
-                    max_text_w = max(max_text_w, fm.horizontalAdvance(it.text()))
-            if max_text_w > avail:
-                ps = base_font.pointSizeF() or 9.0
-                new_size = max(7.0, ps * avail / max_text_w)
-                shrink_font = QFont(base_font)
-                shrink_font.setPointSizeF(new_size)
-                for r in range(table.rowCount()):
+        layout.addWidget(table)
+
+        # 待处理变动列表（标记已读后从此移除并刷新表格）；行内 UserRole 存 remaining 索引，排序/部分标记后仍可正确映射
+        remaining = list(changes)
+
+        def _populate(show_list, with_progress=False):
+            table.setSortingEnabled(False)
+            table.setRowCount(len(show_list))
+            prog = None
+            if with_progress and len(show_list) > 0:
+                prog = QProgressDialog("正在加载变更明细...", None, 0, len(show_list), self)
+                prog.setWindowTitle("加载变动提醒")
+                prog.setWindowModality(Qt.WindowModal)
+                prog.setMinimumDuration(300)
+                prog.setValue(0)
+            for i, c in enumerate(show_list):
+                did = str(c.get('data_id', ''))
+                parts = did.split('|')
+                date = parts[0] if len(parts) > 0 else ''
+                order = parts[1] if len(parts) > 1 else ''
+                mat = parts[2] if len(parts) > 2 else ''
+                wk = c.get('workshop', '') or ''
+                old_v = c.get('old_value', '')
+                new_v = c.get('new_value', '')
+                it0 = QTableWidgetItem(date)
+                it0.setData(Qt.UserRole, i)  # 存 remaining 索引
+                table.setItem(i, 0, it0)
+                table.setItem(i, 1, QTableWidgetItem(str(wk)))
+                table.setItem(i, 2, QTableWidgetItem(order))
+                table.setItem(i, 3, QTableWidgetItem(mat))
+                table.setItem(i, 4, QTableWidgetItem(str(c.get('material_name', '') or '')))
+                table.setItem(i, 5, QTableWidgetItem(str(c.get('field', ''))))
+                table.setItem(i, 6, QTableWidgetItem('' if old_v is None else str(old_v)))
+                table.setItem(i, 7, QTableWidgetItem('' if new_v is None else str(new_v)))
+                if prog and (i + 1) % 200 == 0:
+                    prog.setValue(i + 1)
+                    QApplication.processEvents()
+            if prog:
+                prog.setValue(len(show_list))
+            # 列宽：手动设定固定/拉伸，避免 ResizeToContents 在大量行时逐行测量导致卡顿
+            header = table.horizontalHeader()
+            fixed_widths = {0: 100, 1: 90, 2: 100, 3: 110, 4: 200, 5: 90}
+            for col, w in fixed_widths.items():
+                header.setSectionResizeMode(col, QHeaderView.Fixed)
+                table.setColumnWidth(col, w)
+            name_col = 4
+            name_max_w = 200
+            header.setSectionResizeMode(6, QHeaderView.Stretch)  # 旧值
+            header.setSectionResizeMode(7, QHeaderView.Stretch)  # 新值
+            # 仅在小数据量时做逐行字号缩放（大数据量跳过，避免逐行 QFontMetrics 卡顿）
+            n = len(show_list)
+            if n <= 2000:
+                base_font = table.font()
+                fm = QFontMetrics(base_font)
+                pad = 12
+                avail = name_max_w - pad
+                max_text_w = 0
+                for r in range(n):
                     it = table.item(r, name_col)
                     if it:
-                        it.setFont(shrink_font)
-        table.setSortingEnabled(True)
-        layout.addWidget(table)
+                        max_text_w = max(max_text_w, fm.horizontalAdvance(it.text()))
+                if max_text_w > avail:
+                    ps = base_font.pointSizeF() or 9.0
+                    new_size = max(7.0, ps * avail / max_text_w)
+                    shrink_font = QFont(base_font)
+                    shrink_font.setPointSizeF(new_size)
+                    for r in range(n):
+                        it = table.item(r, name_col)
+                        if it:
+                            it.setFont(shrink_font)
+            table.setSortingEnabled(True)
+
+        _populate(remaining[:MAX_DISPLAY], with_progress=True)
 
         # 右键：复制单元格 / 复制整行
         _ctx_index = [None]  # 记录右键所在的单元格，避免整行选中导致取错列
@@ -637,9 +649,11 @@ class MainWindow(QMainWindow):
 
         btn_box = QDialogButtonBox(dlg)
         export_btn = QPushButton("导出Excel并打开")
+        mark_sel_btn = QPushButton("选中标记为已读")
         mark_read_btn = QPushButton("全部标记为已读（不再提醒）")
         ok_btn = QPushButton("确定")
         btn_box.addButton(export_btn, QDialogButtonBox.ActionRole)
+        btn_box.addButton(mark_sel_btn, QDialogButtonBox.ActionRole)
         btn_box.addButton(mark_read_btn, QDialogButtonBox.ActionRole)
         btn_box.addButton(ok_btn, QDialogButtonBox.AcceptRole)
         layout.addWidget(btn_box)
@@ -674,32 +688,77 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.warning(dlg, "导出失败", f"导出失败：{e}")
 
+        def _get_df_for_mark():
+            """构造用于标记已读的主表快照 df（优先 source_model，其次 view_model.df，最后最小 data_id df）。"""
+            df = None
+            if self.source_model:
+                df = self.source_model.getDataFrame()
+            if df is None or (hasattr(df, 'empty') and df.empty):
+                df = getattr(self.view_model, 'df', None)
+                if df is not None and not (hasattr(df, 'empty') and df.empty):
+                    self.log("source_model 为空，使用 view_model.df 作为已读快照", "warning")
+            if df is None or (hasattr(df, 'empty') and df.empty):
+                data_ids = list(dict.fromkeys([str(c.get('data_id', '')) for c in remaining if c.get('data_id')]))
+                if not data_ids:
+                    return None
+                df = pd.DataFrame({'data_id': data_ids})
+                self.log("主表数据为空，以最小 data_id 列标记变动已读（不保存当前值快照）", "warning")
+            return df
+
+        def _mark_selected_read():
+            """把当前选中的行（点击高亮即选中，Ctrl/Shift 可多选）标记为已读，并从列表移除。"""
+            sel = table.selectedIndexes()
+            if not sel:
+                QMessageBox.information(dlg, "提示", "请先选中要标记的行（点击行即高亮选中，Ctrl/Shift 可多选）。")
+                return
+            rows = sorted({idx.row() for idx in sel})
+            idxs = []
+            for r in rows:
+                ud = table.item(r, 0).data(Qt.UserRole)
+                if isinstance(ud, int) and 0 <= ud < len(remaining):
+                    idxs.append(ud)
+            if not idxs:
+                return
+            idxs = sorted(set(idxs))
+            sub_changes = [remaining[i] for i in idxs]
+            df = _get_df_for_mark()
+            if df is None:
+                QMessageBox.warning(dlg, "提示", "主表数据为空且无有效 data_id，无法标记已读。")
+                return
+            n = self.data_service.mark_changes_as_read(sub_changes, df)
+            if n > 0:
+                # 从 remaining 移除已标记行（按 data_id+变更字段 去重，避免误删未选中的同名行）
+                marked_keys = {(str(c.get('data_id', '')), str(c.get('field', ''))) for c in sub_changes}
+                new_remaining = [c for c in remaining if (str(c.get('data_id', '')), str(c.get('field', ''))) not in marked_keys]
+                remaining[:] = new_remaining
+                dlg.setWindowTitle(f"变动提醒（{len(remaining)} 条）")
+                _populate(remaining[:MAX_DISPLAY])
+                _apply_filter()
+                toast(f"已把 {n} 条标记为已读（剩余 {len(remaining)} 条）", parent=dlg)
+                if not remaining:
+                    toast("已全部标记为已读", parent=dlg)
+                    dlg.accept()
+            else:
+                QMessageBox.warning(dlg, "标记失败", "未能标记所选行为已读，请检查数据。")
+
         def _mark_all_read():
             try:
-                df = None
-                if self.source_model:
-                    df = self.source_model.getDataFrame()
-                # 兜底：source_model 为空时改用 view_model.df（分析结果）
-                if df is None or df.empty:
-                    df = getattr(self.view_model, 'df', None)
-                    if df is not None and not df.empty:
-                        self.log("source_model 为空，使用 view_model.df 作为已读快照", "warning")
-                # 仍空：用变动记录里的 data_id 构造最小 DataFrame，保证能标记为已读
-                if df is None or df.empty:
-                    data_ids = list(dict.fromkeys([str(c.get('data_id', '')) for c in changes if c.get('data_id')]))
-                    if not data_ids:
-                        QMessageBox.warning(dlg, "提示", "变动记录无有效 data_id，无法标记已读。")
-                        return
-                    df = pd.DataFrame({'data_id': data_ids})
-                    self.log("主表数据为空，以最小 data_id 列标记变动已读（不保存当前值快照）", "warning")
-                n = self.data_service.mark_changes_as_read(changes, df)
+                df = _get_df_for_mark()
+                if df is None:
+                    QMessageBox.warning(dlg, "提示", "主表数据为空且无有效 data_id，无法标记已读。")
+                    return
+                n = self.data_service.mark_changes_as_read(remaining, df)
                 if n > 0:
                     toast(f"已把 {n} 条记录标记为已读，下次不再提醒", parent=dlg)
+                remaining[:] = []
+                dlg.setWindowTitle("变动提醒（0 条）")
+                _populate([])
                 dlg.accept()
             except Exception as e:
                 QMessageBox.warning(dlg, "标记失败", f"标记已读失败：{e}")
 
         export_btn.clicked.connect(_export)
+        mark_sel_btn.clicked.connect(_mark_selected_read)
         mark_read_btn.clicked.connect(_mark_all_read)
         ok_btn.clicked.connect(dlg.accept)
         dlg.exec()
