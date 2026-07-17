@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QPushButton, QProgressBar, QTableView, QHeaderView,
     QWidget, QSizePolicy, QToolButton,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal, QObject
 
 # 分析进度步骤图标（沿用 v31 经典布局：一排图标 + 进度条 + 状态文字）
 ANALYSIS_STEPS = [
@@ -82,10 +82,14 @@ QProgressBar::chunk {
 """
 
 
-class MainTableComponent:
+class MainTableComponent(QObject):
     """主表格区组件：分析进度、操作按钮、统计卡片、表格"""
 
+    # 分析进度面板整体显隐变化（True=显示, False=隐藏）
+    progress_visibility_changed = Signal(bool)
+
     def __init__(self, main_window):
+        super().__init__(main_window)
         self.mw = main_window
         self._create_widgets()
 
@@ -282,11 +286,13 @@ class MainTableComponent:
     # 分析进度面板折叠
     # ------------------------------------------------------------------ #
     def _toggle_progress(self, visible):
-        """标题栏折叠按钮：折叠/展开分析进度内容区"""
+        """标题栏隐藏按钮：点击后整个分析进度面板消失"""
         self._progress_hidden = not visible
         self.progress_content.setVisible(visible)
         self.progress_toggle_btn.setText("隐藏" if visible else "显示")
         self.progress_toggle_btn.setToolTip("隐藏分析进度" if visible else "显示分析进度")
+        self.progress_group.setVisible(visible)
+        self.progress_visibility_changed.emit(visible)
 
     def set_progress_visible(self, visible: bool):
         """外部（如开始分析时）强制展开/折叠进度面板，并同步按钮状态"""
@@ -295,6 +301,12 @@ class MainTableComponent:
         self.progress_toggle_btn.setChecked(visible)
         self.progress_toggle_btn.setText("隐藏" if visible else "显示")
         self.progress_toggle_btn.setToolTip("隐藏分析进度" if visible else "显示分析进度")
+        self.progress_group.setVisible(visible)
+        self.progress_visibility_changed.emit(visible)
+
+    def show_progress(self):
+        """外部调用：显示整个分析进度面板"""
+        self.set_progress_visible(True)
 
     # ------------------------------------------------------------------ #
     # 分析进度步骤图标

@@ -330,6 +330,24 @@ class MainWindow(QMainWindow):
         action_layout.addWidget(self.action_btn_auto_q)
 
         action_layout.addStretch()
+
+        # 面板显隐切换按钮（当面板被“隐藏”后，可在此恢复显示）
+        self.action_btn_toggle_stats = QPushButton("📊 概览")
+        self.action_btn_toggle_stats.setCursor(Qt.PointingHandCursor)
+        self.action_btn_toggle_stats.setObjectName("actionBtnToggleStats")
+        self.action_btn_toggle_stats.setProperty("class", "actionBtn")
+        self.action_btn_toggle_stats.setToolTip("显示/隐藏「本次分析概览」面板")
+        self.action_btn_toggle_stats.clicked.connect(self._toggle_stats_from_toolbar)
+        action_layout.addWidget(self.action_btn_toggle_stats)
+
+        self.action_btn_toggle_progress = QPushButton("⚡ 进度")
+        self.action_btn_toggle_progress.setCursor(Qt.PointingHandCursor)
+        self.action_btn_toggle_progress.setObjectName("actionBtnToggleProgress")
+        self.action_btn_toggle_progress.setProperty("class", "actionBtn")
+        self.action_btn_toggle_progress.setToolTip("显示/隐藏「分析进度」面板")
+        self.action_btn_toggle_progress.clicked.connect(self._toggle_progress_from_toolbar)
+        action_layout.addWidget(self.action_btn_toggle_progress)
+
         action_layout.addWidget(shortcut_hint)
 
         # 底部按钮行已删除，start_btn 别名指向顶部工具栏分析按钮（供分析起止启用/禁用）
@@ -354,14 +372,14 @@ class MainWindow(QMainWindow):
         right_layout.setSpacing(6)
 
         # 上半部分：本次分析概览 + 分析进度（用户可拖动，默认占较小空间）
-        top_panel = QWidget()
-        top_panel.setObjectName("topPanel")
-        top_layout = QVBoxLayout(top_panel)
+        self.top_panel = QWidget()
+        self.top_panel.setObjectName("topPanel")
+        top_layout = QVBoxLayout(self.top_panel)
         top_layout.setContentsMargins(0, 0, 0, 0)
         top_layout.setSpacing(6)
         top_layout.addWidget(self.stats_cards)                # 📊 本次分析概览
         top_layout.addWidget(self.main_table.progress_group)  # ⚡ 分析进度
-        top_panel.setMaximumHeight(240)                       # 限制最大高度，不抢表格空间
+        self.top_panel.setMaximumHeight(240)                       # 限制最大高度，不抢表格空间
 
         # 垂直分割器：表格 + 日志；这里用 stretch 让表格区自适应窗口高度
         self._v_splitter = QSplitter(Qt.Vertical)
@@ -383,7 +401,7 @@ class MainWindow(QMainWindow):
         # 用户可拖动中间分隔线，把上面压扁以显示更多表格行
         self._right_v_splitter = QSplitter(Qt.Vertical)
         self._right_v_splitter.setChildrenCollapsible(True)
-        self._right_v_splitter.addWidget(top_panel)
+        self._right_v_splitter.addWidget(self.top_panel)
         self._right_v_splitter.addWidget(self._v_splitter)
         self._right_v_splitter.setSizes([150, 650])
         self._right_v_splitter.setStretchFactor(0, 0)
@@ -408,6 +426,8 @@ class MainWindow(QMainWindow):
         self.audit_controller.log_message.connect(self.log)
         self.analysis_controller.analysis_finished.connect(self._on_analysis_finished_ui)
         self.stats_cards.card_clicked.connect(self._on_stats_card_clicked)
+        self.stats_cards.visibility_changed.connect(self._on_stats_visibility_changed)
+        self.main_table.progress_visibility_changed.connect(self._on_progress_visibility_changed)
         self.analysis_controller.analysis_error.connect(self._on_analysis_error_ui)
         self.audit_controller.progress_started.connect(self._on_ai_ui_start)
         self.audit_controller.progress_updated.connect(self._on_ai_progress_ui)
@@ -879,6 +899,38 @@ class MainWindow(QMainWindow):
 
         # 分析完成后自动把「疑难包材箱」记录移入隔离区（静默：仅当有新增时 toast）
         self._auto_move_to_quarantine(manual=False)
+
+    # ------------------------------------------------------------------ #
+    # 顶部面板（概览 / 进度）显隐控制
+    # ------------------------------------------------------------------ #
+    def _toggle_stats_from_toolbar(self):
+        """工具栏「📊 概览」按钮：切换本次分析概览面板显隐"""
+        if self.stats_cards._user_hidden:
+            self.stats_cards.show_panel()
+        else:
+            self.stats_cards._toggle_cards(False)
+
+    def _toggle_progress_from_toolbar(self):
+        """工具栏「⚡ 进度」按钮：切换分析进度面板显隐"""
+        self.main_table.set_progress_visible(self.main_table._progress_hidden)
+
+    def _on_stats_visibility_changed(self, visible: bool):
+        """概览面板显隐变化时同步工具栏按钮文字和顶部容器可见性"""
+        self.action_btn_toggle_stats.setText("📊 概览" if visible else "📊 显示概览")
+        self.action_btn_toggle_stats.setToolTip("隐藏本次分析概览" if visible else "显示本次分析概览")
+        self._update_top_panel_visibility()
+
+    def _on_progress_visibility_changed(self, visible: bool):
+        """进度面板显隐变化时同步工具栏按钮文字和顶部容器可见性"""
+        self.action_btn_toggle_progress.setText("⚡ 进度" if visible else "⚡ 显示进度")
+        self.action_btn_toggle_progress.setToolTip("隐藏分析进度" if visible else "显示分析进度")
+        self._update_top_panel_visibility()
+
+    def _update_top_panel_visibility(self):
+        """两个面板都隐藏时，把顶部容器也隐藏，释放空间给表格"""
+        stats_visible = self.stats_cards.isVisible()
+        progress_visible = self.main_table.progress_group.isVisible()
+        self.top_panel.setVisible(stats_visible or progress_visible)
 
     def _on_analysis_error_ui(self, error_msg):
         self._stop_countdown()

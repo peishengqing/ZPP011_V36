@@ -43,6 +43,8 @@ class StatsCardsWidget(QWidget):
 
     # 点击某张卡片时发出的信号，携带卡片标识
     card_clicked = Signal(str)  # "anomaly" | "unread" | "alt" | "changed" | "quarantine"
+    # 面板整体显隐变化（True=显示, False=隐藏）
+    visibility_changed = Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -122,13 +124,23 @@ class StatsCardsWidget(QWidget):
         main_layout.addWidget(self.cards_container)
 
     def _toggle_cards(self, visible):
-        """标题栏折叠按钮：折叠/显示卡片区"""
+        """标题栏隐藏按钮：点击隐藏后整个面板消失"""
         self._user_hidden = not visible
         self.cards_container.setVisible(visible)
         self.toggle_btn.setText("隐藏" if visible else "显示")
         self.toggle_btn.setToolTip("隐藏本次分析概览卡片" if visible else "显示本次分析概览卡片")
+        self.setVisible(visible)
+        self.visibility_changed.emit(visible)
 
-    # ── 事件处理 ──
+    def show_panel(self):
+        """外部调用：显示整个概览面板"""
+        self._user_hidden = False
+        self.cards_container.setVisible(True)
+        self.toggle_btn.setChecked(True)
+        self.toggle_btn.setText("隐藏")
+        self.toggle_btn.setToolTip("隐藏本次分析概览卡片")
+        self.setVisible(True)
+        self.visibility_changed.emit(True)
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.MouseButtonPress:
@@ -141,12 +153,13 @@ class StatsCardsWidget(QWidget):
     # ── 公开方法 ──
 
     def refresh(self, df: pd.DataFrame):
-        """根据 DataFrame 刷新所有卡片统计；用户手动折叠后保留折叠状态"""
+        """根据 DataFrame 刷新所有卡片统计；用户手动隐藏后保持隐藏"""
         if df is None or df.empty:
             self.setVisible(False)
+            self.visibility_changed.emit(False)
             return
 
-        # 始终更新数值，再按用户折叠状态决定是否展示卡片区
+        # 始终更新数值，再按用户隐藏状态决定是否展示
         self._update_pass_rate(df)
         self._update_unread(df)
         self._update_anomaly(df)
@@ -154,11 +167,12 @@ class StatsCardsWidget(QWidget):
         self._update_changed(df)
         self._update_quarantine(df)
 
-        self.setVisible(True)
+        self.setVisible(not self._user_hidden)
         self.cards_container.setVisible(not self._user_hidden)
         self.toggle_btn.setChecked(not self._user_hidden)
         self.toggle_btn.setText("隐藏" if not self._user_hidden else "显示")
         self.toggle_btn.setToolTip("隐藏本次分析概览卡片" if not self._user_hidden else "显示本次分析概览卡片")
+        self.visibility_changed.emit(not self._user_hidden)
 
     # ── 内部计算 ──
 
