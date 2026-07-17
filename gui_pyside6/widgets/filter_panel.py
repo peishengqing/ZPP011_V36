@@ -123,7 +123,6 @@ class FilterPanel(QWidget):
         # 物料名称：使用可编辑下拉框，内容完全由用户通过 config/material_name_presets.json 自定义
         self.material_name_edit = QComboBox()
         self.material_name_edit.setEditable(True)
-        self.material_name_edit.addItem("全部")
         self.material_name_edit.setCurrentText("")
         self.material_name_edit.lineEdit().setPlaceholderText("输入名称(逗号分隔多选)")
         self.material_name_edit.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
@@ -594,7 +593,6 @@ class FilterPanel(QWidget):
         """物料名称下拉项来自用户自定义预设，不自动灌入数据中的名称（避免下拉过长难找）。"""
         current_text = self.material_name_edit.currentText()
         self.material_name_edit.clear()
-        self.material_name_edit.addItem("全部")
         for name in self._material_presets:
             self.material_name_edit.addItem(name)
         self.material_name_edit.setCurrentText(current_text)
@@ -797,7 +795,7 @@ class FilterPanel(QWidget):
         self.zero_qty_combo.setCurrentIndex(0)
         self._clear_color_checks()
         self.material_code_edit.clear()
-        self.material_name_edit.setCurrentIndex(0)
+        self.material_name_edit.setCurrentText("")
         self.remark_search_edit.clear()
         self.remark_not_edit.clear()
         # 重置日期为数据最小/最大日期
