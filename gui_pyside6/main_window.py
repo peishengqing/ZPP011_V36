@@ -167,8 +167,6 @@ class MainWindow(QMainWindow):
         self.fullscreen_btn = self.main_table.fullscreen_btn
         self.unit_summary_btn = self.main_table.unit_summary_btn
         self._is_fullscreen = False
-        # log_text 已由 BottomBarComponent 在初始化时设置到主窗口
-        self.log_group = self.bottom_bar.log_group
 
         # 初始化表格模型
         self._init_table_model()
@@ -381,23 +379,13 @@ class MainWindow(QMainWindow):
         top_layout.addWidget(self.main_table.progress_group)  # ⚡ 分析进度
         self.top_panel.setMaximumHeight(240)                       # 限制最大高度，不抢表格空间
 
-        # 垂直分割器：表格 + 日志；这里用 stretch 让表格区自适应窗口高度
+        # 垂直分割器：仅表格（运行日志已移除，空间全部给表格）
         self._v_splitter = QSplitter(Qt.Vertical)
         self._v_splitter.setChildrenCollapsible(True)
         self._v_splitter.addWidget(self.main_table.audit_widget)
-        self._v_splitter.addWidget(self.log_group)
-        self._v_splitter.setSizes([500, 140])
-        self._v_splitter.setStretchFactor(0, 7)
-        self._v_splitter.setStretchFactor(1, 3)
-        # 记录日志面板是否被用户手动展开
-        self._log_user_expanded = False
-        self._log_saved_sizes = [500, 140]
-        # 复用单个定时器
-        self._log_auto_timer = QTimer(self)
-        self._log_auto_timer.setSingleShot(True)
-        self._log_auto_timer.timeout.connect(self._auto_collapse_log)
+        self._v_splitter.setStretchFactor(0, 1)
 
-        # 右侧整体垂直分割器：上面概览/进度，下面表格/日志
+        # 右侧整体垂直分割器：上面概览/进度，下面表格
         # 用户可拖动中间分隔线，把上面压扁以显示更多表格行
         self._right_v_splitter = QSplitter(Qt.Vertical)
         self._right_v_splitter.setChildrenCollapsible(True)
@@ -889,8 +877,6 @@ class MainWindow(QMainWindow):
             self.main_table.summary_container.raise_()
             self.main_table.summary_container.repaint()
             QApplication.processEvents()
-            # 分析完成后5秒自动折叠日志面板
-            self._log_auto_timer.start(5000)
         except Exception as e:
             QMessageBox.critical(self, "错误", f"加载结果失败: {e}")
 
@@ -1481,8 +1467,6 @@ class MainWindow(QMainWindow):
         self._is_fullscreen = full
         if full:
             self.left_panel.setVisible(False)
-            # 全屏时隐藏日志面板
-            self.log_group.setVisible(False)
             # 全屏时保留底部合计栏，隐藏系统状态栏
             if hasattr(self, 'filter_panel') and self.filter_panel:
                 self.filter_panel.setVisible(False)
@@ -1491,7 +1475,6 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("全屏模式 (F11 退出)", 3000)
         else:
             self.left_panel.setVisible(True)
-            self.log_group.setVisible(True)
             if hasattr(self, 'filter_panel') and self.filter_panel:
                 self.filter_panel.setVisible(True)
             self.statusBar().show()
@@ -1690,29 +1673,9 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(msg, 3000)
 
     def log(self, msg, level="info"):
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        self.log_text.append(f"[{timestamp}] {msg}")
-        # 定时器尚未初始化时只记录日志，不触发折叠
-        if not hasattr(self, '_log_auto_timer') or not self._log_auto_timer:
-            return
-        # 有新日志时自动展开日志面板，5秒后自动折叠
-        self._log_auto_timer.stop()
-        # 如果日志面板已折叠，展开它
-        sizes = self._v_splitter.sizes()
-        if len(sizes) >= 2 and sizes[1] < 30:
-            self._v_splitter.setSizes(self._log_saved_sizes if self._log_saved_sizes else [500, 140])
-            QApplication.processEvents()
-        # 重启5秒倒计时
-        self._log_auto_timer.start(5000)
-
-    def _auto_collapse_log(self):
-        """自动折叠日志面板（通过设置分割器大小，而非setVisible）"""
-        sizes = self._v_splitter.sizes()
-        if len(sizes) >= 2 and sizes[1] > 30:
-            self._log_saved_sizes = sizes
-        total = sum(sizes) if sizes else 640
-        self._v_splitter.setSizes([total, 0])
-        QApplication.processEvents()
+        """运行日志面板已移除，保留接口为空操作，避免各处 self.log(...) 调用崩溃。
+        如需重新启用日志，恢复 bottom_bar 与 _v_splitter 中的日志项即可。"""
+        pass
 
     # -----------------------------------------------------------
     # 数据相关
