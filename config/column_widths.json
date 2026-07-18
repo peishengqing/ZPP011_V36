@@ -64,8 +64,8 @@
     "hidden": false
   },
   "净偏差数量": {
-    "width": 0,
-    "hidden": true
+    "width": 120,
+    "hidden": false
   },
   "净偏差金额": {
     "width": 0,
