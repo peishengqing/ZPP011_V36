@@ -50,7 +50,8 @@ class DataFrameModel(QAbstractTableModel):
         """
         if self._data.empty:
             self._data_cache = []
-            self._display_columns = []
+            # 空数据也要保留列名，否则 columnCount 返回 0，表格表头会消失
+            self._display_columns = list(self._data.columns)
             self._changed_rows = set()
             self._quarantined_rows = set()
             self._substitute_rows = set()
