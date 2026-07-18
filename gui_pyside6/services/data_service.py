@@ -8,8 +8,10 @@ import pandas as pd
 import numpy as np
 from PySide6.QtCore import QObject, Signal
 
-from core.fingerprint import calc_fingerprint
-from core.read_status import load_read_status, load_audit_results, record_deviation_change, get_deviation_history, save_snapshot
+from core.read_status import (
+    load_read_status, load_audit_results,
+    record_deviation_change_batch, save_snapshot_batch,
+)
 from core.change_detector import detect_changes
 from core.quarantine_manager import get_quarantined_ids
 
@@ -137,12 +139,11 @@ class DataService(QObject):
             print(f'[DEBUG data_service] data_id 创建失败，用索引回退')
 
         try:
-            df['fingerprint'] = df.apply(
-                lambda r: calc_fingerprint(
-                    r.get('偏差金额(含税)', r.get('偏差金额', 0)),
-                    r.get('偏差率(%)', 0)
-                ), axis=1
-            )
+            # 向量化计算指纹，避免 df.apply(..., axis=1) 的 Python 级逐行开销
+            amount_col = '偏差金额(含税)' if '偏差金额(含税)' in df.columns else '偏差金额'
+            amount = pd.to_numeric(df[amount_col], errors='coerce').fillna(0.0) if amount_col in df.columns else pd.Series(0.0, index=df.index)
+            rate = pd.to_numeric(df['偏差率(%)'], errors='coerce').fillna(0.0) if '偏差率(%)' in df.columns else pd.Series(0.0, index=df.index)
+            df['fingerprint'] = amount.round(2).astype(str) + '|' + rate.round(1).astype(str)
         except Exception as e:
             self.log(f"计算指纹失败: {e}", "error")
             df['fingerprint'] = "0.00|0.0"
@@ -155,6 +156,8 @@ class DataService(QObject):
         - 历史记录有 snapshot_qty / snapshot_note（审核时保存的基线）→ 与当前比对；
         - 历史记录无基线（旧记录/基线未初始化）→ 用当前值静默建立基线，不报警（旧记录静默迁移）；
         - 实际数量 或 备注原因 被改动 → 回退未读 + 行红标 + deviation_history 留痕 + 弹变动提醒。
+
+        性能：改用向量化 + 批量 SQLite，避免万行级 Python 循环和逐条开库。
         """
         try:
             data_ids = df['data_id'].tolist()
@@ -167,62 +170,94 @@ class DataService(QObject):
         real_col = self._find_real_qty_col(df)
         remark_col = self._find_remark_col(df)
         self.last_audit_changes = []  # 每次重新加载都重置变更详情
-        read_list = []
-        matched_count = 0
-        changed_count = 0
-        changed_indices = []   # 收集审核后基线被改动（实际数量/备注原因）行的位置
-        for idx, row in df.iterrows():
-            did = row['data_id']
-            cur_qty = self._safe_qty(row.get(real_col)) if real_col else None
-            cur_note = self._norm_note(row.get(remark_col)) if remark_col else ''
-            if did in status_map:
-                matched_count += 1
-                hist_read, hist_fp, hist_snap, hist_note = status_map[did]
-                # 旧记录（数量基线或备注基线未初始化）→ 用当前值静默建立基线，不报警（旧记录静默迁移）
-                if hist_snap is None or hist_note is None:
-                    try:
-                        save_snapshot(did, cur_qty, cur_note)
-                    except Exception:
-                        pass
-                    read_list.append(hist_read)
-                    continue
-                # 两基线都已初始化 → 比对
-                qty_changed = (cur_qty is not None) and (abs(float(hist_snap) - float(cur_qty)) >= 1e-6)
-                note_changed = (self._norm_note(hist_note) != cur_note)
-                if qty_changed or note_changed:
-                    # 审核后数据被私自修改（实际数量 或 备注原因）
-                    changed_count += 1
-                    read_list.append(0)  # 强制回退未读，避免假审批
-                    changed_indices.append(idx)
-                    if qty_changed:
-                        self._record_post_audit_change(did, hist_snap, cur_qty, '实际数量')
-                        self.last_audit_changes.append({
-                            'data_id': did, 'field': '实际数量',
-                            'workshop': row.get('车间'),
-                            'material_name': row.get('物料名称') or row.get('物料描述') or '',
-                            'old_value': float(hist_snap) if hist_snap is not None else None,
-                            'new_value': cur_qty})
-                    if note_changed:
-                        self._record_post_audit_change(did, hist_note, cur_note, '备注原因')
-                        self.last_audit_changes.append({
-                            'data_id': did, 'field': '备注原因',
-                            'workshop': row.get('车间'),
-                            'material_name': row.get('物料名称') or row.get('物料描述') or '',
-                            'old_value': self._norm_note(hist_note),
-                            'new_value': cur_note})
 
-                else:
-                    read_list.append(hist_read)
-            else:
-                read_list.append(0)
-        print(f'[DEBUG _restore_read_status] 总行数={len(df)}, 匹配={matched_count}, 基线被改={changed_count}, status_map大小={len(status_map)}')
-        df['_read'] = read_list
-        # 审核后变更标记列（供卡片计数 / 行红标 / 点击过滤使用）
-        df['_post_audit_changed'] = 0
-        if changed_indices:
-            df.loc[changed_indices, '_post_audit_changed'] = 1
-            self.log(f"⚠️ 发现 {len(changed_indices)} 条已审核记录的实际数量/备注原因被修改，已强制设为未读并留痕", "warning")
-            self.log_signal.emit(f"变动提醒|{len(changed_indices)}", "alert")
+        # 没有历史状态：直接全部未读
+        if not status_map:
+            df['_read'] = 0
+            df['_post_audit_changed'] = 0
+            return df
+
+        # 1. 把历史状态对齐到 df（避免 Python 级逐行查找）
+        status_df = pd.DataFrame.from_dict(
+            status_map, orient='index',
+            columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note']
+        )
+        df = df.join(status_df, on='data_id')
+
+        has_status = df['_hist_read'].notna()
+        missing_baseline = has_status & (df['_hist_snap'].isna() | df['_hist_note'].isna())
+        has_baseline = has_status & ~missing_baseline
+
+        # 2. 当前实际数量 / 备注原因
+        if real_col:
+            cur_qty = pd.to_numeric(df[real_col], errors='coerce')
+        else:
+            cur_qty = pd.Series([np.nan] * len(df), index=df.index)
+        if remark_col:
+            cur_note = df[remark_col].apply(self._norm_note)
+        else:
+            cur_note = pd.Series([''] * len(df), index=df.index)
+
+        # 3. 旧记录无基线 → 批量静默建立基线（不报警）
+        if missing_baseline.any():
+            init_records = list(zip(
+                df.loc[missing_baseline, 'data_id'],
+                cur_qty[missing_baseline],
+                cur_note[missing_baseline],
+            ))
+            save_snapshot_batch(init_records)
+
+        # 4. 两基线都已初始化 → 向量化比对
+        hist_snap = pd.to_numeric(df['_hist_snap'], errors='coerce')
+        hist_note = df['_hist_note'].apply(self._norm_note)
+        qty_changed = has_baseline & cur_qty.notna() & (abs(hist_snap - cur_qty) >= 1e-6)
+        note_changed = has_baseline & (hist_note != cur_note)
+        changed = qty_changed | note_changed
+
+        # 5. 组装 _read / _post_audit_changed
+        hist_read_int = df['_hist_read'].fillna(0).astype(int)
+        df['_read'] = np.where(changed, 0, np.where(has_status, hist_read_int, 0))
+        df['_post_audit_changed'] = changed.astype(int)
+
+        # 6. 批量记录变动历史 + 收集弹窗详情
+        if changed.any():
+            changes_records = []
+            qty_changed_idx = df.index[qty_changed]
+            for idx in qty_changed_idx:
+                changes_records.append((
+                    df.at[idx, 'data_id'], '实际数量',
+                    df.at[idx, '_hist_snap'], cur_qty.at[idx]
+                ))
+                self.last_audit_changes.append({
+                    'data_id': df.at[idx, 'data_id'], 'field': '实际数量',
+                    'workshop': df.at[idx, '车间'] if '车间' in df.columns else None,
+                    'material_name': df.at[idx, '物料名称'] if '物料名称' in df.columns else (
+                        df.at[idx, '物料描述'] if '物料描述' in df.columns else ''),
+                    'old_value': float(df.at[idx, '_hist_snap']) if pd.notna(df.at[idx, '_hist_snap']) else None,
+                    'new_value': cur_qty.at[idx],
+                })
+            note_changed_idx = df.index[note_changed]
+            for idx in note_changed_idx:
+                changes_records.append((
+                    df.at[idx, 'data_id'], '备注原因',
+                    df.at[idx, '_hist_note'], cur_note.at[idx]
+                ))
+                self.last_audit_changes.append({
+                    'data_id': df.at[idx, 'data_id'], 'field': '备注原因',
+                    'workshop': df.at[idx, '车间'] if '车间' in df.columns else None,
+                    'material_name': df.at[idx, '物料名称'] if '物料名称' in df.columns else (
+                        df.at[idx, '物料描述'] if '物料描述' in df.columns else ''),
+                    'old_value': self._norm_note(df.at[idx, '_hist_note']),
+                    'new_value': cur_note.at[idx],
+                })
+            record_deviation_change_batch(changes_records)
+            changed_count = int(changed.sum())
+            self.log(f"⚠️ 发现 {changed_count} 条已审核记录的实际数量/备注原因被修改，已强制设为未读并留痕", "warning")
+            self.log_signal.emit(f"变动提醒|{changed_count}", "alert")
+
+        # 清理临时历史列
+        df = df.drop(columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note'], errors='ignore')
+        print(f'[DEBUG _restore_read_status] 总行数={len(df)}, 匹配={int(has_status.sum())}, 基线被改={int(changed.sum())}, status_map大小={len(status_map)}')
         return df
 
     @staticmethod
@@ -341,7 +376,7 @@ class DataService(QObject):
             return 0
 
     def _restore_audit_results(self, df: pd.DataFrame) -> pd.DataFrame:
-        """从 DB 恢复审核结果（审核结果、AI建议、备注来源）"""
+        """从 DB 恢复审核结果（审核结果、AI建议、备注来源），使用向量化赋值替代逐行 iloc。"""
         try:
             data_ids = df['data_id'].tolist()
             audit_map = load_audit_results(data_ids)
@@ -356,23 +391,14 @@ class DataService(QObject):
         for col, key in [('审核结果', 'audit_result'), ('AI建议', 'ai_suggestion'), ('备注来源', 'note_source')]:
             if col not in df.columns:
                 df[col] = ''
-            col_idx = df.columns.get_loc(col)
-            # 处理重复列名（get_loc 可能返回数组）
-            if isinstance(col_idx, (list, slice, np.ndarray)):
-                col_idx = col_idx[0] if hasattr(col_idx, '__getitem__') else int(col_idx)
-            for i in range(len(df)):
-                did = df.iloc[i].get('data_id', '')
-                if did in audit_map:
-                    saved_val = audit_map[did].get(key, '')
-                    current_val = df.iloc[i, col_idx]
-                    try:
-                        is_empty = pd.isna(current_val) or str(current_val).strip() == ''
-                    except Exception:
-                        is_empty = False
-                    if is_empty and saved_val:
-                        df.iloc[i, col_idx] = saved_val
-                        if key == 'audit_result' and saved_val:
-                            restored += 1
+            # 把 audit_map 对齐成 Series，只在当前值为空（NaN/空字符串）时回填
+            mapped = df['data_id'].map(lambda did: audit_map.get(did, {}).get(key, ''))
+            current = df[col].astype(str).replace('nan', '').replace('None', '')
+            is_empty = df[col].isna() | (current.str.strip() == '')
+            if is_empty.any():
+                df.loc[is_empty, col] = mapped[is_empty]
+                if key == 'audit_result':
+                    restored += int((is_empty & (mapped != '')).sum())
 
         if restored > 0:
             self.log(f"从数据库恢复了 {restored} 条审核结果", "info")

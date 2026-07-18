@@ -44,7 +44,10 @@ class DataFrameModel(QAbstractTableModel):
         self.dataChanged.emit()
 
     def _build_cache(self):
-        """将 DataFrame 转换为 Python 原生类型的二维列表，大幅提升 data() 速度"""
+        """将 DataFrame 转换为 Python 原生类型的二维列表，大幅提升 data() 速度。
+
+        优化：行集合计算和缓存构建均使用向量化/NumPy，避免万行级 Python 循环。
+        """
         if self._data.empty:
             self._data_cache = []
             self._display_columns = []
@@ -54,25 +57,22 @@ class DataFrameModel(QAbstractTableModel):
             return
 
         self._display_columns = list(self._data.columns)
-        # 计算审核后变更行集合（供整行红标使用）
-        self._changed_rows = set()
-        self._quarantined_rows = set()
-        self._substitute_rows = set()
+        n = len(self._data)
+
+        # 1. 向量化计算特殊行集合（比逐行 iloc 快 1~2 个数量级）
         if '_post_audit_changed' in self._data.columns:
-            for i in range(len(self._data)):
-                try:
-                    if self._data.iloc[i]['_post_audit_changed'] == 1:
-                        self._changed_rows.add(i)
-                except Exception:
-                    pass
+            mask = pd.to_numeric(self._data['_post_audit_changed'], errors='coerce').fillna(0).astype(int) == 1
+            self._changed_rows = set(np.where(mask)[0])
+        else:
+            self._changed_rows = set()
+
         if '_quarantined' in self._data.columns:
-            for i in range(len(self._data)):
-                try:
-                    if self._data.iloc[i]['_quarantined'] == 1:
-                        self._quarantined_rows.add(i)
-                except Exception:
-                    pass
-        # 替代料/非耗用检测：实际=0 且 定额>0（偏差率恒为 -100%）
+            mask = pd.to_numeric(self._data['_quarantined'], errors='coerce').fillna(0).astype(int) == 1
+            self._quarantined_rows = set(np.where(mask)[0])
+        else:
+            self._quarantined_rows = set()
+
+        # 替代料/非耗用检测：实际≈0 且 定额>0
         _sub_actual_col = None
         for c in ['数量-实际', '实际']:
             if c in self._data.columns:
@@ -84,38 +84,28 @@ class DataFrameModel(QAbstractTableModel):
                 _sub_qty_col = c
                 break
         if _sub_actual_col and _sub_qty_col:
-            for i in range(len(self._data)):
-                try:
-                    a = self._data.iloc[i][_sub_actual_col]
-                    q = self._data.iloc[i][_sub_qty_col]
-                    a = 0.0 if pd.isna(a) else float(a)
-                    q = 0.0 if pd.isna(q) else float(q)
-                    if abs(a) <= 0.001 and q > 0.001:
-                        self._substitute_rows.add(i)
-                except Exception:
-                    pass
-        # 逐行转换：将 pandas Series 转为 list，并处理 NaN
-        self._data_cache = []
-        for idx in range(len(self._data)):
-            row = self._data.iloc[idx]
-            row_list = []
-            for col in self._display_columns:
-                val = row[col]
-                # 如果是 Series（重复索引导致），取第一个值
-                if isinstance(val, pd.Series):
-                    val = val.iloc[0] if len(val) > 0 else None
-                # 处理缺失值
-                if val is None or (isinstance(val, float) and pd.isna(val)):
-                    row_list.append("")
-                else:
-                    # 保留原始类型，但确保数值是 Python 原生类型
-                    if isinstance(val, (np.integer, np.int64, np.int32)):
-                        row_list.append(int(val))
-                    elif isinstance(val, (np.floating, np.float64, np.float32)):
-                        row_list.append(float(val))
-                    else:
-                        row_list.append(val)
-            self._data_cache.append(row_list)
+            a = pd.to_numeric(self._data[_sub_actual_col], errors='coerce').fillna(0.0)
+            q = pd.to_numeric(self._data[_sub_qty_col], errors='coerce').fillna(0.0)
+            mask = (a.abs() <= 0.001) & (q > 0.001)
+            self._substitute_rows = set(np.where(mask)[0])
+        else:
+            self._substitute_rows = set()
+
+        # 2. 批量构建缓存：to_numpy(dtype=object) 一次把 DataFrame 转成 object 数组，
+        #    再替换 NaN/None，最后把 numpy scalar 转成 Python 原生类型。
+        arr = self._data.to_numpy(dtype=object)
+        # 处理缺失值（NaN/None/NaT 统一替换为空字符串）
+        na_mask = pd.isna(arr)
+        if na_mask.any():
+            arr[na_mask] = ""
+        # 把 numpy scalar 转成 Python int/float，避免后续显示/比较时依赖 numpy 类型
+        def _py_scalar(v):
+            if isinstance(v, np.integer):
+                return int(v)
+            if isinstance(v, np.floating):
+                return float(v)
+            return v
+        self._data_cache = [[_py_scalar(v) for v in row] for row in arr.tolist()]
 
     def getDataFrame(self) -> pd.DataFrame:
         return self._data

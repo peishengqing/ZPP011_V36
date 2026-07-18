@@ -875,13 +875,11 @@ class MainWindow(QMainWindow):
                 self.view_model.df = processed_df
             self._analysis_params = self.analysis_controller.get_analysis_params()
 
-            import tempfile
-            temp_dir = os.path.join(tempfile.gettempdir(), "zpp011_analysis")
-            os.makedirs(temp_dir, exist_ok=True)
-            temp_path = os.path.join(temp_dir, f"analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
-            df.to_excel(temp_path, sheet_name="完整偏差明细", index=False)
-            self._analysis_output_path = temp_path
+            # 注意：此处不再在主线程同步写临时 Excel——大 df 的 to_excel 会阻塞 UI 数秒，
+            # 导致分析完成后标题栏显示「未响应」。完整报告缓存已由 _FullCacheWorker 后台生成。
+            # 如需「导出当前表格」，直接由 export_current_table 用内存 df 实时写出。
 
+            import tempfile
             cache_dir = os.path.join(tempfile.gettempdir(), "zpp011_analysis")
             os.makedirs(cache_dir, exist_ok=True)
             cache_path = os.path.join(cache_dir, f"full_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
@@ -1767,15 +1765,16 @@ class MainWindow(QMainWindow):
                 self._apply_default_width(col, col_name)
             return
 
-        # 无配置文件时用默认逻辑
-        self.table_view.resizeColumnsToContents()
+        # 无配置文件时用默认逻辑。
+        # 注意：不再调用 resizeColumnsToContents()——万行级表格会逐行测量宽度，
+        # 导致主线程卡顿/未响应。改为按列名设定合理最小宽度，让用户可手动拖动。
         self.table_view.setColumnWidth(0, 35)
         for col in range(1, model.columnCount()):
             col_name = model.headerData(col, Qt.Horizontal) if hasattr(model, 'headerData') else ''
             self._apply_default_width(col, col_name)
 
     def _apply_default_width(self, col, col_name):
-        """对单列应用默认宽度逻辑"""
+        """对单列应用默认宽度逻辑（按列名给最小宽度，避免 ResizeToContents 扫描全表）"""
         if isinstance(col_name, str):
             if '名称' in col_name or '描述' in col_name or col_name == '物料':
                 if self.table_view.columnWidth(col) < 200:
@@ -1786,6 +1785,10 @@ class MainWindow(QMainWindow):
             elif '备注' in col_name or '原因' in col_name:
                 if self.table_view.columnWidth(col) < 150:
                     self.table_view.setColumnWidth(col, 150)
+            else:
+                # 数字/日期等列给一个保底宽度，避免太窄
+                if self.table_view.columnWidth(col) < 80:
+                    self.table_view.setColumnWidth(col, 80)
 
     def _get_config_path(self):
         """获取列宽配置文件路径"""

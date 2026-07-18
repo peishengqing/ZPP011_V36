@@ -69,12 +69,56 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
 
     group_seq = 0  # 替代料组序号
 
-    for order, grp in df.groupby('流程订单'):
-        # 按物料A分组，处理1对多的情况
-        a_to_bs = {}
-        for mat_a_desc, mat_b_desc in converted_pairs:
-            a_to_bs.setdefault(mat_a_desc, []).append(mat_b_desc)
+    # ---- 性能优化：预建索引，避免「逐订单 × 逐配对」全扫描 ----
+    # 原实现复杂度 O(订单数 × 配对数)，在 1 万行 / 1500 订单 / 40 配对下耗时可达数十秒。
+    # 改为：先建「描述/编码 -> 出现过的订单集合」索引，对每个配对仅定位相关订单，
+    # 再仅遍历这些订单做三级匹配（语义与原 _match_rows 完全一致）。
+    # 按物料A分组，处理1对多的情况
+    a_to_bs = {}
+    for mat_a_desc, mat_b_desc in converted_pairs:
+        a_to_bs.setdefault(mat_a_desc, []).append(mat_b_desc)
 
+    order_groups = {}
+    desc_to_orders = {}
+    for _order, _grp in df.groupby('流程订单'):
+        order_groups[_order] = _grp
+        _dset = set()
+        for _d in _grp['组件物料描述'].dropna().astype(str):
+            _dset.add(_d)
+        for _d in _dset:
+            desc_to_orders.setdefault(_d, set()).add(_order)
+    if code_col:
+        code_to_orders = {}
+        for _order, _grp in order_groups.items():
+            _cset = set()
+            for _c in _grp[code_col].dropna().astype(str):
+                _cset.add(_c)
+            for _c in _cset:
+                code_to_orders.setdefault(_c, set()).add(_order)
+
+    def _related_orders(sub):
+        """收集所有「描述或编码包含 sub（子串）」的订单，保留与原 _match_rows 一致的三级匹配语义"""
+        if not sub:
+            return set()
+        res = set()
+        for _d, _ords in desc_to_orders.items():
+            if sub in _d:
+                res |= _ords
+        if code_col:
+            for _c, _ords in code_to_orders.items():
+                if sub in _c:
+                    res |= _ords
+        return res
+
+    # 仅遍历「至少有一个配对物料出现」的订单
+    _target_orders = set()
+    for _a_desc, _b_descs in a_to_bs.items():
+        _target_orders |= _related_orders(_a_desc)
+        for _b in _b_descs:
+            _target_orders |= _related_orders(_b)
+
+    for order in _target_orders:
+        grp = order_groups[order]
         for mat_a_desc, mat_b_descs in a_to_bs.items():
             rows_a = _match_rows(grp, mat_a_desc)
             if len(rows_a) == 0:

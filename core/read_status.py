@@ -188,6 +188,32 @@ def save_snapshot(data_id: str, snapshot_qty, snapshot_note=None):
         pass
 
 
+def save_snapshot_batch(records):
+    """
+    批量延迟初始化/更新基线。
+
+    records: [(data_id, snapshot_qty, snapshot_note), ...]
+    """
+    if not records:
+        return
+    try:
+        conn = _get_conn()
+        norm = []
+        for did, snap_qty, snap_note in records:
+            norm.append((
+                None if snap_qty is None else float(snap_qty),
+                '' if snap_note is None else str(snap_note),
+                str(did),
+            ))
+        conn.executemany("""
+            UPDATE read_status SET snapshot_qty = ?, snapshot_note = ? WHERE data_id = ?
+        """, norm)
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
 # ── 审核结果持久化 ─────────────────────────────────────
 
 def load_audit_results(data_ids: List[str]) -> Dict[str, Dict[str, str]]:
@@ -284,6 +310,57 @@ def record_deviation_change(data_id: str, field: str, old_value, new_value, reas
           _to_float(old_value), _to_float(new_value),
           datetime.now().isoformat(), reason))
     conn.commit()
+    conn.close()
+
+
+def get_deviation_history_batch(data_ids: List[str]) -> List[Dict]:
+    """批量查询一批 data_id 的最新变动历史（用于去重）"""
+    if not data_ids:
+        return []
+    conn = _get_conn()
+    placeholders = ','.join(['?' for _ in data_ids])
+    cur = conn.execute(
+        f"SELECT data_id, field, new_value FROM deviation_history "
+        f"WHERE data_id IN ({placeholders}) ORDER BY change_time DESC",
+        data_ids
+    )
+    columns = ['data_id', 'field', 'new_value']
+    result = [dict(zip(columns, row)) for row in cur.fetchall()]
+    conn.close()
+    return result
+
+
+def record_deviation_change_batch(changes: List[Tuple], reason: str = "审核后数据被修改"):
+    """
+    批量记录审核后/重新分析的数据变动历史，内部先去重（同一 data_id + field + new_value 已存在则跳过）。
+
+    changes: [(data_id, field, old_value, new_value), ...]
+    """
+    if not changes:
+        return
+    data_ids = list(set(c[0] for c in changes))
+    history = get_deviation_history_batch(data_ids)
+    seen = set((h['data_id'], h['field'], str(h['new_value'])) for h in history)
+
+    conn = _get_conn()
+    now = datetime.now().isoformat()
+    norm = []
+    for data_id, field, old_value, new_value in changes:
+        key = (str(data_id), str(field), str(new_value))
+        if key in seen:
+            continue
+        seen.add(key)
+        norm.append((
+            str(data_id), str(field), str(old_value), str(new_value),
+            now, reason,
+        ))
+    if norm:
+        # 仅写入通用列，兼容早期没有 old_qty/new_qty 的数据库
+        conn.executemany("""
+            INSERT INTO deviation_history (data_id, field, old_value, new_value, change_time, change_reason)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, norm)
+        conn.commit()
     conn.close()
 
 
