@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt, QPoint, Signal
 from PySide6.QtGui import QPolygon, QColor, QBrush
 from gui_pyside6.models.data_frame_model import DataFrameModel
 from core.quarantine_manager import remove_quarantine, get_quarantine_records
-from core.read_status import save_read_status
+from core.read_status import save_read_status, save_read_status_batch
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
 from gui_pyside6.widgets.toast import toast
 
@@ -132,9 +132,22 @@ class QuarantineDialog(QDialog):
         except Exception:
             df['隔离原因'] = '（未填写原因）'
 
+        # 与主表同步最新 _read：避免主表已读状态变化后隔离区仍显示旧状态
+        df = self._sync_read_from_main(df)
+
         # 保留完整隔离数据，供隔离原因筛选切片使用
         self.full_df = df.copy()
         self._render_table(df)
+
+    def _sync_read_from_main(self, df):
+        """用主表 view_model.df 的最新 _read 覆盖隔离区 df 的 _read。"""
+        if self.main_window and hasattr(self.main_window, 'view_model'):
+            main_df = self.main_window.view_model.df
+            if main_df is not None and 'data_id' in main_df.columns and '_read' in main_df.columns:
+                read_map = main_df.set_index('data_id')['_read'].to_dict()
+                current = df.get('_read', pd.Series(0, index=df.index))
+                df['_read'] = df['data_id'].astype(str).map(read_map).fillna(current).astype(int)
+        return df
 
     def _render_table(self, df):
         """重建表格模型并应用内部列隐藏（不重查 reason），并重注册隔离原因列筛选三角"""
@@ -202,12 +215,84 @@ class QuarantineDialog(QDialog):
         if not selected_rows:
             selected_rows = [index.row()]
         menu = QMenu()
-        mark_read_action = menu.addAction("✓ 设为已读并移出隔离区")
-        mark_read_action.triggered.connect(lambda: self._mark_read_and_remove(selected_rows))
+        # 动态判断当前选中行是否有未读/已读，分别提供对应操作
+        df = self.source_model.getDataFrame()
+        any_unread = False
+        any_read = False
+        if df is not None:
+            for r in selected_rows:
+                if r < len(df):
+                    val = df.iloc[r].get('_read', 0)
+                    try:
+                        is_read = int(val) if pd.notna(val) else 0
+                    except Exception:
+                        is_read = 0
+                    if is_read:
+                        any_read = True
+                    else:
+                        any_unread = True
+        if any_unread:
+            mark_read_action = menu.addAction("✓ 标记为已读")
+            mark_read_action.triggered.connect(lambda: self._mark_rows_read_state(selected_rows, 1))
+        if any_read:
+            mark_unread_action = menu.addAction("🔘 标记为未读")
+            mark_unread_action.triggered.connect(lambda: self._mark_rows_read_state(selected_rows, 0))
+        if any_unread or any_read:
+            menu.addSeparator()
+        mark_read_and_remove_action = menu.addAction("✓ 设为已读并移出隔离区")
+        mark_read_and_remove_action.triggered.connect(lambda: self._mark_read_and_remove(selected_rows))
         menu.addSeparator()
         restore_action = menu.addAction("↩ 取消隔离（选中行）")
         restore_action.triggered.connect(lambda: self._restore_rows(selected_rows))
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
+
+    def _mark_rows_read_state(self, rows, is_read):
+        """批量切换隔离区选中行的已读/未读状态，并同步回主表和 SQLite。"""
+        df = self.source_model.getDataFrame()
+        if df is None:
+            return
+        ids = set()
+        for r in rows:
+            if r >= len(df):
+                continue
+            uid = df.iloc[r].get('data_id')
+            if uid:
+                ids.add(str(uid))
+        if not ids:
+            return
+
+        main_df = self.main_window.view_model.df if (self.main_window and hasattr(self.main_window, 'view_model')) else None
+        records = []
+        for uid in ids:
+            fp = ''
+            if 'fingerprint' in df.columns:
+                sel = df.loc[df['data_id'].astype(str) == uid, 'fingerprint']
+                if len(sel) > 0:
+                    fp = sel.iloc[0]
+            qty = snapshot_qty_for(main_df, uid) if main_df is not None else None
+            note = snapshot_note_for(main_df, uid) if main_df is not None else ''
+            records.append((uid, int(is_read), str(fp), qty, note))
+
+        save_read_status_batch(records)
+
+        # 回写主表内存
+        if main_df is not None and 'data_id' in main_df.columns and '_read' in main_df.columns:
+            main_df.loc[main_df['data_id'].astype(str).isin(ids), '_read'] = int(is_read)
+            self.main_window.view_model.df = main_df
+            self._refresh_main_table()
+
+        # 刷新隔离区弹窗自身
+        self._refresh_self()
+        toast(f"已标记为{'已读' if is_read else '未读'} {len(ids)} 条", parent=self)
+
+    def _refresh_main_table(self):
+        """刷新主表显示和统计卡片。"""
+        if self.main_window and hasattr(self.main_window, 'source_model') and self.main_window.source_model:
+            self.main_window.source_model.setDataFrame(self.main_window.view_model.df)
+            if hasattr(self.main_window, '_apply_column_visibility_by_name'):
+                self.main_window._apply_column_visibility_by_name()
+        if self.main_window and hasattr(self.main_window, 'stats_cards') and self.main_window.stats_cards:
+            self.main_window.stats_cards.refresh(self.main_window.view_model.df)
 
     def _restore_rows(self, rows):
         df = self.source_model.getDataFrame()
