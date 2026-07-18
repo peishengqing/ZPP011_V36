@@ -135,9 +135,25 @@ class QuarantineDialog(QDialog):
         # 与主表同步最新 _read：避免主表已读状态变化后隔离区仍显示旧状态
         df = self._sync_read_from_main(df)
 
+        # 列序调整：把「隔离原因」移到「状态(审核状态)」列之后（用户要求）
+        df = self._reorder_reason_after_status(df)
+
         # 保留完整隔离数据，供隔离原因筛选切片使用
         self.full_df = df.copy()
         self._render_table(df)
+
+    def _reorder_reason_after_status(self, df):
+        """将「隔离原因」列移到「审核状态/状态」列之后；找不到状态列则保持末尾。"""
+        if '隔离原因' not in df.columns:
+            return df
+        status_col = next((c for c in ('审核状态', '状态') if c in df.columns), None)
+        if status_col is None:
+            return df
+        cols = list(df.columns)
+        cols.remove('隔离原因')
+        idx = cols.index(status_col)
+        cols.insert(idx + 1, '隔离原因')
+        return df[cols]
 
     def _sync_read_from_main(self, df):
         """用主表 view_model.df 的最新 _read 覆盖隔离区 df 的 _read。"""
@@ -155,9 +171,12 @@ class QuarantineDialog(QDialog):
         self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
         # 重注册隔离原因列的筛选三角（setModel 会重置表头状态）
+        # 注意：DataFrameModel 内部会重排列顺序（如把 _read 前置），
+        # 必须用模型实际显示的列顺序取列号，否则筛选三角会错位到别的列。
         self.header.clear_filter_sections()
-        if '隔离原因' in df.columns:
-            self.header.add_filter_section(df.columns.get_loc('隔离原因'))
+        display_df = self.source_model.getDataFrame()
+        if '隔离原因' in display_df.columns:
+            self.header.add_filter_section(display_df.columns.get_loc('隔离原因'))
         self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
         for col in _HIDDEN_INTERNAL:

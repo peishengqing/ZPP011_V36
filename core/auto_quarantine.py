@@ -4,8 +4,8 @@
 
 规则：同时满足以下 4 个条件的记录，自动标记为「疑难」并移入隔离区：
   1. 不是替代料   （是否替代料 != '是'）
-  2. 属于包材     （物料分类 == '包材'）
-  3. 物料名称带「箱」 （组件物料描述 / 物料名称 含「箱」字）
+  2. 属于包材     （物料分类 / 组件物料类型描述 == '包材'）
+  3. 物料名称带「箱」或「手包袋」 （组件物料描述 / 物料名称 含「箱」或「手包袋」字）
   4. 有实际数量  且 实际数量 < 定额数量 （实际 > 0 且 实际 < 定额）
 
 说明：
@@ -48,9 +48,10 @@ def compute_auto_quarantine_ids(df: pd.DataFrame) -> set:
     else:
         m_cat = pd.Series(False, index=df.index)
 
-    # 3. 物料名称带「箱」
+    # 3. 物料名称带「箱」或「手包袋」（包装类易漏耗物料）
     if name_col:
-        m_name = df[name_col].astype(str).fillna('').str.contains('箱')
+        name_str = df[name_col].astype(str).fillna('')
+        m_name = name_str.str.contains('箱') | name_str.str.contains('手包袋')
     else:
         m_name = pd.Series(False, index=df.index)
 

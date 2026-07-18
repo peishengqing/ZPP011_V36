@@ -323,7 +323,7 @@ class MainWindow(QMainWindow):
         self.action_btn_auto_q.setObjectName("actionBtnAutoQ")
         self.action_btn_auto_q.setProperty("class", "actionBtn")
         self.action_btn_auto_q.setToolTip(
-            "按规则自动把「非替代料·包材·物料名含箱·实际<定额」的记录移入隔离区")
+            "按规则自动把「非替代料·包材·物料名含箱或手包袋·实际<定额」的记录移入隔离区")
         self.action_btn_auto_q.clicked.connect(lambda: self._auto_move_to_quarantine(manual=True))
         action_layout.addWidget(self.action_btn_auto_q)
 
@@ -607,11 +607,15 @@ class MainWindow(QMainWindow):
             menu = QMenu()
             a_cell = menu.addAction("复制单元格")
             a_row = menu.addAction("复制整行")
+            menu.addSeparator()
+            a_mark_read = menu.addAction("标记为已读（选中行）")
             act = menu.exec_(table.viewport().mapToGlobal(pos))
             if act == a_cell:
                 _copy_cell()
             elif act == a_row:
                 _copy_row()
+            elif act == a_mark_read:
+                _mark_selected_read()
 
         table.setContextMenuPolicy(Qt.CustomContextMenu)
         table.customContextMenuRequested.connect(_on_context)
@@ -2367,7 +2371,7 @@ class MainWindow(QMainWindow):
 
     def _auto_move_to_quarantine(self, manual=False):
         """按规则自动把符合条件的记录移入隔离区：
-        非替代料 + 包材 + 物料名含「箱」 + 有实际数量且 实际 < 定额。
+        非替代料 + 包材 + 物料名含「箱」或「手包袋」 + 有实际数量且 实际 < 定额。
         manual=True 来自工具栏手动按钮（弹窗反馈）；False 为分析完成后静默执行。"""
         df = self.view_model.df
         if df is None or 'data_id' not in df.columns:
@@ -2379,7 +2383,7 @@ class MainWindow(QMainWindow):
             if manual:
                 QMessageBox.information(
                     self, "自动整理隔离区",
-                    "没有符合规则的记录（规则：非替代料 · 包材 · 物料名含「箱」 · 实际>0 且 实际<定额）。")
+                    "没有符合规则的记录（规则：非替代料 · 包材 · 物料名含「箱」或「手包袋」 · 实际>0 且 实际<定额）。")
             return
         # 仅对「尚未在隔离区」的新记录执行，避免重复打扰 / 覆盖用户手动取消隔离的行
         already = set()
@@ -2393,7 +2397,7 @@ class MainWindow(QMainWindow):
                     f"符合规则的 {len(matched)} 条均已在隔离区，无需重复移入。")
             return
         for uid in new_ids:
-            add_quarantine(uid, "自动规则:非替代料·包材·含箱·实际<定额")
+            add_quarantine(uid, "自动规则:非替代料·包材·含箱或手包袋·实际<定额")
         df.loc[df['data_id'].isin(new_ids), '_quarantined'] = 1
         self.view_model.df = df
         if self.source_model:
