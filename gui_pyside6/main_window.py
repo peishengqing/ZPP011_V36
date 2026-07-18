@@ -41,8 +41,7 @@ from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.quarantine_dialog import QuarantineDialog
 from core.quarantine_manager import add_quarantine, remove_quarantine
 from core.auto_quarantine import (
-    build_rule_reason,
-    build_rule_summary,
+    build_all_summary,
     compute_auto_quarantine_ids,
     load_auto_quarantine_config,
 )
@@ -328,7 +327,7 @@ class MainWindow(QMainWindow):
         self.action_btn_auto_q.setObjectName("actionBtnAutoQ")
         self.action_btn_auto_q.setProperty("class", "actionBtn")
         self.action_btn_auto_q.setToolTip(
-            "按规则自动移入隔离区：" + build_rule_summary(load_auto_quarantine_config()))
+            "按规则自动移入隔离区：" + build_all_summary(load_auto_quarantine_config()))
         self.action_btn_auto_q.clicked.connect(lambda: self._auto_move_to_quarantine(manual=True))
         action_layout.addWidget(self.action_btn_auto_q)
 
@@ -2403,13 +2402,13 @@ class MainWindow(QMainWindow):
             if manual:
                 QMessageBox.information(
                     self, "自动整理隔离区",
-                    "没有符合规则的记录（当前规则：%s）。" % build_rule_summary(cfg))
+                    "没有符合规则的记录（%s）。" % build_all_summary(cfg))
             return
         # 仅对「尚未在隔离区」的新记录执行，避免重复打扰 / 覆盖用户手动取消隔离的行
         already = set()
         if '_quarantined' in df.columns:
             already = set(df.loc[df['_quarantined'] == 1, 'data_id'].astype(str))
-        new_ids = matched - already
+        new_ids = set(matched) - already
         if not new_ids:
             if manual:
                 QMessageBox.information(
@@ -2417,7 +2416,7 @@ class MainWindow(QMainWindow):
                     f"符合规则的 {len(matched)} 条均已在隔离区，无需重复移入。")
             return
         for uid in new_ids:
-            add_quarantine(uid, build_rule_reason(cfg))
+            add_quarantine(uid, matched[uid])
         df.loc[df['data_id'].isin(new_ids), '_quarantined'] = 1
         self.view_model.df = df
         if self.source_model:
@@ -2425,7 +2424,7 @@ class MainWindow(QMainWindow):
             if hasattr(self, '_apply_column_visibility_by_name'):
                 self._apply_column_visibility_by_name()
         self.stats_cards.refresh(df)
-        msg = f"🧹 自动移入隔离区 {len(new_ids)} 条（{build_rule_summary(cfg)}）"
+        msg = f"🧹 自动移入隔离区 {len(new_ids)} 条（{build_all_summary(cfg)}）"
         toast(msg, parent=self)
         if manual:
             QMessageBox.information(self, "自动整理隔离区", msg)
@@ -2437,7 +2436,7 @@ class MainWindow(QMainWindow):
         dlg = AutoQuarantineRuleDialog(self)
         if dlg.exec_() == QDialog.DialogCode.Accepted:
             cfg = load_auto_quarantine_config()
-            self.action_btn_auto_q.setToolTip("按规则自动移入隔离区：" + build_rule_summary(cfg))
+            self.action_btn_auto_q.setToolTip("按规则自动移入隔离区：" + build_all_summary(cfg))
             toast("✅ 自动隔离规则已更新", parent=self)
 
     def _open_quarantine_dialog(self):
