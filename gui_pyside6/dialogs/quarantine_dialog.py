@@ -135,7 +135,12 @@ class QuarantineDialog(QDialog):
         # 与主表同步最新 _read：避免主表已读状态变化后隔离区仍显示旧状态
         df = self._sync_read_from_main(df)
 
-        # 列序调整：把「隔离原因」移到「状态(审核状态)」列之后（用户要求）
+        # 派生「状态」列（已读/未读），供隔离区显示，并作为隔离原因的目标锚点
+        df['状态'] = df.get('_read', pd.Series(0, index=df.index)).apply(
+            lambda v: '已读' if (pd.notna(v) and int(v)) else '未读'
+        )
+
+        # 列序调整：把「隔离原因」移到「状态」列之后（用户要求：隔离原因跟在已读状态后）
         df = self._reorder_reason_after_status(df)
 
         # 保留完整隔离数据，供隔离原因筛选切片使用
