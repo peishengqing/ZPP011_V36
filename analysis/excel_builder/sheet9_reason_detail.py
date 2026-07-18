@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """sheet9_reason_detail.py — Sheet9 偏差原因分析（v36 抽取，未修改逻辑）"""
 import pandas as pd
+from analysis.excel_builder.write_sheet_util import ensure_numeric_cols
 from utils.helpers import standardize_remark
 
 
@@ -18,9 +19,7 @@ def build_sheet9(df, report_progress, progress_idx=9):
     report_progress(progress_idx, "Sheet9-原因分析", 0)
 
     # 确保数值列为数值类型（防止字符串导致比较错误）
-    for col in ["材料偏差", "偏差率(%)", "偏差金额", "偏差金额(含税)", "数量-实际", "数量-定额"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    ensure_numeric_cols(df, ["材料偏差", "偏差率(%)", "偏差金额", "偏差金额(含税)", "数量-实际", "数量-定额"])
 
     has_reason = df[(df['备注原因'].notna()) & (
         df['备注原因'] != '') & (df['材料偏差'] != 0)].copy()

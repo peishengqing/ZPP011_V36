@@ -301,7 +301,7 @@ class DataFrameModel(QAbstractTableModel):
         if isinstance(val, str) and '%' in val:
             try:
                 return float(val.replace('%', '').strip())
-            except:
+            except Exception:
                 return 0.0
         return 0.0
 

@@ -7,6 +7,7 @@ sheet7_amount.py — Sheet7 偏差金额分析（v36 抽取，未修改逻辑）
 analyzer.py 调用 build_sheet7(wb, df, report_progress) 执行。
 """
 import pandas as pd
+from analysis.excel_builder.write_sheet_util import ensure_numeric_cols
 import os
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -25,10 +26,7 @@ def build_sheet7(wb, df, report_progress, progress_idx=7):
     """
 
     # 确保数值列为数值类型（防止字符串导致比较错误）
-    numeric_cols = ["偏差金额(含税)", "数量-实际", "数量-定额", "材料偏差", "偏差金额"]
-    for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    ensure_numeric_cols(df, ["偏差金额(含税)", "数量-实际", "数量-定额", "材料偏差", "偏差金额"])
 
     report_progress(progress_idx, "Sheet7-偏差金额分析", 0)
     print("[DEBUG do_analysis_v2] 开始生成Sheet7")

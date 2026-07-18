@@ -5,6 +5,8 @@ sheet4_middle.py — Sheet4 中间地带明细（v36 抽取，未修改逻辑）
 """
 import pandas as pd
 import re
+from analysis.excel_builder.write_sheet_util import ensure_numeric_cols
+from config.settings import DEFAULT_THRESHOLD
 
 
 def build_sheet4(df, alt_df, alt_pairs, report_progress, progress_idx=4):
@@ -22,13 +24,11 @@ def build_sheet4(df, alt_df, alt_pairs, report_progress, progress_idx=4):
     report_progress(progress_idx, "Sheet4-中间地带明细", 0)
 
     col_p = '偏差率(%)'
-    dyn_thresh = 10.0
+    dyn_thresh = DEFAULT_THRESHOLD
     thresh = dyn_thresh
 
 # 确保数值列为数值类型（防止字符串导致比较错误）
-    for col in ["材料偏差", "偏差率(%)", "偏差金额", "偏差金额(含税)", "数量-实际", "数量-定额"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    ensure_numeric_cols(df, ["材料偏差", "偏差率(%)", "偏差金额", "偏差金额(含税)", "数量-实际", "数量-定额"])
     middle = df[(df[col_p].notna()) & (df[col_p] >= -thresh)
                 & (df[col_p] <= thresh)].copy()
 

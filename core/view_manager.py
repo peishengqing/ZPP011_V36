@@ -23,7 +23,7 @@ class ViewManager:
             try:
                 with open(self.views_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
-            except:
+            except Exception:
                 return {}
         return {}
 
@@ -40,7 +40,7 @@ class ViewManager:
             self.views[name] = state
             self._save()
             return True
-        except:
+        except Exception:
             return False
 
     def delete_view(self, name: str) -> bool:

@@ -221,7 +221,7 @@ class AdvancedPPTGeneratorV3(QObject):
                 dmin = self.df_main['订单日期'].min()
                 dmax = self.df_main['订单日期'].max()
                 period = f"{dmin.strftime('%Y-%m-%d') if hasattr(dmin, 'strftime') else dmin} ~ {dmax.strftime('%Y-%m-%d') if hasattr(dmax, 'strftime') else dmax}"
-        except:
+        except Exception:
             pass
         _add_textbox(slide, CONTENT_L, int(SLIDE_H * 0.28), CONTENT_W, 142875,
                      "Industrial Production Data Analysis", size=9, bold=True,

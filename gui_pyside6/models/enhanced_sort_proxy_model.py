@@ -191,7 +191,7 @@ class EnhancedSortProxyModel(QSortFilterProxyModel):
         try:
             rate = float(rate_str.replace('%', '').strip())
             return abs(rate) > 10
-        except:
+        except Exception:
             return False
 
     def data(self, index, role=Qt.DisplayRole):

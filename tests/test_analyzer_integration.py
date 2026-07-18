@@ -124,7 +124,7 @@ class TestDoAnalysisV2Integration:
             assert os.path.getsize(out.name) > 0
         finally:
             try: os.unlink(out.name)
-            except: pass
+            except Exception: pass
 
     def test_empty_file(self):
         """空文件应抛出异常"""
@@ -146,7 +146,7 @@ class TestDoAnalysisV2Integration:
             pass
         finally:
             try: os.unlink(path)
-            except: pass
+            except Exception: pass
 
     def test_file_not_found(self):
         """文件不存在应该报错"""

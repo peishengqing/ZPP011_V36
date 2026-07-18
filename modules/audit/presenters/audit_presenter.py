@@ -420,7 +420,7 @@ class AuditPresenter:
                 if isinstance(dev_rate_raw, str):
                     dev_rate_raw = dev_rate_raw.replace('%', '').strip()
                 dev_rate = float(dev_rate_raw or 0)
-            except:
+            except Exception:
                 dev_rate = 0.0
             material_desc = str(row[name_col]) if name_col else ''
             

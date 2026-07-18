@@ -239,7 +239,7 @@ def _get_note_rate_by_workshop(summary_df):
         rate_str = row['备注覆盖率']
         try:
             rate = float(str(rate_str).replace('%',''))/100
-        except:
+        except Exception:
             rate = 0
         rates[ws] = (rate, total)
     # 加权平均

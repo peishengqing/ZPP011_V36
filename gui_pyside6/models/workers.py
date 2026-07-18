@@ -2,6 +2,7 @@
 """
 后台工作线程（分析、AI审核）
 """
+import threading
 import traceback
 import pandas as pd
 from PySide6.QtCore import QThread, Signal
@@ -26,10 +27,10 @@ class AnalysisWorker(QThread):
         self.end_date = end_date
         self.material_search = material_search
         self.dev_rate_threshold = dev_rate_threshold
-        self._cancel = False
+        self._cancel = threading.Event()
 
     def cancel(self):
-        self._cancel = True
+        self._cancel.set()
 
     def run(self):
         try:
@@ -40,7 +41,7 @@ class AnalysisWorker(QThread):
             self.log.emit(f"替代料净偏差抵消: {'开启' if _enable_net_offset else '关闭'}")
 
             def progress_cb(step_idx, step_name, percent):
-                if self._cancel:
+                if self._cancel.is_set():
                     raise InterruptedError("用户取消")
                 self.progress.emit(percent, step_name)
                 self.log.emit(f"{step_name} ({percent}%)")
@@ -50,7 +51,7 @@ class AnalysisWorker(QThread):
                 output_dir=None,
                 alt_pairs=self.alt_pairs,
                 progress_callback=progress_cb,
-                cancel_check=lambda: self._cancel,
+                cancel_check=lambda: self._cancel.is_set(),
                 start_date=self.start_date,
                 end_date=self.end_date,
                 material_search=self.material_search,
@@ -60,7 +61,7 @@ class AnalysisWorker(QThread):
                 dev_rate_threshold=self.dev_rate_threshold,
             )
 
-            if self._cancel:
+            if self._cancel.is_set():
                 self.log.emit("分析已取消")
                 return  # 优雅退出，不发射错误信号
 
@@ -88,10 +89,10 @@ class AIAuditWorker(QThread):
         self.audit_data = audit_data.copy()
         self.rule_engine = rule_engine
         self.ai_client = ai_client
-        self._cancel = False
+        self._cancel = threading.Event()
 
     def cancel(self):
-        self._cancel = True
+        self._cancel.set()
 
     def _save_audit_results(self):
         """将审核结果批量保存到 SQLite"""
@@ -153,7 +154,7 @@ class AIAuditWorker(QThread):
             ai_queue = []  # [(idx, context, dev_rate)] 需要调用 AI 的行
 
             for idx, row in self.audit_data.iterrows():
-                if self._cancel:
+                if self._cancel.is_set():
                     break
 
                 dev_rate = self._parse_dev_rate(row)
@@ -218,7 +219,7 @@ class AIAuditWorker(QThread):
                 self.progress.emit(0, ai_total)
 
                 for batch_start in range(0, ai_total, BATCH_SIZE):
-                    if self._cancel:
+                    if self._cancel.is_set():
                         break
 
                     batch_end = min(batch_start + BATCH_SIZE, ai_total)
@@ -258,7 +259,7 @@ class AIAuditWorker(QThread):
                 self.progress.emit(ai_processed, ai_total)
                 self.log.emit(f"AI审核进度: {ai_processed}/{ai_total}")
 
-            if not self._cancel:
+            if not self._cancel.is_set():
                 if 'audit_result' in self.audit_data.columns or '审核结果' in self.audit_data.columns:
                     self._save_audit_results()
                 self.log.emit("AI审核完成")

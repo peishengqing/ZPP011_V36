@@ -1086,27 +1086,27 @@ class MainWindow(QMainWindow):
         box.exec()
         if box.clickedButton() != yes_btn:
             return
-            try:
-                # 直接用 AlertMonitor 传过来的 alerts_df，已经过滤过替代料了
-                all_alerts = alerts_df.copy()
-                if all_alerts is None or all_alerts.empty:
-                    QMessageBox.information(self, "提示", "没有替代料预警记录")
-                    return
-                # 只保留关键列，避免显示乱七八糟
-                required_cols = [c for c in [
-                    "订单日期", "流程订单", "物料编码", "物料描述", "物料名称",
-                    "车间", "定额", "实际", "偏差数量", "偏差率(%)",
-                    "净偏差数量", "净偏差金额", "净偏差率(%)", "备注", "备注原因", "备注来源",
-                    "_read"
-                ] if c in all_alerts.columns]
-                all_alerts = all_alerts[required_cols]
-                if "_read" in all_alerts.columns:
-                    all_alerts["状态"] = all_alerts["_read"].map({0: "未读", 1: "已读"})
-                    all_alerts = all_alerts[["状态"] + [c for c in all_alerts.columns if c != "状态"]]
-                dialog = AlertDialog(all_alerts, self)
-                dialog.exec()
-            except Exception as e:
-                QMessageBox.critical(self, "错误", f"显示预警失败: {e}")
+        try:
+            # 直接用 AlertMonitor 传过来的 alerts_df，已经过滤过替代料了
+            all_alerts = alerts_df.copy()
+            if all_alerts is None or all_alerts.empty:
+                QMessageBox.information(self, "提示", "没有替代料预警记录")
+                return
+            # 只保留关键列，避免显示乱七八糟
+            required_cols = [c for c in [
+                "订单日期", "流程订单", "物料编码", "物料描述", "物料名称",
+                "车间", "定额", "实际", "偏差数量", "偏差率(%)",
+                "净偏差数量", "净偏差金额", "净偏差率(%)", "备注", "备注原因", "备注来源",
+                "_read"
+            ] if c in all_alerts.columns]
+            all_alerts = all_alerts[required_cols]
+            if "_read" in all_alerts.columns:
+                all_alerts["状态"] = all_alerts["_read"].map({0: "未读", 1: "已读"})
+                all_alerts = all_alerts[["状态"] + [c for c in all_alerts.columns if c != "状态"]]
+            dialog = AlertDialog(all_alerts, self)
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"显示预警失败: {e}")
 
     def _show_alert_dashboard(self):
         """手动打开替代料看板"""
@@ -2577,7 +2577,7 @@ class MainWindow(QMainWindow):
             display = str(val)
             if "偏差率" in label and val:
                 try: display = f"{float(val):.2f}%"
-                except: pass
+                except Exception: pass
             fl2.addRow(f"{label}：", _mk_label(display))
         layout.addWidget(gb2)
         gb3 = QGroupBox("备注与建议")

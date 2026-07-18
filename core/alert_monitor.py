@@ -66,9 +66,13 @@ class AlertMonitor(QObject):
     def _monitor_loop(self):
         while not self._stop_flag:
             try:
-                df = self.data_source_func()
-                if df is not None and not df.empty:
-                    self._check_alerts(df)
+                raw = self.data_source_func()
+                if raw is None or raw.empty:
+                    continue
+                # 拷贝快照：后台线程不再持有主线程 DataFrame 的引用，
+                # 避免主线程改写 view_model.df 时与后台读取产生数据竞争
+                df = raw.copy()
+                self._check_alerts(df)
             except Exception as e:
                 print(f"预警监控错误: {e}")
             time.sleep(self.interval)

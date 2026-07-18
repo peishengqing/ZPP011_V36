@@ -4,6 +4,7 @@
 sheet1_summary.py — Sheet1 汇总统计（v36 抽取，增加预警列颜色导出）
 """
 import pandas as pd
+from analysis.excel_builder.write_sheet_util import ensure_numeric_cols
 
 # 尝试导入 openpyxl（用于颜色填充）
 try:
@@ -28,9 +29,7 @@ def build_sheet1(df, report_progress, progress_idx=1):
     print("[DEBUG do_analysis_v2] 开始生成Sheet1")
 
     # 确保数值列为数值类型（防止字符串导致比较错误）
-    for col in ["材料偏差", "偏差率(%)", "偏差金额", "偏差金额(含税)", "数量-实际", "数量-定额"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    ensure_numeric_cols(df, ["材料偏差", "偏差率(%)", "偏差金额", "偏差金额(含税)", "数量-实际", "数量-定额"])
 
     summary_rows = []
     idx = 1

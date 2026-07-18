@@ -10,7 +10,8 @@ from PySide6.QtCore import QObject, Signal
 
 from core.read_status import (
     load_read_status, load_audit_results,
-    record_deviation_change_batch, save_snapshot_batch,
+    record_deviation_change, record_deviation_change_batch,
+    get_deviation_history, save_snapshot_batch,
 )
 from core.change_detector import detect_changes
 from core.quarantine_manager import get_quarantined_ids

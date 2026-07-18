@@ -26,6 +26,7 @@ import traceback
 import shutil
 import sqlite3
 import zipfile
+from config.settings import DEFAULT_THRESHOLD
 
 # 模块化组件
 from storage import storage
@@ -274,7 +275,7 @@ def do_analysis_v2(
     col_p = '偏差率(%)'
 
     # ── 固定阈值（公司规定）─────────────────────
-    dyn_thresh = 10.0
+    dyn_thresh = DEFAULT_THRESHOLD
     thresh_desc = "固定阈值（公司规定）：±10%"
     df['_dyn_thresh'] = dyn_thresh
 
@@ -342,6 +343,12 @@ def do_analysis_v2(
         # 没有用户输入，使用数据中的日期范围
         date_min = df['订单开始日期'].min()
         date_max = df['订单开始日期'].max()
+
+    # 防御：df 为空或日期列全空时，min/max 返回 NaT，strftime 会抛 ValueError
+    if pd.isna(date_min) or pd.isna(date_max):
+        _today = pd.Timestamp.now().normalize()
+        date_min = _today if pd.isna(date_min) else date_min
+        date_max = _today if pd.isna(date_max) else date_max
 
     date_range = f"{pd.Timestamp(date_min).strftime('%Y%m%d')}-{pd.Timestamp(date_max).strftime('%Y%m%d')}"
     _dprint(f"[DEBUG do_analysis_v2] 日期范围：{date_range}")
