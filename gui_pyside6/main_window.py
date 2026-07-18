@@ -40,7 +40,12 @@ from gui_pyside6.dialogs.unit_summary_dialog import UnitSummaryDialog
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.quarantine_dialog import QuarantineDialog
 from core.quarantine_manager import add_quarantine, remove_quarantine
-from core.auto_quarantine import compute_auto_quarantine_ids
+from core.auto_quarantine import (
+    build_rule_reason,
+    build_rule_summary,
+    compute_auto_quarantine_ids,
+    load_auto_quarantine_config,
+)
 from gui_pyside6.dialogs.rule_config_dialog import RuleConfigDialog
 from gui_pyside6.dialogs.dashboard_dialog import DashboardDialog
 from gui_pyside6.dialogs.history_compare_dialog import HistoryCompareDialog
@@ -323,9 +328,17 @@ class MainWindow(QMainWindow):
         self.action_btn_auto_q.setObjectName("actionBtnAutoQ")
         self.action_btn_auto_q.setProperty("class", "actionBtn")
         self.action_btn_auto_q.setToolTip(
-            "按规则自动把「非替代料·包材·物料名含箱或手包袋·实际<定额」的记录移入隔离区")
+            "按规则自动移入隔离区：" + build_rule_summary(load_auto_quarantine_config()))
         self.action_btn_auto_q.clicked.connect(lambda: self._auto_move_to_quarantine(manual=True))
         action_layout.addWidget(self.action_btn_auto_q)
+
+        self.action_btn_auto_q_rule = QPushButton("⚙ 规则")
+        self.action_btn_auto_q_rule.setCursor(Qt.PointingHandCursor)
+        self.action_btn_auto_q_rule.setObjectName("actionBtnAutoQRule")
+        self.action_btn_auto_q_rule.setProperty("class", "actionBtn")
+        self.action_btn_auto_q_rule.setToolTip("配置自动隔离规则（关键词 / 包材 / 负损）")
+        self.action_btn_auto_q_rule.clicked.connect(self._open_auto_quarantine_rule_dialog)
+        action_layout.addWidget(self.action_btn_auto_q_rule)
 
         action_layout.addStretch()
 
@@ -2370,20 +2383,27 @@ class MainWindow(QMainWindow):
         toast(f"{'⚠️ 已移入隔离区' if flag else '↩ 已取消隔离'} {len(ids)} 条", parent=self)
 
     def _auto_move_to_quarantine(self, manual=False):
-        """按规则自动把符合条件的记录移入隔离区：
-        非替代料 + 包材 + 物料名含「箱」或「手包袋」 + 有实际数量且 实际 < 定额。
+        """按 config/auto_quarantine_config.json 配置把符合条件的记录移入隔离区。
+        配置项：关键词 / 是否限定包材 / 是否排除替代料 / 是否要求负损。
         manual=True 来自工具栏手动按钮（弹窗反馈）；False 为分析完成后静默执行。"""
+        cfg = load_auto_quarantine_config()
+        if not cfg.get("enabled", True):
+            if manual:
+                QMessageBox.information(
+                    self, "自动整理隔离区",
+                    "自动隔离已关闭（配置 enabled=false），可在工具栏「⚙ 规则」中开启。")
+            return
         df = self.view_model.df
         if df is None or 'data_id' not in df.columns:
             if manual:
                 QMessageBox.information(self, "自动整理隔离区", "暂无数据，无法执行。")
             return
-        matched = compute_auto_quarantine_ids(df)
+        matched = compute_auto_quarantine_ids(df, cfg)
         if not matched:
             if manual:
                 QMessageBox.information(
                     self, "自动整理隔离区",
-                    "没有符合规则的记录（规则：非替代料 · 包材 · 物料名含「箱」或「手包袋」 · 实际>0 且 实际<定额）。")
+                    "没有符合规则的记录（当前规则：%s）。" % build_rule_summary(cfg))
             return
         # 仅对「尚未在隔离区」的新记录执行，避免重复打扰 / 覆盖用户手动取消隔离的行
         already = set()
@@ -2397,7 +2417,7 @@ class MainWindow(QMainWindow):
                     f"符合规则的 {len(matched)} 条均已在隔离区，无需重复移入。")
             return
         for uid in new_ids:
-            add_quarantine(uid, "自动规则:非替代料·包材·含箱或手包袋·实际<定额")
+            add_quarantine(uid, build_rule_reason(cfg))
         df.loc[df['data_id'].isin(new_ids), '_quarantined'] = 1
         self.view_model.df = df
         if self.source_model:
@@ -2405,10 +2425,20 @@ class MainWindow(QMainWindow):
             if hasattr(self, '_apply_column_visibility_by_name'):
                 self._apply_column_visibility_by_name()
         self.stats_cards.refresh(df)
-        msg = f"🧹 自动移入隔离区 {len(new_ids)} 条（非替代料·包材·含「箱」·实际<定额）"
+        msg = f"🧹 自动移入隔离区 {len(new_ids)} 条（{build_rule_summary(cfg)}）"
         toast(msg, parent=self)
         if manual:
             QMessageBox.information(self, "自动整理隔离区", msg)
+
+    def _open_auto_quarantine_rule_dialog(self):
+        """打开自动隔离规则配置对话框。保存成功后刷新工具栏 tooltip。"""
+        from PySide6.QtWidgets import QDialog
+        from gui_pyside6.dialogs.auto_quarantine_rule_dialog import AutoQuarantineRuleDialog
+        dlg = AutoQuarantineRuleDialog(self)
+        if dlg.exec_() == QDialog.DialogCode.Accepted:
+            cfg = load_auto_quarantine_config()
+            self.action_btn_auto_q.setToolTip("按规则自动移入隔离区：" + build_rule_summary(cfg))
+            toast("✅ 自动隔离规则已更新", parent=self)
 
     def _open_quarantine_dialog(self):
         """顶部按钮：打开隔离区弹窗"""

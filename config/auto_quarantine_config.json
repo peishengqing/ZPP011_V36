@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "exclude_alt": true,
+  "category_required": true,
+  "category_value": "包材",
+  "name_keywords": ["箱", "手包袋"],
+  "negative_loss_required": true
+}
