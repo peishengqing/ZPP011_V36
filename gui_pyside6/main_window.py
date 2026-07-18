@@ -972,9 +972,13 @@ class MainWindow(QMainWindow):
         self._update_top_panel_visibility()
 
     def _update_top_panel_visibility(self):
-        """两个面板都隐藏时，把顶部容器也隐藏，释放空间给表格"""
-        stats_visible = self.stats_cards.isVisible()
-        progress_visible = self.main_table.progress_group.isVisible()
+        """两个面板都隐藏时，把顶部容器也隐藏，释放空间给表格。
+        注意：必须用各自的「用户期望可见」状态变量判断，不能用 isVisible()——
+        因为 isVisible() 受父级 top_panel 可见性影响：一旦 top_panel 被隐藏，
+        子 widget 的 isVisible() 也会返回 False，会导致「显示」时 top_panel 永远
+        无法重新出现（死循环）。"""
+        stats_visible = not self.stats_cards._user_hidden
+        progress_visible = not self.main_table._progress_hidden
         self.top_panel.setVisible(stats_visible or progress_visible)
 
     def _on_analysis_error_ui(self, error_msg):
