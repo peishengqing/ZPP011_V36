@@ -12,7 +12,7 @@
     "hidden": false
   },
   "流程订单": {
-    "width": 77,
+    "width": 72,
     "hidden": false
   },
   "工厂": {
@@ -20,7 +20,7 @@
     "hidden": false
   },
   "车间": {
-    "width": 55,
+    "width": 58,
     "hidden": false
   },
   "物料类型": {
@@ -32,19 +32,19 @@
     "hidden": false
   },
   "产品物料号码": {
-    "width": 120,
-    "hidden": false
+    "width": 0,
+    "hidden": true
   },
   "产品物料描述": {
-    "width": 144,
-    "hidden": false
+    "width": 0,
+    "hidden": true
   },
   "物料编码": {
     "width": 120,
     "hidden": false
   },
   "物料名称": {
-    "width": 191,
+    "width": 257,
     "hidden": false
   },
   "单位": {
@@ -64,16 +64,16 @@
     "hidden": false
   },
   "净偏差数量": {
-    "width": 85,
-    "hidden": false
+    "width": 0,
+    "hidden": true
   },
   "净偏差金额": {
-    "width": 85,
-    "hidden": false
+    "width": 0,
+    "hidden": true
   },
   "净偏差率(%)": {
-    "width": 97,
-    "hidden": false
+    "width": 0,
+    "hidden": true
   },
   "偏差金额": {
     "width": 81,
@@ -112,7 +112,7 @@
     "hidden": false
   },
   "fingerprint": {
-    "width": 84,
+    "width": 86,
     "hidden": false
   },
   "_post_audit_changed": {
