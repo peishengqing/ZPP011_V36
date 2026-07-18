@@ -5,9 +5,10 @@
 import pandas as pd
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
-    QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QComboBox,
+    QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel,
 )
-from PySide6.QtCore import Qt, QPoint
+from PySide6.QtCore import Qt, QPoint, Signal
+from PySide6.QtGui import QPolygon, QColor, QBrush
 from gui_pyside6.models.data_frame_model import DataFrameModel
 from core.quarantine_manager import remove_quarantine, get_quarantine_records
 from core.read_status import save_read_status
@@ -15,6 +16,51 @@ from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_fo
 from gui_pyside6.widgets.toast import toast
 
 _HIDDEN_INTERNAL = ['_read', 'data_id', '_quarantined', '_post_audit_changed', 'fingerprint']
+
+
+class FilterHeader(QHeaderView):
+    """带列头筛选三角的表头：点击指定列右侧的 ▼ 三角弹出该列筛选菜单，
+    点击列头其余区域仍按原逻辑排序（不破坏排序交互）。"""
+
+    sectionFilterClicked = Signal(int)
+
+    def __init__(self, orientation=Qt.Horizontal, parent=None):
+        super().__init__(orientation, parent)
+        self._filter_sections = set()
+        self._tri_w = 16
+
+    def add_filter_section(self, logical):
+        self._filter_sections.add(logical)
+
+    def clear_filter_sections(self):
+        self._filter_sections.clear()
+
+    def paintSection(self, painter, rect, logicalIndex):
+        super().paintSection(painter, rect, logicalIndex)
+        if logicalIndex in self._filter_sections:
+            painter.save()
+            mid_x = rect.right() - self._tri_w / 2
+            mid_y = rect.center().y()
+            painter.setBrush(QBrush(QColor(90, 90, 90)))
+            painter.setPen(Qt.NoPen)
+            painter.drawPolygon(QPolygon([
+                QPoint(int(mid_x - 3), int(mid_y - 2)),
+                QPoint(int(mid_x + 3), int(mid_y - 2)),
+                QPoint(int(mid_x), int(mid_y + 3)),
+            ]))
+            painter.restore()
+
+    def mousePressEvent(self, event):
+        x = event.position().x()
+        xi = int(x)
+        for sec in self._filter_sections:
+            if self.logicalIndexAt(xi) == sec:
+                sp = self.sectionViewportPosition(sec)
+                sz = self.sectionSize(sec)
+                if x >= sp + sz - self._tri_w:
+                    self.sectionFilterClicked.emit(sec)
+                    return
+        super().mousePressEvent(event)
 
 
 class QuarantineDialog(QDialog):
@@ -27,6 +73,7 @@ class QuarantineDialog(QDialog):
         # 允许最大化/最小化（Windows 上最大化按钮需与最小化成对才稳定显示）
         self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.main_window = main_window
+        self._current_reason_filter = "全部"
         self.setup_ui()
         self.set_data(quarantine_df)
 
@@ -35,23 +82,9 @@ class QuarantineDialog(QDialog):
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
 
-        info = QLabel("以下数据被标记为「疑难待处理」。修改主表后重新导入，隔离区记录会同步更新（引用模式，仅按 data_id 关联，不存副本）。可用上方「隔离原因」下拉仅看某一类（自动规则 / 手动移入 / 未填写）。")
+        info = QLabel("以下数据被标记为「疑难待处理」。修改主表后重新导入，隔离区记录会同步更新（引用模式，仅按 data_id 关联，不存副本）。点击「隔离原因」列头右侧的 ▼ 三角可按原因筛选（自动规则 / 手动移入 / 未填写）；点击列头其余区域仍可排序。")
         info.setWordWrap(True)
         layout.addWidget(info)
-
-        # 隔离原因筛选栏：按 reason 过滤隔离记录
-        filter_bar = QHBoxLayout()
-        filter_bar.setSpacing(6)
-        reason_label = QLabel("隔离原因:")
-        self.reason_combo = QComboBox()
-        self.reason_combo.setMinimumWidth(280)
-        self.reason_combo.addItem("全部")
-        self.reason_combo.setToolTip("按隔离原因筛选（自动规则 / 手动移入 / 未填写等）")
-        self.reason_combo.currentIndexChanged.connect(self._on_reason_filter)
-        filter_bar.addWidget(reason_label)
-        filter_bar.addWidget(self.reason_combo)
-        filter_bar.addStretch()
-        layout.addLayout(filter_bar)
 
         self.table_view = QTableView()
         self.table_view.setAlternatingRowColors(True)
@@ -62,6 +95,10 @@ class QuarantineDialog(QDialog):
         self.table_view.doubleClicked.connect(self.on_double_click)
         self.table_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table_view.setSortingEnabled(True)
+        # 自定义表头：隔离原因列带筛选三角
+        self.header = FilterHeader(Qt.Horizontal, self.table_view)
+        self.table_view.setHorizontalHeader(self.header)
+        self.header.sectionFilterClicked.connect(self._show_reason_filter_menu)
         self.table_view.horizontalHeader().setStretchLastSection(True)
         self.table_view.verticalHeader().setVisible(False)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
@@ -97,50 +134,63 @@ class QuarantineDialog(QDialog):
 
         # 保留完整隔离数据，供隔离原因筛选切片使用
         self.full_df = df.copy()
-        self._populate_reason_combo(df)
         self._render_table(df)
 
-    def _populate_reason_combo(self, df):
-        """用当前隔离数据的隔离原因 distinct 值填充下拉（保留用户当前选择）"""
-        seen = set()
-        reasons = []
-        for r in df['隔离原因'].tolist():
-            s = str(r).strip() or '（未填写原因）'
-            if s not in seen:
-                seen.add(s)
-                reasons.append(s)
-        reasons.sort()
-        current = self.reason_combo.currentText()
-        self.reason_combo.blockSignals(True)
-        self.reason_combo.clear()
-        self.reason_combo.addItem("全部")
-        for r in reasons:
-            self.reason_combo.addItem(r)
-        # 数据刷新后，尽量恢复之前的选择
-        idx = self.reason_combo.findText(current)
-        self.reason_combo.setCurrentIndex(idx if idx >= 0 else 0)
-        self.reason_combo.blockSignals(False)
-
     def _render_table(self, df):
-        """重建表格模型并应用内部列隐藏（不重查 reason）"""
+        """重建表格模型并应用内部列隐藏（不重查 reason），并重注册隔离原因列筛选三角"""
         self.source_model = DataFrameModel()
         self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
+        # 重注册隔离原因列的筛选三角（setModel 会重置表头状态）
+        self.header.clear_filter_sections()
+        if '隔离原因' in df.columns:
+            self.header.add_filter_section(df.columns.get_loc('隔离原因'))
         self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
         for col in _HIDDEN_INTERNAL:
             if col in df.columns:
                 self.table_view.setColumnHidden(df.columns.get_loc(col), True)
 
-    def _on_reason_filter(self):
-        """按隔离原因下拉过滤表格（全部 = 不过滤）"""
+    def _show_reason_filter_menu(self, col):
+        """点击隔离原因列头 ▼ 三角：弹出该列 distinct 值菜单"""
         if not hasattr(self, 'full_df') or self.full_df is None:
             return
-        selected = self.reason_combo.currentText()
-        if selected == "全部" or not selected:
+        if '隔离原因' not in self.full_df.columns:
+            return
+        values = self.full_df['隔离原因'].dropna().astype(str).tolist()
+        seen = set()
+        uniq = []
+        for v in values:
+            if v not in seen:
+                seen.add(v)
+                uniq.append(v)
+        menu = QMenu(self)
+        act_all = menu.addAction("全部（清除筛选）")
+        menu.addSeparator()
+        actions = {}
+        for v in uniq:
+            actions[menu.addAction(v)] = v
+        header = self.table_view.horizontalHeader()
+        pos = header.sectionViewportPosition(col)
+        sz = header.sectionSize(col)
+        global_pos = header.mapToGlobal(QPoint(int(pos + sz - 16), 0))
+        chosen = menu.exec_(global_pos)
+        if chosen is None:
+            return
+        if chosen == act_all:
+            self._apply_reason_filter("全部")
+        else:
+            self._apply_reason_filter(actions[chosen])
+
+    def _apply_reason_filter(self, value):
+        """按隔离原因筛选表格（全部 = 不过滤），并记住当前选择以便刷新后恢复"""
+        if not hasattr(self, 'full_df') or self.full_df is None:
+            return
+        self._current_reason_filter = value
+        if value == "全部" or not value:
             display = self.full_df
         else:
-            display = self.full_df[self.full_df['隔离原因'] == selected]
+            display = self.full_df[self.full_df['隔离原因'] == value]
         self._render_table(display.copy())
 
     def show_context_menu(self, pos: QPoint):
@@ -255,12 +305,10 @@ class QuarantineDialog(QDialog):
             if df is not None and '_quarantined' in df.columns:
                 qdf = df[df['_quarantined'] == 1].copy().reset_index(drop=True)
                 # 数据变化后重新应用用户当前的隔离原因筛选
-                prev = self.reason_combo.currentText()
+                prev = self._current_reason_filter
                 self.set_data(qdf)
                 if prev and prev != "全部":
-                    idx = self.reason_combo.findText(prev)
-                    if idx >= 0:
-                        self.reason_combo.setCurrentIndex(idx)  # 触发 _on_reason_filter
+                    self._apply_reason_filter(prev)  # 重新应用筛选，保持选择
 
     def on_double_click(self, index):
         if not index.isValid():
