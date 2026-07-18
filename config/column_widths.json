@@ -28,7 +28,7 @@
     "hidden": false
   },
   "原表行号": {
-    "width": 120,
+    "width": 51,
     "hidden": false
   },
   "产品物料号码": {
@@ -40,7 +40,7 @@
     "hidden": true
   },
   "物料编码": {
-    "width": 120,
+    "width": 60,
     "hidden": false
   },
   "物料名称": {
