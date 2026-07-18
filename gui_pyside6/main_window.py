@@ -798,7 +798,7 @@ class MainWindow(QMainWindow):
             return
 
         dev_threshold = getattr(self.filter_panel, 'dev_threshold_spin', None)
-        dev_threshold_val = dev_threshold.value() if dev_threshold is not None else 1.0
+        dev_threshold_val = dev_threshold.value() if dev_threshold is not None else 0.0
 
         # 读取"分析参数"组里的分析日期范围（留空=全部）。修复：此前写死为空导致日期控制失效。
         def _qdate_or_empty(edit):

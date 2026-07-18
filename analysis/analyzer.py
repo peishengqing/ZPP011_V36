@@ -87,7 +87,7 @@ def do_analysis_v2(
         output_path=None,
         enable_net_offset=True,
         return_dataframe=False,
-        dev_rate_threshold=1.0):
+        dev_rate_threshold=0.0):
     _dprint("[DEBUG do_analysis_v2] 函数开始执行")
 
     # output_dir 兜底，防止调用方传 None 导致 os.path.join 崩溃
@@ -882,7 +882,8 @@ def do_analysis_v2(
         ['替代料明细', '识别到的替代料配对及净偏差'],
         ['无备注预警', f'偏差率超过 ±{dyn_thresh:.1f}% 但未填备注的记录（按偏差金额降序）'],
         ['中间地带明细', f'偏差率在 ±{dyn_thresh:.1f}% 区间内（不纳入汇总统计）'],
-        ['完整偏差明细', '所有偏差率超 ±1% 的记录（剔除替代料）'],
+        ['完整偏差明细', ('所有偏差记录（剔除替代料）' if dev_rate_threshold <= 0
+                          else f'所有偏差率超 ±{dev_rate_threshold:.1f}% 的记录（剔除替代料）')],
         ['异常预警', '5类异常：系统无定额、实际为0/负数、BOM问题、包材负偏差、替代料超阈值'],
         ['偏差金额分析', '按物料汇总正/负偏差金额（含税）'],
         ['偏差原因汇总', '按车间汇总原因 Top5（备注已自动标准化）'],

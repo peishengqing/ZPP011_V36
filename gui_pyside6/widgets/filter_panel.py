@@ -70,9 +70,9 @@ class FilterPanel(QWidget):
         self.dev_threshold_spin = QDoubleSpinBox()
         self.dev_threshold_spin.setRange(0.0, 50.0)
         self.dev_threshold_spin.setSingleStep(0.5)
-        self.dev_threshold_spin.setValue(1.0)
+        self.dev_threshold_spin.setValue(0.0)
         self.dev_threshold_spin.setSuffix("%")
-        self.dev_threshold_spin.setToolTip("仅纳入偏差率绝对值 ≥ 此阈值的工单进入主表；调为 0% 可显示全部明细。修改后重新分析生效。")
+        self.dev_threshold_spin.setToolTip("仅纳入偏差率绝对值 ≥ 此阈值的工单进入主表（审核表）。默认 0%（显示全部偏差）；调高可聚焦大偏差。修改后重新分析生效。")
         param_layout.addRow("偏差率纳入阈值:", self.dev_threshold_spin)
         # 分析日期范围（重新分析生效）：控制 do_analysis_v2 的 start_date/end_date
         # 分析日期：QDateEdit + 📅选日期按钮 + ✕清除按钮，规避 specialValueText 下键盘输入不可靠
