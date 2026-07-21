@@ -95,6 +95,12 @@ class AlertMonitor(QObject):
             alerts_df = df[df['偏差率(%)'].abs() > self.threshold]
         if alerts_df is None or alerts_df.empty:
             return
+        # 已标记已读的替代料预警不再视为"新增"，避免跨会话重复打扰
+        # （_read 列由 data_service 预处理从 SQLite 恢复，已读状态持久化）
+        if '_read' in alerts_df.columns:
+            alerts_df = alerts_df[alerts_df['_read'] != 1]
+        if alerts_df is None or alerts_df.empty:
+            return
         alerts_df = alerts_df.copy()
         alerts_df['_alert_id'] = (alerts_df['订单日期'].astype(str) + '|'
                                   + alerts_df['流程订单'].astype(str) + '|'
