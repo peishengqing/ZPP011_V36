@@ -45,6 +45,59 @@ class EnhancedSortProxyModel(QSortFilterProxyModel):
         self._column_states: Dict[int, ColumnSortState] = {}
         # 排序规则栈：只包含已排序的列，按激活时间倒序排列（最后激活的优先级最高）
         self._sort_stack: List[int] = []
+        # 预警行缓存：偏差率列索引 + 每行是否为预警行的布尔数组（避免逐格 O(列数) 扫描）
+        self._rate_col = None
+        self._alert_cache = None
+        self._alert_cache_n = -1
+
+    def setSourceModel(self, model):
+        """切换源模型时同步缓存失效绑定，保证数据变更后预警标记自动重建。"""
+        old = self.sourceModel()
+        if old is not None:
+            try:
+                old.modelReset.disconnect(self._invalidate_alert_cache)
+                old.layoutChanged.disconnect(self._invalidate_alert_cache)
+                old.dataChanged.disconnect(self._invalidate_alert_cache)
+            except Exception:
+                pass
+        super().setSourceModel(model)
+        self._invalidate_alert_cache()
+        if model is not None:
+            model.modelReset.connect(self._invalidate_alert_cache)
+            model.layoutChanged.connect(self._invalidate_alert_cache)
+            model.dataChanged.connect(self._invalidate_alert_cache)
+
+    def _invalidate_alert_cache(self, *args):
+        """源数据变化时失效预警缓存（行数/内容变化后下次访问自动重建）。"""
+        self._rate_col = None
+        self._alert_cache = None
+        self._alert_cache_n = -1
+
+    def _ensure_alert_cache(self):
+        """必要时一次性构建预警行缓存：定位偏差率列 + 计算每行是否超阈值。O(行) 仅重建一次。"""
+        src = self.sourceModel()
+        if src is None:
+            return
+        n = src.rowCount()
+        if self._alert_cache is not None and self._alert_cache_n == n and self._rate_col is not None:
+            return
+        # 忽略换行/空白后匹配偏差率列（与 headerData 实际显示一致）
+        self._rate_col = None
+        for col in range(src.columnCount()):
+            cn = ''.join(str(src.headerData(col, Qt.Horizontal, Qt.DisplayRole)).split())
+            if cn in ('偏差率(%)', '偏差率'):
+                self._rate_col = col
+                break
+        self._alert_cache = [False] * n
+        if self._rate_col is not None:
+            for r in range(n):
+                val = src.data(src.index(r, self._rate_col), Qt.DisplayRole)
+                try:
+                    rate = float(str(val).replace('%', '').strip())
+                    self._alert_cache[r] = abs(rate) > 10
+                except Exception:
+                    pass
+        self._alert_cache_n = n
 
     def get_column_state(self, column: int) -> ColumnSortState:
         """获取指定列的当前排序状态"""
@@ -174,28 +227,11 @@ class EnhancedSortProxyModel(QSortFilterProxyModel):
         return left.row() < right.row()
 
     def _is_alert_row(self, source_row: int) -> bool:
-        """检查某行是否为预警行（偏差率 > 10%）"""
-        source_model = self.sourceModel()
-        if not source_model:
+        """检查某行是否为预警行（偏差率 > 10%），结果来自缓存，O(1)。"""
+        self._ensure_alert_cache()
+        if self._alert_cache is None or source_row < 0 or source_row >= len(self._alert_cache):
             return False
-        # 查找偏差率列
-        rate_col = None
-        for col in range(source_model.columnCount()):
-            col_name = source_model.headerData(col, Qt.Horizontal, Qt.DisplayRole)
-            # 表头可能因换行显示为 '偏差率\n(%)'，先去掉所有空白再匹配
-            normalized = ''.join(str(col_name).split())
-            if normalized in ('偏差率(%)', '偏差率'):
-                rate_col = col
-                break
-        if rate_col is None:
-            return False
-        idx = source_model.index(source_row, rate_col)
-        rate_str = source_model.data(idx, Qt.DisplayRole)
-        try:
-            rate = float(rate_str.replace('%', '').strip())
-            return abs(rate) > 10
-        except Exception:
-            return False
+        return self._alert_cache[source_row]
 
     def data(self, index, role=Qt.DisplayRole):
         """重写 data 方法，为预警行添加浅红色背景"""
