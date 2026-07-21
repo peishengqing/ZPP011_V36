@@ -1,18 +1,18 @@
 {
   "状态": {
-    "width": 35,
+    "width": 100,
     "hidden": false
   },
   "订单日期": {
-    "width": 120,
+    "width": 100,
     "hidden": false
   },
   "订单类型": {
-    "width": 55,
+    "width": 100,
     "hidden": false
   },
   "流程订单": {
-    "width": 76,
+    "width": 100,
     "hidden": false
   },
   "工厂": {
@@ -20,31 +20,31 @@
     "hidden": false
   },
   "车间": {
-    "width": 80,
+    "width": 100,
     "hidden": false
   },
   "物料类型": {
-    "width": 80,
+    "width": 100,
     "hidden": false
   },
   "原表行号": {
-    "width": 52,
+    "width": 100,
     "hidden": false
   },
   "产品物料号码": {
-    "width": 0,
+    "width": 100,
     "hidden": true
   },
   "产品物料描述": {
-    "width": 0,
+    "width": 100,
     "hidden": true
   },
   "物料编码": {
-    "width": 120,
+    "width": 100,
     "hidden": false
   },
   "物料名称": {
-    "width": 200,
+    "width": 100,
     "hidden": false
   },
   "单位": {
@@ -63,6 +63,10 @@
     "width": 100,
     "hidden": false
   },
+  "偏差率": {
+    "width": 100,
+    "hidden": false
+  },
   "净偏差数量": {
     "width": 100,
     "hidden": false
@@ -75,20 +79,20 @@
     "width": 100,
     "hidden": false
   },
-  "偏差金额": {
-    "width": 100,
-    "hidden": false
-  },
   "偏差率(%)": {
     "width": 100,
     "hidden": false
   },
+  "偏差金额": {
+    "width": 100,
+    "hidden": false
+  },
   "备注": {
-    "width": 209,
+    "width": 100,
     "hidden": false
   },
   "备注来源": {
-    "width": 150,
+    "width": 100,
     "hidden": false
   },
   "偏差区间": {
@@ -99,35 +103,11 @@
     "width": 100,
     "hidden": false
   },
-  "_替代料组": {
-    "width": 178,
-    "hidden": false
-  },
   "周": {
     "width": 100,
     "hidden": false
   },
-  "data_id": {
-    "width": 100,
-    "hidden": false
-  },
-  "fingerprint": {
-    "width": 100,
-    "hidden": false
-  },
-  "_post_audit_changed": {
-    "width": 0,
-    "hidden": true
-  },
-  "_quarantined": {
-    "width": 100,
-    "hidden": false
-  },
-  "审核结果": {
-    "width": 100,
-    "hidden": false
-  },
-  "AI建议": {
+  "替代料组": {
     "width": 100,
     "hidden": false
   }

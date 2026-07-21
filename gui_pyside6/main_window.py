@@ -470,11 +470,19 @@ class MainWindow(QMainWindow):
     # -----------------------------------------------------------
     def _on_data_service_log(self, msg, level):
         if level == "alert" and msg.startswith("变动提醒|"):
-            self._show_audit_changes_dialog()
+            # 关键修复：原实现在数据预处理（preprocess_audit_data）执行栈内
+            # 同步弹出模态对话框——此时主表 setDataFrame 尚未执行、模型处于
+            # 不一致状态，且弹窗阻塞会触发 Qt 层崩溃（无 Python 堆栈直接退出）。
+            # 改为推迟到下一轮事件循环（当前分析→预处理→setDataFrame 全部结束后）
+            # 再弹窗，此时主表已刷新、调用栈已展开，彻底规避死锁/崩溃。
+            QTimer.singleShot(0, self._show_audit_changes_dialog)
         else:
             self.log(msg, level)
 
     def _show_audit_changes_dialog(self):
+        # 防重入：延迟触发期间若弹窗已开，跳过（避免堆叠多个模态框导致崩溃）
+        if getattr(self, '_audit_changes_dialog_open', False):
+            return
         # 顶部工具栏：显示已审核记录变更明细（alert 与手动点击均复用）。
         changes = getattr(self.data_service, 'last_audit_changes', [])
         if not changes:
@@ -484,6 +492,7 @@ class MainWindow(QMainWindow):
         MAX_DISPLAY = 3000
         display_len = min(count, MAX_DISPLAY)
         # 自定义对话框：表格展示变更明细 + 筛选/搜索/排序/复制/双击定位 + 手动导出
+        self._audit_changes_dialog_open = True
         dlg = QDialog(self)
         dlg.setWindowTitle(f"变动提醒（{count} 条）")
         dlg.resize(1100, 600)
@@ -795,6 +804,7 @@ class MainWindow(QMainWindow):
         mark_read_btn.clicked.connect(_mark_all_read)
         ok_btn.clicked.connect(dlg.accept)
         dlg.exec()
+        self._audit_changes_dialog_open = False
 
     def _locate_row_in_main_table(self, data_id):
         """变动提醒弹窗双击某行时，定位并选中主表对应行（经 proxy_model 映射）"""
