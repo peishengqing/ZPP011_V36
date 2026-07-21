@@ -71,6 +71,58 @@ from gui_pyside6.controllers.export_controller import ExportController
 from gui_pyside6.controllers.alt_controller import AltController
 
 
+class _FullReportWorker(QThread):
+    """后台生成完整多Sheet报告，进度/完成/失败均通过信号回主线程。"""
+    progress = Signal(int, str)      # (百分比, 步骤名)
+    finished_ok = Signal(str)        # (输出路径)
+    failed = Signal(str)             # (错误信息)
+
+    def __init__(self, input_file, alt_pairs, start_date, end_date,
+                 material_search, output_path, parent=None):
+        super().__init__(parent)
+        self.input_file = input_file
+        self.alt_pairs = alt_pairs
+        self.start_date = start_date
+        self.end_date = end_date
+        self.material_search = material_search
+        self.output_path = output_path
+        self._cancel = False
+
+    def request_cancel(self):
+        self._cancel = True
+
+    def run(self):
+        from analysis.analyzer import do_analysis_v2
+        from core.config_manager import ConfigManager
+        try:
+            _cfg = ConfigManager()
+            do_analysis_v2(
+                input_file=self.input_file, output_dir=None,
+                alt_pairs=self.alt_pairs,
+                progress_callback=lambda step_idx, step_name, percent: (
+                    self.progress.emit(percent, step_name),
+                    self._cancel,
+                )[1] if self._cancel_check() else self.progress.emit(percent, step_name),
+                cancel_check=self._cancel_check,
+                start_date=self.start_date, end_date=self.end_date,
+                material_search=self.material_search,
+                output_path=self.output_path,
+                enable_net_offset=_cfg.get_net_offset_enabled(),
+                return_dataframe=False,
+            )
+            if self._cancel:
+                self.failed.emit("已取消")
+                return
+            self.finished_ok.emit(self.output_path)
+        except Exception as e:
+            import traceback as _tb
+            _tb.print_exc()
+            self.failed.emit(str(e))
+
+    def _cancel_check(self, *args):
+        return self._cancel
+
+
 class MainWindow(QMainWindow):
     """ZPP011 主窗口 — 暗色主题"""
 
@@ -2197,59 +2249,85 @@ class MainWindow(QMainWindow):
             self.log(f"导出失败：文件被占用 {save_path}", "error")
             return
 
-        # 重新分析生成
+        # 重新分析生成（转后台线程，避免主线程冻结）
+        self._export_full_analysis_background(
+            save_path, analysis_params, cache_path
+        )
+
+    def _export_full_analysis_background(self, save_path, analysis_params, cache_path):
+        """后台线程重新分析生成完整报告，完成后弹窗通知；界面不锁。"""
+        from PySide6.QtWidgets import QProgressDialog, QApplication
+        from analysis.analyzer import do_analysis_v2
+
+        # 导出前检查目标文件是否可写
         try:
-            progress_dlg = QProgressDialog("正在重新分析生成完整报告...", "取消", 0, 100, self)
-            progress_dlg.setWindowTitle("导出中")
-            progress_dlg.setWindowModality(Qt.WindowModal)
-            progress_dlg.setMinimumDuration(0)
-            progress_dlg.show()
-            QApplication.processEvents()
-
-            from analysis.analyzer import do_analysis_v2
-            do_analysis_v2(
-                input_file=analysis_params['input_file'],
-                output_dir=None,
-                alt_pairs=analysis_params['alt_pairs'],
-                progress_callback=lambda step_idx, step_name, percent: (
-                    progress_dlg.setValue(percent),
-                    progress_dlg.setLabelText(f"{step_name} ({percent}%)"),
-                    QApplication.processEvents(),
-                )[0],
-                cancel_check=lambda *args: (QApplication.processEvents(), progress_dlg.wasCanceled())[1],
-                start_date=analysis_params.get('start_date'),
-                end_date=analysis_params.get('end_date'),
-                material_search=analysis_params.get('material_search'),
-                output_path=save_path,
-                enable_net_offset=True,
-                return_dataframe=False,
+            test_f = open(save_path, 'a')
+            test_f.close()
+        except (PermissionError, OSError):
+            QMessageBox.critical(
+                self, "文件被占用",
+                f"目标文件被占用，无法写入：\n{save_path}\n\n"
+                "请先关闭正在打开该文件的 Excel，然后重试。"
             )
-            progress_dlg.setValue(100)
-            progress_dlg.close()
+            self.log(f"导出失败：文件被占用 {save_path}", "error")
+            return
 
-            # 回存缓存
-            if cache_path and not os.path.exists(cache_path):
-                try:
-                    shutil.copy2(save_path, cache_path)
-                except Exception:
-                    pass
+        progress_dlg = QProgressDialog("正在后台生成完整报告...", "取消", 0, 100, self)
+        progress_dlg.setWindowTitle("导出中")
+        progress_dlg.setWindowModality(Qt.NonModal)  # 不锁界面，可继续操作主表
+        progress_dlg.setMinimumDuration(0)
+        progress_dlg.show()
 
-            if QMessageBox.question(
-                self, "导出成功",
-                f"完整分析报告已导出到\n{save_path}\n\n"
-                "包含Sheet:\n"
-                "📋 分析说明 · 汇总统计(带预警颜色)\n"
-                "完整偏差明细 · 替代料明细 · 无备注预警\n"
-                "中间地带明细 · 异常预警 · 偏差金额分析\n"
-                "偏差原因汇总 · 偏差原因分析 · 趋势分析\n\n"
-                "是否立即打开？"
-            ) == QMessageBox.Yes:
-                os.startfile(save_path)
-            self.log(f"已导出完整分析报告到 {save_path}", "info")
-        except Exception as e:
-            traceback.print_exc()
-            QMessageBox.critical(self, "错误", f"导出完整报告失败: {e}")
-            self.log(f"导出完整报告失败: {e}", "error")
+        worker = _FullReportWorker(
+            input_file=analysis_params['input_file'],
+            alt_pairs=analysis_params['alt_pairs'],
+            start_date=analysis_params.get('start_date'),
+            end_date=analysis_params.get('end_date'),
+            material_search=analysis_params.get('material_search'),
+            output_path=save_path,
+        )
+        # 进度回调（主线程）
+        worker.progress.connect(
+            lambda pct, txt: (progress_dlg.setValue(pct),
+                              progress_dlg.setLabelText(f"{txt} ({pct}%)"))[0]
+        )
+        # 取消：进度对话框 wasCanceled → worker 取消标志
+        progress_dlg.canceled.connect(worker.request_cancel)
+        # 完成/失败回调（主线程）
+        worker.finished_ok.connect(
+            lambda out_path: self._on_full_report_done(out_path, cache_path, progress_dlg)
+        )
+        worker.failed.connect(
+            lambda err: (progress_dlg.close(),
+                         QMessageBox.critical(self, "错误", f"导出完整报告失败: {err}"),
+                         self.log(f"导出完整报告失败: {err}", "error"))
+        )
+        self._full_report_worker = worker  # 防止被 GC
+        worker.start()
+
+    def _on_full_report_done(self, save_path, cache_path, progress_dlg):
+        """后台生成完成：回存缓存 + 弹窗通知（不锁界面）"""
+        progress_dlg.close()
+        # 回存缓存
+        if cache_path and not os.path.exists(cache_path):
+            try:
+                import shutil
+                shutil.copy2(save_path, cache_path)
+            except Exception:
+                pass
+        reply = QMessageBox.question(
+            self, "导出成功",
+            f"完整分析报告已生成：\n{save_path}\n\n"
+            "包含Sheet:\n"
+            "📋 分析说明 · 汇总统计(带预警颜色)\n"
+            "完整偏差明细 · 替代料明细 · 无备注预警\n"
+            "中间地带明细 · 异常预警 · 偏差金额分析\n"
+            "偏差原因汇总 · 偏差原因分析 · 趋势分析\n\n"
+            "是否立即打开？"
+        )
+        if reply == QMessageBox.Yes:
+            os.startfile(save_path)
+        self.log(f"已导出完整分析报告到 {save_path}", "info")
 
     # -----------------------------------------------------------
     # 净偏差
