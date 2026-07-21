@@ -721,6 +721,20 @@ class MainWindow(QMainWindow):
                 self.log("主表数据为空，以最小 data_id 列标记变动已读（不保存当前值快照）", "warning")
             return df
 
+        def _sync_main_read_status(dids):
+            """把一组 data_id 对应的主表行 _read 设为 1 并触发界面刷新。"""
+            if not dids or not self.source_model:
+                return
+            df = self.source_model.getDataFrame()
+            if df is None or (hasattr(df, 'empty') and df.empty):
+                return
+            if 'data_id' not in df.columns or '_read' not in df.columns:
+                return
+            mask = df['data_id'].astype(str).isin(dids)
+            if mask.any():
+                df.loc[mask, '_read'] = 1
+                self.source_model.setDataFrame(df)
+
         def _mark_selected_read():
             """把当前选中的行（点击高亮即选中，Ctrl/Shift 可多选）标记为已读，并从列表移除。"""
             sel = table.selectedIndexes()
@@ -741,8 +755,9 @@ class MainWindow(QMainWindow):
             if df is None:
                 QMessageBox.warning(dlg, "提示", "主表数据为空且无有效 data_id，无法标记已读。")
                 return
-            n = self.data_service.mark_changes_as_read(sub_changes, df)
+            n, marked_dids = self.data_service.mark_changes_as_read(sub_changes, df)
             if n > 0:
+                _sync_main_read_status(marked_dids)
                 # 从 remaining 移除已标记行（按 data_id+变更字段 去重，避免误删未选中的同名行）
                 marked_keys = {(str(c.get('data_id', '')), str(c.get('field', ''))) for c in sub_changes}
                 new_remaining = [c for c in remaining if (str(c.get('data_id', '')), str(c.get('field', ''))) not in marked_keys]
@@ -763,8 +778,10 @@ class MainWindow(QMainWindow):
                 if df is None:
                     QMessageBox.warning(dlg, "提示", "主表数据为空且无有效 data_id，无法标记已读。")
                     return
-                n = self.data_service.mark_changes_as_read(remaining, df)
+                marked_dids = {str(c.get('data_id', '')) for c in remaining if c.get('data_id')}
+                n, _ = self.data_service.mark_changes_as_read(remaining, df)
                 if n > 0:
+                    _sync_main_read_status(marked_dids)
                     toast(f"已把 {n} 条记录标记为已读，下次不再提醒", parent=dlg)
                 remaining[:] = []
                 dlg.setWindowTitle("变动提醒（0 条）")

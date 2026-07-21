@@ -371,10 +371,10 @@ class DataService(QObject):
                 snapshot_map[did] = (snap_qty, snap_note)
             mark_read_batch(list(dids), snapshot_map)
             self.last_audit_changes = []  # 当前会话不再重复弹窗
-            return len(dids)
+            return len(dids), dids
         except Exception as e:
             self.log(f"批量标记已读失败: {e}", "error")
-            return 0
+            return 0, set()
 
     def _restore_audit_results(self, df: pd.DataFrame) -> pd.DataFrame:
         """从 DB 恢复审核结果（审核结果、AI建议、备注来源），使用向量化赋值替代逐行 iloc。"""

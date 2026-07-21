@@ -197,7 +197,8 @@ def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True, gro
                     for idx in code_to_indices[code]:
                         df.at[idx, '净偏差数量'] = net_qty
                         df.at[idx, '净偏差金额'] = net_amt
-                        df.at[idx, '_替代料组'] = f"组_{root[:8]}"
+                        order_id = str(df.at[idx, order_col])
+                        df.at[idx, '_替代料组'] = f"组_{order_id}_{root[:8]}"
 
     df.drop(columns=['_key'], inplace=True)
 

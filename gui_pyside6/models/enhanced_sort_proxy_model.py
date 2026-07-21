@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt, QSortFilterProxyModel, QModelIndex
 from PySide6.QtGui import QColor
 from enum import Enum
 from typing import List, Tuple, Dict, Optional
+from gui_pyside6.models.data_frame_model import ALT_GROUP_ROLE
 
 
 class ColumnSortState(Enum):
@@ -181,7 +182,9 @@ class EnhancedSortProxyModel(QSortFilterProxyModel):
         rate_col = None
         for col in range(source_model.columnCount()):
             col_name = source_model.headerData(col, Qt.Horizontal, Qt.DisplayRole)
-            if col_name in ('偏差率(%)', '偏差率'):
+            # 表头可能因换行显示为 '偏差率\n(%)'，先去掉所有空白再匹配
+            normalized = ''.join(str(col_name).split())
+            if normalized in ('偏差率(%)', '偏差率'):
                 rate_col = col
                 break
         if rate_col is None:
@@ -201,6 +204,10 @@ class EnhancedSortProxyModel(QSortFilterProxyModel):
         source_index = self.mapToSource(index)
         if not source_index.isValid():
             return None
-        if role == Qt.BackgroundRole and self._is_alert_row(source_index.row()):
-            return QColor(255, 200, 200)  # 浅红
+        if role == Qt.BackgroundRole:
+            # 替代料组行：透传源模型的组色，不被预警色覆盖，保证同组视觉一致
+            if self.sourceModel().data(source_index, ALT_GROUP_ROLE):
+                return self.sourceModel().data(source_index, Qt.BackgroundRole)
+            if self._is_alert_row(source_index.row()):
+                return QColor(255, 200, 200)  # 浅红
         return self.sourceModel().data(source_index, role)

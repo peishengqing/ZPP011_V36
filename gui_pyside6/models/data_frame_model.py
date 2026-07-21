@@ -6,8 +6,18 @@ DataFrame Model 和 Proxy Model
 import numpy as np
 import pandas as pd
 from datetime import datetime
+import hashlib
 from PySide6.QtCore import QAbstractTableModel, QSortFilterProxyModel, Qt, Signal, QModelIndex
 from PySide6.QtGui import QColor
+
+# 自定义角色：标记某行是否属于替代料组（代理模型据此跳过预警色覆盖，保证同组视觉一致）
+ALT_GROUP_ROLE = Qt.UserRole + 100
+
+
+def _make_alt_group_color(group_name: str) -> QColor:
+    """根据替代料组名生成稳定的柔和色（同一个组永远同色）。"""
+    hue = int(hashlib.md5(group_name.encode('utf-8')).hexdigest(), 16) % 360
+    return QColor.fromHsv(hue, 50, 240)
 
 
 class DataFrameModel(QAbstractTableModel):
@@ -23,6 +33,7 @@ class DataFrameModel(QAbstractTableModel):
         self._changed_rows = set()  # 审核后变更行（位置索引集合，用于整行红标）
         self._quarantined_rows = set()  # 隔离区行（位置索引集合，用于整行黄标）
         self._substitute_rows = set()  # 替代料/非耗用行（实际=0 且 定额>0，整行浅蓝标）
+        self._alt_group_color_list = []  # 替代料组行对应的组色（QColor 或 None）
         if data is not None:
             self.setDataFrame(data)
 
@@ -55,6 +66,7 @@ class DataFrameModel(QAbstractTableModel):
             self._changed_rows = set()
             self._quarantined_rows = set()
             self._substitute_rows = set()
+            self._alt_group_color_list = []
             return
 
         self._display_columns = list(self._data.columns)
@@ -91,6 +103,22 @@ class DataFrameModel(QAbstractTableModel):
             self._substitute_rows = set(np.where(mask)[0])
         else:
             self._substitute_rows = set()
+
+        # 替代料组：按 _替代料组 分组生成稳定柔和色（同组同色，便于一眼归组）
+        self._alt_group_color_list = [None] * n
+        if '_替代料组' in self._data.columns:
+            grp = self._data['_替代料组']
+            seen = {}
+            for i in range(n):
+                g = grp.iat[i]
+                if g is None or (isinstance(g, float) and pd.isna(g)) or (isinstance(g, str) and g.strip() == ''):
+                    continue
+                gs = str(g)
+                col = seen.get(gs)
+                if col is None:
+                    col = _make_alt_group_color(gs)
+                    seen[gs] = col
+                self._alt_group_color_list[i] = col
 
         # 2. 批量构建缓存：to_numpy(dtype=object) 一次把 DataFrame 转成 object 数组，
         #    再替换 NaN/None，最后把 numpy scalar 转成 Python 原生类型。
@@ -132,12 +160,19 @@ class DataFrameModel(QAbstractTableModel):
             if role == Qt.DisplayRole:
                 read_val = self._data_cache[row][0]
                 return '✅' if read_val else '🔘'
+            elif role == Qt.EditRole:
+                return None
             elif role == Qt.TextAlignmentRole:
                 return Qt.AlignCenter
             elif role == Qt.ToolTipRole:
                 read_val = self._data_cache[row][0]
                 return '已读' if read_val else '未读'
-            return None
+            elif role == ALT_GROUP_ROLE:
+                if row < len(self._alt_group_color_list):
+                    return self._alt_group_color_list[row] is not None
+                return False
+            # 其余角色（如 BackgroundRole）交给下方统一处理（含替代料组色）
+
 
         # 替代料/非耗用行：鼠标悬停显示检测依据与备注原因
         if role == Qt.ToolTipRole and row in self._substitute_rows:
@@ -177,7 +212,18 @@ class DataFrameModel(QAbstractTableModel):
                 return Qt.AlignRight | Qt.AlignVCenter
             return Qt.AlignLeft | Qt.AlignVCenter
         
+        elif role == ALT_GROUP_ROLE:
+            # 告知代理模型：该行属于替代料组
+            if row < len(self._alt_group_color_list):
+                return self._alt_group_color_list[row] is not None
+            return False
+
         elif role == Qt.BackgroundRole:
+            # 替代料组：同组用同一柔和色，覆盖下面的变更/替代料/预警等标记，保证视觉归组
+            if row < len(self._alt_group_color_list):
+                gc = self._alt_group_color_list[row]
+                if gc is not None:
+                    return gc
             # 审核后变更行：整行浅红标记（优先）
             if row in self._changed_rows:
                 return QColor(255, 205, 205)
