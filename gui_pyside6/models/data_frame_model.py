@@ -34,6 +34,7 @@ class DataFrameModel(QAbstractTableModel):
         self._quarantined_rows = set()  # 隔离区行（位置索引集合，用于整行黄标）
         self._substitute_rows = set()  # 替代料/非耗用行（实际=0 且 定额>0，整行浅蓝标）
         self._alt_group_color_list = []  # 替代料组行对应的组色（QColor 或 None）
+        self._alert_rows = set()  # 偏差率预警行（|偏差率|>10%，整行浅红标）
         if data is not None:
             self.setDataFrame(data)
 
@@ -67,6 +68,7 @@ class DataFrameModel(QAbstractTableModel):
             self._quarantined_rows = set()
             self._substitute_rows = set()
             self._alt_group_color_list = []
+            self._alert_rows = set()
             return
 
         self._display_columns = list(self._data.columns)
@@ -103,6 +105,20 @@ class DataFrameModel(QAbstractTableModel):
             self._substitute_rows = set(np.where(mask)[0])
         else:
             self._substitute_rows = set()
+
+        # 偏差率预警：|偏差率| > 10% 的行整行浅红（与 EnhancedSortProxyModel 行为一致）
+        _alert_rate_col = None
+        for c in ['偏差率(%)', '偏差率']:
+            if c in self._data.columns:
+                _alert_rate_col = c
+                break
+        if _alert_rate_col:
+            rates = pd.to_numeric(
+                self._data[_alert_rate_col].astype(str).str.replace('%', '').str.strip(),
+                errors='coerce').fillna(0.0)
+            self._alert_rows = set(np.where(rates.abs() > 10)[0])
+        else:
+            self._alert_rows = set()
 
         # 替代料组：按 _替代料组 分组生成稳定柔和色（同组同色，便于一眼归组）
         self._alt_group_color_list = [None] * n
@@ -233,8 +249,11 @@ class DataFrameModel(QAbstractTableModel):
             # 替代料/非耗用行：整行浅蓝标记（实际=0 且 定额>0）
             if row in self._substitute_rows:
                 return QColor(205, 230, 255)
-            # 预警列上色
             col_name = self._display_columns[col]
+            # 偏差率预警行：整行浅红标记（|偏差率| > 10%，预警列本身保留红/黄/绿标记）
+            if row in self._alert_rows and col_name != '预警':
+                return QColor(255, 200, 200)
+            # 预警列上色
             if col_name == '预警':
                 val = str(self._data_cache[row][col]).strip()
                 if '🔴' in val or val == '红色预警':

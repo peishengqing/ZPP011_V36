@@ -1814,7 +1814,12 @@ class MainWindow(QMainWindow):
         # self.source_model.dataChanged.connect(self._refresh_stats_cards)  # stats_cards 已删除
         self.proxy_model.layoutChanged.connect(self._update_summary)
         # self.proxy_model.layoutChanged.connect(self._refresh_stats_cards)  # stats_cards 已删除
-        self.table_view.horizontalHeader().sortIndicatorChanged.connect(self._on_sort_indicator_changed)
+        # 三态排序：禁用 Qt 自动排序，改用列头点击（sectionClicked）自行管理 升/降/取消
+        self.table_view.setSortingEnabled(False)
+        self.table_view.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
+        self._natural_df = None          # 原始（加载时）顺序，供"取消排序"恢复
+        self._in_sort = False            # 排序过程中的 setDataFrame 不刷新 _natural_df
+        self.source_model.modelReset.connect(self._capture_natural_df)
         self._set_column_widths()
         self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         # 表头2行显示：自动换行
@@ -1999,11 +2004,13 @@ class MainWindow(QMainWindow):
         self.proxy_model.setCustomFilters(filters)
         self._update_summary()
 
-    def _on_sort_indicator_changed(self, logical_index, order):
+    def _on_header_clicked(self, logical_index):
+        """列头点击：单列为【未排 → 升序 → 降序 → 未排】三态循环；Ctrl+点击为多列多级排序。"""
         modifiers = QApplication.keyboardModifiers()
-        ctrl_pressed = modifiers == Qt.ControlModifier
+        ctrl_pressed = bool(modifiers & Qt.ControlModifier)
         col = logical_index
-        ascending = order == Qt.AscendingOrder
+        if col <= 0:
+            return  # 第一列(_read)不参与排序
         if ctrl_pressed:
             found = False
             for i, (c, asc) in enumerate(self.sort_columns):
@@ -2012,39 +2019,78 @@ class MainWindow(QMainWindow):
                     found = True
                     break
             if not found:
-                self.sort_columns.append((col, ascending))
+                self.sort_columns.append((col, True))
         else:
-            self.sort_columns = [(col, ascending)]
+            active = [(c, a) for (c, a) in self.sort_columns if c == col]
+            if not active:
+                self.sort_columns = [(col, True)]
+            elif active[0][1]:
+                self.sort_columns = [(col, False)]
+            else:
+                self.sort_columns = []
         self._apply_multi_sort()
+        self._update_sort_indicators()
 
     def _apply_multi_sort(self):
-        if not self.sort_columns:
-            return
+        """按 self.sort_columns 重排主表（基于原始顺序，避免多次排序叠加）。
+        空列表时恢复加载时的原始顺序（取消排序）。"""
         if not hasattr(self, "source_model") or self.source_model is None:
             return
-        df = self.source_model.getDataFrame()
-        if df is None or df.empty:
+        if not self.sort_columns:
+            # 取消排序：恢复原始（加载时）顺序
+            if self._natural_df is not None:
+                self._in_sort = True
+                try:
+                    self.source_model.setDataFrame(self._natural_df.copy())
+                finally:
+                    self._in_sort = False
+                self._apply_column_visibility_by_name()
             return
+        natural = self._natural_df if self._natural_df is not None else self.source_model.getDataFrame()
+        if natural is None or natural.empty:
+            return
+        df = natural.copy()
         sort_args = []
         for col, asc in self.sort_columns:
-            if col == 0 or col < 0 or col >= len(df.columns):
+            if col <= 0 or col >= len(df.columns):
                 continue
             sort_args.append((df.columns[col], asc))
-        if sort_args:
-            cols = [c for c, _ in sort_args]
-            asc = [a for _, a in sort_args]
-            sort_keys = {}
-            for c in cols:
-                has_pct = df[c].astype(str).str.contains("%", na=False).any()
-                if has_pct:
-                    numeric_vals = pd.to_numeric(df[c].astype(str).str.replace("%", "").str.strip(), errors="coerce").fillna(0)
-                    sort_keys[c] = numeric_vals
-            if sort_keys:
-                df_sorted = df.sort_values(by=cols, ascending=asc, key=lambda col: sort_keys.get(col.name, col), na_position="last")
-            else:
-                df_sorted = df.sort_values(by=cols, ascending=asc, na_position="last")
+        if not sort_args:
+            return
+        cols = [c for c, _ in sort_args]
+        asc_list = [a for _, a in sort_args]
+        sort_keys = {}
+        for c in cols:
+            has_pct = df[c].astype(str).str.contains("%", na=False).any()
+            if has_pct:
+                numeric_vals = pd.to_numeric(df[c].astype(str).str.replace("%", "").str.strip(), errors="coerce").fillna(0)
+                sort_keys[c] = numeric_vals
+        if sort_keys:
+            df_sorted = df.sort_values(by=cols, ascending=asc_list, key=lambda col: sort_keys.get(col.name, col), na_position="last")
+        else:
+            df_sorted = df.sort_values(by=cols, ascending=asc_list, na_position="last")
+        self._in_sort = True
+        try:
             self.source_model.setDataFrame(df_sorted)
-            self._apply_column_visibility_by_name()
+        finally:
+            self._in_sort = False
+        self._apply_column_visibility_by_name()
+
+    def _capture_natural_df(self):
+        """数据（重新）加载时记录原始顺序，供"取消排序"恢复；排序过程中的 setDataFrame 忽略。"""
+        if getattr(self, "_in_sort", False):
+            return
+        if self.source_model is not None:
+            df = self.source_model.getDataFrame()
+            if df is not None:
+                self._natural_df = df.copy()
+
+    def _update_sort_indicators(self):
+        """同步列头排序箭头（单/多列升/降态）。"""
+        header = self.table_view.horizontalHeader()
+        header.setSortIndicatorClear()
+        for col, asc in self.sort_columns:
+            header.setSortIndicator(col, Qt.AscendingOrder if asc else Qt.DescendingOrder)
 
     # -----------------------------------------------------------
     # 工厂切换

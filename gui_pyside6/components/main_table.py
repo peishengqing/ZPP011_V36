@@ -202,7 +202,7 @@ class MainTableComponent(QObject):
         self.table_view.horizontalHeader().setStretchLastSection(False)
         self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.table_view.horizontalHeader().setSortIndicatorShown(True)
-        self.table_view.horizontalHeader().sortIndicatorChanged.connect(self.mw._on_sort_indicator_changed)
+        self.table_view.horizontalHeader().sectionClicked.connect(self.mw._on_header_clicked)
         self.table_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.table_view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.table_view.setContextMenuPolicy(Qt.CustomContextMenu)
