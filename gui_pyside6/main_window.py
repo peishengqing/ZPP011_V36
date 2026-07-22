@@ -193,6 +193,10 @@ class MainWindow(QMainWindow):
         self._analysis_params = {}
         self._full_analysis_cache_path = None
         self._cache_worker = None
+        self._full_report_worker = None
+        # 全局"重型操作进行中"标志：分析 / 缓存生成 / 完整报告导出共用，
+        # 用于防止多个 do_analysis_v2 并发抢占 GIL 导致 UI 假死（"未响应"）。
+        self._heavy_busy = False
         self.sort_columns = []
         self._countdown_seconds = 0
         self._countdown_timer = None
@@ -940,9 +944,14 @@ class MainWindow(QMainWindow):
         if not self.current_input_file:
             QMessageBox.warning(self, "提示", "请先选择输入文件")
             return
+        if self._heavy_busy:
+            QMessageBox.information(self, "提示", "分析/报告生成进行中，请稍候")
+            return
         if self.analysis_controller.worker and self.analysis_controller.worker.isRunning():
             QMessageBox.information(self, "提示", "分析任务已在后台运行")
             return
+        # 统一路径格式（正/反斜杠），避免与监控指纹对不上导致重复触发
+        self.current_input_file = os.path.normpath(self.current_input_file)
 
         dev_threshold = getattr(self.filter_panel, 'dev_threshold_spin', None)
         dev_threshold_val = dev_threshold.value() if dev_threshold is not None else 0.0
@@ -973,6 +982,7 @@ class MainWindow(QMainWindow):
         )
 
     def _on_analysis_ui_start(self):
+        self._heavy_busy = True
         self.progress_bar.setValue(0)
         self.progress_bar.setVisible(True)
         self.start_btn.setEnabled(False)
@@ -1022,9 +1032,8 @@ class MainWindow(QMainWindow):
                 self.view_model.df = processed_df
             self._analysis_params = self.analysis_controller.get_analysis_params()
 
-            # 注意：此处不再在主线程同步写临时 Excel——大 df 的 to_excel 会阻塞 UI 数秒，
-            # 导致分析完成后标题栏显示「未响应」。完整报告缓存已由 _FullCacheWorker 后台生成。
-            # 如需「导出当前表格」，直接由 export_current_table 用内存 df 实时写出。
+            # 注意：完整报告缓存由后台线程(_FullCacheWorker)生成，主线程绝不等待，
+            # 否则分析完成后标题栏会显示「未响应」。导出完整报告时优先复制该缓存。
 
             import tempfile
             cache_dir = os.path.join(tempfile.gettempdir(), "zpp011_analysis")
@@ -1032,42 +1041,54 @@ class MainWindow(QMainWindow):
             cache_path = os.path.join(cache_dir, f"full_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
             self._full_analysis_cache_path = cache_path
 
-            from PySide6.QtCore import QThread
-            class _FullCacheWorker(QThread):
-                def __init__(self, input_file, alt_pairs, start_date, end_date, material_search, output_path):
-                    super().__init__()
-                    self.input_file = input_file
-                    self.alt_pairs = alt_pairs
-                    self.start_date = start_date
-                    self.end_date = end_date
-                    self.material_search = material_search
-                    self.output_path = output_path
-                def run(self):
-                    from analysis.analyzer import do_analysis_v2
-                    from core.config_manager import ConfigManager
-                    _cfg = ConfigManager()
-                    do_analysis_v2(
-                        input_file=self.input_file, output_dir=None,
-                        alt_pairs=self.alt_pairs, start_date=self.start_date,
-                        end_date=self.end_date, material_search=self.material_search,
-                        output_path=self.output_path,
-                        enable_net_offset=_cfg.get_net_offset_enabled(),
-                        return_dataframe=False,
-                    )
-
+            # 后台生成完整报告缓存：独立线程，主线程不等待（避免"未响应"）。
+            # 用全局 _heavy_busy 标志防止与其他重型操作（再次分析/导出）并发抢占 GIL。
             params = self.analysis_controller.get_analysis_params()
-            self._cache_worker = _FullCacheWorker(
-                params['input_file'], params['alt_pairs'],
-                params.get('start_date', ''), params.get('end_date', ''),
-                params.get('material_search', ''), cache_path
-            )
-            _cw = self._cache_worker
-            def _on_cache_done():
-                _cw.wait()
-                if self._cache_worker is _cw:
-                    self._cache_worker = None
-            self._cache_worker.finished.connect(_on_cache_done)
-            self._cache_worker.start()
+            if self._cache_worker is not None and self._cache_worker.isRunning():
+                # 已有缓存在生成，复用其路径即可，不叠加第二个 do_analysis_v2
+                pass
+            else:
+                from PySide6.QtCore import QThread
+                class _FullCacheWorker(QThread):
+                    def __init__(self, input_file, alt_pairs, start_date, end_date, material_search, output_path):
+                        super().__init__()
+                        self.input_file = os.path.normpath(input_file)
+                        self.alt_pairs = alt_pairs
+                        self.start_date = start_date
+                        self.end_date = end_date
+                        self.material_search = material_search
+                        self.output_path = output_path
+                    def run(self):
+                        from analysis.analyzer import do_analysis_v2
+                        from core.config_manager import ConfigManager
+                        _cfg = ConfigManager()
+                        try:
+                            do_analysis_v2(
+                                input_file=self.input_file, output_dir=None,
+                                alt_pairs=self.alt_pairs, start_date=self.start_date,
+                                end_date=self.end_date, material_search=self.material_search,
+                                output_path=self.output_path,
+                                enable_net_offset=_cfg.get_net_offset_enabled(),
+                                return_dataframe=False,
+                            )
+                        except Exception:
+                            import traceback as _tb
+                            _tb.print_exc()
+
+                self._cache_worker = _FullCacheWorker(
+                    params['input_file'], params['alt_pairs'],
+                    params.get('start_date', ''), params.get('end_date', ''),
+                    params.get('material_search', ''), cache_path
+                )
+                _cw = self._cache_worker
+                self._heavy_busy = True  # 缓存生成期间仍视为"重型操作进行中"
+                def _on_cache_done():
+                    # 仅在 finished 信号槽里清引用与标志，绝不调用 wait() 阻塞主线程
+                    self._heavy_busy = False
+                    if self._cache_worker is _cw:
+                        self._cache_worker = None
+                self._cache_worker.finished.connect(_on_cache_done)
+                self._cache_worker.start()
 
             self._set_column_widths()
             self.statusBar().showMessage(f"分析完成，共加载 {len(processed_df)} 行 × {len(processed_df.columns)} 列")
@@ -1082,6 +1103,7 @@ class MainWindow(QMainWindow):
             self.main_table.summary_container.repaint()
             QApplication.processEvents()
         except Exception as e:
+            self._heavy_busy = False
             QMessageBox.critical(self, "错误", f"加载结果失败: {e}")
 
             if not self.alert_monitor.isRunning():
@@ -1127,6 +1149,7 @@ class MainWindow(QMainWindow):
         self.top_panel.setVisible(stats_visible or progress_visible)
 
     def _on_analysis_error_ui(self, error_msg):
+        self._heavy_busy = False
         self._stop_countdown()
         self.progress_bar.setVisible(False)
         # 若是监控文件夹自动加载失败，不弹模态错误框，避免"未响应"；改为 toast + 日志，并允许重试
@@ -1334,6 +1357,7 @@ class MainWindow(QMainWindow):
             self.progress_bar.setVisible(False)
             self.progress_label.setText("已取消")
             self.start_btn.setEnabled(True)
+            self._heavy_busy = False
             self.log("操作已取消", "info")
 
     def _batch_mark_selected_read(self, is_read=1):
@@ -1363,8 +1387,8 @@ class MainWindow(QMainWindow):
         default_dir = r"E:\ZPP011导出文件原数据"
         file_path, _ = QFileDialog.getOpenFileName(self, "选择 SAP Excel 文件", default_dir, "Excel files (*.xlsx *.xls)")
         if file_path:
-            self.current_input_file = file_path
-            self.input_file_edit.setText(file_path)
+            self.current_input_file = os.path.normpath(file_path)
+            self.input_file_edit.setText(self.current_input_file)
             # 显示短文件名，完整路径放到 tooltip
             short_name = os.path.basename(file_path)
             self.input_file_edit.setToolTip(file_path)
@@ -1466,7 +1490,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 return 0
         files.sort(key=_mtime, reverse=True)
-        fp = files[0]
+        fp = os.path.normpath(files[0])
         try:
             st = os.stat(fp)
         except Exception:
@@ -1494,7 +1518,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 return 0
         files.sort(key=_mtime, reverse=True)
-        fp = files[0]
+        fp = os.path.normpath(files[0])
         try:
             st = os.stat(fp)
         except Exception:
@@ -1558,8 +1582,9 @@ class MainWindow(QMainWindow):
 
     def _auto_load_from_monitor(self, fp):
         """监控到新文件：写入当前输入文件并触发分析加载（复用主流程）。"""
-        # 若分析正在后台跑，稍后重试（避免被 _start_analysis 的"已在运行"拦截）
-        if self.analysis_controller.worker and self.analysis_controller.worker.isRunning():
+        fp = os.path.normpath(fp)
+        # 若分析/缓存/导出等重型操作正在进行，稍后重试（避免并发 do_analysis_v2 卡死 UI）
+        if self._heavy_busy or (self.analysis_controller.worker and self.analysis_controller.worker.isRunning()):
             # 延迟 3 秒再试一次，期间仍视为监控自动加载
             QTimer.singleShot(3000, lambda: self._auto_load_from_monitor(fp))
             return
@@ -2248,6 +2273,11 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "提示", "无数据，请先进行分析")
             return
 
+        # 若分析/缓存/上次报告生成仍在进行，避免再叠加一个 do_analysis_v2 导致 UI 卡死
+        if self._heavy_busy:
+            QMessageBox.information(self, "提示", "分析/报告生成进行中，请稍候再导出")
+            return
+
         # 1. 选择保存路径
         default_name = f"ZPP011偏差分析最终版_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         save_path, _ = QFileDialog.getSaveFileName(
@@ -2397,14 +2427,17 @@ class MainWindow(QMainWindow):
         )
         worker.failed.connect(
             lambda err: (progress_dlg.close(),
+                         setattr(self, '_heavy_busy', False),
                          QMessageBox.critical(self, "错误", f"导出完整报告失败: {err}"),
                          self.log(f"导出完整报告失败: {err}", "error"))
         )
         self._full_report_worker = worker  # 防止被 GC
+        self._heavy_busy = True
         worker.start()
 
     def _on_full_report_done(self, save_path, cache_path, progress_dlg):
         """后台生成完成：回存缓存 + 弹窗通知（不锁界面）"""
+        self._heavy_busy = False
         progress_dlg.close()
         # 回存缓存
         if cache_path and not os.path.exists(cache_path):
