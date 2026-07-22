@@ -49,7 +49,6 @@ from gui_pyside6.dialogs.rule_config_dialog import RuleConfigDialog
 from gui_pyside6.dialogs.dashboard_dialog import DashboardDialog
 from gui_pyside6.dialogs.history_compare_dialog import HistoryCompareDialog
 from gui_pyside6.dialogs.import_wizard_dialog import ImportWizard
-from gui_pyside6.dialogs.benefit_report_dialog import BenefitReportDialog
 from gui_pyside6.dialogs.health_check_dialog import HealthCheckDialog
 from gui_pyside6.viewmodels.analysis_vm import AnalysisViewModel
 from core.alert_monitor import AlertMonitor, filter_alt_alerts
@@ -121,6 +120,59 @@ class _FullReportWorker(QThread):
 
     def _cancel_check(self, *args):
         return self._cancel
+
+
+class _PptViewShim:
+    """适配 MainWindow.view_model.df 给 AuditPresenter.generate_ppt 使用。
+
+    generate_ppt 依赖 view.get_audit_data() / get_output_path() / log()，
+    而 MainWindow 用的是 view_model.df，这里做一层桥接。
+    """
+
+    def __init__(self, df, log_emit):
+        self._df = df
+        self._log_emit = log_emit  # callable(msg, level)，由 worker 转成跨线程信号
+
+    def get_audit_data(self):
+        return self._df
+
+    def get_output_path(self):
+        # generate_ppt 调用方已显式传入 output_path，这里返回 None 即可
+        return None
+
+    def log(self, msg, level='info'):
+        try:
+            self._log_emit(msg, level)
+        except Exception:
+            pass
+
+
+class _PptReportWorker(QThread):
+    """后台调用 AuditPresenter.generate_ppt 生成 PPT 报告（不锁界面）。"""
+    progress = Signal(int, str)      # (百分比, 步骤名)
+    finished_ok = Signal(str)        # (输出路径)
+    failed = Signal(str)             # (错误信息)
+    _log = Signal(str, str)          # (msg, level) -> 主线程日志
+
+    def __init__(self, df, output_path, parent=None):
+        super().__init__(parent)
+        self.df = df
+        self.output_path = output_path
+
+    def run(self):
+        from modules.audit.presenters.audit_presenter import AuditPresenter
+        try:
+            shim = _PptViewShim(self.df, self._log.emit)
+            presenter = AuditPresenter(None, shim)  # model 未用于 PPT 生成
+            presenter.generate_ppt(
+                output_path=self.output_path,
+                progress_callback=lambda p: self.progress.emit(int(p), '生成PPT'),
+            )
+            self.finished_ok.emit(self.output_path)
+        except Exception as e:
+            import traceback as _tb
+            _tb.print_exc()
+            self.failed.emit(str(e))
 
 
 class MainWindow(QMainWindow):
@@ -255,7 +307,7 @@ class MainWindow(QMainWindow):
                 self.view_model.df, self
             )
         )
-        QShortcut(QKeySequence("F7"), self).activated.connect(self._show_benefit_report)
+        QShortcut(QKeySequence("F7"), self).activated.connect(self._generate_ppt_report)
         QShortcut(QKeySequence("Ctrl+B"), self).activated.connect(
             lambda: self._batch_mark_selected_read(1)
         )
@@ -339,7 +391,7 @@ class MainWindow(QMainWindow):
         self.action_btn_ppt.setCursor(Qt.PointingHandCursor)
         self.action_btn_ppt.setObjectName("actionBtnPpt")
         self.action_btn_ppt.setProperty("class", "actionBtn")
-        self.action_btn_ppt.clicked.connect(self._show_benefit_report)
+        self.action_btn_ppt.clicked.connect(self._generate_ppt_report)
 
         shortcut_hint = QLabel("F5:分析 | F6:导出 | F7:效益 | F11:全屏")
         shortcut_hint.setObjectName("shortcutHint")
@@ -2722,12 +2774,56 @@ class MainWindow(QMainWindow):
         m, s = divmod(elapsed, 60)
         return f"{m:02d}:{s:02d}"
 
-    def _show_benefit_report(self):
+    def _generate_ppt_report(self):
+        """生成 PPT 偏差分析报告（后台线程，完成后弹窗，界面不冻结）。"""
         if self.view_model.df is None or self.view_model.df.empty:
-            QMessageBox.warning(self, "提示", "无数据")
+            QMessageBox.warning(self, "提示", "请先完成分析，暂无数据可生成 PPT")
             return
-        dialog = BenefitReportDialog(self, self.view_model.df)
-        dialog.exec()
+        default_name = f"ZPP011偏差分析_{datetime.now():%Y%m%d_%H%M}.pptx"
+        default_dir = os.path.join(os.path.expanduser('~'), 'Documents', 'ZPP011分析报告')
+        os.makedirs(default_dir, exist_ok=True)
+        save_path, _ = QFileDialog.getSaveFileName(
+            self, "生成 PPT 报告", os.path.join(default_dir, default_name),
+            "PPT files (*.pptx)",
+        )
+        if not save_path:
+            return
+        if not save_path.lower().endswith('.pptx'):
+            save_path += '.pptx'
+
+        # 进度条（非模态，不锁界面；PPT 生成本身不可中断，故不提供取消按钮）
+        self._ppt_progress = QProgressDialog("正在生成 PPT 报告...", None, 0, 100, self)
+        self._ppt_progress.setWindowTitle("生成中")
+        self._ppt_progress.setWindowModality(Qt.NonModal)
+        self._ppt_progress.setMinimumDuration(0)
+        self._ppt_progress.setCancelButton(None)
+        self._ppt_progress.show()
+
+        self._ppt_worker = _PptReportWorker(self.view_model.df.copy(), save_path)
+        self._ppt_worker.progress.connect(
+            lambda p, s: (self._ppt_progress.setValue(p), self._ppt_progress.setLabelText(s))
+        )
+        self._ppt_worker._log.connect(lambda m, lvl: self.log(m, lvl))
+        self._ppt_worker.finished_ok.connect(self._on_ppt_done)
+        self._ppt_worker.failed.connect(self._on_ppt_fail)
+        self._ppt_worker.start()
+
+    def _on_ppt_done(self, path):
+        if hasattr(self, '_ppt_progress'):
+            self._ppt_progress.setValue(100)
+            self._ppt_progress.close()
+        if QMessageBox.question(
+            self, "生成成功",
+            f"PPT 报告已生成：\n{path}\n\n是否立即打开？"
+        ) == QMessageBox.Yes:
+            os.startfile(path)
+        self.log(f"已生成 PPT 报告：{path}", "info")
+
+    def _on_ppt_fail(self, err):
+        if hasattr(self, '_ppt_progress'):
+            self._ppt_progress.close()
+        QMessageBox.critical(self, "错误", f"生成 PPT 失败：{err}")
+        self.log(f"生成 PPT 失败：{err}", "error")
 
     def _open_rule_config(self):
         rules_path = os.path.join(os.path.dirname(__file__), "..", "config", "system", "rules.json")

@@ -81,8 +81,8 @@ class MenuBarComponent:
         import_action.triggered.connect(self.mw._show_import_wizard)
         tools_menu.addAction(import_action)
 
-        benefit_action = QAction("效益报告", self.mw)
-        benefit_action.triggered.connect(self.mw._show_benefit_report)
+        benefit_action = QAction("生成PPT报告", self.mw)
+        benefit_action.triggered.connect(self.mw._generate_ppt_report)
         tools_menu.addAction(benefit_action)
 
         alt_action = QAction("备选料管理", self.mw)

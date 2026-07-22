@@ -1,1 +1,134 @@
-{}
+{
+  "状态": {
+    "width": 35,
+    "hidden": false
+  },
+  "订单日期": {
+    "width": 120,
+    "hidden": false
+  },
+  "订单类型": {
+    "width": 120,
+    "hidden": false
+  },
+  "流程订单": {
+    "width": 120,
+    "hidden": false
+  },
+  "工厂": {
+    "width": 100,
+    "hidden": false
+  },
+  "车间": {
+    "width": 100,
+    "hidden": false
+  },
+  "物料类型": {
+    "width": 100,
+    "hidden": false
+  },
+  "原表行号": {
+    "width": 120,
+    "hidden": false
+  },
+  "产品物料号码": {
+    "width": 120,
+    "hidden": false
+  },
+  "产品物料描述": {
+    "width": 200,
+    "hidden": false
+  },
+  "物料编码": {
+    "width": 120,
+    "hidden": false
+  },
+  "物料名称": {
+    "width": 223,
+    "hidden": false
+  },
+  "单位": {
+    "width": 100,
+    "hidden": false
+  },
+  "定额": {
+    "width": 100,
+    "hidden": false
+  },
+  "实际": {
+    "width": 100,
+    "hidden": false
+  },
+  "偏差数量": {
+    "width": 100,
+    "hidden": false
+  },
+  "净偏差数量": {
+    "width": 0,
+    "hidden": true
+  },
+  "净偏差金额": {
+    "width": 0,
+    "hidden": true
+  },
+  "净偏差率(%)": {
+    "width": 0,
+    "hidden": true
+  },
+  "偏差金额": {
+    "width": 100,
+    "hidden": false
+  },
+  "偏差率(%)": {
+    "width": 100,
+    "hidden": false
+  },
+  "备注": {
+    "width": 150,
+    "hidden": false
+  },
+  "备注来源": {
+    "width": 150,
+    "hidden": false
+  },
+  "偏差区间": {
+    "width": 100,
+    "hidden": false
+  },
+  "是否替代料": {
+    "width": 100,
+    "hidden": false
+  },
+  "_替代料组": {
+    "width": 100,
+    "hidden": false
+  },
+  "周": {
+    "width": 100,
+    "hidden": false
+  },
+  "data_id": {
+    "width": 100,
+    "hidden": false
+  },
+  "fingerprint": {
+    "width": 100,
+    "hidden": false
+  },
+  "_post_audit_changed": {
+    "width": 0,
+    "hidden": true
+  },
+  "_quarantined": {
+    "width": 100,
+    "hidden": false
+  },
+  "审核结果": {
+    "width": 100,
+    "hidden": false
+  },
+  "AI建议": {
+    "width": 100,
+    "hidden": false
+  }
+}
