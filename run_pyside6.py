@@ -10,6 +10,10 @@ import traceback
 # 将项目根目录加入 sys.path，确保 gui_pyside6 可以正常导入
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# ========== faulthandler：捕获原生崩溃（segfault）的 Python 堆栈 ==========
+import faulthandler
+faulthandler.enable()
+
 # ========== 全局异常捕获 ==========
 def global_exception_hook(exc_type, exc_value, exc_tb):
     """捕获未处理的异常，同时输出到控制台和弹窗"""

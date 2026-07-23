@@ -261,7 +261,7 @@ class DataFrameModel(QAbstractTableModel):
                 elif '🟡' in val or val == '黄色预警':
                     return Qt.GlobalColor.yellow
                 elif '🟢' in val or val == '绿色预警':
-                    return Qt.QColor(144, 238, 144)  # 浅绿
+                    return QColor(144, 238, 144)  # 浅绿
         
         return None
 
