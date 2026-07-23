@@ -2111,11 +2111,20 @@ class MainWindow(QMainWindow):
                 self._natural_df = df.copy()
 
     def _update_sort_indicators(self):
-        """同步列头排序箭头（单/多列升/降态）。"""
+        """同步列头排序箭头（单/多列升/降态）。
+        PySide6/Qt6 无 setSortIndicatorClear，用 setSortIndicatorShown 代替。"""
         header = self.table_view.horizontalHeader()
-        header.setSortIndicatorClear()
-        for col, asc in self.sort_columns:
+        header.blockSignals(True)
+        try:
+            if not self.sort_columns:
+                header.setSortIndicatorShown(False)
+                return
+            header.setSortIndicatorShown(True)
+            # QHeaderView 只支持单箭头，多列时显示最后一级
+            col, asc = self.sort_columns[-1]
             header.setSortIndicator(col, Qt.AscendingOrder if asc else Qt.DescendingOrder)
+        finally:
+            header.blockSignals(False)
 
     # -----------------------------------------------------------
     # 工厂切换

@@ -146,10 +146,16 @@ def do_analysis_v2(
         with open(src_file, 'r+b'):
             pass
     except PermissionError:
-        error_msg = f"文件被占用或无权限访问: {src_file}"
-        _dprint(f"❌ {error_msg}")
-        report_progress(1, "错误：文件被占用", 0)
-        raise PermissionError(error_msg)
+        # r+b 失败可能是 Excel 打开了文件（写锁定），尝试只读模式
+        try:
+            with open(src_file, 'rb'):
+                pass
+            _dprint(f"⚠ 文件被写锁定（可能被 Excel 打开），但可读取，继续分析: {src_file}")
+        except PermissionError:
+            error_msg = f"文件被占用或无权限访问: {src_file}"
+            _dprint(f"❌ {error_msg}")
+            report_progress(1, "错误：文件被占用", 0)
+            raise PermissionError(error_msg)
     except Exception as e:
         _dprint(f"⚠ 文件访问检查失败（可能不影响读取）: {e}")
     
