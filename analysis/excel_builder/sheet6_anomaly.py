@@ -28,7 +28,9 @@ def build_sheet6(df, alt_order_mat, report_progress, progress_idx=6, net_offset_
         df['_no_quota'] = df['_no_quota'].fillna(False).astype(bool)
 
     col_p = '偏差率(%)'
-    dyn_thresh = 5.0
+    # 异常5 替代料残差阈值：0 = 只要偏差率≠0(存在净残差)就报，与「完整偏差明细」同口径
+    # （原为 5.0，即 |偏差率|>5% 才报；2026-07-24 应业务要求放开为所有真实偏差）
+    dyn_thresh = 0.0
 
 # 确保数值列为数值类型（防止字符串导致比较错误）
     ensure_numeric_cols(df, ["材料偏差", "偏差率(%)", "偏差金额", "偏差金额(含税)", "数量-实际", "数量-定额"])
@@ -231,8 +233,8 @@ def build_sheet6(df, alt_order_mat, report_progress, progress_idx=6, net_offset_
             '净偏差率': f"{_net_rate(r):.1f}%" if pd.notna(_net_rate(r)) else '',
             '备注': str(r['备注原因']) if pd.notna(r['备注原因']) and r['备注原因'] != '' else '',
             '标准原因': r.get('标准原因', ''),
-            '异常说明': '替代料偏差率超过动态阈值，残差过大，请确认是否为合理部分替代或配对有误',
-            '处理建议': '替代料残差过大，请确认是否为合理部分替代或配对有误',
+            '异常说明': '替代料存在偏差残差，请确认是否为合理部分替代或配对有误',
+            '处理建议': '替代料存在残差，请确认是否为合理部分替代或配对有误',
             'row_type': '异常5',
             '替代料': '是',
         })

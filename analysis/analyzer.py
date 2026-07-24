@@ -780,9 +780,9 @@ def do_analysis_v2(
         c.font = Font(size=10, bold=True, color='FF000000')
         c.alignment = center
         ws6.column_dimensions[get_column_letter(k)].width = 10
-    # ④ 阈值说明：主表明细 ±10%（业务口径）；异常预警 ±5%（重点排查口径）
+    # ④ 阈值说明：主表明细 ±10%（业务口径）；异常预警替代料残差全部列示（不设阈值）
     note_c = ws6.cell(row=2, column=7,
-                      value='阈值说明：主表明细±10%（业务口径）；异常预警±5%（重点排查口径）')
+                      value='阈值说明：主表明细±10%（业务口径）；异常预警：替代料残差全部列示（不设阈值）')
     note_c.font = Font(size=9, italic=True, color='666666')
     r_row = 3
     for r in anomaly_df.to_dict('records'):
@@ -897,7 +897,7 @@ def do_analysis_v2(
         ['中间地带明细', f'偏差率在 ±{dyn_thresh:.1f}% 区间内（不纳入汇总统计）'],
         ['完整偏差明细', ('所有偏差记录（剔除替代料）' if dev_rate_threshold <= 0
                           else f'所有偏差率超 ±{dev_rate_threshold:.1f}% 的记录（剔除替代料）')],
-        ['异常预警', '5类异常：系统无定额、实际为0/负数、BOM问题、包材负偏差、替代料超阈值'],
+        ['异常预警', '5类异常：系统无定额、实际为0/负数、BOM问题、包材负偏差、替代料残差'],
         ['偏差金额分析', '按物料汇总正/负偏差金额（含税）'],
         ['偏差原因汇总', '按车间汇总原因 Top5（备注已自动标准化）'],
         ['偏差原因分析', '按标准原因类别汇总分析'],
