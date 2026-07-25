@@ -26,7 +26,12 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.oxml.ns import qn
 
 # ===================== CONFIG =====================
-SEARCH_DIRS = [r"E:\zpp011_v2", r"E:\ZPP011导出文件原数据"]
+SEARCH_DIRS = [
+    r"E:\zpp011_v2",
+    r"E:\ZPP011导出文件原数据",
+    os.path.join(os.path.expanduser("~"), "Desktop"),
+    os.path.join(os.path.expanduser("~"), "Documents"),
+]
 INPUT_PATTERN = "ZPP011偏差分析最终版_*.xlsx"
 FONT = "Microsoft YaHei"
 
@@ -150,8 +155,9 @@ def find_input():
     return max(cands, key=os.path.getmtime)
 
 
-def load_metrics(xlsx):
-    d = pd.read_excel(xlsx, "完整偏差明细")
+def _metrics_from_df(d, src="当前分析数据"):
+    """从内存 DataFrame（= 完整偏差明细同构）计算核心指标。"""
+    d = d.copy()
     d["rd"] = d["偏差率"].apply(rate_num)
     for col in ("偏差金额", "净偏差金额"):
         d[col] = pd.to_numeric(d[col], errors="coerce").fillna(0.0)
@@ -160,7 +166,7 @@ def load_metrics(xlsx):
     alt = d[alt_mask]
 
     M = {}
-    M["src"] = os.path.basename(xlsx)
+    M["src"] = src
     M["total_rows"] = len(d)
     M["alt_rows"] = int(alt_mask.sum())
 
@@ -202,16 +208,83 @@ def load_metrics(xlsx):
     sys_mask = hi["备注"].fillna("").str.contains("系统无额定|系统无定额")
     M["hi_sys_cnt"] = int(sys_mask.sum())
 
-    # 预警 sheets
-    for key, sheet in (("warn_note", "无备注预警"),
-                       ("warn_abn", "异常预警"),
-                       ("warn_mid", "中间地带明细")):
-        try:
-            M[key] = len(pd.read_excel(xlsx, sheet))
-        except Exception:
-            M[key] = 0
-
     return M, d
+
+
+def _warn_counts_from_df(d):
+    """从内存 df 直接重算三类预警条数（口径与表格主数据一致）。
+
+    规则翻译自 analysis/excel_builder 的 sheet3/4/6：
+    - 无备注预警：偏差数量≠0 且 备注为空 且 |偏差率|>10%
+    - 中间地带：|偏差率|<=10% 且 非替代料行 且 流程订单不在替代料订单集合
+    - 异常预警：5 类（系统无定额 / 实际<=0无备注 / 实际==0有备注 / 包材负偏差 / 替代料残差）
+    """
+    T = 10.0
+    d = d.copy()
+    d["rd"] = d["偏差率"].apply(rate_num)
+    for c in ("定额", "实际", "偏差数量"):
+        d[c] = pd.to_numeric(d[c], errors="coerce")
+    d["备注"] = d["备注"].fillna("").astype(str).str.strip()
+    d["流程订单"] = d["流程订单"].astype(str)
+    d["物料类型"] = d["物料类型"].astype(str)
+
+    # 无备注预警
+    note = int(((d["偏差数量"] != 0) & (d["备注"] == "") & (d["rd"].abs() > T)).sum())
+
+    # 中间地带：排除替代料行 + 替代料订单下的所有行
+    alt_orders = set(d.loc[d["是否替代料"] == "是", "流程订单"])
+    mid = int(((d["rd"].abs() <= T) & (~d["流程订单"].isin(alt_orders))
+               & (d["是否替代料"] != "是")).sum())
+
+    # 异常预警 5 类
+    sys_no = d["备注"].str.contains("系统无定额")
+    no_quota = (d["定额"] == 0) | sys_no
+    abn1 = (d["定额"] > 0) & sys_no
+    abn2 = (d["定额"] > 0) & (d["实际"] <= 0) & (d["备注"] == "")
+    abn3 = (d["定额"] > 0) & (d["实际"] == 0) & (d["备注"] != "")
+    abn4 = (d["物料类型"] == "包材") & (d["rd"] < 0) & (~no_quota)
+    abn5 = (d["是否替代料"] == "是") & (d["rd"].notna()) & (d["rd"].abs() > 0) & (~no_quota)
+    abn = int(abn1.sum() + abn2.sum() + abn3.sum() + abn4.sum() + abn5.sum())
+
+    return {"warn_note": note, "warn_abn": abn, "warn_mid": mid}
+
+
+def _prepare(df, src_name=None):
+    """统一入口：从 df 计算 (M, d)，含三类预警重算。"""
+    M, d = _metrics_from_df(df, src=src_name or "当前分析数据")
+    M.update(_warn_counts_from_df(d))
+    return M, d
+
+
+def load_metrics(xlsx):
+    """文件模式：读取完整偏差明细 sheet，走统一 df 管线。"""
+    d = pd.read_excel(xlsx, "完整偏差明细")
+    return _prepare(d, os.path.basename(xlsx))
+
+
+def build_net_report(df, output_path, src_name=None):
+    """核心生成入口：直接吃内存 DataFrame，生成净偏差口径 PPT。
+
+    软件端调用此函数，把当前 view_model.df 传入即可，无需落盘 Excel。
+    所有数字/方向词动态计算，不写死。
+    """
+    M, d = _prepare(df, src_name)
+    prs = Presentation()
+    prs.slide_width = PW
+    prs.slide_height = PH
+    build_cover(prs, M)
+    build_toc(prs)
+    build_metrics(prs, M)
+    build_gross_vs_net(prs, M)
+    build_factory_cmp(prs, M)
+    build_mat_top10(prs, M)
+    build_workshop(prs, M)
+    build_mat_type(prs, M)
+    build_cause(prs, M)
+    build_warn(prs, M)
+    build_summary(prs, M, d)
+    prs.save(output_path)
+    return output_path
 
 
 # ===================== 各页构建 =====================
@@ -632,32 +705,16 @@ def build_summary(prs, M, d):
 def main():
     xlsx = find_input()
     print(f"输入文件：{xlsx}")
-    M, d = load_metrics(xlsx)
-
+    d = pd.read_excel(xlsx, "完整偏差明细")
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                        f"ZPP011偏差分析_净偏差口径_{datetime.datetime.now():%Y%m%d}.pptx")
-
-    prs = Presentation()
-    prs.slide_width = PW
-    prs.slide_height = PH
-
-    build_cover(prs, M)
-    build_toc(prs)
-    build_metrics(prs, M)
-    build_gross_vs_net(prs, M)
-    build_factory_cmp(prs, M)
-    build_mat_top10(prs, M)
-    build_workshop(prs, M)
-    build_mat_type(prs, M)
-    build_cause(prs, M)
-    build_warn(prs, M)
-    build_summary(prs, M, d)
-
-    prs.save(out)
+    build_net_report(d, out, src_name=os.path.basename(xlsx))
+    M, _ = _prepare(d, os.path.basename(xlsx))
     print(f"已生成：{out}")
     print(f"  总记录 {M['total_rows']:,} / 替代料 {M['alt_rows']} 行")
     print(f"  毛偏差 {w_money(M['tot_b'])} → 净偏差 {w_money(M['tot_n'])}"
           f"（消除噪音 {w_money(M['noise'])}）")
+    print(f"  预警：无备注 {M['warn_note']} / 异常 {M['warn_abn']} / 中间地带 {M['warn_mid']}")
 
 
 if __name__ == "__main__":

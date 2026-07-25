@@ -148,30 +148,51 @@ class _PptViewShim:
 
 
 class _PptReportWorker(QThread):
-    """后台调用 AuditPresenter.generate_ppt 生成 PPT 报告（不锁界面）。"""
+    """后台调用 build_ppt_net.build_net_report 生成净偏差口径 PPT（不锁界面）。"""
     progress = Signal(int, str)      # (百分比, 步骤名)
     finished_ok = Signal(str)        # (输出路径)
     failed = Signal(str)             # (错误信息)
     _log = Signal(str, str)          # (msg, level) -> 主线程日志
 
-    def __init__(self, df, output_path, parent=None):
+    def __init__(self, df, output_path, src_name=None, parent=None):
         super().__init__(parent)
         self.df = df
         self.output_path = output_path
+        self.src_name = src_name
 
     def run(self):
-        from modules.audit.presenters.audit_presenter import AuditPresenter
         try:
-            shim = _PptViewShim(self.df, self._log.emit)
-            presenter = AuditPresenter(None, shim)  # model 未用于 PPT 生成
-            presenter.generate_ppt(
-                output_path=self.output_path,
-                progress_callback=lambda p: self.progress.emit(int(p), '生成PPT'),
-            )
+            import os as _os
+            import sys as _sys
+            _root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+            if _root not in _sys.path:
+                _sys.path.insert(0, _root)
+            from build_ppt_net import build_net_report
+            build_net_report(self.df, self.output_path, src_name=self.src_name)
             self.finished_ok.emit(self.output_path)
         except Exception as e:
             import traceback as _tb
             _tb.print_exc()
+            self.failed.emit(str(e))
+
+
+class _FileReadWorker(QThread):
+    """后台读取 SAP Excel，避免大文件阻塞主线程（文件选择卡顿修复）"""
+    loaded = Signal(object, str)   # (df, file_path)
+    failed = Signal(str)           # (错误信息)
+
+    def __init__(self, file_path):
+        super().__init__()
+        self.file_path = file_path
+
+    def run(self):
+        try:
+            xl = pd.ExcelFile(self.file_path)
+            sheets = xl.sheet_names
+            target = "Data" if "Data" in sheets else sheets[0]
+            df = pd.read_excel(self.file_path, sheet_name=target)
+            self.loaded.emit(df, self.file_path)
+        except Exception as e:
             self.failed.emit(str(e))
 
 
@@ -194,6 +215,7 @@ class MainWindow(QMainWindow):
         self._full_analysis_cache_path = None
         self._cache_worker = None
         self._full_report_worker = None
+        self._file_worker = None
         # 全局"重型操作进行中"标志：分析 / 缓存生成 / 完整报告导出共用，
         # 用于防止多个 do_analysis_v2 并发抢占 GIL 导致 UI 假死（"未响应"）。
         self._heavy_busy = False
@@ -408,6 +430,13 @@ class MainWindow(QMainWindow):
         action_layout.addWidget(self.action_btn_excel)
         action_layout.addWidget(self.action_btn_export_full)
         action_layout.addWidget(self.action_btn_ppt)
+
+        self.action_btn_dashboard = QPushButton("📊 管理看板")
+        self.action_btn_dashboard.setCursor(Qt.PointingHandCursor)
+        self.action_btn_dashboard.setObjectName("actionBtnDashboard")
+        self.action_btn_dashboard.setProperty("class", "actionBtn")
+        self.action_btn_dashboard.clicked.connect(self._show_dashboard)
+        action_layout.addWidget(self.action_btn_dashboard)
 
         self.action_btn_quarantine = QPushButton("⚠️ 隔离区")
         self.action_btn_quarantine.setCursor(Qt.PointingHandCursor)
@@ -1386,23 +1415,37 @@ class MainWindow(QMainWindow):
     def _select_input_file(self):
         default_dir = r"E:\ZPP011导出文件原数据"
         file_path, _ = QFileDialog.getOpenFileName(self, "选择 SAP Excel 文件", default_dir, "Excel files (*.xlsx *.xls)")
-        if file_path:
-            self.current_input_file = os.path.normpath(file_path)
-            self.input_file_edit.setText(self.current_input_file)
-            # 显示短文件名，完整路径放到 tooltip
-            short_name = os.path.basename(file_path)
-            self.input_file_edit.setToolTip(file_path)
-            try:
-                xl = pd.ExcelFile(file_path)
-                sheets = xl.sheet_names
-                target = "Data" if "Data" in sheets else sheets[0]
-                df = pd.read_excel(file_path, sheet_name=target)
-                basename = os.path.basename(file_path)
-                if hasattr(self, 'preview_label') and self.preview_label:
-                    self.preview_label.setText(self._format_preview_stats(df))
-            except Exception as e:
-                if hasattr(self, 'preview_label') and self.preview_label:
-                    self.preview_label.setText(f"读取失败：{e}")
+        if not file_path:
+            return
+        self.current_input_file = os.path.normpath(file_path)
+        self.input_file_edit.setText(self.current_input_file)
+        self.input_file_edit.setToolTip(file_path)
+        # 后台读取，避免大文件阻塞主线程导致"未响应"
+        if hasattr(self, 'preview_label') and self.preview_label:
+            self.preview_label.setText("📂 正在读取文件…")
+        self._file_worker = _FileReadWorker(file_path)
+        self._file_worker.loaded.connect(self._on_file_loaded)
+        self._file_worker.failed.connect(self._on_file_failed)
+        self._file_worker.start()
+
+    def _on_file_loaded(self, df, file_path):
+        try:
+            if hasattr(self, 'preview_label') and self.preview_label:
+                self.preview_label.setText(self._format_preview_stats(df))
+        except Exception as e:
+            if hasattr(self, 'preview_label') and self.preview_label:
+                self.preview_label.setText(f"读取失败：{e}")
+        finally:
+            if self._file_worker is not None:
+                self._file_worker.deleteLater()
+                self._file_worker = None
+
+    def _on_file_failed(self, msg):
+        if hasattr(self, 'preview_label') and self.preview_label:
+            self.preview_label.setText(f"读取失败：{msg}")
+        if self._file_worker is not None:
+            self._file_worker.deleteLater()
+            self._file_worker = None
 
     def _select_output_dir(self):
         dir_path = QFileDialog.getExistingDirectory(self, "选择输出目录")
@@ -2887,7 +2930,12 @@ class MainWindow(QMainWindow):
         self._ppt_progress.setCancelButton(None)
         self._ppt_progress.show()
 
-        self._ppt_worker = _PptReportWorker(self.view_model.df.copy(), save_path)
+        src_name = None
+        ap = getattr(self, 'analysis_params', None)
+        if ap and ap.get('output_path'):
+            src_name = os.path.basename(ap['output_path'])
+        self._ppt_worker = _PptReportWorker(
+            self.view_model.df.copy(), save_path, src_name)
         self._ppt_worker.progress.connect(
             lambda p, s: (self._ppt_progress.setValue(p), self._ppt_progress.setLabelText(s))
         )
