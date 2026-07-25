@@ -842,7 +842,11 @@ def do_analysis_v2(
             c = ws7.cell(row=i, column=j, value=v)
             c.border = border
             c.font = Font(size=11)
-            c.alignment = Alignment(vertical='top', horizontal='center')
+            # 多耗/少耗/净偏差数量为「原料/包材×单位」多行文本，需换行+左对齐
+            if j in (3, 4, 5):
+                c.alignment = Alignment(wrap_text=True, vertical='top', horizontal='left')
+            else:
+                c.alignment = Alignment(vertical='top', horizontal='center')
         for col, key in [(7, '原料主要原因（Top5）'), (8, '包材主要原因（Top5）')]:
             c = ws7.cell(row=i, column=col, value=_add_ordinal(r[key]))
             c.border = border
@@ -852,9 +856,12 @@ def do_analysis_v2(
         pkg_t = str(r['包材主要原因（Top5）']) if pd.notna(r['包材主要原因（Top5）']) else ''
         lines = sum(max(1, (len(p.strip()) + 19) // 20) for p in raw_t.split('\n') if p.strip())
         lines += sum(max(1, (len(p.strip()) + 19) // 20) for p in pkg_t.split('\n') if p.strip())
-        ws7.row_dimensions[i].height = max(lines * 16, 67)
+        # 多耗/少耗/净偏差数量 也是多行文本（原料/包材各一行），行高取两者较大值
+        dev_lines = max(
+            (str(r.get(k, '')).count('\n') + 1) for k in ('多耗', '少耗', '净偏差数量'))
+        ws7.row_dimensions[i].height = max(lines * 16, dev_lines * 32, 67)
     for col, w in zip(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'],
-                      [14, 10, 14, 14, 14, 10, 55, 55]):
+                      [14, 10, 26, 26, 30, 10, 55, 55]):
         ws7.column_dimensions[col].width = w
 
     ws8 = wb.create_sheet('偏差原因分析')

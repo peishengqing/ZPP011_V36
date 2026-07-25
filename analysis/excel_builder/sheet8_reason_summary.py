@@ -6,6 +6,60 @@ sheet8_reason_summary.py — Sheet8 偏差原因汇总（v36 抽取，未修改�
 import pandas as pd
 from analysis.excel_builder.write_sheet_util import ensure_numeric_cols
 
+_CIRCLES = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩']
+
+
+def _fmt_qty(v):
+    """数量格式化：保留1位小数并去掉多余的0（1166.7 / 529 / 3）；
+    小于0.1的非零值保留2位小数，避免显示成 0"""
+    a = abs(float(v))
+    s = f"{a:.2f}" if 0 < a < 0.1 else f"{a:.1f}"
+    return s.rstrip('0').rstrip('.') if '.' in s else s
+
+
+def _dev_breakdown(ws_df, mode):
+    """
+    按 物料分类(原料/包材) → 单位 两层分解偏差量。
+    mode: 'over'=多耗(>0求和) / 'under'=少耗(<0绝对值求和) / 'net'=净偏差(带方向)
+    返回多行字符串，如：
+        原料：①3557.4KG ②12包
+        包材：①529个 ②88.7KG
+    半成品并入原料口径。
+    """
+    tmp = ws_df.copy()
+    tmp['_cat'] = tmp['物料分类'].astype(str).apply(
+        lambda x: '包材' if x == '包材' else '原料')
+    unit_series = tmp['组件单位'].fillna('').astype(str).str.strip() \
+        if '组件单位' in tmp.columns else pd.Series('', index=tmp.index)
+    tmp['_unit'] = unit_series.replace('', '未知')
+
+    parts = []
+    for cat in ('原料', '包材'):
+        sub = tmp[tmp['_cat'] == cat]
+        if sub.empty:
+            continue
+        if mode == 'over':
+            g = sub[sub['材料偏差'] > 0].groupby('_unit')['材料偏差'].sum()
+        elif mode == 'under':
+            g = sub[sub['材料偏差'] < 0].groupby('_unit')['材料偏差'].sum().abs()
+        else:  # net
+            g = sub.groupby('_unit')['材料偏差'].sum()
+        g = g[g.round(2) != 0]
+        if g.empty:
+            continue
+        # 按绝对值降序排列并编号
+        g = g.reindex(g.abs().sort_values(ascending=False).index)
+        items = []
+        for k, (unit, val) in enumerate(g.items()):
+            prefix = _CIRCLES[k] if k < 10 else f'{k + 1}.'
+            if mode == 'net':
+                direction = '净多耗' if val > 0 else '净少耗'
+                items.append(f"{prefix}{direction}{_fmt_qty(val)}{unit}")
+            else:
+                items.append(f"{prefix}{_fmt_qty(val)}{unit}")
+        parts.append(f"{cat}：{' '.join(items)}")
+    return '\n'.join(parts) or '0'
+
 
 def build_sheet8(df, report_progress, progress_idx=8):
     """
@@ -83,9 +137,9 @@ def build_sheet8(df, report_progress, progress_idx=8):
         reason_summary.append({
             '工厂': factory,
             '车间': ws_name,
-            '多耗': round(ws_all[ws_all['材料偏差'] > 0]['材料偏差'].sum(), 2),
-            '少耗': round(abs(ws_all[ws_all['材料偏差'] < 0]['材料偏差'].sum()), 2),
-            '净偏差数量': round(ws_all['材料偏差'].sum(), 2),
+            '多耗': _dev_breakdown(ws_all, 'over'),
+            '少耗': _dev_breakdown(ws_all, 'under'),
+            '净偏差数量': _dev_breakdown(ws_all, 'net'),
             '原因数': len(ws_grp),
             '原料主要原因（Top5）': raw_top5_str,
             '包材主要原因（Top5）': pkg_top5_str,
@@ -98,9 +152,9 @@ def build_sheet8(df, report_progress, progress_idx=8):
             reason_summary.append({
                 '工厂': factory,
                 '车间': ws_name,
-                '多耗': round(ws_data[ws_data['材料偏差'] > 0]['材料偏差'].sum(), 2),
-                '少耗': round(abs(ws_data[ws_data['材料偏差'] < 0]['材料偏差'].sum()), 2),
-                '净偏差数量': round(ws_data['材料偏差'].sum(), 2),
+                '多耗': _dev_breakdown(ws_data, 'over'),
+                '少耗': _dev_breakdown(ws_data, 'under'),
+                '净偏差数量': _dev_breakdown(ws_data, 'net'),
                 '原因数': 0,
                 '原料主要原因（Top5）': '无备注',
                 '包材主要原因（Top5）': '无备注',
