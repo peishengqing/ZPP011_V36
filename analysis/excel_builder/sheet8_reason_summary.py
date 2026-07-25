@@ -60,16 +60,18 @@ def build_sheet8(df, report_progress, progress_idx=8):
         def fmt_top(grp_df, label):
             result = ''
             for rank, (_, mr) in enumerate(grp_df.head(5).iterrows(), 1):
-                parts = []
                 unit = mr['单位'] if pd.notna(mr['单位']) and mr['单位'] != '' else ''
-                if mr['多耗'] > 0:
-                    parts.append(f"多耗{mr['多耗']:.1f}{unit}")
-                if mr['少耗'] > 0:
-                    parts.append(f"少耗{mr['少耗']:.1f}{unit}")
-                dev_str = f"（{'，'.join(parts)}）" if parts else ''
+                net = round(float(mr['多耗']) - float(mr['少耗']), 1)
+                if net > 0:
+                    dev_str = f"（多耗{net:.1f}{unit}）"
+                elif net < 0:
+                    dev_str = f"（少耗{abs(net):.1f}{unit}）"
+                else:
+                    dev_str = ''
                 std_r = mr['主导原因']
-                ex = str(mr['示例备注'])[:15] if pd.notna(mr['示例备注']) and str(mr['示例备注']).strip() != '' else ''
-                result += f"{mr['组件物料描述']}{dev_str} — {std_r}（例：{ex}…，{mr['次数']}次）\n"
+                ex = str(mr['示例备注']).strip() if pd.notna(mr['示例备注']) and str(mr['示例备注']).strip() != '' else ''
+                ex_part = f"（例：{ex}，{mr['次数']}次）" if ex else f"（{mr['次数']}次）"
+                result += f"{mr['组件物料描述']}{dev_str} — {std_r}{ex_part}\n"
             return result.rstrip('\n') or '无'
 
         raw_top5_str = fmt_top(
