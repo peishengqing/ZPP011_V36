@@ -2,7 +2,7 @@
 """菜单栏组件 — 暗色主题 v43.0
 裴哥 2026-06-23
 """
-from PySide6.QtWidgets import QMenuBar
+from PySide6.QtWidgets import QMenuBar, QMenu
 from PySide6.QtGui import QAction
 
 
@@ -85,6 +85,16 @@ class MenuBarComponent:
         benefit_action.triggered.connect(self.mw._generate_ppt_report)
         tools_menu.addAction(benefit_action)
 
+        # 智能PPT(试用) 子菜单 —— 底层 advanced_ppt_generator_v2，需完整分析 Excel
+        smart_ppt_menu = QMenu("智能PPT(试用)", self.mw)
+        smart_simple_action = QAction("简明版", self.mw)
+        smart_simple_action.triggered.connect(self.mw._generate_smart_ppt_simple)
+        smart_ppt_menu.addAction(smart_simple_action)
+        smart_pro_action = QAction("专业版(20+页)", self.mw)
+        smart_pro_action.triggered.connect(self.mw._generate_smart_ppt_pro)
+        smart_ppt_menu.addAction(smart_pro_action)
+        tools_menu.addMenu(smart_ppt_menu)
+
         alt_action = QAction("备选料管理", self.mw)
         alt_action.triggered.connect(self.mw._toggle_alt_panel)
         tools_menu.addAction(alt_action)
@@ -102,10 +112,6 @@ class MenuBarComponent:
         compare_action = QAction("历史对比", self.mw)
         compare_action.triggered.connect(self.mw._show_history_compare)
         history_menu.addAction(compare_action)
-
-        dashboard_action = QAction("管理看板", self.mw)
-        dashboard_action.triggered.connect(self.mw._show_dashboard)
-        history_menu.addAction(dashboard_action)
 
         source_backup_action = QAction("历史源码", self.mw)
         source_backup_action.triggered.connect(self.mw._show_source_backup)

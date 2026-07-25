@@ -2961,6 +2961,34 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "错误", f"生成 PPT 失败：{err}")
         self.log(f"生成 PPT 失败：{err}", "error")
 
+    def _resolve_smart_ppt_excel(self):
+        """智能PPT 取数：优先用最近分析生成的完整报告缓存；没有则返回 None（由控制器弹框手选）。"""
+        cp = getattr(self, '_full_analysis_cache_path', None)
+        if cp and os.path.exists(cp):
+            return cp
+        ap = getattr(self, 'analysis_output_path', None)
+        if ap and os.path.exists(ap):
+            return ap
+        return None
+
+    def _generate_smart_ppt_simple(self):
+        """智能PPT(试用) — 简明版。底层 advanced_ppt_generator_v2，需完整分析 Excel。"""
+        if self.view_model.df is None or self.view_model.df.empty:
+            QMessageBox.warning(self, "提示", "请先完成分析，暂无数据可生成 PPT")
+            return
+        excel_path = self._resolve_smart_ppt_excel()
+        self.export_controller.generate_simple_ppt(
+            self.view_model.df, excel_path, None, self, log_cb=self.log)
+
+    def _generate_smart_ppt_pro(self):
+        """智能PPT(试用) — 专业版(20+页)。底层 advanced_ppt_generator_v2，需完整分析 Excel。"""
+        if self.view_model.df is None or self.view_model.df.empty:
+            QMessageBox.warning(self, "提示", "请先完成分析，暂无数据可生成 PPT")
+            return
+        excel_path = self._resolve_smart_ppt_excel()
+        self.export_controller.generate_advanced_report(
+            self.view_model.df, excel_path, None, self, log_cb=self.log)
+
     def _open_rule_config(self):
         rules_path = os.path.join(os.path.dirname(__file__), "..", "config", "system", "rules.json")
         def on_rules_changed():
