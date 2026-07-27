@@ -140,24 +140,29 @@ class QuarantineDialog(QDialog):
             lambda v: '已读' if (pd.notna(v) and int(v)) else '未读'
         )
 
-        # 列序调整：把「隔离原因」移到「状态」列之后（用户要求：隔离原因跟在已读状态后）
-        df = self._reorder_reason_after_status(df)
+        # 列序调整：把「隔离原因」移到「订单日期」列之前（用户要求：隔离原因放到最前面）
+        df = self._reorder_reason_before_order_date(df)
 
         # 保留完整隔离数据，供隔离原因筛选切片使用
         self.full_df = df.copy()
         self._render_table(df)
 
-    def _reorder_reason_after_status(self, df):
-        """将「隔离原因」列移到「审核状态/状态」列之后；找不到状态列则保持末尾。"""
+    def _reorder_reason_before_order_date(self, df):
+        """将「隔离原因」列移到「订单日期」列之前；找不到订单日期列则降级到状态列之后。"""
         if '隔离原因' not in df.columns:
-            return df
-        status_col = next((c for c in ('审核状态', '状态') if c in df.columns), None)
-        if status_col is None:
             return df
         cols = list(df.columns)
         cols.remove('隔离原因')
-        idx = cols.index(status_col)
-        cols.insert(idx + 1, '隔离原因')
+        if '订单日期' in cols:
+            idx = cols.index('订单日期')
+            cols.insert(idx, '隔离原因')
+        else:
+            status_col = next((c for c in ('审核状态', '状态') if c in cols), None)
+            if status_col is None:
+                cols.append('隔离原因')
+            else:
+                idx = cols.index(status_col)
+                cols.insert(idx + 1, '隔离原因')
         return df[cols]
 
     def _sync_read_from_main(self, df):
