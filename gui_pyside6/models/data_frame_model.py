@@ -497,6 +497,24 @@ class AuditProxyModel(QSortFilterProxyModel):
                 if row_val != str(value).strip():
                     return False
 
+            # 1.4 产品物料号码模糊搜索（成品/母件编码；逗号分隔多值 OR 匹配）
+            if '_product_code' in self._custom_filters:
+                prod_cols = self._get_product_code_columns(df)
+                if prod_cols:
+                    raw_query = str(self._custom_filters['_product_code']).lower()
+                    queries = [q.strip() for q in raw_query.split(',') if q.strip()]
+                    matched = False
+                    for q in queries:
+                        for col in prod_cols:
+                            row_val = str(row_data.get(col, '')).lower()
+                            if q in row_val:
+                                matched = True
+                                break
+                        if matched:
+                            break
+                    if not matched:
+                        return False
+
             # 1.5 物料编码模糊搜索（支持逗号分隔多值，跨多个编码列 OR 匹配）
             if '_material_code' in self._custom_filters:
                 code_cols = self._get_material_code_columns(df)
@@ -767,6 +785,10 @@ class AuditProxyModel(QSortFilterProxyModel):
     def _get_material_code_columns(self, df):
         """返回所有候选的物料编码列（用于跨列模糊匹配）"""
         return [c for c in df.columns if c in ('物料号', '物料编码', 'code', '组件物料号')]
+
+    def _get_product_code_columns(self, df):
+        """返回所有候选的产品物料号码列（成品/母件编码，用于跨列模糊匹配）"""
+        return [c for c in df.columns if c in ('产品物料号码', '产品物料号', '产品编码', '成品编码')]
 
     def _find_material_name_column(self, df):
         for col in ['物料描述', '物料名称', '物料']:

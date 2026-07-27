@@ -117,6 +117,9 @@ class FilterPanel(QWidget):
         self.alt_combo.addItems(["全部", "是", "否"])
         self.order_type_combo = QComboBox()
         self.order_type_combo.addItem("全部")
+        self.product_code_edit = QLineEdit()
+        self.product_code_edit.setPlaceholderText("输入产品物料号码，逗号分隔多选")
+        self.product_code_edit.setMaximumWidth(240)
         self.material_code_edit = QLineEdit()
         self.material_code_edit.setPlaceholderText("输入编码，逗号分隔多选")
         self.material_code_edit.setMaximumWidth(240)
@@ -142,6 +145,7 @@ class FilterPanel(QWidget):
         material_layout.addRow("物料类型:", self.category_combo)
         material_layout.addRow("替代料:", self.alt_combo)
         material_layout.addRow("订单类型:", self.order_type_combo)
+        material_layout.addRow("产品物料号:", self.product_code_edit)
         material_layout.addRow("物料编码:", self.material_code_edit)
         material_layout.addRow("物料名称:", material_name_row)
         content_layout.addWidget(material_group)
@@ -270,6 +274,9 @@ class FilterPanel(QWidget):
         self.remark_empty_combo.currentIndexChanged.connect(self._emit_filter)
         self.order_type_combo.currentIndexChanged.connect(self._emit_filter)
         self.read_status_combo.currentIndexChanged.connect(self._emit_filter)
+        self.product_code_edit.textChanged.connect(self._emit_filter)
+        self.product_code_edit.editingFinished.connect(self._emit_filter)
+        self.product_code_edit.returnPressed.connect(self._emit_filter)
         self.material_code_edit.textChanged.connect(self._emit_filter)
         self.material_code_edit.editingFinished.connect(self._emit_filter)
         self.material_code_edit.returnPressed.connect(self._emit_filter)
@@ -658,6 +665,9 @@ class FilterPanel(QWidget):
         order_type_col = self._col_map.get('订单类型')
         if order_type_col and self.order_type_combo.currentText() != "全部":
             filters[order_type_col] = self.order_type_combo.currentText()
+        product_code_text = self.product_code_edit.text().strip()
+        if product_code_text:
+            filters['_product_code'] = product_code_text
         material_code_text = self.material_code_edit.text().strip()
         if material_code_text:
             filters['_material_code'] = material_code_text
@@ -794,6 +804,7 @@ class FilterPanel(QWidget):
         self.remark_source_combo.setCurrentIndex(0)
         self.zero_qty_combo.setCurrentIndex(0)
         self._clear_color_checks()
+        self.product_code_edit.clear()
         self.material_code_edit.clear()
         self.material_name_edit.setCurrentText("")
         self.remark_search_edit.clear()
