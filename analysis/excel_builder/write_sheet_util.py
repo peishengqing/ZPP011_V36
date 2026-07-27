@@ -3,6 +3,8 @@
 """
 write_sheet_util.py — Excel 写入工具函数（v36 抽取，未修改逻辑）
 """
+from copy import copy
+
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 import pandas as pd
@@ -46,7 +48,13 @@ def get_default_styles():
 
 
 def write_sheet(ws, headers, data_rows, col_widths=None):
-    """通用 Sheet 写入函数（用于 Sheet1/2/3/4/5/8）"""
+    """通用 Sheet 写入函数（用于 Sheet1/2/3/4/5/8）
+
+    性能优化（2026-07-27）：数据区样式改为「探针格算一次 StyleArray，
+    其余格逐格拷贝 _style 数组」。原来每格 3 次样式赋值都会触发 openpyxl
+    对样式对象的递归 hash + 去重查表（12K 行 × 24 列时 200 万次），
+    是导出路径最大热点（cProfile 实测 write_sheet 占导出总耗时 ~2/3）。
+    每格持有独立 StyleArray 拷贝，后续仍可安全地单独改某格样式（如涨跌色）。"""
     styles = get_default_styles()
     for j, h in enumerate(headers, 1):
         c = ws.cell(row=1, column=j, value=h)
@@ -54,12 +62,24 @@ def write_sheet(ws, headers, data_rows, col_widths=None):
         c.fill = styles['header_fill']
         c.alignment = styles['center']
         c.border = styles['border']
-    for i, row in enumerate(data_rows, 2):
-        for j, v in enumerate(row, 1):
-            c = ws.cell(row=i, column=j, value=v)
-            c.font = styles['data_font']
-            c.border = styles['border']
-            c.alignment = styles['center']
+    if data_rows:
+        # 探针格：常规赋值一次，让 openpyxl 注册样式并生成 StyleArray 原型
+        probe = ws.cell(row=2, column=1)
+        probe.font = styles['data_font']
+        probe.border = styles['border']
+        probe.alignment = styles['center']
+        # 关键：探针格若恰好位于日期列（如各 Sheet 首列“订单日期/订单开始日期”），
+        # _bind_value 会为其 _style 套上日期 numFmtId；若直接 copy 给所有格，
+        # 数值格会被写成日期格式（读回变 1902-xx-xx 等）。这里强制把原型 numFmtId
+        # 清成 0（General），再在下方逐格优先“设样式、后设值”——真日期在设值时
+        # 由 _bind_value 重新套用日期格式，数值则保持 General。
+        proto = copy(probe._style)
+        proto.numFmtId = 0
+        for i, row in enumerate(data_rows, 2):
+            for j, v in enumerate(row, 1):
+                c = ws.cell(row=i, column=j)
+                c._style = copy(proto)
+                c.value = v  # 真日期→_bind_value 重套日期格式；数值→保持 General
     if col_widths:
         for j, w in enumerate(col_widths, 1):
             ws.column_dimensions[get_column_letter(j)].width = w
@@ -68,8 +88,15 @@ def write_sheet(ws, headers, data_rows, col_widths=None):
 
 def ensure_numeric_cols(df, cols):
     """将指定列转为数值型（转换失败填 0），原地修改并返回 df。
-    用于消除各 sheet builder 中重复的 to_numeric 转换块。"""
+    用于消除各 sheet builder 中重复的 to_numeric 转换块。
+    性能优化（2026-07-27）：已是数值 dtype 的列跳过 to_numeric 全量拷贝，
+    仅在含 NaN 时补 fillna(0)，语义与原实现完全一致。"""
     for col in cols:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            s = df[col]
+            if pd.api.types.is_numeric_dtype(s):
+                if s.isna().any():
+                    df[col] = s.fillna(0)
+                continue
+            df[col] = pd.to_numeric(s, errors='coerce').fillna(0)
     return df

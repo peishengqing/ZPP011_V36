@@ -205,44 +205,47 @@ def do_analysis_v2(
     }
     _dprint(f"[TRACE-1] 读取后: 数量-实际 sum={df['数量-实际'].sum() if '数量-实际' in df.columns else 'N/A'}")
 
-    # ========== 诊断：找出哪个数值列被字符串污染 ==========
-    # 使用文件日志（避免输出被吞掉）
-    _diag_log = os.path.join(os.environ.get('TEMP', '.'), 'zpp011_diagnostic.log')
-    with open(_diag_log, 'w', encoding='utf-8') as _f:
-        _f.write(f"=== 诊断开始 {pd.Timestamp.now()} ===\n")
-        _f.write(f"文件: {src_file}\n")
-        _f.write(f"行数: {len(df)}\n")
-        _f.write(f"列名: {list(df.columns)}\n\n")
-    
-    _dprint(f"[诊断] 正在检查数值列，日志写入: {_diag_log}")
-    print("[诊断] 检查数值列中的字符串...")
-    numeric_cols_check = [
-        '数量-定额', '数量-实际', '材料偏差', '偏差率(%)',
-        '金额-定额(含税)', '金额-实际(含税)', '实际成本', '产量', '组件数量'
-    ]
-    for col in numeric_cols_check:
-        if col in df.columns:
-            try:
-                # 找出非数值的行（包括字符串）
-                mask = ~df[col].apply(lambda x: isinstance(x, (int, float)) or pd.isna(x))
-                if mask.any():
-                    bad_vals = df.loc[mask, col].unique()[:5]
-                    print(f"⚠️ 列 [{col}] 包含非数值：{bad_vals}")
-                    # 同时打印对应的物料名称和订单号，便于定位
-                    sample_rows = df.loc[mask].head(3)
-                    if all(c in df.columns for c in ['流程订单', '组件物料描述', col]):
-                        print(f" 示例行：{sample_rows[['流程订单', '组件物料描述', col]].to_dict(orient='records')}")
-            except Exception as e:
-                print(f"⚠️ 检查列 [{col}] 时出错: {e}")
-    print("[诊断] 数值列检查完成")
+    # ========== 诊断：找出哪个数值列被字符串污染（默认关闭，DEBUG 时启用）==========
+    # 默认关闭：该诊断块含逐列 apply(isinstance) 检查，数据量大时显著拖慢分析（详见性能报告）。
+    # 排查数据质量问题时设环境变量 ZPP011_DEBUG=1 重新运行即可开启。
+    ENABLE_DIAGNOSTIC = os.environ.get('ZPP011_DEBUG', '0') == '1'
+    if ENABLE_DIAGNOSTIC:
+        # 使用文件日志（避免输出被吞掉）
+        _diag_log = os.path.join(os.environ.get('TEMP', '.'), 'zpp011_diagnostic.log')
+        with open(_diag_log, 'w', encoding='utf-8') as _f:
+            _f.write(f"=== 诊断开始 {pd.Timestamp.now()} ===\n")
+            _f.write(f"文件: {src_file}\n")
+            _f.write(f"行数: {len(df)}\n")
+            _f.write(f"列名: {list(df.columns)}\n\n")
+        
+        _dprint(f"[诊断] 正在检查数值列，日志写入: {_diag_log}")
+        print("[诊断] 检查数值列中的字符串...")
+        numeric_cols_check = [
+            '数量-定额', '数量-实际', '材料偏差', '偏差率(%)',
+            '金额-定额(含税)', '金额-实际(含税)', '实际成本', '产量', '组件数量'
+        ]
+        for col in numeric_cols_check:
+            if col in df.columns:
+                try:
+                    # 找出非数值的行（包括字符串）
+                    mask = ~df[col].apply(lambda x: isinstance(x, (int, float)) or pd.isna(x))
+                    if mask.any():
+                        bad_vals = df.loc[mask, col].unique()[:5]
+                        print(f"⚠️ 列 [{col}] 包含非数值：{bad_vals}")
+                        # 同时打印对应的物料名称和订单号，便于定位
+                        sample_rows = df.loc[mask].head(3)
+                        if all(c in df.columns for c in ['流程订单', '组件物料描述', col]):
+                            print(f" 示例行：{sample_rows[['流程订单', '组件物料描述', col]].to_dict(orient='records')}")
+                except Exception as e:
+                    print(f"⚠️ 检查列 [{col}] 时出错: {e}")
+        print("[诊断] 数值列检查完成")
+        # 同时写入诊断日志文件
+        with open(_diag_log, 'a', encoding='utf-8') as _f:
+            _f.write(f"\n=== 数值列检查完成 ===\n")
+            _f.write(f"df.shape: {df.shape}\n")
+            _f.write(f"数值列检查: 完成\n\n")
+            _f.write(f"'组件单位' in df.columns: {'组件单位' in df.columns}\n")
     report_progress(2, "2/5 正在解析生产数据", 30)
-    
-    # 同时写入诊断日志文件
-    with open(_diag_log, 'a', encoding='utf-8') as _f:
-        _f.write(f"\n=== 数值列检查完成 ===\n")
-        _f.write(f"df.shape: {df.shape}\n")
-        _f.write(f"数值列检查: 完成\n\n")
-        _f.write(f"'组件单位' in df.columns: {'组件单位' in df.columns}\n")
 
     # 保留原始 Excel 行号：用 openpyxl 读取真实行号（避免 pandas read_excel 跳过空行导致偏移）
     try:
@@ -360,18 +363,19 @@ def do_analysis_v2(
     _dprint(f"[DEBUG do_analysis_v2] 日期范围：{date_range}")
     
 
-    def classify_material(row):
-        mtype = row['组件物料类型']
-        mtype_desc = row['组件物料类型描述']
-        if mtype in ('Z002', 'Z009'):
-            return '包材'
-        elif mtype == 'Z004':
-            return '原材料'
-        elif mtype_desc and '半成品' in str(mtype_desc):
-            return '半成品'
-        return '原材料'
-
-    df['物料分类'] = df.apply(classify_material, axis=1)
+    # 物料分类：向量化 np.select 替代逐行 apply(classify_material)（快 20~50 倍）
+    # 判定顺序与原函数一致：Z002/Z009→包材；Z004→原材料；描述含"半成品"→半成品；其余→原材料
+    _mt = df['组件物料类型']
+    _mtd = df['组件物料类型描述'].astype(str)
+    df['物料分类'] = np.select(
+        [
+            _mt.isin(['Z002', 'Z009']),
+            _mt == 'Z004',
+            _mtd.str.contains('半成品', na=False),
+        ],
+        ['包材', '原材料', '半成品'],
+        default='原材料'
+    )
     # ① 无定额标志：数量-定额==0 时偏差率无意义（SAP 填成假性 ±100%），用于区分假性偏差
     df['_no_quota'] = (df['数量-定额'] == 0)
     df['组件物料号_str'] = df['组件物料号'].astype(str)
@@ -398,17 +402,7 @@ def do_analysis_v2(
     pkg_no_quota_mask = (df['物料分类'] == '包材') & (df['数量-定额'] == 0) & no_note_mask
     df.loc[pkg_no_quota_mask, '备注原因'] = '系统无定额'
 
-    # ========== 数值列保护（自动填充后） ==========
-    _numeric_cols = ['数量-定额', '数量-实际', '材料偏差', '偏差率(%)',
-                    '金额-定额(含税)', '金额-实际(含税)', '实际成本', '产量', '组件数量']
-    for _col in _numeric_cols:
-        if _col in df.columns:
-            _before = df[_col].dtype
-            df[_col] = pd.to_numeric(df[_col], errors='coerce').fillna(0)
-            _after = df[_col].dtype
-            if _before != _after:
-                print(f"[数值保护] 列 [{_col}] 已转换: {_before} → {_after}")
-    
+    # 数值列已在入口（读取 Excel 后）统一转换一次，此处无需重复 to_numeric
     df['_note_source'] = '人工填写'
 
     # DeepSeek版：标注标准原因列
@@ -420,14 +414,7 @@ def do_analysis_v2(
 
     df['车间'] = df['生产管理员描述'].apply(lambda x: str(x).strip())
 
-    # ========== 数值列保护（偏差计算前） ==========
-    for _col in ['金额-实际(含税)', '金额-定额(含税)']:
-        if _col in df.columns:
-            _before = df[_col].dtype
-            df[_col] = pd.to_numeric(df[_col], errors='coerce').fillna(0)
-            _after = df[_col].dtype
-            if _before != _after:
-                print(f"[数值保护-计算前] 列 [{_col}] 已转换: {_before} → {_after}")
+    # 数值列（含金额-实际(含税)/金额-定额(含税)）已在入口统一转换一次，此处无需重复
 
     # ========== 偏差金额计算（优先使用含税金额直接相减） ==========
     if '金额-实际(含税)' in df.columns and '金额-定额(含税)' in df.columns:
@@ -502,24 +489,27 @@ def do_analysis_v2(
     check_cancel()
 
     # 基于 Sheet2 结果构建订单级替代料标记集合（仅同订单内出现配对物料才标记）
-    alt_order_mat = set()
-    for _, r in alt_df.iterrows():
-        alt_order_mat.add((str(r['订单号']), str(r['物料A'])))
-        alt_order_mat.add((str(r['订单号']), str(r['物料B'])))
+    # 向量化：用 zip + set 推导替代 iterrows（约 12K 行下从逐行 Python 循环改为 C 级操作）
+    if not alt_df.empty and all(c in alt_df.columns for c in ('订单号', '物料A', '物料B')):
+        _alt_order_s = alt_df['订单号'].astype(str)
+        alt_order_mat = set(zip(_alt_order_s, alt_df['物料A'].astype(str)))
+        alt_order_mat |= set(zip(_alt_order_s, alt_df['物料B'].astype(str)))
+    else:
+        alt_order_mat = set()
 
     # 订单级替代料标记（基于 alt_order_mat，仅同订单内同时存在配对物料才标记）
-    for idx_r, r in df.iterrows():
-        key = (str(r['流程订单']), str(r['组件物料描述']))
-        if key in alt_order_mat:
-            df.at[idx_r, '_note_source'] = '替代料'
+    # 向量化：构建 (流程订单, 组件物料描述) 键 Series，用 isin 一次性标记
+    _order_keys = pd.Series(zip(df['流程订单'].astype(str), df['组件物料描述'].astype(str)))
+    df.loc[_order_keys.isin(alt_order_mat), '_note_source'] = '替代料'
 
     # 更新标准原因
     df.loc[df['_note_source'] == '替代料', '标准原因'] = '替代料'
 
     # 重新计算 _is_alt 标志（仅基于订单级匹配，同一订单内同时存在配对物料才标记）
     report_progress(4, "4/5 正在匹配替代料信息", 70)
-    _order_alt = df.apply(lambda r: (str(r['流程订单']), str(r['组件物料描述'])) in alt_order_mat, axis=1)
-    df['_is_alt'] = _order_alt
+    # 向量化：tuple Series + isin 替代逐行 apply（in alt_order_mat）
+    _order_alt_keys = pd.Series(zip(df['流程订单'].astype(str), df['组件物料描述'].astype(str)))
+    df['_is_alt'] = _order_alt_keys.isin(alt_order_mat)
 
     check_cancel()
 
@@ -537,32 +527,25 @@ def do_analysis_v2(
     # 补齐"是否替代料"列
     # 优先使用 _is_alt 标志（已做订单级匹配：同一订单内同时存在配对物料才标记）
     if '_is_alt' in df.columns:
-        # 构建 (流程订单, 组件物料描述) -> _is_alt 的映射
-        _alt_map = {}
-        for _, r in df.iterrows():
-            key = (str(r.get('流程订单', '')), str(r.get('组件物料描述', '')))
-            _alt_map[key] = _alt_map.get(key, False) or bool(r.get('_is_alt', False))
-        # dev_df 中物料名称对应 df 中的组件物料描述
-        dev_df['是否替代料'] = dev_df.apply(
-            lambda r: _alt_map.get((str(r.get('流程订单', '')), str(r.get('物料名称', ''))), False),
-            axis=1
-        ).map({True: '是', False: '否'})
+        # 向量化：收集所有 _is_alt 为 True 的 (流程订单, 组件物料描述) 键集合，dev_df 用 isin 匹配
+        _alt_true_keys = set(zip(
+            df.loc[df['_is_alt'], '流程订单'].astype(str),
+            df.loc[df['_is_alt'], '组件物料描述'].astype(str)
+        ))
+        _dev_alt_keys = pd.Series(zip(dev_df['流程订单'].astype(str), dev_df['物料名称'].astype(str)))
+        dev_df['是否替代料'] = _dev_alt_keys.isin(_alt_true_keys).map({True: '是', False: '否'})
     elif '是否替代料' not in dev_df.columns and alt_pairs:
-        # 回退：仅在 dev_df 上做订单级匹配
-        alt_order_mat = set()
-        for _, r in alt_df.iterrows():
-            alt_order_mat.add((str(r['订单号']), str(r['物料A'])))
-            alt_order_mat.add((str(r['订单号']), str(r['物料B'])))
-        name_col = None
-        for c in ['物料名称', '物料描述', '组件物料描述']:
-            if c in dev_df.columns:
-                name_col = c
-                break
+        # 回退：仅在 dev_df 上做订单级匹配（向量化）
+        if not alt_df.empty and all(c in alt_df.columns for c in ('订单号', '物料A', '物料B')):
+            _ao_s = alt_df['订单号'].astype(str)
+            alt_order_mat = set(zip(_ao_s, alt_df['物料A'].astype(str)))
+            alt_order_mat |= set(zip(_ao_s, alt_df['物料B'].astype(str)))
+        else:
+            alt_order_mat = set()
+        name_col = next((c for c in ['物料名称', '物料描述', '组件物料描述'] if c in dev_df.columns), None)
         if name_col:
-            dev_df['是否替代料'] = dev_df.apply(
-                lambda r: (str(r.get('流程订单', '')), str(r.get(name_col, ''))) in alt_order_mat,
-                axis=1
-            ).map({True: '是', False: '否'})
+            _dev_fb_keys = pd.Series(zip(dev_df['流程订单'].astype(str), dev_df[name_col].astype(str)))
+            dev_df['是否替代料'] = _dev_fb_keys.isin(alt_order_mat).map({True: '是', False: '否'})
         else:
             dev_df['是否替代料'] = '否'
     elif '是否替代料' not in dev_df.columns:
@@ -673,14 +656,15 @@ def do_analysis_v2(
         return dev_df
 
     # 构建净偏差查找表：(流程订单, 物料编码) -> (净偏差数量, 净偏差金额)
+    # 向量化：dict(zip(键, zip(数量, 金额))) 替代 iterrows（约 12K 行下消除逐行 Python 循环）
     net_offset_map = {}
     if '净偏差数量' in dev_df.columns:
-        for _, dr in dev_df.iterrows():
-            key = (str(dr.get('流程订单', '')), str(dr.get('物料编码', '')))
-            net_offset_map[key] = (
-                dr.get('净偏差数量', None),
-                dr.get('净偏差金额', None)
-            )
+        _fk = dev_df['流程订单'].astype(str) if '流程订单' in dev_df.columns else pd.Series([''] * len(dev_df), index=dev_df.index)
+        _mc = dev_df['物料编码'].astype(str) if '物料编码' in dev_df.columns else pd.Series([''] * len(dev_df), index=dev_df.index)
+        net_offset_map = dict(zip(
+            zip(_fk, _mc),
+            zip(dev_df['净偏差数量'], dev_df['净偏差金额'])
+        ))
 
     # Sheet6（第五步抽取 → analysis/sheets/sheet6_anomaly.py）
     anomaly_df = build_sheet6(df, alt_order_mat, report_progress, net_offset_map=net_offset_map)
@@ -776,17 +760,23 @@ def do_analysis_v2(
     write_sheet(ws5, headers5, rows5,
                 [14, 10, 16, 10, 10, 10, 10, 18, 30, 16, 28, 8, 12, 12, 12, 10, 14, 14, 12, 10, 20, 16, 10])
 
+    # 性能优化（2026-07-27）：预注册 fill 拿到索引，循环内只改 _style.fillId 整数，
+    # 避免每格 .fill= 赋值触发 openpyxl 样式对象递归 hash + 去重查表（12K 行时为大热点）
+    _pos_fid = wb._fills.add(pos_fill)
+    _neg_fid = wb._fills.add(neg_fill)
+    _alt_fid = wb._fills.add(alt_fill)
+    _gx_fid = wb._fills.add(gx_fill)
     for i, r in enumerate(dev_df.to_dict('records'), 2):
         dev_qty = r['偏差数量']
         if isinstance(dev_qty, (int, float)) and dev_qty != 0:
-            fill = pos_fill if dev_qty > 0 else neg_fill
+            _fid = _pos_fid if dev_qty > 0 else _neg_fid
             for j in range(1, len(headers5) + 1):
-                ws5.cell(row=i, column=j).fill = fill
+                ws5.cell(row=i, column=j)._style.fillId = _fid
         src = r['备注来源']
         if src == '替代料':
-            ws5.cell(row=i, column=21).fill = alt_fill  # 第21列 = 是否替代料
+            ws5.cell(row=i, column=21)._style.fillId = _alt_fid  # 第21列 = 是否替代料
         elif src in ('系统无定额(广宣)', '自动填充'):
-            ws5.cell(row=i, column=21).fill = gx_fill  # 第21列 = 是否替代料
+            ws5.cell(row=i, column=21)._style.fillId = _gx_fid  # 第21列 = 是否替代料
 
     ws6 = wb.create_sheet('异常预警')
     headers6 = ['订单开始日期', '订单类型', '订单号', '异常类型', '工厂', '车间',
@@ -817,9 +807,21 @@ def do_analysis_v2(
     note_c = ws6.cell(row=2, column=7,
                       value='阈值说明：主表明细±10%（业务口径）；异常预警：替代料残差全部列示（不设阈值）')
     note_c.font = Font(size=9, italic=True, color='666666')
+    # 性能优化（2026-07-27）：按 5 种异常类型预构建 StyleArray 原型，
+    # 数据格只做 _style 数组拷贝，避免每格 4 次样式赋值的 hash/查表开销
+    from copy import copy as _copy
+    _proto6 = {}
+    if len(anomaly_df):
+        _probe6 = ws6.cell(row=3, column=1)
+        _probe6.font = data_font
+        _probe6.border = border
+        _probe6.alignment = center
+        for _atype, _afill in anomaly_fills.items():
+            _probe6.fill = _afill
+            _proto6[_atype] = _copy(_probe6._style)
     r_row = 3
     for r in anomaly_df.to_dict('records'):
-        fill = anomaly_fills.get(r['row_type'], anomaly_fills['异常1'])
+        proto = _proto6.get(r['row_type'], _proto6['异常1'])
         row_vals = [
             r['订单开始日期'], r['订单类型'], r['流程订单'], r['异常类型'], r['工厂'], r['车间'],
             r['原表行号'],
@@ -829,11 +831,9 @@ def do_analysis_v2(
             r.get('净偏差率', ''),
             r['偏差率'], r.get('备注', ''), r.get('处理建议', ''), r.get('替代料', '否')]
         for j, v in enumerate(row_vals, 1):
-            c = ws6.cell(row=r_row, column=j, value=v)
-            c.font = data_font
-            c.border = border
-            c.alignment = center
-            c.fill = fill
+            c = ws6.cell(row=r_row, column=j)
+            c._style = _copy(proto)
+            c.value = v  # 先于样式设值会被 _style 覆盖日期格式；改为先样式后设值，真日期保留日期格式
         r_row += 1
     for j, w in enumerate([14, 10, 18, 10, 10, 10, 10, 16, 28, 8, 12, 12, 12, 12, 14, 10, 30, 10, 30, 10], 1):
         ws6.column_dimensions[get_column_letter(j)].width = w

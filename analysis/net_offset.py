@@ -135,11 +135,16 @@ def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True, gro
     order_col = group_key[1] if len(group_key) > 1 and group_key[1] in df.columns else '流程订单'
     df['_key'] = df[date_col].astype(str) + '|' + df[order_col].astype(str)
 
-    for key, group in df.groupby('_key'):
-        # 收集该订单内所有物料编码及对应的行索引
+    # 性能优化（2026-07-27）：code_to_indices 仅被替代料组成员编码查询（均在并查集 parent 中），
+    # 故只需对替代料相关行建索引，避免对全表逐组 iterrows。
+    _alt_codes = set(parent.keys())
+    _code_s = df['物料编码'].astype(str)
+    _alt_rows = df[_code_s.isin(_alt_codes)]
+
+    for key, group in _alt_rows.groupby('_key'):
+        # 收集该订单内替代料物料编码及对应的行索引
         code_to_indices = {}
-        for idx, row in group.iterrows():
-            code = str(row['物料编码'])
+        for idx, code in _code_s.loc[group.index].items():
             code_to_indices.setdefault(code, []).append(idx)
 
         # 为每个物料组计算净偏差
