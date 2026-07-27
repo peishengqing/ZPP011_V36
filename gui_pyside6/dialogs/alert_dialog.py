@@ -39,16 +39,19 @@ class AlertDialog(QDialog):
 
         self.btn_all = QPushButton("全部")
         self.btn_all.setCheckable(True)
+        self.btn_all.setMinimumWidth(70)
         self.btn_all.clicked.connect(lambda: self._set_filter("all"))
         filter_layout.addWidget(self.btn_all)
 
         self.btn_unread = QPushButton("未读")
         self.btn_unread.setCheckable(True)
+        self.btn_unread.setMinimumWidth(70)
         self.btn_unread.clicked.connect(lambda: self._set_filter("unread"))
         filter_layout.addWidget(self.btn_unread)
 
         self.btn_read = QPushButton("已读")
         self.btn_read.setCheckable(True)
+        self.btn_read.setMinimumWidth(70)
         self.btn_read.clicked.connect(lambda: self._set_filter("read"))
         filter_layout.addWidget(self.btn_read)
 
@@ -56,15 +59,18 @@ class AlertDialog(QDialog):
 
         # 批量操作
         self.btn_batch_read = QPushButton("批量标记已读")
+        self.btn_batch_read.setMinimumWidth(100)
         self.btn_batch_read.clicked.connect(self.batch_mark_read)
         filter_layout.addWidget(self.btn_batch_read)
 
         self.btn_batch_unread = QPushButton("批量标记未读")
+        self.btn_batch_unread.setMinimumWidth(100)
         self.btn_batch_unread.clicked.connect(self.batch_mark_unread)
         filter_layout.addWidget(self.btn_batch_unread)
 
         # 放大按钮
         self.btn_fullscreen = QPushButton("⛶ 放大")
+        self.btn_fullscreen.setMinimumWidth(80)
         self.btn_fullscreen.clicked.connect(self.toggle_fullscreen)
         filter_layout.addWidget(self.btn_fullscreen)
 
