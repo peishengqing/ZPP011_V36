@@ -1907,32 +1907,34 @@ class MainWindow(QMainWindow):
         self.filter_panel.update_options(df)
 
     def _on_stats_card_clicked(self, card_type: str):
-        """统计卡片点击：切换对应筛选（审核后变更 / 隔离区卡可过滤对应行）"""
-        proxy = self.proxy_model
-        if proxy is None or self.view_model.df is None:
+        """统计卡片点击：切换对应筛选（审核后变更 / 隔离区卡可过滤对应行）
+
+        注意：这里绝不能直接改写 proxy._custom_filters（旧实现拿 proxy 旧字典
+        改一改再 setCustomFilters 写回，会把面板已清掉的条件重新塞回 proxy，
+        造成「界面没勾选、proxy 却在暗中过滤」的状态残留 bug——表现为筛选
+        结果莫名为 0 行/假数据，重启才恢复）。
+        唯一数据源 = 筛选面板：只操作面板控件，由面板 _emit_filter 用完整
+        状态整体替换 proxy 条件。
+        """
+        if self.proxy_model is None or self.view_model.df is None:
             return
-        current = dict(getattr(proxy, '_custom_filters', {}))
         if card_type == 'changed':
-            if current.get('_changed_only'):
-                current.pop('_changed_only', None)
-                msg = "已显示全部记录"
+            cb = self.filter_panel.color_checks.get('_changed_only')
+            if cb is not None and cb.isChecked():
                 self.filter_panel.set_color_filter('all')
+                msg = "已显示全部记录"
             else:
-                current['_changed_only'] = True
-                msg = "已过滤：仅显示审核后变更的记录"
                 self.filter_panel.set_color_filter('changed')
-            proxy.setCustomFilters(current)
+                msg = "已过滤：仅显示审核后变更的记录"
             self.statusBar().showMessage(msg, 3000)
         elif card_type == 'quarantine':
-            if current.get('_quarantined_only'):
-                current.pop('_quarantined_only', None)
-                msg = "已显示全部记录"
+            cb = self.filter_panel.color_checks.get('_quarantined_only')
+            if cb is not None and cb.isChecked():
                 self.filter_panel.set_color_filter('all')
+                msg = "已显示全部记录"
             else:
-                current['_quarantined_only'] = True
-                msg = "已过滤：仅显示隔离区记录"
                 self.filter_panel.set_color_filter('quarantine')
-            proxy.setCustomFilters(current)
+                msg = "已过滤：仅显示隔离区记录"
             self.statusBar().showMessage(msg, 3000)
         elif card_type == 'anomaly':
             df = self.view_model.df
@@ -1942,15 +1944,12 @@ class MainWindow(QMainWindow):
                 count = int((rates.abs() > 30).sum())
                 self.statusBar().showMessage(f"🔴 真异常 {count} 条（已排除替代料）", 5000)
         elif card_type == 'unread':
-            if current.get('_read_status') == '未读':
-                current.pop('_read_status', None)
-                msg = "已显示全部记录"
+            if self.filter_panel.read_status_combo.currentText() == '未读':
                 self.filter_panel.set_read_status_filter('全部')
+                msg = "已显示全部记录"
             else:
-                current['_read_status'] = '未读'
-                msg = "已过滤：仅显示未读记录"
                 self.filter_panel.set_read_status_filter('未读')
-            proxy.setCustomFilters(current)
+                msg = "已过滤：仅显示未读记录"
             self.statusBar().showMessage(msg, 3000)
 
     def log(self, msg, level="info"):
