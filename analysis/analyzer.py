@@ -639,6 +639,39 @@ def do_analysis_v2(
 
     check_cancel()
 
+    # ========== 确保主表所需列存在（原本在 wb 构建之后，现上移到此处） ==========
+    # 主表快速路径（return_dataframe=True）在下方会直接 return，这几列必须先备齐
+    if '车间' not in dev_df.columns:
+        dev_df['车间'] = '未知车间'
+    if '物料类型' not in dev_df.columns:
+        dev_df['物料类型'] = dev_df['物料编码'].apply(infer_material_type)
+    if '订单日期' in dev_df.columns and '周' not in dev_df.columns:
+        dev_df['订单日期'] = pd.to_datetime(dev_df['订单日期'], errors='coerce')
+        dev_df['周'] = dev_df['订单日期'].dt.strftime('%Y-W%W')
+    if '替代料组' not in dev_df.columns:
+        dev_df['替代料组'] = ''
+
+    # ========== 主表快速路径：return_dataframe=True 时 dev_df 已齐活，直接返回 ==========
+    # 后续 build_sheet6~10 与整本 wb 仅为「导出 Excel 报告」服务，主表用不上，跳过以加速加载
+    if return_dataframe:
+        _snapshot['after_sheet5'] = {
+            '数量-实际': df['数量-实际'].describe().to_dict() if '数量-实际' in df.columns else 'NOT_FOUND',
+            '行数': len(df)
+        }
+        report_progress(5, "5/5 主表计算完成", 90)
+        report_progress(5, "5/5 分析完成", 100)
+        _dprint("[DEBUG do_analysis_v2] 主表快速路径：跳过导出专用 sheet，直接返回 dev_df")
+        try:
+            with open(_trace_log, 'a', encoding='utf-8') as f:
+                f.write(f"\n=== Trace Log {datetime.now()} ===\n")
+                f.write(f"Input file: {src_file}\n")
+                f.write(json.dumps(_snapshot, indent=2, ensure_ascii=False, default=str))
+                f.write('\n')
+            _dprint(f"[TRACE] 日志已保存到: {_trace_log}")
+        except Exception as e:
+            _dprint(f"[TRACE] 保存日志失败: {e}")
+        return dev_df
+
     # 构建净偏差查找表：(流程订单, 物料编码) -> (净偏差数量, 净偏差金额)
     net_offset_map = {}
     if '净偏差数量' in dev_df.columns:
@@ -927,45 +960,8 @@ def do_analysis_v2(
         ws_info.column_dimensions['B'].width = 62
 
     _dprint(f"[DEBUG do_analysis_v2] 准备保存到：{final_output_path}")
-    
-    # 如果不保存文件，直接返回 dev_df
-    # ===== 确保 PT 报告所需列存在 =====
-    # 1. 车间列
-    if '车间' not in dev_df.columns:
-        # 可选：根据订单号前缀推断车间（示例：订单号以 'WX' 开头为无锡车间）
-        # 如果没有映射规则，直接填充默认值
-        dev_df['车间'] = '未知车间'
-    
-    # 2. 物料类型列
-    if '物料类型' not in dev_df.columns:
-        # 根据物料编码前缀简单映射（可自定义）
-        dev_df['物料类型'] = dev_df['物料编码'].apply(infer_material_type)
-    
-    # 3. 周列（如果订单日期存在）
-    if '订单日期' in dev_df.columns and '周' not in dev_df.columns:
-        dev_df['订单日期'] = pd.to_datetime(dev_df['订单日期'], errors='coerce')
-        dev_df['周'] = dev_df['订单日期'].dt.strftime('%Y-W%W')
-    
-    # 4. 替代料组列（若净偏差计算已生成则保留，否则创建空列）
-    if '替代料组' not in dev_df.columns:
-        dev_df['替代料组'] = ''
-
     report_progress(5, "5/5 分析完成", 100)
 
-    if return_dataframe:
-        _dprint("[DEBUG do_analysis_v2] 不保存文件，直接返回 DataFrame")
-        # 保存追踪日志
-        try:
-            with open(_trace_log, 'a', encoding='utf-8') as f:
-                f.write(f"\n=== Trace Log {datetime.now()} ===\n")
-                f.write(f"Input file: {src_file}\n")
-                f.write(json.dumps(_snapshot, indent=2, ensure_ascii=False, default=str))
-                f.write('\n')
-            _dprint(f"[TRACE] 日志已保存到: {_trace_log}")
-        except Exception as e:
-            _dprint(f"[TRACE] 保存日志失败: {e}")
-        return dev_df
-    
     # 否则保存文件
     _out_dir = os.path.dirname(final_output_path)
     if _out_dir:
