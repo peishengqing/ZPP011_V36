@@ -141,26 +141,12 @@ class DataFrameModel(QAbstractTableModel):
                     seen[gs] = col
                 self._alt_group_color_list[i] = col
 
-        # 2. 批量构建缓存：to_numpy(dtype=object) 一次把 DataFrame 转成 object 数组，
-        #    再替换 NaN/None，最后把 numpy scalar 转成 Python 原生类型。
+        # 2. 批量构建缓存：用 pandas 内置 where 按列向量化替换 NaN(比 pd.isna(N×M 数组) 快得多),
+        #    然后 values.tolist() 一次性递归转 Python scalar(numpy 已自带 to-Python 转换),
+        #    移除冗余的 [[_py_scalar(v) for v in row] for row in arr.tolist()] 嵌套循环
         _bm("phase2 start")
-        arr = self._data.to_numpy(dtype=object)
-        _bm("after to_numpy")
-        # 处理缺失值（NaN/None/NaT 统一替换为空字符串）
-        na_mask = pd.isna(arr)
-        _bm("after pd.isna")
-        if na_mask.any():
-            arr[na_mask] = ""
-        _bm("after replace na")
-        # 把 numpy scalar 转成 Python int/float，避免后续显示/比较时依赖 numpy 类型
-        def _py_scalar(v):
-            if isinstance(v, np.integer):
-                return int(v)
-            if isinstance(v, np.floating):
-                return float(v)
-            return v
-        self._data_cache = [[_py_scalar(v) for v in row] for row in arr.tolist()]
-        _bm("after double list comp, _data_cache built")
+        self._data_cache = self._data.astype(object).where(self._data.notna(), "").values.tolist()
+        _bm("after where+tolist, _data_cache built")
 
     def getDataFrame(self) -> pd.DataFrame:
         return self._data

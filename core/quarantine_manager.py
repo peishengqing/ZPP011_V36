@@ -47,6 +47,29 @@ def add_quarantine(uid: str, reason: str = ""):
     conn.close()
 
 
+def add_quarantine_batch(items: list):
+    """批量移入隔离区：items=[(uid, reason), ...]。
+
+    单事务 executemany 替代循环 connect/commit/close，
+    数百条记录耗时从几秒降到几十毫秒，避免 UI「未响应」。
+    """
+    if not items:
+        return
+    conn = _get_conn()
+    now = datetime.now().isoformat()
+    rows = [(str(uid), str(reason), now) for uid, reason in items]
+    conn.executemany("""
+        INSERT INTO quarantine_records (uid, reason, quarantined_at, restored_at)
+        VALUES (?, ?, ?, NULL)
+        ON CONFLICT(uid) DO UPDATE SET
+            reason=excluded.reason,
+            quarantined_at=excluded.quarantined_at,
+            restored_at=NULL
+    """, rows)
+    conn.commit()
+    conn.close()
+
+
 def remove_quarantine(uid: str):
     """将一条记录移出隔离区（软删除：记录恢复时间，便于追溯）"""
     conn = _get_conn()

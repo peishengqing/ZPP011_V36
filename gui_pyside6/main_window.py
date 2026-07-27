@@ -2726,8 +2726,9 @@ class MainWindow(QMainWindow):
                     self, "自动整理隔离区",
                     f"符合规则的 {len(matched)} 条均已在隔离区，无需重复移入。")
             return
-        for uid in new_ids:
-            add_quarantine(uid, matched[uid])
+        # 批量写入 SQLite：单事务 executemany，替代逐行 connect/commit/close（12K 行下卡死的根因之一）
+        from core.quarantine_manager import add_quarantine_batch
+        add_quarantine_batch([(uid, matched[uid]) for uid in new_ids])
         df.loc[df['data_id'].isin(new_ids), '_quarantined'] = 1
         self.view_model.df = df
         if self.source_model:
