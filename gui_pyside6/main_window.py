@@ -548,7 +548,7 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.main_table.summary_container, 0)
 
         self.body_splitter.addWidget(right_container)
-        self.body_splitter.setSizes([260, 360, 860])
+        self.body_splitter.setSizes([260, 440, 860])
 
         main_layout.addWidget(self.body_splitter, 1)
 
@@ -3153,10 +3153,10 @@ class MainWindow(QMainWindow):
         else:
             self.filter_panel.setVisible(True)
             # 展开时给筛选面板合适宽度（360px），与 FilterPanel 自身最大宽度一致
-            self.filter_panel.setFixedWidth(360)
+            self.filter_panel.setFixedWidth(440)
             prev_sizes = self.body_splitter.sizes()
             # left_panel | filter_panel | table_area
-            self.body_splitter.setSizes([prev_sizes[0], 360, prev_sizes[2]])
+            self.body_splitter.setSizes([prev_sizes[0], 440, prev_sizes[2]])
             self.action_btn_filter.setText("🔍 隐藏筛选")
             self.action_btn_filter.setChecked(True)
 

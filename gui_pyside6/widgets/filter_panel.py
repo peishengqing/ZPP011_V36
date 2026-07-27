@@ -35,8 +35,8 @@ class FilterPanel(QWidget):
         self._expanded = True
         self._data_min_date = None
         self._data_max_date = None
-        self.setMaximumWidth(360)
-        self.setMinimumWidth(360)
+        self.setMaximumWidth(440)
+        self.setMinimumWidth(440)
         self.setObjectName("filterPanel")
 
         main_layout = QVBoxLayout(self)
@@ -95,8 +95,10 @@ class FilterPanel(QWidget):
         basic_layout.setLabelAlignment(Qt.AlignRight)
         self.factory_combo = QComboBox()
         self.factory_combo.addItem("全部")
+        self.factory_combo.setMinimumWidth(220)
         self.workshop_combo = QComboBox()
         self.workshop_combo.addItem("全部")
+        self.workshop_combo.setMinimumWidth(220)
         self.process_order_edit = QLineEdit()
         self.process_order_edit.setPlaceholderText("输入流程订单号搜索")
         self.process_order_edit.setMaximumWidth(240)
@@ -428,7 +430,7 @@ class FilterPanel(QWidget):
     def _toggle_collapse(self):
         self._expanded = not self._expanded
         if self._expanded:
-            self.setMaximumWidth(360)
+            self.setMaximumWidth(440)
             self.content_widget.setVisible(True)
             self.collapse_btn.setText("◀")
         else:
