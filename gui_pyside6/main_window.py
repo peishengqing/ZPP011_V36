@@ -1036,6 +1036,11 @@ class MainWindow(QMainWindow):
         self.progress_label.setText(f"{step_name}  {percent}%")
 
     def _on_analysis_finished_ui(self, df):
+        import time as _t
+        _t0 = _t.perf_counter()
+        def _m(label):
+            print(f"[FINISH_UI+{int((_t.perf_counter()-_t0)*1000):6d}ms] {label}", flush=True)
+        _m(f"slot enter, df={len(df)} rows, cols={len(df.columns)}")
         self._monitor_auto_loading = False
         self._monitor_current_key = None
         self._stop_countdown()
@@ -1047,19 +1052,26 @@ class MainWindow(QMainWindow):
         self.progress_label.setText(f"✅ 完成 ({elapsed})")
         toast(f"✅ 分析完成，共 {len(df)} 条记录 ({elapsed})", "success", parent=self)
         self.statusBar().showMessage("分析完成，正在加载结果...")
+        _m("progress UI done")
 
         factory_list = self.analysis_controller.get_factory_list()
         if factory_list:
             # 默认显示全部工厂，不按工厂拆分
             self._on_factory_changed('全部')
+            _m(f"after _on_factory_changed, factory_list={len(factory_list)}")
 
         try:
             processed_df = self.view_model.df
+            _m("view_model.df checked")
             if processed_df is None or processed_df.empty:
                 processed_df = self.data_service.preprocess_audit_data(df)
+                _m(f"after preprocess -> {processed_df.shape}")
                 self.source_model.setDataFrame(processed_df)
+                _m("after source_model.setDataFrame")
                 self.view_model.df = processed_df
+                _m("after view_model.df = processed_df")
             self._analysis_params = self.analysis_controller.get_analysis_params()
+            _m("after _analysis_params loaded")
 
             # 注意：完整报告缓存由后台线程(_FullCacheWorker)生成，主线程绝不等待，
             # 否则分析完成后标题栏会显示「未响应」。导出完整报告时优先复制该缓存。
@@ -1118,28 +1130,40 @@ class MainWindow(QMainWindow):
                         self._cache_worker = None
                 self._cache_worker.finished.connect(_on_cache_done)
                 self._cache_worker.start()
+                _m("after _cache_worker.start")
 
             self._set_column_widths()
+            _m("after _set_column_widths")
             self.statusBar().showMessage(f"分析完成，共加载 {len(processed_df)} 行 × {len(processed_df.columns)} 列")
+            _m("after statusBar msg 2")
             # 更新左侧"数据预览"卡片（文字统计，使用与表格一致的预处理后 df）
             if hasattr(self, 'preview_label') and self.preview_label:
                 self.preview_label.setText(self._format_preview_stats(processed_df))
+            _m("after preview_label update")
             if hasattr(self, 'left_panel') and hasattr(self.left_panel, 'preview_group'):
                 self.left_panel.preview_group.expand()
             self.main_table.summary_container.setVisible(True)
             self._update_summary()
+            _m("after _update_summary")
             self.main_table.summary_container.raise_()
             self.main_table.summary_container.repaint()
+            _m("after summary_container.repaint")
             QApplication.processEvents()
+            _m("after processEvents")
         except Exception as e:
+            import traceback as _tb
+            _m(f"EXCEPTION in slot: {e}")
+            _tb.print_exc()
             self._heavy_busy = False
             QMessageBox.critical(self, "错误", f"加载结果失败: {e}")
 
-            if not self.alert_monitor.isRunning():
-                self.alert_monitor.start()
+        if not self.alert_monitor.isRunning():
+            self.alert_monitor.start()
+        _m("after alert_monitor.start")
 
         # 分析完成后自动把「疑难包材箱」记录移入隔离区（静默：仅当有新增时 toast）
         self._auto_move_to_quarantine(manual=False)
+        _m("slot end")
 
     # ------------------------------------------------------------------ #
     # 顶部面板（概览 / 进度）显隐控制

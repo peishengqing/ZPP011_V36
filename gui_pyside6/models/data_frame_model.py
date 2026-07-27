@@ -60,7 +60,12 @@ class DataFrameModel(QAbstractTableModel):
 
         优化：行集合计算和缓存构建均使用向量化/NumPy，避免万行级 Python 循环。
         """
+        import time as _t
+        _t0 = _t.perf_counter()
+        def _bm(label):
+            print(f"[BUILD_CACHE+{int((_t.perf_counter()-_t0)*1000):6d}ms] {label}", flush=True)
         if self._data.empty:
+            _bm("empty early return")
             self._data_cache = []
             # 空数据也要保留列名，否则 columnCount 返回 0，表格表头会消失
             self._display_columns = list(self._data.columns)
@@ -138,11 +143,15 @@ class DataFrameModel(QAbstractTableModel):
 
         # 2. 批量构建缓存：to_numpy(dtype=object) 一次把 DataFrame 转成 object 数组，
         #    再替换 NaN/None，最后把 numpy scalar 转成 Python 原生类型。
+        _bm("phase2 start")
         arr = self._data.to_numpy(dtype=object)
+        _bm("after to_numpy")
         # 处理缺失值（NaN/None/NaT 统一替换为空字符串）
         na_mask = pd.isna(arr)
+        _bm("after pd.isna")
         if na_mask.any():
             arr[na_mask] = ""
+        _bm("after replace na")
         # 把 numpy scalar 转成 Python int/float，避免后续显示/比较时依赖 numpy 类型
         def _py_scalar(v):
             if isinstance(v, np.integer):
@@ -151,6 +160,7 @@ class DataFrameModel(QAbstractTableModel):
                 return float(v)
             return v
         self._data_cache = [[_py_scalar(v) for v in row] for row in arr.tolist()]
+        _bm("after double list comp, _data_cache built")
 
     def getDataFrame(self) -> pd.DataFrame:
         return self._data
