@@ -18,6 +18,7 @@ ZPP011 偏差分析 PPT 生成脚本（剔除替代料口径）
 import os
 import sys
 import argparse
+import json
 import datetime
 import pandas as pd
 import numpy as np
@@ -29,7 +30,12 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.oxml.ns import qn
 
 # ===================== CONFIG =====================
-# 以下为「缺省值」，可用命令行参数覆盖：
+# 「缺省值」，可被以下来源覆盖（优先级从高到低）：
+#   1. 命令行参数  --input / --output
+#   2. 同目录 build_ppt_excluded_config.json 的 input / output 字段
+#   3. 以下缺省常量
+# 用法：
+#   python build_ppt_excluded.py
 #   python build_ppt_excluded.py --input 新数据.xlsx --output 新报告.pptx
 INPUT_XLSX = r"E:\zpp011_v2\ZPP011偏差分析最终版_20260724_090611.xlsx"
 OUTPUT_PPTX = r"E:\zpp011_v2\ZPP011偏差分析_改进版_剔除替代料_20260724.pptx"
@@ -604,18 +610,41 @@ def build_summary(prs, M):
         13, INK)
 
 
+# ===================== 配置加载 =====================
+def load_config():
+    """读取同目录 build_ppt_excluded_config.json（可选）。
+
+    返回 dict；文件缺失或 JSON 损坏时返回 {}，不影响脚本运行。
+    优先级：命令行参数 > 配置文件 > 源码缺省常量。
+    """
+    cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "build_ppt_excluded_config.json")
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print(f"[warn] 读取配置文件 {cfg_path} 失败，回退默认值：{e}")
+    return {}
+
+
 # ===================== 主流程 =====================
 def main():
     parser = argparse.ArgumentParser(
         description="ZPP011 偏差分析 PPT 生成（剔除替代料口径）")
-    parser.add_argument("--input", default=INPUT_XLSX,
-                        help="输入 Excel（含「完整偏差明细」等 Sheet），默认取 CONFIG.INPUT_XLSX")
-    parser.add_argument("--output", default=OUTPUT_PPTX,
-                        help="输出 PPTX 路径，默认取 CONFIG.OUTPUT_PPTX")
+    parser.add_argument("--input", default=None,
+                        help="输入 Excel（含「完整偏差明细」等 Sheet）；不传则读配置文件，再否则取 CONFIG.INPUT_XLSX")
+    parser.add_argument("--output", default=None,
+                        help="输出 PPTX 路径；不传则读配置文件，再否则取 CONFIG.OUTPUT_PPTX")
     args = parser.parse_args()
 
-    input_xlsx = args.input
-    output_pptx = args.output
+    # 优先级合并：命令行参数 > 配置文件 > 源码缺省常量
+    cfg = load_config()
+    input_xlsx = args.input or cfg.get("input") or INPUT_XLSX
+    output_pptx = args.output or cfg.get("output") or OUTPUT_PPTX
 
     M, d, keep = load_metrics(input_xlsx)
     M["src_name"] = os.path.basename(input_xlsx)  # 供封面自动显示真实文件名
