@@ -2,7 +2,7 @@
   "enabled": true,
   "rules": [
     {
-      "name": "包材箱类负损",
+      "name": "包材箱类、纸罐、手包袋负损",
       "enabled": true,
       "exclude_alt": true,
       "category_required": true,

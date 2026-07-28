@@ -141,6 +141,7 @@ if __name__ == "__main__":
         "--hidden-import=core.fingerprint",
         "--hidden-import=core.change_detector",
         "--hidden-import=analysis.analyzer",
+        "--hidden-import=analysis.dashboard_html",
         "--hidden-import=analysis.net_offset",
         "--hidden-import=analysis.bom_diff",
         "--hidden-import=analysis.excel_builder.sheet5_full",

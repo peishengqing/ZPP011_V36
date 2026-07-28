@@ -44,7 +44,7 @@
     "hidden": false
   },
   "物料名称": {
-    "width": 223,
+    "width": 200,
     "hidden": false
   },
   "单位": {
@@ -64,16 +64,16 @@
     "hidden": false
   },
   "净偏差数量": {
-    "width": 0,
-    "hidden": true
+    "width": 100,
+    "hidden": false
   },
   "净偏差金额": {
-    "width": 0,
-    "hidden": true
+    "width": 100,
+    "hidden": false
   },
   "净偏差率(%)": {
-    "width": 0,
-    "hidden": true
+    "width": 100,
+    "hidden": false
   },
   "偏差金额": {
     "width": 100,

@@ -1,12 +1,17 @@
 # -*- coding: utf-8 -*-
-"""管理看板对话框 - PySide6 迁移版"""
-import matplotlib
-matplotlib.use("qtagg")
-import matplotlib.pyplot as plt
-plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
-plt.rcParams["axes.unicode_minus"] = False
+"""管理看板对话框 - 偏差视角 12 图 HTML 看板（QWebEngineView 渲染）
 
-import json
+替代旧版只用 matplotlib 画的车间排名/物料大类/月度趋势三张糙图，
+改为复用 analysis.dashboard_html.build_html 生成自包含 HTML，
+用 QWebEngineView 加载 —— 与「tools/gen_dashboard.py 生成的桌面 HTML 版」完全一致：
+顶部「全部 / 食品厂 / 饮料厂」切换按钮、按工厂独立出 指标卡 + 12 图 + 小结。
+
+数据来源：main_window 传来的 view_model.df（已按分析日期窗口过滤、含 工厂 列的混合 df），
+本对话框只做「取数拆分 + 渲染」，不碰任何分析逻辑。
+"""
+import os
+import sys
+import tempfile
 from pathlib import Path
 
 import pandas as pd
@@ -14,404 +19,176 @@ from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
-    QTabWidget,
-    QWidget,
     QLabel,
-    QComboBox,
     QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
-    QTextEdit,
+    QFileDialog,
     QMessageBox,
+    QTextBrowser,
 )
-from PySide6.QtCore import Signal, QThread, QObject
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
+from PySide6.QtCore import QUrl
 
-try:
-    from gui_pyside6.utils.atomic_json import atomic_save_json
-except ImportError:
+# 让项目 analysis 模块可 import
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-    def atomic_save_json(data, path):
-        import json as _json
+from analysis.dashboard_html import build_html, compute_metrics, short_name  # noqa: E402
 
-        tmp = str(path) + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            _json.dump(data, f, ensure_ascii=False, indent=2)
-        import os
-
-        if os.path.exists(path):
-            os.replace(tmp, path)
-        else:
-            os.rename(tmp, path)
+# 说明：本模块故意不在文件顶部 import matplotlib(qtagg) 与 PySide6.QtWebEngine*，
+# 因为 main_window.py 在模块级（顶部）就 `from .dialogs.dashboard_dialog import DashboardDialog`，
+# 会导致软件一启动就强制初始化 Chromium 内核（WebEngine）而长时间 hang。
+# 这两个重型依赖改为在 DashboardDialog.__init__ 内部延迟 import + try/except 降级。
 
 
-class AnalysisWorker(QObject):
-    """分析工作线程"""
 
-    finished = Signal(object)
-    error = Signal(str)
-    progress = Signal(int, str)
+def _split_by_factory(audit_df):
+    """把混合 df 按 工厂 列拆成 blocks（工厂名 -> (metrics, sub_df)）。
+    无 工厂 列时整体作为单一区块。"""
+    blocks = {}
+    if audit_df is None or audit_df.empty:
+        return blocks
+    if "工厂" in audit_df.columns:
+        for fac in audit_df["工厂"].dropna().unique():
+            sub = audit_df[audit_df["工厂"] == fac]
+            if not sub.empty:
+                blocks[str(fac)] = (compute_metrics(sub), sub)
+    else:
+        blocks["全部"] = (compute_metrics(audit_df), audit_df)
+    return blocks
 
-    def __init__(self, audit_df, material_df):
-        super().__init__()
-        self.audit_df = audit_df
-        self.material_df = material_df
 
-    def run(self):
-        try:
-            self.progress.emit(10, "数据预处理...")
-            result = self._analyze()
-            self.progress.emit(100, "完成")
-            self.finished.emit(result)
-        except Exception as e:
-            self.error.emit(str(e))
-
-    def _analyze(self):
-        audit_df = self.audit_df
-
-        # 兼容中英文列名
-        col_map = {}
-        for c in audit_df.columns:
-            c_lower = str(c).strip().lower()
-            if c in ("车间", "生产管理员描述", "workshop"):
-                col_map["workshop"] = c
-            elif c in ("偏差金额", "deviation_amount"):
-                col_map["deviation_amount"] = c
-            elif c in ("物料大类", "material_group"):
-                col_map["material_group"] = c
-            elif c in ("订单日期", "order_date"):
-                col_map["order_date"] = c
-            elif c_lower in ("车间", "生产管理员描述", "workshop"):
-                col_map["workshop"] = c
-            elif c_lower in ("偏差金额", "deviation_amount"):
-                col_map["deviation_amount"] = c
-            elif c_lower in ("物料大类", "material_group"):
-                col_map["material_group"] = c
-            elif c_lower in ("订单日期", "order_date"):
-                col_map["order_date"] = c
-
-        # 如果数据中无物料大类列，从物料编码前缀计算
-        mg_col = col_map.get("material_group")
-        if mg_col is None:
-            code_col = next((c for c in ("物料编码", "组件物料号", "code") if c in audit_df.columns), None)
-            if code_col:
-                mat_map = {
-                    "100": "原辅料", "200": "包材", "400": "食品辅料/半成品",
-                    "410": "饮料辅料/半成品", "500": "食品成品", "510": "饮料成品", "600": "促销品"
-                }
-                audit_df = audit_df.copy()
-                audit_df["material_group"] = audit_df[code_col].apply(
-                    lambda x: mat_map.get(str(x)[:3], "其他") if pd.notna(x) else "未知"
-                )
-                col_map["material_group"] = "material_group"
-            else:
-                audit_df["material_group"] = "未知"
-                col_map["material_group"] = "material_group"
-
-        # material_df 预留，用于后续 AI 归因分析扩展
-        self.progress.emit(30, "计算车间排名...")
-        # 车间排名
-        ws_col = col_map.get("workshop")
-        amt_col = col_map.get("deviation_amount")
-        if ws_col and amt_col:
-            ws = (
-                audit_df.groupby(ws_col, dropna=False)[amt_col]
-                .sum()
-                .sort_values(ascending=False)
-            )
-        else:
-            ws = pd.Series(dtype=float)
-
-        self.progress.emit(50, "计算物料大类排名...")
-        # 物料大类排名
-        mg_col = col_map.get("material_group")
-        if mg_col and amt_col:
-            mg = (
-                audit_df.groupby(mg_col, dropna=False)[amt_col]
-                .sum()
-                .sort_values(ascending=False)
-            )
-        else:
-            mg = pd.Series(dtype=float)
-
-        self.progress.emit(70, "计算时间趋势...")
-        # 时间趋势
-        date_col = col_map.get("order_date")
-        if date_col and amt_col:
-            audit_df2 = audit_df.copy()
-            audit_df2[date_col] = pd.to_datetime(
-                audit_df2[date_col], errors="coerce"
-            )
-            trend = (
-                audit_df2.dropna(subset=[date_col]).groupby(audit_df2[date_col].dt.to_period("M"))[amt_col]
-                .sum()
-                .sort_index()
-            )
-        else:
-            trend = pd.Series(dtype=float)
-
-        self.progress.emit(90, "生成小结...")
-        summary = self._generate_summary(ws, mg, trend, audit_df, col_map)
-        return {
-            "workshop_rank": ws,
-            "material_group_rank": mg,
-            "trend": trend,
-            "summary": summary,
-            "audit_df": audit_df,
-        }
-
-    def _generate_summary(self, ws, mg, trend, audit_df, col_map=None):
-        if col_map is None:
-            col_map = {}
-        lines = []
-        if not ws.empty:
-            top_ws = ws.head(3)
-            lines.append(
-                "车间偏差TOP3："
-                + "，".join([f"{k}({v:,.0f})" for k, v in top_ws.items()])
-            )
-        if not mg.empty:
-            top_mg = mg.head(3)
-            lines.append(
-                "物料大类偏差TOP3："
-                + "，".join([f"{k}({v:,.0f})" for k, v in top_mg.items()])
-            )
-        amt_col = col_map.get("deviation_amount", "deviation_amount")
-        total = (
-            audit_df[amt_col].sum()
-            if amt_col in audit_df.columns
-            else 0
-        )
-        lines.append(f"总偏差金额：{total:,.0f}")
-        return "\n".join(lines)
+def _window_from_df(audit_df):
+    """从 df 的 订单日期 推断分析窗口，用于看板副标题。"""
+    if audit_df is None or "订单日期" not in audit_df.columns:
+        return "全量", "全量"
+    dates = pd.to_datetime(audit_df["订单日期"], errors="coerce").dropna()
+    if dates.empty:
+        return "全量", "全量"
+    return dates.min().strftime("%Y-%m-%d"), dates.max().strftime("%Y-%m-%d")
 
 
 class DashboardDialog(QDialog):
-    """管理看板主对话框"""
+    """管理看板：偏差视角 12 图（分厂切换）。"""
 
-    drill_down_signal = Signal(str, str)  # (维度类型, 维度值)
+    def __init__(self, audit_df, material_df=None, parent=None, main_window=None):
+        # —— 延迟重型依赖（避免 main_window 模块级 import 本文件时 hang）——
+        # matplotlib 后端：仅当尚未设过 qtagg/qt5agg 时才切，避免重复 use 警告
+        try:
+            import matplotlib
+            if matplotlib.get_backend().lower() not in ("qtagg", "qt5agg", "qt4agg"):
+                try:
+                    matplotlib.use("qtagg")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # WebEngine：首次 import 会初始化 Chromium 内核（较重），失败时降级 QTextBrowser
+        self._web_engine_ok = False
+        self._web_engine_err = ""
+        self._WebEngineView = None
+        self._WebEngineSettings = None
+        try:
+            from PySide6.QtWebEngineWidgets import QWebEngineView  # noqa: F401
+            from PySide6.QtWebEngineCore import QWebEngineSettings  # noqa: F401
+            self._WebEngineView = QWebEngineView
+            self._WebEngineSettings = QWebEngineSettings
+            self._web_engine_ok = True
+        except Exception as e:  # noqa: BLE001
+            self._web_engine_err = str(e)
 
-    def __init__(self, audit_df, material_df, parent=None, main_window=None):
         super().__init__(parent)
         self.main_window = main_window
         self.audit_df = audit_df
         self.material_df = material_df
-        self.analysis_result = None
+        self._tmp_html = None
+        self._last_html = None
         self._init_ui()
-        self._start_analysis()
+        self._render()
 
     def _init_ui(self):
-        self.setWindowTitle("管理看板")
-        self.setMinimumSize(1000, 700)
+        self.setWindowTitle("管理看板 · 偏差视角 12 图")
+        self.resize(1100, 760)
         layout = QVBoxLayout(self)
+
         # 顶部工具栏
-        top_bar = QHBoxLayout()
-        top_bar.addWidget(QLabel("维度："))
-        self.dim_combo = QComboBox()
-        self.dim_combo.addItems(["车间", "物料大类", "时间趋势"])
-        self.dim_combo.currentTextChanged.connect(self._on_dim_changed)
-        top_bar.addWidget(self.dim_combo)
-        top_bar.addStretch()
-        self.refresh_btn = QPushButton("刷新")
-        self.refresh_btn.clicked.connect(self._start_analysis)
-        top_bar.addWidget(self.refresh_btn)
-        layout.addLayout(top_bar)
-        # Tab 页
-        self.tabs = QTabWidget()
-        self.tab_rank = QWidget()
-        self.tab_trend = QWidget()
-        self.tab_summary = QWidget()
-        self.tabs.addTab(self.tab_rank, "排名")
-        self.tabs.addTab(self.tab_trend, "趋势")
-        self.tabs.addTab(self.tab_summary, "小结")
-        # 工厂对比页签（如果有主窗口且有多工厂数据）
-        if self.main_window and hasattr(self.main_window, 'analysis_controller'):
-            factory_data = self.main_window.analysis_controller.factory_data
-            if factory_data and len(factory_data) > 1:
-                self.tab_factory = QWidget()
-                self._create_factory_comparison_tab(self.tab_factory, factory_data)
-                self.tabs.addTab(self.tab_factory, "🏭 工厂对比")
-        
-        layout.addWidget(self.tabs)
-        # 排名页
-        self._init_rank_tab()
-        # 趋势页
-        self._init_trend_tab()
-        # 小结页
-        self._init_summary_tab()
-        # 关闭按钮
-        btn_bar = QHBoxLayout()
-        btn_bar.addStretch()
-        close_btn = QPushButton("关闭")
-        close_btn.clicked.connect(self.accept)
-        btn_bar.addWidget(close_btn)
-        layout.addLayout(btn_bar)
+        top = QHBoxLayout()
+        hint = QLabel("偏差分析看板（顶部按钮可切换 食品厂 / 饮料厂）")
+        hint.setStyleSheet("color:#656d76;font-size:13px")
+        top.addWidget(hint)
+        top.addStretch()
+        self.export_btn = QPushButton("导出 HTML")
+        self.export_btn.clicked.connect(self._export_html)
+        top.addWidget(self.export_btn)
+        self.close_btn = QPushButton("关闭")
+        self.close_btn.clicked.connect(self.accept)
+        top.addWidget(self.close_btn)
+        layout.addLayout(top)
 
-    def _init_rank_tab(self):
-        layout = QVBoxLayout(self.tab_rank)
-        # 图表区
-        self.rank_fig = Figure(figsize=(6, 4), dpi=100)
-        self.rank_canvas = FigureCanvas(self.rank_fig)
-        self.rank_toolbar = NavigationToolbar(self.rank_canvas, self)
-        layout.addWidget(self.rank_toolbar)
-        layout.addWidget(self.rank_canvas)
-        # 表格区
-        self.rank_table = QTableWidget()
-        layout.addWidget(self.rank_table)
-
-    def _init_trend_tab(self):
-        layout = QVBoxLayout(self.tab_trend)
-        self.trend_fig = Figure(figsize=(6, 4), dpi=100)
-        self.trend_canvas = FigureCanvas(self.trend_fig)
-        self.trend_toolbar = NavigationToolbar(self.trend_canvas, self)
-        layout.addWidget(self.trend_toolbar)
-        layout.addWidget(self.trend_canvas)
-
-    def _init_summary_tab(self):
-        layout = QVBoxLayout(self.tab_summary)
-        self.summary_text = QTextEdit()
-        self.summary_text.setReadOnly(True)
-        layout.addWidget(self.summary_text)
-        self.ai_btn = QPushButton("AI 归因分析")
-        self.ai_btn.clicked.connect(self._on_ai_analysis)
-        layout.addWidget(self.ai_btn)
-
-    def _start_analysis(self):
-        self.worker = AnalysisWorker(self.audit_df, self.material_df)
-        self.thread = QThread()
-        self.worker.moveToThread(self.thread)
-        self.thread.started.connect(self.worker.run)
-        self.worker.finished.connect(self._on_analysis_done)
-        self.worker.error.connect(self._on_analysis_error)
-        self.thread.start()
-
-    def _on_analysis_done(self, result):
-        self.analysis_result = result
-        self._update_rank_tab(result)
-        self._update_trend_tab(result)
-        self._update_summary_tab(result)
-        self.thread.quit()
-        self.thread.wait()
-
-    def _on_analysis_error(self, msg):
-        QMessageBox.critical(self, "分析错误", msg)
-        self.thread.quit()
-        self.thread.wait()
-
-    def _update_rank_tab(self, result):
-        dim = self.dim_combo.currentText()
-        self.rank_fig.clear()
-        ax = self.rank_fig.add_subplot(111)
-        if dim == "车间":
-            sr = result["workshop_rank"]
-        elif dim == "物料大类":
-            sr = result["material_group_rank"]
+        # WebEngine 视图（若可用），否则降级到 QTextBrowser
+        if self._web_engine_ok:
+            self.web = self._WebEngineView(self)
+            self.web.settings().setAttribute(
+                self._WebEngineSettings.LocalContentCanAccessFileUrls, True
+            )
         else:
-            sr = pd.Series(dtype=float)
-        if not sr.empty:
-            sr.head(10).plot(kind="bar", ax=ax)
-            ax.set_ylabel("偏差金额")
-            ax.set_title(f"{dim}排名TOP10")
+            self.web = QTextBrowser(self)
+            self.web.setAcceptRichText(True)
+            self.web.setOpenExternalLinks(False)
+            if self._web_engine_err:
+                self.web.setHtml(
+                    f"<p style='color:#b00'>WebEngine 不可用，已降级为文本视图：<br>"
+                    f"<small>{self._web_engine_err}</small></p>"
+                )
+        layout.addWidget(self.web, 1)
+
+    def _render(self):
+        blocks = _split_by_factory(self.audit_df)
+        if not blocks:
+            QMessageBox.information(self, "提示", "当前没有可展示的偏差数据。")
+            return
+        start, end = _window_from_df(self.audit_df)
+        meta = {
+            "start": start,
+            "end": end,
+            "src": "管理看板（实时数据）",
+            "gen": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
+        }
+        html = build_html(blocks, meta)
+        self._last_html = html
+        # WebEngine 模式：写临时文件用本地 file:// 加载（data: URI 过长易出问题）
+        if self._web_engine_ok:
+            tmp = tempfile.NamedTemporaryFile(
+                "w", suffix=".html", delete=False, encoding="utf-8", dir=tempfile.gettempdir()
+            )
+            tmp.write(html)
+            tmp.close()
+            self._tmp_html = tmp.name
+            self.web.load(QUrl.fromLocalFile(self._tmp_html))
         else:
-            ax.text(0.5, 0.5, "无数据", ha="center", va="center")
-        self.rank_canvas.draw()
-        # 表格
-        self.rank_table.setRowCount(len(sr))
-        self.rank_table.setColumnCount(2)
-        self.rank_table.setHorizontalHeaderLabels(["名称", "偏差金额"])
-        for i, (name, val) in enumerate(sr.items()):
-            self.rank_table.setItem(i, 0, QTableWidgetItem(str(name)))
-            self.rank_table.setItem(i, 1, QTableWidgetItem(f"{val:,.0f}"))
+            # 降级模式：QTextBrowser 直接渲染静态 HTML（JS 切换按钮不生效，但全部厂区默认可见）
+            self._tmp_html = None
+            self.web.setHtml(html)
 
-    def _update_trend_tab(self, result):
-        self.trend_fig.clear()
-        ax = self.trend_fig.add_subplot(111)
-        trend = result["trend"]
-        if not trend.empty:
-            trend.plot(ax=ax, marker="o")
-            ax.set_ylabel("偏差金额")
-            ax.set_title("时间趋势")
-        else:
-            ax.text(0.5, 0.5, "无数据", ha="center", va="center")
-        self.trend_canvas.draw()
+    def _export_html(self):
+        if not getattr(self, "_last_html", None):
+            self._render()
+        if not getattr(self, "_last_html", None):
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出看板 HTML", "ZPP011偏差看板.html", "HTML (*.html)"
+        )
+        if path:
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(self._last_html)
+                QMessageBox.information(self, "已导出", f"看板已保存到：\n{path}")
+            except Exception as e:  # noqa: BLE001
+                QMessageBox.critical(self, "导出失败", str(e))
 
-    def _update_summary_tab(self, result):
-        self.summary_text.setPlainText(result["summary"])
-
-    def _on_dim_changed(self, text):
-        if self.analysis_result:
-            self._update_rank_tab(self.analysis_result)
-
-    def _on_ai_analysis(self):
-        QMessageBox.information(self, "AI 归因", "AI 归因分析功能开发中...")
-
-
-    def _create_factory_comparison_tab(self, widget, factory_data):
-        """创建工厂对比页签"""
-        layout = QVBoxLayout(widget)
-        
-        # 计算各工厂的偏差总额和平均偏差率
-        stats = []
-        for factory, df in factory_data.items():
-            # 偏差总额
-            amount_col = None
-            for col in ['偏差金额(含税)', '偏差金额']:
-                if col in df.columns:
-                    amount_col = col
-                    break
-            
-            if amount_col and amount_col in df.columns:
-                total_dev = df[amount_col].fillna(0).sum()
-            else:
-                total_dev = 0
-            
-            # 平均偏差率
-            rate_col = None
-            for col in ['偏差率(%)', '偏差率']:
-                if col in df.columns:
-                    rate_col = col
-                    break
-            
-            if rate_col and rate_col in df.columns:
-                avg_rate = df[rate_col].fillna(0).mean()
-            else:
-                avg_rate = 0
-            
-            stats.append((factory, total_dev, avg_rate))
-        
-        # 使用 QTableWidget 显示
-        table = QTableWidget()
-        table.setRowCount(len(stats))
-        table.setColumnCount(3)
-        table.setHorizontalHeaderLabels(["工厂", "偏差总额(元)", "平均偏差率(%)"])
-        
-        for i, (fac, total, avg) in enumerate(stats):
-            table.setItem(i, 0, QTableWidgetItem(str(fac)))
-            table.setItem(i, 1, QTableWidgetItem(f"{total:,.2f}"))
-            table.setItem(i, 2, QTableWidgetItem(f"{avg:.2f}"))
-        
-        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        layout.addWidget(table)
-        
-        # 添加简单柱状图（需要 matplotlib，如果未安装则跳过）
-        try:
-            import matplotlib.pyplot as plt
-            from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-            
-            fig, ax = plt.subplots(figsize=(6, 4))
-            factories = [s[0] for s in stats]
-            totals = [s[1] for s in stats]
-            
-            ax.bar(factories, totals, color='steelblue')
-            ax.set_title('各工厂偏差总额对比')
-            ax.set_ylabel('金额(元)')
-            
-            canvas = FigureCanvas(fig)
-            layout.addWidget(canvas)
-        except ImportError:
-            pass
-
-    def get_analysis_result(self):
-        return self.analysis_result
+    def closeEvent(self, event):
+        if self._tmp_html and os.path.exists(self._tmp_html):
+            try:
+                os.remove(self._tmp_html)
+            except OSError:
+                pass
+        super().closeEvent(event)
