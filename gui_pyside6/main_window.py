@@ -38,6 +38,7 @@ from gui_pyside6.widgets.filter_panel import FilterPanel
 from gui_pyside6.widgets.stats_cards import StatsCardsWidget
 from gui_pyside6.dialogs.unit_summary_dialog import UnitSummaryDialog
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
+from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
 from gui_pyside6.dialogs.quarantine_dialog import QuarantineDialog
 from core.quarantine_manager import add_quarantine, remove_quarantine
 from core.auto_quarantine import (
@@ -458,6 +459,13 @@ class MainWindow(QMainWindow):
         self.action_btn_alt_board.setProperty("class", "actionBtn")
         self.action_btn_alt_board.clicked.connect(self._show_alert_dashboard)
         action_layout.addWidget(self.action_btn_alt_board)
+
+        self.action_btn_deviation = QPushButton("📊 偏差率预警")
+        self.action_btn_deviation.setCursor(Qt.PointingHandCursor)
+        self.action_btn_deviation.setObjectName("actionBtnDeviation")
+        self.action_btn_deviation.setProperty("class", "actionBtn")
+        self.action_btn_deviation.clicked.connect(self._show_deviation_warning_dialog)
+        action_layout.addWidget(self.action_btn_deviation)
 
         self.action_btn_auto_q = QPushButton("🧹 自动整理隔离区")
         self.action_btn_auto_q.setCursor(Qt.PointingHandCursor)
@@ -1350,6 +1358,39 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开替代料看板失败: {e}")
 
+    def _show_deviation_warning_dialog(self):
+        """手动打开偏差率预警看板（|偏差率| >= 10%）"""
+        try:
+            df = self.view_model.df
+            if df is None or df.empty:
+                QMessageBox.information(self, "提示", "暂无数据，请先分析")
+                return
+            if "偏差率(%)" not in df.columns:
+                QMessageBox.information(self, "提示", "当前数据无偏差率列")
+                return
+            # 偏差率预警：|偏差率| >= 10%（与看板标题一致；主表整行橙色高亮用 >10，边界 10.0 行仅高亮差一行）
+            rates = pd.to_numeric(df["偏差率(%)"], errors='coerce').fillna(0)
+            warnings_df = df[rates.abs() >= 10].copy()
+            if warnings_df.empty:
+                QMessageBox.information(self, "提示", "没有偏差率预警记录（|偏差率| ≥ 10%）")
+                return
+            # 只保留关键列（兼容两种命名：数量-实际/实际、组件物料号/物料编码 等）
+            candidates = [
+                "订单日期", "流程订单", "组件物料号", "物料编码", "物料名称", "物料描述", "车间",
+                "数量-实际", "实际", "数量-定额", "定额", "偏差数量", "偏差率(%)",
+                "偏差金额", "净偏差数量", "净偏差金额", "净偏差率(%)", "是否替代料",
+                "备注", "备注原因", "备注来源", "预警", "_read",
+            ]
+            required_cols = [c for c in candidates if c in warnings_df.columns]
+            warnings_df = warnings_df[required_cols]
+            if "_read" in warnings_df.columns:
+                warnings_df["状态"] = warnings_df["_read"].map({0: "未读", 1: "已读"})
+                warnings_df = warnings_df[["状态"] + [c for c in warnings_df.columns if c != "状态"]]
+            dialog = DeviationWarningDialog(warnings_df, self)
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"打开偏差率预警看板失败: {e}")
+
     def _update_all_summary(self):
         """恢复整体合计"""
         self._update_summary()
@@ -1975,6 +2016,8 @@ class MainWindow(QMainWindow):
                 self.filter_panel.set_read_status_filter('未读')
                 msg = "已过滤：仅显示未读记录"
             self.statusBar().showMessage(msg, 3000)
+        elif card_type == 'deviation':
+            self._show_deviation_warning_dialog()
 
     def log(self, msg, level="info"):
         """运行日志面板已移除，保留接口为空操作，避免各处 self.log(...) 调用崩溃。

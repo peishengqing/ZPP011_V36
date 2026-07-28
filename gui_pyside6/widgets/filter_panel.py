@@ -204,6 +204,7 @@ class FilterPanel(QWidget):
             ("_changed_only", "审核后变更", (255, 205, 205)),
             ("_quarantined_only", "隔离区", (255, 248, 200)),
             ("_substitute_only", "替代料/非耗用", (205, 230, 255)),
+            ("_alert_only", "偏差率预警", (255, 198, 142)),
             ("_plain_only", "无标记", (235, 235, 235)),
         ]
         color_check_layout = QVBoxLayout()
@@ -773,6 +774,7 @@ class FilterPanel(QWidget):
             'quarantine': ['_quarantined_only'],
             'plain': ['_plain_only'],
             'substitute': ['_substitute_only'],
+            'alert': ['_alert_only'],
         }
         keys = mapping.get(mode, [])
         for key, cb in self.color_checks.items():

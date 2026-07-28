@@ -97,6 +97,8 @@ class StatsCardsWidget(QWidget):
                                         "已审核记录被私自修改的次数（数量/金额/率变动）")
         self.card_quarantine = _make_card(self, "--", "隔离区", "#f9a825",
                                            "疑难待处理、暂存隔离区的数据条数（点击仅显示隔离行）")
+        self.card_deviation = _make_card(self, "--", "偏差率预警", "#ff7043",
+                                         "偏差率绝对值 ≥ 10% 的记录数（点击打开偏差率预警看板）")
 
         # 给可点击的卡片安装事件过滤器
         self.card_anomaly.installEventFilter(self)
@@ -107,6 +109,8 @@ class StatsCardsWidget(QWidget):
         self.card_changed.setProperty("cardType", "changed")
         self.card_quarantine.installEventFilter(self)
         self.card_quarantine.setProperty("cardType", "quarantine")
+        self.card_deviation.installEventFilter(self)
+        self.card_deviation.setProperty("cardType", "deviation")
 
         cards_layout.addWidget(self.card_pass)
         cards_layout.addWidget(self.card_unread)
@@ -114,6 +118,7 @@ class StatsCardsWidget(QWidget):
         cards_layout.addWidget(self.card_alt)
         cards_layout.addWidget(self.card_changed)
         cards_layout.addWidget(self.card_quarantine)
+        cards_layout.addWidget(self.card_deviation)
         cards_layout.addStretch()
 
         # ── 组装 ──
@@ -166,6 +171,7 @@ class StatsCardsWidget(QWidget):
         self._update_alt(df)
         self._update_changed(df)
         self._update_quarantine(df)
+        self._update_deviation(df)
 
         self.setVisible(not self._user_hidden)
         self.cards_container.setVisible(not self._user_hidden)
@@ -290,6 +296,20 @@ class StatsCardsWidget(QWidget):
             return
         cnt = int((df['_quarantined'] == 1).sum())
         self._set_card_value(self.card_quarantine, str(cnt) if cnt else "0")
+
+    def _update_deviation(self, df: pd.DataFrame):
+        """偏差率预警：偏差率绝对值 >= 10% 的条数"""
+        rate_col = None
+        for col in ['偏差率(%)', '偏差率', 'dev_rate']:
+            if col in df.columns:
+                rate_col = col
+                break
+        if rate_col is None:
+            self._set_card_value(self.card_deviation, "--")
+            return
+        rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
+        cnt = int((rates.abs() >= 10).sum())
+        self._set_card_value(self.card_deviation, str(cnt) if cnt else "0")
 
     @staticmethod
     def _set_card_value(card: QFrame, text: str):

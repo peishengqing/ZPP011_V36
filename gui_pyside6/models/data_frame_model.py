@@ -34,7 +34,7 @@ class DataFrameModel(QAbstractTableModel):
         self._quarantined_rows = set()  # 隔离区行（位置索引集合，用于整行黄标）
         self._substitute_rows = set()  # 替代料/非耗用行（实际=0 且 定额>0，整行浅蓝标）
         self._alt_group_color_list = []  # 替代料组行对应的组色（QColor 或 None）
-        self._alert_rows = set()  # 偏差率预警行（|偏差率|>10%，整行浅红标）
+        self._alert_rows = set()  # 偏差率预警行（|偏差率|>=10%，整行浅橙标）
         if data is not None:
             self.setDataFrame(data)
 
@@ -111,7 +111,7 @@ class DataFrameModel(QAbstractTableModel):
         else:
             self._substitute_rows = set()
 
-        # 偏差率预警：|偏差率| > 10% 的行整行浅红（与 EnhancedSortProxyModel 行为一致）
+        # 偏差率预警：|偏差率| >= 10% 的行整行浅橙（与偏差率预警看板阈值一致）
         _alert_rate_col = None
         for c in ['偏差率(%)', '偏差率']:
             if c in self._data.columns:
@@ -121,7 +121,7 @@ class DataFrameModel(QAbstractTableModel):
             rates = pd.to_numeric(
                 self._data[_alert_rate_col].astype(str).str.replace('%', '').str.strip(),
                 errors='coerce').fillna(0.0)
-            self._alert_rows = set(np.where(rates.abs() > 10)[0])
+            self._alert_rows = set(np.where(rates.abs() >= 10)[0])
         else:
             self._alert_rows = set()
 
@@ -246,9 +246,9 @@ class DataFrameModel(QAbstractTableModel):
             if row in self._substitute_rows:
                 return QColor(205, 230, 255)
             col_name = self._display_columns[col]
-            # 偏差率预警行：整行浅红标记（|偏差率| > 10%，预警列本身保留红/黄/绿标记）
+            # 偏差率预警行：整行浅橙标记（|偏差率| >= 10%，与审核后变更的浅红区分；预警列本身保留红/黄/绿标记）
             if row in self._alert_rows and col_name != '预警':
-                return QColor(255, 200, 200)
+                return QColor(255, 198, 142)
             # 预警列上色
             if col_name == '预警':
                 val = str(self._data_cache[row][col]).strip()
@@ -593,7 +593,7 @@ class AuditProxyModel(QSortFilterProxyModel):
 
             # 3.5 颜色标记筛选（多选 OR：勾选任意颜色即保留匹配行）
             color_keys = [k for k in self._custom_filters if k in (
-                '_changed_only', '_quarantined_only', '_substitute_only', '_plain_only')]
+                '_changed_only', '_quarantined_only', '_substitute_only', '_alert_only', '_plain_only')]
             if color_keys:
                 # 先判定本行属于哪些颜色类别
                 is_changed = row_data.get('_post_audit_changed', 0) == 1
@@ -617,7 +617,24 @@ class AuditProxyModel(QSortFilterProxyModel):
                     if abs(a_val) <= 0.001 and q_val > 0.001:
                         is_substitute = True
 
-                is_plain = not (is_changed or is_quarantined or is_substitute)
+                # 偏差率预警判定（|偏差率| >= 10%，与整行浅橙底色、偏差率预警看板一致）
+                is_alert = False
+                alert_rate_col = None
+                for c in ['偏差率(%)', '偏差率']:
+                    if c in df.columns:
+                        alert_rate_col = c
+                        break
+                if alert_rate_col:
+                    rv_raw = row_data.get(alert_rate_col, 0)
+                    try:
+                        rv = float(str(rv_raw).replace('%', '').strip())
+                    except (ValueError, TypeError):
+                        rv = 0.0
+                    if abs(rv) >= 10:
+                        is_alert = True
+
+                # 无标记 = 四类皆非（审核后变更/隔离区/替代料/偏差率预警）
+                is_plain = not (is_changed or is_quarantined or is_substitute or is_alert)
 
                 matched_any = False
                 if '_changed_only' in color_keys and is_changed:
@@ -625,6 +642,8 @@ class AuditProxyModel(QSortFilterProxyModel):
                 if '_quarantined_only' in color_keys and is_quarantined:
                     matched_any = True
                 if '_substitute_only' in color_keys and is_substitute:
+                    matched_any = True
+                if '_alert_only' in color_keys and is_alert:
                     matched_any = True
                 if '_plain_only' in color_keys and is_plain:
                     matched_any = True
