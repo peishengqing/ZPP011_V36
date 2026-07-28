@@ -16,6 +16,8 @@ ZPP011 偏差分析 PPT 生成脚本（剔除替代料口径）
 """
 
 import os
+import sys
+import argparse
 import datetime
 import pandas as pd
 import numpy as np
@@ -27,6 +29,8 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.oxml.ns import qn
 
 # ===================== CONFIG =====================
+# 以下为「缺省值」，可用命令行参数覆盖：
+#   python build_ppt_excluded.py --input 新数据.xlsx --output 新报告.pptx
 INPUT_XLSX = r"E:\zpp011_v2\ZPP011偏差分析最终版_20260724_090611.xlsx"
 OUTPUT_PPTX = r"E:\zpp011_v2\ZPP011偏差分析_改进版_剔除替代料_20260724.pptx"
 FONT = "Microsoft YaHei"
@@ -216,7 +220,7 @@ def build_cover(prs, M):
     txt(s, Inches(0.82), Inches(1.75), Inches(11.5), Inches(0.5),
         "剔除替代料口径 · 改进版", 20, AMBER, True)
     txt(s, Inches(0.82), Inches(2.35), Inches(11.5), Inches(0.4),
-        "数据来源：ZPP011偏差分析最终版_20260724_090611.xlsx", 13,
+        f"数据来源：{M['src_name']}", 13,
         RGBColor(0xCF, 0xE8, 0xE8))
 
     cards = [
@@ -602,7 +606,19 @@ def build_summary(prs, M):
 
 # ===================== 主流程 =====================
 def main():
-    M, d, keep = load_metrics(INPUT_XLSX)
+    parser = argparse.ArgumentParser(
+        description="ZPP011 偏差分析 PPT 生成（剔除替代料口径）")
+    parser.add_argument("--input", default=INPUT_XLSX,
+                        help="输入 Excel（含「完整偏差明细」等 Sheet），默认取 CONFIG.INPUT_XLSX")
+    parser.add_argument("--output", default=OUTPUT_PPTX,
+                        help="输出 PPTX 路径，默认取 CONFIG.OUTPUT_PPTX")
+    args = parser.parse_args()
+
+    input_xlsx = args.input
+    output_pptx = args.output
+
+    M, d, keep = load_metrics(input_xlsx)
+    M["src_name"] = os.path.basename(input_xlsx)  # 供封面自动显示真实文件名
     # 补充替代料正负拆分（用于说明页）
     alt = d[d["是否替代料"] == "是"]
     M["alt_b_pos"] = alt.loc[alt["偏差金额"] > 0, "偏差金额"].sum()
@@ -624,8 +640,8 @@ def main():
     build_warn(prs, M)
     build_summary(prs, M)
 
-    prs.save(OUTPUT_PPTX)
-    print(f"已生成：{OUTPUT_PPTX}")
+    prs.save(output_pptx)
+    print(f"已生成：{output_pptx}")
     print(f"  总记录 {M['total_rows']:,} / 替代料 {M['alt_rows']} / 有效 {M['keep_rows']:,}")
     print(f"  剔除后总净偏差：{M['keep_n']/10000:+,}万")
 
