@@ -1960,6 +1960,7 @@ class MainWindow(QMainWindow):
     def _init_table_model(self):
         self.source_model = DataFrameModel()
         self.proxy_model = AuditProxyModel()
+        self.proxy_model.setDynamicSortFilter(False)  # 关键性能修复：关闭 dataChanged 触发的整表重过滤风暴
         self.proxy_model.setSourceModel(self.source_model)
         self.table_view.setModel(self.proxy_model)
         try:
@@ -2284,6 +2285,7 @@ class MainWindow(QMainWindow):
             if self.source_model is None:
                 self.source_model = DataFrameModel()
                 self.proxy_model = AuditProxyModel()
+                self.proxy_model.setDynamicSortFilter(False)  # 同上，关闭重过滤风暴
                 self.proxy_model.setSourceModel(self.source_model)
                 self.table_view.setModel(self.proxy_model)
             self.source_model.setDataFrame(processed_df)
