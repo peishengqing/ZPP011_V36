@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel,
 )
-from PySide6.QtCore import Qt, QPoint
+from PySide6.QtCore import Qt, QPoint, QTimer
 from gui_pyside6.models.data_frame_model import DataFrameModel
 from core.read_status import save_read_status, save_read_status_batch
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
@@ -170,8 +170,11 @@ class DeviationWarningDialog(QDialog):
         self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
 
-        # 初始按内容自适应，之后用户可拖拽调整（Interactive 模式）
-        self.table_view.resizeColumnsToContents()
+        # 初始按内容自适应，之后用户可拖拽调整（Interactive 模式）。
+        # ⚠️ 必须在下一轮事件循环再 resizeColumnsToContents：set_data 在 __init__ 中调用
+        # 同步执行该方法会逐行测宽，万行级数据直接卡死主线程、整窗变黑且「未响应」。
+        # 延迟后弹窗先渲染、用户立即可见，再后台测宽不阻塞交互。
+        QTimer.singleShot(0, lambda: self.table_view.resizeColumnsToContents())
         self.table_view.verticalHeader().setDefaultSectionSize(28)
 
         if '_read' in df.columns:

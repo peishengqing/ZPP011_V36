@@ -250,6 +250,9 @@ class MainWindow(QMainWindow):
         )
         self.alert_monitor.alert_triggered.connect(self._on_new_alerts)
         self.alert_monitor.start()
+        # 关闭自动弹窗（变动提醒表格 / 新替代料预警弹窗），避免阻塞主线程导致「未响应」。
+        # 手动按钮（变动提醒 / 替代料看板 / 偏差率预警）仍可用。
+        self._auto_pop_alerts = False
 
         # 创建组件
         self.menu_bar = MenuBarComponent(self)
@@ -615,12 +618,17 @@ class MainWindow(QMainWindow):
     # -----------------------------------------------------------
     def _on_data_service_log(self, msg, level):
         if level == "alert" and msg.startswith("变动提醒|"):
-            # 关键修复：原实现在数据预处理（preprocess_audit_data）执行栈内
-            # 同步弹出模态对话框——此时主表 setDataFrame 尚未执行、模型处于
-            # 不一致状态，且弹窗阻塞会触发 Qt 层崩溃（无 Python 堆栈直接退出）。
-            # 改为推迟到下一轮事件循环（当前分析→预处理→setDataFrame 全部结束后）
-            # 再弹窗，此时主表已刷新、调用栈已展开，彻底规避死锁/崩溃。
-            QTimer.singleShot(0, self._show_audit_changes_dialog)
+            # 变动明细已记录在 data_service.last_audit_changes，工具栏「变动提醒」按钮可随时手动查看。
+            # 自动弹窗已关闭（self._auto_pop_alerts=False），避免阻塞主线程 / 误触冻结。
+            if getattr(self, "_auto_pop_alerts", False):
+                # 关键修复：原实现在数据预处理（preprocess_audit_data）执行栈内
+                # 同步弹出模态对话框——此时主表 setDataFrame 尚未执行、模型处于
+                # 不一致状态，且弹窗阻塞会触发 Qt 层崩溃（无 Python 堆栈直接退出）。
+                # 改为推迟到下一轮事件循环（当前分析→预处理→setDataFrame 全部结束后）
+                # 再弹窗，此时主表已刷新、调用栈已展开，彻底规避死锁/崩溃。
+                QTimer.singleShot(0, self._show_audit_changes_dialog)
+            else:
+                self.log(msg, level)
         else:
             self.log(msg, level)
 
@@ -1044,11 +1052,8 @@ class MainWindow(QMainWindow):
         self.progress_label.setText(f"{step_name}  {percent}%")
 
     def _on_analysis_finished_ui(self, df):
-        import time as _t
-        _t0 = _t.perf_counter()
-        def _m(label):
-            print(f"[FINISH_UI+{int((_t.perf_counter()-_t0)*1000):6d}ms] {label}", flush=True)
-        _m(f"slot enter, df={len(df)} rows, cols={len(df.columns)}")
+        def _m(label):  # 诊断打点（默认静默；排查性能卡顿时改回 print 即可）
+            pass
         self._monitor_auto_loading = False
         self._monitor_current_key = None
         self._stop_countdown()
@@ -1065,6 +1070,7 @@ class MainWindow(QMainWindow):
         factory_list = self.analysis_controller.get_factory_list()
         if factory_list:
             # 默认显示全部工厂，不按工厂拆分
+            _m("before _on_factory_changed('全部')")
             self._on_factory_changed('全部')
             _m(f"after _on_factory_changed, factory_list={len(factory_list)}")
 
@@ -1156,8 +1162,9 @@ class MainWindow(QMainWindow):
             self.main_table.summary_container.raise_()
             self.main_table.summary_container.repaint()
             _m("after summary_container.repaint")
+            _m("before QApplication.processEvents()")
             QApplication.processEvents()
-            _m("after processEvents")
+            _m("after QApplication.processEvents()")
         except Exception as e:
             import traceback as _tb
             _m(f"EXCEPTION in slot: {e}")
@@ -1170,7 +1177,9 @@ class MainWindow(QMainWindow):
         _m("after alert_monitor.start")
 
         # 分析完成后自动把「疑难包材箱」记录移入隔离区（静默：仅当有新增时 toast）
+        _m("before _auto_move_to_quarantine")
         self._auto_move_to_quarantine(manual=False)
+        _m("after _auto_move_to_quarantine")
         _m("slot end")
 
     # ------------------------------------------------------------------ #
@@ -1288,6 +1297,10 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "错误", error_msg)
 
     def _on_new_alerts(self, alerts_df):
+        # 自动弹窗已关闭（self._auto_pop_alerts=False），避免阻塞主线程导致「未响应」。
+        # 手动打开「替代料看板」仍可见同样的预警明细。
+        if not getattr(self, "_auto_pop_alerts", False):
+            return
         count = len(alerts_df)
         # 先刷新一次事件队列，避免主线程因前面积压的 UI 更新被 Windows 标记为未响应
         QApplication.processEvents()
@@ -1368,9 +1381,19 @@ class MainWindow(QMainWindow):
             if "偏差率(%)" not in df.columns:
                 QMessageBox.information(self, "提示", "当前数据无偏差率列")
                 return
-            # 偏差率预警：|偏差率| >= 10%（与看板标题一致；主表整行橙色高亮用 >10，边界 10.0 行仅高亮差一行）
+            # 偏差率预警：|偏差率| >= 10%，且排除「实际=0 且 定额>0」的行
+            # （偏差率恒为 -100%，是未真实投料的机械结果，不是真偏差；与主表橙色高亮、颜色筛选一致）
             rates = pd.to_numeric(df["偏差率(%)"], errors='coerce').fillna(0)
-            warnings_df = df[rates.abs() >= 10].copy()
+            act_col = '数量-实际' if '数量-实际' in df.columns else ('实际' if '实际' in df.columns else None)
+            qty_col = '数量-定额' if '数量-定额' in df.columns else ('定额' if '定额' in df.columns else None)
+            if act_col and qty_col:
+                a = pd.to_numeric(df[act_col], errors='coerce').fillna(0)
+                q = pd.to_numeric(df[qty_col], errors='coerce').fillna(0)
+                no_input = (a.abs() <= 0.001) & (q > 0.001)
+                mask = (rates.abs() >= 10) & (~no_input)
+            else:
+                mask = rates.abs() >= 10
+            warnings_df = df[mask].copy()
             if warnings_df.empty:
                 QMessageBox.information(self, "提示", "没有偏差率预警记录（|偏差率| ≥ 10%）")
                 return

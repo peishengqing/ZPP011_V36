@@ -203,7 +203,8 @@ class FilterPanel(QWidget):
         _color_items = [
             ("_changed_only", "审核后变更", (255, 205, 205)),
             ("_quarantined_only", "隔离区", (255, 248, 200)),
-            ("_substitute_only", "替代料/非耗用", (205, 230, 255)),
+            ("_substitute_only", "替代料", (205, 230, 255)),
+            ("_unused_only", "未投料", (200, 240, 210)),
             ("_alert_only", "偏差率预警", (255, 198, 142)),
             ("_plain_only", "无标记", (235, 235, 235)),
         ]
@@ -774,6 +775,7 @@ class FilterPanel(QWidget):
             'quarantine': ['_quarantined_only'],
             'plain': ['_plain_only'],
             'substitute': ['_substitute_only'],
+            'unused': ['_unused_only'],
             'alert': ['_alert_only'],
         }
         keys = mapping.get(mode, [])

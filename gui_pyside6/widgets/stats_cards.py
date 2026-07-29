@@ -308,7 +308,17 @@ class StatsCardsWidget(QWidget):
             self._set_card_value(self.card_deviation, "--")
             return
         rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
-        cnt = int((rates.abs() >= 10).sum())
+        # 排除「实际=0 且 定额>0」的行（偏差率恒为 -100%，是未真实投料的机械结果，
+        # 不是真偏差；与主表橙色高亮、偏差率预警看板、颜色筛选保持一致）
+        act_col = '数量-实际' if '数量-实际' in df.columns else ('实际' if '实际' in df.columns else None)
+        qty_col = '数量-定额' if '数量-定额' in df.columns else ('定额' if '定额' in df.columns else None)
+        if act_col and qty_col:
+            a = pd.to_numeric(df[act_col], errors='coerce').fillna(0)
+            q = pd.to_numeric(df[qty_col], errors='coerce').fillna(0)
+            no_input = (a.abs() <= 0.001) & (q > 0.001)
+            cnt = int(((rates.abs() >= 10) & (~no_input)).sum())
+        else:
+            cnt = int((rates.abs() >= 10).sum())
         self._set_card_value(self.card_deviation, str(cnt) if cnt else "0")
 
     @staticmethod

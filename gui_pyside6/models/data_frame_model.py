@@ -32,24 +32,25 @@ class DataFrameModel(QAbstractTableModel):
         self._display_columns = []  # 记录列顺序
         self._changed_rows = set()  # 审核后变更行（位置索引集合，用于整行红标）
         self._quarantined_rows = set()  # 隔离区行（位置索引集合，用于整行黄标）
-        self._substitute_rows = set()  # 替代料/非耗用行（实际=0 且 定额>0，整行浅蓝标）
+        self._substitute_rows = set()  # 替代料行（是否替代料=是，整行浅蓝标，正常被组色覆盖）
         self._alt_group_color_list = []  # 替代料组行对应的组色（QColor 或 None）
-        self._alert_rows = set()  # 偏差率预警行（|偏差率|>=10%，整行浅橙标）
+        self._unused_rows = set()  # 未投料行（实际=0 且 定额>0 且 否替代料，整行浅青绿标）
+        self._alert_rows = set()  # 偏差率预警行（|偏差率|>=10% 且排除实际=0定额>0，整行浅橙标）
         if data is not None:
             self.setDataFrame(data)
 
     def setDataFrame(self, df: pd.DataFrame):
         self.beginResetModel()
         self._data = df.copy()
-        
+
         # 确保 _read 列存在（用于已读/未读状态）
         if '_read' not in self._data.columns:
             self._data['_read'] = 0  # 默认未读
-        
+
         # 将 _read 列移到第一列
         cols = ['_read'] + [c for c in self._data.columns if c != '_read']
         self._data = self._data[cols]
-        
+
         self._original_data = self._data.copy()
         self._build_cache()  # 新增：构建缓存
         self.endResetModel()
@@ -60,12 +61,7 @@ class DataFrameModel(QAbstractTableModel):
 
         优化：行集合计算和缓存构建均使用向量化/NumPy，避免万行级 Python 循环。
         """
-        import time as _t
-        _t0 = _t.perf_counter()
-        def _bm(label):
-            print(f"[BUILD_CACHE+{int((_t.perf_counter()-_t0)*1000):6d}ms] {label}", flush=True)
         if self._data.empty:
-            _bm("empty early return")
             self._data_cache = []
             # 空数据也要保留列名，否则 columnCount 返回 0，表格表头会消失
             self._display_columns = list(self._data.columns)
@@ -73,6 +69,7 @@ class DataFrameModel(QAbstractTableModel):
             self._quarantined_rows = set()
             self._substitute_rows = set()
             self._alt_group_color_list = []
+            self._unused_rows = set()
             self._alert_rows = set()
             return
 
@@ -92,36 +89,40 @@ class DataFrameModel(QAbstractTableModel):
         else:
             self._quarantined_rows = set()
 
-        # 替代料/非耗用检测：实际≈0 且 定额>0
-        _sub_actual_col = None
-        for c in ['数量-实际', '实际']:
-            if c in self._data.columns:
-                _sub_actual_col = c
-                break
-        _sub_qty_col = None
-        for c in ['数量-定额', '定额']:
-            if c in self._data.columns:
-                _sub_qty_col = c
-                break
+        # 替代料判定：改用分析层已算好的「是否替代料」列（基于替代料表 + 同一订单严格匹配），
+        # 不再用纯数值法（实际=0 且 定额>0），后者会把未投料与真替代料混为一谈、染同一颜色。
+        # 未投料（实际=0 且 定额>0 且 否替代料）单独成一类，用不同颜色区分。
+        _sub_actual_col = next((c for c in ['数量-实际', '实际'] if c in self._data.columns), None)
+        _sub_qty_col = next((c for c in ['数量-定额', '定额'] if c in self._data.columns), None)
+        _alt_flag_col = '是否替代料' if '是否替代料' in self._data.columns else None
+
+        # no_input：实际≈0 且 定额>0（未投料或替代料，偏差率恒为 -100%）
         if _sub_actual_col and _sub_qty_col:
             a = pd.to_numeric(self._data[_sub_actual_col], errors='coerce').fillna(0.0)
             q = pd.to_numeric(self._data[_sub_qty_col], errors='coerce').fillna(0.0)
-            mask = (a.abs() <= 0.001) & (q > 0.001)
-            self._substitute_rows = set(np.where(mask)[0])
+            no_input = (a.abs() <= 0.001) & (q > 0.001)
         else:
-            self._substitute_rows = set()
+            no_input = pd.Series(False, index=self._data.index)
+
+        if _alt_flag_col is not None:
+            is_alt = self._data[_alt_flag_col].astype(str).str.strip().eq('是')
+        else:
+            is_alt = pd.Series(False, index=self._data.index)
+        # 替代料：有「是否替代料=是」标记（组色优先渲染，浅蓝仅兜底）
+        self._substitute_rows = set(np.where(is_alt.values)[0])
+        # 未投料：实际=0 定额>0 且 非替代料（没登记在替代料表）
+        unused_mask = no_input & (~is_alt)
+        self._unused_rows = set(np.where(unused_mask.values)[0])
 
         # 偏差率预警：|偏差率| >= 10% 的行整行浅橙（与偏差率预警看板阈值一致）
-        _alert_rate_col = None
-        for c in ['偏差率(%)', '偏差率']:
-            if c in self._data.columns:
-                _alert_rate_col = c
-                break
+        # 排除「实际=0 且 定额>0」的行：偏差率恒为 -100%，是未真实投料的机械结果，不是真偏差
+        _alert_rate_col = next((c for c in ['偏差率(%)', '偏差率'] if c in self._data.columns), None)
         if _alert_rate_col:
             rates = pd.to_numeric(
                 self._data[_alert_rate_col].astype(str).str.replace('%', '').str.strip(),
                 errors='coerce').fillna(0.0)
-            self._alert_rows = set(np.where(rates.abs() >= 10)[0])
+            alert_mask = (rates.abs() >= 10) & (~no_input)
+            self._alert_rows = set(np.where(alert_mask.values)[0])
         else:
             self._alert_rows = set()
 
@@ -144,9 +145,7 @@ class DataFrameModel(QAbstractTableModel):
         # 2. 批量构建缓存：用 pandas 内置 where 按列向量化替换 NaN(比 pd.isna(N×M 数组) 快得多),
         #    然后 values.tolist() 一次性递归转 Python scalar(numpy 已自带 to-Python 转换),
         #    移除冗余的 [[_py_scalar(v) for v in row] for row in arr.tolist()] 嵌套循环
-        _bm("phase2 start")
         self._data_cache = self._data.astype(object).where(self._data.notna(), "").values.tolist()
-        _bm("after where+tolist, _data_cache built")
 
     def getDataFrame(self) -> pd.DataFrame:
         return self._data
@@ -242,9 +241,12 @@ class DataFrameModel(QAbstractTableModel):
             # 隔离区行：整行浅黄标记
             if row in self._quarantined_rows:
                 return QColor(255, 248, 200)
-            # 替代料/非耗用行：整行浅蓝标记（实际=0 且 定额>0）
+            # 替代料/非耗用行：整行浅蓝标记（实际兜底，正常被上面组色覆盖）
             if row in self._substitute_rows:
                 return QColor(205, 230, 255)
+            # 未投料行：实际=0 且 定额>0 且 非替代料，整行浅青绿标记（与替代料蓝/组色明显区分）
+            if row in self._unused_rows:
+                return QColor(200, 240, 210)
             col_name = self._display_columns[col]
             # 偏差率预警行：整行浅橙标记（|偏差率| >= 10%，与审核后变更的浅红区分；预警列本身保留红/黄/绿标记）
             if row in self._alert_rows and col_name != '预警':
@@ -593,31 +595,33 @@ class AuditProxyModel(QSortFilterProxyModel):
 
             # 3.5 颜色标记筛选（多选 OR：勾选任意颜色即保留匹配行）
             color_keys = [k for k in self._custom_filters if k in (
-                '_changed_only', '_quarantined_only', '_substitute_only', '_alert_only', '_plain_only')]
+                '_changed_only', '_quarantined_only', '_substitute_only', '_unused_only', '_alert_only', '_plain_only')]
             if color_keys:
-                # 先判定本行属于哪些颜色类别
+                # 先判定本行属于哪些颜色类别（与背景色渲染、偏差率预警看板保持一致）
                 is_changed = row_data.get('_post_audit_changed', 0) == 1
                 is_quarantined = row_data.get('_quarantined', 0) == 1
 
-                # 替代料/非耗用判定（实际≈0 且 定额>0）
-                is_substitute = False
-                sub_actual_col = None
+                # 替代料：改用分析层「是否替代料」列（替代料表 + 同一订单），不再纯数值判定
+                is_substitute = (str(row_data.get('是否替代料', '')).strip() == '是') if '是否替代料' in df.columns else False
+
+                # 实际/定额数值（用于未投料与偏差率预警排除）
+                a_val = 0.0
+                q_val = 0.0
                 for c in ['数量-实际', '实际']:
                     if c in df.columns:
-                        sub_actual_col = c
+                        a_val = _to_float_safe(row_data.get(c, 0))
                         break
-                sub_qty_col = None
                 for c in ['数量-定额', '定额']:
                     if c in df.columns:
-                        sub_qty_col = c
+                        q_val = _to_float_safe(row_data.get(c, 0))
                         break
-                if sub_actual_col and sub_qty_col:
-                    a_val = _to_float_safe(row_data.get(sub_actual_col, 0))
-                    q_val = _to_float_safe(row_data.get(sub_qty_col, 0))
-                    if abs(a_val) <= 0.001 and q_val > 0.001:
-                        is_substitute = True
+                no_input = (abs(a_val) <= 0.001) and (q_val > 0.001)  # 实际=0 定额>0
 
-                # 偏差率预警判定（|偏差率| >= 10%，与整行浅橙底色、偏差率预警看板一致）
+                # 未投料：实际=0 定额>0 且 非替代料（没登记在替代料表）
+                is_unused = no_input and not is_substitute
+
+                # 偏差率预警：|偏差率| >= 10% 且 排除「实际=0 定额>0」（未投料/替代料的 -100% 非真偏差），
+                # 且排除被更高优先级底色（审核后变更/隔离区）覆盖的行，使筛选严格匹配主表橙色行
                 is_alert = False
                 alert_rate_col = None
                 for c in ['偏差率(%)', '偏差率']:
@@ -630,11 +634,11 @@ class AuditProxyModel(QSortFilterProxyModel):
                         rv = float(str(rv_raw).replace('%', '').strip())
                     except (ValueError, TypeError):
                         rv = 0.0
-                    if abs(rv) >= 10:
+                    if abs(rv) >= 10 and not no_input and not (is_changed or is_quarantined):
                         is_alert = True
 
-                # 无标记 = 四类皆非（审核后变更/隔离区/替代料/偏差率预警）
-                is_plain = not (is_changed or is_quarantined or is_substitute or is_alert)
+                # 无标记 = 五类皆非（审核后变更/隔离区/替代料/未投料/偏差率预警）
+                is_plain = not (is_changed or is_quarantined or is_substitute or is_unused or is_alert)
 
                 matched_any = False
                 if '_changed_only' in color_keys and is_changed:
@@ -642,6 +646,8 @@ class AuditProxyModel(QSortFilterProxyModel):
                 if '_quarantined_only' in color_keys and is_quarantined:
                     matched_any = True
                 if '_substitute_only' in color_keys and is_substitute:
+                    matched_any = True
+                if '_unused_only' in color_keys and is_unused:
                     matched_any = True
                 if '_alert_only' in color_keys and is_alert:
                     matched_any = True
