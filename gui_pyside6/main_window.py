@@ -1053,9 +1053,26 @@ class MainWindow(QMainWindow):
         self.timer_lbl.setText(f"⏱ {m:02d}:{s:02d}")
         self.progress_label.setText(f"{step_name}  {percent}%")
 
+    # ---- 性能诊断打点（排查 6:55 卡顿用，定位后删除）----
+    _PERF_START = None
+    _PERF_LAST = None
+
+    def _perf_mark(self, label):
+        import time as _t
+        if MainWindow._PERF_START is None:
+            MainWindow._PERF_START = _t.perf_counter()
+            MainWindow._PERF_LAST = MainWindow._PERF_START
+            print(f"[PERF] {label}: t=0.000s (start)", flush=True)
+        else:
+            now = _t.perf_counter()
+            print(f"[PERF] {label}: +{now - MainWindow._PERF_LAST:.3f}s  abs={now - MainWindow._PERF_START:.3f}s", flush=True)
+            MainWindow._PERF_LAST = now
+
     def _on_analysis_finished_ui(self, df):
-        def _m(label):  # 诊断打点（默认静默；排查性能卡顿时改回 print 即可）
-            pass
+        MainWindow._PERF_START = None
+        MainWindow._PERF_LAST = None
+        def _m(label):
+            self._perf_mark(label)
         self._monitor_auto_loading = False
         self._monitor_current_key = None
         self._stop_countdown()
@@ -1067,7 +1084,7 @@ class MainWindow(QMainWindow):
         self.progress_label.setText(f"✅ 完成 ({elapsed})")
         toast(f"✅ 分析完成，共 {len(df)} 条记录 ({elapsed})", "success", parent=self)
         self.statusBar().showMessage("分析完成，正在加载结果...")
-        _m("progress UI done")
+        _m("SLOT_START (progress UI done)")
 
         factory_list = self.analysis_controller.get_factory_list()
         if factory_list:
@@ -2269,6 +2286,7 @@ class MainWindow(QMainWindow):
     # 工厂切换
     # -----------------------------------------------------------
     def _on_factory_changed(self, factory_name):
+        self._perf_mark(f"FACTORY_ENTER name={factory_name}")
         if not factory_name:
             return
         if factory_name == '全部':
@@ -2299,7 +2317,9 @@ class MainWindow(QMainWindow):
                 self.proxy_model.setDynamicSortFilter(False)  # 同上，关闭重过滤风暴
                 self.proxy_model.setSourceModel(self.source_model)
                 self.table_view.setModel(self.proxy_model)
+            self._perf_mark("FACTORY_before_setDataFrame")
             self.source_model.setDataFrame(processed_df)
+            self._perf_mark("FACTORY_after_setDataFrame")
             self._apply_column_visibility_by_name()
             self.view_model.df = processed_df
             self._update_summary()

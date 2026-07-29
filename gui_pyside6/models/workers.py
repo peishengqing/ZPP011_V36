@@ -69,19 +69,6 @@ class AnalysisWorker(QThread):
                 self.log.emit("分析已取消")
                 return  # 优雅退出，不发射错误信号
 
-            # ── 预处理移到后台线程：指纹/已读状态/隔离区/审核结果恢复。
-            #    此前该步骤在主线程跑约 31s，导致分析完成后界面冻结「1 分钟没反应」。
-            #    现在在 worker 线程完成，主线程只接处理好的 df 做 setDataFrame（亚秒）。
-            if self.data_service is not None:
-                try:
-                    self.log.emit("后台预处理数据（指纹/已读/隔离区/审核结果）...")
-                    df = self.data_service.preprocess_audit_data(df, previous_df=self._previous_df)
-                    self.log.emit(f"后台预处理完成，共 {len(df)} 行")
-                except Exception as e:
-                    import traceback as _tb
-                    _tb.print_exc()
-                    self.log.emit(f"后台预处理失败，退回主线程处理: {e}")
-
             self.log.emit(f"分析完成，共 {len(df)} 行")
             self.finished.emit(df)
         except InterruptedError:

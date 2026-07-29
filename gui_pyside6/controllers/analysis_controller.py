@@ -27,6 +27,10 @@ class AnalysisController(QObject):
 
         self.factory_data = {}  # {工厂名: DataFrame}
         self.current_factory = None  # 当前选中的工厂
+        # 注：preprocess 不再搬后台（worker 调 QObject DataService 会被跨线程 signal 拖慢 30s+），
+        #     改在主线程 controller._on_finished 之后跑（repro 测 0.2s，亚秒级）。
+        self._data_service = None
+        self._previous_df = None
 
     def start_analysis(self, input_file, alt_pairs, start_date, end_date, material_search,
                        dev_rate_threshold=0.0, data_service=None, previous_df=None):
@@ -44,11 +48,14 @@ class AnalysisController(QObject):
             'material_search': material_search,
             'dev_rate_threshold': dev_rate_threshold,
         }
+        # 缓存 data_service / previous_df 给 _on_finished 跑预处理
+        self._data_service = data_service
+        self._previous_df = previous_df
 
         self.analysis_started.emit()
         self.worker = AnalysisWorker(
             input_file, alt_pairs, start_date, end_date, material_search,
-            dev_rate_threshold, data_service, previous_df
+            dev_rate_threshold
         )
         self.worker.progress.connect(self.progress_updated)
         self.worker.finished.connect(self._on_finished)
@@ -72,11 +79,27 @@ class AnalysisController(QObject):
 
     def _on_finished(self, df):
         """分析完成回调：按工厂拆分数据"""
+        import time as _t
+        _t0 = _t.perf_counter()
         if self.worker:
             self.worker.wait()                         # 等待底层线程完全退出
         self.worker = None
-        
+        print(f"[PERF] controller._on_finished ENTER: t={_t.perf_counter()-_t0:.3f}s", flush=True)
+
+        # 在主线程跑预处理（repro 测 0.2s，亚秒级；之前搬到 worker 调 QObject 跨线程 signal 被拖到 3+ 分钟）
+        if self._data_service is not None and df is not None and not df.empty:
+            try:
+                _t1 = _t.perf_counter()
+                df = self._data_service.preprocess_audit_data(df, previous_df=self._previous_df)
+                print(f"[PERF] controller preprocess: t={_t.perf_counter()-_t1:.3f}s shape={df.shape}", flush=True)
+            except Exception as e:
+                import traceback as _tb
+                _tb.print_exc()
+                print(f"[PERF] controller preprocess FAILED: {e}", flush=True)
+        self._last_processed_df = df
+
         # 按工厂拆分
+        _t2 = _t.perf_counter()
         self.factory_data = {}
         if df is not None and not df.empty and '工厂' in df.columns:
             for factory, group in df.groupby('工厂'):
@@ -84,17 +107,16 @@ class AnalysisController(QObject):
         else:
             # 无工厂列或空数据，存为"全部"
             self.factory_data['全部'] = df
-        
+        print(f"[PERF] controller groupby: t={_t.perf_counter()-_t2:.3f}s n={len(self.factory_data)}", flush=True)
+
         # 设置当前工厂
         if self.factory_data:
             self.current_factory = list(self.factory_data.keys())[0]
         else:
             self.current_factory = None
-        
-        self.analysis_finished.emit(df)
 
-        # 记录本次处理好的 df，供下次「重新分析」时做同会话变动检测
-        self._last_processed_df = df
+        print(f"[PERF] controller emit analysis_finished: total={_t.perf_counter()-_t0:.3f}s", flush=True)
+        self.analysis_finished.emit(df)
 
 
     def get_factory_list(self):
