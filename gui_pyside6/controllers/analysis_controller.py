@@ -28,7 +28,8 @@ class AnalysisController(QObject):
         self.factory_data = {}  # {工厂名: DataFrame}
         self.current_factory = None  # 当前选中的工厂
 
-    def start_analysis(self, input_file, alt_pairs, start_date, end_date, material_search, dev_rate_threshold=0.0):
+    def start_analysis(self, input_file, alt_pairs, start_date, end_date, material_search,
+                       dev_rate_threshold=0.0, data_service=None, previous_df=None):
         """启动分析线程"""
         if self.worker and self.worker.isRunning():
             self.log_message.emit("分析任务已在运行", "warning")
@@ -46,7 +47,8 @@ class AnalysisController(QObject):
 
         self.analysis_started.emit()
         self.worker = AnalysisWorker(
-            input_file, alt_pairs, start_date, end_date, material_search, dev_rate_threshold
+            input_file, alt_pairs, start_date, end_date, material_search,
+            dev_rate_threshold, data_service, previous_df
         )
         self.worker.progress.connect(self.progress_updated)
         self.worker.finished.connect(self._on_finished)
@@ -91,6 +93,9 @@ class AnalysisController(QObject):
         
         self.analysis_finished.emit(df)
 
+        # 记录本次处理好的 df，供下次「重新分析」时做同会话变动检测
+        self._last_processed_df = df
+
 
     def get_factory_list(self):
         """获取工厂列表"""
@@ -116,3 +121,7 @@ class AnalysisController(QObject):
     def get_analysis_params(self):
         """获取最近一次分析的参数（用于导出完整Excel）"""
         return self._analysis_params
+
+    def get_last_processed_df(self):
+        """返回上一次分析处理好的 df（供 worker 做同会话变动检测）"""
+        return getattr(self, '_last_processed_df', None)

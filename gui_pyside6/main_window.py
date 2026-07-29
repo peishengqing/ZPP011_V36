@@ -1024,6 +1024,8 @@ class MainWindow(QMainWindow):
             end_date,
             "",
             dev_threshold_val,
+            self.data_service,
+            self.analysis_controller.get_last_processed_df(),
         )
 
     def _on_analysis_ui_start(self):
@@ -1078,7 +1080,11 @@ class MainWindow(QMainWindow):
             processed_df = self.view_model.df
             _m("view_model.df checked")
             if processed_df is None or processed_df.empty:
-                processed_df = self.data_service.preprocess_audit_data(df)
+                # 后台已预处理过（带 _read 列）则复用，绝不在主线程重跑 31s 预处理
+                if '_read' in df.columns:
+                    processed_df = df
+                else:
+                    processed_df = self.data_service.preprocess_audit_data(df)
                 _m(f"after preprocess -> {processed_df.shape}")
                 self.source_model.setDataFrame(processed_df)
                 _m("after source_model.setDataFrame")
@@ -2281,7 +2287,12 @@ class MainWindow(QMainWindow):
         else:
             df = self.analysis_controller.factory_data.get(factory_name)
         if df is not None:
-            processed_df = self.data_service.preprocess_audit_data(df)
+            # 后台线程已预处理过（带 _read 列）→ 直接复用，避免主线程再跑 31s 卡顿；
+            # 仅在拿到原始 dev_df（无 _read 列）时才在主线程预处理（兜底）。
+            if '_read' in df.columns:
+                processed_df = df
+            else:
+                processed_df = self.data_service.preprocess_audit_data(df)
             if self.source_model is None:
                 self.source_model = DataFrameModel()
                 self.proxy_model = AuditProxyModel()
