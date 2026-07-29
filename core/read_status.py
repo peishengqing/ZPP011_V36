@@ -60,6 +60,9 @@ def _get_conn():
     _migrate_add_column(conn, 'deviation_history', 'field', 'TEXT DEFAULT NULL')
     _migrate_add_column(conn, 'deviation_history', 'old_value', 'TEXT DEFAULT ""')
     _migrate_add_column(conn, 'deviation_history', 'new_value', 'TEXT DEFAULT ""')
+    # 性能：deviation_history 的查询走 data_id（get_deviation_history 等），
+    # 主键是 id 自增，无 data_id 索引，大表会全表扫描。补单列索引（幂等、无害）。
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_deviation_history_data_id ON deviation_history(data_id)")
 
     return conn
 
