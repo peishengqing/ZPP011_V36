@@ -10,6 +10,68 @@ import traceback
 # 将项目根目录加入 sys.path，确保 gui_pyside6 可以正常导入
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# ========== Windows 控制台环境优化（防卡死）==========
+# 元凶1：快速编辑模式 —— 鼠标在控制台点一下就冻结所有 print 线程，按任意键才解
+# 元凶2：后台限流 —— 窗口失焦时 Windows 降优先级 + 限制 CPU 频率
+# 仅 Windows 生效，非 Windows / 无控制台环境静默跳过
+if sys.platform == 'win32':
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        _k32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        _k32.GetCurrentProcess.restype = wintypes.HANDLE
+
+        # --- 1. 关闭控制台「快速编辑模式」 ---
+        STD_INPUT_HANDLE = -10
+        ENABLE_QUICK_EDIT_MODE = 0x0040
+        ENABLE_EXTENDED_FLAGS = 0x0080
+
+        _k32.GetStdHandle.restype = wintypes.HANDLE
+        _k32.GetConsoleMode.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        _k32.SetConsoleMode.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+
+        _h_stdin = _k32.GetStdHandle(STD_INPUT_HANDLE)
+        _mode = wintypes.DWORD()
+        if _k32.GetConsoleMode(_h_stdin, ctypes.byref(_mode)):
+            # 去掉 QUICK_EDIT，保留其余标志；必须同时设 EXTENDED_FLAGS 才能真正禁用
+            _new_mode = (_mode.value & ~ENABLE_QUICK_EDIT_MODE) | ENABLE_EXTENDED_FLAGS
+            _k32.SetConsoleMode(_h_stdin, _new_mode)
+
+        # --- 2. 提高进程优先级（ABOVE_NORMAL，不抢实时优先级但高于普通） ---
+        ABOVE_NORMAL_PRIORITY_CLASS = 0x00008000
+        _k32.SetPriorityClass.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        _k32.SetPriorityClass.restype = wintypes.BOOL
+        _k32.SetPriorityClass(_k32.GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS)
+
+        # --- 3. 关闭电源限流（强制全速，Win8+） ---
+        class _PROCESS_POWER_THROTTLING_STATE(ctypes.Structure):
+            _fields_ = [
+                ('Version', wintypes.ULONG),
+                ('ControlMask', wintypes.ULONG),
+                ('StateMask', wintypes.ULONG),
+            ]
+
+        _ppt = _PROCESS_POWER_THROTTLING_STATE()
+        _ppt.Version = 1      # PROCESS_POWER_THROTTLING_CURRENT_VERSION
+        _ppt.ControlMask = 0x1  # PROCESS_POWER_THROTTLING_EXECUTION_SPEED
+        _ppt.StateMask = 0    # 0 = 关闭限速 → 全速运行
+
+        _k32.SetProcessInformation.argtypes = [
+            wintypes.HANDLE, wintypes.DWORD,
+            ctypes.c_void_p, wintypes.ULONG,
+        ]
+        _k32.SetProcessInformation.restype = wintypes.BOOL
+        _k32.SetProcessInformation(
+            _k32.GetCurrentProcess(),
+            4,                       # ProcessPowerThrottling（PROCESS_INFORMATION_CLASS 枚举值=4，实测 1 会报 87 参数错误）
+            ctypes.byref(_ppt),
+            ctypes.sizeof(_ppt),
+        )
+    except Exception:
+        pass  # 环境优化失败不影响程序启动
+# ========== 控制台环境优化结束 ==========
+
 # ========== faulthandler：捕获原生崩溃（segfault）的 Python 堆栈 ==========
 import faulthandler
 faulthandler.enable()
