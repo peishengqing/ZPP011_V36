@@ -33,7 +33,6 @@ from gui_pyside6.components.bottom_bar import BottomBarComponent
 
 # 导入自定义模块
 from gui_pyside6.models.data_frame_model import DataFrameModel, AuditProxyModel
-from gui_pyside6.models.workers import PreprocessWorker
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.widgets.filter_panel import FilterPanel
 from gui_pyside6.widgets.stats_cards import StatsCardsWidget
@@ -1027,6 +1026,7 @@ class MainWindow(QMainWindow):
             dev_threshold_val,
             self.data_service,
             self.analysis_controller.get_last_processed_df(),
+            getattr(self, '_cached_input_df', None),  # 复用选文件时缓存的 DataFrame，跳过重复文件 IO
         )
 
     def _on_analysis_ui_start(self):
@@ -1054,29 +1054,14 @@ class MainWindow(QMainWindow):
         self.timer_lbl.setText(f"⏱ {m:02d}:{s:02d}")
         self.progress_label.setText(f"{step_name}  {percent}%")
 
-    # ---- 性能诊断打点（排查 6:55 卡顿用，定位后删除）----
-    _PERF_START = None
-    _PERF_LAST = None
-
-    def _perf_mark(self, label):
-        import time as _t
-        from datetime import datetime
-        def _wall():
-            return datetime.now().strftime('%H:%M:%S.%f')[:-3]
-        if MainWindow._PERF_START is None:
-            MainWindow._PERF_START = _t.perf_counter()
-            MainWindow._PERF_LAST = MainWindow._PERF_START
-            print(f"[{_wall()}] [PERF] {label}: t=0.000s (start)", flush=True)
-        else:
-            now = _t.perf_counter()
-            print(f"[{_wall()}] [PERF] {label}: +{now - MainWindow._PERF_LAST:.3f}s  abs={now - MainWindow._PERF_START:.3f}s", flush=True)
-            MainWindow._PERF_LAST = now
-
     def _on_analysis_finished_ui(self, df):
-        MainWindow._PERF_START = None
-        MainWindow._PERF_LAST = None
-        def _m(label):
-            self._perf_mark(label)
+        _t_start = time.perf_counter()
+        # 写入日志文件以便诊断
+        _perf_log = os.path.join(tempfile.gettempdir(), "zpp011_perf.log")
+        def _plog(msg):
+            with open(_perf_log, "a", encoding="utf-8") as f:
+                f.write(f"{datetime.now().strftime('%H:%M:%S.%f')[:-3]} {msg}\n")
+        _plog("[_on_analysis_finished_ui] START")
         self._monitor_auto_loading = False
         self._monitor_current_key = None
         self._stop_countdown()
@@ -1088,31 +1073,44 @@ class MainWindow(QMainWindow):
         self.progress_label.setText(f"✅ 完成 ({elapsed})")
         toast(f"✅ 分析完成，共 {len(df)} 条记录 ({elapsed})", "success", parent=self)
         self.statusBar().showMessage("分析完成，正在加载结果...")
-        _m("SLOT_START (progress UI done)")
+        QApplication.processEvents()
 
+        _plog(f'get_factory_list: {time.perf_counter()-_t_start:.2f}s')
         factory_list = self.analysis_controller.get_factory_list()
         if factory_list:
-            # 默认显示全部工厂，不按工厂拆分
-            _m("before _on_factory_changed('全部')")
-            self._on_factory_changed('全部')
-            _m(f"after _on_factory_changed, factory_list={len(factory_list)}")
+            _plog(f'factory_changed: {time.perf_counter()-_t_start:.2f}s')
+        # 修复「分析完成主表空白」：上一轮残留的筛选条件（proxy._filters/_custom_filters）
+        # 会把新分析的整表过滤成 0 行（右下角显示 0/0）。每次分析完成时统一清空：
+        # 1) proxy 两个筛选字典；2) 侧边栏面板 UI 同步复位（blockSignals 防止重复触发）。
+        try:
+            if self.proxy_model is not None:
+                self.proxy_model.clearFilters()
+            if hasattr(self, 'filter_panel') and self.filter_panel is not None:
+                self.filter_panel.blockSignals(True)
+                try:
+                    self.filter_panel.reset_filters()
+                finally:
+                    self.filter_panel.blockSignals(False)
+        except Exception as _e:
+            print(f"[WARN] 分析完成后清筛选失败(不影响主流程): {_e}", flush=True)
+        self._on_factory_changed('全部')
+        QApplication.processEvents()
 
         try:
+            _plog(f'get_view_model: {time.perf_counter()-_t_start:.2f}s')
             processed_df = self.view_model.df
-            _m("view_model.df checked")
             if processed_df is None or processed_df.empty:
                 # 后台已预处理过（带 _read 列）则复用，绝不在主线程重跑 31s 预处理
                 if '_read' in df.columns:
                     processed_df = df
                 else:
+                    _plog(f'preprocess: {time.perf_counter()-_t_start:.2f}s')
                     processed_df = self.data_service.preprocess_audit_data(df)
-                _m(f"after preprocess -> {processed_df.shape}")
+                _plog(f'setDataFrame: {time.perf_counter()-_t_start:.2f}s')
                 self.source_model.setDataFrame(processed_df)
-                _m("after source_model.setDataFrame")
+                QApplication.processEvents()
                 self.view_model.df = processed_df
-                _m("after view_model.df = processed_df")
             self._analysis_params = self.analysis_controller.get_analysis_params()
-            _m("after _analysis_params loaded")
 
             # 注意：完整报告缓存由后台线程(_FullCacheWorker)生成，主线程绝不等待，
             # 否则分析完成后标题栏会显示「未响应」。导出完整报告时优先复制该缓存。
@@ -1140,31 +1138,32 @@ class MainWindow(QMainWindow):
                         self.end_date = end_date
                         self.material_search = material_search
                         self.output_path = output_path
-                def run(self):
-                    import analysis.analyzer as _az
-                    from analysis.analyzer import export_full_report_from_intermediates
-                    from core.config_manager import ConfigManager
-                    _cfg = ConfigManager()
-                    try:
-                        _li = _az.LATEST_INTERMEDIATES
-                        if _li is not None:
-                            # 复用 worker 已算好的 Sheet1~5 中间结果，只生成 Sheet6~10 + 保存，避免重算
-                            export_full_report_from_intermediates(
-                                _li, output_path=self.output_path,
-                                progress_callback=None, cancel_check=None)
-                        else:
-                            # 兜底：中间结果缺失时退回完整分析（理论上不会发生，worker 必先生效）
-                            _az.do_analysis_v2(
-                                input_file=self.input_file, output_dir=None,
-                                alt_pairs=self.alt_pairs, start_date=self.start_date,
-                                end_date=self.end_date, material_search=self.material_search,
-                                output_path=self.output_path,
-                                enable_net_offset=_cfg.get_net_offset_enabled(),
-                                return_dataframe=False,
-                            )
-                    except Exception:
-                        import traceback as _tb
-                        _tb.print_exc()
+
+                    def run(self):
+                        import analysis.analyzer as _az
+                        from analysis.analyzer import export_full_report_from_intermediates
+                        from core.config_manager import ConfigManager
+                        _cfg = ConfigManager()
+                        try:
+                            _li = _az.LATEST_INTERMEDIATES
+                            if _li is not None:
+                                # 复用 worker 已算好的 Sheet1~5 中间结果，只生成 Sheet6~10 + 保存，避免重算
+                                export_full_report_from_intermediates(
+                                    _li, output_path=self.output_path,
+                                    progress_callback=None, cancel_check=None)
+                            else:
+                                # 兜底：中间结果缺失时退回完整分析（理论上不会发生，worker 必先生效）
+                                _az.do_analysis_v2(
+                                    input_file=self.input_file, output_dir=None,
+                                    alt_pairs=self.alt_pairs, start_date=self.start_date,
+                                    end_date=self.end_date, material_search=self.material_search,
+                                    output_path=self.output_path,
+                                    enable_net_offset=_cfg.get_net_offset_enabled(),
+                                    return_dataframe=False,
+                                )
+                        except Exception:
+                            import traceback as _tb
+                            _tb.print_exc()
 
                 self._cache_worker = _FullCacheWorker(
                     params['input_file'], params['alt_pairs'],
@@ -1180,43 +1179,37 @@ class MainWindow(QMainWindow):
                         self._cache_worker = None
                 self._cache_worker.finished.connect(_on_cache_done)
                 self._cache_worker.start()
-                _m("after _cache_worker.start")
 
+            _plog(f'set_column_widths: {time.perf_counter()-_t_start:.2f}s')
             self._set_column_widths()
-            _m("after _set_column_widths")
+            QApplication.processEvents()
             self.statusBar().showMessage(f"分析完成，共加载 {len(processed_df)} 行 × {len(processed_df.columns)} 列")
-            _m("after statusBar msg 2")
             # 更新左侧"数据预览"卡片（文字统计，使用与表格一致的预处理后 df）
             if hasattr(self, 'preview_label') and self.preview_label:
                 self.preview_label.setText(self._format_preview_stats(processed_df))
-            _m("after preview_label update")
             if hasattr(self, 'left_panel') and hasattr(self.left_panel, 'preview_group'):
                 self.left_panel.preview_group.expand()
             self.main_table.summary_container.setVisible(True)
+            _plog(f'update_summary: {time.perf_counter()-_t_start:.2f}s')
             self._update_summary()
-            _m("after _update_summary")
+            QApplication.processEvents()
             self.main_table.summary_container.raise_()
             self.main_table.summary_container.repaint()
-            _m("after summary_container.repaint")
-            _m("before QApplication.processEvents()")
+            _plog(f'processEvents: {time.perf_counter()-_t_start:.2f}s')
             QApplication.processEvents()
-            _m("after QApplication.processEvents()")
         except Exception as e:
+            _plog(f"EXCEPTION after {time.perf_counter()-_t_start:.2f}s: {e}")
             import traceback as _tb
-            _m(f"EXCEPTION in slot: {e}")
             _tb.print_exc()
             self._heavy_busy = False
             QMessageBox.critical(self, "错误", f"加载结果失败: {e}")
+        _plog(f"TOTAL: {time.perf_counter()-_t_start:.2f}s")
 
         if not self.alert_monitor.isRunning():
             self.alert_monitor.start()
-        _m("after alert_monitor.start")
 
         # 分析完成后自动把「疑难包材箱」记录移入隔离区（静默：仅当有新增时 toast）
-        _m("before _auto_move_to_quarantine")
         self._auto_move_to_quarantine(manual=False)
-        _m("after _auto_move_to_quarantine")
-        _m("slot end")
 
     # ------------------------------------------------------------------ #
     # 顶部面板（概览 / 进度）显隐控制
@@ -1321,25 +1314,19 @@ class MainWindow(QMainWindow):
         self._ai_box_condition = ("AI建议" not in updated_df.columns or
                                    updated_df["AI建议"].replace("", pd.NA).notna().sum() > 0)
 
-        # 重预处理挪到后台线程（含 load_read_status 重 DB IO），主线程不卡
-        self._ai_preprocess_worker = PreprocessWorker(
-            self.data_service, updated_df, previous_df=self.view_model.df)
-        self._ai_preprocess_worker.finished.connect(self._on_ai_preprocess_done)
-        self._ai_preprocess_worker.error.connect(
-            lambda e: self._on_ai_preprocess_error(e, updated_df))
-        self._ai_preprocess_worker.start()
+        # 预处理（恢复已读状态+审核结果）直接同步执行，DB 操作 ~0.2s 不卡
+        try:
+            updated_df = self.data_service.preprocess_audit_data(updated_df, self.view_model.df)
+        except Exception:
+            pass  # 降级，用原始 updated_df
 
-    def _on_ai_preprocess_done(self, processed_df):
-        self.source_model.setDataFrame(processed_df)
+        self.source_model.setDataFrame(updated_df)
         self._apply_column_visibility_by_name()
-        self.view_model.df = processed_df
+        self.view_model.df = updated_df
         self.progress_bar.setVisible(False)
         self.progress_label.setText("就绪")
         if getattr(self, "_ai_box_condition", True):
             QMessageBox.information(self, "完成", "AI审核已完成")
-        if self._ai_preprocess_worker is not None:
-            self._ai_preprocess_worker.deleteLater()
-            self._ai_preprocess_worker = None
 
     def _on_ai_preprocess_error(self, error_msg, updated_df):
         self.log(f"AI审核后预处理失败，降级用原始结果: {error_msg}", "error")
@@ -1581,6 +1568,8 @@ class MainWindow(QMainWindow):
 
     def _on_file_loaded(self, df, file_path):
         try:
+            # 缓存 Data sheet DataFrame，点击分析时直接复用，跳过 ~20-30s 重复文件 IO
+            self._cached_input_df = df
             if hasattr(self, 'preview_label') and self.preview_label:
                 self.preview_label.setText(self._format_preview_stats(df))
         except Exception as e:
@@ -2326,7 +2315,6 @@ class MainWindow(QMainWindow):
     # 工厂切换
     # -----------------------------------------------------------
     def _on_factory_changed(self, factory_name):
-        self._perf_mark(f"FACTORY_ENTER name={factory_name}")
         if not factory_name:
             return
         if factory_name == '全部':
@@ -2357,32 +2345,12 @@ class MainWindow(QMainWindow):
                 self.proxy_model.setDynamicSortFilter(False)  # 同上，关闭重过滤风暴
                 self.proxy_model.setSourceModel(self.source_model)
                 self.table_view.setModel(self.proxy_model)
-            self._perf_mark("FACTORY_before_setDataFrame")
             try:
                 self.source_model.setDataFrame(processed_df)
             except Exception as _e:
                 import traceback as _tb
                 _tb.print_exc()
-                print(f"[PERF] setDataFrame EXCEPTION: {_e}", flush=True)
                 raise
-            # ── 强诊断：定位 5:59 慢 + 主表行不显示 ──
-            try:
-                _src_rc = self.source_model.rowCount()
-                _src_cc = self.source_model.columnCount()
-                _pxy_rc = self.proxy_model.rowCount() if self.proxy_model else -1
-                _cache_rows = len(self.source_model._data_cache) if hasattr(self.source_model, '_data_cache') else -1
-                # 抽样 5 行验证 proxy 是否过滤掉数据
-                _samples = []
-                if self.proxy_model and self.source_model:
-                    for _r in [0, 100, 1000, 5000, 13326]:
-                        if _r < _src_rc:
-                            _src_idx = self.source_model.index(_r, 1)
-                            _pxy_match = self.proxy_model.mapFromSource(_src_idx)
-                            _samples.append(f"r={_r}→proxy_row={_pxy_match.row()}")
-                print(f"[PERF] DIAG src_rc={_src_rc} src_cc={_src_cc} pxy_rc={_pxy_rc} cache_rows={_cache_rows} custom_filters_keys={list((self.proxy_model._custom_filters if self.proxy_model else {}).keys())} top_filters={self.proxy_model._filters if self.proxy_model else {}} samples={_samples}", flush=True)
-            except Exception as _e:
-                print(f"[PERF] DIAG EXCEPTION: {_e}", flush=True)
-            self._perf_mark("FACTORY_after_setDataFrame")
             self._apply_column_visibility_by_name()
             self.view_model.df = processed_df
             self._update_summary()
@@ -3180,28 +3148,17 @@ class MainWindow(QMainWindow):
         def on_rules_changed():
             self.audit_controller.rule_engine.load_rules()
             if self.view_model.df is not None:
-                # 重预处理挪到后台线程，主线程不卡
-                self._rule_preprocess_worker = PreprocessWorker(
-                    self.data_service, self.view_model.df, previous_df=self.view_model.df)
-                self._rule_preprocess_worker.finished.connect(self._on_rule_preprocess_done)
-                self._rule_preprocess_worker.error.connect(self._on_rule_preprocess_error)
-                self._rule_preprocess_worker.start()
+                # 预处理直接同步执行，DB 操作 ~0.2s 不卡
+                try:
+                    processed_df = self.data_service.preprocess_audit_data(
+                        self.view_model.df, self.view_model.df)
+                    self.source_model.setDataFrame(processed_df)
+                    self._apply_column_visibility_by_name()
+                    self.view_model.df = processed_df
+                except Exception as e:
+                    self.log(f"规则变更后预处理失败: {e}", "error")
         dialog = RuleConfigDialog(self, rules_path, self.config_manager, on_rules_changed)
         dialog.exec()
-
-    def _on_rule_preprocess_done(self, processed_df):
-        self.source_model.setDataFrame(processed_df)
-        self._apply_column_visibility_by_name()
-        self.view_model.df = processed_df
-        if self._rule_preprocess_worker is not None:
-            self._rule_preprocess_worker.deleteLater()
-            self._rule_preprocess_worker = None
-
-    def _on_rule_preprocess_error(self, error_msg):
-        self.log(f"规则变更后预处理失败: {error_msg}", "error")
-        if self._rule_preprocess_worker is not None:
-            self._rule_preprocess_worker.deleteLater()
-            self._rule_preprocess_worker = None
 
     def _show_health_check(self):
         dialog = HealthCheckDialog(self)
