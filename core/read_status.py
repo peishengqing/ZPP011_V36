@@ -13,8 +13,14 @@
 import sqlite3
 import os
 import threading
+import time as _time
 from datetime import datetime
 from typing import Dict, List, Tuple
+
+
+def _wall():
+    """诊断用真实墙钟前缀（HH:MM:SS.mmm）"""
+    return datetime.now().strftime('%H:%M:%S.%f')[:-3]
 
 
 DB_PATH = os.path.join(os.path.expanduser("~"), ".zpp011_audit", "audit.db")
@@ -158,13 +164,19 @@ def load_read_status(data_ids: List[str]) -> Dict[str, Tuple]:
     if not data_ids:
         return {}
 
+    _t0 = _time.perf_counter()
     conn = _get_conn()
+    print(f"[{_wall()}] [PERF-DB] lr._get_conn: +{_time.perf_counter()-_t0:.3f}s", flush=True)
+    _t = _time.perf_counter()
     placeholders = ','.join(['?' for _ in data_ids])
     cur = conn.execute(
         f"SELECT data_id, is_read, fingerprint, snapshot_qty, snapshot_note FROM read_status WHERE data_id IN ({placeholders})",
         data_ids
     )
+    print(f"[{_wall()}] [PERF-DB] lr.query: +{_time.perf_counter()-_t:.3f}s", flush=True)
+    _t = _time.perf_counter()
     result = {row[0]: (row[1], row[2], row[3], row[4]) for row in cur.fetchall()}
+    print(f"[{_wall()}] [PERF-DB] lr.build: +{_time.perf_counter()-_t:.3f}s", flush=True)
     # 性能修复（2026-07-29）：_get_conn() 改为进程级单例，此处不再 close（否则下次又重建）
     # conn.close()
     return result
@@ -270,7 +282,9 @@ def save_snapshot_batch(records):
     if not records:
         return
     try:
+        _t0 = _time.perf_counter()
         conn = _get_conn()
+        print(f"[{_wall()}] [PERF-DB] ss._get_conn: +{_time.perf_counter()-_t0:.3f}s", flush=True)
         norm = []
         for did, snap_qty, snap_note in records:
             norm.append((
@@ -278,10 +292,14 @@ def save_snapshot_batch(records):
                 '' if snap_note is None else str(snap_note),
                 str(did),
             ))
+        _t = _time.perf_counter()
         conn.executemany("""
             UPDATE read_status SET snapshot_qty = ?, snapshot_note = ? WHERE data_id = ?
         """, norm)
+        print(f"[{_wall()}] [PERF-DB] ss.executemany: +{_time.perf_counter()-_t:.3f}s", flush=True)
+        _t = _time.perf_counter()
         conn.commit()
+        print(f"[{_wall()}] [PERF-DB] ss.commit: +{_time.perf_counter()-_t:.3f}s", flush=True)
         # 性能修复（2026-07-29）：_get_conn() 改为进程级单例，此处不再 close（否则下次又重建）
     # conn.close()
     except Exception:
@@ -298,13 +316,18 @@ def load_audit_results(data_ids: List[str]) -> Dict[str, Dict[str, str]]:
     if not data_ids:
         return {}
 
+    _t0 = _time.perf_counter()
     conn = _get_conn()
+    print(f"[{_wall()}] [PERF-DB] la._get_conn: +{_time.perf_counter()-_t0:.3f}s", flush=True)
+    _t = _time.perf_counter()
     placeholders = ','.join(['?' for _ in data_ids])
     cur = conn.execute(
         f"SELECT data_id, audit_result, ai_suggestion, note_source "
         f"FROM read_status WHERE data_id IN ({placeholders})",
         data_ids
     )
+    print(f"[{_wall()}] [PERF-DB] la.query: +{_time.perf_counter()-_t:.3f}s", flush=True)
+    _t = _time.perf_counter()
     result = {}
     for row in cur.fetchall():
         did, ar, ai, ns = row
@@ -313,6 +336,7 @@ def load_audit_results(data_ids: List[str]) -> Dict[str, Dict[str, str]]:
             'ai_suggestion': ai or '',
             'note_source': ns or '',
         }
+    print(f"[{_wall()}] [PERF-DB] la.build: +{_time.perf_counter()-_t:.3f}s", flush=True)
     # 性能修复（2026-07-29）：_get_conn() 改为进程级单例，此处不再 close（否则下次又重建）
     # conn.close()
     return result

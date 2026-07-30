@@ -5,7 +5,7 @@
 """
 
 from PySide6.QtCore import QObject, Signal
-from gui_pyside6.models.workers import AnalysisWorker
+from gui_pyside6.models.workers import AnalysisWorker, PreprocessWorker
 
 
 class AnalysisController(QObject):
@@ -78,7 +78,7 @@ class AnalysisController(QObject):
             self.analysis_cancelled.emit()
 
     def _on_finished(self, df):
-        """分析完成回调：按工厂拆分数据"""
+        """分析完成回调：重预处理挪到后台线程，主线程绝不阻塞"""
         import time as _t
         from datetime import datetime
         def _wall():
@@ -87,22 +87,52 @@ class AnalysisController(QObject):
         if self.worker:
             self.worker.wait()                         # 等待底层线程完全退出
         self.worker = None
+        self._pending_raw_df = df
         print(f"[{_wall()}] [PERF] controller._on_finished ENTER: t={_t.perf_counter()-_t0:.3f}s", flush=True)
 
-        # 在主线程跑预处理（repro 测 0.2s，亚秒级；之前搬到 worker 调 QObject 跨线程 signal 被拖到 3+ 分钟）
+        # 重预处理挪到后台线程（preprocess_audit_data 内含 load_read_status 等重 DB IO），
+        # 后台跑时不受窗口前后台影响、主线程 GUI 不卡。仅在结束 emit 一次结果。
         if self._data_service is not None and df is not None and not df.empty:
-            try:
-                _t1 = _t.perf_counter()
-                df = self._data_service.preprocess_audit_data(df, previous_df=self._previous_df)
-                print(f"[{_wall()}] [PERF] controller preprocess: t={_t.perf_counter()-_t1:.3f}s shape={df.shape}", flush=True)
-            except Exception as e:
-                import traceback as _tb
-                _tb.print_exc()
-                print(f"[{_wall()}] [PERF] controller preprocess FAILED: {e}", flush=True)
-        self._last_processed_df = df
+            self._preprocess_worker = PreprocessWorker(
+                self._data_service, df, previous_df=self._previous_df)
+            self._preprocess_worker.finished.connect(self._on_preprocess_done)
+            self._preprocess_worker.error.connect(self._on_preprocess_error)
+            print(f"[{_wall()}] [PERF] controller start PreprocessWorker", flush=True)
+            self._preprocess_worker.start()
+        else:
+            self._last_processed_df = df
+            self._emit_analysis_finished(df)
 
+    def _on_preprocess_done(self, processed_df):
+        import time as _t
+        from datetime import datetime
+        def _wall():
+            return datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        self._last_processed_df = processed_df
+        print(f"[{_wall()}] [PERF] controller preprocess OK shape={processed_df.shape}", flush=True)
+        self._emit_analysis_finished(processed_df)
+        if self._preprocess_worker is not None:
+            self._preprocess_worker.deleteLater()
+            self._preprocess_worker = None
+
+    def _on_preprocess_error(self, msg):
+        import traceback as _tb
+        _tb.print_exc()
+        self.log_message.emit(f"预处理失败，降级用原始结果: {msg}", "error")
+        # 降级：用原始（未预处理）df 继续，不阻断主流程
+        self._last_processed_df = self._pending_raw_df
+        self._emit_analysis_finished(self._pending_raw_df)
+        if self._preprocess_worker is not None:
+            self._preprocess_worker.deleteLater()
+            self._preprocess_worker = None
+
+    def _emit_analysis_finished(self, df):
+        import time as _t
+        from datetime import datetime
+        def _wall():
+            return datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        _t0 = _t.perf_counter()
         # 按工厂拆分
-        _t2 = _t.perf_counter()
         self.factory_data = {}
         if df is not None and not df.empty and '工厂' in df.columns:
             for factory, group in df.groupby('工厂'):
@@ -110,7 +140,7 @@ class AnalysisController(QObject):
         else:
             # 无工厂列或空数据，存为"全部"
             self.factory_data['全部'] = df
-        print(f"[{_wall()}] [PERF] controller groupby: t={_t.perf_counter()-_t2:.3f}s n={len(self.factory_data)}", flush=True)
+        print(f"[{_wall()}] [PERF] controller groupby: t={_t.perf_counter()-_t0:.3f}s n={len(self.factory_data)}", flush=True)
 
         # 设置当前工厂
         if self.factory_data:

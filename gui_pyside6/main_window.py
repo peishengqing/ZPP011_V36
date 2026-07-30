@@ -33,6 +33,7 @@ from gui_pyside6.components.bottom_bar import BottomBarComponent
 
 # 导入自定义模块
 from gui_pyside6.models.data_frame_model import DataFrameModel, AuditProxyModel
+from gui_pyside6.models.workers import PreprocessWorker
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.widgets.filter_panel import FilterPanel
 from gui_pyside6.widgets.stats_cards import StatsCardsWidget
@@ -1316,15 +1317,42 @@ class MainWindow(QMainWindow):
                 self.log("警告：AI建议列为空", "warning")
         else:
             self.log("警告：AI建议列不存在", "warning")
+        # 弹窗条件（原始逻辑：AI建议列缺失 或 有非空建议时才弹）
+        self._ai_box_condition = ("AI建议" not in updated_df.columns or
+                                   updated_df["AI建议"].replace("", pd.NA).notna().sum() > 0)
 
-        processed_df = self.data_service.preprocess_audit_data(updated_df, self.view_model.df)
+        # 重预处理挪到后台线程（含 load_read_status 重 DB IO），主线程不卡
+        self._ai_preprocess_worker = PreprocessWorker(
+            self.data_service, updated_df, previous_df=self.view_model.df)
+        self._ai_preprocess_worker.finished.connect(self._on_ai_preprocess_done)
+        self._ai_preprocess_worker.error.connect(
+            lambda e: self._on_ai_preprocess_error(e, updated_df))
+        self._ai_preprocess_worker.start()
+
+    def _on_ai_preprocess_done(self, processed_df):
         self.source_model.setDataFrame(processed_df)
         self._apply_column_visibility_by_name()
         self.view_model.df = processed_df
         self.progress_bar.setVisible(False)
         self.progress_label.setText("就绪")
-        if "AI建议" not in updated_df.columns or updated_df["AI建议"].replace("", pd.NA).notna().sum() > 0:
+        if getattr(self, "_ai_box_condition", True):
             QMessageBox.information(self, "完成", "AI审核已完成")
+        if self._ai_preprocess_worker is not None:
+            self._ai_preprocess_worker.deleteLater()
+            self._ai_preprocess_worker = None
+
+    def _on_ai_preprocess_error(self, error_msg, updated_df):
+        self.log(f"AI审核后预处理失败，降级用原始结果: {error_msg}", "error")
+        self.source_model.setDataFrame(updated_df)
+        self._apply_column_visibility_by_name()
+        self.view_model.df = updated_df
+        self.progress_bar.setVisible(False)
+        self.progress_label.setText("就绪")
+        if getattr(self, "_ai_box_condition", True):
+            QMessageBox.information(self, "完成", "AI审核已完成")
+        if self._ai_preprocess_worker is not None:
+            self._ai_preprocess_worker.deleteLater()
+            self._ai_preprocess_worker = None
 
     def _on_ai_error_ui(self, error_msg):
         self.progress_bar.setVisible(False)
@@ -3152,12 +3180,28 @@ class MainWindow(QMainWindow):
         def on_rules_changed():
             self.audit_controller.rule_engine.load_rules()
             if self.view_model.df is not None:
-                processed_df = self.data_service.preprocess_audit_data(self.view_model.df, self.view_model.df)
-                self.source_model.setDataFrame(processed_df)
-                self._apply_column_visibility_by_name()
-                self.view_model.df = processed_df
+                # 重预处理挪到后台线程，主线程不卡
+                self._rule_preprocess_worker = PreprocessWorker(
+                    self.data_service, self.view_model.df, previous_df=self.view_model.df)
+                self._rule_preprocess_worker.finished.connect(self._on_rule_preprocess_done)
+                self._rule_preprocess_worker.error.connect(self._on_rule_preprocess_error)
+                self._rule_preprocess_worker.start()
         dialog = RuleConfigDialog(self, rules_path, self.config_manager, on_rules_changed)
         dialog.exec()
+
+    def _on_rule_preprocess_done(self, processed_df):
+        self.source_model.setDataFrame(processed_df)
+        self._apply_column_visibility_by_name()
+        self.view_model.df = processed_df
+        if self._rule_preprocess_worker is not None:
+            self._rule_preprocess_worker.deleteLater()
+            self._rule_preprocess_worker = None
+
+    def _on_rule_preprocess_error(self, error_msg):
+        self.log(f"规则变更后预处理失败: {error_msg}", "error")
+        if self._rule_preprocess_worker is not None:
+            self._rule_preprocess_worker.deleteLater()
+            self._rule_preprocess_worker = None
 
     def _show_health_check(self):
         dialog = HealthCheckDialog(self)

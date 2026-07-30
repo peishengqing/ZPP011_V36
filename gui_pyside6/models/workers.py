@@ -287,3 +287,34 @@ class AIAuditWorker(QThread):
                 except Exception:
                     pass
         return 0.0
+
+
+class PreprocessWorker(QThread):
+    """后台预处理线程：把 DataService.preprocess_audit_data（含 load_read_status /
+    save_snapshot_batch / load_audit_results 重 DB IO）挪出主线程，杜绝 GUI 卡死、
+    并避免受 Windows 对后台控制台进程的 CPU 限流影响。
+
+    关键点：run() 内只 emit 一次 finished(df)，绝不在循环里逐行发信号
+    （逐行 emit QObject 信号曾把 0.2s 拖成 3+ 分钟）。preprocess_audit_data 内部
+    通过 data_service.log_signal 发的少量日志，因 data_service 活着主线程，会走
+    QueuedConnection 安全排队到主线程，无需额外转发。
+    """
+    finished = Signal(pd.DataFrame)
+    error = Signal(str)
+
+    def __init__(self, data_service, df, previous_df=None):
+        super().__init__()
+        self.data_service = data_service
+        # 深拷贝，避免与调用方持有的同一 df 实例在跨线程期间产生别名竞争
+        # （preprocess_audit_data 内部会对输入 df 做 in-place 赋值，如 _read 列）
+        self.df = df.copy(deep=True)
+        self.previous_df = previous_df.copy(deep=True) if previous_df is not None else None
+
+    def run(self):
+        try:
+            result = self.data_service.preprocess_audit_data(self.df, self.previous_df)
+            self.finished.emit(result)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.error.emit(f"预处理失败: {e}\n{traceback.format_exc()}")
