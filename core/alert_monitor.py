@@ -67,12 +67,14 @@ class AlertMonitor(QObject):
         while not self._stop_flag:
             try:
                 raw = self.data_source_func()
-                if raw is None or raw.empty:
-                    continue
-                # 拷贝快照：后台线程不再持有主线程 DataFrame 的引用，
-                # 避免主线程改写 view_model.df 时与后台读取产生数据竞争
-                df = raw.copy()
-                self._check_alerts(df)
+                # 注意：空表/None 时【不能】continue —— continue 会跳过下面的 sleep，
+                # 造成裸自旋线程百万次/秒抢 GIL，把同进程其它线程的纯 Python 代码
+                # 拖慢 ~1000 倍（实测 0.081s → 84.9s）。必须走到末尾的 sleep。
+                if raw is not None and not raw.empty:
+                    # 拷贝快照：后台线程不再持有主线程 DataFrame 的引用，
+                    # 避免主线程改写 view_model.df 时与后台读取产生数据竞争
+                    df = raw.copy()
+                    self._check_alerts(df)
             except Exception as e:
                 print(f"预警监控错误: {e}")
             time.sleep(self.interval)
