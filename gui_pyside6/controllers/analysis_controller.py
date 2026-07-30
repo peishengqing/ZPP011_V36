@@ -80,22 +80,25 @@ class AnalysisController(QObject):
     def _on_finished(self, df):
         """分析完成回调：按工厂拆分数据"""
         import time as _t
+        from datetime import datetime
+        def _wall():
+            return datetime.now().strftime('%H:%M:%S.%f')[:-3]
         _t0 = _t.perf_counter()
         if self.worker:
             self.worker.wait()                         # 等待底层线程完全退出
         self.worker = None
-        print(f"[PERF] controller._on_finished ENTER: t={_t.perf_counter()-_t0:.3f}s", flush=True)
+        print(f"[{_wall()}] [PERF] controller._on_finished ENTER: t={_t.perf_counter()-_t0:.3f}s", flush=True)
 
         # 在主线程跑预处理（repro 测 0.2s，亚秒级；之前搬到 worker 调 QObject 跨线程 signal 被拖到 3+ 分钟）
         if self._data_service is not None and df is not None and not df.empty:
             try:
                 _t1 = _t.perf_counter()
                 df = self._data_service.preprocess_audit_data(df, previous_df=self._previous_df)
-                print(f"[PERF] controller preprocess: t={_t.perf_counter()-_t1:.3f}s shape={df.shape}", flush=True)
+                print(f"[{_wall()}] [PERF] controller preprocess: t={_t.perf_counter()-_t1:.3f}s shape={df.shape}", flush=True)
             except Exception as e:
                 import traceback as _tb
                 _tb.print_exc()
-                print(f"[PERF] controller preprocess FAILED: {e}", flush=True)
+                print(f"[{_wall()}] [PERF] controller preprocess FAILED: {e}", flush=True)
         self._last_processed_df = df
 
         # 按工厂拆分
@@ -107,7 +110,7 @@ class AnalysisController(QObject):
         else:
             # 无工厂列或空数据，存为"全部"
             self.factory_data['全部'] = df
-        print(f"[PERF] controller groupby: t={_t.perf_counter()-_t2:.3f}s n={len(self.factory_data)}", flush=True)
+        print(f"[{_wall()}] [PERF] controller groupby: t={_t.perf_counter()-_t2:.3f}s n={len(self.factory_data)}", flush=True)
 
         # 设置当前工厂
         if self.factory_data:
@@ -115,7 +118,7 @@ class AnalysisController(QObject):
         else:
             self.current_factory = None
 
-        print(f"[PERF] controller emit analysis_finished: total={_t.perf_counter()-_t0:.3f}s", flush=True)
+        print(f"[{_wall()}] [PERF] controller emit analysis_finished: total={_t.perf_counter()-_t0:.3f}s", flush=True)
         self.analysis_finished.emit(df)
 
 

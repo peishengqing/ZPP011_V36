@@ -1059,13 +1059,16 @@ class MainWindow(QMainWindow):
 
     def _perf_mark(self, label):
         import time as _t
+        from datetime import datetime
+        def _wall():
+            return datetime.now().strftime('%H:%M:%S.%f')[:-3]
         if MainWindow._PERF_START is None:
             MainWindow._PERF_START = _t.perf_counter()
             MainWindow._PERF_LAST = MainWindow._PERF_START
-            print(f"[PERF] {label}: t=0.000s (start)", flush=True)
+            print(f"[{_wall()}] [PERF] {label}: t=0.000s (start)", flush=True)
         else:
             now = _t.perf_counter()
-            print(f"[PERF] {label}: +{now - MainWindow._PERF_LAST:.3f}s  abs={now - MainWindow._PERF_START:.3f}s", flush=True)
+            print(f"[{_wall()}] [PERF] {label}: +{now - MainWindow._PERF_LAST:.3f}s  abs={now - MainWindow._PERF_START:.3f}s", flush=True)
             MainWindow._PERF_LAST = now
 
     def _on_analysis_finished_ui(self, df):
@@ -1136,12 +1139,21 @@ class MainWindow(QMainWindow):
                         self.end_date = end_date
                         self.material_search = material_search
                         self.output_path = output_path
-                    def run(self):
-                        from analysis.analyzer import do_analysis_v2
-                        from core.config_manager import ConfigManager
-                        _cfg = ConfigManager()
-                        try:
-                            do_analysis_v2(
+                def run(self):
+                    import analysis.analyzer as _az
+                    from analysis.analyzer import export_full_report_from_intermediates
+                    from core.config_manager import ConfigManager
+                    _cfg = ConfigManager()
+                    try:
+                        _li = _az.LATEST_INTERMEDIATES
+                        if _li is not None:
+                            # 复用 worker 已算好的 Sheet1~5 中间结果，只生成 Sheet6~10 + 保存，避免重算
+                            export_full_report_from_intermediates(
+                                _li, output_path=self.output_path,
+                                progress_callback=None, cancel_check=None)
+                        else:
+                            # 兜底：中间结果缺失时退回完整分析（理论上不会发生，worker 必先生效）
+                            _az.do_analysis_v2(
                                 input_file=self.input_file, output_dir=None,
                                 alt_pairs=self.alt_pairs, start_date=self.start_date,
                                 end_date=self.end_date, material_search=self.material_search,
@@ -1149,9 +1161,9 @@ class MainWindow(QMainWindow):
                                 enable_net_offset=_cfg.get_net_offset_enabled(),
                                 return_dataframe=False,
                             )
-                        except Exception:
-                            import traceback as _tb
-                            _tb.print_exc()
+                    except Exception:
+                        import traceback as _tb
+                        _tb.print_exc()
 
                 self._cache_worker = _FullCacheWorker(
                     params['input_file'], params['alt_pairs'],
@@ -2318,7 +2330,30 @@ class MainWindow(QMainWindow):
                 self.proxy_model.setSourceModel(self.source_model)
                 self.table_view.setModel(self.proxy_model)
             self._perf_mark("FACTORY_before_setDataFrame")
-            self.source_model.setDataFrame(processed_df)
+            try:
+                self.source_model.setDataFrame(processed_df)
+            except Exception as _e:
+                import traceback as _tb
+                _tb.print_exc()
+                print(f"[PERF] setDataFrame EXCEPTION: {_e}", flush=True)
+                raise
+            # ── 强诊断：定位 5:59 慢 + 主表行不显示 ──
+            try:
+                _src_rc = self.source_model.rowCount()
+                _src_cc = self.source_model.columnCount()
+                _pxy_rc = self.proxy_model.rowCount() if self.proxy_model else -1
+                _cache_rows = len(self.source_model._data_cache) if hasattr(self.source_model, '_data_cache') else -1
+                # 抽样 5 行验证 proxy 是否过滤掉数据
+                _samples = []
+                if self.proxy_model and self.source_model:
+                    for _r in [0, 100, 1000, 5000, 13326]:
+                        if _r < _src_rc:
+                            _src_idx = self.source_model.index(_r, 1)
+                            _pxy_match = self.proxy_model.mapFromSource(_src_idx)
+                            _samples.append(f"r={_r}→proxy_row={_pxy_match.row()}")
+                print(f"[PERF] DIAG src_rc={_src_rc} src_cc={_src_cc} pxy_rc={_pxy_rc} cache_rows={_cache_rows} custom_filters_keys={list((self.proxy_model._custom_filters if self.proxy_model else {}).keys())} top_filters={self.proxy_model._filters if self.proxy_model else {}} samples={_samples}", flush=True)
+            except Exception as _e:
+                print(f"[PERF] DIAG EXCEPTION: {_e}", flush=True)
             self._perf_mark("FACTORY_after_setDataFrame")
             self._apply_column_visibility_by_name()
             self.view_model.df = processed_df

@@ -46,6 +46,10 @@ from analysis.excel_builder.sheet10_trend import build_sheet10
 from analysis.excel_builder.write_sheet_util import write_sheet
 from analysis.net_offset import apply_net_offset
 
+# 缓存最近一次分析的中间结果（worker 快速路径写入），供后台缓存线程复用，避免 Sheet1~5 重算
+LATEST_INTERMEDIATES = None
+
+
 
 # 通用工具函数
 from utils.helpers import standardize_remark
@@ -634,7 +638,17 @@ def do_analysis_v2(
     if '替代料组' not in dev_df.columns:
         dev_df['替代料组'] = ''
 
-    # ========== 主表快速路径：return_dataframe=True 时 dev_df 已齐活，直接返回 ==========
+        # ========== 暂存中间结果：供后台缓存线程复用，避免 Sheet1~5 重算 ==========
+    _inter = {
+        'df': df, 'dev_df': dev_df, 'alt_df': alt_df, 'summary_df': summary_df,
+        'no_note_df': no_note_df, 'middle_df': middle_df,
+        'alt_order_mat': alt_order_mat, 'date_min': date_min, 'date_max': date_max,
+        'dyn_thresh': dyn_thresh, 'thresh_desc': thresh_desc, 'src_file': src_file,
+        'dev_rate_threshold': dev_rate_threshold,
+        '_trace_log': _trace_log, '_snapshot': _snapshot,
+    }
+
+# ========== 主表快速路径：return_dataframe=True 时 dev_df 已齐活，直接返回 ==========
     # 后续 build_sheet6~10 与整本 wb 仅为「导出 Excel 报告」服务，主表用不上，跳过以加速加载
     if return_dataframe:
         _snapshot['after_sheet5'] = {
@@ -653,7 +667,56 @@ def do_analysis_v2(
             _dprint(f"[TRACE] 日志已保存到: {_trace_log}")
         except Exception as e:
             _dprint(f"[TRACE] 保存日志失败: {e}")
+        global LATEST_INTERMEDIATES
+        LATEST_INTERMEDIATES = _inter
         return dev_df
+
+    return export_full_report_from_intermediates(_inter, output_path=output_path, output_dir=output_dir, progress_callback=progress_callback, cancel_check=cancel_check)
+
+
+
+def export_full_report_from_intermediates(intermediates, output_path=None, output_dir=None,
+                                         progress_callback=None, cancel_check=None):
+    """复用 do_analysis_v2 的计算中间结果，仅生成 Sheet6~10 + 整本 wb 并保存。
+    供后台缓存线程(_FullCacheWorker)调用，避免 Sheet1~5 被重复计算。"""
+    df = intermediates['df']
+    dev_df = intermediates['dev_df']
+    alt_df = intermediates['alt_df']
+    summary_df = intermediates['summary_df']
+    no_note_df = intermediates['no_note_df']
+    middle_df = intermediates['middle_df']
+    alt_order_mat = intermediates['alt_order_mat']
+    date_min = intermediates['date_min']
+    date_max = intermediates['date_max']
+    dyn_thresh = intermediates['dyn_thresh']
+    thresh_desc = intermediates['thresh_desc']
+    src_file = intermediates['src_file']
+    dev_rate_threshold = intermediates['dev_rate_threshold']
+    _trace_log = intermediates.get('_trace_log')
+    _snapshot = intermediates.get('_snapshot', {})
+    date_range = f"{pd.Timestamp(date_min).strftime('%Y%m%d')}-{pd.Timestamp(date_max).strftime('%Y%m%d')}"
+
+    def check_cancel():
+        if cancel_check and cancel_check():
+            raise KeyboardInterrupt("用户取消")
+
+    def report_progress(step_idx, step_name, percent):
+        if progress_callback:
+            progress_callback(step_idx, step_name, percent)
+            time.sleep(0.01)
+
+    from analysis.excel_builder.write_sheet_util import get_default_styles
+    _styles = get_default_styles()
+    pos_fill = _styles['pos_fill']
+    neg_fill = _styles['neg_fill']
+    alt_fill = _styles['alt_fill']
+    gx_fill = _styles['gx_fill']
+    header_font = _styles['header_font']
+    header_fill = _styles['header_fill']
+    center = _styles['center']
+    border = _styles['border']
+    data_font = _styles['data_font']
+    anomaly_fills = _styles['anomaly_fills']
 
     # 构建净偏差查找表：(流程订单, 物料编码) -> (净偏差数量, 净偏差金额)
     # 向量化：dict(zip(键, zip(数量, 金额))) 替代 iterrows（约 12K 行下消除逐行 Python 循环）
@@ -1008,7 +1071,6 @@ def do_analysis_v2(
         _dprint(f"[TRACE] 保存日志失败: {e}")
 
     return final_output_path
-
 
 def _apply_warning_colors(wb):
     """为汇总统计sheet的预警列添加颜色填充"""

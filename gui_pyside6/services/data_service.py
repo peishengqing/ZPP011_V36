@@ -6,7 +6,14 @@
 
 import pandas as pd
 import numpy as np
+import time as _time
+from datetime import datetime
 from PySide6.QtCore import QObject, Signal
+
+
+def _wall():
+    """真实墙钟时间戳（HH:MM:SS.mmm），供诊断打点前缀，方便对上真实耗时"""
+    return datetime.now().strftime('%H:%M:%S.%f')[:-3]
 
 from core.read_status import (
     load_read_status, load_audit_results,
@@ -33,9 +40,16 @@ class DataService(QObject):
     def preprocess_audit_data(self, df: pd.DataFrame, previous_df: pd.DataFrame = None) -> pd.DataFrame:
         if df is None or df.empty:
             return df
+        _t0 = _time.perf_counter(); _last = [_t0]
+        def _mark(name):
+            _n = _time.perf_counter()
+            print(f"[{_wall()}] [PERF-PRE] {name}: +{_n-_last[0]:.3f}s  abs={_n-_t0:.3f}s", flush=True)
+            _last[0] = _n
         try:
+            _mark("ENTER")
             # ── 首步：清理脏列 ──
             df = self._clean_columns(df)
+            _mark("_clean_columns")
 
             # 确保数值列是数值类型（防止字符串导致聚合报错）
             rate_col = None
@@ -51,18 +65,25 @@ class DataService(QObject):
             for num_col in ['定额', '实际', '偏差数量', '偏差金额', '偏差金额(含税)', '净偏差数量', '净偏差金额', '净偏差率(%)']:
                 if num_col in df.columns:
                     df[num_col] = pd.to_numeric(df[num_col], errors='coerce').fillna(0.0)
+            _mark("numeric_conv")
 
             # 数值列转换完成后，如果偏差率字符串列为空，从数值列自动生成
             if '偏差率(%)' in df.columns and '偏差率' in df.columns:
                 if (df['偏差率'].isna().all() or (df['偏差率'].astype(str).str.strip() == '').all()):
                     df['偏差率'] = df['偏差率(%)'].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else '')
             df = self._normalize_alt_flag(df)
+            _mark("_normalize_alt_flag")
             df = self._add_data_id_and_fingerprint(df)
+            _mark("_add_data_id_and_fingerprint")
             df = self._restore_read_status(df)
+            _mark("_restore_read_status")
             df = self._restore_quarantine_status(df)
+            _mark("_restore_quarantine_status")
             if previous_df is not None and not previous_df.empty:
                 self._detect_and_notify_changes(previous_df, df)
+                _mark("_detect_and_notify_changes")
             df = self._reorder_columns(df)
+            _mark("_reorder_columns")
             # 统一审核结果列名
             if '审核结果' in df.columns and 'audit_result' in df.columns:
                 # 两列都有 → 用新数据(audit_result)覆盖旧列(审核结果)，删英文列
@@ -77,12 +98,16 @@ class DataService(QObject):
             dup = df.columns[df.columns.duplicated(keep='first')]
             if len(dup) > 0:
                 df = df.loc[:, ~df.columns.duplicated(keep='first')]
+            _mark("dedup_cols")
             # 从 DB 恢复审核结果（覆盖重新分析产生的空值）
             df = self._restore_audit_results(df)
+            _mark("_restore_audit_results")
             # 新增：计算净偏差率（净偏差数量 / 定额）
             df = self._compute_net_deviation_rate(df)
+            _mark("_compute_net_deviation_rate")
             if self.alt_controller:
                 pass  # 净偏差计算已在 analyzer.py 中完成
+            _mark("DONE")
             return df
         except Exception as e:
             self.log(f"数据预处理失败: {e}", "error")
@@ -161,8 +186,15 @@ class DataService(QObject):
         性能：改用向量化 + 批量 SQLite，避免万行级 Python 循环和逐条开库。
         """
         try:
+            _rt0 = _time.perf_counter(); _rlast = [_rt0]
+            def _rmark(name):
+                _n = _time.perf_counter()
+                print(f"[{_wall()}] [PERF-RS] {name}: +{_n-_rlast[0]:.3f}s  abs={_n-_rt0:.3f}s", flush=True)
+                _rlast[0] = _n
+            _rmark("ENTER")
             data_ids = df['data_id'].tolist()
             status_map = load_read_status(data_ids)
+            _rmark("load_read_status")
         except Exception as e:
             self.log(f"加载历史状态失败: {e}", "error")
             import traceback; traceback.print_exc()
@@ -184,6 +216,7 @@ class DataService(QObject):
             columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note']
         )
         df = df.join(status_df, on='data_id')
+        _rmark("df.join")
 
         has_status = df['_hist_read'].notna()
         missing_baseline = has_status & (df['_hist_snap'].isna() | df['_hist_note'].isna())
@@ -198,6 +231,7 @@ class DataService(QObject):
             cur_note = df[remark_col].apply(self._norm_note)
         else:
             cur_note = pd.Series([''] * len(df), index=df.index)
+        _rmark("cur_note.apply")
 
         # 3. 旧记录无基线 → 批量静默建立基线（不报警）
         if missing_baseline.any():
@@ -207,6 +241,7 @@ class DataService(QObject):
                 cur_note[missing_baseline],
             ))
             save_snapshot_batch(init_records)
+            _rmark("save_snapshot_batch")
 
         # 4. 两基线都已初始化 → 向量化比对
         hist_snap = pd.to_numeric(df['_hist_snap'], errors='coerce')
@@ -258,6 +293,7 @@ class DataService(QObject):
 
         # 清理临时历史列
         df = df.drop(columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note'], errors='ignore')
+        _rmark("DONE")
         print(f'[DEBUG _restore_read_status] 总行数={len(df)}, 匹配={int(has_status.sum())}, 基线被改={int(changed.sum())}, status_map大小={len(status_map)}')
         return df
 
@@ -379,8 +415,15 @@ class DataService(QObject):
     def _restore_audit_results(self, df: pd.DataFrame) -> pd.DataFrame:
         """从 DB 恢复审核结果（审核结果、AI建议、备注来源），使用向量化赋值替代逐行 iloc。"""
         try:
+            _at0 = _time.perf_counter(); _alast = [_at0]
+            def _amark(name):
+                _n = _time.perf_counter()
+                print(f"[{_wall()}] [PERF-AR] {name}: +{_n-_alast[0]:.3f}s  abs={_n-_at0:.3f}s", flush=True)
+                _alast[0] = _n
+            _amark("ENTER")
             data_ids = df['data_id'].tolist()
             audit_map = load_audit_results(data_ids)
+            _amark("load_audit_results")
         except Exception as e:
             self.log(f"加载审核结果失败: {e}", "error")
             return df
@@ -388,21 +431,60 @@ class DataService(QObject):
         if not audit_map:
             return df
 
-        restored = 0
-        for col, key in [('审核结果', 'audit_result'), ('AI建议', 'ai_suggestion'), ('备注来源', 'note_source')]:
-            if col not in df.columns:
-                df[col] = ''
-            # 把 audit_map 对齐成 Series，只在当前值为空（NaN/空字符串）时回填
-            mapped = df['data_id'].map(lambda did: audit_map.get(did, {}).get(key, ''))
-            current = df[col].astype(str).replace('nan', '').replace('None', '')
-            is_empty = df[col].isna() | (current.str.strip() == '')
-            if is_empty.any():
-                df.loc[is_empty, col] = mapped[is_empty]
-                if key == 'audit_result':
-                    restored += int((is_empty & (mapped != '')).sum())
+        # 性能优化（2026-07-29）：把 audit_map 一次性转 DataFrame + merge 替代 4×13327 次 Python lambda
+        # 原版：df['data_id'].map(lambda did: audit_map.get(did, {}).get(key, '')) × 3 列 = 4 万次 Python lambda → 273s
+        # 新版：1 次 merge + 3 次向量化 fillna → 0.5-1s
+        try:
+            audit_df = pd.DataFrame.from_dict(audit_map, orient='index')
+            audit_df.index.name = 'data_id'
+            # 给 audit_df 的列加后缀避免与 df 现有列冲突
+            audit_df = audit_df.add_suffix('__db')
+            df = df.merge(audit_df, how='left', left_on='data_id', right_index=True)
+        except Exception as e:
+            self.log(f"向量化恢复审核结果失败（merge），回退旧逻辑: {e}", "warning")
+            audit_df = None
+
+        if audit_df is not None:
+            restored = 0
+            for col, key in [('审核结果', 'audit_result'), ('AI建议', 'ai_suggestion'), ('备注来源', 'note_source')]:
+                db_col = f'{key}__db'
+                if db_col not in df.columns:
+                    if col not in df.columns:
+                        df[col] = ''
+                    continue
+                if col not in df.columns:
+                    df[col] = ''
+                # 判断原列是否为空：NaN 或 strip 后为 ''/nan/None
+                cur = df[col]
+                if cur.dtype != object:
+                    cur_str = cur.astype('object').where(cur.notna(), '').astype(str).str.strip()
+                else:
+                    cur_str = cur.where(cur.notna(), '').astype(str).str.strip()
+                is_empty = df[col].isna() | cur_str.isin(['', 'nan', 'None'])
+                if is_empty.any():
+                    db_vals = df[db_col].fillna('')
+                    df.loc[is_empty, col] = db_vals[is_empty]
+                    if key == 'audit_result':
+                        restored += int((is_empty & (db_vals != '')).sum())
+                df.drop(columns=[db_col], inplace=True)
+        else:
+            # 兜底：旧 map(lambda) 逻辑（仅在 merge 异常时走）
+            restored = 0
+            for col, key in [('审核结果', 'audit_result'), ('AI建议', 'ai_suggestion'), ('备注来源', 'note_source')]:
+                if col not in df.columns:
+                    df[col] = ''
+                mapped = df['data_id'].map(lambda did: audit_map.get(did, {}).get(key, ''))
+                current = df[col].astype(str).replace('nan', '').replace('None', '')
+                is_empty = df[col].isna() | (current.str.strip() == '')
+                if is_empty.any():
+                    df.loc[is_empty, col] = mapped[is_empty]
+                    if key == 'audit_result':
+                        restored += int((is_empty & (mapped != '')).sum())
+        _amark("map+fill")
 
         if restored > 0:
             self.log(f"从数据库恢复了 {restored} 条审核结果", "info")
+        _amark("DONE")
         return df
 
     def _compute_net_deviation_rate(self, df: pd.DataFrame) -> pd.DataFrame:

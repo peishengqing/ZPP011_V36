@@ -2,83 +2,148 @@
 """
 已读/未读状态管理 + 审核结果持久化 + 偏差变动历史记录
 使用 SQLite 持久化存储
+
+性能设计（2026-07-29 优化）：
+- _get_conn() 改为进程级单例连接，避免每次调用都重跑 DDL/迁移（5 ALTER + 1 UPDATE + 1 INDEX）
+- 启用 WAL + NORMAL synchronous + 64MB cache，大幅提升 IN/UPDATE 批处理吞吐
+- 所有 load/save 不再 close()，由进程退出时由 OS 回收连接
+- 线程安全说明：当前 DB 调用全在主线程（preprocess_audit_data 内部同步调用），
+  _FullCacheWorker 在子线程但只调 export_full_report_from_intermediates，不会触达 read_status。
 """
 import sqlite3
 import os
+import threading
 from datetime import datetime
 from typing import Dict, List, Tuple
 
 
 DB_PATH = os.path.join(os.path.expanduser("~"), ".zpp011_audit", "audit.db")
 
+# 进程级单例连接 + DDL-完成标志（避免每次调用都重跑 5 次 ALTER + 1 次 UPDATE + 1 次 CREATE INDEX）
+_CONN = None
+_DDL_DONE = False
+_CONN_LOCK = threading.Lock()
+
+
 def _get_conn():
-    """获取数据库连接，自动创建表结构"""
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    """获取数据库连接（进程级单例），自动建表/迁移（仅首次）。
 
-    # 已读状态表（含审核结果）
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS read_status (
-            data_id TEXT PRIMARY KEY,
-            is_read INTEGER DEFAULT 0,
-            fingerprint TEXT,
-            read_time TIMESTAMP,
-            user TEXT DEFAULT 'default'
-        )
-    """)
+    性能修复：原版每次调用都跑 5 次 ALTER + 1 次 UPDATE + 1 次 CREATE INDEX，
+    在 13K 数据规模下被实测拖慢 142s/146s/126s。改为单例后 DDL 只跑一次。
+    """
+    global _CONN, _DDL_DONE
+    if _CONN is not None and _DDL_DONE:
+        return _CONN
 
-    # 自动迁移：添加审核结果列
-    _migrate_add_column(conn, 'read_status', 'audit_result', 'TEXT DEFAULT ""')
-    _migrate_add_column(conn, 'read_status', 'ai_suggestion', 'TEXT DEFAULT ""')
-    _migrate_add_column(conn, 'read_status', 'note_source', 'TEXT DEFAULT ""')
-    # 自动迁移：添加实际数量基线列（方案A：审核后变更检测只盯实际数量）
-    _migrate_add_column(conn, 'read_status', 'snapshot_qty', 'REAL DEFAULT NULL')
-    # 自动迁移：添加备注原因基线列（方案A：审核后变更检测同时盯备注原因）
-    _migrate_add_column(conn, 'read_status', 'snapshot_note', 'TEXT DEFAULT NULL')
-    # 兼容：旧版迁移可能用空字符串作默认值，导致旧记录被误判为「已建空备注基线」；
-    # 这里把空字符串统一洗成 NULL，走静默建基线逻辑，不再报警。
-    conn.execute("UPDATE read_status SET snapshot_note = NULL WHERE snapshot_note = ''")
-    conn.commit()
+    with _CONN_LOCK:
+        if _CONN is not None and _DDL_DONE:
+            return _CONN
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        # 性能 PRAGMA（首次生效；WAL 提升并发，NORMAL 比 FULL 快 5-10×，64MB cache 减少磁盘 IO）
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA temp_store=MEMORY")
+            conn.execute("PRAGMA cache_size=-65536")  # 64MB
+        except sqlite3.Error:
+            pass
 
-    # 偏差变动历史表
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS deviation_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            data_id TEXT NOT NULL,
-            field TEXT,
-            old_qty REAL,
-            new_qty REAL,
-            old_amount REAL,
-            new_amount REAL,
-            old_rate REAL,
-            new_rate REAL,
-            change_time TIMESTAMP,
-            change_reason TEXT
-        )
-    """)
-    # 自动迁移：deviation_history 增加通用文本值列（方案A：同时记录实际数量/备注原因变动）
-    _migrate_add_column(conn, 'deviation_history', 'field', 'TEXT DEFAULT NULL')
-    _migrate_add_column(conn, 'deviation_history', 'old_value', 'TEXT DEFAULT ""')
-    _migrate_add_column(conn, 'deviation_history', 'new_value', 'TEXT DEFAULT ""')
-    # 性能：deviation_history 的查询走 data_id（get_deviation_history 等），
-    # 主键是 id 自增，无 data_id 索引，大表会全表扫描。补单列索引（幂等、无害）。
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_deviation_history_data_id ON deviation_history(data_id)")
+        # 已读状态表（含审核结果）
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS read_status (
+                data_id TEXT PRIMARY KEY,
+                is_read INTEGER DEFAULT 0,
+                fingerprint TEXT,
+                read_time TIMESTAMP,
+                user TEXT DEFAULT 'default'
+            )
+        """)
 
-    return conn
+        # 自动迁移：添加审核结果列（用 PRAGMA table_info 一次查清，避免 5 次 try/except ALTER）
+        existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(read_status)").fetchall()}
+        for col_name, col_def in [
+            ('audit_result', 'TEXT DEFAULT ""'),
+            ('ai_suggestion', 'TEXT DEFAULT ""'),
+            ('note_source', 'TEXT DEFAULT ""'),
+            ('snapshot_qty', 'REAL DEFAULT NULL'),
+            ('snapshot_note', 'TEXT DEFAULT NULL'),
+        ]:
+            if col_name not in existing_cols:
+                try:
+                    conn.execute(f"ALTER TABLE read_status ADD COLUMN {col_name} {col_def}")
+                except sqlite3.OperationalError:
+                    pass  # 并发场景下的双保险
+
+        # 兼容：旧版迁移可能用空字符串作默认值，导致旧记录被误判为「已建空备注基线」；
+        # 这里把空字符串统一洗成 NULL，走静默建基线逻辑，不再报警。
+        conn.execute("UPDATE read_status SET snapshot_note = NULL WHERE snapshot_note = ''")
+        conn.commit()
+
+        # 偏差变动历史表
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS deviation_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                data_id TEXT NOT NULL,
+                field TEXT,
+                old_qty REAL,
+                new_qty REAL,
+                old_amount REAL,
+                new_amount REAL,
+                old_rate REAL,
+                new_rate REAL,
+                change_time TIMESTAMP,
+                change_reason TEXT
+            )
+        """)
+        # 自动迁移：deviation_history 通用文本列（用 PRAGMA 一次查清）
+        existing_dh_cols = {row[1] for row in conn.execute("PRAGMA table_info(deviation_history)").fetchall()}
+        for col_name, col_def in [
+            ('field', 'TEXT DEFAULT NULL'),
+            ('old_value', 'TEXT DEFAULT ""'),
+            ('new_value', 'TEXT DEFAULT ""'),
+        ]:
+            if col_name not in existing_dh_cols:
+                try:
+                    conn.execute(f"ALTER TABLE deviation_history ADD COLUMN {col_name} {col_def}")
+                except sqlite3.OperationalError:
+                    pass
+        # 性能：deviation_history 的查询走 data_id，主键是 id 自增，无 data_id 索引，全表扫描很慢
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_deviation_history_data_id ON deviation_history(data_id)")
+
+        _CONN = conn
+        _DDL_DONE = True
+        return _CONN
+
+
+def close_db():
+    """显式关闭数据库连接（通常不需要——进程退出时 OS 回收；测试/迁移场景调用）"""
+    global _CONN, _DDL_DONE
+    with _CONN_LOCK:
+        if _CONN is not None:
+            try:
+                _CONN.close()
+            except Exception:
+                pass
+        _CONN = None
+        _DDL_DONE = False
 
 
 def _migrate_add_column(conn, table, col_name, col_def):
-    """安全添加列：如果列不存在则 ALTER TABLE ADD COLUMN"""
+    """安全添加列：如果列不存在则 ALTER TABLE ADD COLUMN（兼容旧调用）"""
     try:
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if col_name in existing:
+            return
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
     except sqlite3.OperationalError:
-        pass  # 列已存在，跳过
+        pass
 
 
 def init_db():
     """初始化数据库（供外部调用）"""
-    conn = _get_conn()
-    conn.close()
+    _get_conn()  # 触发单例 + DDL 一次性完成
+    # 注意：单例连接不 close，由进程退出时 OS 回收
 
 
 # ── 已读状态 ──────────────────────────────────────────
@@ -100,7 +165,8 @@ def load_read_status(data_ids: List[str]) -> Dict[str, Tuple]:
         data_ids
     )
     result = {row[0]: (row[1], row[2], row[3], row[4]) for row in cur.fetchall()}
-    conn.close()
+    # 性能修复（2026-07-29）：_get_conn() 改为进程级单例，此处不再 close（否则下次又重建）
+    # conn.close()
     return result
 
 
@@ -115,7 +181,8 @@ def save_read_status(data_id: str, is_read: int, fingerprint: str, snapshot_qty=
           '' if snapshot_note is None else str(snapshot_note),
           datetime.now().isoformat(), 'default'))
     conn.commit()
-    conn.close()
+    # 性能修复（2026-07-29）：_get_conn() 改为进程级单例，此处不再 close（否则下次又重建）
+    # conn.close()
 
 
 def save_read_status_batch(records):
@@ -145,7 +212,8 @@ def save_read_status_batch(records):
         VALUES (?, ?, ?, ?, ?, ?, ?)
     """, norm)
     conn.commit()
-    conn.close()
+    # 性能修复（2026-07-29）：_get_conn() 改为进程级单例，此处不再 close（否则下次又重建）
+    # conn.close()
 
 
 def mark_read_batch(data_ids, snapshot_map):
@@ -173,7 +241,8 @@ def mark_read_batch(data_ids, snapshot_map):
               '' if snap_note is None else str(snap_note),
               now, str(did)))
     conn.commit()
-    conn.close()
+    # 性能修复（2026-07-29）：_get_conn() 改为进程级单例，此处不再 close（否则下次又重建）
+    # conn.close()
 
 
 def save_snapshot(data_id: str, snapshot_qty, snapshot_note=None):
@@ -186,7 +255,8 @@ def save_snapshot(data_id: str, snapshot_qty, snapshot_note=None):
               '' if snapshot_note is None else str(snapshot_note),
               str(data_id)))
         conn.commit()
-        conn.close()
+        # 性能修复（2026-07-29）：_get_conn() 改为进程级单例，此处不再 close（否则下次又重建）
+    # conn.close()
     except Exception:
         pass
 
@@ -212,7 +282,8 @@ def save_snapshot_batch(records):
             UPDATE read_status SET snapshot_qty = ?, snapshot_note = ? WHERE data_id = ?
         """, norm)
         conn.commit()
-        conn.close()
+        # 性能修复（2026-07-29）：_get_conn() 改为进程级单例，此处不再 close（否则下次又重建）
+    # conn.close()
     except Exception:
         pass
 
@@ -242,7 +313,8 @@ def load_audit_results(data_ids: List[str]) -> Dict[str, Dict[str, str]]:
             'ai_suggestion': ai or '',
             'note_source': ns or '',
         }
-    conn.close()
+    # 性能修复（2026-07-29）：_get_conn() 改为进程级单例，此处不再 close（否则下次又重建）
+    # conn.close()
     return result
 
 
@@ -279,7 +351,8 @@ def save_audit_results_batch(records: List[Dict[str, str]]):
             'default',
         ))
     conn.commit()
-    conn.close()
+    # 性能修复（2026-07-29）：_get_conn() 改为进程级单例，此处不再 close（否则下次又重建）
+    # conn.close()
 
 
 # ── 偏差变动历史 ───────────────────────────────────────
@@ -313,7 +386,8 @@ def record_deviation_change(data_id: str, field: str, old_value, new_value, reas
           _to_float(old_value), _to_float(new_value),
           datetime.now().isoformat(), reason))
     conn.commit()
-    conn.close()
+    # 性能修复（2026-07-29）：_get_conn() 改为进程级单例，此处不再 close（否则下次又重建）
+    # conn.close()
 
 
 def get_deviation_history_batch(data_ids: List[str]) -> List[Dict]:
@@ -329,7 +403,8 @@ def get_deviation_history_batch(data_ids: List[str]) -> List[Dict]:
     )
     columns = ['data_id', 'field', 'new_value']
     result = [dict(zip(columns, row)) for row in cur.fetchall()]
-    conn.close()
+    # 性能修复（2026-07-29）：_get_conn() 改为进程级单例，此处不再 close（否则下次又重建）
+    # conn.close()
     return result
 
 
@@ -364,7 +439,8 @@ def record_deviation_change_batch(changes: List[Tuple], reason: str = "审核后
             VALUES (?, ?, ?, ?, ?, ?)
         """, norm)
         conn.commit()
-    conn.close()
+    # 性能修复（2026-07-29）：_get_conn() 改为进程级单例，此处不再 close（否则下次又重建）
+    # conn.close()
 
 
 def get_deviation_history(data_id: str = None) -> List[Dict]:
@@ -380,5 +456,6 @@ def get_deviation_history(data_id: str = None) -> List[Dict]:
 
     columns = ['id', 'data_id', 'field', 'old_value', 'new_value', 'old_qty', 'new_qty', 'old_amount', 'new_amount', 'old_rate', 'new_rate', 'change_time', 'change_reason']
     result = [dict(zip(columns, row)) for row in cur.fetchall()]
-    conn.close()
+    # 性能修复（2026-07-29）：_get_conn() 改为进程级单例，此处不再 close（否则下次又重建）
+    # conn.close()
     return result
