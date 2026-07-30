@@ -1055,6 +1055,7 @@ class MainWindow(QMainWindow):
         self.progress_label.setText(f"{step_name}  {percent}%")
 
     def _on_analysis_finished_ui(self, df):
+        import tempfile  # 顶层未 import；提到函数顶部防止下面 _plog 使用时触发 UnboundLocalError
         _t_start = time.perf_counter()
         # 写入日志文件以便诊断
         _perf_log = os.path.join(tempfile.gettempdir(), "zpp011_perf.log")
@@ -1115,7 +1116,6 @@ class MainWindow(QMainWindow):
             # 注意：完整报告缓存由后台线程(_FullCacheWorker)生成，主线程绝不等待，
             # 否则分析完成后标题栏会显示「未响应」。导出完整报告时优先复制该缓存。
 
-            import tempfile
             cache_dir = os.path.join(tempfile.gettempdir(), "zpp011_analysis")
             os.makedirs(cache_dir, exist_ok=True)
             cache_path = os.path.join(cache_dir, f"full_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
