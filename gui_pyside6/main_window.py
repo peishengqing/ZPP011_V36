@@ -2508,7 +2508,8 @@ class MainWindow(QMainWindow):
                 os.startfile(save_path)
             self.log(f"已导出完整Excel到 {save_path}", "info")
         except Exception as e:
-            traceback.print_exc()
+            import traceback as _tb
+            _tb.print_exc()
             QMessageBox.critical(self, "错误", f"导出失败: {e}")
             self.log(f"导出失败: {e}", "error")
 

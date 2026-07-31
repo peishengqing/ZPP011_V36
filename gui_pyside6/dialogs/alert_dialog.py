@@ -435,6 +435,7 @@ class AlertDialog(QDialog):
 
         records = []          # [(data_id, is_read, fingerprint), ...] 待落盘
         changed_ids = set()   # 实际发生状态变化的 data_id（用于 original_df 向量化更新）
+        count = 0
 
         for row in selected_rows:
             if row >= len(df):
@@ -498,6 +499,7 @@ class AlertDialog(QDialog):
 
         records = []
         changed_ids = set()
+        count = 0
 
         for row in selected_rows:
             if row >= len(df):

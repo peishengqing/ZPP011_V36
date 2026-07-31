@@ -1,4 +1,5 @@
 """探测 SAP GUI 8.0 多种引擎获取方式。"""
+import sys
 import time
 import win32com.client
 
