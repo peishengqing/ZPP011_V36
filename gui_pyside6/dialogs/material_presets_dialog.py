@@ -5,7 +5,7 @@ import os
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton,
+    QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem, QPushButton,
     QLineEdit, QMessageBox
 )
 
