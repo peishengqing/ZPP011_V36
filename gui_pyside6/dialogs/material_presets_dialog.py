@@ -3,10 +3,35 @@
 import json
 import os
 
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton,
     QLineEdit, QMessageBox
 )
+
+# 预设列表固定第 0 行的保留项：选中它等价于“不过滤物料名称 = 显示全部物料”
+MATERIAL_ALL_SENTINEL = "全部物料"
+
+
+class _PresetListWidget(QListWidget):
+    """支持内部拖拽重排的列表控件；拖拽落地后通过 parent 的回调同步顺序。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDragDropMode(QListWidget.InternalMove)
+        self.setDefaultDropAction(Qt.MoveAction)
+
+    def dropEvent(self, event):
+        if event.source() is self:
+            super().dropEvent(event)
+            dlg = self.parent()
+            if dlg is not None and hasattr(dlg, "_sync_order_from_list"):
+                # 延迟到拖拽完全结束后重建，避免重建过程中访问已移走的项
+                QTimer.singleShot(0, dlg._sync_order_from_list)
+        else:
+            super().dropEvent(event)
 
 
 class MaterialPresetsDialog(QDialog):
@@ -27,9 +52,9 @@ class MaterialPresetsDialog(QDialog):
         layout.setSpacing(10)
         layout.setContentsMargins(12, 12, 12, 12)
 
-        # 预设列表
-        self.list_widget = QListWidget()
-        self.list_widget.setEditTriggers(QListWidget.DoubleClicked | QListWidget.EditKeyPressed)
+        # 预设列表（支持拖拽重排，第 0 行为保留项“全部物料”）
+        self.list_widget = _PresetListWidget(self)
+        self.list_widget.setEditTriggers(QListWidget.NoEditTriggers)
         layout.addWidget(self.list_widget)
 
         # 添加行
@@ -60,14 +85,35 @@ class MaterialPresetsDialog(QDialog):
         self.cancel_btn.clicked.connect(self.reject)
 
     def _refresh_list(self):
-        """把当前预设刷新到列表控件。"""
+        """把当前预设刷新到列表控件：第 0 行固定为保留项，其余按当前顺序编号。"""
         self.list_widget.clear()
-        for p in self._presets:
-            self.list_widget.addItem(p)
+        # 保留项：不可拖动 / 不可拖入 / 不可编辑 / 不可删除
+        sentinel = QListWidgetItem(MATERIAL_ALL_SENTINEL)
+        sentinel.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+        sentinel.setData(Qt.UserRole, MATERIAL_ALL_SENTINEL)
+        self.list_widget.addItem(sentinel)
+        # 用户预设：显示带序号，真实名称存 UserRole（保存时取它，避免污染前缀）
+        for i, name in enumerate(self._presets, start=1):
+            item = QListWidgetItem(f"{i}. {name}")
+            item.setData(Qt.UserRole, name)
+            self.list_widget.addItem(item)
+
+    def _sync_order_from_list(self):
+        """拖拽落地后，按列表当前视觉顺序重建 self._presets（跳过保留项）。"""
+        new_presets = []
+        for i in range(self.list_widget.count()):
+            data = self.list_widget.item(i).data(Qt.UserRole)
+            if data != MATERIAL_ALL_SENTINEL:
+                new_presets.append(data)
+        self._presets = new_presets
+        self._refresh_list()
 
     def _add_item(self):
         text = self.add_edit.text().strip()
         if not text:
+            return
+        if text == MATERIAL_ALL_SENTINEL:
+            QMessageBox.information(self, "提示", f"「{text}」是保留项，不能新增")
             return
         if text in self._presets:
             QMessageBox.information(self, "提示", f"「{text}」已经存在")
@@ -78,9 +124,11 @@ class MaterialPresetsDialog(QDialog):
 
     def _delete_item(self):
         row = self.list_widget.currentRow()
-        if row < 0:
+        if row <= 0:
+            if row == 0:
+                QMessageBox.information(self, "提示", f"「{MATERIAL_ALL_SENTINEL}」是保留项，不能删除")
             return
-        del self._presets[row]
+        del self._presets[row - 1]
         self._refresh_list()
 
     def _save(self):
@@ -94,5 +142,5 @@ class MaterialPresetsDialog(QDialog):
             QMessageBox.critical(self, "保存失败", f"无法保存预设文件：{e}")
 
     def get_presets(self):
-        """返回当前预设列表（保存后使用）。"""
+        """返回当前预设列表（不含保留项，保存后使用）。"""
         return list(self._presets)

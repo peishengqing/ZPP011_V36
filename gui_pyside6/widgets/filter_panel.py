@@ -17,7 +17,7 @@ import pandas as pd
 import json
 import os
 
-from gui_pyside6.dialogs.material_presets_dialog import MaterialPresetsDialog
+from gui_pyside6.dialogs.material_presets_dialog import MaterialPresetsDialog, MATERIAL_ALL_SENTINEL
 
 
 def _color_icon(rgb):
@@ -594,7 +594,8 @@ class FilterPanel(QWidget):
         """用户在框里手输并确认一个值时，自动收进下拉项（永久保留，方便下次直接选）。"""
         text = self.material_name_edit.currentText().strip()
         # 只收藏单个值：含逗号分隔的不收（那是一次性多选），已存在的跳过
-        if not text or (',' in text) or ('，' in text) or (text in self._material_presets):
+        # 保留项「全部物料」不可被收进预设列表
+        if not text or (',' in text) or ('，' in text) or (text == MATERIAL_ALL_SENTINEL) or (text in self._material_presets):
             return
         self._material_presets.append(text)
         self._save_material_presets()
@@ -604,9 +605,11 @@ class FilterPanel(QWidget):
         self.material_name_edit.blockSignals(False)
 
     def _update_material_name_combo(self):
-        """物料名称下拉项来自用户自定义预设，不自动灌入数据中的名称（避免下拉过长难找）。"""
+        """物料名称下拉项来自用户自定义预设，不自动灌入数据中的名称（避免下拉过长难找）。
+        第 0 项固定为保留项「全部物料」，选中它等价于“不过滤物料名称 = 显示全部物料”。"""
         current_text = self.material_name_edit.currentText()
         self.material_name_edit.clear()
+        self.material_name_edit.addItem(MATERIAL_ALL_SENTINEL)
         for name in self._material_presets:
             self.material_name_edit.addItem(name)
         self.material_name_edit.setCurrentText(current_text)
@@ -679,8 +682,9 @@ class FilterPanel(QWidget):
         if material_code_text:
             filters['_material_code'] = material_code_text
         # 物料名称模糊搜索（逗号分隔多选，OR匹配）
+        # 选中保留项「全部物料」或留空 → 不写入筛选条件，即显示全部物料（绝不按字面去搜“全部”）
         material_name_text = self.material_name_edit.currentText().strip()
-        if material_name_text:
+        if material_name_text and material_name_text != MATERIAL_ALL_SENTINEL:
             filters['_material_names'] = material_name_text
         if self.dev_rate_combo.currentText() != "全部":
             rate_range = self.dev_rate_combo.currentText()
