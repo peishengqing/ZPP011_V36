@@ -2003,7 +2003,10 @@ class MainWindow(QMainWindow):
         self.source_model.dataChanged.connect(self._update_summary)
         # self.source_model.dataChanged.connect(self._refresh_stats_cards)  # stats_cards 已删除
         self.proxy_model.layoutChanged.connect(self._update_summary)
+        self.proxy_model.layoutChanged.connect(self._update_mark_stats)
         # self.proxy_model.layoutChanged.connect(self._refresh_stats_cards)  # stats_cards 已删除
+        self.source_model.dataChanged.connect(self._update_mark_stats)
+        self.source_model.modelReset.connect(self._update_mark_stats)
         # 三态排序：禁用 Qt 自动排序，改用列头点击（sectionClicked）自行管理 升/降/取消
         self.table_view.setSortingEnabled(False)
         self.table_view.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
@@ -2326,6 +2329,9 @@ class MainWindow(QMainWindow):
                 self.proxy_model.setDynamicSortFilter(False)  # 同上，关闭重过滤风暴
                 self.proxy_model.setSourceModel(self.source_model)
                 self.table_view.setModel(self.proxy_model)
+                self.proxy_model.layoutChanged.connect(self._update_mark_stats)
+                self.source_model.dataChanged.connect(self._update_mark_stats)
+                self.source_model.modelReset.connect(self._update_mark_stats)
             try:
                 self.source_model.setDataFrame(processed_df)
             except Exception as _e:
@@ -2398,6 +2404,43 @@ class MainWindow(QMainWindow):
         else:
             self.summary_amount.setText(f"偏差率: {rate_str}")
         self.summary_qty.setText(f"偏差量: {qty_sum:,.2f}")
+
+    def _update_mark_stats(self):
+        """更新主表上方『标记统计』标签：当前筛选后可见行中，各类颜色标记的行数。
+
+        三类标记来自 source_model 的私有集合（set of 源行号）：
+          - 偏差预警(橙) = _alert_rows（|偏差率|>=10% 且非未投料）
+          - 替代料(蓝)   = _substitute_rows（是否替代料=是）
+          - 未投料(灰)   = _unused_rows（实际≈0 且 定额>0 且非替代料）
+        计数按 proxy_model 当前可见行统计，故筛选/搜索变化即动态刷新。
+        触发：proxy.layoutChanged（筛选/排序）+ source.dataChanged/modelReset（数据重算）。
+        """
+        lbl = getattr(self.main_table, "mark_stats_label", None)
+        if lbl is None:
+            return
+        if self.source_model is None or self.proxy_model is None:
+            lbl.setText("标记统计：—")
+            return
+        sm = self.source_model
+        pm = self.proxy_model
+        alert = getattr(sm, "_alert_rows", set())
+        sub = getattr(sm, "_substitute_rows", set())
+        unused = getattr(sm, "_unused_rows", set())
+        n_alert = n_sub = n_unused = 0
+        rows = pm.rowCount()
+        if rows:
+            for r in range(rows):
+                sr = pm.mapToSource(pm.index(r, 0)).row()
+                if sr in alert:
+                    n_alert += 1
+                if sr in sub:
+                    n_sub += 1
+                if sr in unused:
+                    n_unused += 1
+        lbl.setText(
+            "🔴 偏差预警 %d 条    🔵 替代料 %d 条    ⚪ 未投料 %d 条"
+            % (n_alert, n_sub, n_unused)
+        )
 
     def _update_selection_summary(self, col_sums: dict):
         """更新选中行合计到底部栏"""

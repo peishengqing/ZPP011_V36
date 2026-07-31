@@ -270,7 +270,20 @@ class MainTableComponent(QObject):
         # 组装：表格区（不含合计栏，合计栏由 main_window 固定在底部）
         audit_layout = QVBoxLayout()
         audit_layout.setContentsMargins(0, 0, 0, 0)
-        audit_layout.setSpacing(0)
+        audit_layout.setSpacing(4)
+
+        # 标记统计常驻标签：显示当前可见行中各类颜色标记的行数（偏差预警/替代料/未投料）
+        # 文本由 main_window._update_mark_stats 实时刷新，随筛选/排序/数据变化动态更新
+        self.mark_stats_label = QLabel("标记统计：—")
+        self.mark_stats_label.setObjectName("markStatsLabel")
+        self.mark_stats_label.setStyleSheet(
+            "QLabel#markStatsLabel{"
+            "padding:3px 8px;border-radius:4px;"
+            "background:#f3f4f6;color:#374151;font-size:12px;"
+            "}"
+        )
+        self.mark_stats_label.setFixedHeight(22)
+        audit_layout.addWidget(self.mark_stats_label)
 
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(0, 0, 0, 0)
