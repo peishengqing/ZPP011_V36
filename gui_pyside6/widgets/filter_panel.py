@@ -813,7 +813,7 @@ class FilterPanel(QWidget):
         self.audit_status_combo.setCurrentIndex(0)
         self.remark_empty_combo.setCurrentIndex(0)
         self.order_type_combo.setCurrentIndex(0)
-        self.read_status_combo.setCurrentIndex(0)
+        self.read_status_combo.setCurrentIndex(2)  # 默认未读（与初始化一致）：分析完成/重置均回到未读视图
         self.remark_source_combo.setCurrentIndex(0)
         self.zero_qty_combo.setCurrentIndex(0)
         self._clear_color_checks()
