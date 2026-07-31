@@ -53,18 +53,7 @@ LATEST_INTERMEDIATES = None
 
 # 通用工具函数
 from utils.helpers import standardize_remark
-
-
-def _dprint(*args, **kwargs):
-    """Safe debug print - avoids GBK Errno 22 on Windows console"""
-    import sys
-    if getattr(sys.stdout, 'closed', False) or sys.stdout is None:
-        return
-    kwargs.pop('flush', None)
-    try:
-        print(*args, **kwargs)
-    except (OSError, UnicodeEncodeError):
-        pass
+from analysis.debug_util import dprint as _dprint
 
 
 def infer_material_type(code):
@@ -92,7 +81,8 @@ def do_analysis_v2(
         output_path=None,
         enable_net_offset=True,
         return_dataframe=False,
-        dev_rate_threshold=0.0):
+        dev_rate_threshold=0.0,
+        input_df=None):
     _dprint("[DEBUG do_analysis_v2] 函数开始执行")
 
     # output_dir 兜底，防止调用方传 None 导致 os.path.join 崩溃
@@ -165,13 +155,18 @@ def do_analysis_v2(
     
     try:
         _dprint(f"[DEBUG] 开始读取Excel: {src_file}")
-        # 容错：优先读 'Data' 工作表，不存在则取第一个
-        xl = pd.ExcelFile(src_file)
-        _sheet = 'Data' if 'Data' in xl.sheet_names else xl.sheet_names[0]
-        if _sheet != 'Data':
-            _dprint(f"[WARN] 工作表 'Data' 不存在，改用 '{_sheet}'")
-        df = pd.read_excel(src_file, sheet_name=_sheet)
-        _dprint(f"[DEBUG do_analysis_v2] 读取Data表成功，{len(df)} 行")
+        if input_df is not None:
+            # 优化：直接使用选中文件时已经读取过的 DataFrame，跳过重复的文件 IO（约 20-30s）
+            df = input_df.copy()
+            _dprint(f"[DEBUG do_analysis_v2] 复用已读 DataFrame，{len(df)} 行")
+        else:
+            # 容错：优先读 'Data' 工作表，不存在则取第一个
+            xl = pd.ExcelFile(src_file)
+            _sheet = 'Data' if 'Data' in xl.sheet_names else xl.sheet_names[0]
+            if _sheet != 'Data':
+                _dprint(f"[WARN] 工作表 'Data' 不存在，改用 '{_sheet}'")
+            df = pd.read_excel(src_file, sheet_name=_sheet)
+            _dprint(f"[DEBUG do_analysis_v2] 读取Data表成功，{len(df)} 行")
 
         # 校验：必须为原始 SAP 导出文件，而非分析报告
         _required_cols = ['订单开始日期', '数量-定额', '数量-实际']

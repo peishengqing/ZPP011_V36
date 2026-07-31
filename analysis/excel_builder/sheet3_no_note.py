@@ -6,6 +6,7 @@ sheet3_no_note.py — Sheet3 无备注预警（v36 抽取，未修改逻辑）
 import pandas as pd
 from analysis.excel_builder.write_sheet_util import ensure_numeric_cols
 from config.settings import DEFAULT_THRESHOLD
+from analysis.debug_util import dprint
 
 
 def build_sheet3(df, report_progress, progress_idx=3):
@@ -19,7 +20,7 @@ def build_sheet3(df, report_progress, progress_idx=3):
         no_note_df: 无备注预警 DataFrame（按偏差金额绝对值降序）
     """
     report_progress(progress_idx, "Sheet3-无备注预警", 0)
-    print("[DEBUG do_analysis_v2] 开始生成Sheet3")
+    dprint("[DEBUG do_analysis_v2] 开始生成Sheet3")
 
     col_p = '偏差率(%)'
     dyn_thresh = DEFAULT_THRESHOLD

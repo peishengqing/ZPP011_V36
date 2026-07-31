@@ -5,6 +5,7 @@ sheet2_alt.py — Sheet2 替代料明细（v36 抽取，兼容三元组配对）
 返回: (alt_df, alt_order_mat_set)
 """
 import pandas as pd
+from analysis.debug_util import dprint
 
 
 def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
@@ -22,7 +23,7 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
             alt_order_mat_set: set of (订单号, 物料描述) 用于标记替代料
     """
     report_progress(progress_idx, "Sheet2-替代料明细", 0)
-    print("[DEBUG do_analysis_v2] 开始生成Sheet2")
+    dprint("[DEBUG do_analysis_v2] 开始生成Sheet2")
 
     # ---------- 兼容性转换：将配对中的物料提取为描述字符串 ----------
     converted_pairs = []
@@ -174,11 +175,11 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
                 })
 
     alt_df = pd.DataFrame(alt_rows)
-    print(f"[DEBUG do_analysis_v2] Sheet2完成，{len(alt_df)} 行")
+    dprint(f"[DEBUG do_analysis_v2] Sheet2完成，{len(alt_df)} 行")
     if len(alt_df) == 0 and len(converted_pairs) > 0:
-        print(f"[DEBUG] 配对数: {len(converted_pairs)}, 前3个: {converted_pairs[:3]}")
+        dprint(f"[DEBUG] 配对数: {len(converted_pairs)}, 前3个: {converted_pairs[:3]}")
         sample_descs = list(set(df['组件物料描述'].dropna()))[:5]
-        print(f"[DEBUG] df物料描述样本: {sample_descs}")
+        dprint(f"[DEBUG] df物料描述样本: {sample_descs}")
     report_progress(progress_idx, "Sheet2-替代料明细", 100)
 
     # 构建替代料订单-物料集合（用于后续标记）

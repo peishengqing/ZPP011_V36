@@ -862,19 +862,14 @@ class AuditProxyModel(QSortFilterProxyModel):
         return super().headerData(section, orientation, role)
 
     def lessThan(self, left, right):
+        # 性能：本函数在排序时被调用 N·logN 次（13904 行约 19 万次），
+        # 内部严禁 print / headerData() 等额外调用，否则点列头排序会卡死。
         left_data = self.sourceModel().data(left, Qt.DisplayRole)
         right_data = self.sourceModel().data(right, Qt.DisplayRole)
-        col_name = self.sourceModel().headerData(left.column(), Qt.Horizontal)
         try:
             # 去掉 % 和逗号，再尝试数值比较
             left_str = str(left_data).replace('%', '').replace(',', '').strip()
             right_str = str(right_data).replace('%', '').replace(',', '').strip()
-            left_num = float(left_str)
-            right_num = float(right_str)
-            result = left_num < right_num
-            print(f"[DEBUG lessThan] col={col_name}, {left_data!r} vs {right_data!r} -> {left_num} < {right_num} = {result}")
-            return result
+            return float(left_str) < float(right_str)
         except (ValueError, TypeError):
-            result = str(left_data) < str(right_data)
-            print(f"[DEBUG lessThan fallback] col={col_name}, {left_data!r} vs {right_data!r} -> str={result}")
-            return result
+            return str(left_data) < str(right_data)

@@ -5,7 +5,7 @@
 """
 
 from PySide6.QtCore import QObject, Signal
-from gui_pyside6.models.workers import AnalysisWorker, PreprocessWorker
+from gui_pyside6.models.workers import AnalysisWorker
 
 
 class AnalysisController(QObject):
@@ -33,7 +33,7 @@ class AnalysisController(QObject):
         self._previous_df = None
 
     def start_analysis(self, input_file, alt_pairs, start_date, end_date, material_search,
-                       dev_rate_threshold=0.0, data_service=None, previous_df=None):
+                       dev_rate_threshold=0.0, data_service=None, previous_df=None, input_df=None):
         """启动分析线程"""
         if self.worker and self.worker.isRunning():
             self.log_message.emit("分析任务已在运行", "warning")
@@ -52,10 +52,14 @@ class AnalysisController(QObject):
         self._data_service = data_service
         self._previous_df = previous_df
 
+        # 注：2026-07-30 预处理（preprocess_audit_data）改在主线程 _on_finished 同步执行，
+        #     不再开 PreprocessWorker QThread。DB 操作 ~0.2s，不值得开线程。
+        self._input_df = input_df  # 复用选中文件时缓存的 DataFrame，跳过重复文件 IO
+
         self.analysis_started.emit()
         self.worker = AnalysisWorker(
             input_file, alt_pairs, start_date, end_date, material_search,
-            dev_rate_threshold
+            dev_rate_threshold, data_service, previous_df, input_df
         )
         self.worker.progress.connect(self.progress_updated)
         self.worker.finished.connect(self._on_finished)
@@ -78,60 +82,26 @@ class AnalysisController(QObject):
             self.analysis_cancelled.emit()
 
     def _on_finished(self, df):
-        """分析完成回调：重预处理挪到后台线程，主线程绝不阻塞"""
-        import time as _t
-        from datetime import datetime
-        def _wall():
-            return datetime.now().strftime('%H:%M:%S.%f')[:-3]
-        _t0 = _t.perf_counter()
+        """分析完成回调：主线程同步执行预处理（DB 操作 ~0.2s，不值得开线程）。
+
+        历史：2026-07-29 尝试把预处理搬 QThread，实测 QThread 跑 SQLite 因 WAL
+        锁争用（主线程 _update_countdown 每秒触发）+ Ctrl+C 中断等复杂因素导致
+        _chunked_query 从 0.04s 拖成 184s。决定回退到主线程同步执行。
+        """
         if self.worker:
-            self.worker.wait()                         # 等待底层线程完全退出
+            self.worker.wait()
         self.worker = None
-        self._pending_raw_df = df
-        print(f"[{_wall()}] [PERF] controller._on_finished ENTER: t={_t.perf_counter()-_t0:.3f}s", flush=True)
 
-        # 重预处理挪到后台线程（preprocess_audit_data 内含 load_read_status 等重 DB IO），
-        # 后台跑时不受窗口前后台影响、主线程 GUI 不卡。仅在结束 emit 一次结果。
         if self._data_service is not None and df is not None and not df.empty:
-            self._preprocess_worker = PreprocessWorker(
-                self._data_service, df, previous_df=self._previous_df)
-            self._preprocess_worker.finished.connect(self._on_preprocess_done)
-            self._preprocess_worker.error.connect(self._on_preprocess_error)
-            print(f"[{_wall()}] [PERF] controller start PreprocessWorker", flush=True)
-            self._preprocess_worker.start()
-        else:
-            self._last_processed_df = df
-            self._emit_analysis_finished(df)
+            try:
+                df = self._data_service.preprocess_audit_data(df, self._previous_df)
+            except Exception as e:
+                self.log_message.emit(f"预处理失败，降级用原始结果: {e}", "error")
 
-    def _on_preprocess_done(self, processed_df):
-        import time as _t
-        from datetime import datetime
-        def _wall():
-            return datetime.now().strftime('%H:%M:%S.%f')[:-3]
-        self._last_processed_df = processed_df
-        print(f"[{_wall()}] [PERF] controller preprocess OK shape={processed_df.shape}", flush=True)
-        self._emit_analysis_finished(processed_df)
-        if self._preprocess_worker is not None:
-            self._preprocess_worker.deleteLater()
-            self._preprocess_worker = None
-
-    def _on_preprocess_error(self, msg):
-        import traceback as _tb
-        _tb.print_exc()
-        self.log_message.emit(f"预处理失败，降级用原始结果: {msg}", "error")
-        # 降级：用原始（未预处理）df 继续，不阻断主流程
-        self._last_processed_df = self._pending_raw_df
-        self._emit_analysis_finished(self._pending_raw_df)
-        if self._preprocess_worker is not None:
-            self._preprocess_worker.deleteLater()
-            self._preprocess_worker = None
+        self._last_processed_df = df
+        self._emit_analysis_finished(df)
 
     def _emit_analysis_finished(self, df):
-        import time as _t
-        from datetime import datetime
-        def _wall():
-            return datetime.now().strftime('%H:%M:%S.%f')[:-3]
-        _t0 = _t.perf_counter()
         # 按工厂拆分
         self.factory_data = {}
         if df is not None and not df.empty and '工厂' in df.columns:
@@ -140,15 +110,12 @@ class AnalysisController(QObject):
         else:
             # 无工厂列或空数据，存为"全部"
             self.factory_data['全部'] = df
-        print(f"[{_wall()}] [PERF] controller groupby: t={_t.perf_counter()-_t0:.3f}s n={len(self.factory_data)}", flush=True)
 
         # 设置当前工厂
         if self.factory_data:
             self.current_factory = list(self.factory_data.keys())[0]
         else:
             self.current_factory = None
-
-        print(f"[{_wall()}] [PERF] controller emit analysis_finished: total={_t.perf_counter()-_t0:.3f}s", flush=True)
         self.analysis_finished.emit(df)
 
 

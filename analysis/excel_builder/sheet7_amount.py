@@ -11,6 +11,7 @@ from analysis.excel_builder.write_sheet_util import ensure_numeric_cols
 import os
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from analysis.debug_util import dprint
 
 
 def build_sheet7(wb, df, report_progress, progress_idx=7):
@@ -29,7 +30,7 @@ def build_sheet7(wb, df, report_progress, progress_idx=7):
     ensure_numeric_cols(df, ["偏差金额(含税)", "数量-实际", "数量-定额", "材料偏差", "偏差金额"])
 
     report_progress(progress_idx, "Sheet7-偏差金额分析", 0)
-    print("[DEBUG do_analysis_v2] 开始生成Sheet7")
+    dprint("[DEBUG do_analysis_v2] 开始生成Sheet7")
 
     ws_amt = wb.create_sheet('偏差金额分析', index=6)
 

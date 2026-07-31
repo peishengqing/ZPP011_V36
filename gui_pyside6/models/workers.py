@@ -20,7 +20,7 @@ class AnalysisWorker(QThread):
     log = Signal(str)           # 日志信号
 
     def __init__(self, input_file, alt_pairs, start_date, end_date, material_search,
-                 dev_rate_threshold=1.0, data_service=None, previous_df=None):
+                 dev_rate_threshold=1.0, data_service=None, previous_df=None, input_df=None):
         super().__init__()
         self.input_file = input_file
         self.alt_pairs = alt_pairs
@@ -31,6 +31,7 @@ class AnalysisWorker(QThread):
         # 后台预处理所需（DataSerivce 为 QObject，跨线程仅发信号，逻辑可安全在 worker 跑）
         self.data_service = data_service
         self._previous_df = previous_df
+        self._input_df = input_df
         self._cancel = threading.Event()
 
     def cancel(self):
@@ -63,6 +64,7 @@ class AnalysisWorker(QThread):
                 enable_net_offset=_enable_net_offset,
                 return_dataframe=True,  # 返回DataFrame，不自动保存文件
                 dev_rate_threshold=self.dev_rate_threshold,
+                input_df=self._input_df,  # reuse cached DataFrame from file selection
             )
 
             if self._cancel.is_set():
@@ -234,34 +236,34 @@ class AIAuditWorker(QThread):
                         batch_items.append({"context": ctx, "dev_rate": dr})
                         batch_idxs.append(idx)
 
-                self.log.emit(f"AI批量审核: {ai_processed}/{ai_total} (本轮 {len(batch_items)} 条)")
-                try:
-                    results = self.ai_client.audit_batch(batch_items)
-                except Exception as e:
-                    # 批量失败 → 直接用 Mock 降级，不再逐条调 API（浪费时间）
-                    self.log.emit(f"批量调用失败({str(e)[:60]})，降级 Mock")
-                    results = []
-                    for item in batch_items:
-                        dr = item["dev_rate"]
-                        abs_r = abs(dr)
-                        if abs_r >= 30:
-                            results.append({"result": "需补备注", "suggestion": "严重超耗，请检查工艺或定额"})
-                        elif abs_r >= 10:
-                            results.append({"result": "需补备注", "suggestion": "偏差较大，建议核查替代料或录入错误"})
-                        elif abs_r >= 5:
-                            results.append({"result": "需关注", "suggestion": "偏差需关注，请确认合理性"})
+                    self.log.emit(f"AI批量审核: {ai_processed}/{ai_total} (本轮 {len(batch_items)} 条)")
+                    try:
+                        results = self.ai_client.audit_batch(batch_items)
+                    except Exception as e:
+                        # 批量失败 → 直接用 Mock 降级，不再逐条调 API（浪费时间）
+                        self.log.emit(f"批量调用失败({str(e)[:60]})，降级 Mock")
+                        results = []
+                        for item in batch_items:
+                            dr = item["dev_rate"]
+                            abs_r = abs(dr)
+                            if abs_r >= 30:
+                                results.append({"result": "需补备注", "suggestion": "严重超耗，请检查工艺或定额"})
+                            elif abs_r >= 10:
+                                results.append({"result": "需补备注", "suggestion": "偏差较大，建议核查替代料或录入错误"})
+                            elif abs_r >= 5:
+                                results.append({"result": "需关注", "suggestion": "偏差需关注，请确认合理性"})
+                            else:
+                                results.append({"result": "合格", "suggestion": "偏差在正常范围内"})
+
+                    for j, (idx, result) in enumerate(zip(batch_idxs, results)):
+                        if isinstance(result, dict):
+                            self.audit_data.at[idx, 'AI建议'] = result.get('suggestion', '')
                         else:
-                            results.append({"result": "合格", "suggestion": "偏差在正常范围内"})
+                            self.audit_data.at[idx, 'AI建议'] = str(result)
 
-                for j, (idx, result) in enumerate(zip(batch_idxs, results)):
-                    if isinstance(result, dict):
-                        self.audit_data.at[idx, 'AI建议'] = result.get('suggestion', '')
-                    else:
-                        self.audit_data.at[idx, 'AI建议'] = str(result)
-
-                ai_processed = batch_end
-                self.progress.emit(ai_processed, ai_total)
-                self.log.emit(f"AI审核进度: {ai_processed}/{ai_total}")
+                    ai_processed = batch_end
+                    self.progress.emit(ai_processed, ai_total)
+                    self.log.emit(f"AI审核进度: {ai_processed}/{ai_total}")
 
             if not self._cancel.is_set():
                 if 'audit_result' in self.audit_data.columns or '审核结果' in self.audit_data.columns:

@@ -1055,14 +1055,7 @@ class MainWindow(QMainWindow):
         self.progress_label.setText(f"{step_name}  {percent}%")
 
     def _on_analysis_finished_ui(self, df):
-        import tempfile  # 顶层未 import；提到函数顶部防止下面 _plog 使用时触发 UnboundLocalError
-        _t_start = time.perf_counter()
-        # 写入日志文件以便诊断
-        _perf_log = os.path.join(tempfile.gettempdir(), "zpp011_perf.log")
-        def _plog(msg):
-            with open(_perf_log, "a", encoding="utf-8") as f:
-                f.write(f"{datetime.now().strftime('%H:%M:%S.%f')[:-3]} {msg}\n")
-        _plog("[_on_analysis_finished_ui] START")
+        import tempfile  # 下方生成完整报告缓存目录时使用
         self._monitor_auto_loading = False
         self._monitor_current_key = None
         self._stop_countdown()
@@ -1076,10 +1069,6 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("分析完成，正在加载结果...")
         QApplication.processEvents()
 
-        _plog(f'get_factory_list: {time.perf_counter()-_t_start:.2f}s')
-        factory_list = self.analysis_controller.get_factory_list()
-        if factory_list:
-            _plog(f'factory_changed: {time.perf_counter()-_t_start:.2f}s')
         # 修复「分析完成主表空白」：上一轮残留的筛选条件（proxy._filters/_custom_filters）
         # 会把新分析的整表过滤成 0 行（右下角显示 0/0）。每次分析完成时统一清空：
         # 1) proxy 两个筛选字典；2) 侧边栏面板 UI 同步复位（blockSignals 防止重复触发）。
@@ -1098,16 +1087,13 @@ class MainWindow(QMainWindow):
         QApplication.processEvents()
 
         try:
-            _plog(f'get_view_model: {time.perf_counter()-_t_start:.2f}s')
             processed_df = self.view_model.df
             if processed_df is None or processed_df.empty:
                 # 后台已预处理过（带 _read 列）则复用，绝不在主线程重跑 31s 预处理
                 if '_read' in df.columns:
                     processed_df = df
                 else:
-                    _plog(f'preprocess: {time.perf_counter()-_t_start:.2f}s')
                     processed_df = self.data_service.preprocess_audit_data(df)
-                _plog(f'setDataFrame: {time.perf_counter()-_t_start:.2f}s')
                 self.source_model.setDataFrame(processed_df)
                 QApplication.processEvents()
                 self.view_model.df = processed_df
@@ -1180,7 +1166,6 @@ class MainWindow(QMainWindow):
                 self._cache_worker.finished.connect(_on_cache_done)
                 self._cache_worker.start()
 
-            _plog(f'set_column_widths: {time.perf_counter()-_t_start:.2f}s')
             self._set_column_widths()
             QApplication.processEvents()
             self.statusBar().showMessage(f"分析完成，共加载 {len(processed_df)} 行 × {len(processed_df.columns)} 列")
@@ -1190,20 +1175,16 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'left_panel') and hasattr(self.left_panel, 'preview_group'):
                 self.left_panel.preview_group.expand()
             self.main_table.summary_container.setVisible(True)
-            _plog(f'update_summary: {time.perf_counter()-_t_start:.2f}s')
             self._update_summary()
             QApplication.processEvents()
             self.main_table.summary_container.raise_()
             self.main_table.summary_container.repaint()
-            _plog(f'processEvents: {time.perf_counter()-_t_start:.2f}s')
             QApplication.processEvents()
         except Exception as e:
-            _plog(f"EXCEPTION after {time.perf_counter()-_t_start:.2f}s: {e}")
             import traceback as _tb
             _tb.print_exc()
             self._heavy_busy = False
             QMessageBox.critical(self, "错误", f"加载结果失败: {e}")
-        _plog(f"TOTAL: {time.perf_counter()-_t_start:.2f}s")
 
         if not self.alert_monitor.isRunning():
             self.alert_monitor.start()

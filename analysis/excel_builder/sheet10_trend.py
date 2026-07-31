@@ -8,6 +8,7 @@ sheet10_trend.py — Sheet10 趋势分析
 import pandas as pd
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from analysis.debug_util import dprint
 
 
 def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
@@ -15,7 +16,7 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
     构建 Sheet10 趋势分析并写入工作表
     """
     report_progress(progress_idx, "Sheet10-趋势分析", 0)
-    print("[DEBUG do_analysis_v2] 开始生成Sheet10")
+    dprint("[DEBUG do_analysis_v2] 开始生成Sheet10")
 
     header_fill = PatternFill(start_color='1B5E20', end_color='1B5E20', fill_type='solid')
     header_font = Font(bold=True, size=11, color='FFFFFF')
@@ -76,7 +77,7 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
 
         valid_rate = dev['_dev_rate_num'].notna().sum()
         total = len(dev)
-        print(f"[DEBUG Sheet10] 总行数={total}, 有效偏差率={valid_rate}")
+        dprint(f"[DEBUG Sheet10] 总行数={total}, 有效偏差率={valid_rate}")
 
         if valid_rate == 0:
             ws.cell(row=2, column=1, value='无有效偏差率数据，无法生成趋势')
@@ -111,7 +112,7 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
                           f"中期：{fmt(mid_start)}～{fmt(mid_end)}  |  "
                           f"近期：{fmt(recent_start)}～{fmt(date_max_real)}")
 
-        print(f"[DEBUG Sheet10] {period_desc}")
+        dprint(f"[DEBUG Sheet10] {period_desc}")
 
         # 在表头下方写入日期范围说明
         ws.cell(row=2, column=1, value=period_desc)
@@ -227,8 +228,8 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
         for j, w in enumerate(col_widths, 1):
             ws.column_dimensions[get_column_letter(j)].width = w
 
-        print(f"[DEBUG Sheet10] 写入 {len(rows)} 行趋势数据")
+        dprint(f"[DEBUG Sheet10] 写入 {len(rows)} 行趋势数据")
 
     write_trend_sheet(wb, dev_df, date_min)
-    print("[DEBUG do_analysis_v2] Sheet10完成")
+    dprint("[DEBUG do_analysis_v2] Sheet10完成")
     report_progress(progress_idx, "Sheet10-趋势分析", 100)
