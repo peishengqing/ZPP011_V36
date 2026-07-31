@@ -147,8 +147,19 @@ def build_rule_summary(rule=None):
     return " · ".join(parts)
 
 
-def build_rule_reason(rule=None):
-    """生成写进隔离原因列的单条规则文本（带规则名）。"""
+def build_rule_reason(rule=None, idx=None):
+    """生成写进隔离原因列的单条规则文本。
+
+    idx: 规则在配置列表中的 1-based 序号（与「⚙ 自动隔离规则」对话框的
+         1. 2. 3. 编号一致，含已停用的规则也占位）。传入时返回简短形式
+         '自动规则[第N条]'，隔离区列宽更友好；不传则回退带名称+条件的
+         长文本（向后兼容 / 非自动隔离场景）。
+    """
+    if idx is not None:
+        try:
+            return "自动规则[第%d条]" % int(idx)
+        except (TypeError, ValueError):
+            pass
     rule = rule or DEFAULT_RULE
     name = str(rule.get("name") or "未命名规则").strip() or "未命名规则"
     return "自动规则[%s]:%s" % (name, build_rule_summary(rule).replace(" · ", "·"))
@@ -179,7 +190,7 @@ def compute_auto_quarantine_ids(df: pd.DataFrame, cfg=None) -> dict:
         cfg = load_auto_quarantine_config()
     if not cfg.get("enabled", True):
         return {}
-    rules = [r for r in cfg.get("rules", []) if r.get("enabled", True)]
+    rules = cfg.get("rules", [])
     if not rules:
         return {}
 
@@ -190,11 +201,13 @@ def compute_auto_quarantine_ids(df: pd.DataFrame, cfg=None) -> dict:
     quota_col = _first_col(df, ["数量-定额", "定额", "定额数量", "数量 - 定额", "quota"])
 
     result = {}  # data_id -> reason（只记靠前规则）
-    for rule in rules:
+    for idx, rule in enumerate(rules, 1):
+        if not rule.get("enabled", True):
+            continue
         mask = _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_col)
         for uid in df.loc[mask, "data_id"].astype(str):
             if uid not in result:  # 已被靠前规则命中的不再覆盖
-                result[uid] = build_rule_reason(rule)
+                result[uid] = build_rule_reason(rule, idx)
     return result
 
 
