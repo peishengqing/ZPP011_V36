@@ -2054,7 +2054,7 @@ class MainWindow(QMainWindow):
         4 类未读统一用主表 view_model.df 的 _read 列判定，口径与各看板一致：
         - 隔离区未读     = _quarantined==1 且 _read==0
         - 变动提醒未读   = _post_audit_changed==1 且 _read==0（已改动且未读的行）
-        - 替代料未读     = 是否替代料=='是' 且 _read==0
+        - 替代料未读     = 是否替代料=='是' 且（超阈值 或 组内有差异）且 _read==0（与替代料看板一致）
         - 偏差率预警未读 = |偏差率|>=10% 且非「实际0定额>0」且 _read==0
         """
         try:
@@ -2089,12 +2089,10 @@ class MainWindow(QMainWindow):
                 n_c = int(((pd.to_numeric(df['_post_audit_changed'], errors='coerce').fillna(0).astype(int) == 1) & read_mask).sum())
             else:
                 n_c = 0
-            # 3. 替代料未读
-            if alt_col:
-                is_alt = df[alt_col].astype(str).str.strip().eq('是')
-                n_a = int((is_alt & read_mask).sum())
-            else:
-                n_a = 0
+            # 3. 替代料未读（与替代料看板口径一致：是否替代料=是 且 超阈值/有差异 且 未读）
+            threshold = getattr(self.alert_monitor, 'threshold', 10)
+            alt_alerts = filter_alt_alerts(df, threshold) if alt_col else pd.DataFrame()
+            n_a = int(read_mask.loc[alt_alerts.index].sum()) if not alt_alerts.empty else 0
             # 4. 偏差率预警未读
             if rate_col:
                 rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
