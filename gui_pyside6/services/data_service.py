@@ -258,6 +258,69 @@ class DataService(QObject):
         df = df.drop(columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note'], errors='ignore')
         return df
 
+    def get_audit_changes(self, df):
+        """变动提醒看板的单一数据源：从主表 df 的「审核后变更」行重算变动明细。
+
+        与未读概览弹窗 / 标记统计共用同一个真相（_post_audit_changed & _read 列），
+        不再依赖易失的 last_audit_changes 列表，避免两者口径脱钩导致看板为空。
+        旧值 / 新值通过对当前 df 与 DB 基线快照（load_read_status）的向量化比对还原。
+        """
+        if df is None or getattr(df, 'empty', True) or '_post_audit_changed' not in df.columns:
+            return []
+        mask = pd.to_numeric(df['_post_audit_changed'], errors='coerce').fillna(0).astype(int) == 1
+        if '_read' in df.columns:
+            mask = mask & (pd.to_numeric(df['_read'], errors='coerce').fillna(0).astype(int) == 0)
+        if not mask.any():
+            return []
+        sub = df[mask].copy()
+        data_ids = sub['data_id'].tolist()
+        status_map = load_read_status(data_ids)
+        if not status_map:
+            return []
+        real_col = self._find_real_qty_col(sub)
+        remark_col = self._find_remark_col(sub)
+        status_df = pd.DataFrame.from_dict(
+            status_map, orient='index',
+            columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note'])
+        sub = sub.join(status_df, on='data_id')
+        has_baseline = sub['_hist_snap'].notna() & sub['_hist_note'].notna()
+        if real_col:
+            cur_qty = pd.to_numeric(sub[real_col], errors='coerce')
+        else:
+            cur_qty = pd.Series([np.nan] * len(sub), index=sub.index)
+        if remark_col:
+            cur_note = sub[remark_col].apply(self._norm_note)
+        else:
+            cur_note = pd.Series([''] * len(sub), index=sub.index)
+        hist_snap = pd.to_numeric(sub['_hist_snap'], errors='coerce')
+        hist_note = sub['_hist_note'].apply(self._norm_note)
+        qty_changed = has_baseline & cur_qty.notna() & (abs(hist_snap - cur_qty) >= 1e-6)
+        note_changed = has_baseline & (hist_note != cur_note)
+        changes = []
+        for idx in sub.index[qty_changed]:
+            did = str(sub.at[idx, 'data_id'])
+            changes.append({
+                'data_id': did,
+                'field': '实际数量',
+                'workshop': sub.at[idx, '车间'] if '车间' in sub.columns else None,
+                'material_name': sub.at[idx, '物料名称'] if '物料名称' in sub.columns else (
+                    sub.at[idx, '物料描述'] if '物料描述' in sub.columns else ''),
+                'old_value': float(hist_snap.at[idx]) if pd.notna(hist_snap.at[idx]) else None,
+                'new_value': cur_qty.at[idx],
+            })
+        for idx in sub.index[note_changed]:
+            did = str(sub.at[idx, 'data_id'])
+            changes.append({
+                'data_id': did,
+                'field': '备注原因',
+                'workshop': sub.at[idx, '车间'] if '车间' in sub.columns else None,
+                'material_name': sub.at[idx, '物料名称'] if '物料名称' in sub.columns else (
+                    sub.at[idx, '物料描述'] if '物料描述' in sub.columns else ''),
+                'old_value': self._norm_note(hist_note.at[idx]),
+                'new_value': cur_note.at[idx],
+            })
+        return changes
+
     @staticmethod
     def _find_real_qty_col(df: pd.DataFrame):
         """探测实际数量列名（不同 SAP 导出可能不同）

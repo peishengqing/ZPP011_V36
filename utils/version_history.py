@@ -14,6 +14,15 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.19",
+        "date": "2026-08-01",
+        "build_datetime": "2026-08-01 15:10:00",
+        "features": [
+            "✓ 修复「变动提醒」看板为空 bug：看板数据源由易失的 last_audit_changes 列表改为从主表 _post_audit_changed==1 且未读 的行实时重算（与未读概览弹窗/标记统计共用同一真相），重新分析导致列表被清空后看板不再空白",
+            "✓ 主表未读数据存在 ~/.zpp011_audit/audit.db，与清缓存(__pycache__)、打包、预设持久化(已迁用户级)均互不干扰",
+        ],
+    },
+    {
         "version": "v42.18",
         "date": "2026-08-01",
         "build_datetime": "2026-08-01 11:00:00",

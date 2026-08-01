@@ -641,7 +641,10 @@ class MainWindow(QMainWindow):
         if getattr(self, '_audit_changes_dialog_open', False):
             return
         # 顶部工具栏：显示已审核记录变更明细（alert 与手动点击均复用）。
-        changes = getattr(self.data_service, 'last_audit_changes', [])
+        # 单一数据源：从主表 df 的 _post_audit_changed==1（且未读）行重算，
+        # 与未读概览弹窗/标记统计共用同一真相，不再依赖易失的 last_audit_changes 列表。
+        _adf = self.source_model.getDataFrame() if self.source_model else getattr(self.view_model, 'df', None)
+        changes = self.data_service.get_audit_changes(_adf) if (_adf is not None and not getattr(_adf, 'empty', True)) else []
         if not changes:
             QMessageBox.information(self, "变动提醒", "暂无已审核记录变动。")
             return
