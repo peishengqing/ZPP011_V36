@@ -33,7 +33,12 @@ class UnreadSummaryPopup(QWidget):
             Qt.WindowStaysOnTopHint |
             Qt.Tool
         )
-        self.setAttribute(Qt.WA_DeleteOnClose)
+        # 注意：故意【不】设 WA_DeleteOnClose。
+        # 若开启，点「查看」打开模态看板期间，20 秒自动关闭定时器触发 close()
+        # 会直接销毁 C++ 对象；看板关闭后 _open_board 末尾再调 close() 即抛
+        # "Internal C++ object already deleted"。改为 close() 仅隐藏，由持有方
+        # （main_window 单例）负责 deleteLater 释放，杜绝生命周期竞态。
+        self._closed = False
         self.setFixedWidth(330)
         self._setup_ui()
         self._move_to_bottom_right()
@@ -88,11 +93,35 @@ class UnreadSummaryPopup(QWidget):
     def _open_board(self, callback):
         """点击「查看」→ 打开对应看板（用户主动触发，此时分析已完成、主表就绪）。"""
         try:
+            # 先停定时器：避免看板模态期间定时器触发 close() 销毁本对象
+            self._auto_close_timer.stop()
+        except Exception:
+            pass
+        try:
             if callable(callback):
                 callback()
         except Exception:
             pass
-        self.close()
+        self._safe_close()
+
+    def _safe_close(self):
+        """安全关闭：已关闭则跳过；C++ 对象万一已被销毁也不抛异常。"""
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            super().close()
+        except RuntimeError:
+            # 极少数情况下 C++ 对象已被销毁，忽略即可
+            pass
+
+    def closeEvent(self, event):
+        try:
+            self._auto_close_timer.stop()
+        except Exception:
+            pass
+        self._closed = True
+        super().closeEvent(event)
 
     def _move_to_bottom_right(self):
         """移动到屏幕右下角（与主窗无关，避免依赖 parent 几何）"""
@@ -104,5 +133,8 @@ class UnreadSummaryPopup(QWidget):
             self.move(x, y)
 
     def _start_auto_close(self):
-        """20 秒后自动关闭"""
-        QTimer.singleShot(20000, self.close)
+        """20 秒后自动关闭（用受控 QTimer，可被 stop 取消）"""
+        self._auto_close_timer = QTimer(self)
+        self._auto_close_timer.setSingleShot(True)
+        self._auto_close_timer.timeout.connect(self._safe_close)
+        self._auto_close_timer.start(20000)

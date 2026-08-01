@@ -256,6 +256,7 @@ class MainWindow(QMainWindow):
         self._auto_pop_alerts = False
         # 未读汇总弹窗：分析/加载完成后自动弹（非模态、延迟渲染，安全不卡顿）
         self._pending_unread_summary = False
+        self._unread_popup = None
 
         # 创建组件
         self.menu_bar = MenuBarComponent(self)
@@ -2115,6 +2116,14 @@ class MainWindow(QMainWindow):
             ]
             popup = UnreadSummaryPopup(items, self)
             popup.show()
+            # 单例管理：弹新窗前先销毁旧窗，避免多个弹窗堆叠 + 按钮 lambda 引用环
+            if getattr(self, '_unread_popup', None) is not None:
+                try:
+                    self._unread_popup._safe_close()
+                    self._unread_popup.deleteLater()
+                except Exception:
+                    pass
+            self._unread_popup = popup
         except Exception:
             import traceback as _tb
             _tb.print_exc()
