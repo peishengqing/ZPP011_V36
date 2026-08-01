@@ -36,6 +36,7 @@ from gui_pyside6.models.data_frame_model import DataFrameModel, AuditProxyModel
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.widgets.filter_panel import FilterPanel
 from gui_pyside6.widgets.stats_cards import StatsCardsWidget
+from gui_pyside6.widgets.unread_summary_popup import UnreadSummaryPopup
 from gui_pyside6.dialogs.unit_summary_dialog import UnitSummaryDialog
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
@@ -253,6 +254,8 @@ class MainWindow(QMainWindow):
         # 关闭自动弹窗（变动提醒表格 / 新替代料预警弹窗），避免阻塞主线程导致「未响应」。
         # 手动按钮（变动提醒 / 替代料看板 / 偏差率预警）仍可用。
         self._auto_pop_alerts = False
+        # 未读汇总弹窗：分析/加载完成后自动弹（非模态、延迟渲染，安全不卡顿）
+        self._pending_unread_summary = False
 
         # 创建组件
         self.menu_bar = MenuBarComponent(self)
@@ -1096,6 +1099,7 @@ class MainWindow(QMainWindow):
                     processed_df = self.data_service.preprocess_audit_data(df)
                 self.source_model.setDataFrame(processed_df)
                 QApplication.processEvents()
+                self._schedule_unread_summary()
                 self.view_model.df = processed_df
             self._analysis_params = self.analysis_controller.get_analysis_params()
 
@@ -2026,10 +2030,94 @@ class MainWindow(QMainWindow):
         if df is None or df.empty:
             self._update_summary()
             self.filter_panel.update_options(pd.DataFrame())
-            return
-        self._update_summary()
-        self.stats_cards.refresh(df)
-        self.filter_panel.update_options(df)
+        else:
+            self._update_summary()
+            self.stats_cards.refresh(df)
+            self.filter_panel.update_options(df)
+        # 真实数据载入后，弹未读汇总（非模态 + 延迟到渲染完成后，避免卡顿）
+        if getattr(self, '_pending_unread_summary', False):
+            self._pending_unread_summary = False
+            if df is not None and not df.empty:
+                QTimer.singleShot(0, self._show_unread_summary)
+
+    def _schedule_unread_summary(self):
+        """标记「本次为真实数据载入」，待 _on_view_model_data_changed 末尾弹未读汇总。"""
+        self._pending_unread_summary = True
+
+    def _show_unread_summary(self):
+        """分析/加载完成后，弹非模态未读汇总（隔离区/变动提醒/替代料/偏差率预警）。
+
+        4 类未读统一用主表 view_model.df 的 _read 列判定，口径与各看板一致：
+        - 隔离区未读     = _quarantined==1 且 _read==0
+        - 变动提醒未读   = _post_audit_changed==1 且 _read==0（已改动且未读的行）
+        - 替代料未读     = 是否替代料=='是' 且 _read==0
+        - 偏差率预警未读 = |偏差率|>=10% 且非「实际0定额>0」且 _read==0
+        """
+        try:
+            df = self.view_model.df
+            if df is None or df.empty:
+                return
+
+            # 未读掩码
+            if '_read' in df.columns:
+                read_mask = pd.to_numeric(
+                    df['_read'], errors='coerce').fillna(0).astype(int) == 0
+            else:
+                read_mask = pd.Series(True, index=df.index)
+
+            # 列探测
+            qty_col = next((c for c in ['数量-定额', '定额'] if c in df.columns), None)
+            act_col = next((c for c in ['数量-实际', '实际'] if c in df.columns), None)
+            rate_col = next((c for c in ['偏差率(%)', '偏差率', 'dev_rate'] if c in df.columns), None)
+            alt_col = '是否替代料' if '是否替代料' in df.columns else None
+
+            a = pd.to_numeric(df[act_col], errors='coerce').fillna(0) if act_col else pd.Series(0, index=df.index)
+            q = pd.to_numeric(df[qty_col], errors='coerce').fillna(0) if qty_col else pd.Series(0, index=df.index)
+            no_input = (a.abs() <= 0.001) & (q > 0.001)
+
+            # 1. 隔离区未读
+            if '_quarantined' in df.columns:
+                n_q = int(((pd.to_numeric(df['_quarantined'], errors='coerce').fillna(0).astype(int) == 1) & read_mask).sum())
+            else:
+                n_q = 0
+            # 2. 变动提醒未读（已改动且未读的行）
+            if '_post_audit_changed' in df.columns:
+                n_c = int(((pd.to_numeric(df['_post_audit_changed'], errors='coerce').fillna(0).astype(int) == 1) & read_mask).sum())
+            else:
+                n_c = 0
+            # 3. 替代料未读
+            if alt_col:
+                is_alt = df[alt_col].astype(str).str.strip().eq('是')
+                n_a = int((is_alt & read_mask).sum())
+            else:
+                n_a = 0
+            # 4. 偏差率预警未读
+            if rate_col:
+                rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
+                alert_mask = (rates.abs() >= 10) & (~no_input)
+                n_d = int((alert_mask & read_mask).sum())
+            else:
+                n_d = 0
+
+            # 全部已读则不弹（避免无意义打扰）
+            if n_q == 0 and n_c == 0 and n_a == 0 and n_d == 0:
+                return
+
+            items = [
+                {"icon": "📦", "label": "隔离区", "count": n_q,
+                 "callback": self._open_quarantine_dialog},
+                {"icon": "📝", "label": "变动提醒", "count": n_c,
+                 "callback": self._show_audit_changes_dialog},
+                {"icon": "🔄", "label": "替代料", "count": n_a,
+                 "callback": self._show_alert_dashboard},
+                {"icon": "⚠️", "label": "偏差率预警", "count": n_d,
+                 "callback": self._show_deviation_warning_dialog},
+            ]
+            popup = UnreadSummaryPopup(items, self)
+            popup.show()
+        except Exception:
+            import traceback as _tb
+            _tb.print_exc()
 
     def _on_stats_card_clicked(self, card_type: str):
         """统计卡片点击：切换对应筛选（审核后变更 / 隔离区卡可过滤对应行）
@@ -2339,6 +2427,7 @@ class MainWindow(QMainWindow):
                 _tb.print_exc()
                 raise
             self._apply_column_visibility_by_name()
+            self._schedule_unread_summary()
             self.view_model.df = processed_df
             self._update_summary()
             self.filter_panel.update_options(processed_df)
@@ -2726,6 +2815,7 @@ class MainWindow(QMainWindow):
             df = df.copy()
             df["净偏差数量"] = df.get("偏差数量", 0)
             df["是否替代料"] = "否"
+            self._schedule_unread_summary()
             self.view_model.df = df
             if self.source_model is not None:
                 self.source_model.setDataFrame(df)
@@ -2738,6 +2828,7 @@ class MainWindow(QMainWindow):
             return
         try:
             new_df = apply_net_offset(df, alt_pairs, group_key=["订单日期", "流程订单"])
+            self._schedule_unread_summary()
             self.view_model.df = new_df
             if self.source_model is not None:
                 self.source_model.setDataFrame(new_df)
@@ -3179,6 +3270,7 @@ class MainWindow(QMainWindow):
                         self.view_model.df, self.view_model.df)
                     self.source_model.setDataFrame(processed_df)
                     self._apply_column_visibility_by_name()
+                    self._schedule_unread_summary()
                     self.view_model.df = processed_df
                 except Exception as e:
                     self.log(f"规则变更后预处理失败: {e}", "error")
