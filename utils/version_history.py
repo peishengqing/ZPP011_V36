@@ -14,6 +14,21 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.17",
+        "date": "2026-08-01",
+        "build_datetime": "2026-08-01 10:45:00",
+        "features": [
+            "✦ 物料名称预设存储改为用户级目录（~/.zpp011_audit/material_name_presets.json），exe 内新增/修改预设永久保存，与已读数据同源",
+            "✦ 打包配置修复：将整个 config 目录（含根目录 json）纳入 exe，补全此前遗漏的 material_name_presets.json / auto_quarantine_config.json / column_widths.json 等运行时配置",
+        ],
+        "fixes": [],
+        "optimizations": [],
+        "notes": [
+            "📌 首次运行自动将项目内 config/material_name_presets.json 迁移至用户目录，源码与 exe 共用同一份预设",
+            "📌 打包采用 --debug（带控制台），崩溃时可直接查看 traceback",
+        ],
+    },
+    {
         "version": "v42.16",
         "date": "2026-08-01",
         "build_datetime": "2026-08-01 09:00:00",

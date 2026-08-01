@@ -8,16 +8,13 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 from PyInstaller.__main__ import run as pyinstaller_run
 
-# 准备 add-data 参数，只加存在的目录
+# 准备 add-data 参数：整目录打包 config（含根目录 json、system、prompts、template.pptx 等），
+# 避免遗漏 material_name_presets.json / auto_quarantine_config.json / column_widths.json 等运行时配置
 add_data_opts = []
-if os.path.isdir("config/system"):
-    add_data_opts.append(f"--add-data={os.path.join('config', 'system')};config/system")
-if os.path.isdir("config/prompts"):
-    add_data_opts.append(f"--add-data={os.path.join('config', 'prompts')};config/prompts")
+if os.path.isdir("config"):
+    add_data_opts.append(f"--add-data={os.path.join('config')};config")
 if os.path.isfile(os.path.join("gui_pyside6", "style.qss")):
     add_data_opts.append(f"--add-data={os.path.join('gui_pyside6', 'style.qss')};gui_pyside6")
-if os.path.isfile(os.path.join("config", "template.pptx")):
-    add_data_opts.append(f"--add-data={os.path.join('config', 'template.pptx')};config")
 
 if __name__ == "__main__":
     # 检测是否要调试模式（带控制台）

@@ -7,15 +7,15 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout,
     QComboBox, QPushButton, QLabel, QDateEdit, QLineEdit, QScrollArea,
-    QDoubleSpinBox, QListWidget, QListWidgetItem, QDialog, QCalendarWidget,
+    QDoubleSpinBox, QDialog, QCalendarWidget,
     QSizePolicy, QMenu, QCheckBox
 )
 from PySide6.QtCore import Signal, Qt, QDate, QEvent
 from PySide6.QtGui import QColor, QPixmap, QIcon
-from datetime import datetime
 import pandas as pd
 import json
 import os
+import shutil
 
 from gui_pyside6.dialogs.material_presets_dialog import MaterialPresetsDialog, MATERIAL_ALL_SENTINEL
 
@@ -141,7 +141,7 @@ class FilterPanel(QWidget):
         self._material_presets = self._load_material_presets()
         # 编辑预设按钮：直接打开 JSON 文件让用户自己维护下拉项
         self.edit_presets_btn = QPushButton("编辑")
-        self.edit_presets_btn.setToolTip("打开 config/material_name_presets.json 自定义下拉项")
+        self.edit_presets_btn.setToolTip("管理物料名称下拉预设（编辑/拖拽排序/新增，保存至用户目录持久化）")
         self.edit_presets_btn.setMaximumWidth(50)
         self.edit_presets_btn.clicked.connect(self._open_material_presets_editor)
         material_name_row = QHBoxLayout()
@@ -565,14 +565,29 @@ class FilterPanel(QWidget):
             combo.addItem("全部")
 
     def _preset_path(self):
-        """用户自定义物料名称下拉项配置文件路径（项目 config 目录）"""
+        """用户级持久位置（与 audit.db 同目录 ~/.zpp011_audit/），
+        保证 exe 内新增/修改预设也能永久保存，且源码与 exe 共用同一份预设。"""
+        base = os.path.join(os.path.expanduser("~"), ".zpp011_audit")
+        os.makedirs(base, exist_ok=True)
+        return os.path.join(base, "material_name_presets.json")
+
+    def _default_preset_source(self):
+        """项目内默认预设文件（作为首次运行迁移模板）。"""
         return os.path.normpath(os.path.join(
             os.path.dirname(__file__), "..", "..", "config", "material_name_presets.json"))
 
     def _load_material_presets(self):
-        """读取用户自定义的物料名称下拉项；文件不存在或损坏则返回空列表。"""
+        """读取用户级物料名称下拉预设；首次运行从项目内默认配置迁移；损坏则回退空列表。"""
+        p = self._preset_path()
+        if not os.path.exists(p):
+            src = self._default_preset_source()
+            if os.path.exists(src):
+                try:
+                    shutil.copyfile(src, p)
+                except Exception:
+                    pass
         try:
-            with open(self._preset_path(), "r", encoding="utf-8") as f:
+            with open(p, "r", encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, list):
                 return [str(x).strip() for x in data if str(x).strip()]
@@ -669,7 +684,6 @@ class FilterPanel(QWidget):
         cat_col = self._col_map.get('物料类型')
         if cat_col and self.category_combo.currentText() != "全部":
             filters[cat_col] = self.category_combo.currentText()
-        alt_col = self._col_map.get('替代料')
         if self.alt_combo.currentText() != "全部":
             filters['是否替代料'] = self.alt_combo.currentText()
         order_type_col = self._col_map.get('订单类型')
