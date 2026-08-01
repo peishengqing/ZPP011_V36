@@ -10,7 +10,7 @@
 import pandas as pd
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
-    QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel,
+    QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QFrame,
 )
 from PySide6.QtCore import Qt, QPoint, QTimer
 from gui_pyside6.models.data_frame_model import DataFrameModel
@@ -31,6 +31,8 @@ class DeviationWarningDialog(QDialog):
         self.main_window = main_window
         self.original_df = warnings_df.copy()
         self.filter_mode = "all"
+        self.mat_filter = "all"   # 料别筛选：all / raw(原料) / pkg(包材)，与已读状态筛选独立叠加
+        self._mat_col = None      # 料别列名（物料类型 / 物料大类），set_data 时探测
         self.setup_ui()
         self.set_data(warnings_df)
 
@@ -60,6 +62,35 @@ class DeviationWarningDialog(QDialog):
         self.btn_read.setMinimumWidth(70)
         self.btn_read.clicked.connect(lambda: self._set_filter("read"))
         filter_layout.addWidget(self.btn_read)
+
+        # ---- 第二组：料别筛选（与上面的已读状态筛选独立，可叠加）----
+        self.mat_sep = QFrame()
+        self.mat_sep.setFrameShape(QFrame.VLine)
+        self.mat_sep.setFrameShadow(QFrame.Sunken)
+        filter_layout.addSpacing(8)
+        filter_layout.addWidget(self.mat_sep)
+        filter_layout.addSpacing(8)
+
+        self.lbl_mat = QLabel("料别:")
+        filter_layout.addWidget(self.lbl_mat)
+
+        self.btn_mat_all = QPushButton("全部")
+        self.btn_mat_all.setCheckable(True)
+        self.btn_mat_all.setMinimumWidth(70)
+        self.btn_mat_all.clicked.connect(lambda: self._set_mat_filter("all"))
+        filter_layout.addWidget(self.btn_mat_all)
+
+        self.btn_mat_raw = QPushButton("原料")
+        self.btn_mat_raw.setCheckable(True)
+        self.btn_mat_raw.setMinimumWidth(70)
+        self.btn_mat_raw.clicked.connect(lambda: self._set_mat_filter("raw"))
+        filter_layout.addWidget(self.btn_mat_raw)
+
+        self.btn_mat_pkg = QPushButton("包材")
+        self.btn_mat_pkg.setCheckable(True)
+        self.btn_mat_pkg.setMinimumWidth(70)
+        self.btn_mat_pkg.clicked.connect(lambda: self._set_mat_filter("pkg"))
+        filter_layout.addWidget(self.btn_mat_pkg)
 
         filter_layout.addStretch()
 
@@ -124,29 +155,85 @@ class DeviationWarningDialog(QDialog):
         self.btn_read.setChecked(mode == "read")
         self._apply_filter()
 
+    def _set_mat_filter(self, mode):
+        """料别筛选（全部/原料/包材），与已读状态筛选独立叠加"""
+        self.mat_filter = mode
+        self.btn_mat_all.setChecked(mode == "all")
+        self.btn_mat_raw.setChecked(mode == "raw")
+        self.btn_mat_pkg.setChecked(mode == "pkg")
+        self._apply_filter()
+
+    def _read_mask(self, df, mode):
+        """已读状态掩码：all=全True / unread=_read==0 / read=_read==1"""
+        if "_read" in df.columns:
+            r = pd.to_numeric(df["_read"], errors="coerce").fillna(0).astype(int)
+        else:
+            r = pd.Series(0, index=df.index)
+        if mode == "unread":
+            return r == 0
+        if mode == "read":
+            return r == 1
+        return pd.Series(True, index=df.index)
+
+    def _mat_mask(self, df, mode):
+        """料别掩码：all=全True / raw=物料类型=='原料' / pkg=='包材'
+
+        料别列取「物料类型」（analyzer 按物料编码前缀推断：20→包材、30→原料）。
+        列缺失时一律返回全 True，等同于不做料别过滤（按钮此时已隐藏）。
+        """
+        if mode == "all" or not self._mat_col or self._mat_col not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df[self._mat_col].astype(str).str.strip()
+        return vals == ("原料" if mode == "raw" else "包材")
+
     def _apply_filter(self):
-        """从 original_df 重新过滤并刷新模型"""
+        """从 original_df 重新过滤并刷新模型（已读状态 × 料别 两组条件叠加）"""
         if not hasattr(self, "original_df") or self.original_df is None:
             return
         df = self.original_df.copy()
         if df.empty:
             if hasattr(self, "source_model"):
                 self.source_model.setDataFrame(df)
+            self._update_button_counts()
             return
 
         if "_read" not in df.columns:
             df["_read"] = 0
 
-        if self.filter_mode == "unread":
-            filtered = df[df["_read"] == 0].copy()
-        elif self.filter_mode == "read":
-            filtered = df[df["_read"] == 1].copy()
-        else:
-            filtered = df.copy()
+        filtered = df[self._read_mask(df, self.filter_mode)
+                      & self._mat_mask(df, self.mat_filter)].copy()
 
         filtered = filtered.reset_index(drop=True)
         if hasattr(self, "source_model"):
             self.source_model.setDataFrame(filtered)
+        self._update_button_counts()
+
+    def _update_button_counts(self):
+        """按钮上显示条数：每个按钮显示「点它之后会得到多少条」（另一组条件保持当前选择）"""
+        try:
+            df = self.original_df
+            if df is None or df.empty:
+                for b, t in [(self.btn_all, "全部"), (self.btn_unread, "未读"),
+                             (self.btn_read, "已读"), (self.btn_mat_all, "全部"),
+                             (self.btn_mat_raw, "原料"), (self.btn_mat_pkg, "包材")]:
+                    b.setText(f"{t} (0)")
+                return
+            cur_read = self._read_mask(df, self.filter_mode)
+            cur_mat = self._mat_mask(df, self.mat_filter)
+            # 已读状态组：固定当前料别，看三种状态各多少条
+            self.btn_all.setText(f"全部 ({int(cur_mat.sum())})")
+            self.btn_unread.setText(
+                f"未读 ({int((self._read_mask(df, 'unread') & cur_mat).sum())})")
+            self.btn_read.setText(
+                f"已读 ({int((self._read_mask(df, 'read') & cur_mat).sum())})")
+            # 料别组：固定当前已读状态，看三种料别各多少条
+            self.btn_mat_all.setText(f"全部 ({int(cur_read.sum())})")
+            self.btn_mat_raw.setText(
+                f"原料 ({int((cur_read & self._mat_mask(df, 'raw')).sum())})")
+            self.btn_mat_pkg.setText(
+                f"包材 ({int((cur_read & self._mat_mask(df, 'pkg')).sum())})")
+        except Exception:
+            pass
 
     def set_data(self, df):
         """设置表格数据 - 确保 _read / data_id / 状态 列存在，初始按内容自适应列宽"""
@@ -184,16 +271,56 @@ class DeviationWarningDialog(QDialog):
             col_idx = df.columns.get_loc('data_id')
             self.table_view.setColumnHidden(col_idx, True)
 
+        # 探测料别列（物料类型：20开头→包材、30开头→原料）；列缺失则隐藏整组料别按钮
+        self._mat_col = next(
+            (c for c in ['物料类型', '物料大类'] if c in df.columns), None)
+        has_mat = self._mat_col is not None
+        for w in (self.mat_sep, self.lbl_mat, self.btn_mat_all,
+                  self.btn_mat_raw, self.btn_mat_pkg):
+            w.setVisible(has_mat)
+        # 料别默认「全部」（直接置状态，避免与下面的 _set_filter 重复过滤一次）
+        self.mat_filter = "all"
+        self.btn_mat_all.setChecked(True)
+        self.btn_mat_raw.setChecked(False)
+        self.btn_mat_pkg.setChecked(False)
+
         # 默认打开时显示未读
         self._set_filter("unread")
 
+    def _filter_desc(self):
+        """当前筛选条件的中文描述，用于默认文件名与提示语"""
+        state = {"all": "全部", "unread": "未读", "read": "已读"}.get(self.filter_mode, "全部")
+        parts = [state]
+        if self._mat_col:
+            mat = {"all": "", "raw": "原料", "pkg": "包材"}.get(self.mat_filter, "")
+            if mat:
+                parts.append(mat)
+        return "_".join(parts)
+
     def export_excel(self):
+        """导出当前筛选+排序后、表格里实际显示的记录（非全量）。
+
+        表格直接绑定 source_model 且 DataFrameModel.sort() 就地排序 _data，
+        故 getDataFrame() 即为屏幕所见的那一份。
+        """
+        cur_df = self.source_model.getDataFrame() if hasattr(self, "source_model") else None
+        if cur_df is None or cur_df.empty:
+            toast("当前筛选结果为空，无可导出的记录", parent=self)
+            return
+
+        desc = self._filter_desc()
+        default_name = f"偏差率预警_{desc}.xlsx" if desc else "偏差率预警.xlsx"
         path, _ = QFileDialog.getSaveFileName(
-            self, "导出偏差率预警列表", "偏差率预警.xlsx", "Excel files (*.xlsx)")
+            self, f"导出偏差率预警列表（当前筛选：{desc}，共 {len(cur_df)} 条）",
+            default_name, "Excel files (*.xlsx)")
         if path:
-            export_df = self.original_df.drop(columns=['_read', 'data_id'], errors='ignore')
-            export_df.to_excel(path, index=False)
-            toast(f"已导出 {len(export_df)} 条记录", parent=self)
+            from gui_pyside6.save_guard import safe_save
+            export_df = cur_df.drop(columns=['_read', 'data_id'], errors='ignore')
+            saved = safe_save(self, path,
+                              lambda p: export_df.to_excel(p, index=False),
+                              what="预警列表")
+            if saved:
+                toast(f"已导出 {len(export_df)} 条记录（{desc}）到 {saved}", parent=self)
 
     def show_context_menu(self, pos: QPoint):
         index = self.table_view.indexAt(pos)

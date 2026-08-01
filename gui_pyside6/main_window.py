@@ -412,7 +412,7 @@ class MainWindow(QMainWindow):
         self.action_btn_excel.setObjectName("actionBtnExcel")
         self.action_btn_excel.setProperty("class", "actionBtn")
         self.action_btn_excel.clicked.connect(
-            lambda: self.export_controller.export_current_table(self.view_model.df, self)
+            lambda: self.export_controller.export_current_table(self._get_displayed_dataframe(), self)
         )
 
         self.action_btn_export_full = QPushButton("📋 完整报告")
@@ -1378,7 +1378,7 @@ class MainWindow(QMainWindow):
     def _show_alert_dashboard(self):
         """手动打开替代料看板"""
         try:
-            df = self.view_model.df
+            df = self._get_master_df()  # 与未读弹窗同源，避免两边数对不上
             if df is None or df.empty:
                 QMessageBox.information(self, "提示", "暂无数据，请先分析")
                 return
@@ -1413,7 +1413,7 @@ class MainWindow(QMainWindow):
     def _show_deviation_warning_dialog(self):
         """手动打开偏差率预警看板（|偏差率| >= 10%）"""
         try:
-            df = self.view_model.df
+            df = self._get_master_df()  # 与未读弹窗同源，避免两边数对不上
             if df is None or df.empty:
                 QMessageBox.information(self, "提示", "暂无数据，请先分析")
                 return
@@ -1439,6 +1439,7 @@ class MainWindow(QMainWindow):
             # 只保留关键列（兼容两种命名：数量-实际/实际、组件物料号/物料编码 等）
             candidates = [
                 "订单日期", "流程订单", "组件物料号", "物料编码", "物料名称", "物料描述", "车间",
+                "物料类型", "物料大类",
                 "数量-定额", "定额", "数量-实际", "实际", "偏差数量", "偏差率(%)",
                 "偏差金额", "净偏差数量", "净偏差金额", "净偏差率(%)", "是否替代料",
                 "备注", "备注原因", "备注来源", "预警", "_read",
@@ -2010,6 +2011,8 @@ class MainWindow(QMainWindow):
             pass
         self.source_model.dataChanged.connect(self._update_summary)
         # self.source_model.dataChanged.connect(self._refresh_stats_cards)  # stats_cards 已删除
+        # 标记已读/加隔离等会走 source_model.setDataFrame → 实时刷新未读弹窗条数
+        self.source_model.dataChanged.connect(self._refresh_unread_popup)
         self.proxy_model.layoutChanged.connect(self._update_summary)
         self.proxy_model.layoutChanged.connect(self._update_mark_stats)
         # self.proxy_model.layoutChanged.connect(self._refresh_stats_cards)  # stats_cards 已删除
@@ -2043,91 +2046,154 @@ class MainWindow(QMainWindow):
             self._pending_unread_summary = False
             if df is not None and not df.empty:
                 QTimer.singleShot(0, self._show_unread_summary)
+        # 数据变化（隔离/标记已读等）→ 实时刷新已弹出的未读汇总弹窗
+        try:
+            self._refresh_unread_popup()
+        except Exception:
+            pass
 
     def _schedule_unread_summary(self):
         """标记「本次为真实数据载入」，待 _on_view_model_data_changed 末尾弹未读汇总。"""
         self._pending_unread_summary = True
 
-    def _show_unread_summary(self):
-        """分析/加载完成后，弹非模态未读汇总（隔离区/变动提醒/替代料/偏差率预警）。
+    def _get_master_df(self):
+        """未读计数 / 各看板的唯一取数口径。
 
-        4 类未读统一用主表 view_model.df 的 _read 列判定，口径与各看板一致：
-        - 隔离区未读     = _quarantined==1 且 _read==0
-        - 变动提醒未读   = _post_audit_changed==1 且 _read==0（已改动且未读的行）
-        - 替代料未读     = 是否替代料=='是' 且（超阈值 或 组内有差异）且 _read==0（与替代料看板一致）
-        - 偏差率预警未读 = |偏差率|>=10% 且非「实际0定额>0」且 _read==0
+        source_model 持有的才是主表实际显示的那份数据：DataFrameModel.setDataFrame
+        内部做了 df.copy()，因此「标记已读 / 加隔离」等操作只会改到 source_model，
+        view_model.df 不会同步。两者一旦分叉，就会出现「弹窗数 ≠ 看板数」
+        （用户实测：隔离区 2 条未读，弹窗只报 1 条）。
+        故统一以 source_model 为准，仅在其不可用时回退 view_model.df。
         """
         try:
-            df = self.view_model.df
-            if df is None or df.empty:
+            if getattr(self, 'source_model', None) is not None:
+                df = self.source_model.getDataFrame()
+                if df is not None and not df.empty:
+                    return df
+        except Exception:
+            pass
+        return getattr(self.view_model, 'df', None)
+
+    def _count_unread_items(self):
+        """统计 4 类未读条数，返回 items 列表（供弹窗构建 + 实时刷新共用）。
+
+        4 类未读统一用主表 _read 列判定，口径与各看板一致：
+        - 隔离区未读     = _quarantined==1 且 _read==0
+        - 变动提醒未读   = _post_audit_changed==1 且 _read==0（已改动且未读的行）
+        - 替代料未读     = filter_alt_alerts 命中 且 _read==0（与替代料看板一致）
+        - 偏差率预警未读 = |偏差率|>=10% 且非「实际0定额>0」且 _read==0
+        无数据时返回 None。
+        """
+        df = self._get_master_df()
+        if df is None or df.empty:
+            return None
+
+        # 未读掩码
+        if '_read' in df.columns:
+            read_mask = pd.to_numeric(
+                df['_read'], errors='coerce').fillna(0).astype(int) == 0
+        else:
+            read_mask = pd.Series(True, index=df.index)
+
+        # 列探测
+        qty_col = next((c for c in ['数量-定额', '定额'] if c in df.columns), None)
+        act_col = next((c for c in ['数量-实际', '实际'] if c in df.columns), None)
+        rate_col = next((c for c in ['偏差率(%)', '偏差率', 'dev_rate'] if c in df.columns), None)
+        alt_col = '是否替代料' if '是否替代料' in df.columns else None
+
+        a = pd.to_numeric(df[act_col], errors='coerce').fillna(0) if act_col else pd.Series(0, index=df.index)
+        q = pd.to_numeric(df[qty_col], errors='coerce').fillna(0) if qty_col else pd.Series(0, index=df.index)
+        no_input = (a.abs() <= 0.001) & (q > 0.001)
+
+        # 1. 隔离区未读
+        if '_quarantined' in df.columns:
+            n_q = int(((pd.to_numeric(df['_quarantined'], errors='coerce').fillna(0).astype(int) == 1) & read_mask).sum())
+        else:
+            n_q = 0
+        # 2. 变动提醒未读（已改动且未读的行）
+        if '_post_audit_changed' in df.columns:
+            n_c = int(((pd.to_numeric(df['_post_audit_changed'], errors='coerce').fillna(0).astype(int) == 1) & read_mask).sum())
+        else:
+            n_c = 0
+        # 3. 替代料未读（与替代料看板口径一致：超阈值/组内有差异 且 未读）
+        threshold = getattr(self.alert_monitor, 'threshold', 10)
+        alt_alerts = filter_alt_alerts(df, threshold) if alt_col else pd.DataFrame()
+        n_a = int(read_mask.loc[alt_alerts.index].sum()) if not alt_alerts.empty else 0
+        # 4. 偏差率预警未读
+        if rate_col:
+            rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
+            alert_mask = (rates.abs() >= 10) & (~no_input)
+            n_d = int((alert_mask & read_mask).sum())
+        else:
+            n_d = 0
+
+        return [
+            {"icon": "📦", "label": "隔离区", "count": n_q,
+             "callback": self._open_quarantine_dialog},
+            {"icon": "📝", "label": "变动提醒", "count": n_c,
+             "callback": self._show_audit_changes_dialog},
+            {"icon": "🔄", "label": "替代料", "count": n_a,
+             "callback": self._show_alert_dashboard},
+            {"icon": "⚠️", "label": "偏差率预警", "count": n_d,
+             "callback": self._show_deviation_warning_dialog},
+        ]
+
+    def _show_unread_summary(self):
+        """分析/加载完成后，弹常驻非模态未读汇总弹窗（全部已读则不弹）。"""
+        try:
+            items = self._count_unread_items()
+            if not items:
                 return
-
-            # 未读掩码
-            if '_read' in df.columns:
-                read_mask = pd.to_numeric(
-                    df['_read'], errors='coerce').fillna(0).astype(int) == 0
-            else:
-                read_mask = pd.Series(True, index=df.index)
-
-            # 列探测
-            qty_col = next((c for c in ['数量-定额', '定额'] if c in df.columns), None)
-            act_col = next((c for c in ['数量-实际', '实际'] if c in df.columns), None)
-            rate_col = next((c for c in ['偏差率(%)', '偏差率', 'dev_rate'] if c in df.columns), None)
-            alt_col = '是否替代料' if '是否替代料' in df.columns else None
-
-            a = pd.to_numeric(df[act_col], errors='coerce').fillna(0) if act_col else pd.Series(0, index=df.index)
-            q = pd.to_numeric(df[qty_col], errors='coerce').fillna(0) if qty_col else pd.Series(0, index=df.index)
-            no_input = (a.abs() <= 0.001) & (q > 0.001)
-
-            # 1. 隔离区未读
-            if '_quarantined' in df.columns:
-                n_q = int(((pd.to_numeric(df['_quarantined'], errors='coerce').fillna(0).astype(int) == 1) & read_mask).sum())
-            else:
-                n_q = 0
-            # 2. 变动提醒未读（已改动且未读的行）
-            if '_post_audit_changed' in df.columns:
-                n_c = int(((pd.to_numeric(df['_post_audit_changed'], errors='coerce').fillna(0).astype(int) == 1) & read_mask).sum())
-            else:
-                n_c = 0
-            # 3. 替代料未读（与替代料看板口径一致：是否替代料=是 且 超阈值/有差异 且 未读）
-            threshold = getattr(self.alert_monitor, 'threshold', 10)
-            alt_alerts = filter_alt_alerts(df, threshold) if alt_col else pd.DataFrame()
-            n_a = int(read_mask.loc[alt_alerts.index].sum()) if not alt_alerts.empty else 0
-            # 4. 偏差率预警未读
-            if rate_col:
-                rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
-                alert_mask = (rates.abs() >= 10) & (~no_input)
-                n_d = int((alert_mask & read_mask).sum())
-            else:
-                n_d = 0
-
             # 全部已读则不弹（避免无意义打扰）
-            if n_q == 0 and n_c == 0 and n_a == 0 and n_d == 0:
+            if all(it["count"] == 0 for it in items):
                 return
 
-            items = [
-                {"icon": "📦", "label": "隔离区", "count": n_q,
-                 "callback": self._open_quarantine_dialog},
-                {"icon": "📝", "label": "变动提醒", "count": n_c,
-                 "callback": self._show_audit_changes_dialog},
-                {"icon": "🔄", "label": "替代料", "count": n_a,
-                 "callback": self._show_alert_dashboard},
-                {"icon": "⚠️", "label": "偏差率预警", "count": n_d,
-                 "callback": self._show_deviation_warning_dialog},
-            ]
-            popup = UnreadSummaryPopup(items, self)
-            popup.show()
-            # 单例管理：弹新窗前先销毁旧窗，避免多个弹窗堆叠 + 按钮 lambda 引用环
-            if getattr(self, '_unread_popup', None) is not None:
+            # 单例：已有弹窗就地刷新并置前，不重复弹、不销毁重建（避免闪烁/引用环）
+            existing = getattr(self, '_unread_popup', None)
+            if existing is not None:
                 try:
-                    self._unread_popup._safe_close()
-                    self._unread_popup.deleteLater()
-                except Exception:
-                    pass
+                    existing.update_counts(items)
+                    existing.show()
+                    return
+                except RuntimeError:
+                    self._unread_popup = None
+
+            popup = UnreadSummaryPopup(items, self)
+            popup.closed.connect(self._on_unread_popup_closed)
             self._unread_popup = popup
+            popup.show()
         except Exception:
             import traceback as _tb
             _tb.print_exc()
+
+    def _on_unread_popup_closed(self):
+        """弹窗关闭（用户点「关闭」或清零自动关）→ 清掉单例引用。"""
+        self._unread_popup = None
+
+    def _refresh_unread_popup(self):
+        """数据变化（加隔离 / 标记已读等）→ 实时刷新已弹出的未读汇总弹窗。
+
+        - 弹窗不存在：什么都不做（不主动弹，避免打扰）。
+        - 4 类全部清零：自动关闭（满足「信息清零自动关闭」）。
+        - 否则：就地刷新条数（满足「没清零就一直挂着」）。
+        """
+        popup = getattr(self, '_unread_popup', None)
+        if popup is None:
+            return
+        try:
+            items = self._count_unread_items()
+            if not items:
+                return
+            if all(it["count"] == 0 for it in items):
+                popup._safe_close()
+                self._unread_popup = None
+                return
+            popup.update_counts(items)
+        except RuntimeError:
+            # C++ 对象已销毁，丢弃引用即可
+            self._unread_popup = None
+        except Exception:
+            pass
 
     def _on_stats_card_clicked(self, card_type: str):
         """统计卡片点击：切换对应筛选（审核后变更 / 隔离区卡可过滤对应行）
@@ -2643,7 +2709,16 @@ class MainWindow(QMainWindow):
 
         # 3. 仅导出当前表格数据
         try:
-            audit_data.to_excel(save_path, sheet_name='完整偏差明细', index=False)
+            from gui_pyside6.save_guard import safe_save
+            saved = safe_save(
+                self, save_path,
+                lambda p: audit_data.to_excel(p, sheet_name='完整偏差明细', index=False),
+                what="表格",
+            )
+            if not saved:
+                self.log("导出已取消（目标文件被占用）", "warning")
+                return
+            save_path = saved
             if QMessageBox.question(
                 self, "导出成功", f"文件已导出到：\n{save_path}\n是否打开？"
             ) == QMessageBox.Yes:
@@ -2663,7 +2738,14 @@ class MainWindow(QMainWindow):
         # 缓存命中：直接复制
         if cache_path and os.path.exists(cache_path):
             try:
-                shutil.copy2(cache_path, save_path)
+                from gui_pyside6.save_guard import safe_save
+                _saved = safe_save(self, save_path,
+                                   lambda p: shutil.copy2(cache_path, p),
+                                   what="报告")
+                if not _saved:
+                    self.log("导出已取消（目标文件被占用）", "warning")
+                    return
+                save_path = _saved
                 if QMessageBox.question(
                     self, "导出成功",
                     f"完整分析报告已导出到\n{save_path}\n\n"
@@ -2678,14 +2760,6 @@ class MainWindow(QMainWindow):
                     os.startfile(save_path)
                 self.log(f"已导出完整分析报告到 {save_path} (缓存)", "info")
                 return
-            except PermissionError:
-                QMessageBox.critical(
-                    self, "文件被占用",
-                    f"目标文件被占用，无法写入：\n{save_path}\n\n"
-                    "请先关闭正在打开该文件的 Excel，然后重试。"
-                )
-                self.log(f"导出失败：文件被占用 {save_path}", "error")
-                return
             except Exception as e:
                 QMessageBox.warning(
                     self, "缓存复制失败",
@@ -2693,17 +2767,11 @@ class MainWindow(QMainWindow):
                 )
                 self.log(f"缓存复制失败，回退重新分析: {e}", "warning")
 
-        # 导出前检查目标文件是否可写
-        try:
-            test_f = open(save_path, 'a')
-            test_f.close()
-        except (PermissionError, OSError):
-            QMessageBox.critical(
-                self, "文件被占用",
-                f"目标文件被占用，无法写入：\n{save_path}\n\n"
-                "请先关闭正在打开该文件的 Excel，然后重试。"
-            )
-            self.log(f"导出失败：文件被占用 {save_path}", "error")
+        # 重新分析要跑几十秒，先确认目标文件写得进去，免得白算一场
+        from gui_pyside6.save_guard import precheck_save_path
+        save_path = precheck_save_path(self, save_path, what="报告")
+        if not save_path:
+            self.log("导出已取消（目标文件被占用）", "warning")
             return
 
         # 重新分析生成（转后台线程，避免主线程冻结）
@@ -2716,17 +2784,11 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QProgressDialog, QApplication
         from analysis.analyzer import do_analysis_v2
 
-        # 导出前检查目标文件是否可写
-        try:
-            test_f = open(save_path, 'a')
-            test_f.close()
-        except (PermissionError, OSError):
-            QMessageBox.critical(
-                self, "文件被占用",
-                f"目标文件被占用，无法写入：\n{save_path}\n\n"
-                "请先关闭正在打开该文件的 Excel，然后重试。"
-            )
-            self.log(f"导出失败：文件被占用 {save_path}", "error")
+        # 导出前确认目标文件写得进去（后台线程里弹不了窗，必须在这拦）
+        from gui_pyside6.save_guard import precheck_save_path
+        save_path = precheck_save_path(self, save_path, what="报告")
+        if not save_path:
+            self.log("导出已取消（目标文件被占用）", "warning")
             return
 
         progress_dlg = QProgressDialog("正在后台生成完整报告...", "取消", 0, 100, self)
@@ -2912,8 +2974,33 @@ class MainWindow(QMainWindow):
         copy_region_action.triggered.connect(self.copy_selected_cells)
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
 
+    def _get_displayed_dataframe(self):
+        """返回当前主表筛选+排序后「正在显示」的数据（按显示顺序）。
+
+        主表显示走 proxy_model（在 source_model 之上做筛选/排序），
+        而 view_model.df 是全量、未筛选的 DataFrame。
+        导出应取的是屏幕上看得见的子集，故遍历 proxy_model 可见行 mapToSource 回源表取数。
+        若无 proxy / 无数据，回退为 view_model.df 全量。
+        """
+        if self.proxy_model is None or self.source_model is None:
+            return self.view_model.df
+        src_rows = []
+        for r in range(self.proxy_model.rowCount()):
+            src_idx = self.proxy_model.mapToSource(self.proxy_model.index(r, 0))
+            src_rows.append(src_idx.row())
+        df_full = self.source_model.getDataFrame()
+        if df_full is None or df_full.empty:
+            return df_full
+        if not src_rows:
+            # 筛选后无可见行：返回空表（保留列结构）
+            return df_full.iloc[0:0].copy()
+        return df_full.iloc[src_rows].copy()
+
     def _batch_export_wrapper(self, rows):
-        df_subset = self.view_model.df.iloc[rows].copy()
+        df_subset = self._get_displayed_dataframe()
+        if df_subset is None or (hasattr(df_subset, 'empty') and df_subset.empty):
+            QMessageBox.warning(self, "提示", "当前筛选后没有可导出的数据")
+            return
         self.audit_controller.batch_export(rows, df_subset, self)
 
     def _set_quarantine(self, rows, flag: bool):
@@ -3009,7 +3096,7 @@ class MainWindow(QMainWindow):
 
     def _open_quarantine_dialog(self):
         """顶部按钮：打开隔离区弹窗"""
-        df = self.view_model.df
+        df = self._get_master_df()  # 与未读弹窗同源，避免两边数对不上
         if df is None or '_quarantined' not in df.columns:
             QMessageBox.information(self, "隔离区", "暂无数据，无法打开隔离区")
             return
@@ -3201,6 +3288,12 @@ class MainWindow(QMainWindow):
             return
         if not save_path.lower().endswith('.pptx'):
             save_path += '.pptx'
+        # PPT 生成较慢且在后台线程落盘，先确认目标文件没被 PowerPoint 占着
+        from gui_pyside6.save_guard import precheck_save_path
+        save_path = precheck_save_path(self, save_path, what="PPT 报告")
+        if not save_path:
+            self.log("PPT 生成已取消（目标文件被占用）", "warning")
+            return
 
         # 进度条（非模态，不锁界面；PPT 生成本身不可中断，故不提供取消按钮）
         self._ppt_progress = QProgressDialog("正在生成 PPT 报告...", None, 0, 100, self)

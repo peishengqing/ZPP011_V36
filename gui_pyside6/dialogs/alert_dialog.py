@@ -3,7 +3,6 @@
 替代料看板对话框 - 仅显示替代料预警，支持标记已读、导出、双击跳转
 """
 
-import pandas as pd
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel,
@@ -167,9 +166,13 @@ class AlertDialog(QDialog):
         path, _ = QFileDialog.getSaveFileName(
             self, "导出预警列表", "替代料预警.xlsx", "Excel files (*.xlsx)")
         if path:
+            from gui_pyside6.save_guard import safe_save
             export_df = self.original_df.drop(columns=['_read', 'data_id'], errors='ignore')
-            export_df.to_excel(path, index=False)
-            toast(f"已导出 {len(export_df)} 条记录", parent=self)
+            saved = safe_save(self, path,
+                              lambda p: export_df.to_excel(p, index=False),
+                              what="预警列表")
+            if saved:
+                toast(f"已导出 {len(export_df)} 条记录到 {saved}", parent=self)
 
     def show_context_menu(self, pos: QPoint):
         index = self.table_view.indexAt(pos)

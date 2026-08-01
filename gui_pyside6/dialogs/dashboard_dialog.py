@@ -32,7 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from analysis.dashboard_html import build_html, compute_metrics, short_name  # noqa: E402
+from analysis.dashboard_html import build_html, compute_metrics  # noqa: E402
 
 # 说明：本模块故意不在文件顶部 import matplotlib(qtagg) 与 PySide6.QtWebEngine*，
 # 因为 main_window.py 在模块级（顶部）就 `from .dialogs.dashboard_dialog import DashboardDialog`，
@@ -178,12 +178,18 @@ class DashboardDialog(QDialog):
             self, "导出看板 HTML", "ZPP011偏差看板.html", "HTML (*.html)"
         )
         if path:
-            try:
-                with open(path, "w", encoding="utf-8") as f:
+            from gui_pyside6.save_guard import safe_save, friendly_error
+
+            def _write(p):
+                with open(p, "w", encoding="utf-8") as f:
                     f.write(self._last_html)
-                QMessageBox.information(self, "已导出", f"看板已保存到：\n{path}")
+
+            try:
+                saved = safe_save(self, path, _write, what="看板")
+                if saved:
+                    QMessageBox.information(self, "已导出", f"看板已保存到：\n{saved}")
             except Exception as e:  # noqa: BLE001
-                QMessageBox.critical(self, "导出失败", str(e))
+                QMessageBox.critical(self, "导出失败", friendly_error(path, e))
 
     def closeEvent(self, event):
         if self._tmp_html and os.path.exists(self._tmp_html):

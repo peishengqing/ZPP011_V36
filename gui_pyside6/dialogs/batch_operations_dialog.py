@@ -6,9 +6,8 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QTextEdit,
     QPushButton, QProgressBar, QFileDialog, QMessageBox, QCheckBox
 )
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import QThread, Signal
 import pandas as pd
-import os
 
 
 class BatchChangeStatusDialog(QDialog):
@@ -171,7 +170,12 @@ class BatchExportDialog(QDialog):
         layout.addLayout(btn_layout)
 
     def _export(self):
+        from gui_pyside6.save_guard import precheck_save_path
         file_path, _ = QFileDialog.getSaveFileName(self, "保存 Excel 文件", "batch_export.xlsx", "Excel files (*.xlsx)")
+        if not file_path:
+            return
+        # 实际写盘在后台线程，弹不了窗，所以在这里先把"文件被占用"挡掉
+        file_path = precheck_save_path(self, file_path, what="表格")
         if not file_path:
             return
         self.progress.setVisible(True)
@@ -191,5 +195,11 @@ class BatchExportDialog(QDialog):
 
     def _on_error(self, err):
         self.progress.setVisible(False)
-        QMessageBox.critical(self, "错误", err)
+        msg = err
+        if 'Errno 13' in err or 'Permission denied' in err:
+            path = getattr(self.worker, 'file_path', '') if self.worker else ''
+            from gui_pyside6.save_guard import friendly_error
+            msg = (friendly_error(path) +
+                   "\n\n请先在 Excel 里关掉这个文件，再重新导出一次。")
+        QMessageBox.critical(self, "错误", msg)
         self.reject()

@@ -440,9 +440,13 @@ class QuarantineDialog(QDialog):
     def export_excel(self):
         path, _ = QFileDialog.getSaveFileName(self, "导出隔离区列表", "隔离区数据.xlsx", "Excel files (*.xlsx)")
         if path:
+            from gui_pyside6.save_guard import safe_save
             export_df = self.source_model.getDataFrame().drop(columns=_HIDDEN_INTERNAL, errors='ignore')
-            export_df.to_excel(path, index=False)
-            toast(f"已导出 {len(export_df)} 条记录", parent=self)
+            saved = safe_save(self, path,
+                              lambda p: export_df.to_excel(p, index=False),
+                              what="隔离区列表")
+            if saved:
+                toast(f"已导出 {len(export_df)} 条记录到 {saved}", parent=self)
 
     def eventFilter(self, obj, event):
         from PySide6.QtCore import QEvent

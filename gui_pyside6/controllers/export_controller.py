@@ -8,6 +8,8 @@ from datetime import datetime
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import QMessageBox, QFileDialog, QProgressDialog
 
+from gui_pyside6.save_guard import safe_save, precheck_save_path, friendly_error
+
 
 class ExportController(QObject):
     log_message = Signal(str, str)           # (msg, level)
@@ -25,13 +27,20 @@ class ExportController(QObject):
         )
         if file_path:
             try:
-                audit_data.to_excel(file_path, index=False)
-                QMessageBox.information(parent_widget, "成功", f"已导出到 {file_path}")
-                self.log_message.emit(f"已导出当前表格到 {file_path}", "info")
+                saved = safe_save(
+                    parent_widget, file_path,
+                    lambda p: audit_data.to_excel(p, index=False),
+                    what="表格",
+                )
+                if not saved:
+                    self.log_message.emit("导出已取消（目标文件被占用）", "warning")
+                    return False
+                QMessageBox.information(parent_widget, "成功", f"已导出到 {saved}")
+                self.log_message.emit(f"已导出当前表格到 {saved}", "info")
                 return True
             except Exception as e:
                 traceback.print_exc()
-                QMessageBox.critical(parent_widget, "错误", f"导出失败: {e}")
+                QMessageBox.critical(parent_widget, "错误", friendly_error(file_path, e))
                 self.log_message.emit(f"导出失败: {e}", "error")
         return False
 
@@ -66,16 +75,23 @@ class ExportController(QObject):
 
             # 仅导出当前表格数据
             try:
-                audit_data.to_excel(save_path, sheet_name='完整偏差明细', index=False)
+                saved = safe_save(
+                    parent_widget, save_path,
+                    lambda p: audit_data.to_excel(p, sheet_name='完整偏差明细', index=False),
+                    what="表格",
+                )
+                if not saved:
+                    self.log_message.emit("导出已取消（目标文件被占用）", "warning")
+                    return False
                 if QMessageBox.question(
-                    parent_widget, "导出成功", f"文件已导出到：\n{save_path}\n是否打开？"
+                    parent_widget, "导出成功", f"文件已导出到：\n{saved}\n是否打开？"
                 ) == QMessageBox.Yes:
-                    os.startfile(save_path)
-                self.log_message.emit(f"已导出完整Excel到 {save_path}", "info")
+                    os.startfile(saved)
+                self.log_message.emit(f"已导出完整Excel到 {saved}", "info")
                 return True
             except Exception as e:
                 traceback.print_exc()
-                QMessageBox.critical(parent_widget, "错误", f"导出失败: {e}")
+                QMessageBox.critical(parent_widget, "错误", friendly_error(save_path, e))
                 self.log_message.emit(f"导出失败: {e}", "error")
                 return False
         except Exception as e:
@@ -93,7 +109,15 @@ class ExportController(QObject):
         # ---- 缓存命中：直接复制，秒传 ----
         if cache_path and os.path.exists(cache_path):
             try:
-                shutil.copy2(cache_path, save_path)
+                saved = safe_save(
+                    parent_widget, save_path,
+                    lambda p: shutil.copy2(cache_path, p),
+                    what="报告",
+                )
+                if not saved:
+                    self.log_message.emit("导出已取消（目标文件被占用）", "warning")
+                    return False
+                save_path = saved
                 if QMessageBox.question(
                     parent_widget, "导出成功",
                     f"完整分析报告已导出到\n{save_path}\n\n"
@@ -111,6 +135,12 @@ class ExportController(QObject):
             except Exception as e:
                 self.log_message.emit(f"缓存复制失败，回退重新分析: {e}", "warning")
 
+        # 重新分析要跑几十秒，先确认目标文件写得进去，免得白算一场
+        save_path = precheck_save_path(parent_widget, save_path, what="报告")
+        if not save_path:
+            self.log_message.emit("导出已取消（目标文件被占用）", "warning")
+            return False
+
         try:
             from PySide6.QtWidgets import QApplication
 
@@ -122,7 +152,7 @@ class ExportController(QObject):
             QApplication.processEvents()  # 强制刷新UI，防止进度条不出来
 
             from analysis.analyzer import do_analysis_v2
-            result = do_analysis_v2(
+            do_analysis_v2(
                 input_file=analysis_params['input_file'],
                 output_dir=None,
                 alt_pairs=analysis_params['alt_pairs'],
@@ -164,7 +194,7 @@ class ExportController(QObject):
             return True
         except Exception as e:
             traceback.print_exc()
-            QMessageBox.critical(parent_widget, "错误", f"导出完整报告失败: {e}")
+            QMessageBox.critical(parent_widget, "错误", friendly_error(save_path, e))
             self.log_message.emit(f"导出完整报告失败: {e}", "error")
             return False
 
