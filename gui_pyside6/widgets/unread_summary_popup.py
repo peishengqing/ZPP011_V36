@@ -64,6 +64,16 @@ class UnreadSummaryPopup(QWidget):
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
+        # v42.29: 副标题——4 类全部清零时显示「🎉 全清零啦」+ 文字提示，
+        # 数据再有未读会自动隐藏（与 mark_all_clear / clear_all_clear 配对）。
+        self._all_clear_label = QLabel("🎉 全清零啦")
+        self._all_clear_label.setObjectName("unreadAllClear")
+        self._all_clear_label.setFont(QFont("Microsoft YaHei", 10, QFont.Bold))
+        self._all_clear_label.setAlignment(Qt.AlignCenter)
+        self._all_clear_label.setStyleSheet("color: #2e7d32; padding: 2px 0 4px 0;")
+        self._all_clear_label.hide()
+        layout.addWidget(self._all_clear_label)
+
         for it in self._items:
             row = QFrame(self)
             row.setObjectName("unreadRow")
@@ -108,6 +118,20 @@ class UnreadSummaryPopup(QWidget):
             lbl = self._count_labels.get(it["label"])
             if lbl is not None:
                 lbl.setText(f"{it['count']} 条未读")
+
+    def mark_all_clear(self):
+        """4 类未读全部清零时显示「🎉 全清零啦」副标题。"""
+        try:
+            self._all_clear_label.show()
+        except RuntimeError:
+            pass
+
+    def clear_all_clear(self):
+        """有任意未读时（清零状态结束）隐藏「全清零啦」副标题。"""
+        try:
+            self._all_clear_label.hide()
+        except RuntimeError:
+            pass
 
     def _open_board(self, callback):
         """点击「查看」→ 打开对应看板（用户主动触发，此时分析已完成、主表就绪）。

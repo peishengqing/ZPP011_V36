@@ -14,6 +14,19 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.29",
+        "date": "2026-08-02",
+        "build_datetime": "2026-08-02 17:50:00",
+        "fixes": [
+            "🔔 自动已读 toast 显示时间 3s → 6s（_auto_read_by_rules 内 4 处 toast 调用全部加 duration=6000），解决「自动已读闪一下没看清」的盲区",
+            "📋 工具栏新增「📋 未读概览」按钮：分析后未读概览弹窗可能被数据/面板挡住，工具栏随时可重开。复用现有单例机制 + 新增 show_unread_summary(force=True) 入口，force=True 时全已读也弹（标题下显示「🎉 全清零啦」副标题，再有新未读自动隐藏）",
+        ],
+        "notes": [
+            "UnreadSummaryPopup 新增 mark_all_clear / clear_all_clear 两个方法（默认 hidden 的 QLabel 副标题），数据变化时主窗口自动切换",
+            "工具栏位置在「⚡ 进度」之后，符合「分析 → 概览/进度/未读」流程顺到底",
+        ],
+    },
+    {
         "version": "v42.28",
         "date": "2026-08-02",
         "build_datetime": "2026-08-02 17:15:00",

@@ -517,6 +517,17 @@ class MainWindow(QMainWindow):
         self.action_btn_toggle_progress.clicked.connect(self._toggle_progress_from_toolbar)
         action_layout.addWidget(self.action_btn_toggle_progress)
 
+        # v42.29: 工具栏「📋 未读概览」按钮——分析后已弹的弹窗可被数据/面板挡住，
+        # 用户随时可点击重开。复用 _show_unread_summary 的单例机制 + force 选项，
+        # 全已读时也会弹出并显示 0 条 + "全清零啦"。
+        self.action_btn_unread_summary = QPushButton("📋 未读概览")
+        self.action_btn_unread_summary.setCursor(Qt.PointingHandCursor)
+        self.action_btn_unread_summary.setObjectName("actionBtnUnreadSummary")
+        self.action_btn_unread_summary.setProperty("class", "actionBtn")
+        self.action_btn_unread_summary.setToolTip("打开「未读概览」弹窗（隔离区/变动提醒/替代料/偏差率预警）")
+        self.action_btn_unread_summary.clicked.connect(lambda: self.show_unread_summary(force=True))
+        action_layout.addWidget(self.action_btn_unread_summary)
+
         action_layout.addWidget(shortcut_hint)
 
         # 底部按钮行已删除，start_btn 别名指向顶部工具栏分析按钮（供分析起止启用/禁用）
@@ -1269,7 +1280,7 @@ class MainWindow(QMainWindow):
             from core.auto_read_rules import load_auto_read_rules_config, compute_auto_read_mask
             cfg = load_auto_read_rules_config()
             if not cfg.get('enabled', True):
-                toast("ℹ️ 自动已读已关闭（规则中心总开关）", "info", parent=self)
+                toast("ℹ️ 自动已读已关闭（规则中心总开关）", "info", parent=self, duration=6000)
                 return
             union_mask, per_rule = compute_auto_read_mask(df, cfg)
             unread = (df['_read'] == 0)
@@ -1278,9 +1289,9 @@ class MainWindow(QMainWindow):
             n_would = int(union_mask.sum())
             if n_auto == 0:
                 if n_would == 0:
-                    toast("ℹ️ 本次无符合自动已读规则的行", "info", parent=self)
+                    toast("ℹ️ 本次无符合自动已读规则的行", "info", parent=self, duration=6000)
                 else:
-                    toast(f"ℹ️ 符合自动已读规则共 {n_would} 条，均已读过，无需自动已读", "info", parent=self)
+                    toast(f"ℹ️ 符合自动已读规则共 {n_would} 条，均已读过，无需自动已读", "info", parent=self, duration=6000)
                 return
 
             # —— 建立变更检测基线（向量化 dict(zip)，避免逐行 df.loc 的 O(n²)）——
@@ -1312,7 +1323,7 @@ class MainWindow(QMainWindow):
 
             toast(
                 f"✅ 自动已读 {n_auto} 条｜" + "｜".join(parts),
-                "success", parent=self,
+                "success", parent=self, duration=6000,
             )
             self.statusBar().showMessage(
                 f"自动已读 {n_auto} 条（" + "；".join(parts)
@@ -2224,33 +2235,56 @@ class MainWindow(QMainWindow):
              "callback": self._show_deviation_warning_dialog},
         ]
 
-    def _show_unread_summary(self):
-        """分析/加载完成后，弹常驻非模态未读汇总弹窗（全部已读则不弹）。"""
+    def _show_unread_summary(self, force=False):
+        """分析/加载完成后，弹常驻非模态未读汇总弹窗。
+
+        force=False（默认，分析后自动调）：全部已读则不弹，避免无意义打扰。
+        force=True（工具栏按钮/用户主动调）：不论是否全已读都弹，全已读时显示
+                  0 条 + 「全清零啦」提示语，方便用户随时复查。
+        """
         try:
             items = self._count_unread_items()
             if not items:
+                if force:
+                    toast("ℹ️ 主表无任何未读数据可统计", "info", parent=self, duration=4000)
                 return
-            # 全部已读则不弹（避免无意义打扰）
-            if all(it["count"] == 0 for it in items):
-                return
+            all_zero = all(it["count"] == 0 for it in items)
+            if all_zero and not force:
+                return  # 分析后自动调：全已读不弹，避免无意义打扰
 
             # 单例：已有弹窗就地刷新并置前，不重复弹、不销毁重建（避免闪烁/引用环）
             existing = getattr(self, '_unread_popup', None)
             if existing is not None:
                 try:
-                    existing.update_counts(items)
+                    if all_zero:
+                        # 全已读：把现有弹窗刷成 0 条，并在标题旁加 "全清零啦"
+                        existing.update_counts(items)
+                        existing.mark_all_clear()
+                    else:
+                        existing.update_counts(items)
+                        existing.clear_all_clear()
                     existing.show()
+                    existing.raise_()
+                    existing.activateWindow()
                     return
                 except RuntimeError:
                     self._unread_popup = None
 
             popup = UnreadSummaryPopup(items, self)
+            if all_zero:
+                popup.mark_all_clear()
             popup.closed.connect(self._on_unread_popup_closed)
             self._unread_popup = popup
             popup.show()
+            popup.raise_()
+            popup.activateWindow()
         except Exception:
             import traceback as _tb
             _tb.print_exc()
+
+    def show_unread_summary(self, force=False):
+        """工具栏「📋 未读概览」按钮入口——用户主动复查。"""
+        self._show_unread_summary(force=force)
 
     def _on_unread_popup_closed(self):
         """弹窗关闭（用户点「关闭」或清零自动关）→ 清掉单例引用。"""
