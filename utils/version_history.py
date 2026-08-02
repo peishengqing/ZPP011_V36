@@ -14,6 +14,21 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.25",
+        "date": "2026-08-02",
+        "build_datetime": "2026-08-02 14:55:00",
+        "features": [],
+        "fixes": [],
+        "optimizations": [
+            "🧹 修复 ws6「异常预警」sheet 头部阈值说明硬编码：note_c 单元格原为写死字符串 '阈值说明：主表明细±10%（业务口径）...'，未跟随 UI 动态阈值；改为 f-string 跟随 dyn_thresh（±{dyn_thresh:.0f}%），UI 设 20% 时显示 ±20%、默认 10% 显示 ±10%",
+        ],
+        "notes": [
+            "📌 这是 v42.22 dyn_thresh 贯穿修复遗留的一处漏网硬编码（用户反馈「分析说明阈值没改」时排查发现，当时 UI 默认值=10% 故未暴露）",
+            "📌 仅改 analysis/analyzer.py 第 883 行 1 行字符串，零侵入业务逻辑",
+            "📌 验证：py_compile 通过；pyflakes 无 F821/F822；dyn_thresh=20/10 两路径 ws6 头部实测分别显示 ±20%/±10%",
+        ],
+    },
+    {
         "version": "v42.24",
         "date": "2026-08-02",
         "build_datetime": "2026-08-02 14:30:00",

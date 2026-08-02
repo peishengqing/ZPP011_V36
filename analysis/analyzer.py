@@ -880,7 +880,7 @@ def export_full_report_from_intermediates(intermediates, output_path=None, outpu
         ws6.column_dimensions[get_column_letter(k)].width = 10
     # ④ 阈值说明：主表明细 ±10%（业务口径）；异常预警替代料残差全部列示（不设阈值）
     note_c = ws6.cell(row=2, column=7,
-                      value='阈值说明：主表明细±10%（业务口径）；异常预警：替代料残差全部列示（不设阈值）')
+                      value=f'阈值说明：主表明细±{dyn_thresh:.0f}%（业务口径）；异常预警：替代料残差全部列示（不设阈值）')
     note_c.font = Font(size=9, italic=True, color='666666')
     # 性能优化（2026-07-27）：按 5 种异常类型预构建 StyleArray 原型，
     # 数据格只做 _style 数组拷贝，避免每格 4 次样式赋值的 hash/查表开销
