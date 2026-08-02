@@ -92,8 +92,12 @@ if __name__ == "__main__":
         reverse=True
     )
     for old in existing[20:]:
-        os.remove(os.path.join(backup_base, old))
-        print(f"[备份] 清理旧备份: {old}")
+        try:
+            os.remove(os.path.join(backup_base, old))
+            print(f"[备份] 清理旧备份: {old}")
+        except OSError:
+            # 沙箱/回收站不可用等导致删除失败时不阻断打包（旧备份多留一个无害）
+            print(f"[备份] 清理旧备份跳过(删除被拦截): {old}")
 
     opts = [
         "run_pyside6.py",
