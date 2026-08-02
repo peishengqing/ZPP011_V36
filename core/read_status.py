@@ -296,8 +296,11 @@ def save_snapshot(data_id: str, snapshot_qty, snapshot_note=None):
               '' if snapshot_note is None else str(snapshot_note),
               str(data_id)))
         conn.commit()
-    except Exception:
-        pass
+    except Exception as e:
+        # v42.26: 不再静默吞错。基线写失败会导致「偏差变动」判断失真，
+        # 必须留下痕迹；但仍不向上抛，避免打断主流程。
+        print(f"[read_status] save_snapshot 失败 (data_id={data_id}): "
+              f"{type(e).__name__}: {e}")
 
 
 def save_snapshot_batch(records):
@@ -324,8 +327,10 @@ def save_snapshot_batch(records):
         """, norm)
         _t = _time.perf_counter()
         conn.commit()
-    except Exception:
-        pass
+    except Exception as e:
+        # v42.26: 同 save_snapshot，批量基线写失败必须留痕，不再静默吞掉
+        print(f"[read_status] save_snapshot_batch 失败 ({len(records)} 条): "
+              f"{type(e).__name__}: {e}")
 
 
 # ── 审核结果持久化 ──

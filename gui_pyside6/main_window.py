@@ -220,6 +220,11 @@ class MainWindow(QMainWindow):
         self._cache_worker = None
         self._full_report_worker = None
         self._file_worker = None
+        # v42.26: 这两个后台 worker 此前从未初始化。_ai_preprocess_worker 在
+        # _on_ai_preprocess_error() 中被读取，未初始化时会直接 AttributeError；
+        # _ppt_worker 在 closeEvent 里需要收尾，同样需要一个稳定的初始值。
+        self._ppt_worker = None
+        self._ai_preprocess_worker = None
         # 全局"重型操作进行中"标志：分析 / 缓存生成 / 完整报告导出共用，
         # 用于防止多个 do_analysis_v2 并发抢占 GIL 导致 UI 假死（"未响应"）。
         self._heavy_busy = False
@@ -3648,6 +3653,27 @@ class MainWindow(QMainWindow):
             else:
                 self._cache_worker.wait(3000)
             self._cache_worker = None
+        # v42.26: 补齐完整报告 / PPT 生成 / 文件读取三个后台线程的收尾。
+        # 此前关窗时它们若仍在跑，主窗口先析构、线程回调再触发，可能崩溃。
+        # 一律只 quit + wait(3000)，超时就放行，不用 terminate 强杀（同 v42.23 口径）。
+        for _attr in ("_full_report_worker", "_ppt_worker", "_file_worker"):
+            _w = getattr(self, _attr, None)
+            if _w is None:
+                continue
+            try:
+                if _w.isRunning():
+                    # 支持协作式取消的 worker（如完整报告）先置取消标志，
+                    # 让它在下一个检查点自行退出，比硬等 3 秒快得多
+                    if hasattr(_w, "request_cancel"):
+                        _w.request_cancel()
+                    _w.quit()
+                    _w.wait(3000)
+                else:
+                    _w.wait(3000)
+            except RuntimeError:
+                # 底层 C++ 对象已被 deleteLater 回收，忽略即可
+                pass
+            setattr(self, _attr, None)
         event.accept()
 
 

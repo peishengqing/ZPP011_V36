@@ -14,6 +14,26 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.26",
+        "date": "2026-08-02",
+        "build_datetime": "2026-08-02 16:25:00",
+        "features": [],
+        "fixes": [
+            "🔧 修复潜在必崩点：_on_ai_preprocess_error() 读取 self._ai_preprocess_worker，但该属性全项目从未赋值、__init__ 也未初始化 → 只要 AI 审核后预处理失败走进该降级分支就 AttributeError；已在 __init__ 补 self._ai_preprocess_worker = None（与 v42.22 的 AuditLogger.queue 同类型隐患，pyflakes 查不出实例属性）",
+            "🔧 关窗收尾补齐三个后台线程：closeEvent 此前只处理 analysis / ai / alert_monitor / _cache_worker，遗漏 _full_report_worker（完整报告导出）、_ppt_worker（PPT 生成）、_file_worker（大文件后台读取）。导出/生成/读文件途中关窗，主窗口先析构而线程回调后触发，存在崩溃风险；现统一 quit + wait(3000) 收尾并置 None",
+        ],
+        "optimizations": [
+            "⚡ closeEvent 收尾对支持协作式取消的 worker（含 request_cancel 的完整报告 worker）先置取消标志再等待，避免硬等满 3 秒才关窗",
+            "🛡️ closeEvent 收尾包 try/except RuntimeError，兼容底层 C++ 对象已被 deleteLater 回收的情形，关窗不再有二次异常风险",
+            "🧹 save_snapshot / save_snapshot_batch 不再 except Exception: pass 静默吞错，改为打印 [read_status] 前缀的失败原因（含 data_id / 记录条数 / 异常类型）；仍不向上抛出，不打断主流程。基线写失败会导致「偏差变动」判断失真，此前完全无痕迹可查",
+        ],
+        "notes": [
+            "📌 本版处理 AI 代码质量审查报告「第二批」问题，全部经真实代码逐条核实后才修（报告把 _full_report_worker 与 _ppt_worker 混为一谈，实际两者创建位置与生命周期不同）",
+            "📌 验证：py_compile 通过；pyflakes 无 F821/F822；异常留痕与 closeEvent 收尾块均以真实源码 exec 方式做了运行时验证（含「运行中可取消 / 未运行 / C++ 对象已回收」三种 worker 状态），全部通过",
+            "📌 改动集中在 gui_pyside6/main_window.py（__init__ + closeEvent）与 core/read_status.py（两处异常处理），不触碰任何分析算法与报表逻辑",
+        ],
+    },
+    {
         "version": "v42.25",
         "date": "2026-08-02",
         "build_datetime": "2026-08-02 14:55:00",
