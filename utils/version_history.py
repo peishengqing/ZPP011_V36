@@ -14,6 +14,20 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.23",
+        "date": "2026-08-02",
+        "build_datetime": "2026-08-02 14:10:00",
+        "features": [],
+        "fixes": [],
+        "optimizations": [
+            "⚡ 取消（cancel）谨慎化：analysis_controller.cancel / audit_controller.cancel_ai_audit 的等待超时由 3000ms 提高到 5000ms，给后台 worker 在自身检查点（AnalysisWorker 的 cancel_check、AIAuditWorker 的 _cancel 轮询、_save_audit_results 前判 _cancel）优雅退出的机会——正常取消不再走到 terminate() 强杀线程，消除正在读 Excel / 写 SQLite 时被硬杀留下文件半截或锁残留的风险；terminate() 仍保留作最后兜底（真卡死才用），兜底后 wait() 确保线程真正结束。仅改 2 行 wait 阈值，零侵入 worker 内部逻辑",
+        ],
+        "notes": [
+            "📌 属代码质量审查报告「第二批」里唯一有真实风险项的稳健化（其余 closeEvent 补 worker、save_snapshot 不吞错暂未做）",
+            "📌 范围为用户确认的「只做 terminate 谨慎化」，未扩大改动面",
+        ],
+    },
+    {
         "version": "v42.22",
         "date": "2026-08-02",
         "build_datetime": "2026-08-02 10:30:00",

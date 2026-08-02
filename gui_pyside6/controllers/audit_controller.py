@@ -62,7 +62,7 @@ class AuditController(QObject):
         """取消AI审核"""
         if self.ai_worker and self.ai_worker.isRunning():
             self.ai_worker.cancel()
-            if not self.ai_worker.wait(3000):
+            if not self.ai_worker.wait(5000):
                 self.ai_worker.terminate()
                 self.ai_worker.wait()
             self.ai_worker = None

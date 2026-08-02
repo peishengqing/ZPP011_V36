@@ -77,7 +77,7 @@ class AnalysisController(QObject):
         """取消分析"""
         if self.worker and self.worker.isRunning():
             self.worker.cancel()
-            if not self.worker.wait(3000):
+            if not self.worker.wait(5000):
                 self.worker.terminate()
                 self.worker.wait()
             self.worker = None
