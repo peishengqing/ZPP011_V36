@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
-"""自动隔离规则配置 —— 可复用 Widget + 薄壳 Dialog。
+"""自动已读规则配置 —— 可复用 Widget + 薄壳 Dialog。
 
-AutoQuarantineRuleWidget 承载全部 UI 与逻辑，可被「规则中心」对话框以 Tab 形式嵌入；
-AutoQuarantineRuleDialog 仅作为独立打开时的薄壳（保留工具栏按钮原行为）。
+支持多条件类型（偏差数量=0 / 物料编码前缀 / 物料编码属于集合 / 物料名称包含 / 物料类型等于），
+可被「规则中心」对话框以 Tab 形式嵌入；AutoReadRuleDialog 仅作为独立打开时的薄壳。
 """
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QGroupBox,
@@ -16,24 +17,34 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
-from core.auto_quarantine import (
-    DEFAULT_RULE,
+from core.auto_read_rules import (
+    CONDITION_TYPES,
     build_rule_summary,
-    load_auto_quarantine_config,
-    save_auto_quarantine_config,
+    load_auto_read_rules_config,
+    save_auto_read_rules_config,
 )
 
+# 类型 combo 的显示顺序（与 CONDITION_TYPES 注册表一致）
+_TYPE_ORDER = [
+    "dev_qty_eq",
+    "mat_code_prefix",
+    "mat_code_in",
+    "mat_name_contains",
+    "mat_type_eq",
+]
 
-class AutoQuarantineRuleWidget(QWidget):
-    """规则管理器：支持多条规则并存、独立启停、排序。"""
+
+class AutoReadRuleWidget(QWidget):
+    """自动已读规则管理器：多规则并存、独立启停、排序、条件类型可选。"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.cfg = load_auto_quarantine_config()  # {'enabled', 'rules'}
+        self.cfg = load_auto_read_rules_config()  # {'enabled', 'rules'}
         self.current_index = 0
         self._build_ui()
         self._refresh_list()
@@ -46,7 +57,7 @@ class AutoQuarantineRuleWidget(QWidget):
         root.setContentsMargins(16, 16, 16, 16)
 
         # 总开关
-        self.chk_master = QCheckBox("启用自动隔离（总开关，关闭则完全不整理）")
+        self.chk_master = QCheckBox("启用自动已读（总开关，关闭则完全不自动已读）")
         self.chk_master.setChecked(self.cfg.get("enabled", True))
         root.addWidget(self.chk_master)
 
@@ -80,24 +91,22 @@ class AutoQuarantineRuleWidget(QWidget):
         self.chk_rule_enabled = QCheckBox("启用此规则")
         ev.addWidget(self.chk_rule_enabled)
 
-        ev.addWidget(QLabel("物料名称包含（任一即命中，中英文逗号分隔）："))
-        self.edit_keywords = QLineEdit()
-        self.edit_keywords.setPlaceholderText("例如：箱, 手包袋, 塑料袋")
-        ev.addWidget(self.edit_keywords)
+        ht = QHBoxLayout()
+        ht.addWidget(QLabel("条件类型："))
+        self.combo_type = QComboBox()
+        for t in _TYPE_ORDER:
+            self.combo_type.addItem(CONDITION_TYPES[t]["label"], t)
+        ht.addWidget(self.combo_type, 1)
+        ev.addLayout(ht)
 
-        h1 = QHBoxLayout()
-        self.chk_cat = QCheckBox("要求属于类别：")
-        self.edit_cat = QLineEdit()
-        self.edit_cat.setFixedWidth(120)
-        h1.addWidget(self.chk_cat)
-        h1.addWidget(self.edit_cat)
-        h1.addStretch()
-        ev.addLayout(h1)
-
-        self.chk_alt = QCheckBox("排除替代料（不隔离替代料记录）")
-        ev.addWidget(self.chk_alt)
-        self.chk_loss = QCheckBox("要求负损（实际>0 且 实际<定额）")
-        ev.addWidget(self.chk_loss)
+        # 参数输入区（按条件类型动态切换）
+        hp = QHBoxLayout()
+        hp.addWidget(QLabel("参数值："))
+        self.param_container = QWidget()
+        self.param_layout = QHBoxLayout(self.param_container)
+        self.param_layout.setContentsMargins(0, 0, 0, 0)
+        hp.addWidget(self.param_container, 1)
+        ev.addLayout(hp)
 
         ev.addWidget(QLabel("当前规则预览："))
         self.lbl_summary = QLabel()
@@ -109,31 +118,62 @@ class AutoQuarantineRuleWidget(QWidget):
         root.addWidget(box)
 
         # 信号
-        for w in (self.edit_name, self.edit_keywords, self.edit_cat):
-            w.textChanged.connect(self._refresh_summary)
-        for w in (self.chk_rule_enabled, self.chk_cat, self.chk_alt, self.chk_loss):
-            w.stateChanged.connect(self._refresh_summary)
+        self.edit_name.textChanged.connect(self._refresh_summary)
+        self.combo_type.currentIndexChanged.connect(self._on_type_changed)
+        self.chk_rule_enabled.stateChanged.connect(self._refresh_summary)
         self.btn_add.clicked.connect(self._on_add)
         self.btn_del.clicked.connect(self._on_del)
         self.btn_up.clicked.connect(self._on_up)
         self.btn_down.clicked.connect(self._on_down)
 
+    # ---------------------------------------------------------------- 参数控件
+    def _build_param_input(self, value_type, value):
+        """根据 value_type 构造参数输入控件并返回。"""
+        self._param_input = None
+        if value_type == "number":
+            w = QSpinBox()
+            w.setRange(-999999, 999999)
+            w.setValue(int(float(value)) if str(value).strip() not in ("", None) else 0)
+            w.valueChanged.connect(self._refresh_summary)
+            self._param_input = w
+        else:  # text / textlist
+            w = QLineEdit()
+            w.setText("" if value is None else str(value))
+            w.setPlaceholderText(CONDITION_TYPES[self._current_type()]["hint"])
+            w.textChanged.connect(self._refresh_summary)
+            self._param_input = w
+        return w
+
+    def _current_type(self):
+        return self.combo_type.currentData() or "dev_qty_eq"
+
+    def _read_param_value(self):
+        spec = CONDITION_TYPES[self._current_type()]
+        if spec["value_type"] == "number":
+            return self._param_input.value()
+        return self._param_input.text().strip()
+
+    def _rebuild_param_input(self):
+        # 清空旧控件
+        while self.param_layout.count():
+            item = self.param_layout.takeAt(0)
+            old = item.widget()
+            if old is not None:
+                old.deleteLater()
+        spec = CONDITION_TYPES[self._current_type()]
+        val = spec["default"]
+        w = self._build_param_input(spec["value_type"], val)
+        self.param_layout.addWidget(w)
+
     # ---------------------------------------------------------------- 数据
     def _commit_editor(self):
-        """把编辑区当前内容写回 self.cfg['rules'][current_index]。"""
         if not (0 <= self.current_index < len(self.cfg["rules"])):
             return
         r = self.cfg["rules"][self.current_index]
         r["name"] = self.edit_name.text().strip() or "未命名规则"
         r["enabled"] = self.chk_rule_enabled.isChecked()
-        raw = self.edit_keywords.text()
-        r["name_keywords"] = [
-            k.strip() for k in raw.replace("，", ",").split(",") if k.strip()
-        ]
-        r["category_required"] = self.chk_cat.isChecked()
-        r["category_value"] = self.edit_cat.text().strip() or "包材"
-        r["exclude_alt"] = self.chk_alt.isChecked()
-        r["negative_loss_required"] = self.chk_loss.isChecked()
+        r["type"] = self._current_type()
+        r["params"] = {"value": self._read_param_value()}
 
     def _load_rule_to_editor(self, idx):
         if not (0 <= idx < len(self.cfg["rules"])):
@@ -142,11 +182,30 @@ class AutoQuarantineRuleWidget(QWidget):
         r = self.cfg["rules"][idx]
         self.edit_name.setText(r.get("name", ""))
         self.chk_rule_enabled.setChecked(bool(r.get("enabled", True)))
-        self.edit_keywords.setText("，".join(r.get("name_keywords") or []))
-        self.chk_cat.setChecked(bool(r.get("category_required", True)))
-        self.edit_cat.setText(str(r.get("category_value", "包材")))
-        self.chk_alt.setChecked(bool(r.get("exclude_alt", True)))
-        self.chk_loss.setChecked(bool(r.get("negative_loss_required", True)))
+        # 类型
+        t = r.get("type", "dev_qty_eq")
+        if t not in CONDITION_TYPES:
+            t = "dev_qty_eq"
+        ti = self.combo_type.findData(t)
+        if ti < 0:
+            ti = 0
+        self.combo_type.blockSignals(True)
+        self.combo_type.setCurrentIndex(ti)
+        self.combo_type.blockSignals(False)
+        # 参数输入：先按类型重建，再填值
+        spec = CONDITION_TYPES[t]
+        while self.param_layout.count():
+            item = self.param_layout.takeAt(0)
+            old = item.widget()
+            if old is not None:
+                old.deleteLater()
+        w = self._build_param_input(spec["value_type"], r.get("params", {}).get("value", spec["default"]))
+        self.param_layout.addWidget(w)
+        self._refresh_summary()
+
+    def _on_type_changed(self, _idx):
+        # 切换条件类型时，参数输入按新类型默认值重建
+        self._rebuild_param_input()
         self._refresh_summary()
 
     def _refresh_list(self):
@@ -156,8 +215,6 @@ class AutoQuarantineRuleWidget(QWidget):
             name = r.get("name", "未命名规则")
             tag = "（已停用）" if not r.get("enabled", True) else ""
             self.list_rules.addItem(QListWidgetItem("%d. %s%s" % (i + 1, name, tag)))
-        # setCurrentRow 必须在 blockSignals 内，否则会触发 _on_select_rule -> _commit_editor
-        # 用空/旧编辑区覆盖当前规则
         if 0 <= self.current_index < self.list_rules.count():
             self.list_rules.setCurrentRow(self.current_index)
         self.list_rules.blockSignals(False)
@@ -170,8 +227,12 @@ class AutoQuarantineRuleWidget(QWidget):
 
     def _on_add(self):
         self._commit_editor()
-        new_rule = dict(DEFAULT_RULE)
-        new_rule["name"] = "新规则%d" % (len(self.cfg["rules"]) + 1)
+        new_rule = {
+            "name": "新规则%d" % (len(self.cfg["rules"]) + 1),
+            "enabled": True,
+            "type": "dev_qty_eq",
+            "params": {"value": CONDITION_TYPES["dev_qty_eq"]["default"]},
+        }
         self.cfg["rules"].append(new_rule)
         self.current_index = len(self.cfg["rules"]) - 1
         self._refresh_list()
@@ -210,47 +271,37 @@ class AutoQuarantineRuleWidget(QWidget):
             self._load_rule_to_editor(self.current_index)
 
     def _refresh_summary(self):
-        r = self._collect_preview()
-        self.lbl_summary.setText(build_rule_summary(r))
-
-    def _collect_preview(self):
-        return {
+        preview = {
+            "name": self.edit_name.text().strip() or "未命名规则",
             "enabled": self.chk_rule_enabled.isChecked(),
-            "exclude_alt": self.chk_alt.isChecked(),
-            "category_required": self.chk_cat.isChecked(),
-            "category_value": self.edit_cat.text().strip() or "包材",
-            "name_keywords": [
-                k.strip()
-                for k in self.edit_keywords.text().replace("，", ",").split(",")
-                if k.strip()
-            ],
-            "negative_loss_required": self.chk_loss.isChecked(),
+            "type": self._current_type(),
+            "params": {"value": self._read_param_value()},
         }
+        self.lbl_summary.setText(build_rule_summary(preview))
 
     # ---------------------------------------------------------------- 保存
     def save(self):
-        """提交编辑区并写盘，成功返回 True。"""
         self._commit_editor()
         self.cfg["enabled"] = self.chk_master.isChecked()
         try:
-            save_auto_quarantine_config(self.cfg)
+            save_auto_read_rules_config(self.cfg)
         except Exception as e:  # noqa: BLE001
             QMessageBox.critical(self, "保存失败", "写入配置文件失败：%s" % e)
             return False
         return True
 
 
-class AutoQuarantineRuleDialog(QDialog):
+class AutoReadRuleDialog(QDialog):
     """独立打开时的薄壳：承载 Widget + OK/Cancel。"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("⚙ 自动隔离规则")
+        self.setWindowTitle("⚙ 自动已读规则")
         self.setMinimumWidth(580)
         self.setMinimumHeight(560)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self.widget = AutoQuarantineRuleWidget(self)
+        self.widget = AutoReadRuleWidget(self)
         layout.addWidget(self.widget, 1)
         self.btn_box = QDialogButtonBox(
             QDialogButtonBox.Cancel | QDialogButtonBox.Ok, parent=self)
@@ -269,6 +320,6 @@ if __name__ == "__main__":
     import sys
     from PySide6.QtWidgets import QApplication
     app = QApplication(sys.argv)
-    dlg = AutoQuarantineRuleDialog()
+    dlg = AutoReadRuleDialog()
     dlg.show()
     sys.exit(app.exec())

@@ -1,0 +1,284 @@
+# -*- coding: utf-8 -*-
+"""
+自动已读 — 业务规则（可配置 · 多规则版）
+
+规则通过 config/auto_read_rules.json 配置，本模块每次执行实时读取，无需重启。
+配置结构：
+  {
+    "enabled": true,                 # 总开关；False 则完全不自动已读
+    "rules": [                       # 规则列表，多条规则 OR 并存
+      {
+        "name": "偏差数量=0",         # 规则名称（写入已读原因列便于追溯）
+        "enabled": true,             # 单条规则开关
+        "type": "dev_qty_eq",        # 条件类型（见 CONDITION_TYPES）
+        "params": {"value": 0}       # 条件参数（按 type 取值）
+      },
+      {
+        "name": "物料600开头",
+        "enabled": true,
+        "type": "mat_code_prefix",
+        "params": {"value": "600"}
+      }
+    ]
+  }
+
+匹配语义（关键）：
+  - 多条规则之间为 OR：一条记录命中任意一条「启用」的规则即自动已读。
+  - 同一条记录命中多条规则时，已读原因取列表顺序靠前的那条规则（列表顺序即优先级）。
+  - 单条规则即一个条件（自动已读场景下条件足够清晰，无需 AND 组合）。
+  - 条件「开着，但数据里没有对应列」→ 该项不匹配（False），保守不误伤。
+
+向后兼容：旧版单条配置（顶层直接是 enabled/name/type/params...）会在 load 时自动包成 rules[0]。
+
+说明：
+  - 本模块只负责返回「应自动已读的 data_id → 原因」映射与命中掩码，
+    真正的 mark_read_batch / 列标记由 GUI 层完成，保持与手动标记已读一致。
+  - 列名在不同 SAP 导出可能不同，故用候选名依次探测，缺失则对应条件判为不匹配。
+"""
+
+import json
+import os
+
+import pandas as pd
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.path.join(_HERE, "..", "config", "auto_read_rules.json")
+
+# --------------------------------------------------------------------------- 条件类型注册表
+# 每个条件类型约定：
+#   label      : 下拉框显示名
+#   field      : 命中判定的目标列（候选名依次探测）
+#   op         : 比较算子（eq / startswith / contains / in）
+#   value_type : 参数输入控件类型（number / text / textlist）
+#   default    : 默认参数值
+#   hint       : 编辑区占位提示
+CONDITION_TYPES = {
+    "dev_qty_eq": {
+        "label": "偏差数量等于",
+        "field_candidates": ["偏差数量"],
+        "op": "eq",
+        "value_type": "number",
+        "default": 0,
+        "hint": "例如 0 表示偏差数量为零的记录自动已读",
+    },
+    "mat_code_prefix": {
+        "label": "物料编码前缀为",
+        "field_candidates": ["物料编码", "组件物料号", "物料号"],
+        "op": "startswith",
+        "value_type": "text",
+        "default": "600",
+        "hint": "例如 600 表示物料编码以 600 开头的记录自动已读",
+    },
+    "mat_code_in": {
+        "label": "物料编码属于",
+        "field_candidates": ["物料编码", "组件物料号", "物料号"],
+        "op": "in",
+        "value_type": "textlist",
+        "default": "",
+        "hint": "逗号分隔的编码列表，命中任一即已读，例如 600123,600456",
+    },
+    "mat_name_contains": {
+        "label": "物料名称包含",
+        "field_candidates": ["物料名称", "组件物料描述", "物料描述"],
+        "op": "contains",
+        "value_type": "text",
+        "default": "",
+        "hint": "物料名称包含该关键字即已读",
+    },
+    "mat_type_eq": {
+        "label": "物料类型等于",
+        "field_candidates": ["物料类型", "物料分类", "物料大类"],
+        "op": "eq_str",
+        "value_type": "text",
+        "default": "包材",
+        "hint": "例如 包材 / 原料",
+    },
+}
+
+DEFAULT_RULES = [
+    {"name": "偏差数量=0", "enabled": True, "type": "dev_qty_eq", "params": {"value": 0}},
+    {"name": "物料600开头", "enabled": True, "type": "mat_code_prefix", "params": {"value": "600"}},
+]
+
+DEFAULT_CONFIG = {"enabled": True, "rules": [dict(r) for r in DEFAULT_RULES]}
+
+# 单条规则的全部合法字段
+_RULE_FIELDS = ("name", "enabled", "type", "params")
+
+
+def _first_col(df: pd.DataFrame, candidates):
+    """返回 df 中第一个存在的候选列名，都不存在则返回 None。"""
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
+
+
+def _to_num(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+# --------------------------------------------------------------------------- 配置读写
+def _normalize_rule(rule):
+    """补齐字段，保证每条规则都有完整键。"""
+    r = {
+        "name": "未命名规则",
+        "enabled": True,
+        "type": "dev_qty_eq",
+        "params": {"value": CONDITION_TYPES["dev_qty_eq"]["default"]},
+    }
+    if isinstance(rule, dict):
+        if rule.get("name") not in (None, ""):
+            r["name"] = str(rule["name"]).strip()
+        if "enabled" in rule:
+            r["enabled"] = bool(rule["enabled"])
+        t = rule.get("type")
+        if t in CONDITION_TYPES:
+            r["type"] = t
+        spec = CONDITION_TYPES[r["type"]]
+        params = rule.get("params") if isinstance(rule.get("params"), dict) else {}
+        val = params.get("value", spec["default"])
+        if spec["value_type"] == "number":
+            val = _to_num(val)
+        else:
+            val = str(val).strip()
+        r["params"] = {"value": val}
+    return r
+
+
+def load_auto_read_rules_config():
+    """读取配置，兼容旧单条格式，返回 {'enabled': bool, 'rules': [规则...]}。"""
+    cfg = {"enabled": DEFAULT_CONFIG["enabled"], "rules": [dict(r) for r in DEFAULT_RULES]}
+    try:
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                user = json.load(f)
+            if isinstance(user, dict):
+                if "rules" in user and isinstance(user["rules"], list):
+                    # 新格式
+                    cfg["enabled"] = bool(user.get("enabled", True))
+                    rules = [_normalize_rule(r) for r in user["rules"] if isinstance(r, dict)]
+                    cfg["rules"] = rules if rules else [dict(r) for r in DEFAULT_RULES]
+                else:
+                    # 旧单条格式：包成 rules[0]
+                    old = _normalize_rule(user)
+                    cfg["rules"] = [old]
+    except Exception:
+        pass
+    return cfg
+
+
+def save_auto_read_rules_config(cfg):
+    """合并默认配置后写回文件，返回最终生效配置（{'enabled', 'rules'}）。"""
+    merged = {
+        "enabled": bool(cfg.get("enabled", True)),
+        "rules": [_normalize_rule(r) for r in (cfg.get("rules") or [])],
+    }
+    if not merged["rules"]:
+        merged["rules"] = [dict(r) for r in DEFAULT_RULES]
+    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(merged, f, ensure_ascii=False, indent=2)
+    return merged
+
+
+# --------------------------------------------------------------------------- 文案生成
+def build_rule_summary(rule=None):
+    """生成单条规则的预览文本。"""
+    if rule is None:
+        return "（未配置）"
+    if not rule.get("enabled", True):
+        return "（已停用）"
+    spec = CONDITION_TYPES.get(rule.get("type"), CONDITION_TYPES["dev_qty_eq"])
+    val = rule.get("params", {}).get("value", spec["default"])
+    if spec["op"] == "eq":
+        return "%s = %s" % (spec["label"], _to_num(val))
+    if spec["op"] == "startswith":
+        return "%s「%s」" % (spec["label"], str(val).strip())
+    if spec["op"] == "contains":
+        return "%s「%s」" % (spec["label"], str(val).strip())
+    if spec["op"] == "in":
+        items = [x.strip() for x in str(val).split(",") if x.strip()]
+        return "%s（%s）" % (spec["label"], "、".join(items) if items else "未填")
+    if spec["op"] == "eq_str":
+        return "%s「%s」" % (spec["label"], str(val).strip())
+    return spec["label"]
+
+
+def build_all_summary(cfg=None):
+    """整体预览（给主窗口 tooltip / 空结果提示）。"""
+    cfg = cfg or load_auto_read_rules_config()
+    if not cfg.get("enabled", True):
+        return "（自动已读已关闭）"
+    active = [r for r in cfg.get("rules", []) if r.get("enabled", True)]
+    if not active:
+        return "（无启用的规则）"
+    names = "、".join(r.get("name", "未命名") for r in active)
+    return "启用规则(%d)：%s" % (len(active), names)
+
+
+# --------------------------------------------------------------------------- 核心匹配
+def compute_auto_read_mask(df: pd.DataFrame, cfg=None):
+    """返回 (union_mask, per_rule)。
+
+    union_mask : bool Series（与 df.index 对齐），标记命中任意一条「启用」规则的行。
+    per_rule   : list of (rule_dict, matched_mask)，matched_mask 为 bool Series。
+                 用于上层在「未读」范围内统计每条规则命中数做反馈。
+
+    - 多条规则 OR 合并；同一条记录命中多条时取列表靠前的规则（优先级）。
+    - 数据缺失必要条件 → 该规则整条不匹配（保守）。
+    """
+    empty = pd.Series(dtype=bool)  # 占位，真正缺失时按 df.index 重建
+    if df is None or df.empty or "data_id" not in df.columns:
+        return empty, []
+    if cfg is None:
+        cfg = load_auto_read_rules_config()
+    if not cfg.get("enabled", True):
+        return pd.Series(False, index=df.index), []
+    rules = cfg.get("rules", [])
+    if not rules:
+        return pd.Series(False, index=df.index), []
+
+    result_union = pd.Series(False, index=df.index)
+    per_rule = []
+    for rule in rules:
+        if not rule.get("enabled", True):
+            continue
+        m = _match_single_rule(df, rule)
+        per_rule.append((rule, m))
+        result_union = result_union | m
+    return result_union, per_rule
+
+
+def _match_single_rule(df, rule):
+    """单条规则的匹配，返回 bool 掩码。"""
+    spec = CONDITION_TYPES.get(rule.get("type"), CONDITION_TYPES["dev_qty_eq"])
+    field = _first_col(df, spec["field_candidates"])
+    if field is None:
+        return pd.Series(False, index=df.index)  # 无列 → 不匹配
+    op = spec["op"]
+    val = rule.get("params", {}).get("value", spec["default"])
+    col = df[field]
+
+    if op == "eq":
+        target = _to_num(val)
+        return pd.to_numeric(col, errors="coerce").fillna(0) == target
+    if op == "startswith":
+        s = col.astype(str).fillna("")
+        return s.str.startswith(str(val).strip(), na=False)
+    if op == "contains":
+        s = col.astype(str).fillna("")
+        return s.str.contains(str(val).strip(), regex=False, na=False)
+    if op == "in":
+        items = [x.strip() for x in str(val).split(",") if x.strip()]
+        if not items:
+            return pd.Series(False, index=df.index)
+        s = col.astype(str).fillna("")
+        return s.isin(items)
+    if op == "eq_str":
+        s = col.astype(str).fillna("")
+        return s == str(val).strip()
+    return pd.Series(False, index=df.index)

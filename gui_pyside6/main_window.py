@@ -494,8 +494,8 @@ class MainWindow(QMainWindow):
         self.action_btn_auto_q_rule.setCursor(Qt.PointingHandCursor)
         self.action_btn_auto_q_rule.setObjectName("actionBtnAutoQRule")
         self.action_btn_auto_q_rule.setProperty("class", "actionBtn")
-        self.action_btn_auto_q_rule.setToolTip("配置自动隔离规则（关键词 / 包材 / 负损）")
-        self.action_btn_auto_q_rule.clicked.connect(self._open_auto_quarantine_rule_dialog)
+        self.action_btn_auto_q_rule.setToolTip("规则中心（自动隔离 / 自动已读）")
+        self.action_btn_auto_q_rule.clicked.connect(self._open_rule_center)
         action_layout.addWidget(self.action_btn_auto_q_rule)
 
         action_layout.addStretch()
@@ -1116,8 +1116,8 @@ class MainWindow(QMainWindow):
             else:
                 # 重新分析：用本次新分析的 df 刷新主表，避免显示陈旧数据
                 processed_df = df if '_read' in df.columns else self.data_service.preprocess_audit_data(df)
-            # 新增：分析完成后自动把「偏差数量=0」的未读行标为已读，并报告分类计数
-            self._auto_read_zero_deviation(processed_df)
+            # 新增：分析完成后按「自动已读规则中心」配置自动标已读，并逐规则报告命中数
+            self._auto_read_by_rules(processed_df)
             self.source_model.setDataFrame(processed_df)
             QApplication.processEvents()
             self._schedule_unread_summary()
@@ -1256,26 +1256,31 @@ class MainWindow(QMainWindow):
         progress_visible = not self.main_table._progress_hidden
         self.top_panel.setVisible(stats_visible or progress_visible)
 
-    def _auto_read_zero_deviation(self, df):
-        """分析完成后：把「偏差数量=0」的未读行自动标为已读，并报告分类计数。
+    def _auto_read_by_rules(self, df):
+        """分析完成后：按「自动已读规则中心」配置，把命中任意启用规则的未读行自动标为已读，
+        并逐条规则报告命中数（清晰 toast + 状态栏，解决「自动已读没告诉我」的盲区）。
 
-        判定列：原始『偏差数量』（= 数量-定额 − 数量-实际），非净偏差数量。
-        分类口径：食品/饮料 按工厂列含『食品』/『饮料』；原料/包材 按『物料类型』列。
-        落库：复用与手动标已读同一套 snapshot + mark_read_batch，数据变动会自动翻回未读。
+        判定：多条规则 OR 并存；命中行若已读过则跳过（不重复打扰，数据变动会自动翻回未读）。
+        落库：复用与手动标已读同一套 snapshot + mark_read_batch。
         """
         try:
-            if df is None or df.empty or '_read' not in df.columns or '偏差数量' not in df.columns:
+            if df is None or df.empty or '_read' not in df.columns or 'data_id' not in df.columns:
                 return
-            dev_col = pd.to_numeric(df['偏差数量'], errors='coerce').fillna(0)
-            zero_mask = (dev_col == 0)
-            n_total_zero = int(zero_mask.sum())
-            if n_total_zero == 0:
-                toast("ℹ️ 本次无偏差数量=0 的行，无需自动已读", "info", parent=self)
+            from core.auto_read_rules import load_auto_read_rules_config, compute_auto_read_mask
+            cfg = load_auto_read_rules_config()
+            if not cfg.get('enabled', True):
+                toast("ℹ️ 自动已读已关闭（规则中心总开关）", "info", parent=self)
                 return
-            unread_zero = df[zero_mask & (df['_read'] == 0)]
-            n_auto = len(unread_zero)
+            union_mask, per_rule = compute_auto_read_mask(df, cfg)
+            unread = (df['_read'] == 0)
+            target = union_mask & unread
+            n_auto = int(target.sum())
+            n_would = int(union_mask.sum())
             if n_auto == 0:
-                toast(f"ℹ️ 偏差数量=0 共 {n_total_zero} 条，均已读过，无需自动已读", "info", parent=self)
+                if n_would == 0:
+                    toast("ℹ️ 本次无符合自动已读规则的行", "info", parent=self)
+                else:
+                    toast(f"ℹ️ 符合自动已读规则共 {n_would} 条，均已读过，无需自动已读", "info", parent=self)
                 return
 
             # —— 建立变更检测基线（向量化 dict(zip)，避免逐行 df.loc 的 O(n²)）——
@@ -1285,7 +1290,7 @@ class MainWindow(QMainWindow):
             qty_lookup = {str(k): v for k, v in zip(df['data_id'], df[qty_col])} if qty_col else {}
             note_lookup = {str(k): str(v) for k, v in zip(df['data_id'], df[note_col].astype(str))} if note_col else {}
 
-            dids = [str(x) for x in unread_zero['data_id'].tolist()]
+            dids = [str(x) for x in df.loc[target, 'data_id'].tolist()]
             snapshot_map = {}
             for did in dids:
                 q = qty_lookup.get(did)
@@ -1296,34 +1301,26 @@ class MainWindow(QMainWindow):
                 )
             if dids:
                 mark_read_batch(dids, snapshot_map)
-                df.loc[unread_zero.index, '_read'] = 1
+                df.loc[target, '_read'] = 1
 
-            # —— 分类计数（仅本次自动已读的行）——
-            factory_col = next((c for c in ['工厂名称', '工厂', 'plant'] if c in df.columns), None)
-            food = drink = 0
-            if factory_col:
-                fstr = df.loc[unread_zero.index, factory_col].astype(str).fillna('')
-                food = int(fstr.str.contains('食品').sum())
-                drink = int(fstr.str.contains('饮料').sum())
-            raw_cnt = pkg_cnt = other_cnt = 0
-            if '物料类型' in df.columns:
-                mat = df.loc[unread_zero.index, '物料类型'].astype(str).fillna('')
-                raw_cnt = int((mat == '原料').sum())
-                pkg_cnt = int((mat == '包材').sum())
-                other_cnt = int((~mat.isin(['原料', '包材'])).sum())
+            # —— 逐规则命中数（仅在未读范围内统计，供反馈）——
+            parts = []
+            for rule, m in per_rule:
+                cnt = int((m & unread).sum())
+                if cnt > 0:
+                    parts.append("「%s」%d" % (rule.get('name', '未命名'), cnt))
 
             toast(
-                f"✅ 自动已读 {n_auto} 条（偏差数量=0）｜食品 {food}/饮料 {drink}｜原料 {raw_cnt}/包材 {pkg_cnt}"
-                + (f"｜其他 {other_cnt}" if other_cnt else ""),
+                f"✅ 自动已读 {n_auto} 条｜" + "｜".join(parts),
                 "success", parent=self,
             )
             self.statusBar().showMessage(
-                f"偏差数量=0 自动已读 {n_auto} 条（食品{food}/饮料{drink}；原料{raw_cnt}/包材{pkg_cnt}）"
-                f"｜全表偏差数量=0 共 {n_total_zero} 条",
+                f"自动已读 {n_auto} 条（" + "；".join(parts)
+                + f"）｜符合规则共 {n_would} 条",
                 6000,
             )
         except Exception as e:
-            print(f"[WARN] 自动已读偏差数量=0 失败(不影响主流程): {e}", flush=True)
+            print(f"[WARN] 自动已读失败(不影响主流程): {e}", flush=True)
 
     def _on_analysis_error_ui(self, error_msg):
         self._heavy_busy = False
@@ -3174,7 +3171,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "自动整理隔离区", msg)
 
     def _open_auto_quarantine_rule_dialog(self):
-        """打开自动隔离规则配置对话框。保存成功后刷新工具栏 tooltip。"""
+        """打开自动隔离规则配置对话框（独立入口，保留兼容）。保存成功后提示。"""
         from PySide6.QtWidgets import QDialog
         from gui_pyside6.dialogs.auto_quarantine_rule_dialog import AutoQuarantineRuleDialog
         dlg = AutoQuarantineRuleDialog(self)
@@ -3182,6 +3179,14 @@ class MainWindow(QMainWindow):
             cfg = load_auto_quarantine_config()
             self.action_btn_auto_q.setToolTip("按规则自动移入隔离区：" + build_all_summary(cfg))
             toast("✅ 自动隔离规则已更新", parent=self)
+
+    def _open_rule_center(self, open_tab=0):
+        """打开「规则中心」：Tab1 自动隔离区 + Tab2 自动已读，两页共享保存。"""
+        from PySide6.QtWidgets import QDialog
+        from gui_pyside6.dialogs.auto_rules_center_dialog import AutoRulesCenterDialog
+        dlg = AutoRulesCenterDialog(self, open_tab=open_tab)
+        if dlg.exec_() == QDialog.DialogCode.Accepted:
+            toast("✅ 规则已更新（自动隔离 + 自动已读）", parent=self)
 
     def _open_quarantine_dialog(self):
         """顶部按钮：打开隔离区弹窗"""

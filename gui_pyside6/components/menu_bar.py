@@ -71,6 +71,10 @@ class MenuBarComponent:
         rule_action.triggered.connect(self.mw._open_rule_config)
         audit_menu.addAction(rule_action)
 
+        rule_center_action = QAction("⚙ 规则中心（隔离/已读）", self.mw)
+        rule_center_action.triggered.connect(self.mw._open_rule_center)
+        audit_menu.addAction(rule_center_action)
+
         alert_action = QAction("🔔 替代料看板", self.mw)
         alert_action.triggered.connect(self.mw._show_alert_dashboard)
         audit_menu.addAction(alert_action)
