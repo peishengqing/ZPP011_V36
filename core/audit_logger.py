@@ -12,6 +12,7 @@ class AuditLogger:
     def __init__(self, db_path=None, max_queue_size=1000):
         self.db_path = db_path or _get_default_db_path()
         self._app_dir = os.path.dirname(self.db_path)
+        self.queue = queue.Queue(maxsize=max_queue_size)
         self.worker = threading.Thread(target=self._worker, daemon=True)
         self.worker.start()
         self._init_db()

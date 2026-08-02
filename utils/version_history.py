@@ -14,6 +14,24 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.22",
+        "date": "2026-08-02",
+        "build_datetime": "2026-08-02 10:30:00",
+        "features": [
+            "✦ 动态阈值 UI 可调：筛选面板新增「动态阈值」输入框（0~50%，默认10%），贯穿 分析→主表→完整报告 Sheet3/4 数据及说明文字，sheet 描述里的阈值数值不再写死 ±10%",
+        ],
+        "fixes": [
+            "🔧 修复 AuditLogger 后台线程启动即崩：__init__ 从未初始化 self.queue（queue.Queue），_worker 线程 self.queue.get() 直接 AttributeError、log() 同样崩；现补上 self.queue = queue.Queue(maxsize=max_queue_size)（仅被单测实例化，属潜伏缺陷，连自带单测都会挂）",
+            "🔧 修复自动已读 mark_read_batch 主线程逐行 SQLite 写入（零偏差行多时界面冻结）：改为两条 executemany 批量化（INSERT OR IGNORE + UPDATE 各一批，单事务一次 commit），与 save_snapshot_batch 同款写法",
+            "🔧 Sheet8「偏差原因汇总」备注完整输出——经复现已确认当前源码不截断，本次无代码改动，仅澄清旧版报表的截断现象",
+        ],
+        "optimizations": [],
+        "notes": [
+            "📌 合并上一轮未提交的 dyn_thresh 8 文件改动一并发版",
+            "📌 代码质量审查报告（AI 生成）经逐条核对，其中 2 处 P1（AIAuditWorker 缩进、_get_conn 重复迁移）为误报，未采纳",
+        ],
+    },
+    {
         "version": "v42.21",
         "date": "2026-08-02",
         "build_datetime": "2026-08-02 09:10:00",

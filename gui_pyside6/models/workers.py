@@ -20,7 +20,8 @@ class AnalysisWorker(QThread):
     log = Signal(str)           # 日志信号
 
     def __init__(self, input_file, alt_pairs, start_date, end_date, material_search,
-                 dev_rate_threshold=1.0, data_service=None, previous_df=None, input_df=None):
+                 dev_rate_threshold=1.0, data_service=None, previous_df=None, input_df=None,
+                 dyn_thresh=None):
         super().__init__()
         self.input_file = input_file
         self.alt_pairs = alt_pairs
@@ -28,6 +29,7 @@ class AnalysisWorker(QThread):
         self.end_date = end_date
         self.material_search = material_search
         self.dev_rate_threshold = dev_rate_threshold
+        self.dyn_thresh = dyn_thresh
         # 后台预处理所需（DataSerivce 为 QObject，跨线程仅发信号，逻辑可安全在 worker 跑）
         self.data_service = data_service
         self._previous_df = previous_df
@@ -65,6 +67,7 @@ class AnalysisWorker(QThread):
                 return_dataframe=True,  # 返回DataFrame，不自动保存文件
                 dev_rate_threshold=self.dev_rate_threshold,
                 input_df=self._input_df,  # reuse cached DataFrame from file selection
+                dyn_thresh=self.dyn_thresh,
             )
 
             if self._cancel.is_set():

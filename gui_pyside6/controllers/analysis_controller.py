@@ -33,7 +33,8 @@ class AnalysisController(QObject):
         self._previous_df = None
 
     def start_analysis(self, input_file, alt_pairs, start_date, end_date, material_search,
-                       dev_rate_threshold=0.0, data_service=None, previous_df=None, input_df=None):
+                       dev_rate_threshold=0.0, data_service=None, previous_df=None, input_df=None,
+                       dyn_thresh=None):
         """启动分析线程"""
         if self.worker and self.worker.isRunning():
             self.log_message.emit("分析任务已在运行", "warning")
@@ -47,6 +48,7 @@ class AnalysisController(QObject):
             'end_date': end_date,
             'material_search': material_search,
             'dev_rate_threshold': dev_rate_threshold,
+            'dyn_thresh': dyn_thresh,
         }
         # 缓存 data_service / previous_df 给 _on_finished 跑预处理
         self._data_service = data_service
@@ -59,7 +61,7 @@ class AnalysisController(QObject):
         self.analysis_started.emit()
         self.worker = AnalysisWorker(
             input_file, alt_pairs, start_date, end_date, material_search,
-            dev_rate_threshold, data_service, previous_df, input_df
+            dev_rate_threshold, data_service, previous_df, input_df, dyn_thresh
         )
         self.worker.progress.connect(self.progress_updated)
         self.worker.finished.connect(self._on_finished)

@@ -168,6 +168,7 @@ class ExportController(QObject):
                 output_path=save_path,
                 enable_net_offset=True,
                 return_dataframe=False,
+                dyn_thresh=analysis_params.get('dyn_thresh'),
             )
             progress_dlg.setValue(100)
             progress_dlg.close()

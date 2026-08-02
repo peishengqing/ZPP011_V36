@@ -265,18 +265,24 @@ def mark_read_batch(data_ids, snapshot_map):
         return
     conn = _get_conn()
     now = datetime.now().isoformat()
+    # 向量化归一化：避免 Python 逐行 execute 在主线程阻塞（零偏差行可能上千）
+    insert_rows = [(str(did), now) for did in data_ids]
+    norm = []
     for did in data_ids:
         snap_qty, snap_note = snapshot_map.get(did, (None, None))
-        conn.execute("""
-            INSERT OR IGNORE INTO read_status (data_id, is_read, read_time, user)
-            VALUES (?, 0, ?, 'default')
-        """, (str(did), now))
-        conn.execute("""
-            UPDATE read_status SET is_read = 1, snapshot_qty = ?, snapshot_note = ?, read_time = ?
-            WHERE data_id = ?
-        """, (None if snap_qty is None else float(snap_qty),
-              '' if snap_note is None else str(snap_note),
-              now, str(did)))
+        norm.append((
+            None if snap_qty is None else float(snap_qty),
+            '' if snap_note is None else str(snap_note),
+            now, str(did),
+        ))
+    conn.executemany("""
+        INSERT OR IGNORE INTO read_status (data_id, is_read, read_time, user)
+        VALUES (?, 0, ?, 'default')
+    """, insert_rows)
+    conn.executemany("""
+        UPDATE read_status SET is_read = 1, snapshot_qty = ?, snapshot_note = ?, read_time = ?
+        WHERE data_id = ?
+    """, norm)
     conn.commit()
 
 

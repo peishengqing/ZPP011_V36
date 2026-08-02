@@ -79,7 +79,7 @@ class _FullReportWorker(QThread):
     failed = Signal(str)             # (错误信息)
 
     def __init__(self, input_file, alt_pairs, start_date, end_date,
-                 material_search, output_path, parent=None):
+                 material_search, output_path, parent=None, dyn_thresh=None):
         super().__init__(parent)
         self.input_file = input_file
         self.alt_pairs = alt_pairs
@@ -87,6 +87,7 @@ class _FullReportWorker(QThread):
         self.end_date = end_date
         self.material_search = material_search
         self.output_path = output_path
+        self.dyn_thresh = dyn_thresh
         self._cancel = False
 
     def request_cancel(self):
@@ -110,6 +111,7 @@ class _FullReportWorker(QThread):
                 output_path=self.output_path,
                 enable_net_offset=_cfg.get_net_offset_enabled(),
                 return_dataframe=False,
+                dyn_thresh=self.dyn_thresh,
             )
             if self._cancel:
                 self.failed.emit("已取消")
@@ -1008,6 +1010,10 @@ class MainWindow(QMainWindow):
         dev_threshold = getattr(self.filter_panel, 'dev_threshold_spin', None)
         dev_threshold_val = dev_threshold.value() if dev_threshold is not None else 0.0
 
+        # 动态阈值（公司规定）：默认 10.0%，可被 filter_panel.dyn_thresh_spin 改
+        dyn_threshold = getattr(self.filter_panel, 'dyn_thresh_spin', None)
+        dyn_thresh_val = dyn_threshold.value() if dyn_threshold is not None else 10.0
+
         # 读取"分析参数"组里的分析日期范围（留空=全部）。修复：此前写死为空导致日期控制失效。
         def _qdate_or_empty(edit):
             try:
@@ -1034,6 +1040,7 @@ class MainWindow(QMainWindow):
             self.data_service,
             self.analysis_controller.get_last_processed_df(),
             getattr(self, '_cached_input_df', None),  # 复用选文件时缓存的 DataFrame，跳过重复文件 IO
+            dyn_thresh=dyn_thresh_val,
         )
 
     def _on_analysis_ui_start(self):
@@ -1159,6 +1166,7 @@ class MainWindow(QMainWindow):
                                     output_path=self.output_path,
                                     enable_net_offset=_cfg.get_net_offset_enabled(),
                                     return_dataframe=False,
+                                    dyn_thresh=getattr(self, 'dyn_thresh', None),
                                 )
                         except Exception:
                             import traceback as _tb
@@ -1167,7 +1175,8 @@ class MainWindow(QMainWindow):
                 self._cache_worker = _FullCacheWorker(
                     params['input_file'], params['alt_pairs'],
                     params.get('start_date', ''), params.get('end_date', ''),
-                    params.get('material_search', ''), cache_path
+                    params.get('material_search', ''), cache_path,
+                    dyn_thresh=params.get('dyn_thresh'),
                 )
                 _cw = self._cache_worker
                 self._heavy_busy = True  # 缓存生成期间仍视为"重型操作进行中"

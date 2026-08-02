@@ -74,6 +74,15 @@ class FilterPanel(QWidget):
         self.dev_threshold_spin.setSuffix("%")
         self.dev_threshold_spin.setToolTip("仅纳入偏差率绝对值 ≥ 此阈值的工单进入主表（审核表）。默认 0%（显示全部偏差）；调高可聚焦大偏差。修改后重新分析生效。")
         param_layout.addRow("偏差率纳入阈值:", self.dev_threshold_spin)
+        # 动态阈值（公司规定）：控制 Sheet3 无备注预警 / Sheet4 中间地带 的判定阈值，
+        # 同时反映在「各Sheet说明」描述里。默认 10.0%。修改后重新分析生效。
+        self.dyn_thresh_spin = QDoubleSpinBox()
+        self.dyn_thresh_spin.setRange(0.0, 50.0)
+        self.dyn_thresh_spin.setSingleStep(0.5)
+        self.dyn_thresh_spin.setValue(10.0)
+        self.dyn_thresh_spin.setSuffix("%")
+        self.dyn_thresh_spin.setToolTip("动态阈值：公司规定偏差率阈值。Sheet3「无备注预警」/ Sheet4「中间地带」/ sheet 描述里的百分比都按这个值生效。默认 10.0%。修改后重新分析生效。")
+        param_layout.addRow("动态阈值:", self.dyn_thresh_spin)
         # 分析日期范围（重新分析生效）：控制 do_analysis_v2 的 start_date/end_date
         # 分析日期：QDateEdit + 📅选日期按钮 + ✕清除按钮，规避 specialValueText 下键盘输入不可靠
         self.analysis_start_date_edit, sd_container = self._make_date_field(

@@ -82,7 +82,8 @@ def do_analysis_v2(
         enable_net_offset=True,
         return_dataframe=False,
         dev_rate_threshold=0.0,
-        input_df=None):
+        input_df=None,
+        dyn_thresh=None):
     _dprint("[DEBUG do_analysis_v2] 函数开始执行")
 
     # output_dir 兜底，防止调用方传 None 导致 os.path.join 崩溃
@@ -283,8 +284,8 @@ def do_analysis_v2(
     col_p = '偏差率(%)'
 
     # ── 固定阈值（公司规定）─────────────────────
-    dyn_thresh = DEFAULT_THRESHOLD
-    thresh_desc = "固定阈值（公司规定）：±10%"
+    dyn_thresh = DEFAULT_THRESHOLD if dyn_thresh is None else dyn_thresh
+    thresh_desc = f"固定阈值（公司规定）：±{dyn_thresh:.0f}%"
     df['_dyn_thresh'] = dyn_thresh
 
     # 确保日期列是datetime类型
@@ -522,11 +523,11 @@ def do_analysis_v2(
     check_cancel()
 
     # Sheet3（第五步抽取 → analysis/sheets/sheet3_no_note.py）
-    no_note_df = build_sheet3(df, report_progress)
+    no_note_df = build_sheet3(df, report_progress, dyn_thresh=dyn_thresh)
     check_cancel()
 
     # Sheet4（第五步抽取 → analysis/sheets/sheet4_middle.py）
-    middle_df = build_sheet4(df, alt_df, alt_pairs, report_progress)
+    middle_df = build_sheet4(df, alt_df, alt_pairs, report_progress, dyn_thresh=dyn_thresh)
     check_cancel()
 
     # Sheet5（第五步抽取 → analysis/sheets/sheet5_full.py）

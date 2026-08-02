@@ -9,7 +9,7 @@ from analysis.excel_builder.write_sheet_util import ensure_numeric_cols
 from config.settings import DEFAULT_THRESHOLD
 
 
-def build_sheet4(df, alt_df, alt_pairs, report_progress, progress_idx=4):
+def build_sheet4(df, alt_df, alt_pairs, report_progress, progress_idx=4, dyn_thresh=None):
     """
     构建 Sheet4 中间地带明细 DataFrame
     参数:
@@ -18,13 +18,14 @@ def build_sheet4(df, alt_df, alt_pairs, report_progress, progress_idx=4):
         alt_pairs: 替代料配对列表
         report_progress: 进度回调函数
         progress_idx: 进度索引（默认4）
+        dyn_thresh: 动态阈值（%），None 时回退到 DEFAULT_THRESHOLD
     返回:
         middle_df: 中间地带明细 DataFrame
     """
     report_progress(progress_idx, "Sheet4-中间地带明细", 0)
 
     col_p = '偏差率(%)'
-    dyn_thresh = DEFAULT_THRESHOLD
+    dyn_thresh = DEFAULT_THRESHOLD if dyn_thresh is None else dyn_thresh
     thresh = dyn_thresh
 
 # 确保数值列为数值类型（防止字符串导致比较错误）

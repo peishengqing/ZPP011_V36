@@ -9,13 +9,14 @@ from config.settings import DEFAULT_THRESHOLD
 from analysis.debug_util import dprint
 
 
-def build_sheet3(df, report_progress, progress_idx=3):
+def build_sheet3(df, report_progress, progress_idx=3, dyn_thresh=None):
     """
     构建 Sheet3 无备注预警 DataFrame
     参数:
         df: 主数据 DataFrame
         report_progress: 进度回调函数
         progress_idx: 进度索引（默认3）
+        dyn_thresh: 动态阈值（%），None 时回退到 DEFAULT_THRESHOLD
     返回:
         no_note_df: 无备注预警 DataFrame（按偏差金额绝对值降序）
     """
@@ -23,7 +24,7 @@ def build_sheet3(df, report_progress, progress_idx=3):
     dprint("[DEBUG do_analysis_v2] 开始生成Sheet3")
 
     col_p = '偏差率(%)'
-    dyn_thresh = DEFAULT_THRESHOLD
+    dyn_thresh = DEFAULT_THRESHOLD if dyn_thresh is None else dyn_thresh
 
 # 确保数值列为数值类型（防止字符串导致比较错误）
     ensure_numeric_cols(df, ["材料偏差", "偏差率(%)", "偏差金额", "偏差金额(含税)", "数量-实际", "数量-定额"])
