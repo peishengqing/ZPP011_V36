@@ -14,6 +14,17 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.28",
+        "date": "2026-08-02",
+        "build_datetime": "2026-08-02 17:15:00",
+        "fixes": [
+            "🐞 修复打开「自动已读规则」页崩溃（AttributeError: 'AutoReadRuleWidget' object has no attribute '_param_input'）：__init__ 中 edit_name.setText / chk_rule_enabled.setChecked 会同步触发 textChanged/stateChanged → _refresh_summary → _read_param_value 提前访问尚未构建的参数控件。改为在 __init__ 早期先声明 self._param_input = None，并让 _read_param_value 对 None 返回该条件类型默认值",
+        ],
+        "notes": [
+            "v42.27 的 exe 打开自动已读规则页必崩，本版为 v42.27 的必须补丁，建议直接覆盖",
+        ],
+    },
+    {
         "version": "v42.27",
         "date": "2026-08-02",
         "build_datetime": "2026-08-02 17:10:00",

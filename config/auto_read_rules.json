@@ -1,0 +1,21 @@
+{
+  "enabled": true,
+  "rules": [
+    {
+      "name": "偏差数量=0",
+      "enabled": true,
+      "type": "dev_qty_eq",
+      "params": {
+        "value": 0.0
+      }
+    },
+    {
+      "name": "物料600开头",
+      "enabled": true,
+      "type": "mat_type_eq",
+      "params": {
+        "value": "包材"
+      }
+    }
+  ]
+}

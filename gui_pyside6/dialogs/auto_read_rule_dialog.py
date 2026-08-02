@@ -46,6 +46,11 @@ class AutoReadRuleWidget(QWidget):
         super().__init__(parent)
         self.cfg = load_auto_read_rules_config()  # {'enabled', 'rules'}
         self.current_index = 0
+        # 防御：参数输入控件在 _load_rule_to_editor 中才创建。
+        # 但 edit_name.setText / chk_rule_enabled.setChecked 会同步触发
+        # textChanged / stateChanged → _refresh_summary → _read_param_value 提前访问它。
+        # 先声明为 None，并由 _read_param_value 对 None 返回默认值，避免初始化期崩溃。
+        self._param_input = None
         self._build_ui()
         self._refresh_list()
         self._load_rule_to_editor(0)
@@ -149,6 +154,9 @@ class AutoReadRuleWidget(QWidget):
 
     def _read_param_value(self):
         spec = CONDITION_TYPES[self._current_type()]
+        # 防御：参数控件尚未构建（如初始化期信号提前触发）时返回该类型默认值
+        if self._param_input is None:
+            return spec["default"]
         if spec["value_type"] == "number":
             return self._param_input.value()
         return self._param_input.text().strip()
