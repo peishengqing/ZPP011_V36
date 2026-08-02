@@ -498,7 +498,13 @@ def do_analysis_v2(
 
     # 订单级替代料标记（基于 alt_order_mat，仅同订单内同时存在配对物料才标记）
     # 向量化：构建 (流程订单, 组件物料描述) 键 Series，用 isin 一次性标记
-    _order_keys = pd.Series(zip(df['流程订单'].astype(str), df['组件物料描述'].astype(str)))
+    # 关键：Series 必须带 df.index。筛选后 df 的索引是非连续的(如 0,1,5,9…)，
+    # 若用默认 RangeIndex，df.loc[bool_mask, col] 会把 mask 当作标签去对齐，
+    # 在 pandas 3.x 下触发 TypeError: unhashable type: 'Series'（日期筛选必崩）。
+    _order_keys = pd.Series(
+        zip(df['流程订单'].astype(str), df['组件物料描述'].astype(str)),
+        index=df.index,
+    )
     df.loc[_order_keys.isin(alt_order_mat), '_note_source'] = '替代料'
 
     # 更新标准原因
@@ -506,8 +512,11 @@ def do_analysis_v2(
 
     # 重新计算 _is_alt 标志（仅基于订单级匹配，同一订单内同时存在配对物料才标记）
     report_progress(4, "4/5 正在匹配替代料信息", 70)
-    # 向量化：tuple Series + isin 替代逐行 apply（in alt_order_mat）
-    _order_alt_keys = pd.Series(zip(df['流程订单'].astype(str), df['组件物料描述'].astype(str)))
+    # 向量化：tuple Series + isin 替代逐行 apply（in alt_order_mat）；同样带 df.index
+    _order_alt_keys = pd.Series(
+        zip(df['流程订单'].astype(str), df['组件物料描述'].astype(str)),
+        index=df.index,
+    )
     df['_is_alt'] = _order_alt_keys.isin(alt_order_mat)
 
     check_cancel()
@@ -527,12 +536,19 @@ def do_analysis_v2(
     # 优先使用 _is_alt 标志（已做订单级匹配：同一订单内同时存在配对物料才标记）
     if '_is_alt' in df.columns:
         # 向量化：收集所有 _is_alt 为 True 的 (流程订单, 组件物料描述) 键集合，dev_df 用 isin 匹配
-        _alt_true_keys = set(zip(
-            df.loc[df['_is_alt'], '流程订单'].astype(str),
-            df.loc[df['_is_alt'], '组件物料描述'].astype(str)
-        ))
-        _dev_alt_keys = pd.Series(zip(dev_df['流程订单'].astype(str), dev_df['物料名称'].astype(str)))
-        dev_df['是否替代料'] = _dev_alt_keys.isin(_alt_true_keys).map({True: '是', False: '否'})
+        # 防御：日期筛选可能使 dev_df 为空(无列)，此时直接标 '否'，避免 KeyError: '流程订单'
+        if not dev_df.empty and '流程订单' in dev_df.columns and '物料名称' in dev_df.columns:
+            _alt_true_keys = set(zip(
+                df.loc[df['_is_alt'], '流程订单'].astype(str),
+                df.loc[df['_is_alt'], '组件物料描述'].astype(str)
+            ))
+            _dev_alt_keys = pd.Series(
+                zip(dev_df['流程订单'].astype(str), dev_df['物料名称'].astype(str)),
+                index=dev_df.index,
+            )
+            dev_df['是否替代料'] = _dev_alt_keys.isin(_alt_true_keys).map({True: '是', False: '否'})
+        else:
+            dev_df['是否替代料'] = '否'
     elif '是否替代料' not in dev_df.columns and alt_pairs:
         # 回退：仅在 dev_df 上做订单级匹配（向量化）
         if not alt_df.empty and all(c in alt_df.columns for c in ('订单号', '物料A', '物料B')):

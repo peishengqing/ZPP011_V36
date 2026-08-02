@@ -48,7 +48,14 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
 
     # 向量化构建（原 iterrows 列表推导，2026-07-27 性能优化）
     if has_real_dev.empty:
-        dev_df = pd.DataFrame([])
+        # 防御：返回带完整列结构的空表，而非 pd.DataFrame([])。
+        # 否则下游(df['流程订单']/主表展示/自动已读)在空结果时会 KeyError。
+        dev_df = pd.DataFrame(columns=[
+            '订单日期', '订单类型', '流程订单', '工厂', '车间', '物料类型',
+            '原表行号', '产品物料号码', '产品物料描述', '物料编码', '物料名称',
+            '单位', '定额', '实际', '偏差数量', '偏差率', '偏差率(%)',
+            '偏差金额', '备注', '备注来源', '偏差区间',
+        ])
     else:
         dev_df = pd.DataFrame(index=has_real_dev.index)
         dev_df['订单日期'] = pd.to_datetime(has_real_dev['订单开始日期'], errors='coerce').dt.strftime('%Y-%m-%d').fillna('')

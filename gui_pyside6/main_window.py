@@ -1096,15 +1096,20 @@ class MainWindow(QMainWindow):
         try:
             processed_df = self.view_model.df
             if processed_df is None or processed_df.empty:
-                # 后台已预处理过（带 _read 列）则复用，绝不在主线程重跑 31s 预处理
+                # 首次分析：后台未预处理过（带 _read 列）则复用，否则主线程预处理
                 if '_read' in df.columns:
                     processed_df = df
                 else:
                     processed_df = self.data_service.preprocess_audit_data(df)
-                self.source_model.setDataFrame(processed_df)
-                QApplication.processEvents()
-                self._schedule_unread_summary()
-                self.view_model.df = processed_df
+            else:
+                # 重新分析：用本次新分析的 df 刷新主表，避免显示陈旧数据
+                processed_df = df if '_read' in df.columns else self.data_service.preprocess_audit_data(df)
+            # 新增：分析完成后自动把「偏差数量=0」的未读行标为已读，并报告分类计数
+            self._auto_read_zero_deviation(processed_df)
+            self.source_model.setDataFrame(processed_df)
+            QApplication.processEvents()
+            self._schedule_unread_summary()
+            self.view_model.df = processed_df
             self._analysis_params = self.analysis_controller.get_analysis_params()
 
             # 注意：完整报告缓存由后台线程(_FullCacheWorker)生成，主线程绝不等待，
@@ -1235,6 +1240,75 @@ class MainWindow(QMainWindow):
         stats_visible = not self.stats_cards._user_hidden
         progress_visible = not self.main_table._progress_hidden
         self.top_panel.setVisible(stats_visible or progress_visible)
+
+    def _auto_read_zero_deviation(self, df):
+        """分析完成后：把「偏差数量=0」的未读行自动标为已读，并报告分类计数。
+
+        判定列：原始『偏差数量』（= 数量-定额 − 数量-实际），非净偏差数量。
+        分类口径：食品/饮料 按工厂列含『食品』/『饮料』；原料/包材 按『物料类型』列。
+        落库：复用与手动标已读同一套 snapshot + mark_read_batch，数据变动会自动翻回未读。
+        """
+        try:
+            if df is None or df.empty or '_read' not in df.columns or '偏差数量' not in df.columns:
+                return
+            dev_col = pd.to_numeric(df['偏差数量'], errors='coerce').fillna(0)
+            zero_mask = (dev_col == 0)
+            n_total_zero = int(zero_mask.sum())
+            if n_total_zero == 0:
+                toast("ℹ️ 本次无偏差数量=0 的行，无需自动已读", "info", parent=self)
+                return
+            unread_zero = df[zero_mask & (df['_read'] == 0)]
+            n_auto = len(unread_zero)
+            if n_auto == 0:
+                toast(f"ℹ️ 偏差数量=0 共 {n_total_zero} 条，均已读过，无需自动已读", "info", parent=self)
+                return
+
+            # —— 建立变更检测基线（向量化 dict(zip)，避免逐行 df.loc 的 O(n²)）——
+            from core.read_status import mark_read_batch
+            qty_col = self.data_service._find_real_qty_col(df)
+            note_col = self.data_service._find_remark_col(df)
+            qty_lookup = {str(k): v for k, v in zip(df['data_id'], df[qty_col])} if qty_col else {}
+            note_lookup = {str(k): str(v) for k, v in zip(df['data_id'], df[note_col].astype(str))} if note_col else {}
+
+            dids = [str(x) for x in unread_zero['data_id'].tolist()]
+            snapshot_map = {}
+            for did in dids:
+                q = qty_lookup.get(did)
+                n = note_lookup.get(did, '')
+                snapshot_map[did] = (
+                    self.data_service._safe_qty(q) if qty_col else None,
+                    self.data_service._norm_note(n) if note_col else '',
+                )
+            if dids:
+                mark_read_batch(dids, snapshot_map)
+                df.loc[unread_zero.index, '_read'] = 1
+
+            # —— 分类计数（仅本次自动已读的行）——
+            factory_col = next((c for c in ['工厂名称', '工厂', 'plant'] if c in df.columns), None)
+            food = drink = 0
+            if factory_col:
+                fstr = df.loc[unread_zero.index, factory_col].astype(str).fillna('')
+                food = int(fstr.str.contains('食品').sum())
+                drink = int(fstr.str.contains('饮料').sum())
+            raw_cnt = pkg_cnt = other_cnt = 0
+            if '物料类型' in df.columns:
+                mat = df.loc[unread_zero.index, '物料类型'].astype(str).fillna('')
+                raw_cnt = int((mat == '原料').sum())
+                pkg_cnt = int((mat == '包材').sum())
+                other_cnt = int((~mat.isin(['原料', '包材'])).sum())
+
+            toast(
+                f"✅ 自动已读 {n_auto} 条（偏差数量=0）｜食品 {food}/饮料 {drink}｜原料 {raw_cnt}/包材 {pkg_cnt}"
+                + (f"｜其他 {other_cnt}" if other_cnt else ""),
+                "success", parent=self,
+            )
+            self.statusBar().showMessage(
+                f"偏差数量=0 自动已读 {n_auto} 条（食品{food}/饮料{drink}；原料{raw_cnt}/包材{pkg_cnt}）"
+                f"｜全表偏差数量=0 共 {n_total_zero} 条",
+                6000,
+            )
+        except Exception as e:
+            print(f"[WARN] 自动已读偏差数量=0 失败(不影响主流程): {e}", flush=True)
 
     def _on_analysis_error_ui(self, error_msg):
         self._heavy_busy = False
