@@ -1136,7 +1136,7 @@ class MainWindow(QMainWindow):
             else:
                 from PySide6.QtCore import QThread
                 class _FullCacheWorker(QThread):
-                    def __init__(self, input_file, alt_pairs, start_date, end_date, material_search, output_path):
+                    def __init__(self, input_file, alt_pairs, start_date, end_date, material_search, output_path, dyn_thresh=None):
                         super().__init__()
                         self.input_file = os.path.normpath(input_file)
                         self.alt_pairs = alt_pairs
@@ -1144,6 +1144,7 @@ class MainWindow(QMainWindow):
                         self.end_date = end_date
                         self.material_search = material_search
                         self.output_path = output_path
+                        self.dyn_thresh = dyn_thresh
 
                     def run(self):
                         import analysis.analyzer as _az

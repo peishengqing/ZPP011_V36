@@ -14,6 +14,21 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.24",
+        "date": "2026-08-02",
+        "build_datetime": "2026-08-02 14:30:00",
+        "features": [],
+        "fixes": [
+            "🔧 修复 v42.22/42.23 崩溃回归：分析完成回调 _on_analysis_finished_ui 启动后台缓存线程 _FullCacheWorker 时传入 dyn_thresh= 关键字，但该局部类的 __init__ 未声明该形参 → TypeError: unexpected keyword argument 'dyn_thresh'（每次点「分析」后必炸）。给 __init__ 补 dyn_thresh=None 形参并 self.dyn_thresh=dyn_thresh，调用处与兜底分支均能正确接收",
+        ],
+        "optimizations": [],
+        "notes": [
+            "📌 根因：v42.22 加 dyn_thresh 贯穿时漏改这个局部类（_FullReportWorker 已加、_FullCacheWorker 漏加）",
+            "📌 主表分析本身不受影响，仅分析完成后的缓存线程异步启动时才炸；缓存正常路径复用 LATEST_INTERMEDIATES，Sheet3/4 阈值天然跟随 UI 设置（±20% 实测正确），仅极罕见兜底分支才显式传 dyn_thresh",
+            "📌 验证：py_compile 通过；pyflakes 无 F821/F822；do_analysis_v2 三路径（主表 dyn_thresh=20 / 缓存复用中间结果 / 兜底 None）均不崩且阈值正确",
+        ],
+    },
+    {
         "version": "v42.23",
         "date": "2026-08-02",
         "build_datetime": "2026-08-02 14:10:00",
