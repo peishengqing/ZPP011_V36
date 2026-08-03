@@ -259,11 +259,14 @@ class DataService(QObject):
         return df
 
     def get_audit_changes(self, df):
-        """变动提醒看板的单一数据源：从主表 df 的「审核后变更」行重算变动明细。
+        """变动提醒看板单一数据源：与主表 _post_audit_changed 列完全一致。
 
-        与未读概览弹窗 / 标记统计共用同一个真相（_post_audit_changed & _read 列），
-        不再依赖易失的 last_audit_changes 列表，避免两者口径脱钩导致看板为空。
-        旧值 / 新值通过对当前 df 与 DB 基线快照（load_read_status）的向量化比对还原。
+        直接以主表 df 中 _post_audit_changed==1 & _read==0 的行为真相，
+        与未读概览弹窗(_count_unread_items)共用同一列，消除两者口径不一致
+        （旧实现二次重比对历史基线，在缺基线 / 重新比对相等时把应展示的变动行
+        归零，导致「未读概览说 N 条、看板却显示暂无变动」）。
+        旧值来自 DB 基线快照(_hist_snap/_hist_note)，新值为当前主表值；
+        缺基线时旧值记为 None（看板展示空白），仍照常列出该行。
         """
         if df is None or getattr(df, 'empty', True) or '_post_audit_changed' not in df.columns:
             return []
@@ -273,51 +276,69 @@ class DataService(QObject):
         if not mask.any():
             return []
         sub = df[mask].copy()
-        data_ids = sub['data_id'].tolist()
-        status_map = load_read_status(data_ids)
-        if not status_map:
-            return []
+        # 统一 data_id 为 str：status_df.index 来自 load_read_status(str key)，
+        # 避免 sub['data_id'] 为 int 时 join 报「int64 与 str 列无法合并」。
+        sub['data_id'] = sub['data_id'].astype(str)
+        data_ids = [str(d) for d in sub['data_id'].tolist()]
         real_col = self._find_real_qty_col(sub)
         remark_col = self._find_remark_col(sub)
-        status_df = pd.DataFrame.from_dict(
-            status_map, orient='index',
-            columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note'])
-        sub = sub.join(status_df, on='data_id')
-        has_baseline = sub['_hist_snap'].notna() & sub['_hist_note'].notna()
-        if real_col:
-            cur_qty = pd.to_numeric(sub[real_col], errors='coerce')
-        else:
-            cur_qty = pd.Series([np.nan] * len(sub), index=sub.index)
-        if remark_col:
-            cur_note = sub[remark_col].apply(self._norm_note)
-        else:
-            cur_note = pd.Series([''] * len(sub), index=sub.index)
+        cur_qty = pd.to_numeric(sub[real_col], errors='coerce') if real_col else pd.Series([np.nan] * len(sub), index=sub.index)
+        cur_note = sub[remark_col].apply(self._norm_note) if remark_col else pd.Series([''] * len(sub), index=sub.index)
+
+        # 拉基线快照（允许为空；缺基线时旧值留空，仍照常展示该行）
+        try:
+            status_map = load_read_status(data_ids)
+        except Exception:
+            status_map = {}
+        if status_map:
+            status_df = pd.DataFrame.from_dict(
+                status_map, orient='index',
+                columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note'])
+            # 防御：若 sub 已含同名基线列（理论主表不会，已被 _restore_read_status drop），
+            # 先去掉避免 join 报「columns overlap」。
+            _overlap = [c for c in status_df.columns if c in sub.columns]
+            if _overlap:
+                sub = sub.drop(columns=_overlap)
+            sub = sub.join(status_df, on='data_id')
+        if '_hist_snap' not in sub.columns:
+            sub['_hist_snap'] = np.nan
+        if '_hist_note' not in sub.columns:
+            sub['_hist_note'] = np.nan
         hist_snap = pd.to_numeric(sub['_hist_snap'], errors='coerce')
         hist_note = sub['_hist_note'].apply(self._norm_note)
-        qty_changed = has_baseline & cur_qty.notna() & (abs(hist_snap - cur_qty) >= 1e-6)
-        note_changed = has_baseline & (hist_note != cur_note)
+
         changes = []
-        for idx in sub.index[qty_changed]:
+        for idx in sub.index:
             did = str(sub.at[idx, 'data_id'])
+            hs_qty = hist_snap.at[idx]
+            hs_note = hist_note.at[idx]
+            cur_q = cur_qty.at[idx]
+            cur_n = cur_note.at[idx]
+            # 实际数量是否有可确认变动（有基线且不同）——优先级最高
+            qty_diff = (not pd.isna(hs_qty)) and (not pd.isna(cur_q)) and (abs(float(hs_qty) - float(cur_q)) >= 1e-6)
+            # 备注原因是否有可确认变动（有基线且不同）
+            note_diff = (hs_note not in ('', None)) and (cur_n != hs_note)
+            if qty_diff:
+                field = '实际数量'
+                ov = float(hs_qty)
+                nv = cur_q
+            elif note_diff:
+                field = '备注原因'
+                ov = hs_note
+                nv = cur_n
+            else:
+                # 缺基线无法确认具体字段，仍列出此行，默认按实际数量展示（旧值留空）
+                field = '实际数量'
+                ov = None
+                nv = cur_q if not pd.isna(cur_q) else None
             changes.append({
                 'data_id': did,
-                'field': '实际数量',
+                'field': field,
                 'workshop': sub.at[idx, '车间'] if '车间' in sub.columns else None,
                 'material_name': sub.at[idx, '物料名称'] if '物料名称' in sub.columns else (
                     sub.at[idx, '物料描述'] if '物料描述' in sub.columns else ''),
-                'old_value': float(hist_snap.at[idx]) if pd.notna(hist_snap.at[idx]) else None,
-                'new_value': cur_qty.at[idx],
-            })
-        for idx in sub.index[note_changed]:
-            did = str(sub.at[idx, 'data_id'])
-            changes.append({
-                'data_id': did,
-                'field': '备注原因',
-                'workshop': sub.at[idx, '车间'] if '车间' in sub.columns else None,
-                'material_name': sub.at[idx, '物料名称'] if '物料名称' in sub.columns else (
-                    sub.at[idx, '物料描述'] if '物料描述' in sub.columns else ''),
-                'old_value': self._norm_note(hist_note.at[idx]),
-                'new_value': cur_note.at[idx],
+                'old_value': ov,
+                'new_value': nv,
             })
         return changes
 
