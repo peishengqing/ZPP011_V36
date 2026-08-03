@@ -619,6 +619,8 @@ class DeviationWarningDialog(QDialog):
 
         self._apply_filter()
         toast(f"✅ 已批量标记 {count} 条为已读", parent=self)
+        if count and hasattr(self, 'main_window') and self.main_window:
+            self.main_window._on_manual_marked(count)
 
     def batch_mark_unread(self):
         """批量标记选中行为未读"""

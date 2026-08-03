@@ -238,6 +238,14 @@ class MainWindow(QMainWindow):
         # 控制器
         self.analysis_controller = AnalysisController(self)
         self.audit_controller = AuditController(self)
+        self.audit_controller.manual_marked.connect(self._on_manual_marked)
+        # 状态栏常驻「已读计数」：自动 N / 手动 M（每批数据清零，见 _on_file_loaded）
+        self._auto_read_count = 0
+        self._manual_read_count = 0
+        self._read_counter_label = QLabel("📖 已读：自动 0 / 手动 0")
+        self._read_counter_label.setObjectName("readCounterLabel")
+        self._read_counter_label.setToolTip("本次数据中自动已读 / 手动标记已读的累计条数")
+        self.statusBar().addPermanentWidget(self._read_counter_label)
         self.export_controller = ExportController(self)
         self.alt_controller = AltController(self)
         self.data_service = DataService(self.alt_controller)
@@ -1313,6 +1321,8 @@ class MainWindow(QMainWindow):
             if dids:
                 mark_read_batch(dids, snapshot_map)
                 df.loc[target, '_read'] = 1
+                self._auto_read_count += n_auto
+                self._update_read_counter()
 
             # —— 逐规则命中数（仅在未读范围内统计，供反馈）——
             parts = []
@@ -1332,6 +1342,22 @@ class MainWindow(QMainWindow):
             )
         except Exception as e:
             print(f"[WARN] 自动已读失败(不影响主流程): {e}", flush=True)
+
+    def _update_read_counter(self):
+        """刷新状态栏常驻的「已读计数」标签（自动 N / 手动 M）。"""
+        try:
+            self._read_counter_label.setText(
+                f"📖 已读：自动 {self._auto_read_count} / 手动 {self._manual_read_count}"
+            )
+        except RuntimeError:
+            # 标签已被 deleteLater 回收（关窗时序），忽略
+            pass
+
+    def _on_manual_marked(self, n):
+        """手动标记已读后累计计数并刷新标签（来自 audit_controller / 两个弹窗的回调）。"""
+        if n:
+            self._manual_read_count += int(n)
+            self._update_read_counter()
 
     def _on_analysis_error_ui(self, error_msg):
         self._heavy_busy = False
@@ -1655,6 +1681,10 @@ class MainWindow(QMainWindow):
 
     def _on_file_loaded(self, df, file_path):
         try:
+            # 新一批数据：清零已读计数（每批数据清零口径）
+            self._auto_read_count = 0
+            self._manual_read_count = 0
+            self._update_read_counter()
             # 缓存 Data sheet DataFrame，点击分析时直接复用，跳过 ~20-30s 重复文件 IO
             self._cached_input_df = df
             if hasattr(self, 'preview_label') and self.preview_label:

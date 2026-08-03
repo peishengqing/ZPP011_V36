@@ -14,6 +14,20 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.30",
+        "date": "2026-08-03",
+        "build_datetime": "2026-08-03 09:20:00",
+        "fixes": [
+            "📊 状态栏常驻「已读计数」标签：📖 已读：自动 N / 手动 M，每批数据清零",
+            "手动已读累计覆盖全部入口：右键/工具栏（audit_controller.batch_mark_read 新增 manual_marked 信号）、预警弹窗、偏差预警弹窗，均回调主窗口 _on_manual_marked 累加",
+            "自动已读在 _auto_read_by_rules 标记成功后累加 _auto_read_count；新文件加载（_on_file_loaded）清零两个计数器",
+        ],
+        "notes": [
+            "计数口径为「本次数据中自动/手动累计标记已读的条数」，只加不减（标未读为取消动作，不扣减）；toast 错过也能随时回看状态栏",
+            "_update_read_counter / _on_manual_marked 对标签已回收（RuntimeError）做容错，关窗时序下不崩",
+        ],
+    },
+    {
         "version": "v42.29",
         "date": "2026-08-02",
         "build_datetime": "2026-08-02 17:50:00",

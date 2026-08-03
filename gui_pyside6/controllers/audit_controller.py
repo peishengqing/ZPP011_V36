@@ -28,6 +28,7 @@ class AuditController(QObject):
     progress_finished = Signal(object)        # 审核完成，传递更新后的DataFrame
     progress_error = Signal(str)              # 错误信息
     audit_data_changed = Signal(object)        # 数据变更后通知界面刷新
+    manual_marked = Signal(int)                 # 手动标记已读的条数（供主窗口状态栏计数）
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -193,6 +194,9 @@ class AuditController(QObject):
             source_model.setDataFrame(df)
             self.audit_data = df
             self.audit_data_changed.emit(df)
+            if is_read:
+                # 通知主窗口累计「手动已读」计数（自动已读走 _auto_read_by_rules，不经过此路径）
+                self.manual_marked.emit(sum(1 for row in rows if row < len(df)))
             status_bar_callback(f"已批量标记为{'已读' if is_read else '未读'}", 2000)
         except Exception as e:
             traceback.print_exc()
