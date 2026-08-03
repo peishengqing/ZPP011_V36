@@ -74,6 +74,17 @@ if sys.platform == 'win32':
 
 # ========== faulthandler：捕获原生崩溃（segfault）的 Python 堆栈 ==========
 import faulthandler
+# --windowed（无控制台）打包下 sys.stderr 会被置为 None，faulthandler.enable() 与
+# traceback.print_exception 都会抛 RuntimeError: sys.stderr is None，导致启动即崩溃。
+# 检测到无控制台时把 sys.stderr/stdout 重定向到日志文件后再启用 faulthandler 规避。
+if sys.stderr is None:
+    try:
+        _err_log = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zpp011_stderr.log")
+        sys.stderr = open(_err_log, "w", buffering=1)
+        if sys.stdout is None:
+            sys.stdout = sys.stderr
+    except Exception:
+        pass
 faulthandler.enable()
 
 # ========== 全局异常捕获 ==========
@@ -91,7 +102,7 @@ def global_exception_hook(exc_type, exc_value, exc_tb):
             QMessageBox.critical(
                 None,
                 "严重错误",
-                f"程序发生未捕获的异常:\n\n{str(exc_value)}\n\n详细错误信息已输出到控制台。"
+                f"程序发生未捕获的异常:\n\n{str(exc_value)}\n\n详细错误信息已输出到日志文件 zpp011_stderr.log。"
             )
     except Exception:
         pass  # 如果弹窗失败，至少控制台已经有输出了

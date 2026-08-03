@@ -14,6 +14,19 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.32",
+        "date": "2026-08-03",
+        "build_datetime": "2026-08-03 17:30:00",
+        "fixes": [
+            "🚑 修复 --windowed（无控制台）exe 启动即崩溃：run_pyside6.py 顶层 faulthandler.enable() 在 sys.stderr 为 None 时抛 RuntimeError: sys.stderr is None。现检测到无控制台即把 sys.stderr/stdout 重定向到 zpp011_stderr.log 再启用 faulthandler，启动不再崩、崩溃堆栈可落盘",
+            "🔧 global_exception_hook 错误文案由「已输出到控制台」改为「已输出到日志文件 zpp011_stderr.log」，与实际落盘位置一致",
+        ],
+        "notes": [
+            "此崩溃为历史遗留（v42.30/v42.31 同一份启动文件均会崩），只是此前未真正双击 exe 运行；本次因要查看状态栏已读计数才首次暴露",
+            "源码模式（有控制台）下 sys.stderr 不为 None，不触发重定向，行为不变",
+        ],
+    },
+    {
         "version": "v42.31",
         "date": "2026-08-03",
         "build_datetime": "2026-08-03 17:30:00",
