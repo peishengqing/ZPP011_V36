@@ -245,6 +245,11 @@ class MainWindow(QMainWindow):
         self._read_counter_label = QLabel("📖 已读：自动 0 / 手动 0")
         self._read_counter_label.setObjectName("readCounterLabel")
         self._read_counter_label.setToolTip("本次数据中自动已读 / 手动标记已读的累计条数")
+        # 醒目样式：加粗蓝字 + 左边框分隔，避免用户注意不到
+        self._read_counter_label.setStyleSheet(
+            "QLabel#readCounterLabel{padding:2px 10px;font-weight:bold;color:#15598c;"
+            "border-left:1px solid #b8c4d0;}"
+        )
         self.statusBar().addPermanentWidget(self._read_counter_label)
         self.export_controller = ExportController(self)
         self.alt_controller = AltController(self)
@@ -953,6 +958,7 @@ class MainWindow(QMainWindow):
             n, marked_dids = self.data_service.mark_changes_as_read(sub_changes, df)
             if n > 0:
                 _sync_main_read_status(marked_dids)
+                self._on_manual_marked(n)  # 变动提醒弹窗手动标已读 → 累加到状态栏计数
                 # 从 remaining 移除已标记行（按 data_id+变更字段 去重，避免误删未选中的同名行）
                 marked_keys = {(str(c.get('data_id', '')), str(c.get('field', ''))) for c in sub_changes}
                 new_remaining = [c for c in remaining if (str(c.get('data_id', '')), str(c.get('field', ''))) not in marked_keys]
@@ -977,6 +983,7 @@ class MainWindow(QMainWindow):
                 n, _ = self.data_service.mark_changes_as_read(remaining, df)
                 if n > 0:
                     _sync_main_read_status(marked_dids)
+                    self._on_manual_marked(n)  # 「全部标记为已读」→ 累加到状态栏计数
                     toast(f"已把 {n} 条记录标记为已读，下次不再提醒", parent=dlg)
                 remaining[:] = []
                 dlg.setWindowTitle("变动提醒（0 条）")
