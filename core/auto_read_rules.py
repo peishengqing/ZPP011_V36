@@ -259,7 +259,11 @@ def build_condition_summary(cond):
     if spec["op"] == "startswith":
         return "%s「%s」" % (spec["label"], str(val.get("value", "")).strip())
     if spec["op"] == "contains":
-        return "%s「%s」" % (spec["label"], str(val.get("value", "")).strip())
+        raw = str(val.get("value", "")).strip()
+        if "," in raw:
+            items = [x.strip() for x in raw.split(",") if x.strip()]
+            return "%s（%s）" % (spec["label"], "、".join(items) if items else "未填")
+        return "%s「%s」" % (spec["label"], raw)
     if spec["op"] == "in":
         items = [x.strip() for x in str(val.get("value", "")).split(",") if x.strip()]
         return "%s（%s）" % (spec["label"], "、".join(items) if items else "未填")
@@ -354,7 +358,17 @@ def _match_single_condition(df, cond):
         return s.str.startswith(str(val.get("value", "")).strip(), na=False)
     if op == "contains":
         s = col.astype(str).fillna("")
-        return s.str.contains(str(val.get("value", "")).strip(), regex=False, na=False)
+        raw = str(val.get("value", "")).strip()
+        # 支持逗号分隔多值 OR（与「物料编码属于/in」行为一致）
+        if "," in raw:
+            items = [x.strip() for x in raw.split(",") if x.strip()]
+            if not items:
+                return pd.Series(False, index=df.index)
+            mask = pd.Series(False, index=df.index)
+            for item in items:
+                mask |= s.str.contains(item, regex=False, na=False)
+            return mask
+        return s.str.contains(raw, regex=False, na=False)
     if op == "in":
         items = [x.strip() for x in str(val.get("value", "")).split(",") if x.strip()]
         if not items:
