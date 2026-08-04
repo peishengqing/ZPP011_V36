@@ -14,6 +14,16 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.36",
+        "date": "2026-08-04",
+        "build_datetime": "2026-08-04 09:52:00",
+        "fixes": [
+            "修复左侧栏「☰ 隐藏左侧栏」点击隐藏后再点显示无法恢复的问题。",
+            "根因：_toggle_left_panel 仅调 setVisible 未同步 body_splitter 的 sizes，QSplitter 在面板隐藏后把其宽度让给表格区，再次显示时左栏宽度被压成 0，表现为「回不来」。",
+            "修复：与 _toggle_filter_panel 同一模式——隐藏时把左栏宽度加到表格区，显示时 setSizes([360, …, 剩余]) 把约 360px 还给左栏，无头验证切换两轮 sizes 正确恢复为 [360, 0, …]。",
+        ],
+    },
+    {
         "version": "v42.35",
         "date": "2026-08-04",
         "build_datetime": "2026-08-04 09:00:00",
