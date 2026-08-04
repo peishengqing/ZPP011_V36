@@ -38,6 +38,11 @@ _TYPE_ORDER = [
     "dev_qty_lt",
     "dev_qty_gte",
     "dev_qty_lte",
+    "actual_qty_eq",
+    "actual_qty_gt",
+    "actual_qty_gte",
+    "actual_qty_lt",
+    "actual_qty_lte",
     "mat_code_prefix",
     "mat_code_in",
     "mat_name_contains",
@@ -200,6 +205,16 @@ class AutoReadRuleWidget(QWidget):
         self.chk_master.setChecked(self.cfg.get("enabled", True))
         root.addWidget(self.chk_master)
 
+        # 全局「排除未投料（实际数量=0）」开关
+        self.chk_exclude_unfed = QCheckBox(
+            "自动已读时排除未投料（实际数量=0）的行　"
+            "⚠ 开启后默认挡掉所有实际=0 的行，可在下方逐规则勾选「包含未投料」豁免")
+        self.chk_exclude_unfed.setChecked(self.cfg.get("exclude_unfed", False))
+        self.chk_exclude_unfed.setToolTip(
+            "未投料（实际数量=0）通常是替代料/非耗用，需要审计；开启此开关可避免它们被自动已读掉。"
+            "600 等你确认保留的规则请勾选下方的「包含未投料」豁免。")
+        root.addWidget(self.chk_exclude_unfed)
+
         # 规则列表 + 工具条
         head = QHBoxLayout()
         head.addWidget(QLabel("规则列表："))
@@ -229,6 +244,13 @@ class AutoReadRuleWidget(QWidget):
 
         self.chk_rule_enabled = QCheckBox("启用此规则")
         ev.addWidget(self.chk_rule_enabled)
+
+        self.chk_ignore_exclude_unfed = QCheckBox(
+            "本规则包含未投料（不受上面的「排除未投料」开关影响）")
+        self.chk_ignore_exclude_unfed.setToolTip(
+            "勾选后，即使全局开启了「排除未投料」，本条规则命中的实际=0 行仍会被自动已读。"
+            "例如 600 物料你想保留未投料也自动已读，就勾这个。")
+        ev.addWidget(self.chk_ignore_exclude_unfed)
 
         # 条件列表（多条件 AND）
         ev.addWidget(QLabel("条件（全部满足＝且关系，多条规则之间为或关系）："))
@@ -308,6 +330,7 @@ class AutoReadRuleWidget(QWidget):
         r = self.cfg["rules"][self.current_index]
         r["name"] = self.edit_name.text().strip() or "未命名规则"
         r["enabled"] = self.chk_rule_enabled.isChecked()
+        r["ignore_exclude_unfed"] = self.chk_ignore_exclude_unfed.isChecked()
         r["conditions"] = self._read_conditions()
 
     def _load_rule_to_editor(self, idx):
@@ -317,6 +340,7 @@ class AutoReadRuleWidget(QWidget):
         r = self.cfg["rules"][idx]
         self.edit_name.setText(r.get("name", ""))
         self.chk_rule_enabled.setChecked(bool(r.get("enabled", True)))
+        self.chk_ignore_exclude_unfed.setChecked(bool(r.get("ignore_exclude_unfed", False)))
         # 条件列表
         self._clear_condition_rows()
         conds = r.get("conditions") or []
@@ -403,6 +427,7 @@ class AutoReadRuleWidget(QWidget):
     def save(self):
         self._commit_editor()
         self.cfg["enabled"] = self.chk_master.isChecked()
+        self.cfg["exclude_unfed"] = self.chk_exclude_unfed.isChecked()
         try:
             save_auto_read_rules_config(self.cfg)
         except Exception as e:  # noqa: BLE001

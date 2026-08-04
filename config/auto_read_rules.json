@@ -1,5 +1,6 @@
 {
   "enabled": true,
+  "exclude_unfed": false,
   "rules": [
     {
       "name": "偏差数量=0",
@@ -12,6 +13,7 @@
     {
       "name": "物料600开头",
       "enabled": true,
+      "ignore_exclude_unfed": true,
       "type": "mat_code_prefix",
       "params": {
         "value": "600"

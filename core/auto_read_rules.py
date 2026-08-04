@@ -133,14 +133,58 @@ CONDITION_TYPES = {
         "default": 0,
         "hint": "偏差数量 ≤ x",
     },
+    # —— 实际数量（用于排除未投料：实际数量=0）——
+    "actual_qty_eq": {
+        "label": "实际数量等于",
+        "field_candidates": ["数量-实际", "实际", "实际数量", "实际耗用"],
+        "op": "eq",
+        "value_type": "number",
+        "default": 0,
+        "hint": "实际数量 = x",
+    },
+    "actual_qty_gt": {
+        "label": "实际数量大于",
+        "field_candidates": ["数量-实际", "实际", "实际数量", "实际耗用"],
+        "op": "gt",
+        "value_type": "number",
+        "default": 0,
+        "hint": "实际数量 > x（常用：> 0 排除未投料）",
+    },
+    "actual_qty_gte": {
+        "label": "实际数量大于等于",
+        "field_candidates": ["数量-实际", "实际", "实际数量", "实际耗用"],
+        "op": "gte",
+        "value_type": "number",
+        "default": 0,
+        "hint": "实际数量 ≥ x",
+    },
+    "actual_qty_lt": {
+        "label": "实际数量小于",
+        "field_candidates": ["数量-实际", "实际", "实际数量", "实际耗用"],
+        "op": "lt",
+        "value_type": "number",
+        "default": 0,
+        "hint": "实际数量 < x",
+    },
+    "actual_qty_lte": {
+        "label": "实际数量小于等于",
+        "field_candidates": ["数量-实际", "实际", "实际数量", "实际耗用"],
+        "op": "lte",
+        "value_type": "number",
+        "default": 0,
+        "hint": "实际数量 ≤ x",
+    },
 }
+
+# 实际数量候选列（排除未投料逻辑使用）
+_ACTUAL_QTY_CANDIDATES = ["数量-实际", "实际", "实际数量", "实际耗用"]
 
 DEFAULT_RULES = [
     {"name": "偏差数量=0", "enabled": True, "type": "dev_qty_eq", "params": {"value": 0}},
     {"name": "物料600开头", "enabled": True, "type": "mat_code_prefix", "params": {"value": "600"}},
 ]
 
-DEFAULT_CONFIG = {"enabled": True, "rules": [dict(r) for r in DEFAULT_RULES]}
+DEFAULT_CONFIG = {"enabled": True, "rules": [dict(r) for r in DEFAULT_RULES], "exclude_unfed": False}
 
 # 单条规则的全部合法字段
 _RULE_FIELDS = ("name", "enabled", "type", "params")
@@ -196,6 +240,7 @@ def _normalize_rule(rule):
     r = {
         "name": "未命名规则",
         "enabled": True,
+        "ignore_exclude_unfed": False,
         "conditions": [dict(_normalize_condition({"type": "dev_qty_eq",
                                                   "params": {"value": CONDITION_TYPES["dev_qty_eq"]["default"]}}))],
     }
@@ -204,6 +249,8 @@ def _normalize_rule(rule):
             r["name"] = str(rule["name"]).strip()
         if "enabled" in rule:
             r["enabled"] = bool(rule["enabled"])
+        if "ignore_exclude_unfed" in rule:
+            r["ignore_exclude_unfed"] = bool(rule["ignore_exclude_unfed"])
         conds = rule.get("conditions")
         if isinstance(conds, list) and conds:
             r["conditions"] = [_normalize_condition(c) for c in conds if isinstance(c, dict)]
@@ -215,7 +262,8 @@ def _normalize_rule(rule):
 
 def load_auto_read_rules_config():
     """读取配置，兼容旧单条格式，返回 {'enabled': bool, 'rules': [规则...]}。"""
-    cfg = {"enabled": DEFAULT_CONFIG["enabled"], "rules": [dict(r) for r in DEFAULT_RULES]}
+    cfg = {"enabled": DEFAULT_CONFIG["enabled"], "rules": [dict(r) for r in DEFAULT_RULES],
+           "exclude_unfed": DEFAULT_CONFIG.get("exclude_unfed", False)}
     try:
         if os.path.exists(CONFIG_PATH):
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -224,6 +272,7 @@ def load_auto_read_rules_config():
                 if "rules" in user and isinstance(user["rules"], list):
                     # 新格式
                     cfg["enabled"] = bool(user.get("enabled", True))
+                    cfg["exclude_unfed"] = bool(user.get("exclude_unfed", False))
                     rules = [_normalize_rule(r) for r in user["rules"] if isinstance(r, dict)]
                     cfg["rules"] = rules if rules else [dict(r) for r in DEFAULT_RULES]
                 else:
@@ -236,9 +285,10 @@ def load_auto_read_rules_config():
 
 
 def save_auto_read_rules_config(cfg):
-    """合并默认配置后写回文件，返回最终生效配置（{'enabled', 'rules'}）。"""
+    """合并默认配置后写回文件，返回最终生效配置（{'enabled', 'rules', 'exclude_unfed'}）。"""
     merged = {
         "enabled": bool(cfg.get("enabled", True)),
+        "exclude_unfed": bool(cfg.get("exclude_unfed", False)),
         "rules": [_normalize_rule(r) for r in (cfg.get("rules") or [])],
     }
     if not merged["rules"]:
@@ -329,12 +379,23 @@ def compute_auto_read_mask(df: pd.DataFrame, cfg=None):
     if not rules:
         return pd.Series(False, index=df.index), []
 
+    # 全局「排除未投料（实际数量=0）」开关：开了之后，默认把实际=0 的行挡在自动已读外；
+    # 但若某条规则显式 ignore_exclude_unfed=True（如 600 规则），则该规则不受此开关影响。
+    exclude_unfed = bool(cfg.get("exclude_unfed", False))
+    actual_gt0 = None
+    if exclude_unfed:
+        actual_col = _first_col(df, _ACTUAL_QTY_CANDIDATES)
+        if actual_col is not None:
+            actual_gt0 = pd.to_numeric(df[actual_col], errors="coerce") > 0
+
     result_union = pd.Series(False, index=df.index)
     per_rule = []
     for rule in rules:
         if not rule.get("enabled", True):
             continue
         m = _match_single_rule(df, rule)
+        if exclude_unfed and actual_gt0 is not None and not rule.get("ignore_exclude_unfed", False):
+            m = m & actual_gt0
         per_rule.append((rule, m))
         result_union = result_union | m
     return result_union, per_rule
