@@ -37,11 +37,29 @@
 
 import json
 import os
+import sys
 
 import pandas as pd
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(_HERE, "..", "config", "auto_quarantine_config.json")
+
+
+def _resolve_config_path(filename):
+    """解析配置文件绝对路径。
+
+    源码模式：使用项目内 config/ 目录（与源码配置同处），__file__ 稳定。
+    exe 模式（PyInstaller onefile 每次解压到随机临时目录 _MEIxxxx）：
+    __file__ 不可信，强制指向项目真实 config 目录，与 column_widths.json、
+    auto_read_rules.json 等真实配置同处，避免写进临时解压目录或 dist
+    导致重启后配置丢失。可用环境变量 ZPP011_PROJECT_ROOT 覆盖项目根。
+    """
+    if getattr(sys, "frozen", False):
+        project_root = os.environ.get("ZPP011_PROJECT_ROOT", r"E:\zpp011_v2")
+        return os.path.join(project_root, "config", filename)
+    return os.path.join(_HERE, "..", "config", filename)
+
+
+CONFIG_PATH = _resolve_config_path("auto_quarantine_config.json")
 
 DEFAULT_RULE = {
     "name": "包材箱类负损",
