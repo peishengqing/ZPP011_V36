@@ -240,6 +240,20 @@ class MainWindow(QMainWindow):
         self.analysis_controller = AnalysisController(self)
         self.audit_controller = AuditController(self)
         self.audit_controller.manual_marked.connect(self._on_manual_marked)
+        # 状态栏常驻「分析时间」：最近一次分析的触发方式(自动/手动) + 完成时刻
+        # （windowed exe 无控制台，自动读取/自动分析后用户无从知晓何时发生，故常驻显示）
+        self._analysis_time_label = QLabel("🕒 分析：—")
+        self._analysis_time_label.setObjectName("analysisTimeLabel")
+        self._analysis_time_label.setToolTip(
+            "最近一次分析的触发方式与时刻：手动=点「分析」按钮/F5；自动=文件夹监控自动读取后自动分析"
+        )
+        # 醒目样式：加粗琥珀色字 + 左边框分隔，与蓝字「已读」标签区分
+        self._analysis_time_label.setStyleSheet(
+            "QLabel#analysisTimeLabel{padding:2px 10px;font-weight:bold;color:#8a5a00;"
+            "border-left:1px solid #b8c4d0;}"
+        )
+        self.statusBar().addPermanentWidget(self._analysis_time_label)
+
         # 状态栏常驻「已读计数」：自动 N / 手动 M（每批数据清零，见 _on_file_loaded）
         self._auto_read_count = 0
         self._manual_read_count = 0
@@ -1086,6 +1100,13 @@ class MainWindow(QMainWindow):
         self.main_table.reset_step_icons()
         self.main_table.set_progress_visible(True)  # 分析开始自动展开进度面板
         self.timer_lbl.setText("⏱ 00:00")
+        # 状态栏「分析时间」先显示进行中 + 触发方式（自动=监控触发 / 手动=点按钮）
+        try:
+            _mode = "自动" if getattr(self, "_monitor_auto_loading", False) else "手动"
+            self._analysis_time_label.setText(f"🕒 分析中…（{_mode}）")
+        except RuntimeError:
+            pass
+
         if self._countdown_timer is None:
             self._countdown_timer = QTimer(self)
             self._countdown_timer.timeout.connect(self._update_countdown)
@@ -1102,9 +1123,13 @@ class MainWindow(QMainWindow):
 
     def _on_analysis_finished_ui(self, df):
         import tempfile  # 下方生成完整报告缓存目录时使用
+        # 抢在 _monitor_auto_loading 被重置前判定触发方式（自动=监控触发 / 手动=点按钮）
+        _analysis_mode = "自动" if getattr(self, "_monitor_auto_loading", False) else "手动"
         self._monitor_auto_loading = False
         self._monitor_current_key = None
         self._stop_countdown()
+        # 状态栏「分析时间」：标触发方式 + 完成时刻（Finish 时刻）
+        self._update_analysis_time_label(_analysis_mode)
         self.progress_bar.setValue(100)
         self.main_table.complete_step_icons()
         self.progress_bar.setVisible(False)
@@ -1361,6 +1386,15 @@ class MainWindow(QMainWindow):
             # 标签已被 deleteLater 回收（关窗时序），忽略
             pass
 
+    def _update_analysis_time_label(self, mode):
+        """刷新状态栏常驻的「分析时间」标签。mode 为 '自动' 或 '手动'。"""
+        try:
+            ts = time.strftime("%m-%d %H:%M:%S")
+            self._analysis_time_label.setText(f"🕒 分析：{mode} {ts}")
+        except RuntimeError:
+            # 标签已被 deleteLater 回收（关窗时序），忽略
+            pass
+
     def _on_manual_marked(self, n):
         """手动标记已读后累计计数并刷新标签（来自 audit_controller / 两个弹窗的回调）。"""
         if n:
@@ -1371,6 +1405,14 @@ class MainWindow(QMainWindow):
         self._heavy_busy = False
         self._stop_countdown()
         self.progress_bar.setVisible(False)
+        # 状态栏「分析时间」：标失败 + 触发方式 + 时刻
+        try:
+            _analysis_mode = "自动" if getattr(self, "_monitor_auto_loading", False) else "手动"
+            self._analysis_time_label.setText(
+                f"🕒 分析失败（{_analysis_mode}）{time.strftime('%m-%d %H:%M:%S')}"
+            )
+        except RuntimeError:
+            pass
         # 若是监控文件夹自动加载失败，不弹模态错误框，避免"未响应"；改为 toast + 日志，并允许重试
         if getattr(self, "_monitor_auto_loading", False):
             self._monitor_auto_loading = False
@@ -1693,6 +1735,9 @@ class MainWindow(QMainWindow):
             self._auto_read_count = 0
             self._manual_read_count = 0
             self._update_read_counter()
+            # 新一批数据：分析时间标签重置（上一批的分析结果不再适用）
+            if hasattr(self, "_analysis_time_label"):
+                self._analysis_time_label.setText("🕒 分析：—")
             # 缓存 Data sheet DataFrame，点击分析时直接复用，跳过 ~20-30s 重复文件 IO
             self._cached_input_df = df
             if hasattr(self, 'preview_label') and self.preview_label:
