@@ -42,7 +42,7 @@ from gui_pyside6.dialogs.unit_summary_dialog import UnitSummaryDialog
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
 from gui_pyside6.dialogs.quarantine_dialog import QuarantineDialog
-from core.quarantine_manager import add_quarantine, remove_quarantine
+from core.quarantine_manager import add_quarantine, remove_quarantine, scan_expired_quarantine
 from core.auto_quarantine import (
     build_all_summary,
     compute_auto_quarantine_ids,
@@ -313,6 +313,8 @@ class MainWindow(QMainWindow):
         self._monitor_pending = set()  # (path, mtime, size) 已排队等待加载（避免重复排队）
         self._monitor_current_key = None  # 当前正在自动加载的文件指纹
         self._monitor_auto_loading = False  # 是否正在由监控触发自动加载
+        self._expired_q_cache = {}  # 隔离区失效复核缓存：uid -> 明细
+        self._expired_q_notified = set()  # 本会话已弹窗告知过的失效 uid（避免重复打扰）
         self._monitor_delay_ms = 5000  # 检测到新文件后延迟加载的毫秒数（等用户关闭自动打开的预览）
         self._monitor_busy_retry = 6   # 文件仍被占用时的重试次数
         self._monitor_busy_interval = 3000  # 被占用时每次重试间隔(ms)
@@ -1271,6 +1273,9 @@ class MainWindow(QMainWindow):
 
         # 分析完成后自动把「疑难包材箱」记录移入隔离区（静默：仅当有新增时 toast）
         self._auto_move_to_quarantine(manual=False)
+
+        # 分析完成后静默扫描「隔离区失效」：仅当有新增失效记录时弹窗/亮角标
+        self._scan_expired_quarantine_after_analysis()
 
     # ------------------------------------------------------------------ #
     # 顶部面板（概览 / 进度）显隐控制
@@ -3241,8 +3246,9 @@ class MainWindow(QMainWindow):
             reason, ok = QInputDialog.getText(self, "移入隔离区", "填写疑难原因（可选）：")
             if not ok:
                 return
+            basis = "手动:" + (reason.strip() if reason.strip() else "手动隔离")
             for uid in ids:
-                add_quarantine(uid, reason)
+                add_quarantine(uid, reason, basis)
         else:
             for uid in ids:
                 remove_quarantine(uid)
@@ -3291,7 +3297,8 @@ class MainWindow(QMainWindow):
             return
         # 批量写入 SQLite：单事务 executemany，替代逐行 connect/commit/close（12K 行下卡死的根因之一）
         from core.quarantine_manager import add_quarantine_batch
-        add_quarantine_batch([(uid, matched[uid]) for uid in new_ids])
+        # basis 用自动规则 reason 文本（含「自动规则」标识），供失效复核重跑规则判定
+        add_quarantine_batch([(uid, matched[uid], matched[uid]) for uid in new_ids])
         df.loc[df['data_id'].isin(new_ids), '_quarantined'] = 1
         self.view_model.df = df
         if self.source_model:
@@ -3303,6 +3310,59 @@ class MainWindow(QMainWindow):
         toast(msg, parent=self)
         if manual:
             QMessageBox.information(self, "自动整理隔离区", msg)
+
+    # ------------------------------------------------------------------ #
+    # 隔离区失效复核（监控旧数据改动：负损→补投相符 / 自动规则不再命中）
+    # ------------------------------------------------------------------ #
+    def _update_quarantine_badge(self, expired_list):
+        """更新隔离区按钮角标：显示当前失效记录数。无失效则去掉角标。"""
+        if not hasattr(self, 'action_btn_quarantine'):
+            return
+        n = len(expired_list) if expired_list else 0
+        if n > 0:
+            self.action_btn_quarantine.setText(f"⚠️ 隔离区 ({n}失效)")
+            self.action_btn_quarantine.setToolTip(
+                f"隔离区：{n} 条记录的入区原因已失效（如负损已补投相符），点击查看")
+        else:
+            self.action_btn_quarantine.setText("⚠️ 隔离区")
+            self.action_btn_quarantine.setToolTip("隔离区：查看/管理疑难记录")
+
+    def _scan_expired_quarantine_after_analysis(self):
+        """分析完成后静默扫描隔离区失效。仅当「新增」失效记录出现时才弹窗告知。"""
+        df = self.view_model.df
+        if df is None or 'data_id' not in df.columns:
+            return
+        cfg = load_auto_quarantine_config()
+        expired = scan_expired_quarantine(df, cfg)
+        # 缓存当前失效集，供隔离区弹窗与角标复用
+        self._expired_q_cache = {r['uid']: r for r in expired}
+        self._update_quarantine_badge(expired)
+        # 仅对新出现的失效 uid 弹窗（避免每次分析重复打扰）
+        notified = getattr(self, '_expired_q_notified', set())
+        new_uids = [r['uid'] for r in expired if r['uid'] not in notified]
+        if new_uids:
+            notified.update(new_uids)
+            self._expired_q_notified = notified
+            self._notify_expired_quarantine(new_uids, expired)
+
+    def _notify_expired_quarantine(self, new_uids, expired_all):
+        """弹窗告知失效记录（仅列出本次新增的）。"""
+        detail_lines = []
+        for r in expired_all:
+            if r['uid'] not in new_uids:
+                continue
+            actual = r.get('actual')
+            quota = r.get('quota')
+            aq = ""
+            if actual is not None and quota is not None:
+                aq = f"（实际={actual:g}，定额={quota:g}）"
+            detail_lines.append(f"• {r['uid']}：{r['detail']}{aq}")
+        if not detail_lines:
+            return
+        msg = ("以下隔离区记录的「入区原因已失效」，建议复核并移出隔离区：\n\n"
+               + "\n".join(detail_lines)
+               + "\n\n可在「⚠️ 隔离区」弹窗的「失效复核」页一键移出。")
+        QMessageBox.information(self, "隔离区失效复核", msg)
 
     def _open_auto_quarantine_rule_dialog(self):
         """打开自动隔离规则配置对话框（独立入口，保留兼容）。保存成功后提示。"""

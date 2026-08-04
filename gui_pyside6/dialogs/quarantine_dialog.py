@@ -1,16 +1,21 @@
 # -*- coding: utf-8 -*-
 """
 隔离区对话框 - 列出已隔离的疑难数据，支持取消隔离、查看明细、双击定位主表
+v42.37 新增：Tab2「失效复核」——监控隔离区旧数据改动（如负损→补投相符），
+可手动扫描并一键移出已失效记录。
 """
 import pandas as pd
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
-    QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel,
+    QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView, QTabWidget,
+    QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QWidget,
 )
 from PySide6.QtCore import Qt, QPoint, Signal
 from PySide6.QtGui import QPolygon, QColor, QBrush
 from gui_pyside6.models.data_frame_model import DataFrameModel
-from core.quarantine_manager import remove_quarantine, get_quarantine_records
+from core.quarantine_manager import (
+    remove_quarantine, get_quarantine_records, scan_expired_quarantine,
+)
+from core.auto_quarantine import load_auto_quarantine_config
 from core.read_status import save_read_status, save_read_status_batch
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
 from gui_pyside6.widgets.toast import toast
@@ -64,7 +69,7 @@ class FilterHeader(QHeaderView):
 
 
 class QuarantineDialog(QDialog):
-    """隔离区对话框 - 疑难数据暂存区，支持取消隔离 / 双击定位"""
+    """隔离区对话框 - 疑难数据暂存区，支持取消隔离 / 双击定位 / 失效复核"""
 
     def __init__(self, quarantine_df, main_window, parent=None):
         super().__init__(parent)
@@ -86,6 +91,29 @@ class QuarantineDialog(QDialog):
         info.setWordWrap(True)
         layout.addWidget(info)
 
+        self.tabs = QTabWidget()
+        # ── Tab1：隔离区列表 ──
+        self.tab_list = QWidget()
+        self._build_list_tab(self.tab_list)
+        self.tabs.addTab(self.tab_list, "隔离区列表")
+        # ── Tab2：失效复核 ──
+        self.tab_expired = QWidget()
+        self._build_expired_tab(self.tab_expired)
+        self.tabs.addTab(self.tab_expired, "失效复核")
+        layout.addWidget(self.tabs)
+
+        btn_layout = QHBoxLayout()
+        close_btn = QPushButton("关闭")
+        close_btn.clicked.connect(self.accept)
+        btn_layout.addStretch()
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+
+    # ------------------------------------------------------------------ Tab1
+    def _build_list_tab(self, tab):
+        v = QVBoxLayout(tab)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(6)
         self.table_view = QTableView()
         self.table_view.setAlternatingRowColors(True)
         self.table_view.setSelectionBehavior(QAbstractItemView.SelectItems)
@@ -95,7 +123,6 @@ class QuarantineDialog(QDialog):
         self.table_view.doubleClicked.connect(self.on_double_click)
         self.table_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table_view.setSortingEnabled(True)
-        # 自定义表头：隔离原因列带筛选三角
         self.header = FilterHeader(Qt.Horizontal, self.table_view)
         self.table_view.setHorizontalHeader(self.header)
         self.header.sectionFilterClicked.connect(self._show_reason_filter_menu)
@@ -103,22 +130,55 @@ class QuarantineDialog(QDialog):
         self.table_view.verticalHeader().setVisible(False)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
         self.table_view.installEventFilter(self)
-        layout.addWidget(self.table_view)
+        v.addWidget(self.table_view)
 
-        btn_layout = QHBoxLayout()
+        bl = QHBoxLayout()
         self.btn_restore = QPushButton("↩ 取消隔离（选中行）")
         self.btn_restore.clicked.connect(self.batch_restore)
-        btn_layout.addWidget(self.btn_restore)
-
+        bl.addWidget(self.btn_restore)
         export_btn = QPushButton("📎 导出 Excel")
         export_btn.clicked.connect(self.export_excel)
-        btn_layout.addWidget(export_btn)
-        btn_layout.addStretch()
-        close_btn = QPushButton("关闭")
-        close_btn.clicked.connect(self.accept)
-        btn_layout.addWidget(close_btn)
-        layout.addLayout(btn_layout)
+        bl.addWidget(export_btn)
+        bl.addStretch()
+        v.addLayout(bl)
 
+    # ------------------------------------------------------------------ Tab2
+    def _build_expired_tab(self, tab):
+        v = QVBoxLayout(tab)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(6)
+        hint = QLabel("监控隔离区旧数据的改动：例如某行当初因「负损（实际<定额）」入区，"
+                      "后来补投使实际≥定额（相符/盘盈）或实际归零，其入区原因即已失效。"
+                      "点「扫描失效」实时比对主表，下方列出失效记录，可一键移出隔离区。")
+        hint.setWordWrap(True)
+        v.addWidget(hint)
+
+        self.expired_view = QTableView()
+        self.expired_view.setAlternatingRowColors(True)
+        self.expired_view.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.expired_view.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.expired_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.expired_view.setSortingEnabled(True)
+        self.expired_view.verticalHeader().setVisible(False)
+        self.expired_view.verticalHeader().setDefaultSectionSize(28)
+        v.addWidget(self.expired_view)
+
+        bl = QHBoxLayout()
+        scan_btn = QPushButton("🔄 扫描失效")
+        scan_btn.clicked.connect(self._run_expired_scan)
+        bl.addWidget(scan_btn)
+        self.btn_remove_expired = QPushButton("↩ 移出隔离区（选中行）")
+        self.btn_remove_expired.clicked.connect(self._remove_expired_selected)
+        bl.addWidget(self.btn_remove_expired)
+        bl.addStretch()
+        self.expired_count_label = QLabel("失效记录：0 条")
+        bl.addWidget(self.expired_count_label)
+        v.addLayout(bl)
+
+        # 初始渲染（复用主窗口已算好的缓存，若没有则实时算）
+        self._render_expired(self._load_expired_from_main())
+
+    # ------------------------------------------------------------------ 数据
     def set_data(self, df):
         df = df.copy()
         if "_read" not in df.columns:
@@ -132,18 +192,13 @@ class QuarantineDialog(QDialog):
         except Exception:
             df['隔离原因'] = '（未填写原因）'
 
-        # 与主表同步最新 _read：避免主表已读状态变化后隔离区仍显示旧状态
         df = self._sync_read_from_main(df)
 
-        # 派生「状态」列（已读/未读），供隔离区显示，并作为隔离原因的目标锚点
         df['状态'] = df.get('_read', pd.Series(0, index=df.index)).apply(
             lambda v: '已读' if (pd.notna(v) and int(v)) else '未读'
         )
-
-        # 列序调整：把「隔离原因」移到「订单日期」列之前（用户要求：隔离原因放到最前面）
         df = self._reorder_reason_before_order_date(df)
 
-        # 保留完整隔离数据，供隔离原因筛选切片使用
         self.full_df = df.copy()
         self._render_table(df)
 
@@ -180,9 +235,6 @@ class QuarantineDialog(QDialog):
         self.source_model = DataFrameModel()
         self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
-        # 重注册隔离原因列的筛选三角（setModel 会重置表头状态）
-        # 注意：DataFrameModel 内部会重排列顺序（如把 _read 前置），
-        # 必须用模型实际显示的列顺序取列号，否则筛选三角会错位到别的列。
         self.header.clear_filter_sections()
         display_df = self.source_model.getDataFrame()
         if '隔离原因' in display_df.columns:
@@ -193,6 +245,91 @@ class QuarantineDialog(QDialog):
             if col in df.columns:
                 self.table_view.setColumnHidden(df.columns.get_loc(col), True)
 
+    # ------------------------------------------------------------------ Tab2 逻辑
+    def _load_expired_from_main(self):
+        """优先用主窗口分析后缓存的失效结果，否则实时算。"""
+        if self.main_window and hasattr(self.main_window, '_expired_q_cache'):
+            cache = self.main_window._expired_q_cache
+            if cache:
+                return list(cache.values())
+        df = self.main_window.view_model.df if (self.main_window and hasattr(self.main_window, 'view_model')) else None
+        if df is None or 'data_id' not in df.columns:
+            return []
+        return scan_expired_quarantine(df, load_auto_quarantine_config())
+
+    def _run_expired_scan(self):
+        """手动触发失效扫描（实时比对主表）。"""
+        df = self.main_window.view_model.df if (self.main_window and hasattr(self.main_window, 'view_model')) else None
+        if df is None or 'data_id' not in df.columns:
+            toast("暂无数据，无法扫描", 'info', parent=self)
+            return
+        expired = scan_expired_quarantine(df, load_auto_quarantine_config())
+        # 写回主窗口缓存，保持角标/后续一致
+        if self.main_window and hasattr(self.main_window, '_expired_q_cache'):
+            self.main_window._expired_q_cache = {r['uid']: r for r in expired}
+            self.main_window._update_quarantine_badge(expired)
+        self._render_expired(expired)
+        toast(f"扫描完成：{len(expired)} 条失效记录", parent=self)
+
+    def _render_expired(self, expired_list):
+        """渲染失效复核表格。列：data_id / 隔离原因 / 失效说明 / 实际 / 定额。"""
+        rows = []
+        for r in expired_list:
+            rows.append({
+                'data_id': r.get('uid', ''),
+                '隔离原因': r.get('reason', ''),
+                '失效说明': r.get('detail', ''),
+                '实际': r.get('actual') if r.get('actual') is not None else '',
+                '定额': r.get('quota') if r.get('quota') is not None else '',
+            })
+        edf = pd.DataFrame(rows, columns=['data_id', '隔离原因', '失效说明', '实际', '定额'])
+        if edf.empty:
+            edf = pd.DataFrame(columns=['data_id', '隔离原因', '失效说明', '实际', '定额'])
+        self.expired_model = DataFrameModel()
+        self.expired_model.setDataFrame(edf)
+        self.expired_view.setModel(self.expired_model)
+        self.expired_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.expired_count_label.setText("失效记录：%d 条" % len(edf))
+        # 同步 Tab 标题角标
+        idx = self.tabs.indexOf(self.tab_expired)
+        self.tabs.setTabText(idx, "失效复核 (%d)" % len(edf) if edf.shape[0] else "失效复核")
+
+    def _remove_expired_selected(self):
+        """把失效复核中选中的记录移出隔离区。"""
+        sel = self.expired_view.selectionModel()
+        if not sel or not sel.hasSelection():
+            toast("请先选中要移出的行", 'info', parent=self)
+            return
+        df = self.expired_model.getDataFrame()
+        rows = sorted(set(idx.row() for idx in sel.selectedIndexes()))
+        ids = set()
+        for r in rows:
+            if r < len(df):
+                uid = df.iloc[r].get('data_id')
+                if uid:
+                    ids.add(str(uid))
+        if not ids:
+            return
+        for uid in ids:
+            remove_quarantine(uid)
+        # 回写主表
+        if self.main_window and hasattr(self.main_window, 'view_model'):
+            main_df = self.main_window.view_model.df
+            if main_df is not None and 'data_id' in main_df.columns and '_quarantined' in main_df.columns:
+                mask = main_df['data_id'].isin(ids)
+                main_df.loc[mask, '_quarantined'] = 0
+                self.main_window.view_model.df = main_df
+                if hasattr(self.main_window, 'source_model') and self.main_window.source_model:
+                    self.main_window.source_model.setDataFrame(main_df)
+                    if hasattr(self.main_window, '_apply_column_visibility_by_name'):
+                        self.main_window._apply_column_visibility_by_name()
+        if self.main_window and hasattr(self.main_window, 'stats_cards'):
+            self.main_window.stats_cards.refresh(self.main_window.view_model.df)
+        # 刷新本弹窗：Tab1 + Tab2
+        self._refresh_self()
+        toast(f"↩ 已移出隔离区 {len(ids)} 条", parent=self)
+
+    # ------------------------------------------------------------------ 原因筛选
     def _show_reason_filter_menu(self, col):
         """点击隔离原因列头 ▼ 三角：弹出该列 distinct 值菜单"""
         if not hasattr(self, 'full_df') or self.full_df is None:
@@ -304,13 +441,11 @@ class QuarantineDialog(QDialog):
 
         save_read_status_batch(records)
 
-        # 回写主表内存
         if main_df is not None and 'data_id' in main_df.columns and '_read' in main_df.columns:
             main_df.loc[main_df['data_id'].astype(str).isin(ids), '_read'] = int(is_read)
             self.main_window.view_model.df = main_df
             self._refresh_main_table()
 
-        # 刷新隔离区弹窗自身
         self._refresh_self()
         toast(f"已标记为{'已读' if is_read else '未读'} {len(ids)} 条", parent=self)
 
@@ -423,6 +558,8 @@ class QuarantineDialog(QDialog):
                 self.set_data(qdf)
                 if prev and prev != "全部":
                     self._apply_reason_filter(prev)  # 重新应用筛选，保持选择
+        # 同步刷新失效复核页
+        self._render_expired(self._load_expired_from_main())
 
     def on_double_click(self, index):
         if not index.isValid():
