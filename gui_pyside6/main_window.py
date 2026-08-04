@@ -3742,10 +3742,16 @@ class MainWindow(QMainWindow):
         """切换左侧栏（文件选择 / 替代料配对 / 数据预览）的显示与隐藏"""
         if self.left_panel.isVisible():
             self.left_panel.setVisible(False)
+            prev_sizes = self.body_splitter.sizes()
+            # 将左侧栏宽度让给右侧表格区域
+            self.body_splitter.setSizes([0, prev_sizes[1], prev_sizes[2] + prev_sizes[0]])
             self.action_btn_left_panel.setText("☰ 显示左侧栏")
             self.action_btn_left_panel.setChecked(False)
         else:
             self.left_panel.setVisible(True)
+            prev_sizes = self.body_splitter.sizes()
+            # left_panel | filter_panel | table_area，左侧栏恢复约 360px
+            self.body_splitter.setSizes([360, prev_sizes[1], max(prev_sizes[2] - 360, 200)])
             self.action_btn_left_panel.setText("☰ 隐藏左侧栏")
             self.action_btn_left_panel.setChecked(True)
 
