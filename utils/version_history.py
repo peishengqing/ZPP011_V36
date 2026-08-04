@@ -14,6 +14,20 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.34",
+        "date": "2026-08-04",
+        "build_datetime": "2026-08-04 09:00:00",
+        "fixes": [
+            "修复文件夹监控自动加载误读非 SAP 导出文件：新增文件名白名单 _is_monitor_accepted_file",
+            "只自动加载 ZPP011_YYYYMMDD[-YYYYMMDD].xlsx（导出范围，含 Excel 副本后缀 (1)）与 ZPP011_SAP_*.xlsx（SAP 自动拉取输出）",
+            "排除测试产物（如 _verify_fallback.xlsx）、分析报告、临时锁文件（~$ 开头）；_seed_monitor_baseline 与 _scan_monitor_dir 两处扫描均经该白名单过滤",
+        ],
+        "title": "修复文件夹监控自动加载误读非 SAP 导出文件",
+        "changes": [
+            "监控自动加载文件名白名单：只接受 ZPP011_导出范围(SAP 手工导出) 与 ZPP011_SAP_*(SAP 自动拉取)，排除测试/报告/锁文件",
+        ],
+    },
+    {
         "version": "v42.33",
         "date": "2026-08-03",
         "build_datetime": "2026-08-03 18:00:00",

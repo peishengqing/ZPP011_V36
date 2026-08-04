@@ -12,6 +12,7 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 import subprocess
+import re
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -1763,6 +1764,23 @@ class MainWindow(QMainWindow):
     # -----------------------------------------------------------
     # 文件夹监控自动加载
     # -----------------------------------------------------------
+    # 监控自动加载文件名白名单：只自动加载符合 SAP 导出命名的真实文件，
+    # 排除测试产物（如 _verify_fallback.xlsx）、分析报告、临时锁文件（~$ 开头）。
+    # 接受两类：
+    #   1) ZPP011_导出范围.xlsx  -> ZPP011_YYYYMMDD[-YYYYMMDD].xlsx（容忍 Excel 副本后缀 (1)）
+    #   2) ZPP011_SAP_*.xlsx     -> SAP 自动拉取输出（当前为时间戳命名，鲁棒兼容任意后缀）
+    _MONITOR_ACCEPT_RE = re.compile(
+        r'^ZPP011_(?:\d{8}(?:-\d{8})?(?:\s*\(\d+\))?|SAP_.*)\.xlsx?$',
+        re.IGNORECASE,
+    )
+
+    def _is_monitor_accepted_file(self, fname):
+        """监控自动加载白名单：该文件名是否应被自动加载。"""
+        base = os.path.basename(fname)
+        if base.startswith("~$"):
+            return False
+        return bool(self._MONITOR_ACCEPT_RE.match(base))
+
     def _toggle_folder_monitor(self, checked):
         """工具栏/菜单开关：监控 E:/ZPP011导出文件原数据 目录，发现新 Excel 自动加载。"""
         self._monitor_enabled = checked
@@ -1786,7 +1804,7 @@ class MainWindow(QMainWindow):
             return
         try:
             files = [os.path.join(d, f) for f in os.listdir(d)
-                     if f.lower().endswith((".xlsx", ".xls")) and not os.path.basename(f).startswith("~$")]
+                     if f.lower().endswith((".xlsx", ".xls")) and self._is_monitor_accepted_file(f)]
         except Exception:
             return
         if not files:
@@ -1813,7 +1831,7 @@ class MainWindow(QMainWindow):
             return
         try:
             files = [os.path.join(d, f) for f in os.listdir(d)
-                     if f.lower().endswith((".xlsx", ".xls")) and not os.path.basename(f).startswith("~$")]
+                     if f.lower().endswith((".xlsx", ".xls")) and self._is_monitor_accepted_file(f)]
         except Exception:
             return
         if not files:
