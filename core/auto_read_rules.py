@@ -103,6 +103,14 @@ CONDITION_TYPES = {
         "default": "",
         "hint": "物料名称包含该关键字即已读",
     },
+    "mat_name_not_contains": {
+        "label": "物料名称不含",
+        "field_candidates": ["物料名称", "组件物料描述", "物料描述"],
+        "op": "not_contains",
+        "value_type": "text",
+        "default": "",
+        "hint": "物料名称不含该关键字才已读；逗号分隔多值表示「且不含其中任一」，例如 箱,彩罐",
+    },
     "mat_type_eq": {
         "label": "物料类型等于",
         "field_candidates": ["物料类型", "物料分类", "物料大类"],
@@ -332,6 +340,12 @@ def build_condition_summary(cond):
             items = [x.strip() for x in raw.split(",") if x.strip()]
             return "%s（%s）" % (spec["label"], "、".join(items) if items else "未填")
         return "%s「%s」" % (spec["label"], raw)
+    if spec["op"] == "not_contains":
+        raw = str(val.get("value", "")).strip()
+        if "," in raw:
+            items = [x.strip() for x in raw.split(",") if x.strip()]
+            return "%s（%s）" % (spec["label"], "、".join(items) if items else "未填")
+        return "%s「%s」" % (spec["label"], raw)
     if spec["op"] == "in":
         items = [x.strip() for x in str(val.get("value", "")).split(",") if x.strip()]
         return "%s（%s）" % (spec["label"], "、".join(items) if items else "未填")
@@ -448,6 +462,19 @@ def _match_single_condition(df, cond):
                 mask |= s.str.contains(item, regex=False, na=False)
             return mask
         return s.str.contains(raw, regex=False, na=False)
+    if op == "not_contains":
+        s = col.astype(str).fillna("")
+        raw = str(val.get("value", "")).strip()
+        # 取反：不含任一关键字才命中。逗号分隔多值 = 且不含其中任一（NOT(含A OR 含B)）
+        if "," in raw:
+            items = [x.strip() for x in raw.split(",") if x.strip()]
+            if not items:
+                return pd.Series(False, index=df.index)  # 未填值不误吞
+            mask = pd.Series(False, index=df.index)
+            for item in items:
+                mask |= s.str.contains(item, regex=False, na=False)
+            return ~mask
+        return ~s.str.contains(raw, regex=False, na=False)
     if op == "in":
         items = [x.strip() for x in str(val.get("value", "")).split(",") if x.strip()]
         if not items:

@@ -46,6 +46,7 @@ _TYPE_ORDER = [
     "mat_code_prefix",
     "mat_code_in",
     "mat_name_contains",
+    "mat_name_not_contains",
     "mat_type_eq",
 ]
 
