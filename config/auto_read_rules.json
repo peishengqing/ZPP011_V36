@@ -6,15 +6,15 @@
       "enabled": true,
       "type": "dev_qty_eq",
       "params": {
-        "value": 0.0
+        "value": 0
       }
     },
     {
       "name": "物料600开头",
       "enabled": true,
-      "type": "mat_type_eq",
+      "type": "mat_code_prefix",
       "params": {
-        "value": "包材"
+        "value": "600"
       }
     }
   ]

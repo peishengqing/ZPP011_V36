@@ -93,6 +93,46 @@ CONDITION_TYPES = {
         "default": "包材",
         "hint": "例如 包材 / 原料",
     },
+    "dev_qty_range": {
+        "label": "偏差数量在范围(开区间)",
+        "field_candidates": ["偏差数量"],
+        "op": "range",
+        "value_type": "range",
+        "default": {"min": 0, "max": 1},
+        "hint": "开区间 (min, max)，不含端点，例如 (0, 1) 表示 0<偏差数量<1",
+    },
+    "dev_qty_gt": {
+        "label": "偏差数量大于",
+        "field_candidates": ["偏差数量"],
+        "op": "gt",
+        "value_type": "number",
+        "default": 0,
+        "hint": "偏差数量 > x",
+    },
+    "dev_qty_lt": {
+        "label": "偏差数量小于",
+        "field_candidates": ["偏差数量"],
+        "op": "lt",
+        "value_type": "number",
+        "default": 0,
+        "hint": "偏差数量 < x",
+    },
+    "dev_qty_gte": {
+        "label": "偏差数量大于等于",
+        "field_candidates": ["偏差数量"],
+        "op": "gte",
+        "value_type": "number",
+        "default": 0,
+        "hint": "偏差数量 ≥ x",
+    },
+    "dev_qty_lte": {
+        "label": "偏差数量小于等于",
+        "field_candidates": ["偏差数量"],
+        "op": "lte",
+        "value_type": "number",
+        "default": 0,
+        "hint": "偏差数量 ≤ x",
+    },
 }
 
 DEFAULT_RULES = [
@@ -122,30 +162,54 @@ def _to_num(v):
 
 
 # --------------------------------------------------------------------------- 配置读写
+def _normalize_condition(cond):
+    """把单条条件（type + params）补齐为合法结构。"""
+    if not isinstance(cond, dict):
+        cond = {}
+    t = cond.get("type")
+    if t not in CONDITION_TYPES:
+        t = "dev_qty_eq"
+    spec = CONDITION_TYPES[t]
+    params = cond.get("params") if isinstance(cond.get("params"), dict) else {}
+    if spec["value_type"] == "range":
+        # range：min / max 两个数字
+        mn = _to_num(params.get("min", spec["default"].get("min", 0)))
+        mx = _to_num(params.get("max", spec["default"].get("max", 1)))
+        norm_params = {"min": mn, "max": mx}
+    elif spec["value_type"] == "number":
+        val = _to_num(params.get("value", spec["default"]))
+        norm_params = {"value": val}
+    else:  # text / textlist
+        val = str(params.get("value", spec["default"])).strip()
+        norm_params = {"value": val}
+    return {"type": t, "params": norm_params}
+
+
 def _normalize_rule(rule):
-    """补齐字段，保证每条规则都有完整键。"""
+    """补齐字段，保证每条规则都有完整键。
+
+    兼容两种历史/目标结构：
+      - 旧单条件：{name, enabled, type, params}
+      - 新多条件：{name, enabled, conditions:[{type, params}, ...]}
+    若两者都有，conditions 优先；只有旧 type 时自动包成 conditions[0]。
+    """
     r = {
         "name": "未命名规则",
         "enabled": True,
-        "type": "dev_qty_eq",
-        "params": {"value": CONDITION_TYPES["dev_qty_eq"]["default"]},
+        "conditions": [dict(_normalize_condition({"type": "dev_qty_eq",
+                                                  "params": {"value": CONDITION_TYPES["dev_qty_eq"]["default"]}}))],
     }
     if isinstance(rule, dict):
         if rule.get("name") not in (None, ""):
             r["name"] = str(rule["name"]).strip()
         if "enabled" in rule:
             r["enabled"] = bool(rule["enabled"])
-        t = rule.get("type")
-        if t in CONDITION_TYPES:
-            r["type"] = t
-        spec = CONDITION_TYPES[r["type"]]
-        params = rule.get("params") if isinstance(rule.get("params"), dict) else {}
-        val = params.get("value", spec["default"])
-        if spec["value_type"] == "number":
-            val = _to_num(val)
-        else:
-            val = str(val).strip()
-        r["params"] = {"value": val}
+        conds = rule.get("conditions")
+        if isinstance(conds, list) and conds:
+            r["conditions"] = [_normalize_condition(c) for c in conds if isinstance(c, dict)]
+        elif "type" in rule:
+            # 旧单条件格式
+            r["conditions"] = [_normalize_condition(rule)]
     return r
 
 
@@ -186,26 +250,45 @@ def save_auto_read_rules_config(cfg):
 
 
 # --------------------------------------------------------------------------- 文案生成
+def build_condition_summary(cond):
+    """生成单条条件（conditions 数组元素）的预览文本。"""
+    spec = CONDITION_TYPES.get(cond.get("type"), CONDITION_TYPES["dev_qty_eq"])
+    val = cond.get("params", {})
+    if spec["op"] == "eq":
+        return "%s = %s" % (spec["label"], _to_num(val.get("value", 0)))
+    if spec["op"] == "startswith":
+        return "%s「%s」" % (spec["label"], str(val.get("value", "")).strip())
+    if spec["op"] == "contains":
+        return "%s「%s」" % (spec["label"], str(val.get("value", "")).strip())
+    if spec["op"] == "in":
+        items = [x.strip() for x in str(val.get("value", "")).split(",") if x.strip()]
+        return "%s（%s）" % (spec["label"], "、".join(items) if items else "未填")
+    if spec["op"] == "eq_str":
+        return "%s「%s」" % (spec["label"], str(val.get("value", "")).strip())
+    if spec["op"] == "range":
+        return "%s (%s, %s)" % (spec["label"], _to_num(val.get("min", 0)), _to_num(val.get("max", 1)))
+    if spec["op"] == "gt":
+        return "%s %s" % (spec["label"], _to_num(val.get("value", 0)))
+    if spec["op"] == "lt":
+        return "%s %s" % (spec["label"], _to_num(val.get("value", 0)))
+    if spec["op"] == "gte":
+        return "%s %s" % (spec["label"], _to_num(val.get("value", 0)))
+    if spec["op"] == "lte":
+        return "%s %s" % (spec["label"], _to_num(val.get("value", 0)))
+    return spec["label"]
+
+
 def build_rule_summary(rule=None):
-    """生成单条规则的预览文本。"""
+    """生成单条规则的预览文本（多条件 AND 拼接）。"""
     if rule is None:
         return "（未配置）"
     if not rule.get("enabled", True):
         return "（已停用）"
-    spec = CONDITION_TYPES.get(rule.get("type"), CONDITION_TYPES["dev_qty_eq"])
-    val = rule.get("params", {}).get("value", spec["default"])
-    if spec["op"] == "eq":
-        return "%s = %s" % (spec["label"], _to_num(val))
-    if spec["op"] == "startswith":
-        return "%s「%s」" % (spec["label"], str(val).strip())
-    if spec["op"] == "contains":
-        return "%s「%s」" % (spec["label"], str(val).strip())
-    if spec["op"] == "in":
-        items = [x.strip() for x in str(val).split(",") if x.strip()]
-        return "%s（%s）" % (spec["label"], "、".join(items) if items else "未填")
-    if spec["op"] == "eq_str":
-        return "%s「%s」" % (spec["label"], str(val).strip())
-    return spec["label"]
+    conds = rule.get("conditions") or []
+    if not conds:
+        return "（无生效条件）"
+    parts = [build_condition_summary(c) for c in conds]
+    return " 且 ".join(parts)
 
 
 def build_all_summary(cfg=None):
@@ -253,32 +336,62 @@ def compute_auto_read_mask(df: pd.DataFrame, cfg=None):
     return result_union, per_rule
 
 
-def _match_single_rule(df, rule):
-    """单条规则的匹配，返回 bool 掩码。"""
-    spec = CONDITION_TYPES.get(rule.get("type"), CONDITION_TYPES["dev_qty_eq"])
+def _match_single_condition(df, cond):
+    """单条条件的匹配，返回 bool 掩码。"""
+    spec = CONDITION_TYPES.get(cond.get("type"), CONDITION_TYPES["dev_qty_eq"])
     field = _first_col(df, spec["field_candidates"])
     if field is None:
         return pd.Series(False, index=df.index)  # 无列 → 不匹配
     op = spec["op"]
-    val = rule.get("params", {}).get("value", spec["default"])
+    val = cond.get("params", {})
     col = df[field]
 
     if op == "eq":
-        target = _to_num(val)
+        target = _to_num(val.get("value", 0))
         return pd.to_numeric(col, errors="coerce").fillna(0) == target
     if op == "startswith":
         s = col.astype(str).fillna("")
-        return s.str.startswith(str(val).strip(), na=False)
+        return s.str.startswith(str(val.get("value", "")).strip(), na=False)
     if op == "contains":
         s = col.astype(str).fillna("")
-        return s.str.contains(str(val).strip(), regex=False, na=False)
+        return s.str.contains(str(val.get("value", "")).strip(), regex=False, na=False)
     if op == "in":
-        items = [x.strip() for x in str(val).split(",") if x.strip()]
+        items = [x.strip() for x in str(val.get("value", "")).split(",") if x.strip()]
         if not items:
             return pd.Series(False, index=df.index)
         s = col.astype(str).fillna("")
         return s.isin(items)
     if op == "eq_str":
         s = col.astype(str).fillna("")
-        return s == str(val).strip()
+        return s == str(val.get("value", "")).strip()
+    if op == "range":
+        num = pd.to_numeric(col, errors="coerce")
+        mn = _to_num(val.get("min", 0))
+        mx = _to_num(val.get("max", 1))
+        # 开区间 (min, max)，不含端点
+        return (num > mn) & (num < mx)
+    if op == "gt":
+        target = _to_num(val.get("value", 0))
+        return pd.to_numeric(col, errors="coerce") > target
+    if op == "lt":
+        target = _to_num(val.get("value", 0))
+        return pd.to_numeric(col, errors="coerce") < target
+    if op == "gte":
+        target = _to_num(val.get("value", 0))
+        return pd.to_numeric(col, errors="coerce") >= target
+    if op == "lte":
+        target = _to_num(val.get("value", 0))
+        return pd.to_numeric(col, errors="coerce") <= target
     return pd.Series(False, index=df.index)
+
+
+def _match_single_rule(df, rule):
+    """单条规则（多条件 AND）的匹配，返回 bool 掩码。"""
+    conds = rule.get("conditions") or []
+    if not conds:
+        return pd.Series(False, index=df.index)
+    # 所有条件 AND：缺列 = 该条件 False → 整条 False（保守）
+    mask = pd.Series(True, index=df.index)
+    for c in conds:
+        mask = mask & _match_single_condition(df, c)
+    return mask

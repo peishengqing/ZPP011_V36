@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """自动已读规则配置 —— 可复用 Widget + 薄壳 Dialog。
 
-支持多条件类型（偏差数量=0 / 物料编码前缀 / 物料编码属于集合 / 物料名称包含 / 物料类型等于），
+支持「多条件 AND」：每条规则内含 conditions 数组，数组内所有条件同时满足才命中。
+多条规则之间仍为 OR。
 可被「规则中心」对话框以 Tab 形式嵌入；AutoReadRuleDialog 仅作为独立打开时的薄壳。
 """
 from PySide6.QtWidgets import (
@@ -9,6 +10,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -17,7 +19,6 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -32,6 +33,11 @@ from core.auto_read_rules import (
 # 类型 combo 的显示顺序（与 CONDITION_TYPES 注册表一致）
 _TYPE_ORDER = [
     "dev_qty_eq",
+    "dev_qty_range",
+    "dev_qty_gt",
+    "dev_qty_lt",
+    "dev_qty_gte",
+    "dev_qty_lte",
     "mat_code_prefix",
     "mat_code_in",
     "mat_name_contains",
@@ -39,18 +45,146 @@ _TYPE_ORDER = [
 ]
 
 
+def _default_params_for(t):
+    """返回某条件类型的默认 params 字典。"""
+    spec = CONDITION_TYPES[t]
+    if spec["value_type"] == "range":
+        d = spec["default"]
+        return {"min": d.get("min", 0), "max": d.get("max", 1)}
+    return {"value": spec["default"]}
+
+
+class _ConditionRow(QWidget):
+    """单条条件编辑行：类型下拉 + 参数输入 + 删除按钮。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._parent_widget = parent
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        self.combo_type = QComboBox()
+        for t in _TYPE_ORDER:
+            self.combo_type.addItem(CONDITION_TYPES[t]["label"], t)
+        layout.addWidget(self.combo_type, 0)
+
+        self.param_container = QWidget()
+        self.param_layout = QHBoxLayout(self.param_container)
+        self.param_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.param_container, 1)
+
+        self.btn_del = QPushButton("✕")
+        self.btn_del.setFixedWidth(28)
+        self.btn_del.setToolTip("删除此条件")
+        layout.addWidget(self.btn_del, 0)
+
+        self._param_widget = None
+        # 类型切换 → 重建参数输入
+        self.combo_type.currentIndexChanged.connect(self._on_type_changed)
+        self.btn_del.clicked.connect(self._on_del_clicked)
+
+    # ---- 参数控件
+    def _build_param_widget(self, t, params):
+        # 清旧
+        while self.param_layout.count():
+            item = self.param_layout.takeAt(0)
+            old = item.widget()
+            if old is not None:
+                old.deleteLater()
+        self._param_widget = None
+        spec = CONDITION_TYPES[t]
+        vt = spec["value_type"]
+        if vt == "range":
+            mn = QDoubleSpinBox()
+            mn.setRange(-999999, 999999)
+            mn.setDecimals(2)
+            mn.setValue(float(params.get("min", 0)))
+            mn.setPrefix("(")
+            mx = QDoubleSpinBox()
+            mx.setRange(-999999, 999999)
+            mx.setDecimals(2)
+            mx.setValue(float(params.get("max", 1)))
+            mx.setPrefix(", ")
+            mx.setSuffix(")")
+            mn.valueChanged.connect(self._on_param_changed)
+            mx.valueChanged.connect(self._on_param_changed)
+            self.param_layout.addWidget(QLabel("偏差数量在"))
+            self.param_layout.addWidget(mn)
+            self.param_layout.addWidget(mx)
+            self._param_widget = (mn, mx)
+        elif vt == "number":
+            w = QDoubleSpinBox()
+            w.setRange(-999999, 999999)
+            w.setDecimals(2)
+            w.setValue(float(params.get("value", 0)))
+            w.valueChanged.connect(self._on_param_changed)
+            self.param_layout.addWidget(w)
+            self._param_widget = w
+        else:  # text / textlist
+            w = QLineEdit()
+            w.setText("" if params.get("value") is None else str(params.get("value")))
+            w.setPlaceholderText(spec.get("hint", ""))
+            w.textChanged.connect(self._on_param_changed)
+            self.param_layout.addWidget(w)
+            self._param_widget = w
+
+    def _current_type(self):
+        return self.combo_type.currentData() or "dev_qty_eq"
+
+    def _read_params(self):
+        t = self._current_type()
+        spec = CONDITION_TYPES[t]
+        vt = spec["value_type"]
+        if vt == "range":
+            mn, mx = self._param_widget
+            return {"min": mn.value(), "max": mx.value()}
+        if vt == "number":
+            return {"value": self._param_widget.value()}
+        return {"value": self._param_widget.text().strip()}
+
+    def set_condition(self, cond):
+        """用 dict 填充此行。"""
+        t = cond.get("type") or "dev_qty_eq"
+        if t not in CONDITION_TYPES:
+            t = "dev_qty_eq"
+        ti = self.combo_type.findData(t)
+        if ti < 0:
+            ti = 0
+        self.combo_type.blockSignals(True)
+        self.combo_type.setCurrentIndex(ti)
+        self.combo_type.blockSignals(False)
+        params = cond.get("params", _default_params_for(t))
+        self._build_param_widget(t, params)
+
+    def get_condition(self):
+        return {"type": self._current_type(), "params": self._read_params()}
+
+    # ---- 信号
+    def _on_type_changed(self, _idx):
+        t = self._current_type()
+        self._build_param_widget(t, _default_params_for(t))
+        self._notify_changed()
+
+    def _on_param_changed(self, *_a):
+        self._notify_changed()
+
+    def _on_del_clicked(self):
+        if self._parent_widget is not None:
+            self._parent_widget._remove_condition_row(self)
+
+    def _notify_changed(self):
+        if self._parent_widget is not None:
+            self._parent_widget._refresh_summary()
+
+
 class AutoReadRuleWidget(QWidget):
-    """自动已读规则管理器：多规则并存、独立启停、排序、条件类型可选。"""
+    """自动已读规则管理器：多规则并存、独立启停、排序、每条规则多条件 AND。"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.cfg = load_auto_read_rules_config()  # {'enabled', 'rules'}
         self.current_index = 0
-        # 防御：参数输入控件在 _load_rule_to_editor 中才创建。
-        # 但 edit_name.setText / chk_rule_enabled.setChecked 会同步触发
-        # textChanged / stateChanged → _refresh_summary → _read_param_value 提前访问它。
-        # 先声明为 None，并由 _read_param_value 对 None 返回默认值，避免初始化期崩溃。
-        self._param_input = None
         self._build_ui()
         self._refresh_list()
         self._load_rule_to_editor(0)
@@ -96,22 +230,19 @@ class AutoReadRuleWidget(QWidget):
         self.chk_rule_enabled = QCheckBox("启用此规则")
         ev.addWidget(self.chk_rule_enabled)
 
-        ht = QHBoxLayout()
-        ht.addWidget(QLabel("条件类型："))
-        self.combo_type = QComboBox()
-        for t in _TYPE_ORDER:
-            self.combo_type.addItem(CONDITION_TYPES[t]["label"], t)
-        ht.addWidget(self.combo_type, 1)
-        ev.addLayout(ht)
+        # 条件列表（多条件 AND）
+        ev.addWidget(QLabel("条件（全部满足＝且关系，多条规则之间为或关系）："))
+        self.cond_list = QVBoxLayout()
+        self.cond_list.setSpacing(6)
+        self.cond_widget = QWidget()
+        self.cond_widget.setLayout(self.cond_list)
+        ev.addWidget(self.cond_widget)
 
-        # 参数输入区（按条件类型动态切换）
-        hp = QHBoxLayout()
-        hp.addWidget(QLabel("参数值："))
-        self.param_container = QWidget()
-        self.param_layout = QHBoxLayout(self.param_container)
-        self.param_layout.setContentsMargins(0, 0, 0, 0)
-        hp.addWidget(self.param_container, 1)
-        ev.addLayout(hp)
+        h_add = QHBoxLayout()
+        self.btn_add_cond = QPushButton("➕ 添加条件")
+        h_add.addWidget(self.btn_add_cond)
+        h_add.addStretch()
+        ev.addLayout(h_add)
 
         ev.addWidget(QLabel("当前规则预览："))
         self.lbl_summary = QLabel()
@@ -124,54 +255,51 @@ class AutoReadRuleWidget(QWidget):
 
         # 信号
         self.edit_name.textChanged.connect(self._refresh_summary)
-        self.combo_type.currentIndexChanged.connect(self._on_type_changed)
         self.chk_rule_enabled.stateChanged.connect(self._refresh_summary)
         self.btn_add.clicked.connect(self._on_add)
         self.btn_del.clicked.connect(self._on_del)
         self.btn_up.clicked.connect(self._on_up)
         self.btn_down.clicked.connect(self._on_down)
+        self.btn_add_cond.clicked.connect(self._on_add_condition)
 
-    # ---------------------------------------------------------------- 参数控件
-    def _build_param_input(self, value_type, value):
-        """根据 value_type 构造参数输入控件并返回。"""
-        self._param_input = None
-        if value_type == "number":
-            w = QSpinBox()
-            w.setRange(-999999, 999999)
-            w.setValue(int(float(value)) if str(value).strip() not in ("", None) else 0)
-            w.valueChanged.connect(self._refresh_summary)
-            self._param_input = w
-        else:  # text / textlist
-            w = QLineEdit()
-            w.setText("" if value is None else str(value))
-            w.setPlaceholderText(CONDITION_TYPES[self._current_type()]["hint"])
-            w.textChanged.connect(self._refresh_summary)
-            self._param_input = w
-        return w
+    # ---------------------------------------------------------------- 条件行管理
+    def _clear_condition_rows(self):
+        while self.cond_list.count():
+            item = self.cond_list.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
 
-    def _current_type(self):
-        return self.combo_type.currentData() or "dev_qty_eq"
+    def _add_condition_row(self, cond=None):
+        row = _ConditionRow(self)
+        if cond is not None:
+            row.set_condition(cond)
+        else:
+            row.set_condition({"type": "dev_qty_eq", "params": _default_params_for("dev_qty_eq")})
+        self.cond_list.addWidget(row)
+        return row
 
-    def _read_param_value(self):
-        spec = CONDITION_TYPES[self._current_type()]
-        # 防御：参数控件尚未构建（如初始化期信号提前触发）时返回该类型默认值
-        if self._param_input is None:
-            return spec["default"]
-        if spec["value_type"] == "number":
-            return self._param_input.value()
-        return self._param_input.text().strip()
+    def _remove_condition_row(self, row_widget):
+        # 至少保留 1 个条件
+        if self.cond_list.count() <= 1:
+            QMessageBox.information(self, "提示", "每条规则至少保留一个条件。")
+            return
+        idx = self.cond_list.indexOf(row_widget)
+        if idx < 0:
+            return
+        item = self.cond_list.takeAt(idx)
+        w = item.widget()
+        if w is not None:
+            w.deleteLater()
+        self._refresh_summary()
 
-    def _rebuild_param_input(self):
-        # 清空旧控件
-        while self.param_layout.count():
-            item = self.param_layout.takeAt(0)
-            old = item.widget()
-            if old is not None:
-                old.deleteLater()
-        spec = CONDITION_TYPES[self._current_type()]
-        val = spec["default"]
-        w = self._build_param_input(spec["value_type"], val)
-        self.param_layout.addWidget(w)
+    def _read_conditions(self):
+        conds = []
+        for i in range(self.cond_list.count()):
+            w = self.cond_list.itemAt(i).widget()
+            if isinstance(w, _ConditionRow):
+                conds.append(w.get_condition())
+        return conds
 
     # ---------------------------------------------------------------- 数据
     def _commit_editor(self):
@@ -180,8 +308,7 @@ class AutoReadRuleWidget(QWidget):
         r = self.cfg["rules"][self.current_index]
         r["name"] = self.edit_name.text().strip() or "未命名规则"
         r["enabled"] = self.chk_rule_enabled.isChecked()
-        r["type"] = self._current_type()
-        r["params"] = {"value": self._read_param_value()}
+        r["conditions"] = self._read_conditions()
 
     def _load_rule_to_editor(self, idx):
         if not (0 <= idx < len(self.cfg["rules"])):
@@ -190,30 +317,17 @@ class AutoReadRuleWidget(QWidget):
         r = self.cfg["rules"][idx]
         self.edit_name.setText(r.get("name", ""))
         self.chk_rule_enabled.setChecked(bool(r.get("enabled", True)))
-        # 类型
-        t = r.get("type", "dev_qty_eq")
-        if t not in CONDITION_TYPES:
-            t = "dev_qty_eq"
-        ti = self.combo_type.findData(t)
-        if ti < 0:
-            ti = 0
-        self.combo_type.blockSignals(True)
-        self.combo_type.setCurrentIndex(ti)
-        self.combo_type.blockSignals(False)
-        # 参数输入：先按类型重建，再填值
-        spec = CONDITION_TYPES[t]
-        while self.param_layout.count():
-            item = self.param_layout.takeAt(0)
-            old = item.widget()
-            if old is not None:
-                old.deleteLater()
-        w = self._build_param_input(spec["value_type"], r.get("params", {}).get("value", spec["default"]))
-        self.param_layout.addWidget(w)
+        # 条件列表
+        self._clear_condition_rows()
+        conds = r.get("conditions") or []
+        if not conds:
+            conds = [{"type": "dev_qty_eq", "params": _default_params_for("dev_qty_eq")}]
+        for c in conds:
+            self._add_condition_row(c)
         self._refresh_summary()
 
-    def _on_type_changed(self, _idx):
-        # 切换条件类型时，参数输入按新类型默认值重建
-        self._rebuild_param_input()
+    def _on_add_condition(self):
+        self._add_condition_row({"type": "dev_qty_eq", "params": _default_params_for("dev_qty_eq")})
         self._refresh_summary()
 
     def _refresh_list(self):
@@ -238,8 +352,7 @@ class AutoReadRuleWidget(QWidget):
         new_rule = {
             "name": "新规则%d" % (len(self.cfg["rules"]) + 1),
             "enabled": True,
-            "type": "dev_qty_eq",
-            "params": {"value": CONDITION_TYPES["dev_qty_eq"]["default"]},
+            "conditions": [{"type": "dev_qty_eq", "params": _default_params_for("dev_qty_eq")}],
         }
         self.cfg["rules"].append(new_rule)
         self.current_index = len(self.cfg["rules"]) - 1
@@ -282,8 +395,7 @@ class AutoReadRuleWidget(QWidget):
         preview = {
             "name": self.edit_name.text().strip() or "未命名规则",
             "enabled": self.chk_rule_enabled.isChecked(),
-            "type": self._current_type(),
-            "params": {"value": self._read_param_value()},
+            "conditions": self._read_conditions(),
         }
         self.lbl_summary.setText(build_rule_summary(preview))
 
@@ -305,8 +417,8 @@ class AutoReadRuleDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("⚙ 自动已读规则")
-        self.setMinimumWidth(580)
-        self.setMinimumHeight(560)
+        self.setMinimumWidth(620)
+        self.setMinimumHeight(600)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.widget = AutoReadRuleWidget(self)
