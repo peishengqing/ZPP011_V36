@@ -950,6 +950,7 @@ class MainWindow(QMainWindow):
             mask = df['data_id'].astype(str).isin(dids)
             if mask.any():
                 df.loc[mask, '_read'] = 1
+                df.loc[mask, '_read_source'] = 'manual'
                 self.source_model.setDataFrame(df)
 
         def _mark_selected_read():
@@ -1357,8 +1358,9 @@ class MainWindow(QMainWindow):
                     self.data_service._norm_note(n) if note_col else '',
                 )
             if dids:
-                mark_read_batch(dids, snapshot_map)
+                mark_read_batch(dids, snapshot_map, read_source='auto')
                 df.loc[target, '_read'] = 1
+                df.loc[target, '_read_source'] = 'auto'
                 self._auto_read_count += n_auto
                 self._update_read_counter()
 

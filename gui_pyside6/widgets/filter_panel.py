@@ -207,6 +207,10 @@ class FilterPanel(QWidget):
         dev_layout.addRow("备注为空:", self.remark_empty_combo)
         dev_layout.addRow("零值筛选:", self.zero_qty_combo)
         dev_layout.addRow("已读/未读:", self.read_status_combo)
+        self.read_source_combo = QComboBox()
+        self.read_source_combo.addItems(["全部", "自动", "手动"])
+        self.read_source_combo.setToolTip("按已读来源筛选：自动=被自动已读规则标记的行；手动=人工手动标记的行")
+        dev_layout.addRow("已读来源:", self.read_source_combo)
         # 颜色标记筛选（与表格行背景色对应）——复选框多选（OR）
         self.color_checks = {}  # key -> QCheckBox
         _color_items = [
@@ -290,6 +294,7 @@ class FilterPanel(QWidget):
         self.remark_empty_combo.currentIndexChanged.connect(self._emit_filter)
         self.order_type_combo.currentIndexChanged.connect(self._emit_filter)
         self.read_status_combo.currentIndexChanged.connect(self._emit_filter)
+        self.read_source_combo.currentIndexChanged.connect(self._emit_filter)
         self.product_code_edit.textChanged.connect(self._emit_filter)
         self.product_code_edit.editingFinished.connect(self._emit_filter)
         self.product_code_edit.returnPressed.connect(self._emit_filter)
@@ -726,6 +731,8 @@ class FilterPanel(QWidget):
             filters['_remark_empty'] = (self.remark_empty_combo.currentText() == '是')
         if self.read_status_combo.currentText() != "全部":
             filters['_read_status'] = self.read_status_combo.currentText()
+        if self.read_source_combo.currentText() != "全部":
+            filters['_read_source'] = 'auto' if self.read_source_combo.currentText() == '自动' else 'manual'
         if self.zero_qty_combo.currentText() != "全部":
             filters['_zero_qty'] = self.zero_qty_combo.currentText()
         # 偏差数量筛选：大于0 / 等于0 / 小于0
@@ -837,6 +844,7 @@ class FilterPanel(QWidget):
         self.remark_empty_combo.setCurrentIndex(0)
         self.order_type_combo.setCurrentIndex(0)
         self.read_status_combo.setCurrentIndex(2)  # 默认未读（与初始化一致）：分析完成/重置均回到未读视图
+        self.read_source_combo.setCurrentIndex(0)  # 已读来源默认全部
         self.remark_source_combo.setCurrentIndex(0)
         self.zero_qty_combo.setCurrentIndex(0)
         self._clear_color_checks()

@@ -46,9 +46,12 @@ class DataFrameModel(QAbstractTableModel):
         # 确保 _read 列存在（用于已读/未读状态）
         if '_read' not in self._data.columns:
             self._data['_read'] = 0  # 默认未读
+        # 确保 _read_source 列存在（已读来源：auto/manual/''）
+        if '_read_source' not in self._data.columns:
+            self._data['_read_source'] = ''
 
-        # 将 _read 列移到第一列
-        cols = ['_read'] + [c for c in self._data.columns if c != '_read']
+        # 将 _read / _read_source 列移到最前（第0列状态、第1列已读来源）
+        cols = ['_read', '_read_source'] + [c for c in self._data.columns if c not in ('_read', '_read_source')]
         self._data = self._data[cols]
 
         self._original_data = self._data.copy()
@@ -184,6 +187,22 @@ class DataFrameModel(QAbstractTableModel):
                 return False
             # 其余角色（如 BackgroundRole）交给下方统一处理（含替代料组色）
 
+        # 第1列：已读来源（auto/manual/''）
+        col_name = self._display_columns[col]
+        if col_name == '_read_source':
+            if role == Qt.DisplayRole:
+                v = self._data_cache[row][col]
+                if v == 'auto':
+                    return '自动'
+                if v == 'manual':
+                    return '手动'
+                return '—'
+            elif role == Qt.TextAlignmentRole:
+                return Qt.AlignCenter
+            elif role == Qt.ToolTipRole:
+                v = self._data_cache[row][col]
+                return {'auto': '由自动已读规则标记已读', 'manual': '人工手动标记已读', '—': '未读'}.get(v, '未读')
+            # 其余角色交给下方统一处理
 
         # 替代料/非耗用行：鼠标悬停显示检测依据与备注原因
         if role == Qt.ToolTipRole and row in self._substitute_rows:
@@ -269,6 +288,8 @@ class DataFrameModel(QAbstractTableModel):
                 # 第一列显示为"状态"
                 if section == 0:
                     return "状态"
+                if section == 1:
+                    return "已读来源"
                 # 其余列：需要偏移1位（因为第0列是 _read）
                 try:
                     read_col_idx = list(self._data.columns).index('_read')
@@ -591,6 +612,15 @@ class AuditProxyModel(QSortFilterProxyModel):
                 if status == '已读' and read_val != 1:
                     return False
                 if status == '未读' and read_val != 0:
+                    return False
+
+            # 3.1 已读来源（自动/手动，未读行来源为空不参与）
+            if '_read_source' in self._custom_filters:
+                want = self._custom_filters['_read_source']
+                src = row_data.get('_read_source', '')
+                if want == 'auto' and src != 'auto':
+                    return False
+                if want == 'manual' and src != 'manual':
                     return False
 
             # 3.5 颜色标记筛选（多选 OR：勾选任意颜色即保留匹配行）

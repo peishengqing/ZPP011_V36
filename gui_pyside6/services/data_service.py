@@ -173,13 +173,14 @@ class DataService(QObject):
         # 没有历史状态：直接全部未读
         if not status_map:
             df['_read'] = 0
+            df['_read_source'] = ''
             df['_post_audit_changed'] = 0
             return df
 
         # 1. 把历史状态对齐到 df（避免 Python 级逐行查找）
         status_df = pd.DataFrame.from_dict(
             status_map, orient='index',
-            columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note']
+            columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note', '_hist_source']
         )
         df = df.join(status_df, on='data_id')
 
@@ -218,6 +219,16 @@ class DataService(QObject):
         df['_read'] = np.where(changed, 0, np.where(has_status, hist_read_int, 0))
         df['_post_audit_changed'] = changed.astype(int)
 
+        # 已读来源（第6列 read_source）：
+        #  - 当前仍为「已读」的行 → 用 DB source；DB 无来源的老数据归为手动
+        #  - 已翻回未读（含数据变动）的行 → 来源清空（主表显示 —）
+        src = df['_hist_source'].fillna('').astype(str) if '_hist_source' in df.columns else pd.Series('', index=df.index)
+        still_read = df['_read'] == 1
+        df['_read_source'] = np.where(
+            still_read & (src == ''), 'manual',
+            np.where(still_read, src, '')
+        )
+
         # 6. 批量记录变动历史 + 收集弹窗详情
         if changed.any():
             changes_records = []
@@ -255,7 +266,7 @@ class DataService(QObject):
             self.log_signal.emit(f"变动提醒|{changed_count}", "alert")
 
         # 清理临时历史列
-        df = df.drop(columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note'], errors='ignore')
+        df = df.drop(columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note', '_hist_source'], errors='ignore')
         return df
 
     def get_audit_changes(self, df):
@@ -293,7 +304,7 @@ class DataService(QObject):
         if status_map:
             status_df = pd.DataFrame.from_dict(
                 status_map, orient='index',
-                columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note'])
+                columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note', '_hist_source'])
             # 防御：若 sub 已含同名基线列（理论主表不会，已被 _restore_read_status drop），
             # 先去掉避免 join 报「columns overlap」。
             _overlap = [c for c in status_df.columns if c in sub.columns]
@@ -450,7 +461,7 @@ class DataService(QObject):
                     snap_qty = row.get(qty_col) if qty_col else None
                     snap_note = self._norm_note(row.get(note_col)) if note_col else ''
                 snapshot_map[did] = (snap_qty, snap_note)
-            mark_read_batch(list(dids), snapshot_map)
+            mark_read_batch(list(dids), snapshot_map, read_source='manual')
             self.last_audit_changes = []  # 当前会话不再重复弹窗
             return len(dids), dids
         except Exception as e:

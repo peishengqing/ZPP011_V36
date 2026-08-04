@@ -97,6 +97,7 @@ def _get_conn():
             ('note_source', 'TEXT DEFAULT ""'),
             ('snapshot_qty', 'REAL DEFAULT NULL'),
             ('snapshot_note', 'TEXT DEFAULT NULL'),
+            ('read_source', 'TEXT DEFAULT ""'),  # 已读来源：'auto' 自动规则 / 'manual' 手动（默认空）
         ]:
             if col_name not in existing_cols:
                 try:
@@ -200,7 +201,8 @@ def _chunked_load(conn, sql_template, data_ids, id_cols):
 def load_read_status(data_ids: List[str]) -> Dict[str, Tuple]:
     """
     批量加载已读状态
-    返回: {data_id: (is_read, fingerprint, snapshot_qty, snapshot_note)}
+    返回: {data_id: (is_read, fingerprint, snapshot_qty, snapshot_note, read_source)}
+    read_source: 'auto' 自动规则标已读 / 'manual' 手动标已读 / '' 无（老数据或新行）
     """
     if not data_ids:
         return {}
@@ -211,22 +213,22 @@ def load_read_status(data_ids: List[str]) -> Dict[str, Tuple]:
     # 用 chunked 查询替代单条大 IN 子句
     return _chunked_load(
         conn,
-        "SELECT data_id, is_read, fingerprint, snapshot_qty, snapshot_note "
+        "SELECT data_id, is_read, fingerprint, snapshot_qty, snapshot_note, read_source "
         "FROM read_status WHERE data_id IN ({placeholders})",
-        data_ids, 4
+        data_ids, 5
     )
 
 
-def save_read_status(data_id: str, is_read: int, fingerprint: str, snapshot_qty=None, snapshot_note=None):
-    """保存已读状态"""
+def save_read_status(data_id: str, is_read: int, fingerprint: str, snapshot_qty=None, snapshot_note=None, read_source='manual'):
+    """保存已读状态。read_source: 'manual' 手动（默认） / 'auto' 自动规则"""
     conn = _get_conn()
     conn.execute("""
-        INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, snapshot_qty, snapshot_note, read_time, user)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, snapshot_qty, snapshot_note, read_time, user, read_source)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (str(data_id), int(is_read), str(fingerprint),
           None if snapshot_qty is None else float(snapshot_qty),
           '' if snapshot_note is None else str(snapshot_note),
-          datetime.now().isoformat(), 'default'))
+          datetime.now().isoformat(), 'default', str(read_source)))
     conn.commit()
 
 
@@ -234,7 +236,8 @@ def save_read_status_batch(records):
     """
     批量保存已读状态
 
-    records: [(data_id, is_read, fingerprint[, snapshot_qty[, snapshot_note]])]
+    records: [(data_id, is_read, fingerprint[, snapshot_qty[, snapshot_note[, read_source]]])]
+    read_source 默认 'manual'（手动）。
     """
     if not records:
         return
@@ -247,26 +250,30 @@ def save_read_status_batch(records):
         fp = rec[2] if len(rec) > 2 else ''
         snap = rec[3] if len(rec) > 3 else None
         note = rec[4] if len(rec) > 4 else None
+        src = rec[5] if len(rec) > 5 else 'manual'
         norm.append((str(did), int(is_read), str(fp),
                      None if snap is None else float(snap),
-                     '' if note is None else str(note), now, 'default'))
+                     '' if note is None else str(note), now, 'default', str(src)))
     conn.executemany("""
-        INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, snapshot_qty, snapshot_note, read_time, user)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, snapshot_qty, snapshot_note, read_time, user, read_source)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, norm)
     conn.commit()
 
 
-def mark_read_batch(data_ids, snapshot_map):
+def mark_read_batch(data_ids, snapshot_map, read_source='auto'):
     """
     批量把已审核记录标记为已读，并同步更新 snapshot 基线。
+    read_source: 'auto' 自动规则标已读（默认） / 'manual' 手动标已读。
+    行已存在时（如翻回未读后再标）也会同步更新 read_source，保证来源真实。
     """
     if not data_ids:
         return
     conn = _get_conn()
     now = datetime.now().isoformat()
+    src = str(read_source)
     # 向量化归一化：避免 Python 逐行 execute 在主线程阻塞（零偏差行可能上千）
-    insert_rows = [(str(did), now) for did in data_ids]
+    insert_rows = [(str(did), now, src) for did in data_ids]
     norm = []
     for did in data_ids:
         snap_qty, snap_note = snapshot_map.get(did, (None, None))
@@ -275,9 +282,11 @@ def mark_read_batch(data_ids, snapshot_map):
             '' if snap_note is None else str(snap_note),
             now, str(did),
         ))
+    # 新行插入 source；已存在行（如数据变动翻回未读又标已读）用 ON CONFLICT 更新 source
     conn.executemany("""
-        INSERT OR IGNORE INTO read_status (data_id, is_read, read_time, user)
-        VALUES (?, 0, ?, 'default')
+        INSERT INTO read_status (data_id, is_read, read_time, user, read_source)
+        VALUES (?, 0, ?, 'default', ?)
+        ON CONFLICT(data_id) DO UPDATE SET read_source = excluded.read_source
     """, insert_rows)
     conn.executemany("""
         UPDATE read_status SET is_read = 1, snapshot_qty = ?, snapshot_note = ?, read_time = ?
