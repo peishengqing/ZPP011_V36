@@ -21,7 +21,7 @@
     {
       "name": "物料600开头",
       "enabled": true,
-      "ignore_exclude_unfed": true,
+      "ignore_exclude_unfed": false,
       "ignore_exclude_units": true,
       "conditions": [
         {
@@ -33,7 +33,7 @@
       ]
     },
     {
-      "name": "新规则3",
+      "name": "含胶带,卷膜,白内袋,收缩膜的小偏差",
       "enabled": true,
       "ignore_exclude_unfed": false,
       "ignore_exclude_units": false,
@@ -54,7 +54,7 @@
       ]
     },
     {
-      "name": "新规则4",
+      "name": "不含箱,彩罐的小偏差",
       "enabled": true,
       "ignore_exclude_unfed": false,
       "ignore_exclude_units": false,

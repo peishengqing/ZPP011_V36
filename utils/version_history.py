@@ -14,6 +14,19 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.53",
+        "date": "2026-08-05",
+        "build_datetime": "2026-08-05 09:30:00",
+        "fixes": [
+            "修复 dry_run_analyzer.py try 块缩进错误（lines 44-50 未正确缩进，导致 IndentationError）。",
+            "修复 _ui_refactor_notes.py 两处中文引号语法错误（lines 30、41 的「」改为『』），避免 SyntaxError。",
+        ],
+        "notes": [
+            "📌 本次为代码质量修复版，零功能变更。",
+            "📌 今天密集迭代 6 个版本（v42.47→v42.52），均因同一需求（规则1豁免排除单位）反复调试导致；本版集中修复遗留的语法隐患。",
+        ],
+    },
+    {
         "version": "v42.52",
         "date": "2026-08-05",
         "build_datetime": "2026-08-05 15:30:00",
