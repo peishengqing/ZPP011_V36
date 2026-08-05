@@ -8,7 +8,7 @@
       "name": "偏差数量=0",
       "enabled": true,
       "ignore_exclude_unfed": false,
-      "ignore_exclude_units": false,
+      "ignore_exclude_units": true,
       "conditions": [
         {
           "type": "dev_qty_eq",
