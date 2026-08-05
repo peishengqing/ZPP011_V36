@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout,
     QComboBox, QPushButton, QLabel, QDateEdit, QLineEdit, QScrollArea,
     QDoubleSpinBox, QDialog, QCalendarWidget,
-    QSizePolicy, QMenu, QCheckBox
+    QSizePolicy, QMenu, QCheckBox, QListWidget, QListWidgetItem
 )
 from PySide6.QtCore import Signal, Qt, QDate, QEvent
 from PySide6.QtGui import QColor, QPixmap, QIcon
@@ -162,6 +162,24 @@ class FilterPanel(QWidget):
         material_layout.addRow("产品物料号:", self.product_code_edit)
         material_layout.addRow("物料编码:", self.material_code_edit)
         material_layout.addRow("物料名称:", material_name_row)
+        # 单位多选筛选：复选框列表，勾选的单位 OR 显示（全不勾=不限）
+        self.unit_list = QListWidget()
+        self.unit_list.setMaximumHeight(120)
+        self.unit_list.setSelectionMode(QListWidget.NoSelection)
+        self.unit_list.itemChanged.connect(self._emit_filter)
+        unit_clear_btn = QPushButton("清空单位")
+        unit_clear_btn.setMaximumWidth(70)
+        unit_clear_btn.setToolTip("取消所有单位勾选（显示全部单位）")
+        unit_clear_btn.clicked.connect(self._clear_unit_list)
+        unit_btn_row = QHBoxLayout()
+        unit_btn_row.addWidget(unit_clear_btn)
+        unit_btn_row.addStretch()
+        unit_list_layout = QVBoxLayout()
+        unit_list_layout.setContentsMargins(0, 0, 0, 0)
+        unit_list_layout.setSpacing(4)
+        unit_list_layout.addWidget(self.unit_list)
+        unit_list_layout.addLayout(unit_btn_row)
+        material_layout.addRow("单位:", unit_list_layout)
         content_layout.addWidget(material_group)
 
         # 偏差与审核
@@ -514,6 +532,7 @@ class FilterPanel(QWidget):
         self._col_map['物料编码'] = self._find_column(['物料号', '物料编码', 'code', '组件物料号'])
         self._col_map['流程订单'] = self._find_column(['流程订单', 'process_order'])
         self._col_map['物料名称'] = self._find_column(['物料名称', '物料描述', 'material_name', '组件物料描述'])
+        self._col_map['单位'] = self._find_column(['单位', '组件单位', '基本单位', '计量单位'])
 
         # 记录数据中的最小/最大日期，用于重置
         self._data_min_date = None
@@ -536,6 +555,7 @@ class FilterPanel(QWidget):
         self._update_combo(self.workshop_combo, self._col_map.get('车间'))
         self._update_combo(self.category_combo, self._col_map.get('物料类型'))
         self._update_combo(self.order_type_combo, self._col_map.get('订单类型'))
+        self._update_unit_list()
         self._update_material_name_combo()
         for _c in (self.factory_combo, self.workshop_combo, self.category_combo, self.order_type_combo,
                    self.material_name_edit):
@@ -577,6 +597,36 @@ class FilterPanel(QWidget):
         else:
             combo.clear()
             combo.addItem("全部")
+
+    def _update_unit_list(self):
+        """根据数据中的「单位」列填充复选框列表（动态、去重、排序）。
+        全不勾选 = 不限制单位（显示全部）。重建前记住已勾选单位，数据刷新时不丢失选择。"""
+        prev_checked = {
+            self.unit_list.item(i).text()
+            for i in range(self.unit_list.count())
+            if self.unit_list.item(i).checkState() == Qt.Checked
+        }
+        self.unit_list.blockSignals(True)
+        self.unit_list.clear()
+        unit_col = self._col_map.get('单位')
+        units = []
+        if unit_col and self._data is not None and not self._data.empty:
+            units = self._data[unit_col].dropna().unique()
+            units = sorted([str(v).strip() for v in units if str(v).strip() != ''])
+        for u in units:
+            item = QListWidgetItem(u)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked if u in prev_checked else Qt.Unchecked)
+            self.unit_list.addItem(item)
+        self.unit_list.blockSignals(False)
+
+    def _clear_unit_list(self):
+        """取消所有单位勾选（显示全部单位）"""
+        self.unit_list.blockSignals(True)
+        for i in range(self.unit_list.count()):
+            self.unit_list.item(i).setCheckState(Qt.Unchecked)
+        self.unit_list.blockSignals(False)
+        self._emit_filter()
 
     def _preset_path(self):
         """用户级持久位置（与 audit.db 同目录 ~/.zpp011_audit/），
@@ -760,6 +810,16 @@ class FilterPanel(QWidget):
             filters['_remark_not'] = remark_not_text
         if self._date_filters:
             filters.update(self._date_filters)
+        # 单位多选筛选（OR）：勾选的单位才显示；全不勾 = 不限制
+        unit_col = self._col_map.get('单位')
+        if unit_col:
+            checked_units = [
+                self.unit_list.item(i).text()
+                for i in range(self.unit_list.count())
+                if self.unit_list.item(i).checkState() == Qt.Checked
+            ]
+            if checked_units:
+                filters['_units'] = (unit_col, set(checked_units))
         return filters
 
     def _clear_color_checks(self):
@@ -851,6 +911,7 @@ class FilterPanel(QWidget):
         self.product_code_edit.clear()
         self.material_code_edit.clear()
         self.material_name_edit.setCurrentText("")
+        self._clear_unit_list()
         self.remark_search_edit.clear()
         self.remark_not_edit.clear()
         # 重置日期为数据最小/最大日期

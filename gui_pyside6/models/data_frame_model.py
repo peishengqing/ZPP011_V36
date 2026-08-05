@@ -687,6 +687,14 @@ class AuditProxyModel(QSortFilterProxyModel):
                 if not matched_any:
                     return False
 
+            # 3.6 单位多选筛选（OR）：仅保留单位列值在被勾选集合内的行
+            if '_units' in self._custom_filters:
+                _unit_col, _units_set = self._custom_filters['_units']
+                if _unit_col and _unit_col in df.columns:
+                    rv = str(row_data.get(_unit_col, '')).strip()
+                    if rv not in _units_set:
+                        return False
+
             # 4. 备注为空
             if '_remark_empty' in self._custom_filters:
                 remark_col = self._get_remark_column(df)
