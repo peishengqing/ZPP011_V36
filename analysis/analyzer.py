@@ -281,8 +281,6 @@ def do_analysis_v2(
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-    col_p = '偏差率(%)'
-
     # ── 固定阈值（公司规定）─────────────────────
     dyn_thresh = DEFAULT_THRESHOLD if dyn_thresh is None else dyn_thresh
     thresh_desc = f"固定阈值（公司规定）：±{dyn_thresh:.0f}%"
@@ -380,27 +378,30 @@ def do_analysis_v2(
     df['_no_quota'] = (df['数量-定额'] == 0)
     df['组件物料号_str'] = df['组件物料号'].astype(str)
 
-    gx_mask = df['组件物料号_str'].str.startswith('6')
     no_note_mask = ~(df['备注原因'].notna() & (df['备注原因'] != ''))
-    dev_rate = df[col_p].fillna(0)
-    raw_mat_mask = df['物料分类'].isin(['原材料', '包材'])
-    small_dev_mask = dev_rate.between(-3, 3)
-    no_auto_mask = raw_mat_mask & small_dev_mask
+    # ① 系统无定额自动填充的统一前置条件（2026-08-05 修正）：
+    #    产量>0（排除「投了料但没填产量」→ SAP 不推送定额、显示0 的假象）
+    #    & 定额=0 & 实际>0 & 无备注 → 才标"系统无定额"。
+    #    业务背景：车间投了料却没填产量，定额不被推送(显示0)，被误判为系统无定额。
+    qty_prod = df['产量'].fillna(0) if '产量' in df.columns else pd.Series(0, index=df.index)
+    qty_act = df['数量-实际'].fillna(0)
+    real_no_quota = (qty_prod > 0) & (df['数量-定额'] == 0) & (qty_act > 0) & no_note_mask
 
-    gx_auto_fill = gx_mask & no_note_mask & ~no_auto_mask
+    # 广宣：仅 600 开头 + real_no_quota（2026-08-05 由"6开头"收窄为"600开头"）
+    gx_auto_fill = df['组件物料号_str'].str.startswith('600') & real_no_quota
     # 确保备注原因为对象类型，防止空值列被推断为 float64
     if '备注原因' in df.columns and df['备注原因'].dtype != object:
         df['备注原因'] = df['备注原因'].astype(object)
     df.loc[gx_auto_fill, '备注原因'] = '系统无定额'
 
+    # 透明胶带：描述含"透明胶带" + real_no_quota（2026-08-05 用户确认保留）
     tape_mask = df['组件物料描述'].str.contains('透明胶带', na=False)
-    tape_auto_fill = tape_mask & no_note_mask & ~no_auto_mask
+    tape_auto_fill = tape_mask & real_no_quota
     df.loc[tape_auto_fill, '备注原因'] = '系统无定额'
 
-    # ② 扩展：全部包材 + 数量-定额==0 + 无备注 → 统一标"系统无定额"
-    # （原逻辑仅覆盖广宣(6开头)/透明胶带，漏掉纸箱、箱码、罐子等包材）
-    pkg_no_quota_mask = (df['物料分类'] == '包材') & (df['数量-定额'] == 0) & no_note_mask
-    df.loc[pkg_no_quota_mask, '备注原因'] = '系统无定额'
+    # 注：已删除原"全部包材+定额0"宽泛规则（pkg_no_quota_mask）——200开头包材不再自动填，
+    #     统一改由上面的 real_no_quota（产量>0 & 定额0 & 实际>0 & 无备注）约束，
+    #     仅保留广宣(600开头) / 透明胶带 两类（见 2026-08-05 决策）。
 
     # 数值列已在入口（读取 Excel 后）统一转换一次，此处无需重复 to_numeric
     df['_note_source'] = '人工填写'
