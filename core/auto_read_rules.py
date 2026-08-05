@@ -209,7 +209,7 @@ _ACTUAL_QTY_CANDIDATES = ["数量-实际", "实际", "实际数量", "实际耗�
 _UNIT_CANDIDATES = ["单位", "组件单位", "基本单位", "计量单位"]
 
 DEFAULT_RULES = [
-    {"name": "偏差数量=0", "enabled": True, "type": "dev_qty_eq", "params": {"value": 0}},
+    {"name": "偏差数量=0", "enabled": True, "type": "dev_qty_eq", "params": {"value": 0}, "ignore_exclude_units": True},
     # 600 物料拥有最高优先级：永远直接自动已读，因此默认豁免「排除未投料」与「排除单位」。
     {"name": "物料600开头", "enabled": True, "type": "mat_code_prefix", "params": {"value": "600"},
      "ignore_exclude_unfed": True, "ignore_exclude_units": True},
