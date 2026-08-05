@@ -14,6 +14,20 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.44",
+        "date": "2026-08-05",
+        "build_datetime": "2026-08-05 09:30:00",
+        "features": [
+            "隔离区「失效复核」页（Tab2）支持点击列头排序（与列表页一致）。",
+            "偏差率预警看板、实时替代料看板支持点击列头排序（此前 setSortingEnabled 在本项目 PySide6/Qt6 下失效、点列头不排序，已改为显式连接修复）。",
+            "抽公共模块 gui_pyside6/utils/table_sort.py（HeaderSortController），统一所有 QTableView+DataFrameModel 的「点列头排序」：两态升↔降切换 + 自管排序箭头 + 筛选/重渲染后恢复排序态，规避 Qt6 失效连接。隔离区列表页原内联 handler 已重构复用该公共函数。",
+        ],
+        "fixes": [
+            "隔离区列表页列头排序在筛选/刷新后保留（应用原因筛选后自动恢复之前的排序列与方向）。",
+            "偏差预警/替代料看板在应用已读筛选后保留列头排序态。",
+        ],
+    },
+    {
         "version": "v42.43",
         "date": "2026-08-04",
         "build_datetime": "2026-08-04 16:45:00",

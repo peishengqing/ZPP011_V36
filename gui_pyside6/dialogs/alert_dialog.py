@@ -12,6 +12,7 @@ from gui_pyside6.models.data_frame_model import DataFrameModel
 from core.read_status import save_read_status, save_read_status_batch
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
 from gui_pyside6.widgets.toast import toast
+from gui_pyside6.utils.table_sort import enable_click_sort
 
 
 class AlertDialog(QDialog):
@@ -84,7 +85,10 @@ class AlertDialog(QDialog):
         self.table_view.customContextMenuRequested.connect(self.show_context_menu)
         self.table_view.doubleClicked.connect(self.on_double_click)
         self.table_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table_view.setSortingEnabled(True)  # 允许点击列头排序
+        # 点击列头排序（显式连接，规避 Qt6 下 setSortingEnabled 内部连接失效）。
+        # 第0列 _read 为内部列，不参与排序。
+        self._sort_ctrl = enable_click_sort(
+            self.table_view, lambda: getattr(self, "source_model", None), skip_cols=(0,))
         self.table_view.horizontalHeader().setStretchLastSection(True)
         self.table_view.verticalHeader().setVisible(False)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
@@ -130,6 +134,7 @@ class AlertDialog(QDialog):
 
         filtered = filtered.reset_index(drop=True)
         self.source_model.setDataFrame(filtered)
+        self._sort_ctrl.reapply()  # 恢复排序态
 
     def set_data(self, df):
         """设置表格数据 - 确保 _read 和 data_id 列存在"""

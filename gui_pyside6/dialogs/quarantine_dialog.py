@@ -19,6 +19,7 @@ from core.auto_quarantine import load_auto_quarantine_config
 from core.read_status import save_read_status, save_read_status_batch
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
 from gui_pyside6.widgets.toast import toast
+from gui_pyside6.utils.table_sort import enable_click_sort
 
 _HIDDEN_INTERNAL = ['_read', 'data_id', '_quarantined', '_post_audit_changed', 'fingerprint']
 
@@ -122,9 +123,12 @@ class QuarantineDialog(QDialog):
         self.table_view.customContextMenuRequested.connect(self.show_context_menu)
         self.table_view.doubleClicked.connect(self.on_double_click)
         self.table_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table_view.setSortingEnabled(True)
         self.header = FilterHeader(Qt.Horizontal, self.table_view)
         self.table_view.setHorizontalHeader(self.header)
+        # 点击列头排序（显式连接，规避 Qt6 下 setSortingEnabled 内部连接失效）。
+        # 第0列 _read 为内部列，不参与排序；隔离原因列头的 ▼ 三角仍触发筛选菜单。
+        self._sort_ctrl = enable_click_sort(
+            self.table_view, lambda: getattr(self, "source_model", None), skip_cols=(0,))
         self.header.sectionFilterClicked.connect(self._show_reason_filter_menu)
         self.table_view.horizontalHeader().setStretchLastSection(True)
         self.table_view.verticalHeader().setVisible(False)
@@ -158,7 +162,9 @@ class QuarantineDialog(QDialog):
         self.expired_view.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.expired_view.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.expired_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.expired_view.setSortingEnabled(True)
+        # 点击列头排序（失效复核表；data_id 等列均可排，skip_cols 留空）
+        self._sort_ctrl_expired = enable_click_sort(
+            self.expired_view, lambda: getattr(self, "expired_model", None))
         self.expired_view.verticalHeader().setVisible(False)
         self.expired_view.verticalHeader().setDefaultSectionSize(28)
         v.addWidget(self.expired_view)
@@ -245,6 +251,10 @@ class QuarantineDialog(QDialog):
             if col in df.columns:
                 self.table_view.setColumnHidden(df.columns.get_loc(col), True)
 
+        # 重渲染后恢复用户之前的排序（筛选/刷新场景不丢排序状态）
+        if hasattr(self, "_sort_ctrl"):
+            self._sort_ctrl.reapply()
+
     # ------------------------------------------------------------------ Tab2 逻辑
     def _load_expired_from_main(self):
         """优先用主窗口分析后缓存的失效结果，否则实时算。"""
@@ -293,6 +303,9 @@ class QuarantineDialog(QDialog):
         # 同步 Tab 标题角标
         idx = self.tabs.indexOf(self.tab_expired)
         self.tabs.setTabText(idx, "失效复核 (%d)" % len(edf) if edf.shape[0] else "失效复核")
+        # 重渲染后恢复排序态（扫描失效后保持用户排序）
+        if hasattr(self, "_sort_ctrl_expired"):
+            self._sort_ctrl_expired.reapply()
 
     def _remove_expired_selected(self):
         """把失效复核中选中的记录移出隔离区。"""
