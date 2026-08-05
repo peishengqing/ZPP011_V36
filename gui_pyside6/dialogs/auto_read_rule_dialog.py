@@ -216,6 +216,22 @@ class AutoReadRuleWidget(QWidget):
             "600 等你确认保留的规则请勾选下方的「包含未投料」豁免。")
         root.addWidget(self.chk_exclude_unfed)
 
+        # 全局「排除单位」开关 + 单位清单
+        self.chk_exclude_units = QCheckBox("自动已读时排除指定单位（留给我重点看）")
+        self.chk_exclude_units.setChecked(self.cfg.get("exclude_units", False))
+        self.chk_exclude_units.setToolTip(
+            "开启后，单位命中下方清单的行默认不自动已读（如 G、个 这类你想重点关注的）。"
+            "可在下方逐规则勾选「包含这些单位」豁免。清单逗号分隔，中英文逗号均可，忽略大小写。")
+        root.addWidget(self.chk_exclude_units)
+        h_exunits = QHBoxLayout()
+        h_exunits.addSpacing(24)
+        h_exunits.addWidget(QLabel("排除单位清单："))
+        self.edit_excluded_units = QLineEdit()
+        self.edit_excluded_units.setText(self.cfg.get("excluded_units", ""))
+        self.edit_excluded_units.setPlaceholderText("逗号分隔，例如 G,个（中英文逗号均可）")
+        h_exunits.addWidget(self.edit_excluded_units, 1)
+        root.addLayout(h_exunits)
+
         # 规则列表 + 工具条
         head = QHBoxLayout()
         head.addWidget(QLabel("规则列表："))
@@ -252,6 +268,13 @@ class AutoReadRuleWidget(QWidget):
             "勾选后，即使全局开启了「排除未投料」，本条规则命中的实际=0 行仍会被自动已读。"
             "例如 600 物料你想保留未投料也自动已读，就勾这个。")
         ev.addWidget(self.chk_ignore_exclude_unfed)
+
+        self.chk_ignore_exclude_units = QCheckBox(
+            "本规则包含这些单位（不受上面的「排除单位」开关影响）")
+        self.chk_ignore_exclude_units.setToolTip(
+            "勾选后，即使全局开启了「排除单位」，本条规则命中的行仍会被自动已读。"
+            "600 物料默认勾选此项（最高优先级，永远直接自动已读），不建议取消。")
+        ev.addWidget(self.chk_ignore_exclude_units)
 
         # 条件列表（多条件 AND）
         ev.addWidget(QLabel("条件（全部满足＝且关系，多条规则之间为或关系）："))
@@ -332,6 +355,7 @@ class AutoReadRuleWidget(QWidget):
         r["name"] = self.edit_name.text().strip() or "未命名规则"
         r["enabled"] = self.chk_rule_enabled.isChecked()
         r["ignore_exclude_unfed"] = self.chk_ignore_exclude_unfed.isChecked()
+        r["ignore_exclude_units"] = self.chk_ignore_exclude_units.isChecked()
         r["conditions"] = self._read_conditions()
 
     def _load_rule_to_editor(self, idx):
@@ -342,6 +366,7 @@ class AutoReadRuleWidget(QWidget):
         self.edit_name.setText(r.get("name", ""))
         self.chk_rule_enabled.setChecked(bool(r.get("enabled", True)))
         self.chk_ignore_exclude_unfed.setChecked(bool(r.get("ignore_exclude_unfed", False)))
+        self.chk_ignore_exclude_units.setChecked(bool(r.get("ignore_exclude_units", False)))
         # 条件列表
         self._clear_condition_rows()
         conds = r.get("conditions") or []
@@ -429,6 +454,8 @@ class AutoReadRuleWidget(QWidget):
         self._commit_editor()
         self.cfg["enabled"] = self.chk_master.isChecked()
         self.cfg["exclude_unfed"] = self.chk_exclude_unfed.isChecked()
+        self.cfg["exclude_units"] = self.chk_exclude_units.isChecked()
+        self.cfg["excluded_units"] = self.edit_excluded_units.text().strip()
         try:
             save_auto_read_rules_config(self.cfg)
         except Exception as e:  # noqa: BLE001

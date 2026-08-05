@@ -205,12 +205,18 @@ CONDITION_TYPES = {
 # 实际数量候选列（排除未投料逻辑使用）
 _ACTUAL_QTY_CANDIDATES = ["数量-实际", "实际", "实际数量", "实际耗用"]
 
+# 单位候选列（排除单位逻辑使用）
+_UNIT_CANDIDATES = ["单位", "组件单位", "基本单位", "计量单位"]
+
 DEFAULT_RULES = [
     {"name": "偏差数量=0", "enabled": True, "type": "dev_qty_eq", "params": {"value": 0}},
-    {"name": "物料600开头", "enabled": True, "type": "mat_code_prefix", "params": {"value": "600"}},
+    # 600 物料拥有最高优先级：永远直接自动已读，因此默认豁免「排除未投料」与「排除单位」。
+    {"name": "物料600开头", "enabled": True, "type": "mat_code_prefix", "params": {"value": "600"},
+     "ignore_exclude_unfed": True, "ignore_exclude_units": True},
 ]
 
-DEFAULT_CONFIG = {"enabled": True, "rules": [dict(r) for r in DEFAULT_RULES], "exclude_unfed": False}
+DEFAULT_CONFIG = {"enabled": True, "rules": [dict(r) for r in DEFAULT_RULES],
+                  "exclude_unfed": False, "exclude_units": False, "excluded_units": ""}
 
 # 单条规则的全部合法字段
 _RULE_FIELDS = ("name", "enabled", "type", "params")
@@ -229,6 +235,20 @@ def _to_num(v):
         return float(v)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _is_600_rule_raw(rule):
+    """判断一条规则（原始 dict，兼容新旧格式）是否为「600 开头物料」规则。"""
+    if not isinstance(rule, dict):
+        return False
+    if rule.get("type") == "mat_code_prefix" and \
+            str(rule.get("params", {}).get("value", "")).strip().startswith("600"):
+        return True
+    for c in rule.get("conditions") or []:
+        if isinstance(c, dict) and c.get("type") == "mat_code_prefix" and \
+                str(c.get("params", {}).get("value", "")).strip().startswith("600"):
+            return True
+    return False
 
 
 # --------------------------------------------------------------------------- 配置读写
@@ -267,6 +287,7 @@ def _normalize_rule(rule):
         "name": "未命名规则",
         "enabled": True,
         "ignore_exclude_unfed": False,
+        "ignore_exclude_units": False,
         "conditions": [dict(_normalize_condition({"type": "dev_qty_eq",
                                                   "params": {"value": CONDITION_TYPES["dev_qty_eq"]["default"]}}))],
     }
@@ -277,6 +298,8 @@ def _normalize_rule(rule):
             r["enabled"] = bool(rule["enabled"])
         if "ignore_exclude_unfed" in rule:
             r["ignore_exclude_unfed"] = bool(rule["ignore_exclude_unfed"])
+        if "ignore_exclude_units" in rule:
+            r["ignore_exclude_units"] = bool(rule["ignore_exclude_units"])
         conds = rule.get("conditions")
         if isinstance(conds, list) and conds:
             r["conditions"] = [_normalize_condition(c) for c in conds if isinstance(c, dict)]
@@ -289,7 +312,9 @@ def _normalize_rule(rule):
 def load_auto_read_rules_config():
     """读取配置，兼容旧单条格式，返回 {'enabled': bool, 'rules': [规则...]}。"""
     cfg = {"enabled": DEFAULT_CONFIG["enabled"], "rules": [dict(r) for r in DEFAULT_RULES],
-           "exclude_unfed": DEFAULT_CONFIG.get("exclude_unfed", False)}
+           "exclude_unfed": DEFAULT_CONFIG.get("exclude_unfed", False),
+           "exclude_units": DEFAULT_CONFIG.get("exclude_units", False),
+           "excluded_units": DEFAULT_CONFIG.get("excluded_units", "")}
     try:
         if os.path.exists(CONFIG_PATH):
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -299,8 +324,15 @@ def load_auto_read_rules_config():
                     # 新格式
                     cfg["enabled"] = bool(user.get("enabled", True))
                     cfg["exclude_unfed"] = bool(user.get("exclude_unfed", False))
-                    rules = [_normalize_rule(r) for r in user["rules"] if isinstance(r, dict)]
-                    cfg["rules"] = rules if rules else [dict(r) for r in DEFAULT_RULES]
+                    cfg["exclude_units"] = bool(user.get("exclude_units", False))
+                    cfg["excluded_units"] = str(user.get("excluded_units", "")).strip()
+                    raw_rules = [r for r in user["rules"] if isinstance(r, dict)]
+                    # 迁移：600 开头物料拥有最高优先级，自动补上单位排除豁免（仅当未显式设置时）。
+                    for r in raw_rules:
+                        if _is_600_rule_raw(r) and "ignore_exclude_units" not in r:
+                            r["ignore_exclude_units"] = True
+                    rules = [_normalize_rule(r) for r in raw_rules]
+                    cfg["rules"] = rules if rules else [_normalize_rule(r) for r in DEFAULT_RULES]
                 else:
                     # 旧单条格式：包成 rules[0]
                     old = _normalize_rule(user)
@@ -311,10 +343,12 @@ def load_auto_read_rules_config():
 
 
 def save_auto_read_rules_config(cfg):
-    """合并默认配置后写回文件，返回最终生效配置（{'enabled', 'rules', 'exclude_unfed'}）。"""
+    """合并默认配置后写回文件，返回最终生效配置（{'enabled', 'rules', 'exclude_unfed', 'exclude_units', 'excluded_units'}）。"""
     merged = {
         "enabled": bool(cfg.get("enabled", True)),
         "exclude_unfed": bool(cfg.get("exclude_unfed", False)),
+        "exclude_units": bool(cfg.get("exclude_units", False)),
+        "excluded_units": str(cfg.get("excluded_units", "")).strip(),
         "rules": [_normalize_rule(r) for r in (cfg.get("rules") or [])],
     }
     if not merged["rules"]:
@@ -386,7 +420,10 @@ def build_all_summary(cfg=None):
     if not active:
         return "（无启用的规则）"
     names = "、".join(r.get("name", "未命名") for r in active)
-    return "启用规则(%d)：%s" % (len(active), names)
+    base = "启用规则(%d)：%s" % (len(active), names)
+    if cfg.get("exclude_units") and str(cfg.get("excluded_units", "")).strip():
+        base += "；排除单位：%s" % str(cfg.get("excluded_units", "")).strip()
+    return base
 
 
 # --------------------------------------------------------------------------- 核心匹配
@@ -420,6 +457,18 @@ def compute_auto_read_mask(df: pd.DataFrame, cfg=None):
         if actual_col is not None:
             actual_gt0 = pd.to_numeric(df[actual_col], errors="coerce") > 0
 
+    # 全局「排除单位」开关：开了且清单非空后，默认把单位命中清单的行挡在自动已读外；
+    # 若某条规则显式 ignore_exclude_units=True，则该规则不受此开关影响。
+    # 清单支持中英文逗号分隔、自动去空格、忽略大小写（如 "G,个" / "G，个"）。
+    exclude_units = bool(cfg.get("exclude_units", False))
+    excluded_units = [u.strip().lower() for u in
+                      str(cfg.get("excluded_units", "")).replace("，", ",").split(",") if u.strip()]
+    unit_outside = None
+    if exclude_units and excluded_units:
+        unit_col = _first_col(df, _UNIT_CANDIDATES)
+        if unit_col is not None:
+            unit_outside = ~df[unit_col].astype(str).fillna("").str.strip().str.lower().isin(excluded_units)
+
     result_union = pd.Series(False, index=df.index)
     per_rule = []
     for rule in rules:
@@ -428,6 +477,8 @@ def compute_auto_read_mask(df: pd.DataFrame, cfg=None):
         m = _match_single_rule(df, rule)
         if exclude_unfed and actual_gt0 is not None and not rule.get("ignore_exclude_unfed", False):
             m = m & actual_gt0
+        if exclude_units and unit_outside is not None and not rule.get("ignore_exclude_units", False):
+            m = m & unit_outside
         per_rule.append((rule, m))
         result_union = result_union | m
     return result_union, per_rule
