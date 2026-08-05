@@ -1541,9 +1541,10 @@ class MainWindow(QMainWindow):
                 return
             # 只保留关键列，避免显示乱七八糟
             required_cols = [c for c in [
-                "订单日期", "流程订单", "物料编码", "物料描述", "物料名称",
+                "订单日期", "流程订单", "物料编码", "物料名称", "物料描述",
+                "备注", "备注来源",
                 "车间", "定额", "实际", "偏差数量", "偏差率(%)",
-                "净偏差数量", "净偏差金额", "净偏差率(%)", "备注", "备注原因", "备注来源",
+                "净偏差数量", "净偏差金额", "净偏差率(%)",
                 "_read"
             ] if c in all_alerts.columns]
             all_alerts = all_alerts[required_cols]
@@ -1576,9 +1577,10 @@ class MainWindow(QMainWindow):
                 return
             # 只保留关键列
             required_cols = [c for c in [
-                "订单日期", "流程订单", "物料编码", "物料描述", "物料名称",
+                "订单日期", "流程订单", "物料编码", "物料名称", "物料描述",
+                "备注", "备注来源",
                 "车间", "定额", "实际", "偏差数量", "偏差率(%)",
-                "净偏差数量", "净偏差金额", "净偏差率(%)", "备注", "备注原因", "备注来源",
+                "净偏差数量", "净偏差金额", "净偏差率(%)",
                 "_read"
             ] if c in alerts_df.columns]
             alerts_df = alerts_df[required_cols]
