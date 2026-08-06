@@ -57,7 +57,7 @@ class TestFilterEngine:
             '偏差率(%)': [5.0, 15.0, 25.0, -15.0]
         })
         engine = FilterEngine()
-        filters = {'dev_rate': '绝对值≥10%'}
+        filters = {'dev_rate': '绝对值>=10%'}
         result = engine.apply(filters, df)
         assert len(result) == 3  # 15, 25, -15
 
