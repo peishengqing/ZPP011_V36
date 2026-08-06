@@ -32,11 +32,10 @@ jobs:
       run: |
         pip install pyflakes
         # 只报致命错误（F821/F822），unused import 等警告降级（不阻塞）
-        output=$(pyflakes core/ gui_pyside6/ analysis/ utils/ modules/ 2>&1)
-        echo "$output"
-        if echo "$output" | grep -E "F821|F822" > /dev/null 2>&1; then
-          echo "❌ 发现致命错误，CI 失败"
-          echo "$output"
+        pyflakes core/ gui_pyside6/ analysis/ utils/ modules/ > pyflakes.txt 2>&1
+        type pyflakes.txt
+        if errorlevel 1 (
+          echo ❌ pyflakes 发现致命错误，CI 失败
           exit 1
-        fi
-        echo "✅ pyflakes 无致命错误（warnings 已忽略）"
+        )
+        echo ✅ pyflakes 无致命错误（warnings 已忽略）
