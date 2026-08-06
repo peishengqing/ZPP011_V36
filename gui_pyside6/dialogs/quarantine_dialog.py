@@ -26,7 +26,12 @@ _HIDDEN_INTERNAL = ['_read', 'data_id', '_quarantined', '_post_audit_changed', '
 
 class FilterHeader(QHeaderView):
     """带列头筛选三角的表头：点击指定列右侧的 ▼ 三角弹出该列筛选菜单，
-    点击列头其余区域仍按原逻辑排序（不破坏排序交互）。"""
+    点击列头其余区域仍可排序。
+
+    Qt6/PySide6 下自定义表头默认 `sectionClicked` 发射路径失效（点击列头不触发
+    排序），故在本类内自行判定「同列按下并抬起」后手动补发 `sectionClicked`，
+    交由 table_sort.HeaderSortController 处理排序；三角筛选与列宽拖动不受影响。
+    """
 
     sectionFilterClicked = Signal(int)
 
@@ -34,6 +39,7 @@ class FilterHeader(QHeaderView):
         super().__init__(orientation, parent)
         self._filter_sections = set()
         self._tri_w = 16
+        self._press_sec = -1
 
     def add_filter_section(self, logical):
         self._filter_sections.add(logical)
@@ -56,17 +62,33 @@ class FilterHeader(QHeaderView):
             ]))
             painter.restore()
 
+    def _is_triangle(self, x, sec):
+        """点击位置是否落在 sec 列右侧 _tri_w 宽的筛选三角区域内。"""
+        sp = self.sectionViewportPosition(sec)
+        sz = self.sectionSize(sec)
+        return x >= sp + sz - self._tri_w
+
     def mousePressEvent(self, event):
         x = event.position().x()
         xi = int(x)
-        for sec in self._filter_sections:
-            if self.logicalIndexAt(xi) == sec:
-                sp = self.sectionViewportPosition(sec)
-                sz = self.sectionSize(sec)
-                if x >= sp + sz - self._tri_w:
-                    self.sectionFilterClicked.emit(sec)
-                    return
+        sec = self.logicalIndexAt(xi)
+        if sec in self._filter_sections and self._is_triangle(x, sec):
+            self.sectionFilterClicked.emit(sec)
+            self._press_sec = -1
+            return
+        self._press_sec = sec
         super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        x = event.position().x()
+        xi = int(x)
+        sec = self.logicalIndexAt(xi)
+        was_click = self._press_sec >= 0 and sec == self._press_sec
+        self._press_sec = -1
+        super().mouseReleaseEvent(event)
+        if was_click:
+            # 默认 sectionClicked 路径对自定义表头失效，手动补发（super 不会重复发射）
+            self.sectionClicked.emit(sec)
 
 
 class QuarantineDialog(QDialog):
@@ -173,6 +195,9 @@ class QuarantineDialog(QDialog):
         scan_btn = QPushButton("🔄 扫描失效")
         scan_btn.clicked.connect(self._run_expired_scan)
         bl.addWidget(scan_btn)
+        self.btn_mark_read_expired = QPushButton("✓ 设为已读并移出隔离区（选中行）")
+        self.btn_mark_read_expired.clicked.connect(self._mark_expired_read_selected)
+        bl.addWidget(self.btn_mark_read_expired)
         self.btn_remove_expired = QPushButton("↩ 移出隔离区（选中行）")
         self.btn_remove_expired.clicked.connect(self._remove_expired_selected)
         bl.addWidget(self.btn_remove_expired)
@@ -251,9 +276,14 @@ class QuarantineDialog(QDialog):
             if col in df.columns:
                 self.table_view.setColumnHidden(df.columns.get_loc(col), True)
 
-        # 重渲染后恢复用户之前的排序（筛选/刷新场景不丢排序状态）
+        # 重渲染后恢复排序态：用户点过列头则保持；否则默认按 data_id 升序
         if hasattr(self, "_sort_ctrl"):
-            self._sort_ctrl.reapply()
+            if self._sort_ctrl.active:
+                self._sort_ctrl.reapply()
+            else:
+                df0 = self.source_model.getDataFrame()
+                col = df0.columns.get_loc('data_id') if 'data_id' in df0.columns else 1
+                self._sort_ctrl.apply_default(col, Qt.AscendingOrder)
 
     # ------------------------------------------------------------------ Tab2 逻辑
     def _load_expired_from_main(self):
@@ -282,19 +312,23 @@ class QuarantineDialog(QDialog):
         toast(f"扫描完成：{len(expired)} 条失效记录", parent=self)
 
     def _render_expired(self, expired_list):
-        """渲染失效复核表格。列：data_id / 隔离原因 / 失效说明 / 实际 / 定额。"""
+        """渲染失效复核表格。列：data_id / 隔离原因 / 失效说明 / 定额 / 实际 / 偏差数量。"""
         rows = []
         for r in expired_list:
+            actual = r.get('actual')
+            quota = r.get('quota')
+            dev = (actual - quota) if (actual is not None and quota is not None) else ''
             rows.append({
                 'data_id': r.get('uid', ''),
                 '隔离原因': r.get('reason', ''),
                 '失效说明': r.get('detail', ''),
-                '实际': r.get('actual') if r.get('actual') is not None else '',
-                '定额': r.get('quota') if r.get('quota') is not None else '',
+                '定额': quota if quota is not None else '',
+                '实际': actual if actual is not None else '',
+                '偏差数量': dev,
             })
-        edf = pd.DataFrame(rows, columns=['data_id', '隔离原因', '失效说明', '实际', '定额'])
+        edf = pd.DataFrame(rows, columns=['data_id', '隔离原因', '失效说明', '定额', '实际', '偏差数量'])
         if edf.empty:
-            edf = pd.DataFrame(columns=['data_id', '隔离原因', '失效说明', '实际', '定额'])
+            edf = pd.DataFrame(columns=['data_id', '隔离原因', '失效说明', '定额', '实际', '偏差数量'])
         self.expired_model = DataFrameModel()
         self.expired_model.setDataFrame(edf)
         self.expired_view.setModel(self.expired_model)
@@ -303,9 +337,14 @@ class QuarantineDialog(QDialog):
         # 同步 Tab 标题角标
         idx = self.tabs.indexOf(self.tab_expired)
         self.tabs.setTabText(idx, "失效复核 (%d)" % len(edf) if edf.shape[0] else "失效复核")
-        # 重渲染后恢复排序态（扫描失效后保持用户排序）
+        # 重渲染后恢复排序态：用户点过列头则保持；否则默认按偏差数量降序（偏差大的优先复核）
         if hasattr(self, "_sort_ctrl_expired"):
-            self._sort_ctrl_expired.reapply()
+            if self._sort_ctrl_expired.active:
+                self._sort_ctrl_expired.reapply()
+            else:
+                df0 = self.expired_model.getDataFrame()
+                col = df0.columns.get_loc('偏差数量') if '偏差数量' in df0.columns else 1
+                self._sort_ctrl_expired.apply_default(col, Qt.DescendingOrder)
 
     def _remove_expired_selected(self):
         """把失效复核中选中的记录移出隔离区。"""
@@ -341,6 +380,46 @@ class QuarantineDialog(QDialog):
         # 刷新本弹窗：Tab1 + Tab2
         self._refresh_self()
         toast(f"↩ 已移出隔离区 {len(ids)} 条", parent=self)
+
+    def _mark_expired_read_selected(self):
+        """把失效复核中选中的记录设为已读（建立变更检测基线）并移出隔离区。"""
+        sel = self.expired_view.selectionModel()
+        if not sel or not sel.hasSelection():
+            toast("请先选中要处理的行", 'info', parent=self)
+            return
+        df = self.expired_model.getDataFrame()
+        rows = sorted(set(idx.row() for idx in sel.selectedIndexes()))
+        ids = set()
+        for r in rows:
+            if r < len(df):
+                uid = df.iloc[r].get('data_id')
+                if uid:
+                    ids.add(str(uid))
+        if not ids:
+            return
+        main_df = self.main_window.view_model.df if (
+            self.main_window and hasattr(self.main_window, 'view_model')) else None
+        for uid in ids:
+            fp = ''
+            qty = snapshot_qty_for(main_df, uid) if main_df is not None else None
+            note = snapshot_note_for(main_df, uid) if main_df is not None else ''
+            save_read_status(uid, 1, fp, snapshot_qty=qty, snapshot_note=note)
+            remove_quarantine(uid)
+        if main_df is not None and 'data_id' in main_df.columns:
+            mask = main_df['data_id'].astype(str).isin(ids)
+            if '_read' in main_df.columns:
+                main_df.loc[mask, '_read'] = 1
+            if '_quarantined' in main_df.columns:
+                main_df.loc[mask, '_quarantined'] = 0
+            self.main_window.view_model.df = main_df
+            if hasattr(self.main_window, 'source_model') and self.main_window.source_model:
+                self.main_window.source_model.setDataFrame(main_df)
+                if hasattr(self.main_window, '_apply_column_visibility_by_name'):
+                    self.main_window._apply_column_visibility_by_name()
+        if self.main_window and hasattr(self.main_window, 'stats_cards'):
+            self.main_window.stats_cards.refresh(self.main_window.view_model.df)
+        self._refresh_self()
+        toast(f"✓ 已设为已读并移出隔离区 {len(ids)} 条", parent=self)
 
     # ------------------------------------------------------------------ 原因筛选
     def _show_reason_filter_menu(self, col):

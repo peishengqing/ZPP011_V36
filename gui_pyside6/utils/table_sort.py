@@ -66,6 +66,21 @@ class HeaderSortController:
         model.sort(self._col, self._order)
         self.table_view.horizontalHeader().setSortIndicator(self._col, self._order)
 
+    def apply_default(self, col, order):
+        """列表首次渲染时设默认排序并立即生效（不依赖列头点击，规避 Qt6 点击失效）。
+
+        仅在用户尚未手动点击列头排序时调用；激活后由 reapply() 维持用户排序。
+        """
+        if col < 0:
+            return
+        model = self.get_model()
+        if model is None:
+            return
+        self._col = col
+        self._order = order
+        model.sort(col, order)
+        self.table_view.horizontalHeader().setSortIndicator(col, order)
+
     @property
     def active(self):
         return self._col >= 0
