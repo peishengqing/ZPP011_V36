@@ -51,10 +51,10 @@ def build_sample_df() -> pd.DataFrame:
 def get_expected_summary() -> dict:
     """返回 build_sample_df() 经分析器处理后对应的预期汇总值"""
     return {
-        'total_rows': 9,       # 分析器会过滤掉全空备注行
+        'total_rows': 10,      # 分析器保留全部输入行（不再过滤空备注行）
         'pos_dev_rows': 6,     # 正偏差行数
         'neg_dev_rows': 3,     # 负偏差行数
-        'zero_dev_rows': 0,    # 零偏差行数（分析器处理后无恰好为0的行）
+        'zero_dev_rows': 1,    # 零偏差行数（MAT-H 实际=定额，偏差率 0.0）
     }
 
 

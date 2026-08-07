@@ -29,28 +29,36 @@ class TestDataFrameModel:
         df = pd.DataFrame({"A": [1, 2], "B": ["a", "b"]})
         model = DataFrameModel(df)
         assert model.rowCount() == 2
-        assert model.columnCount() == 2
+        # setDataFrame 会在最前插入 _read / _read_source 两列（已读状态），故列数 = 数据列 + 2
+        assert model.columnCount() == 4
 
     def test_display_role(self, qapp):
         df = pd.DataFrame({"A": [1, 2]})
         model = DataFrameModel(df)
-        assert model.data(model.index(0, 0)) == "1"
-        assert model.data(model.index(1, 0)) == "2"
+        # 第0列是已读状态列（未读显示 🔘），第1列是已读来源；数据列 A 前移 2 位
+        assert model.data(model.index(0, 0)) == "🔘"
+        assert model.data(model.index(0, 2)) == "1"
+        assert model.data(model.index(1, 2)) == "2"
 
     def test_edit_enabled_only_remark(self, qapp):
         df = pd.DataFrame({"备注": ["x"], "其他": ["y"]})
         model = DataFrameModel(df)
-        idx = model.index(0, df.columns.get_loc("备注"))
-        assert model.flags(idx) & Qt.ItemIsEditable
-        idx2 = model.index(0, df.columns.get_loc("其他"))
+        # 模型为只读：备注列不再可编辑（人工改备注会污染已读变更检测基线）
+        # setDataFrame 插入 2 个元列（_read, _read_source），数据列位置整体后移 2
+        meta = 2
+        idx = model.index(0, meta + df.columns.get_loc("备注"))
+        assert not (model.flags(idx) & Qt.ItemIsEditable)
+        idx2 = model.index(0, meta + df.columns.get_loc("其他"))
         assert not (model.flags(idx2) & Qt.ItemIsEditable)
 
-    def test_set_data_updates_df(self, qapp):
+    def test_set_data_is_readonly(self, qapp):
         df = pd.DataFrame({"备注": [""]})
         model = DataFrameModel(df)
-        idx = model.index(0, 0)
-        assert model.setData(idx, "新备注", Qt.EditRole) is True
-        assert model.getDataFrame().iloc[0]["备注"] == "新备注"
+        # 第0列是只读的已读状态列，备注列在数据列首位（元列之后，即第 2 列）
+        idx = model.index(0, 2)
+        # 模型只读：setData 返回 False 且 DataFrame 不被修改
+        assert model.setData(idx, "新备注", Qt.EditRole) is False
+        assert model.getDataFrame().iloc[0]["备注"] == ""
 
 
 # ---------- TestRuleEngine ----------

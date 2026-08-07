@@ -22,7 +22,9 @@ def _make_alt_group_color(group_name: str) -> QColor:
 
 class DataFrameModel(QAbstractTableModel):
     """将 pandas DataFrame 适配为 QAbstractTableModel"""
-    dataChanged = Signal()
+    # 必须与基类 QAbstractItemModel.dataChanged 保持一致（2 参：topLeft, bottomRight），
+    # 否则 setData 里 emit(index, index) 会因参数个数不符抛异常被吞掉，导致编辑永远返回 False。
+    dataChanged = Signal(QModelIndex, QModelIndex)
 
     def __init__(self, data: pd.DataFrame = None):
         super().__init__()
@@ -57,7 +59,7 @@ class DataFrameModel(QAbstractTableModel):
         self._original_data = self._data.copy()
         self._build_cache()  # 新增：构建缓存
         self.endResetModel()
-        self.dataChanged.emit()
+        self.dataChanged.emit(QModelIndex(), QModelIndex())
 
     def _build_cache(self):
         """将 DataFrame 转换为 Python 原生类型的二维列表，大幅提升 data() 速度。
@@ -338,35 +340,12 @@ class DataFrameModel(QAbstractTableModel):
     def flags(self, index):
         if not index.isValid():
             return Qt.NoItemFlags
-        col = index.column()
-        
-        # 第一列（状态列）不可编辑
-        if col == 0:
-            return Qt.ItemIsSelectable | Qt.ItemIsEnabled
-        
-        col_name = self._data.columns[col]
-        # 只允许备注列可编辑
-        if col_name in ('备注', '备注原因'):
-            return Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable
+        # 模型为只读：所有列（含备注/备注原因）均不可手动编辑，
+        # 避免人工改动备注污染已读变更检测基线（备注变动仅来自 SAP 源数据）
         return Qt.ItemIsSelectable | Qt.ItemIsEnabled
 
     def setData(self, index, value, role=Qt.EditRole):
-        if role == Qt.EditRole:
-            row = index.row()
-            col = index.column()
-            col_name = self._display_columns[col]
-            # 只允许备注列
-            if col_name not in ('备注', '备注原因'):
-                return False
-            try:
-                # 更新 DataFrame
-                self._data.iloc[row, self._data.columns.get_loc(col_name)] = value
-                # 更新缓存
-                self._data_cache[row][col] = value
-                self.dataChanged.emit(index, index)
-                return True
-            except Exception:
-                return False
+        # 模型为只读：备注列不再允许手动编辑，避免污染已读变更检测基线
         return False
     def _get_deviation_rate(self, row):
         """从缓存中获取当前行的偏差率（百分比数值）"""

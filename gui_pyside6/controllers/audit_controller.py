@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 审核控制器
-负责：AI审核、批量改状态/备注、复制上一行备注、已读/未读标记等
+负责：AI审核、批量改状态、已读/未读标记等
 """
 
 import pandas as pd
@@ -12,7 +12,7 @@ from core.rule_engine import RuleEngine
 from core.ai_client import AIClient
 from gui_pyside6.models.workers import AIAuditWorker
 from gui_pyside6.dialogs.batch_operations_dialog import (
-    BatchChangeStatusDialog, BatchRemarkDialog, BatchExportDialog
+    BatchChangeStatusDialog, BatchExportDialog
 )
 from core.read_status import save_read_status
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
@@ -88,18 +88,6 @@ class AuditController(QObject):
         self.audit_data = updated_df
         self.audit_data_changed.emit(updated_df)
 
-    def batch_remark(self, rows: list, parent_widget):
-        """批量填写备注"""
-        if self.audit_data is None or self.audit_data.empty:
-            QMessageBox.warning(parent_widget, "提示", "无数据")
-            return
-        dialog = BatchRemarkDialog(parent_widget, rows, self.audit_data, self._on_batch_remark_callback)
-        dialog.exec()
-
-    def _on_batch_remark_callback(self, updated_df):
-        self.audit_data = updated_df
-        self.audit_data_changed.emit(updated_df)
-
     def batch_export(self, rows: list, df_subset: pd.DataFrame, parent_widget):
         """批量导出选中行"""
         dialog = BatchExportDialog(parent_widget, df_subset)
@@ -113,41 +101,6 @@ class AuditController(QObject):
             QApplication.clipboard().setText(str(code))
             if status_bar_callback:
                 status_bar_callback(f"已复制物料编码: {code}", 2000)
-
-    def copy_previous_remark(self, current_row, source_model, status_bar_callback):
-        """复制上一行的备注到当前行"""
-        if current_row <= 0:
-            status_bar_callback("第一行没有上一行可复制", 2000)
-            return False
-
-        df = source_model.getDataFrame()
-        # 获取上一行的备注
-        prev_remark = ''
-        for col in ['备注', '备注原因']:
-            if col in df.columns:
-                val = df.iloc[current_row - 1][col]
-                if pd.notna(val) and str(val).strip() != '':
-                    prev_remark = str(val)
-                    break
-
-        if not prev_remark:
-            status_bar_callback("上一行没有备注可复制", 2000)
-            return False
-
-        # 更新当前行的备注列
-        try:
-            for col in ['备注', '备注原因']:
-                if col in df.columns:
-                    df.at[df.index[current_row], col] = prev_remark
-            source_model.setDataFrame(df)
-            self.audit_data = df
-            self.audit_data_changed.emit(df)
-            status_bar_callback(f"已复制上一行备注：{prev_remark[:30]}", 3000)
-            return True
-        except Exception as e:
-            traceback.print_exc()
-            status_bar_callback(f"复制失败: {e}", 3000)
-            return False
 
     def batch_mark_read(self, rows, source_model, is_read, status_bar_callback):
         """批量标记已读/未读"""

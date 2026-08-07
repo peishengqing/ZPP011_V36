@@ -382,9 +382,6 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+B"), self).activated.connect(
             lambda: self._batch_mark_selected_read(1)
         )
-        QShortcut(QKeySequence("Ctrl+D"), self).activated.connect(
-            self._copy_previous_remark
-        )
         QShortcut(QKeySequence("F11"), self).activated.connect(
             self._toggle_table_fullscreen
         )
@@ -1709,15 +1706,6 @@ class MainWindow(QMainWindow):
             source_idx = self.proxy_model.mapToSource(idx)
             rows.add(source_idx.row())
         self.audit_controller.batch_mark_read(list(rows), self.source_model, is_read, self.statusBar().showMessage)
-
-    def _copy_previous_remark(self):
-        current = self.table_view.currentIndex()
-        if not current.isValid():
-            self.statusBar().showMessage("请先选中一行", 2000)
-            return
-        source_idx = self.proxy_model.mapToSource(current)
-        row = source_idx.row()
-        self.audit_controller.copy_previous_remark(row, self.source_model, self.statusBar().showMessage)
 
     # -----------------------------------------------------------
     # 文件与目录
@@ -3179,8 +3167,6 @@ class MainWindow(QMainWindow):
         menu.addSeparator()
         batch_status = menu.addAction("批量改状态")
         batch_status.triggered.connect(lambda: self.audit_controller.batch_change_status(selected_rows, self))
-        batch_remark = menu.addAction("批量填备注")
-        batch_remark.triggered.connect(lambda: self.audit_controller.batch_remark(selected_rows, self))
         batch_export = menu.addAction("批量导出")
         batch_export.triggered.connect(lambda: self._batch_export_wrapper(selected_rows))
         menu.addSeparator()

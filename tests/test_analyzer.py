@@ -70,15 +70,15 @@ class TestInferMaterialType:
         from analysis.analyzer import infer_material_type
         assert infer_material_type('20000123') == '包材'
 
-    def test_material_30_raw(self):
-        """30 开头 → 原料"""
+    def test_material_10_raw(self):
+        """10 开头 → 原料（v42.62 修正：真实数据原料为 10 开头，非 30）"""
         from analysis.analyzer import infer_material_type
-        assert infer_material_type('30004567') == '原料'
+        assert infer_material_type('10004567') == '原料'
 
     def test_material_other_prefix(self):
-        """其他数字开头 → 其他"""
+        """其他数字开头（如 90）→ 其他"""
         from analysis.analyzer import infer_material_type
-        assert infer_material_type('40008999') == '其他'
+        assert infer_material_type('90008999') == '其他'
 
     def test_material_empty_string(self):
         """空字符串 → 其他"""

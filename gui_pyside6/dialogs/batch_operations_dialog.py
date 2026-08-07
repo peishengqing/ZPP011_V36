@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-批量操作对话框：批量改状态、批量填备注、批量导出
+批量操作对话框：批量改状态、批量导出
 """
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QTextEdit,
-    QPushButton, QProgressBar, QFileDialog, QMessageBox, QCheckBox
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
+    QPushButton, QProgressBar, QFileDialog, QMessageBox
 )
 from PySide6.QtCore import QThread, Signal
-import pandas as pd
 
 
 class BatchChangeStatusDialog(QDialog):
@@ -65,68 +64,6 @@ class BatchChangeStatusDialog(QDialog):
         self.accept()
 
 
-class BatchRemarkDialog(QDialog):
-    def __init__(self, parent, row_indices, audit_data, on_finished):
-        super().__init__(parent)
-        self.setWindowTitle("批量填备注")
-        self.resize(400, 300)
-        self.row_indices = row_indices
-        self.audit_data = audit_data
-        self.on_finished = on_finished
-
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(f"将为 {len(row_indices)} 行填写备注"))
-        layout.addWidget(QLabel("备注内容:"))
-        self.remark_edit = QTextEdit()
-        self.remark_edit.setPlaceholderText("输入备注内容...")
-        layout.addWidget(self.remark_edit)
-        self.append_cb = QCheckBox("追加模式（在原有备注后添加）")
-        layout.addWidget(self.append_cb)
-
-        self.progress = QProgressBar()
-        self.progress.setVisible(False)
-        layout.addWidget(self.progress)
-
-        btn_layout = QHBoxLayout()
-        self.ok_btn = QPushButton("确定")
-        self.ok_btn.clicked.connect(self._apply)
-        self.cancel_btn = QPushButton("取消")
-        self.cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(self.ok_btn)
-        btn_layout.addWidget(self.cancel_btn)
-        layout.addLayout(btn_layout)
-
-    def _apply(self):
-        new_remark = self.remark_edit.toPlainText().strip()
-        if not new_remark:
-            QMessageBox.warning(self, "提示", "备注内容不能为空")
-            return
-        append = self.append_cb.isChecked()
-        self.progress.setVisible(True)
-        self.progress.setMaximum(len(self.row_indices))
-        self.ok_btn.setEnabled(False)
-        self.cancel_btn.setEnabled(False)
-
-        remark_col = None
-        for col in ['备注原因', '备注']:
-            if col in self.audit_data.columns:
-                remark_col = col
-                break
-        if remark_col is None:
-            QMessageBox.critical(self, "错误", "未找到备注列")
-            self.reject()
-            return
-
-        for i, idx in enumerate(self.row_indices):
-            old_remark = self.audit_data.at[idx, remark_col] if pd.notna(self.audit_data.at[idx, remark_col]) else ''
-            if append and old_remark:
-                new_val = f"{old_remark}；{new_remark}"
-            else:
-                new_val = new_remark
-            self.audit_data.at[idx, remark_col] = new_val
-            self.progress.setValue(i+1)
-        self.on_finished(self.audit_data)
-        self.accept()
 
 
 class BatchExportWorker(QThread):
