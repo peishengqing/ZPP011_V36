@@ -57,16 +57,29 @@ from analysis.debug_util import dprint as _dprint
 
 
 def infer_material_type(code):
-    """根据物料编码前缀推断物料类型"""
+    """根据物料编码前缀推断物料类型（与 SAP 物料大类一致）
+
+    前缀约定（来源：ZPP011 导出数据「组件物料类型描述」实测分布）：
+      10    → 原料（SAP 原辅料）
+      20    → 包材
+      40/41 → 半成品
+      60    → 广宣
+      其余  → 其他
+    注：早期误把「原料」写成 30 开头，但真实数据原料为 10 开头，
+    导致主表「物料类型」列永无「原料」值，看板原料筛选统计为 0（已修正）。
+    """
     if not isinstance(code, str):
         return '未知'
     code = code.strip()
+    if code.startswith('10'):
+        return '原料'
     if code.startswith('20'):
         return '包材'
-    elif code.startswith('30'):
-        return '原料'
-    else:
-        return '其他'
+    if code.startswith('40') or code.startswith('41'):
+        return '半成品'
+    if code.startswith('60'):
+        return '广宣'
+    return '其他'
 
 
 def do_analysis_v2(
