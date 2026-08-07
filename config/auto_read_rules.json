@@ -21,7 +21,7 @@
     {
       "name": "物料600开头",
       "enabled": true,
-      "ignore_exclude_unfed": false,
+      "ignore_exclude_unfed": true,
       "ignore_exclude_units": true,
       "conditions": [
         {
@@ -67,6 +67,13 @@
         },
         {
           "type": "dev_qty_range",
+          "params": {
+            "min": -10.0,
+            "max": 10.0
+          }
+        },
+        {
+          "type": "dev_rate_range",
           "params": {
             "min": -10.0,
             "max": 10.0

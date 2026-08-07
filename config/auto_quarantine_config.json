@@ -2,7 +2,7 @@
   "enabled": true,
   "rules": [
     {
-      "name": "包材箱类、纸罐、手包袋负损",
+      "name": "食品厂包材箱类、纸罐、手包袋负损",
       "enabled": true,
       "exclude_alt": true,
       "category_required": true,
@@ -11,6 +11,18 @@
         "箱",
         "手包袋",
         "彩罐"
+      ],
+      "negative_loss_required": true
+    },
+    {
+      "name": "饮料厂瓶胚、瓶盖少投",
+      "enabled": true,
+      "exclude_alt": true,
+      "category_required": true,
+      "category_value": "包材",
+      "name_keywords": [
+        "胚",
+        "盖"
       ],
       "negative_loss_required": true
     }

@@ -128,7 +128,7 @@ class AutoQuarantineRuleWidget(QWidget):
         r["enabled"] = self.chk_rule_enabled.isChecked()
         raw = self.edit_keywords.text()
         r["name_keywords"] = [
-            k.strip() for k in raw.replace("，", ",").split(",") if k.strip()
+            k.strip() for k in raw.replace("，", ",").replace("、", ",").split(",") if k.strip()
         ]
         r["category_required"] = self.chk_cat.isChecked()
         r["category_value"] = self.edit_cat.text().strip() or "包材"
@@ -221,7 +221,7 @@ class AutoQuarantineRuleWidget(QWidget):
             "category_value": self.edit_cat.text().strip() or "包材",
             "name_keywords": [
                 k.strip()
-                for k in self.edit_keywords.text().replace("，", ",").split(",")
+                for k in self.edit_keywords.text().replace("，", ",").replace("、", ",").split(",")
                 if k.strip()
             ],
             "negative_loss_required": self.chk_loss.isChecked(),

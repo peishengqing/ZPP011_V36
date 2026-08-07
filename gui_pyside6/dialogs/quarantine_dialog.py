@@ -8,6 +8,7 @@ import pandas as pd
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView, QTabWidget,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QWidget,
+    QLineEdit,
 )
 from PySide6.QtCore import Qt, QPoint, Signal
 from PySide6.QtGui import QPolygon, QColor, QBrush
@@ -174,10 +175,23 @@ class QuarantineDialog(QDialog):
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(6)
         hint = QLabel("监控隔离区旧数据的改动：例如某行当初因「负损（实际<定额）」入区，"
-                      "后来补投使实际≥定额（相符/盘盈）或实际归零，其入区原因即已失效。"
+                      "后来补投使实际≥定额（相符/多耗用）或实际归零，其入区原因即已失效。"
                       "点「扫描失效」实时比对主表，下方列出失效记录，可一键移出隔离区。")
         hint.setWordWrap(True)
         v.addWidget(hint)
+
+        # 关键字搜索行
+        sl = QHBoxLayout()
+        sl.addWidget(QLabel("🔍 搜索："))
+        self.edit_expired_search = QLineEdit()
+        self.edit_expired_search.setPlaceholderText("输入关键字过滤（物料编码/名称/车间/原因/说明…），留空显示全部")
+        self.edit_expired_search.textChanged.connect(self._apply_expired_search)
+        sl.addWidget(self.edit_expired_search)
+        clear_btn = QPushButton("✕ 清空")
+        clear_btn.setFixedWidth(60)
+        clear_btn.clicked.connect(lambda: self.edit_expired_search.clear())
+        sl.addWidget(clear_btn)
+        v.addLayout(sl)
 
         self.expired_view = QTableView()
         self.expired_view.setAlternatingRowColors(True)
@@ -263,6 +277,10 @@ class QuarantineDialog(QDialog):
 
     def _render_table(self, df):
         """重建表格模型并应用内部列隐藏（不重查 reason），并重注册隔离原因列筛选三角"""
+        # 插入序号列（从1开始，筛选后自动重编）
+        if df is not None and not df.empty:
+            df = df.copy()
+            df.insert(0, '序号', range(1, len(df) + 1))
         self.source_model = DataFrameModel()
         self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
@@ -312,23 +330,45 @@ class QuarantineDialog(QDialog):
         toast(f"扫描完成：{len(expired)} 条失效记录", parent=self)
 
     def _render_expired(self, expired_list):
-        """渲染失效复核表格。列：data_id / 隔离原因 / 失效说明 / 定额 / 实际 / 偏差数量。"""
+        """渲染失效复核表格。列：物料编码/物料名称/车间（从主表反查）+ 隔离原因/失效说明/定额/实际/偏差数量 + data_id（置末）。"""
+        # 从主表按 data_id 反查物料编码/物料名称/车间（防御式：列不存在则留空）
+        def _norm_id(v):
+            s = str(v).strip()
+            return s[:-2] if s.endswith('.0') else s
+        mat_lookup = {}
+        if self.main_window and hasattr(self.main_window, 'view_model') and self.main_window.view_model is not None:
+            main_df = self.main_window.view_model.df
+            if main_df is not None and 'data_id' in main_df.columns:
+                keys = ['物料编码', '物料名称', '车间']
+                avail = [c for c in keys if c in main_df.columns]
+                if avail:
+                    sub = main_df[['data_id'] + avail].copy()
+                    sub['data_id'] = sub['data_id'].apply(_norm_id)
+                    mat_lookup = sub.set_index('data_id').to_dict('index')
         rows = []
         for r in expired_list:
             actual = r.get('actual')
             quota = r.get('quota')
             dev = (actual - quota) if (actual is not None and quota is not None) else ''
+            uid = r.get('uid', '')
+            info = mat_lookup.get(_norm_id(uid), {})
             rows.append({
-                'data_id': r.get('uid', ''),
+                '物料编码': info.get('物料编码', ''),
+                '物料名称': info.get('物料名称', ''),
+                '车间': info.get('车间', ''),
                 '隔离原因': r.get('reason', ''),
                 '失效说明': r.get('detail', ''),
                 '定额': quota if quota is not None else '',
                 '实际': actual if actual is not None else '',
                 '偏差数量': dev,
+                'data_id': uid,
             })
-        edf = pd.DataFrame(rows, columns=['data_id', '隔离原因', '失效说明', '定额', '实际', '偏差数量'])
+        cols = ['物料编码', '物料名称', '车间', '隔离原因', '失效说明', '定额', '实际', '偏差数量', 'data_id']
+        edf = pd.DataFrame(rows, columns=cols)
         if edf.empty:
-            edf = pd.DataFrame(columns=['data_id', '隔离原因', '失效说明', '定额', '实际', '偏差数量'])
+            edf = pd.DataFrame(columns=cols)
+        # 保存完整副本（关键字搜索基于此过滤）
+        self._expired_full_df = edf
         self.expired_model = DataFrameModel()
         self.expired_model.setDataFrame(edf)
         self.expired_view.setModel(self.expired_model)
@@ -345,6 +385,33 @@ class QuarantineDialog(QDialog):
                 df0 = self.expired_model.getDataFrame()
                 col = df0.columns.get_loc('偏差数量') if '偏差数量' in df0.columns else 1
                 self._sort_ctrl_expired.apply_default(col, Qt.DescendingOrder)
+
+    def _apply_expired_search(self, text):
+        """根据关键字跨列模糊过滤失效复核表格。"""
+        if not hasattr(self, '_expired_full_df') or self._expired_full_df is None:
+            return
+        df = self._expired_full_df
+        kw = text.strip()
+        if not kw:
+            filtered = df
+        else:
+            kw_lower = kw.lower()
+            mask = pd.Series(False, index=df.index)
+            for c in df.columns:
+                if df[c].dtype == object:
+                    mask |= df[c].astype(str).str.lower().str.contains(kw_lower, na=False)
+            filtered = df.loc[mask]
+        self.expired_model = DataFrameModel()
+        self.expired_model.setDataFrame(filtered)
+        self.expired_view.setModel(self.expired_model)
+        self.expired_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        # 更新计数（显示"共 X 条 / 筛选命中 Y 条"）
+        total = len(df)
+        hit = len(filtered)
+        if kw.strip():
+            self.expired_count_label.setText(f"失效记录：{hit} 条（共 {total} 条）")
+        else:
+            self.expired_count_label.setText(f"失效记录：{total} 条")
 
     def _remove_expired_selected(self):
         """把失效复核中选中的记录移出隔离区。"""

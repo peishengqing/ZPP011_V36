@@ -214,7 +214,7 @@ def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
                     if actual == quota:
                         status, detail = "neg_loss_resolved", "补投后实际=定额，已相符"
                     else:
-                        status, detail = "neg_loss_over", "补投过量，实际>定额（盘盈）"
+                        status, detail = "neg_loss_over", "补投过量，实际>定额（多耗用）"
                 elif actual is not None and actual <= 0:
                     status, detail = "neg_loss_zeroed", "实际已归零（非耗用）"
                 else:

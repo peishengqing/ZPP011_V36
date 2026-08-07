@@ -166,10 +166,50 @@ class AltController(QObject):
         layout.addWidget(buttons)
 
         if dialog.exec() == QDialog.Accepted:
-            a = (a_factory.text(), a_code.text(), a_name.text())
-            b = (b_factory.text(), b_code.text(), b_name.text())
+            # 清空首尾空白（半角/全角/制表符等）：复制粘贴时易带入尾空格
+            a = (a_factory.text().strip(), a_code.text().strip(), a_name.text().strip())
+            b = (b_factory.text().strip(), b_code.text().strip(), b_name.text().strip())
             return self.add_pair(a, b, parent_widget)
         return False
+
+    # ------------------- 交互对话框（修改配对） -------------------
+    def show_edit_dialog(self, parent_widget, old_a, old_b):
+        """弹出修改配对的对话框，预填 old_a/old_b，成功返回 (a, b)，取消返回 None"""
+        dialog = QDialog(parent_widget)
+        dialog.setWindowTitle("修改替代料配对")
+        layout = QVBoxLayout(dialog)
+
+        a_group = QGroupBox("物料A")
+        a_form = QFormLayout(a_group)
+        a_factory = QLineEdit(old_a[0] if len(old_a) > 0 else '')
+        a_code = QLineEdit(old_a[1] if len(old_a) > 1 else '')
+        a_name = QLineEdit(old_a[2] if len(old_a) > 2 else '')
+        a_form.addRow("工厂:", a_factory)
+        a_form.addRow("编码:", a_code)
+        a_form.addRow("名称:", a_name)
+        layout.addWidget(a_group)
+
+        b_group = QGroupBox("物料B")
+        b_form = QFormLayout(b_group)
+        b_factory = QLineEdit(old_b[0] if len(old_b) > 0 else '')
+        b_code = QLineEdit(old_b[1] if len(old_b) > 1 else '')
+        b_name = QLineEdit(old_b[2] if len(old_b) > 2 else '')
+        b_form.addRow("工厂:", b_factory)
+        b_form.addRow("编码:", b_code)
+        b_form.addRow("名称:", b_name)
+        layout.addWidget(b_group)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() == QDialog.Accepted:
+            # 同样清空首尾空白
+            a = (a_factory.text().strip(), a_code.text().strip(), a_name.text().strip())
+            b = (b_factory.text().strip(), b_code.text().strip(), b_name.text().strip())
+            return a, b
+        return None
 
     # ------------------- 放大窗口 -------------------
     def show_zoom_window(self, parent_widget, refresh_alt_view_callback=None):
@@ -371,6 +411,11 @@ class AltController(QObject):
             if pair_idx is None or pair_idx < 0 or pair_idx >= len(self.alt_pairs):
                 return
             menu = QMenu()
+            edit_action = menu.addAction("修改此配对")
+            edit_action.triggered.connect(
+                lambda: self._edit_from_zoom(pair_idx, refresh_zoom_table, parent_widget)
+            )
+            menu.addSeparator()
             delete_action = menu.addAction("删除此配对")
             delete_action.triggered.connect(
                 lambda: self._delete_from_zoom(pair_idx, refresh_zoom_table, parent_widget)
@@ -400,3 +445,17 @@ class AltController(QObject):
             refresh_callback()
             self.data_changed.emit()
             QMessageBox.information(parent_widget, "删除成功", "已删除该替代料配对")
+
+    def _edit_from_zoom(self, pair_idx, refresh_callback, parent_widget):
+        """从放大窗口修改配对"""
+        if 0 <= pair_idx < len(self.alt_pairs):
+            old_a, old_b = self.alt_pairs[pair_idx]
+            result = self.show_edit_dialog(parent_widget, old_a, old_b)
+            if result is None:
+                return
+            new_a, new_b = result
+            self.alt_pairs[pair_idx] = (new_a, new_b)
+            save_alt_pairs(self.alt_pairs)
+            refresh_callback()
+            self.data_changed.emit()
+            QMessageBox.information(parent_widget, "修改成功", "已更新该替代料配对")

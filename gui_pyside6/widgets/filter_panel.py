@@ -278,7 +278,13 @@ class FilterPanel(QWidget):
         date_layout.addRow("结束日期:", self.end_date_edit)
         self.date_filter_btn = QPushButton("筛选")
         self.date_filter_btn.clicked.connect(self._emit_date_filter)
-        date_layout.addRow("", self.date_filter_btn)
+        self.date_cancel_btn = QPushButton("取消筛选")
+        self.date_cancel_btn.setToolTip("将筛选日期恢复为当前分析范围，并清除日期筛选")
+        self.date_cancel_btn.clicked.connect(self._cancel_date_filter)
+        btn_row = QHBoxLayout()
+        btn_row.addWidget(self.date_filter_btn)
+        btn_row.addWidget(self.date_cancel_btn)
+        date_layout.addRow("", btn_row)
         content_layout.addWidget(date_group)
 
         # 重置按钮
@@ -859,6 +865,26 @@ class FilterPanel(QWidget):
     def _emit_date_filter(self):
         """日期筛选：用户点击"筛选"按钮时触发"""
         self._date_filters = self._compute_date_filters()
+        self._emit_filter()
+
+    def _cancel_date_filter(self):
+        """取消日期筛选：将筛选日期恢复为输入文件日期范围，并清除日期筛选条件"""
+        try:
+            if self._data_min_date is not None:
+                self.start_date_edit.setDate(
+                    QDate(self._data_min_date.year, self._data_min_date.month, self._data_min_date.day))
+            else:
+                self.start_date_edit.setDate(self.analysis_start_date_edit.minimumDate())
+            if self._data_max_date is not None:
+                self.end_date_edit.setDate(
+                    QDate(self._data_max_date.year, self._data_max_date.month, self._data_max_date.day))
+            else:
+                self.end_date_edit.setDate(self.analysis_end_date_edit.minimumDate())
+        except Exception:
+            pass
+        # 清除日期筛选条件
+        self._date_filters = {}
+        # 重新发射筛选信号，让主表恢复全量
         self._emit_filter()
 
     def set_color_filter(self, mode: str):

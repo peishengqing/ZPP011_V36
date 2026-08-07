@@ -38,6 +38,12 @@ _TYPE_ORDER = [
     "dev_qty_lt",
     "dev_qty_gte",
     "dev_qty_lte",
+    "dev_rate_eq",
+    "dev_rate_range",
+    "dev_rate_gt",
+    "dev_rate_lt",
+    "dev_rate_gte",
+    "dev_rate_lte",
     "actual_qty_eq",
     "actual_qty_gt",
     "actual_qty_gte",
@@ -115,7 +121,7 @@ class _ConditionRow(QWidget):
             mx.setSuffix(")")
             mn.valueChanged.connect(self._on_param_changed)
             mx.valueChanged.connect(self._on_param_changed)
-            self.param_layout.addWidget(QLabel("偏差数量在"))
+            self.param_layout.addWidget(QLabel(spec.get("param_label", "偏差数量在")))
             self.param_layout.addWidget(mn)
             self.param_layout.addWidget(mx)
             self._param_widget = (mn, mx)
