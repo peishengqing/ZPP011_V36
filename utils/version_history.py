@@ -14,7 +14,7 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
-        "version": "v42.66",
+        "version": "v42.67",
         "date": "2026-08-08",
         "features": [],
         "fixes": [
