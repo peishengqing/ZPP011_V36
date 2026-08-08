@@ -10,11 +10,11 @@ from PySide6.QtWidgets import (
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QWidget,
     QLineEdit,
 )
-from PySide6.QtCore import Qt, QPoint, Signal
+from PySide6.QtCore import Qt, QPoint, Signal, QTimer
 from PySide6.QtGui import QPolygon, QColor, QBrush
 from gui_pyside6.models.data_frame_model import DataFrameModel
 from core.quarantine_manager import (
-    remove_quarantine, get_quarantine_records, scan_expired_quarantine,
+    remove_quarantine, remove_quarantine_batch, get_quarantine_records, scan_expired_quarantine,
 )
 from core.auto_quarantine import load_auto_quarantine_config
 from core.read_status import save_read_status, save_read_status_batch
@@ -103,6 +103,11 @@ class QuarantineDialog(QDialog):
         self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.main_window = main_window
         self._current_reason_filter = "全部"
+        # P2-10 修复：防抖定时器，避免搜索框每次按键都重建模型
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(300)
+        self._search_timer.timeout.connect(self._apply_expired_search)
         self.setup_ui()
         self.set_data(quarantine_df)
 
@@ -185,7 +190,7 @@ class QuarantineDialog(QDialog):
         sl.addWidget(QLabel("🔍 搜索："))
         self.edit_expired_search = QLineEdit()
         self.edit_expired_search.setPlaceholderText("输入关键字过滤（物料编码/名称/车间/原因/说明…），留空显示全部")
-        self.edit_expired_search.textChanged.connect(self._apply_expired_search)
+        self.edit_expired_search.textChanged.connect(self._on_search_text_changed)
         sl.addWidget(self.edit_expired_search)
         clear_btn = QPushButton("✕ 清空")
         clear_btn.setFixedWidth(60)
@@ -386,6 +391,11 @@ class QuarantineDialog(QDialog):
                 col = df0.columns.get_loc('偏差数量') if '偏差数量' in df0.columns else 1
                 self._sort_ctrl_expired.apply_default(col, Qt.DescendingOrder)
 
+    def _on_search_text_changed(self, text):
+        """P2-10 修复：防抖处理，避免每次按键都重建模型。"""
+        self._search_timer.stop()
+        self._search_timer.start()
+
     def _apply_expired_search(self, text):
         """根据关键字跨列模糊过滤失效复核表格。"""
         if not hasattr(self, '_expired_full_df') or self._expired_full_df is None:
@@ -404,6 +414,13 @@ class QuarantineDialog(QDialog):
         self.expired_model.setDataFrame(filtered)
         self.expired_view.setModel(self.expired_model)
         self.expired_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        # P2-9 修复：搜索后恢复用户排序状态
+        if hasattr(self, "_sort_ctrl_expired"):
+            if self._sort_ctrl_expired.active:
+                self._sort_ctrl_expired.reapply()
+            else:
+                col = df.columns.get_loc('偏差数量') if '偏差数量' in df.columns else 1
+                self._sort_ctrl_expired.apply_default(col, Qt.DescendingOrder)
         # 更新计数（显示"共 X 条 / 筛选命中 Y 条"）
         total = len(df)
         hit = len(filtered)
@@ -428,8 +445,7 @@ class QuarantineDialog(QDialog):
                     ids.add(str(uid))
         if not ids:
             return
-        for uid in ids:
-            remove_quarantine(uid)
+        remove_quarantine_batch(list(ids))
         # 回写主表
         if self.main_window and hasattr(self.main_window, 'view_model'):
             main_df = self.main_window.view_model.df
@@ -465,12 +481,15 @@ class QuarantineDialog(QDialog):
             return
         main_df = self.main_window.view_model.df if (
             self.main_window and hasattr(self.main_window, 'view_model')) else None
+        # P2-5 修复：批量标记已读 + 移出隔离区
+        records = []
         for uid in ids:
             fp = ''
             qty = snapshot_qty_for(main_df, uid) if main_df is not None else None
             note = snapshot_note_for(main_df, uid) if main_df is not None else ''
-            save_read_status(uid, 1, fp, snapshot_qty=qty, snapshot_note=note)
-            remove_quarantine(uid)
+            records.append((uid, 1, fp, qty, note))
+        save_read_status_batch(records)
+        remove_quarantine_batch(list(ids))
         if main_df is not None and 'data_id' in main_df.columns:
             mask = main_df['data_id'].astype(str).isin(ids)
             if '_read' in main_df.columns:
@@ -629,8 +648,7 @@ class QuarantineDialog(QDialog):
                 ids.add(str(uid))
         if not ids:
             return
-        for uid in ids:
-            remove_quarantine(uid)
+        remove_quarantine_batch(list(ids))
         count = len(ids)
         # 回写主表内存 + 重建模型 + 刷新卡片
         if self.main_window and hasattr(self.main_window, 'view_model'):
@@ -674,10 +692,19 @@ class QuarantineDialog(QDialog):
             note_map[uid] = snapshot_note_for(df, uid)
         if not ids:
             return
+        # P2-5 修复：批量标记已读 + 移出隔离区
+        records = []
         for uid in ids:
-            save_read_status(uid, 1, fp_map.get(uid, ''),
-                             snapshot_qty=qty_map.get(uid), snapshot_note=note_map.get(uid))
-            remove_quarantine(uid)
+            fp = ''
+            if 'fingerprint' in df.columns:
+                sel = df.loc[df['data_id'].astype(str) == uid, 'fingerprint']
+                if len(sel) > 0:
+                    fp = sel.iloc[0]
+            qty = snapshot_qty_for(main_df, uid) if main_df is not None else None
+            note = snapshot_note_for(main_df, uid) if main_df is not None else ''
+            records.append((uid, 1, str(fp), qty, note))
+        save_read_status_batch(records)
+        remove_quarantine_batch(list(ids))
         count = len(ids)
         # 回写主表内存：已读 + 移出隔离区
         if self.main_window and hasattr(self.main_window, 'view_model'):

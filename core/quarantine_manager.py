@@ -103,6 +103,20 @@ def remove_quarantine(uid: str):
     conn.close()
 
 
+def remove_quarantine_batch(uids: List[str]):
+    """批量移出隔离区：单事务 executemany，替代循环 connect/commit/close"""
+    if not uids:
+        return
+    conn = _get_conn()
+    now = datetime.now().isoformat()
+    conn.executemany(
+        "UPDATE quarantine_records SET restored_at = ? WHERE uid = ?",
+        [(now, str(uid)) for uid in uids]
+    )
+    conn.commit()
+    conn.close()
+
+
 def is_quarantined(uid: str) -> bool:
     conn = _get_conn()
     cur = conn.execute(

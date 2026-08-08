@@ -423,9 +423,14 @@ class AuditProxyModel(QSortFilterProxyModel):
         self._filters = {}       # 列索引 -> 筛选文本（顶部筛选行，保留兼容）
         self._custom_filters = {}  # 自定义筛选条件（侧边栏）
         self._alert_threshold = 10.0  # 预警阈值，默认10%
+        # P2-7 修复：保留排序状态
+        self._sort_column = -1
+        self._sort_order = Qt.AscendingOrder
 
     def sort(self, column, order=Qt.AscendingOrder):
-        """代理模型排序：交给父类用 lessThan() 处理"""
+        """代理模型排序：保留排序偏好，交给父类用 lessThan() 处理"""
+        self._sort_column = column
+        self._sort_order = order
         super().sort(column, order)
 
     # ------------------------------------------------------------------ #
