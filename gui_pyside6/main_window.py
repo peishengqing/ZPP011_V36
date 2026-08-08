@@ -43,7 +43,7 @@ from gui_pyside6.dialogs.unit_summary_dialog import UnitSummaryDialog
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
 from gui_pyside6.dialogs.quarantine_dialog import QuarantineDialog
-from core.quarantine_manager import add_quarantine, remove_quarantine, scan_expired_quarantine
+from core.quarantine_manager import add_quarantine, add_quarantine_batch, remove_quarantine, scan_expired_quarantine
 from core.auto_quarantine import (
     build_all_summary,
     compute_auto_quarantine_ids,
