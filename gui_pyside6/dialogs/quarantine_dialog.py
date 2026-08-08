@@ -398,8 +398,7 @@ class QuarantineDialog(QDialog):
             kw_lower = kw.lower()
             mask = pd.Series(False, index=df.index)
             for c in df.columns:
-                if df[c].dtype == object:
-                    mask |= df[c].astype(str).str.lower().str.contains(kw_lower, na=False)
+                mask |= df[c].astype(str).str.lower().str.contains(kw_lower, na=False)
             filtered = df.loc[mask]
         self.expired_model = DataFrameModel()
         self.expired_model.setDataFrame(filtered)
