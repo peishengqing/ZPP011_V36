@@ -170,6 +170,13 @@ def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
     quota_col = _col(df, "数量-定额", "定额", "定额数量", "数量 - 定额", "quota")
 
     records = get_quarantine_records()
+    if not records:
+        return []
+    # O(1) 索引：主表 data_id → row，消除原 O(n*m) 全表扫描
+    try:
+        df_index = df.set_index(df["data_id"].astype(str))
+    except Exception:
+        df_index = None  # 降级回逐行查找
     result = []
     for rec in records:
         uid = str(rec["uid"])
@@ -178,12 +185,9 @@ def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
         # 优先用 basis，缺省降级用 reason
         basis_key = basis if basis else reason
 
-        row = df[df["data_id"].astype(str) == uid]
-        if row.empty:
+        row = df_index.loc[uid] if df_index is not None else None
+        if row is None:
             continue  # 主表已无此行，不翻标
-        row = row.iloc[0]
-
-        # 取实际/定额（数值化，缺失为 None）
         actual = quota = None
         if actual_col:
             actual = pd.to_numeric(row.get(actual_col), errors="coerce")

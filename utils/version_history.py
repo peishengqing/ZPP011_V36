@@ -19,6 +19,7 @@ VERSION_HISTORY = [
         "features": [],
         "fixes": [
             "代码质量审查修复（P1-1/P1-2/P1-4/P2-4）：\n- P1-1 静默异常处理：auto_read_rules.py / auto_quarantine.py / main_window.py 中 except Exception: pass 改为 logging.warning 输出失败原因，便于问题追溯\n- P1-2 原子配置写操作：save_auto_read_rules_config() 和 save_auto_quarantine_config() 改为写临时文件后 os.replace()，防止写入中途崩溃导致配置损坏\n- P1-4 批量 SQLite 写入：手动批量移入隔离区改走 add_quarantine_batch()，单事务 executemany，避免逐行 connect/commit/close 在大量记录时卡 UI",
+            "代码质量审查续修（P2-3/P2-6）：\n- P2-3 性能优化：scan_expired_quarantine 改用 df.set_index() 建立 O(1) 索引，消除原 O(n*m) 全表扫描\n- P2-6 异常处理：save_read_status / save_read_status_batch / mark_read_batch 补充 try/except + logging.warning，与 save_snapshot 风格一致",
         ],
         "optimizations": [],
         "notes": [

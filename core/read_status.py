@@ -10,6 +10,7 @@
 - WAL + NORMAL synchronous + 64MB cache
 """
 import sqlite3
+import logging
 import os
 import threading
 import time as _time
@@ -221,15 +222,18 @@ def load_read_status(data_ids: List[str]) -> Dict[str, Tuple]:
 
 def save_read_status(data_id: str, is_read: int, fingerprint: str, snapshot_qty=None, snapshot_note=None, read_source='manual'):
     """保存已读状态。read_source: 'manual' 手动（默认） / 'auto' 自动规则"""
-    conn = _get_conn()
-    conn.execute("""
-        INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, snapshot_qty, snapshot_note, read_time, user, read_source)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (str(data_id), int(is_read), str(fingerprint),
-          None if snapshot_qty is None else float(snapshot_qty),
-          '' if snapshot_note is None else str(snapshot_note),
-          datetime.now().isoformat(), 'default', str(read_source)))
-    conn.commit()
+    try:
+        conn = _get_conn()
+        conn.execute("""
+            INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, snapshot_qty, snapshot_note, read_time, user, read_source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (str(data_id), int(is_read), str(fingerprint),
+              None if snapshot_qty is None else float(snapshot_qty),
+              '' if snapshot_note is None else str(snapshot_note),
+              datetime.now().isoformat(), 'default', str(read_source)))
+        conn.commit()
+    except Exception as e:
+        logging.warning("[read_status] save_read_status 失败 (data_id=%s): %s", data_id, e)
 
 
 def save_read_status_batch(records):
@@ -241,24 +245,27 @@ def save_read_status_batch(records):
     """
     if not records:
         return
-    conn = _get_conn()
-    now = datetime.now().isoformat()
-    norm = []
-    for rec in records:
-        did = rec[0]
-        is_read = rec[1]
-        fp = rec[2] if len(rec) > 2 else ''
-        snap = rec[3] if len(rec) > 3 else None
-        note = rec[4] if len(rec) > 4 else None
-        src = rec[5] if len(rec) > 5 else 'manual'
-        norm.append((str(did), int(is_read), str(fp),
-                     None if snap is None else float(snap),
-                     '' if note is None else str(note), now, 'default', str(src)))
-    conn.executemany("""
-        INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, snapshot_qty, snapshot_note, read_time, user, read_source)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, norm)
-    conn.commit()
+    try:
+        conn = _get_conn()
+        now = datetime.now().isoformat()
+        norm = []
+        for rec in records:
+            did = rec[0]
+            is_read = rec[1]
+            fp = rec[2] if len(rec) > 2 else ''
+            snap = rec[3] if len(rec) > 3 else None
+            note = rec[4] if len(rec) > 4 else None
+            src = rec[5] if len(rec) > 5 else 'manual'
+            norm.append((str(did), int(is_read), str(fp),
+                         None if snap is None else float(snap),
+                         '' if note is None else str(note), now, 'default', str(src)))
+        conn.executemany("""
+            INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, snapshot_qty, snapshot_note, read_time, user, read_source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, norm)
+        conn.commit()
+    except Exception as e:
+        logging.warning("[read_status] save_read_status_batch 失败 (%d 条): %s", len(records), e)
 
 
 def mark_read_batch(data_ids, snapshot_map, read_source='auto'):
@@ -269,30 +276,33 @@ def mark_read_batch(data_ids, snapshot_map, read_source='auto'):
     """
     if not data_ids:
         return
-    conn = _get_conn()
-    now = datetime.now().isoformat()
-    src = str(read_source)
-    # 向量化归一化：避免 Python 逐行 execute 在主线程阻塞（零偏差行可能上千）
-    insert_rows = [(str(did), now, src) for did in data_ids]
-    norm = []
-    for did in data_ids:
-        snap_qty, snap_note = snapshot_map.get(did, (None, None))
-        norm.append((
-            None if snap_qty is None else float(snap_qty),
-            '' if snap_note is None else str(snap_note),
-            now, str(did),
-        ))
-    # 新行插入 source；已存在行（如数据变动翻回未读又标已读）用 ON CONFLICT 更新 source
-    conn.executemany("""
-        INSERT INTO read_status (data_id, is_read, read_time, user, read_source)
-        VALUES (?, 0, ?, 'default', ?)
-        ON CONFLICT(data_id) DO UPDATE SET read_source = excluded.read_source
-    """, insert_rows)
-    conn.executemany("""
-        UPDATE read_status SET is_read = 1, snapshot_qty = ?, snapshot_note = ?, read_time = ?
-        WHERE data_id = ?
-    """, norm)
-    conn.commit()
+    try:
+        conn = _get_conn()
+        now = datetime.now().isoformat()
+        src = str(read_source)
+        # 向量化归一化：避免 Python 逐行 execute 在主线程阻塞（零偏差行可能上千）
+        insert_rows = [(str(did), now, src) for did in data_ids]
+        norm = []
+        for did in data_ids:
+            snap_qty, snap_note = snapshot_map.get(did, (None, None))
+            norm.append((
+                None if snap_qty is None else float(snap_qty),
+                '' if snap_note is None else str(snap_note),
+                now, str(did),
+            ))
+        # 新行插入 source；已存在行（如数据变动翻回未读又标已读）用 ON CONFLICT 更新 source
+        conn.executemany("""
+            INSERT INTO read_status (data_id, is_read, read_time, user, read_source)
+            VALUES (?, 0, ?, 'default', ?)
+            ON CONFLICT(data_id) DO UPDATE SET read_source = excluded.read_source
+        """, insert_rows)
+        conn.executemany("""
+            UPDATE read_status SET is_read = 1, snapshot_qty = ?, snapshot_note = ?, read_time = ?
+            WHERE data_id = ?
+        """, norm)
+        conn.commit()
+    except Exception as e:
+        logging.warning("[read_status] mark_read_batch 失败 (%d 条): %s", len(data_ids), e)
 
 
 def save_snapshot(data_id: str, snapshot_qty, snapshot_note=None):
