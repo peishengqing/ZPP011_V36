@@ -37,6 +37,7 @@
 """
 
 import json
+import logging
 import os
 import sys
 
@@ -269,9 +270,6 @@ DEFAULT_RULES = [
 DEFAULT_CONFIG = {"enabled": True, "rules": [dict(r) for r in DEFAULT_RULES],
                   "exclude_unfed": False, "exclude_units": False, "excluded_units": ""}
 
-# 单条规则的全部合法字段
-_RULE_FIELDS = ("name", "enabled", "type", "params")
-
 
 def _first_col(df: pd.DataFrame, candidates):
     """返回 df 中第一个存在的候选列名，都不存在则返回 None。"""
@@ -388,8 +386,8 @@ def load_auto_read_rules_config():
                     # 旧单条格式：包成 rules[0]
                     old = _normalize_rule(user)
                     cfg["rules"] = [old]
-    except Exception:
-        pass
+    except Exception as e:
+        logging.warning("自动已读规则配置加载失败: %s", e)
     return cfg
 
 
@@ -405,8 +403,10 @@ def save_auto_read_rules_config(cfg):
     if not merged["rules"]:
         merged["rules"] = [dict(r) for r in DEFAULT_RULES]
     os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+    tmp_path = CONFIG_PATH + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(merged, f, ensure_ascii=False, indent=2)
+    os.replace(tmp_path, CONFIG_PATH)
     return merged
 
 

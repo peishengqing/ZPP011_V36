@@ -6,6 +6,7 @@ ZPP011 主窗口 (PySide6 迁移版)
 """
 
 import sys
+import logging
 import os
 import time
 from datetime import datetime
@@ -3237,8 +3238,7 @@ class MainWindow(QMainWindow):
             if not ok:
                 return
             basis = "手动:" + (reason.strip() if reason.strip() else "手动隔离")
-            for uid in ids:
-                add_quarantine(uid, reason, basis)
+            add_quarantine_batch([(uid, reason, basis) for uid in ids])
         else:
             for uid in ids:
                 remove_quarantine(uid)
@@ -3509,8 +3509,10 @@ class MainWindow(QMainWindow):
             val = _val(*keys)
             display = str(val)
             if "偏差率" in label and val:
-                try: display = f"{float(val):.2f}%"
-                except Exception: pass
+                try:
+                    display = f"{float(val):.2f}%"
+                except Exception as e:
+                    logging.warning("偏差率格式转换失败: %s", e)
             fl2.addRow(f"{label}：", _mk_label(display))
         layout.addWidget(gb2)
         gb3 = QGroupBox("备注与建议")

@@ -36,6 +36,7 @@
 """
 
 import json
+import logging
 import os
 import sys
 
@@ -125,8 +126,8 @@ def load_auto_quarantine_config():
                     if old["name"] == "未命名规则":
                         old["name"] = "包材箱类负损"
                     cfg["rules"] = [old]
-    except Exception:
-        pass
+    except Exception as e:
+        logging.warning("自动隔离规则配置加载失败: %s", e)
     return cfg
 
 
@@ -139,8 +140,10 @@ def save_auto_quarantine_config(cfg):
     if not merged["rules"]:
         merged["rules"] = [dict(DEFAULT_RULE)]
     os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+    tmp_path = CONFIG_PATH + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(merged, f, ensure_ascii=False, indent=2)
+    os.replace(tmp_path, CONFIG_PATH)
     return merged
 
 

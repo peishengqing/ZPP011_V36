@@ -14,6 +14,18 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.66",
+        "date": "2026-08-08",
+        "features": [],
+        "fixes": [
+            "代码质量审查修复（P1-1/P1-2/P1-4/P2-4）：\n- P1-1 静默异常处理：auto_read_rules.py / auto_quarantine.py / main_window.py 中 except Exception: pass 改为 logging.warning 输出失败原因，便于问题追溯\n- P1-2 原子配置写操作：save_auto_read_rules_config() 和 save_auto_quarantine_config() 改为写临时文件后 os.replace()，防止写入中途崩溃导致配置损坏\n- P1-4 批量 SQLite 写入：手动批量移入隔离区改走 add_quarantine_batch()，单事务 executemany，避免逐行 connect/commit/close 在大量记录时卡 UI",
+        ],
+        "optimizations": [],
+        "notes": [
+            "core/auto_read_rules.py 删除未使用的 _RULE_FIELDS 常量（死代码清理）",
+        ],
+    },
+    {
         "version": "v42.65",
         "date": "2026-08-08",
         "features": [],
