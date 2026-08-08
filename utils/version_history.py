@@ -14,6 +14,16 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.70",
+        "date": "2026-08-08",
+        "features": [],
+        "fixes": [
+            "代码质量审查收尾（P1-3/P1-5）：\n- P1-3 硬编码路径：移除 r'E:\\zpp011_v2' 默认值，exe 模式下 ZPP011_PROJECT_ROOT 未设置时改为 raise RuntimeError 显式报错，避免静默使用错误路径\n- P1-5 CI 语法：.github/workflows/ci.yml 改用 shell: bash，消除 CMD 与 PowerShell 混用导致 CI pyflakes 检查失效",
+        ],
+        "optimizations": [],
+        "notes": [],
+    },
+    {
         "version": "v42.68",
         "date": "2026-08-08",
         "features": [],
