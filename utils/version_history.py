@@ -14,6 +14,16 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.71",
+        "date": "2026-08-08",
+        "features": [],
+        "fixes": [
+            "修复 exe 启动崩溃：_resolve_config_path 增加 sys._MEIPASS 路径探测（PyInstaller onefile 解压目录），兼容 config/ 打包进 exe 的情况，不再强制依赖 ZPP011_PROJECT_ROOT 环境变量\n- 打包改为默认打开控制台（--console），方便启动时查看报错和日志",
+        ],
+        "optimizations": [],
+        "notes": [],
+    },
+    {
         "version": "v42.70",
         "date": "2026-08-08",
         "features": [],
