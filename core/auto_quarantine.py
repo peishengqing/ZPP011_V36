@@ -55,13 +55,27 @@ def _resolve_config_path(filename):
     导致重启后配置丢失。可用环境变量 ZPP011_PROJECT_ROOT 覆盖项目根。
     """
     if getattr(sys, "frozen", False):
+        # PyInstaller onefile 解压到临时目录 _MEIxxxx，config/ 在其中的相对路径
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass is not None:
+            return os.path.join(meipass, "config", filename)
+        # 回退：exe 所在目录的 config/（便携模式 / 未解压）
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        fallback = os.path.join(exe_dir, "config", filename)
+        if os.path.exists(fallback):
+            return fallback
+        # 最后：环境变量覆盖
         project_root = os.environ.get("ZPP011_PROJECT_ROOT")
-        if project_root is None:
-            raise RuntimeError(
-                "exe 模式下 ZPP011_PROJECT_ROOT 未设置，无法定位 config/ 目录。"
-                "请在启动前设置该环境变量。"
-            )
-        return os.path.join(project_root, "config", filename)
+        if project_root is not None:
+            return os.path.join(project_root, "config", filename)
+        # 实在找不到才报错
+        raise RuntimeError(
+            f"exe 模式下无法定位 config/ 目录，已尝试：\n"
+            f"  1. sys._MEIPASS\\config\\{filename}\n"
+            f"  2. exe 同目录\\config\\{filename}\n"
+            f"  3. 环境变量 ZPP011_PROJECT_ROOT\n"
+            "请确认 config/ 目录与 exe 同处，或设置 ZPP011_PROJECT_ROOT。"
+        )
     return os.path.join(_HERE, "..", "config", filename)
 
 

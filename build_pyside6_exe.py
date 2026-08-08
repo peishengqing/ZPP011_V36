@@ -48,7 +48,7 @@ if __name__ == "__main__":
         sys.exit(1)
     print(f"✅ 版本号 {version} 验证通过，版本日志已更新，继续打包")
 
-    window_mode = "--windowed" if not debug_mode else "--console"
+    window_mode = "--console" if not debug_mode else "--console"
 
     # ── 自动备份源码 ──
     import zipfile

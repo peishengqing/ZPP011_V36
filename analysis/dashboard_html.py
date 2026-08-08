@@ -309,7 +309,8 @@ def _cards_html(metrics):
         ("备注覆盖率", f"{metrics['coverage']:.1f}%", "#bf8700"),
     ]
     return "".join(
-        f'<div class="card"><div class="card-val" style="color:{c}">{v}</div>'
+        f'<div class="card" style="border-left:4px solid {c}">'
+        f'<div class="card-val" style="color:{c}">{v}</div>'
         f'<div class="card-key">{k}</div></div>'
         for k, v, c in cards
     )
@@ -323,7 +324,11 @@ def _charts_html(dev_df):
         for fn_name, title, desc in items:
             b64 = _safe(CHART_FUNCS[fn_name], dev_df, title)
             if b64:
-                imgs = f'<img src="data:image/png;base64,{b64}" alt="{title}"/>'
+                imgs = (
+                    f'<img src="data:image/png;base64,{b64}" alt="{title}" '
+                    f'onclick="zoomChart(this.src,\'{title}\')" '
+                    f'style="cursor:zoom-in"/>'
+                )
             else:
                 imgs = f'<div class="placeholder">「{title}」本期无数据</div>'
             figs.append(
@@ -337,11 +342,21 @@ def _charts_html(dev_df):
 
 def _summary_html(m, meta):
     return (
-        f"分析窗口 <b>{meta['start']} ~ {meta['end']}</b>，共 <b>{m['n']:,}</b> 条偏差明细，"
-        f"正偏差金额 <b style='color:{C_POS}'>{m['pos']:,.0f}</b>、"
-        f"负偏差金额 <b style='color:{C_NEG}'>{m['neg']:,.0f}</b>，"
-        f"净偏差 {m['net']:,.0f}；平均偏差率 {m['avg_rate']:.2f}%，备注覆盖率 {m['coverage']:.1f}%。"
-        f"数据来源：{meta['src']}。"
+        f'<div class="summary-card">'
+        f'<div class="summary-header">'
+        f'<span class="summary-icon">&#128202;</span>'
+        f'<b>分析小结</b>'
+        f'</div>'
+        f'<div class="summary-body">'
+        f'<span>分析窗口 <b>{meta["start"]} ~ {meta["end"]}</b></span>'
+        f'<span>偏差明细 <b>{m["n"]:,}</b> 条</span>'
+        f'<span>正偏差 <b style="color:{C_POS}">{m["pos"]:,.0f}</b></span>'
+        f'<span>负偏差 <b style="color:{C_NEG}">{m["neg"]:,.0f}</b></span>'
+        f'<span>平均偏差率 <b>{m["avg_rate"]:.2f}%</b></span>'
+        f'<span>备注覆盖率 <b>{m["coverage"]:.1f}%</b></span>'
+        f'</div>'
+        f'<div class="summary-src">数据来源：{meta["src"]}</div>'
+        f'</div>'
     )
 
 
@@ -366,41 +381,88 @@ def build_html(blocks, meta):
             f'<h2 class="fac-title">{fac}</h2>'
             f'<div class="cards">{card_html}</div>'
             f'{ "".join(sections) }'
-            f'<div class="summary">{summary}</div>'
+            f'{summary}'
             f'</div>'
         )
 
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ZPP011 偏差分析看板</title>
 <style>
  body{{font-family:'Microsoft YaHei','PingFang SC',sans-serif;margin:0;background:#f6f8fa;color:#1f2328}}
  .wrap{{max-width:1080px;margin:0 auto;padding:24px}}
  h1{{font-size:22px;margin:0 0 4px}}
  .sub{{color:#656d76;font-size:13px;margin-bottom:6px}}
- .toolbar{{position:sticky;top:0;z-index:10;background:#f6f8fa;padding:10px 0;margin:8px 0 18px;border-bottom:1px solid #d0d7de;display:flex;align-items:center;gap:8px;flex-wrap:wrap}}
+ /* ===== 工具栏 ===== */
+ .toolbar{{position:sticky;top:0;z-index:10;background:rgba(246,248,250,0.95);backdrop-filter:blur(6px);padding:10px 0;margin:8px 0 18px;border-bottom:1px solid #d0d7de;display:flex;align-items:center;gap:8px;flex-wrap:wrap}}
  .tlabel{{font-size:13px;color:#656d76}}
- .fbtn{{font-family:inherit;font-size:13px;padding:6px 16px;border:1px solid #d0d7de;background:#fff;border-radius:20px;cursor:pointer;color:#1f2328}}
- .fbtn:hover{{border-color:{C_ACCENT}}}
+ .fbtn{{font-family:inherit;font-size:13px;padding:6px 16px;border:1px solid #d0d7de;background:#fff;border-radius:20px;cursor:pointer;color:#1f2328;transition:all 0.15s}}
+ .fbtn:hover{{border-color:{C_ACCENT};box-shadow:0 1px 4px rgba(9,105,218,0.15)}}
  .fbtn.active{{background:{C_ACCENT};color:#fff;border-color:{C_ACCENT}}}
+ /* ===== 指标卡 ===== */
  .cards{{display:flex;gap:12px;margin-bottom:22px;flex-wrap:wrap}}
- .card{{flex:1;min-width:160px;background:#fff;border:1px solid #d0d7de;border-radius:10px;padding:14px 16px}}
+ .card{{flex:1;min-width:160px;background:#fff;border:1px solid #d0d7de;border-radius:12px;padding:16px 18px;box-shadow:0 1px 3px rgba(0,0,0,0.05);transition:box-shadow 0.2s,transform 0.2s}}
+ .card:hover{{box-shadow:0 4px 12px rgba(0,0,0,0.1);transform:translateY(-2px)}}
  .card-val{{font-size:24px;font-weight:700}}
  .card-key{{color:#656d76;font-size:13px;margin-top:4px}}
+ /* ===== 工厂标题 ===== */
+ .factory-block{{animation:fadeIn 0.3s ease}}
+ @keyframes fadeIn{{from{{opacity:0;transform:translateY(8px)}}to{{opacity:1;transform:translateY(0)}}}}
  .fac-title{{font-size:18px;margin:26px 0 12px;border-left:4px solid {C_POS};padding-left:10px}}
+ /* ===== 图表区 ===== */
  .group{{margin-bottom:24px}}
  .grp{{font-size:15px;border-left:4px solid {C_ACCENT};padding-left:8px;margin:0 0 12px}}
  .grid{{display:grid;grid-template-columns:1fr 1fr;gap:14px}}
- .cell{{background:#fff;border:1px solid #d0d7de;border-radius:10px;padding:10px;overflow:hidden}}
+ .cell{{background:#fff;border:1px solid #d0d7de;border-radius:12px;padding:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04);transition:box-shadow 0.2s}}
+ .cell:hover{{box-shadow:0 2px 8px rgba(0,0,0,0.08)}}
  .cap{{margin-bottom:6px}}.cap b{{font-size:13px}}.cap span{{display:block;color:#656d76;font-size:11px;margin-top:2px}}
- .cell img{{width:100%;display:block}}
+ .cell img{{width:100%;display:block;border-radius:8px}}
  .placeholder{{height:120px;display:flex;align-items:center;justify-content:center;color:#8b949e;background:#f6f8fa;border-radius:8px;font-size:13px}}
- .summary{{background:#fff;border:1px solid #d0d7de;border-radius:10px;padding:14px 18px;font-size:14px;line-height:1.7;margin-top:6px}}
+ /* ===== 小结卡 ===== */
+ .summary-card{{background:linear-gradient(135deg,#f0f7ff 0%,#fff 100%);border:1px solid #b6d4fe;border-radius:12px;padding:16px 20px;margin-top:8px}}
+ .summary-header{{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:15px}}
+ .summary-icon{{font-size:20px}}
+ .summary-body{{display:flex;flex-wrap:wrap;gap:16px;font-size:14px;color:#374151}}
+ .summary-src{{color:#8b949e;font-size:12px;margin-top:10px;padding-top:8px;border-top:1px solid #e3e8ed}}
+ /* ===== 图表放大遮罩 ===== */
+ .chart-overlay{{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:9999;justify-content:center;align-items:center;cursor:zoom-out}}
+ .chart-overlay.show{{display:flex}}
+ .chart-overlay .overlay-inner{{text-align:center;max-width:92%;max-height:92%}}
+ .chart-overlay .overlay-cap{{color:#fff;font-size:16px;margin-bottom:8px}}
+ .chart-overlay img{{max-width:92vw;max-height:88vh;border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,0.3)}}
+ /* ===== 响应式 ===== */
+ @media(max-width:768px){{
+   .grid{{grid-template-columns:1fr !important}}
+   .cards{{flex-direction:column}}
+   .wrap{{padding:12px}}
+   .toolbar{{flex-direction:column;align-items:flex-start}}
+   .fbtn{{font-size:12px;padding:4px 12px}}
+   h1{{font-size:18px}}
+   .summary-body{{flex-direction:column;gap:8px}}
+ }}
+ /* ===== 打印 ===== */
+ @media print{{
+   .toolbar{{display:none !important}}
+   .factory-block{{animation:none !important}}
+   .chart-overlay{{display:none !important}}
+   .card{{break-inside:avoid;box-shadow:none}}
+   .cell{{break-inside:avoid;box-shadow:none}}
+   .grid{{grid-template-columns:1fr 1fr}}
+   body{{background:#fff}}
+ }}
 </style></head><body><div class="wrap">
 <h1>ZPP011 偏差分析看板</h1>
 <div class="sub">分析窗口 {meta['start']} ~ {meta['end']} ｜ 数据来源 {meta['src']} ｜ 生成时间 {meta['gen']}</div>
 {toolbar}
 {fac_html}
+<!-- 图表放大遮罩 -->
+<div class="chart-overlay" id="chartOverlay" onclick="this.classList.remove('show')">
+  <div class="overlay-inner">
+    <div class="overlay-cap" id="overlayCap"></div>
+    <img id="overlayImg" src=""/>
+  </div>
+</div>
 <script>
 function showFactory(name){{
   document.querySelectorAll('.factory-block').forEach(function(b){{
@@ -409,6 +471,12 @@ function showFactory(name){{
   document.querySelectorAll('.fbtn').forEach(function(b){{
     b.classList.toggle('active', b.getAttribute('data-name')===name);
   }});
+}}
+function zoomChart(src,title){{
+  var o=document.getElementById('chartOverlay');
+  document.getElementById('overlayImg').src=src;
+  document.getElementById('overlayCap').textContent=title;
+  o.classList.add('show');
 }}
 </script>
 </div></body></html>"""
