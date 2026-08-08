@@ -14,6 +14,19 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.64",
+        "date": "2026-08-08",
+        "features": [],
+        "fixes": [
+            "修复偏差率预警看板「原料」合计仍为 0 的二次回归：根因是 _mat_mask 过滤条件 vals == '原料' 与主表实际值 '原材料' 不匹配，改为 isin(('原材料', '原料')) 同时兼容两种命名。",
+            "移除备注编辑功能：删除主表备注列双击编辑、右键菜单「编辑备注」等入口，备注改为只读展示（原功能已废弃且引发多处 NameError）。",
+            "对齐根目录过期测试：清理 c77cd84 遗留的测试脚本引用。",
+            "清理死代码 16 个文件：分析调试脚本（repro_*/analysis_time_check/_verify_analysis_time/marker_test）、旧版打包脚本（build_pyside6/build_ppt_excluded/run_build）、过期测试入口（test_main_window/test_script/run_tests）、已迁移模块（logger.py）、测试生成器（生成报告.py）。tests/ 目录保留，CI 仍跑 68 个 unit 测试。",
+        ],
+        "optimizations": [],
+        "notes": [],
+    },
+    {
         "version": "v42.63",
         "date": "2026-08-07",
         "features": [
