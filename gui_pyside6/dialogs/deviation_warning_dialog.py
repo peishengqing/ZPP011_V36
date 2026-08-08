@@ -188,7 +188,7 @@ class DeviationWarningDialog(QDialog):
         if mode == "all" or not self._mat_col or self._mat_col not in df.columns:
             return pd.Series(True, index=df.index)
         vals = df[self._mat_col].astype(str).str.strip()
-        return vals == ("原料" if mode == "raw" else "包材")
+        return vals.isin(("原材料" if mode == "raw" else "包材", "原料"))
 
     def _apply_filter(self):
         """从 original_df 重新过滤并刷新模型（已读状态 × 料别 两组条件叠加）"""
