@@ -29,21 +29,18 @@ jobs:
         python -m pytest tests/unit/ -v --tb=short --no-cov
 
     - name: Run static checks (pyflakes)
+      shell: bash
       run: |
         pip install pyflakes
         # 只报致命错误（F821/F822），unused import 等警告降级（不阻塞）
         pyflakes core/ gui_pyside6/ analysis/ utils/ modules/ > pyflakes.txt 2>&1
-        type pyflakes.txt
-        if exist pyflakes.txt (
-          findstr /C:"F821" pyflakes.txt >nul 2>&1
-          if not errorlevel 1 (
-            echo ❌ 发现 F821 错误，CI 失败
-            exit 1
-          )
-          findstr /C:"F822" pyflakes.txt >nul 2>&1
-          if not errorlevel 1 (
-            echo ❌ 发现 F822 错误，CI 失败
-            exit 1
-          )
-        )
-        echo ✅ pyflakes 无致命错误（warnings 已忽略）
+        cat pyflakes.txt
+        if grep -q "F821" pyflakes.txt; then
+          echo "❌ 发现 F821 错误，CI 失败"
+          exit 1
+        fi
+        if grep -q "F822" pyflakes.txt; then
+          echo "❌ 发现 F822 错误，CI 失败"
+          exit 1
+        fi
+        echo "✅ pyflakes 无致命错误（warnings 已忽略）"

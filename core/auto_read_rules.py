@@ -56,7 +56,12 @@ def _resolve_config_path(filename):
     导致重启后规则丢失。可用环境变量 ZPP011_PROJECT_ROOT 覆盖项目根。
     """
     if getattr(sys, "frozen", False):
-        project_root = os.environ.get("ZPP011_PROJECT_ROOT", r"E:\zpp011_v2")
+        project_root = os.environ.get("ZPP011_PROJECT_ROOT")
+        if project_root is None:
+            raise RuntimeError(
+                "exe 模式下 ZPP011_PROJECT_ROOT 未设置，无法定位 config/ 目录。"
+                "请在启动前设置该环境变量。"
+            )
         return os.path.join(project_root, "config", filename)
     return os.path.join(_HERE, "..", "config", filename)
 
