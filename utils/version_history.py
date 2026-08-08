@@ -14,6 +14,16 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.65",
+        "date": "2026-08-08",
+        "features": [],
+        "fixes": [
+            "失效复核搜索框漏配数字列：原代码仅对 object 列（文本）做 str.contains 模糊匹配，偏差数量/数量-实际 等数值列被跳过，搜索数字关键字无命中。改为所有列统一 astype(str) 再匹配，输入「0.5」「100」等数字关键字即可命中。",
+        ],
+        "optimizations": [],
+        "notes": [],
+    },
+    {
         "version": "v42.64",
         "date": "2026-08-08",
         "features": [],
