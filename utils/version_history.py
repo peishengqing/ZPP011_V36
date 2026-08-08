@@ -14,6 +14,16 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.68",
+        "date": "2026-08-08",
+        "features": [],
+        "fixes": [
+            "修复 NameError: add_quarantine_batch 未定义——v42.66 将手动批量隔离改为 add_quarantine_batch() 时漏加顶层 import，仅 _auto_move_to_quarantine 内有局部 import，_set_quarantine 路径触发 NameError。已在模块顶部补回导入。",
+        ],
+        "optimizations": [],
+        "notes": [],
+    },
+    {
         "version": "v42.67",
         "date": "2026-08-08",
         "features": [],
