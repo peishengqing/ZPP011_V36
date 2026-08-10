@@ -14,6 +14,16 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.72",
+        "date": "2026-08-10",
+        "features": [],
+        "fixes": [
+            "修复 exe 启动崩溃：ssl/hmac 模块加载时 Windows DLL 未找到（0xc0000139）——build 脚本增加 --collect-all=cryptography 收集 OpenSSL DLL\n- scan_expired_quarantine 的 df_index.loc[uid] 加 KeyError 防护，防止主表 data_id 格式与隔离区 uid 不一致时崩退",
+        ],
+        "optimizations": [],
+        "notes": [],
+    },
+    {
         "version": "v42.71",
         "date": "2026-08-08",
         "features": [],
