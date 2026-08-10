@@ -11,6 +11,7 @@ import pandas as pd
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QFrame,
+    QComboBox,
 )
 from PySide6.QtCore import Qt, QPoint, QTimer
 from gui_pyside6.models.data_frame_model import DataFrameModel
@@ -34,6 +35,8 @@ class DeviationWarningDialog(QDialog):
         self.filter_mode = "all"
         self.mat_filter = "all"   # 料别筛选：all / raw(原料) / pkg(包材)，与已读状态筛选独立叠加
         self._mat_col = None      # 料别列名（物料类型 / 物料大类），set_data 时探测
+        self._workshop_filter = "all"  # 车间筛选：all / 车间名
+        self._workshop_col = None   # 车间列名，set_data 时探测
         self.setup_ui()
         self.set_data(warnings_df)
 
@@ -92,6 +95,25 @@ class DeviationWarningDialog(QDialog):
         self.btn_mat_pkg.setMinimumWidth(70)
         self.btn_mat_pkg.clicked.connect(lambda: self._set_mat_filter("pkg"))
         filter_layout.addWidget(self.btn_mat_pkg)
+
+        # ---- 第三组：车间筛选（与已读状态、料别独立，可叠加）----
+        self.workshop_sep = QFrame()
+        self.workshop_sep.setFrameShape(QFrame.VLine)
+        self.workshop_sep.setFrameShadow(QFrame.Sunken)
+        filter_layout.addSpacing(8)
+        filter_layout.addWidget(self.workshop_sep)
+        filter_layout.addSpacing(8)
+
+        self.lbl_workshop = QLabel("车间:")
+        filter_layout.addWidget(self.lbl_workshop)
+
+        self.combo_workshop = QComboBox()
+        self.combo_workshop.setMinimumWidth(100)
+        self.combo_workshop.setMaximumWidth(160)
+        self.combo_workshop.setEditable(False)
+        self.combo_workshop.addItem("全部")
+        self.combo_workshop.currentTextChanged.connect(self._on_workshop_changed)
+        filter_layout.addWidget(self.combo_workshop)
 
         filter_layout.addStretch()
 
@@ -167,6 +189,11 @@ class DeviationWarningDialog(QDialog):
         self.btn_mat_pkg.setChecked(mode == "pkg")
         self._apply_filter()
 
+    def _on_workshop_changed(self, text):
+        """车间下拉框变化时触发筛选"""
+        self._workshop_filter = "all" if text == "全部" else text
+        self._apply_filter()
+
     def _read_mask(self, df, mode):
         """已读状态掩码：all=全True / unread=_read==0 / read=_read==1"""
         if "_read" in df.columns:
@@ -190,8 +217,18 @@ class DeviationWarningDialog(QDialog):
         vals = df[self._mat_col].astype(str).str.strip()
         return vals.isin(("原材料" if mode == "raw" else "包材", "原料"))
 
+    def _workshop_mask(self, df, mode):
+        """车间掩码：all=全True / 车间名=车间列==该值
+
+        列缺失时一律返回全 True，等同于不做车间过滤（下拉框此时已隐藏）。
+        """
+        if mode == "all" or not self._workshop_col or self._workshop_col not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df[self._workshop_col].astype(str).str.strip()
+        return vals == mode
+
     def _apply_filter(self):
-        """从 original_df 重新过滤并刷新模型（已读状态 × 料别 两组条件叠加）"""
+        """从 original_df 重新过滤并刷新模型（已读状态 × 料别 × 车间 三组条件叠加）"""
         if not hasattr(self, "original_df") or self.original_df is None:
             return
         df = self.original_df.copy()
@@ -206,7 +243,8 @@ class DeviationWarningDialog(QDialog):
             df["_read"] = 0
 
         filtered = df[self._read_mask(df, self.filter_mode)
-                      & self._mat_mask(df, self.mat_filter)].copy()
+                      & self._mat_mask(df, self.mat_filter)
+                      & self._workshop_mask(df, self._workshop_filter)].copy()
 
         filtered = filtered.reset_index(drop=True)
         if hasattr(self, "source_model"):
@@ -238,6 +276,10 @@ class DeviationWarningDialog(QDialog):
                 f"原料 ({int((cur_read & self._mat_mask(df, 'raw')).sum())})")
             self.btn_mat_pkg.setText(
                 f"包材 ({int((cur_read & self._mat_mask(df, 'pkg')).sum())})")
+            # 车间下拉框：不更新，但显示当前选中车间的记录数（用于验证）
+            if self._workshop_filter != "all" and self._workshop_col and self._workshop_col in df.columns:
+                workshop_count = (df[self._workshop_col].astype(str).str.strip() == self._workshop_filter).sum()
+                self.combo_workshop.setToolTip(f"当前车间: {self._workshop_filter}，共 {int(workshop_count)} 条")
         except Exception:
             pass
 
@@ -259,6 +301,14 @@ class DeviationWarningDialog(QDialog):
             df = df[["状态"] + [c for c in df.columns if c != "状态"]]
         self.original_df = df.copy()
 
+        # 备注列移到 data_id 前面（如果存在）
+        if "备注" in df.columns and "data_id" in df.columns:
+            cols = list(df.columns)
+            cols.remove("备注")
+            idx = cols.index("data_id")
+            cols.insert(idx, "备注")
+            df = df[cols]
+
         self.source_model = DataFrameModel()
         self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
@@ -276,6 +326,10 @@ class DeviationWarningDialog(QDialog):
         if 'data_id' in df.columns:
             col_idx = df.columns.get_loc('data_id')
             self.table_view.setColumnHidden(col_idx, True)
+        # 备注列也隐藏（用户只需在悬浮提示或导出时看到）
+        if '备注' in df.columns:
+            col_idx = df.columns.get_loc('备注')
+            self.table_view.setColumnHidden(col_idx, True)
 
         # 探测料别列（物料类型：20开头→包材、30开头→原料）；列缺失则隐藏整组料别按钮
         self._mat_col = next(
@@ -289,6 +343,21 @@ class DeviationWarningDialog(QDialog):
         self.btn_mat_all.setChecked(True)
         self.btn_mat_raw.setChecked(False)
         self.btn_mat_pkg.setChecked(False)
+
+        # 探测车间列，填充下拉框
+        self._workshop_col = None
+        if "车间" in df.columns:
+            self._workshop_col = "车间"
+            unique_workshops = df["车间"].dropna().astype(str).str.strip().unique()
+            unique_workshops = [w for w in unique_workshops if w]
+            self.combo_workshop.addItems(sorted(unique_workshops))
+        has_workshop = self._workshop_col is not None
+        self.workshop_sep.setVisible(has_workshop)
+        self.lbl_workshop.setVisible(has_workshop)
+        self.combo_workshop.setVisible(has_workshop)
+        # 车间默认「全部」
+        self._workshop_filter = "all"
+        self.combo_workshop.setCurrentText("全部")
 
         # 默认打开时显示未读
         self._set_filter("unread")
