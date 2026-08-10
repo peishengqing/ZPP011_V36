@@ -326,10 +326,6 @@ class DeviationWarningDialog(QDialog):
         if 'data_id' in df.columns:
             col_idx = df.columns.get_loc('data_id')
             self.table_view.setColumnHidden(col_idx, True)
-        # 备注列也隐藏（用户只需在悬浮提示或导出时看到）
-        if '备注' in df.columns:
-            col_idx = df.columns.get_loc('备注')
-            self.table_view.setColumnHidden(col_idx, True)
 
         # 探测料别列（物料类型：20开头→包材、30开头→原料）；列缺失则隐藏整组料别按钮
         self._mat_col = next(
