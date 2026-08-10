@@ -156,6 +156,8 @@ if __name__ == "__main__":
         "--hidden-import=numpy.core._methods",
         "--hidden-import=numpy.lib.format",
         "--hidden-import=pandas._libs.tslibs.np_datetime",
+        # SSL/crypto DLLs（PyInstaller onefile 不会自动收集 cryptography 的 OpenSSL DLL）
+        "--collect-all=cryptography",
     ])
     print("=" * 60)
     print("开始打包 PySide6 EXE")
