@@ -199,7 +199,10 @@ def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
         # 优先用 basis，缺省降级用 reason
         basis_key = basis if basis else reason
 
-        row = df_index.loc[uid] if df_index is not None else None
+        try:
+            row = df_index.loc[uid] if df_index is not None else None
+        except KeyError:
+            row = None
         if row is None:
             continue  # 主表已无此行，不翻标
         actual = quota = None
