@@ -8,6 +8,10 @@
 
 数据来源：main_window 传来的 view_model.df（已按分析日期窗口过滤、含 工厂 列的混合 df），
 本对话框只做「取数拆分 + 渲染」，不碰任何分析逻辑。
+
+性能：build_html（为每个工厂画 12 张 matplotlib 图）是同步重活，
+原先在 GUI 主线程跑会阻塞界面、导致「未响应」。现改为在后台 QThread 中
+用 Agg 后端绘制（仅出图、不需要 Qt 集成），画完通过信号把 HTML 交回主线程显示。
 """
 import os
 import sys
@@ -25,19 +29,21 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QTextBrowser,
 )
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QUrl, QThread, Signal
 
 # 让项目 analysis 模块可 import
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from analysis.dashboard_html import build_html, compute_metrics  # noqa: E402
+from analysis.dashboard_html import compute_metrics  # noqa: E402
 
-# 说明：本模块故意不在文件顶部 import matplotlib(qtagg) 与 PySide6.QtWebEngine*，
+# 说明：本模块故意不在文件顶部 import PySide6.QtWebEngine*，
 # 因为 main_window.py 在模块级（顶部）就 `from .dialogs.dashboard_dialog import DashboardDialog`，
 # 会导致软件一启动就强制初始化 Chromium 内核（WebEngine）而长时间 hang。
-# 这两个重型依赖改为在 DashboardDialog.__init__ 内部延迟 import + try/except 降级。
+# WebEngine 改为在 DashboardDialog.__init__ 内部延迟 import + try/except 降级。
+# matplotlib 后端不在主线程设置：绘制改到后台线程用 Agg（见 _DashboardBuildWorker），
+# 主线程只负责把生成的 HTML 交给 WebEngine 显示，不再直接画图。
 
 
 
@@ -67,21 +73,46 @@ def _window_from_df(audit_df):
     return dates.min().strftime("%Y-%m-%d"), dates.max().strftime("%Y-%m-%d")
 
 
+class _DashboardBuildWorker(QThread):
+    """后台线程：拆分数据 + 生成看板 HTML（Agg 后端，避免占用 GUI 线程）。"""
+
+    html_ready = Signal(str)
+    build_failed = Signal(str)
+
+    def __init__(self, audit_df, parent=None):
+        super().__init__(parent)
+        self.audit_df = audit_df
+
+    def run(self):
+        try:
+            import importlib
+            import matplotlib
+            # 后台线程用纯 Agg 后端出图（fig.savefig 写内存缓冲），
+            # 不依赖 Qt，避免在非 GUI 线程创建 QPixmap/QImage 导致崩溃。
+            matplotlib.use("Agg", force=True)
+            import analysis.dashboard_html as dh
+            importlib.reload(dh)  # 让模块内的 plt 重新绑定到 Agg
+            blocks = _split_by_factory(self.audit_df)
+            if not blocks:
+                self.build_failed.emit("当前没有可展示的偏差数据。")
+                return
+            start, end = _window_from_df(self.audit_df)
+            meta = {
+                "start": start,
+                "end": end,
+                "src": "管理看板（实时数据）",
+                "gen": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
+            }
+            html = dh.build_html(blocks, meta)
+            self.html_ready.emit(html)
+        except Exception as e:  # noqa: BLE001
+            self.build_failed.emit(f"生成看板失败：{e}")
+
+
 class DashboardDialog(QDialog):
     """管理看板：偏差视角 12 图（分厂切换）。"""
 
     def __init__(self, audit_df, material_df=None, parent=None, main_window=None):
-        # —— 延迟重型依赖（避免 main_window 模块级 import 本文件时 hang）——
-        # matplotlib 后端：仅当尚未设过 qtagg/qt5agg 时才切，避免重复 use 警告
-        try:
-            import matplotlib
-            if matplotlib.get_backend().lower() not in ("qtagg", "qt5agg", "qt4agg"):
-                try:
-                    matplotlib.use("qtagg")
-                except Exception:
-                    pass
-        except Exception:
-            pass
         # WebEngine：首次 import 会初始化 Chromium 内核（较重），失败时降级 QTextBrowser
         self._web_engine_ok = False
         self._web_engine_err = ""
@@ -102,8 +133,10 @@ class DashboardDialog(QDialog):
         self.material_df = material_df
         self._tmp_html = None
         self._last_html = None
+        self._worker = None
+        self._alive = True
         self._init_ui()
-        self._render()
+        self._start_build()
 
     def _init_ui(self):
         self.setWindowTitle("管理看板 · 偏差视角 12 图")
@@ -118,6 +151,7 @@ class DashboardDialog(QDialog):
         top.addStretch()
         self.export_btn = QPushButton("导出 HTML")
         self.export_btn.clicked.connect(self._export_html)
+        self.export_btn.setEnabled(False)  # 看板生成完成后才允许导出
         top.addWidget(self.export_btn)
         self.close_btn = QPushButton("关闭")
         self.close_btn.clicked.connect(self.accept)
@@ -140,21 +174,24 @@ class DashboardDialog(QDialog):
                     f"<small>{self._web_engine_err}</small></p>"
                 )
         layout.addWidget(self.web, 1)
+        # 先显示加载占位，避免空白窗
+        self.web.setHtml(
+            "<div style='padding:40px;text-align:center;color:#656d76;"
+            "font-size:15px'>正在生成看板，请稍候…</div>"
+        )
 
-    def _render(self):
-        blocks = _split_by_factory(self.audit_df)
-        if not blocks:
-            QMessageBox.information(self, "提示", "当前没有可展示的偏差数据。")
+    def _start_build(self):
+        """启动后台线程生成看板 HTML，避免阻塞 GUI 主线程。"""
+        self._worker = _DashboardBuildWorker(self.audit_df)
+        self._worker.html_ready.connect(self._on_html_ready)
+        self._worker.build_failed.connect(self._on_build_failed)
+        self._worker.start()
+
+    def _on_html_ready(self, html):
+        if not self._alive:
             return
-        start, end = _window_from_df(self.audit_df)
-        meta = {
-            "start": start,
-            "end": end,
-            "src": "管理看板（实时数据）",
-            "gen": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
-        }
-        html = build_html(blocks, meta)
         self._last_html = html
+        self.export_btn.setEnabled(True)
         # WebEngine 模式：写临时文件用本地 file:// 加载（data: URI 过长易出问题）
         if self._web_engine_ok:
             tmp = tempfile.NamedTemporaryFile(
@@ -169,10 +206,14 @@ class DashboardDialog(QDialog):
             self._tmp_html = None
             self.web.setHtml(html)
 
+    def _on_build_failed(self, msg):
+        if not self._alive:
+            return
+        QMessageBox.information(self, "提示", msg)
+
     def _export_html(self):
         if not getattr(self, "_last_html", None):
-            self._render()
-        if not getattr(self, "_last_html", None):
+            QMessageBox.information(self, "提示", "看板还在生成中，请稍候再导出。")
             return
         path, _ = QFileDialog.getSaveFileName(
             self, "导出看板 HTML", "ZPP011偏差看板.html", "HTML (*.html)"
@@ -192,6 +233,10 @@ class DashboardDialog(QDialog):
                 QMessageBox.critical(self, "导出失败", friendly_error(path, e))
 
     def closeEvent(self, event):
+        self._alive = False
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.quit()       # 非事件循环线程下为 no-op，但保留以策万全
+            self._worker.wait(3000)   # 等待后台绘制结束，避免 use-after-free
         if self._tmp_html and os.path.exists(self._tmp_html):
             try:
                 os.remove(self._tmp_html)
