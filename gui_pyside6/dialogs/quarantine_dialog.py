@@ -14,10 +14,10 @@ from PySide6.QtCore import Qt, QPoint, Signal, QTimer
 from PySide6.QtGui import QPolygon, QColor, QBrush
 from gui_pyside6.models.data_frame_model import DataFrameModel
 from core.quarantine_manager import (
-    remove_quarantine, remove_quarantine_batch, get_quarantine_records, scan_expired_quarantine,
+    remove_quarantine_batch, get_quarantine_records, scan_expired_quarantine,
 )
 from core.auto_quarantine import load_auto_quarantine_config
-from core.read_status import save_read_status, save_read_status_batch
+from core.read_status import save_read_status_batch
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.table_sort import enable_click_sort
@@ -103,11 +103,17 @@ class QuarantineDialog(QDialog):
         self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.main_window = main_window
         self._current_reason_filter = "全部"
+        self._current_keyword = ""
         # P2-10 修复：防抖定时器，避免搜索框每次按键都重建模型
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(300)
         self._search_timer.timeout.connect(self._apply_expired_search)
+        # Tab1 列表关键字搜索防抖定时器
+        self._list_search_timer = QTimer(self)
+        self._list_search_timer.setSingleShot(True)
+        self._list_search_timer.setInterval(300)
+        self._list_search_timer.timeout.connect(self._apply_list_filters)
         self.setup_ui()
         self.set_data(quarantine_df)
 
@@ -143,6 +149,20 @@ class QuarantineDialog(QDialog):
         v = QVBoxLayout(tab)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(6)
+
+        # 关键字搜索行（与失效复核一致：跨列模糊过滤隔离区列表）
+        sl = QHBoxLayout()
+        sl.addWidget(QLabel("🔍 搜索："))
+        self.edit_list_search = QLineEdit()
+        self.edit_list_search.setPlaceholderText("输入关键字过滤（物料编码/名称/车间/流程订单/状态/隔离原因…），留空显示全部")
+        self.edit_list_search.textChanged.connect(self._on_list_search_text_changed)
+        sl.addWidget(self.edit_list_search)
+        clear_btn = QPushButton("✕ 清空")
+        clear_btn.setFixedWidth(60)
+        clear_btn.clicked.connect(lambda: self.edit_list_search.clear())
+        sl.addWidget(clear_btn)
+        v.addLayout(sl)
+
         self.table_view = QTableView()
         self.table_view.setAlternatingRowColors(True)
         self.table_view.setSelectionBehavior(QAbstractItemView.SelectItems)
@@ -539,15 +559,34 @@ class QuarantineDialog(QDialog):
             self._apply_reason_filter(actions[chosen])
 
     def _apply_reason_filter(self, value):
-        """按隔离原因筛选表格（全部 = 不过滤），并记住当前选择以便刷新后恢复"""
+        """记住当前隔离原因筛选选择，并统一走 _apply_list_filters（与关键字搜索叠加）"""
+        self._current_reason_filter = value
+        self._apply_list_filters()
+
+    def _on_list_search_text_changed(self, text):
+        """Tab1 列表关键字搜索防抖：避免每次按键都重建模型"""
+        self._current_keyword = text
+        self._list_search_timer.stop()
+        self._list_search_timer.start()
+
+    def _apply_list_filters(self):
+        """按「隔离原因 + 关键字」叠加过滤隔离区列表（全部/空 = 不过滤），
+        并记住各自选择以便刷新后恢复；渲染前重建序号列与排序态。"""
         if not hasattr(self, 'full_df') or self.full_df is None:
             return
-        self._current_reason_filter = value
-        if value == "全部" or not value:
-            display = self.full_df
-        else:
-            display = self.full_df[self.full_df['隔离原因'] == value]
-        self._render_table(display.copy())
+        df = self.full_df
+        # 隔离原因筛选
+        reason = getattr(self, '_current_reason_filter', '全部')
+        if reason and reason != "全部":
+            df = df[df['隔离原因'] == reason]
+        # 关键字跨列模糊搜索
+        kw = getattr(self, '_current_keyword', '').strip().lower()
+        if kw:
+            mask = pd.Series(False, index=df.index)
+            for c in df.columns:
+                mask |= df[c].astype(str).str.lower().str.contains(kw, na=False)
+            df = df.loc[mask]
+        self._render_table(df.copy())
 
     def show_context_menu(self, pos: QPoint):
         index = self.table_view.indexAt(pos)
@@ -675,6 +714,9 @@ class QuarantineDialog(QDialog):
         df = self.source_model.getDataFrame()
         if df is None:
             return
+        # 提前取主表引用：下方构造 records 时 snapshot_qty_for/note_for 依赖它
+        main_df = self.main_window.view_model.df if (
+            self.main_window and hasattr(self.main_window, 'view_model')) else None
         ids = set()
         fp_map = {}
         qty_map = {}
@@ -707,9 +749,7 @@ class QuarantineDialog(QDialog):
         remove_quarantine_batch(list(ids))
         count = len(ids)
         # 回写主表内存：已读 + 移出隔离区
-        if self.main_window and hasattr(self.main_window, 'view_model'):
-            main_df = self.main_window.view_model.df
-            if main_df is not None and 'data_id' in main_df.columns:
+        if main_df is not None and 'data_id' in main_df.columns:
                 mask = main_df['data_id'].isin(ids)
                 if '_read' in main_df.columns:
                     main_df.loc[mask, '_read'] = 1
@@ -738,11 +778,9 @@ class QuarantineDialog(QDialog):
             df = self.main_window.view_model.df
             if df is not None and '_quarantined' in df.columns:
                 qdf = df[df['_quarantined'] == 1].copy().reset_index(drop=True)
-                # 数据变化后重新应用用户当前的隔离原因筛选
-                prev = self._current_reason_filter
+                # 数据变化后重新应用用户当前的隔离原因 + 关键字筛选（保持选择）
                 self.set_data(qdf)
-                if prev and prev != "全部":
-                    self._apply_reason_filter(prev)  # 重新应用筛选，保持选择
+                self._apply_list_filters()
         # 同步刷新失效复核页
         self._render_expired(self._load_expired_from_main())
 

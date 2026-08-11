@@ -234,7 +234,9 @@ class MainWindow(QMainWindow):
         self._countdown_timer = None
         self._analysis_start_ts = 0.0
         # 按"列名"记录需要隐藏的列（避免 setDataFrame 重排列后索引错位导致列丢失）
-        self._hidden_column_names = {'_post_audit_changed'}  # 内部变更标记列默认隐藏
+        self._hidden_column_names = {
+            '_post_audit_changed', 'data_id', 'fingerprint', '_quarantined',
+        }  # 内部技术列默认隐藏（用户无需看到）
 
         # 控制器
         self.analysis_controller = AnalysisController(self)
@@ -2177,7 +2179,9 @@ class MainWindow(QMainWindow):
 
     def _apply_column_visibility_by_name(self):
         """按列名设置列的显隐状态（不受列重排 / 模型重置影响）"""
-        self._hidden_column_names.add('_post_audit_changed')  # 内部变更标记列始终隐藏
+        self._hidden_column_names.update({
+            '_post_audit_changed', 'data_id', 'fingerprint', '_quarantined',
+        })  # 内部技术列始终隐藏（即使用户在列显隐对话框里勾选显示）
         model = self.table_view.model()
         if not model:
             return
@@ -3336,6 +3340,15 @@ class MainWindow(QMainWindow):
 
     def _notify_expired_quarantine(self, new_uids, expired_all):
         """弹窗告知失效记录（仅列出本次新增的）。"""
+        df = self.view_model.df
+        # 用 data_id → 行的索引，避免每条都全表扫描
+        _idx = {}
+        if df is not None and "data_id" in df.columns:
+            try:
+                _idx = dict(zip(df["data_id"].astype(str), range(len(df))))
+            except Exception:
+                pass
+
         detail_lines = []
         for r in expired_all:
             if r['uid'] not in new_uids:
@@ -3345,7 +3358,18 @@ class MainWindow(QMainWindow):
             aq = ""
             if actual is not None and quota is not None:
                 aq = f"（实际={actual:g}，定额={quota:g}）"
-            detail_lines.append(f"• {r['uid']}：{r['detail']}{aq}")
+            # 用物料编码+物料名称替代裸 data_id（uid 格式：日期|流程订单|物料编码）
+            label = r['uid']
+            row_idx = _idx.get(r['uid'])
+            if row_idx is not None:
+                row = df.iloc[row_idx]
+                mat_code = str(row.get("物料编码", "") or "").strip()
+                mat_name = str(row.get("物料名称", "") or row.get("物料描述", "") or "").strip()
+                if mat_code:
+                    label = mat_code
+                    if mat_name:
+                        label = f"{mat_code}  {mat_name}"
+            detail_lines.append(f"• {label}：{r['detail']}{aq}")
         if not detail_lines:
             return
         msg = ("以下隔离区记录的「入区原因已失效」，建议复核并移出隔离区：\n\n"

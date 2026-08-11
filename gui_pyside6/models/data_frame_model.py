@@ -538,16 +538,18 @@ class AuditProxyModel(QSortFilterProxyModel):
 
             # 1.6 流程订单模糊搜索
             if '_process_order' in self._custom_filters:
-                order_query = str(self._custom_filters['_process_order']).lower()
-                matched = False
-                for col_name in ['流程订单', 'process_order']:
-                    if col_name in df.columns:
-                        row_val = str(row_data.get(col_name, '')).lower()
-                        if order_query in row_val:
-                            matched = True
-                            break
-                if not matched:
-                    return False
+                raw = str(self._custom_filters['_process_order'])
+                queries = [q.strip().lower() for q in raw.split(',') if q.strip()]
+                if queries:
+                    matched = False
+                    for col_name in ['流程订单', 'process_order']:
+                        if col_name in df.columns:
+                            row_val = str(row_data.get(col_name, '')).lower()
+                            if any(q in row_val for q in queries):
+                                matched = True
+                                break
+                    if not matched:
+                        return False
 
             # 1.7 物料名称模糊搜索（逗号分隔多选，子串匹配 OR）
             if '_material_names' in self._custom_filters:
@@ -605,6 +607,15 @@ class AuditProxyModel(QSortFilterProxyModel):
                 if want == 'auto' and src != 'auto':
                     return False
                 if want == 'manual' and src != 'manual':
+                    return False
+
+            # 3.2 隔离区状态筛选（是/否：是否已在隔离区）
+            if '_quarantined_is' in self._custom_filters:
+                want = self._custom_filters['_quarantined_is']
+                is_quar = row_data.get('_quarantined', 0) == 1
+                if want == '是' and not is_quar:
+                    return False
+                if want == '否' and is_quar:
                     return False
 
             # 3.5 颜色标记筛选（多选 OR：勾选任意颜色即保留匹配行）

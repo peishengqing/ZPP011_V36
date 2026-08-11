@@ -109,7 +109,7 @@ class FilterPanel(QWidget):
         self.workshop_combo.addItem("全部")
         self.workshop_combo.setMinimumWidth(220)
         self.process_order_edit = QLineEdit()
-        self.process_order_edit.setPlaceholderText("输入流程订单号搜索")
+        self.process_order_edit.setPlaceholderText("输入流程订单号,逗号分隔多选")
         self.process_order_edit.setMaximumWidth(240)
         basic_layout.addRow("工厂:", self.factory_combo)
         basic_layout.addRow("车间:", self.workshop_combo)
@@ -128,6 +128,9 @@ class FilterPanel(QWidget):
         self.alt_combo = QComboBox()
         self.alt_combo.addItems(["全部", "是", "否"])
         self.alt_combo.setMinimumWidth(220)
+        self.quar_combo = QComboBox()
+        self.quar_combo.addItems(["全部", "是", "否"])
+        self.quar_combo.setMinimumWidth(220)
         self.order_type_combo = QComboBox()
         self.order_type_combo.addItem("全部")
         self.order_type_combo.setMinimumWidth(220)
@@ -158,6 +161,7 @@ class FilterPanel(QWidget):
         material_name_row.addWidget(self.edit_presets_btn)
         material_layout.addRow("物料类型:", self.category_combo)
         material_layout.addRow("替代料:", self.alt_combo)
+        material_layout.addRow("隔离区:", self.quar_combo)
         material_layout.addRow("订单类型:", self.order_type_combo)
         material_layout.addRow("产品物料号:", self.product_code_edit)
         material_layout.addRow("物料编码:", self.material_code_edit)
@@ -311,6 +315,7 @@ class FilterPanel(QWidget):
         self.process_order_edit.returnPressed.connect(self._emit_filter)
         self.category_combo.currentIndexChanged.connect(self._emit_filter)
         self.alt_combo.currentIndexChanged.connect(self._emit_filter)
+        self.quar_combo.currentIndexChanged.connect(self._emit_filter)
         self.dev_rate_combo.currentIndexChanged.connect(self._emit_filter)
         self.dev_qty_combo.currentIndexChanged.connect(self._emit_filter)
         self.substitute_combo.currentIndexChanged.connect(self._emit_filter)
@@ -346,7 +351,7 @@ class FilterPanel(QWidget):
 
         # 滚轮保护：在筛选面板内滚动滚轮时，不要误改筛选条件
         for _w in (self.dev_threshold_spin, self.factory_combo, self.workshop_combo,
-                   self.category_combo, self.alt_combo, self.order_type_combo,
+                   self.category_combo, self.alt_combo, self.quar_combo, self.order_type_combo,
                    self.dev_rate_combo, self.dev_qty_combo, self.audit_status_combo, self.remark_empty_combo,
                    self.read_status_combo, self.remark_source_combo, self.zero_qty_combo,
                    self.substitute_combo, self.start_date_edit, self.end_date_edit,
@@ -756,6 +761,8 @@ class FilterPanel(QWidget):
             filters[cat_col] = self.category_combo.currentText()
         if self.alt_combo.currentText() != "全部":
             filters['是否替代料'] = self.alt_combo.currentText()
+        if self.quar_combo.currentText() != "全部":
+            filters['_quarantined_is'] = self.quar_combo.currentText()
         order_type_col = self._col_map.get('订单类型')
         if order_type_col and self.order_type_combo.currentText() != "全部":
             filters[order_type_col] = self.order_type_combo.currentText()
@@ -923,6 +930,7 @@ class FilterPanel(QWidget):
         self.process_order_edit.clear()
         self.category_combo.setCurrentIndex(0)
         self.alt_combo.setCurrentIndex(0)
+        self.quar_combo.setCurrentIndex(0)
         self.dev_rate_combo.setCurrentIndex(0)
         self.dev_qty_combo.setCurrentIndex(0)
         self.substitute_combo.setCurrentIndex(0)

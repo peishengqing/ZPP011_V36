@@ -14,6 +14,25 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.76",
+        "date": "2026-08-11",
+        "features": [
+            "主表「物料属性」组新增「隔离区」三态筛选（全部/是/否），与「替代料」并列",
+            "隔离区列表新增跨列关键字搜索框（防抖 300ms），与「隔离原因」列筛选叠加生效",
+            "偏差率预警看板新增跨列关键字搜索框（防抖 300ms），与现有分类筛选叠加生效",
+            "流程订单筛选支持逗号分隔多选（OR）",
+            "主表默认隐藏内部列 data_id / fingerprint / _quarantined，不再暴露给用户",
+        ],
+        "fixes": [
+            "修复隔离区右键「设为已读并移出隔离区」未定义 main_df 导致 NameError 崩溃",
+            "隔离区失效恢复通知由显示原始 data_id 改为显示物料编码+物料名称",
+        ],
+        "optimizations": [],
+        "notes": [
+            "顺手清理 quarantine_dialog 两个未使用 import（remove_quarantine / save_read_status）",
+        ],
+    },
+    {
         "version": "v42.75",
         "date": "2026-08-11",
         "features": [

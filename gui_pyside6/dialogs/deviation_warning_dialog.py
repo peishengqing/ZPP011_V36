@@ -11,7 +11,7 @@ import pandas as pd
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QFrame,
-    QComboBox, QInputDialog,
+    QComboBox, QInputDialog, QLineEdit,
 )
 from PySide6.QtCore import Qt, QPoint, QTimer
 from gui_pyside6.models.data_frame_model import DataFrameModel
@@ -40,6 +40,7 @@ class DeviationWarningDialog(QDialog):
         self._workshop_col = None   # 车间列名，set_data 时探测
         self._quar_filter = "all"   # 隔离区筛选：all / yes(是)
         self._alt_filter = "all"    # 替代料筛选：all / yes(是) / no(否)
+        self._keyword = ""          # 关键字搜索（跨列，与分类筛选叠加）
         self.setup_ui()
         self.set_data(warnings_df)
 
@@ -51,6 +52,18 @@ class DeviationWarningDialog(QDialog):
         # ---- 顶部筛选栏 ----
         filter_layout = QHBoxLayout()
         filter_layout.addWidget(QLabel("筛选:"))
+
+        # 关键字搜索（跨列，防抖 300ms，与分类筛选叠加生效）
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText("搜索 物料编码/名称/车间/流程订单/备注…")
+        self.search_edit.setMinimumWidth(200)
+        self.search_edit.setMaximumWidth(260)
+        filter_layout.addWidget(self.search_edit)
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(300)
+        self._search_timer.timeout.connect(self._on_search_changed)
+        self.search_edit.textChanged.connect(lambda _t: self._search_timer.start())
 
         self.btn_all = QPushButton("全部")
         self.btn_all.setCheckable(True)
@@ -235,6 +248,23 @@ class DeviationWarningDialog(QDialog):
         btn_layout.addWidget(close_btn)
         layout.addLayout(btn_layout)
 
+    def _on_search_changed(self):
+        """关键字搜索框防抖回调：更新关键字并重新筛选"""
+        self._keyword = self.search_edit.text().strip().lower()
+        self._apply_filter()
+
+    def _keyword_mask(self, df):
+        """跨列关键字掩码：任一（非内部）列包含关键字即命中；空关键字=全True"""
+        if not self._keyword:
+            return pd.Series(True, index=df.index)
+        kw = self._keyword
+        mask = pd.Series(False, index=df.index)
+        for col in df.columns:
+            if col in ('_read', '_post_audit_changed', '状态', 'data_id'):
+                continue
+            mask = mask | df[col].astype(str).str.lower().str.contains(kw, na=False, regex=False)
+        return mask
+
     def _set_filter(self, mode):
         self.filter_mode = mode
         self.btn_all.setChecked(mode == "all")
@@ -341,7 +371,8 @@ class DeviationWarningDialog(QDialog):
                       & self._mat_mask(df, self.mat_filter)
                       & self._workshop_mask(df, self._workshop_filter)
                       & self._quar_mask(df, self._quar_filter)
-                      & self._alt_mask(df, self._alt_filter)].copy()
+                      & self._alt_mask(df, self._alt_filter)
+                      & self._keyword_mask(df)].copy()
 
         filtered = filtered.reset_index(drop=True)
         if hasattr(self, "source_model"):
