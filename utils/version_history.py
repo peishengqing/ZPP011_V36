@@ -14,6 +14,20 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.78",
+        "date": "2026-08-11",
+        "features": [
+            "偏差率预警看板列表新增「单位」列（件/kg/个等），导出与跨列搜索自动带上",
+        ],
+        "fixes": [
+            "修复偏差率看板「移入隔离区」整表重置导致的视图跳变：改用 mark_quarantine 就地更新 _quarantined 列（仅发单行 dataChanged），加完第1条后滚动位置/列排序/选中行/筛选全部保留，第2条仍在原处可见",
+        ],
+        "optimizations": [],
+        "notes": [
+            "data_frame_model 新增 mark_quarantine(ids, flag) 就地更新方法，供主表与偏差率看板共用，避免整表 setDataFrame 重置视图",
+        ],
+    },
+    {
         "version": "v42.77",
         "date": "2026-08-11",
         "features": [],

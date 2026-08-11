@@ -1620,7 +1620,7 @@ class MainWindow(QMainWindow):
             # 只保留关键列（兼容两种命名：数量-实际/实际、组件物料号/物料编码 等）
             candidates = [
                 "订单日期", "流程订单", "组件物料号", "物料编码", "物料名称", "物料描述", "车间",
-                "物料类型", "物料大类",
+                "物料类型", "物料大类", "单位",
                 "数量-定额", "定额", "数量-实际", "实际", "偏差数量", "偏差率(%)",
                 "偏差金额", "净偏差数量", "净偏差金额", "净偏差率(%)", "是否替代料",
                 "备注", "备注原因", "备注来源", "预警", "_read",
@@ -3248,10 +3248,12 @@ class MainWindow(QMainWindow):
         df.loc[df['data_id'].isin(ids), '_quarantined'] = 1 if flag else 0
         self.view_model.df = df
         if self.source_model:
-            self.source_model.setDataFrame(df)
+            # 就地更新隔离标记，不整表 setDataFrame → 保留滚动/排序/选中/筛选视图
+            self.source_model.mark_quarantine(ids, flag)
             if hasattr(self, '_apply_column_visibility_by_name'):
                 self._apply_column_visibility_by_name()
-        self.stats_cards.refresh(df)
+        if hasattr(self, 'stats_cards') and self.stats_cards is not None:
+            self.stats_cards.refresh(df)
         toast(f"{'⚠️ 已移入隔离区' if flag else '↩ 已取消隔离'} {len(ids)} 条", parent=self)
 
     def _auto_move_to_quarantine(self, manual=False):

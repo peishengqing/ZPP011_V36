@@ -61,6 +61,33 @@ class DataFrameModel(QAbstractTableModel):
         self.endResetModel()
         self.dataChanged.emit(QModelIndex(), QModelIndex())
 
+    def mark_quarantine(self, ids, flag: bool):
+        """就地更新隔离标记（不整表重置），保留主表滚动/排序/选中等视图状态。
+
+        ids: data_id 字符串集合；flag: True=移入隔离区(1) / False=移出(0)。
+        只改对应行的 _quarantined 列并同步黄标缓存，发单行 dataChanged，
+        不触发 beginResetModel，故 proxy 筛选、视图滚动、列排序、选中均保留。
+        """
+        if self._data is None or self._data.empty:
+            return
+        if 'data_id' not in self._data.columns or '_quarantined' not in self._data.columns:
+            return
+        id_set = set(str(i) for i in ids)
+        mask = self._data['data_id'].astype(str).isin(id_set)
+        if not mask.any():
+            return
+        new_val = 1 if flag else 0
+        self._data.loc[mask, '_quarantined'] = new_val
+        positions = set(int(p) for p in np.where(mask.values)[0])
+        if flag:
+            self._quarantined_rows |= positions
+        else:
+            self._quarantined_rows -= positions
+        # 仅发单行 dataChanged（不 beginResetModel），视图状态完全保留
+        last_col = max(self.columnCount() - 1, 0)
+        for pos in positions:
+            self.dataChanged.emit(self.index(pos, 0), self.index(pos, last_col))
+
     def _build_cache(self):
         """将 DataFrame 转换为 Python 原生类型的二维列表，大幅提升 data() 速度。
 
