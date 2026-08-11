@@ -127,7 +127,6 @@ if __name__ == "__main__":
         "--hidden-import=gui_pyside6.widgets.filter_panel",
         "--hidden-import=gui_pyside6.widgets.toast",
         "--hidden-import=gui_pyside6.dialogs.import_wizard_dialog",
-        "--hidden-import=gui_pyside6.dialogs.rule_config_dialog",
         "--hidden-import=gui_pyside6.dialogs.drill_down_dialog",
         "--hidden-import=gui_pyside6.dialogs.settings_dialog",
         "--hidden-import=gui_pyside6.dialogs.alert_dialog",

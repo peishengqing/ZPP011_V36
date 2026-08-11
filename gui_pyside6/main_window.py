@@ -49,7 +49,6 @@ from core.auto_quarantine import (
     compute_auto_quarantine_ids,
     load_auto_quarantine_config,
 )
-from gui_pyside6.dialogs.rule_config_dialog import RuleConfigDialog
 from gui_pyside6.dialogs.dashboard_dialog import DashboardDialog
 from gui_pyside6.dialogs.history_compare_dialog import HistoryCompareDialog
 from gui_pyside6.dialogs.import_wizard_dialog import ImportWizard
@@ -3642,24 +3641,6 @@ class MainWindow(QMainWindow):
         self.export_controller.generate_advanced_report(
             self.view_model.df, excel_path, None, self, log_cb=self.log)
 
-    def _open_rule_config(self):
-        rules_path = os.path.join(os.path.dirname(__file__), "..", "config", "system", "rules.json")
-        def on_rules_changed():
-            self.audit_controller.rule_engine.load_rules()
-            if self.view_model.df is not None:
-                # 预处理直接同步执行，DB 操作 ~0.2s 不卡
-                try:
-                    processed_df = self.data_service.preprocess_audit_data(
-                        self.view_model.df, self.view_model.df)
-                    self.source_model.setDataFrame(processed_df)
-                    self._apply_column_visibility_by_name()
-                    self._schedule_unread_summary()
-                    self.view_model.df = processed_df
-                except Exception as e:
-                    self.log(f"规则变更后预处理失败: {e}", "error")
-        dialog = RuleConfigDialog(self, rules_path, self.config_manager, on_rules_changed)
-        dialog.exec()
-
     def _show_health_check(self):
         dialog = HealthCheckDialog(self)
         dialog.exec()
@@ -3693,7 +3674,7 @@ class MainWindow(QMainWindow):
         title_row.addWidget(icon_label)
         title_row.addWidget(title_label)
         info_layout.addLayout(title_row)
-        desc_label = QLabel("功能：偏差分析 · AI审核 · 规则配置 · 批量操作")
+        desc_label = QLabel("功能：偏差分析 · AI审核 · 批量操作")
         desc_label.setObjectName("aboutDesc")
         info_layout.addWidget(desc_label)
         author_label = QLabel(f"制作人：{AUTHOR} | 云南达利食品")

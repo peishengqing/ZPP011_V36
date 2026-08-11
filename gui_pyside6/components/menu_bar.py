@@ -67,9 +67,6 @@ class MenuBarComponent:
         audit_menu.addAction(mark_unread_action)
 
         audit_menu.addSeparator()
-        rule_action = QAction("规则配置", self.mw)
-        rule_action.triggered.connect(self.mw._open_rule_config)
-        audit_menu.addAction(rule_action)
 
         rule_center_action = QAction("⚙ 规则中心（隔离/已读）", self.mw)
         rule_center_action.triggered.connect(self.mw._open_rule_center)
