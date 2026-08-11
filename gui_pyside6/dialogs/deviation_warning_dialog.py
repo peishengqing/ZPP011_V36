@@ -37,6 +37,8 @@ class DeviationWarningDialog(QDialog):
         self._mat_col = None      # 料别列名（物料类型 / 物料大类），set_data 时探测
         self._workshop_filter = "all"  # 车间筛选：all / 车间名
         self._workshop_col = None   # 车间列名，set_data 时探测
+        self._quar_filter = "all"   # 隔离区筛选：all / yes(是)
+        self._alt_filter = "all"    # 替代料筛选：all / yes(是) / no(否)
         self.setup_ui()
         self.set_data(warnings_df)
 
@@ -115,6 +117,64 @@ class DeviationWarningDialog(QDialog):
         self.combo_workshop.currentTextChanged.connect(self._on_workshop_changed)
         filter_layout.addWidget(self.combo_workshop)
 
+        # ---- 第四组：隔离区筛选（全部 / 是）----
+        self.quar_sep = QFrame()
+        self.quar_sep.setFrameShape(QFrame.VLine)
+        self.quar_sep.setFrameShadow(QFrame.Sunken)
+        filter_layout.addSpacing(8)
+        filter_layout.addWidget(self.quar_sep)
+        filter_layout.addSpacing(8)
+
+        self.lbl_quar = QLabel("隔离区:")
+        filter_layout.addWidget(self.lbl_quar)
+
+        self.btn_quar_all = QPushButton("全部")
+        self.btn_quar_all.setCheckable(True)
+        self.btn_quar_all.setMinimumWidth(70)
+        self.btn_quar_all.clicked.connect(lambda: self._set_quar_filter("all"))
+        filter_layout.addWidget(self.btn_quar_all)
+
+        self.btn_quar_yes = QPushButton("是")
+        self.btn_quar_yes.setCheckable(True)
+        self.btn_quar_yes.setMinimumWidth(70)
+        self.btn_quar_yes.clicked.connect(lambda: self._set_quar_filter("yes"))
+        filter_layout.addWidget(self.btn_quar_yes)
+
+        self.btn_quar_no = QPushButton("否")
+        self.btn_quar_no.setCheckable(True)
+        self.btn_quar_no.setMinimumWidth(70)
+        self.btn_quar_no.clicked.connect(lambda: self._set_quar_filter("no"))
+        filter_layout.addWidget(self.btn_quar_no)
+
+        # ---- 第五组：替代料筛选（全部 / 是 / 否）----
+        self.alt_sep = QFrame()
+        self.alt_sep.setFrameShape(QFrame.VLine)
+        self.alt_sep.setFrameShadow(QFrame.Sunken)
+        filter_layout.addSpacing(8)
+        filter_layout.addWidget(self.alt_sep)
+        filter_layout.addSpacing(8)
+
+        self.lbl_alt = QLabel("替代料:")
+        filter_layout.addWidget(self.lbl_alt)
+
+        self.btn_alt_all = QPushButton("全部")
+        self.btn_alt_all.setCheckable(True)
+        self.btn_alt_all.setMinimumWidth(70)
+        self.btn_alt_all.clicked.connect(lambda: self._set_alt_filter("all"))
+        filter_layout.addWidget(self.btn_alt_all)
+
+        self.btn_alt_yes = QPushButton("是")
+        self.btn_alt_yes.setCheckable(True)
+        self.btn_alt_yes.setMinimumWidth(70)
+        self.btn_alt_yes.clicked.connect(lambda: self._set_alt_filter("yes"))
+        filter_layout.addWidget(self.btn_alt_yes)
+
+        self.btn_alt_no = QPushButton("否")
+        self.btn_alt_no.setCheckable(True)
+        self.btn_alt_no.setMinimumWidth(70)
+        self.btn_alt_no.clicked.connect(lambda: self._set_alt_filter("no"))
+        filter_layout.addWidget(self.btn_alt_no)
+
         filter_layout.addStretch()
 
         # 批量操作
@@ -189,6 +249,40 @@ class DeviationWarningDialog(QDialog):
         self.btn_mat_pkg.setChecked(mode == "pkg")
         self._apply_filter()
 
+    def _set_quar_filter(self, mode):
+        """隔离区筛选（全部/是/否），与已读状态、料别、车间独立叠加"""
+        self._quar_filter = mode
+        self.btn_quar_all.setChecked(mode == "all")
+        self.btn_quar_yes.setChecked(mode == "yes")
+        self.btn_quar_no.setChecked(mode == "no")
+        self._apply_filter()
+
+    def _set_alt_filter(self, mode):
+        """替代料筛选（全部/是/否），与已读状态、料别、车间独立叠加"""
+        self._alt_filter = mode
+        self.btn_alt_all.setChecked(mode == "all")
+        self.btn_alt_yes.setChecked(mode == "yes")
+        self.btn_alt_no.setChecked(mode == "no")
+        self._apply_filter()
+
+    def _quar_mask(self, df, mode):
+        """隔离区掩码：all=全True / yes=隔离区列=='是' / no=隔离区列!='是'"""
+        if mode == "all" or "隔离区" not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df["隔离区"].astype(str).str.strip()
+        if mode == "yes":
+            return vals == "是"
+        return vals != "是"
+
+    def _alt_mask(self, df, mode):
+        """替代料掩码：all=全True / yes=替代料列=='是' / no=替代料列=='否'"""
+        if mode == "all" or "替代料" not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df["替代料"].astype(str).str.strip()
+        if mode == "yes":
+            return vals == "是"
+        return vals == "否"
+
     def _on_workshop_changed(self, text):
         """车间下拉框变化时触发筛选"""
         self._workshop_filter = "all" if text == "全部" else text
@@ -244,7 +338,9 @@ class DeviationWarningDialog(QDialog):
 
         filtered = df[self._read_mask(df, self.filter_mode)
                       & self._mat_mask(df, self.mat_filter)
-                      & self._workshop_mask(df, self._workshop_filter)].copy()
+                      & self._workshop_mask(df, self._workshop_filter)
+                      & self._quar_mask(df, self._quar_filter)
+                      & self._alt_mask(df, self._alt_filter)].copy()
 
         filtered = filtered.reset_index(drop=True)
         if hasattr(self, "source_model"):
@@ -276,6 +372,22 @@ class DeviationWarningDialog(QDialog):
                 f"原料 ({int((cur_read & self._mat_mask(df, 'raw')).sum())})")
             self.btn_mat_pkg.setText(
                 f"包材 ({int((cur_read & self._mat_mask(df, 'pkg')).sum())})")
+            # 隔离区组：固定当前已读状态，看 是/否 各多少条
+            cur_quar_yes = (df["隔离区"].astype(str).str.strip() == "是") if "隔离区" in df.columns else pd.Series(False, index=df.index)
+            cur_quar_no = ~cur_quar_yes
+            self.btn_quar_all.setText(f"全部 ({int(cur_read.sum())})")
+            self.btn_quar_yes.setText(
+                f"是 ({int((cur_read & cur_quar_yes).sum())})")
+            self.btn_quar_no.setText(
+                f"否 ({int((cur_read & cur_quar_no).sum())})")
+            # 替代料组：固定当前已读状态，看 是/否 各多少条
+            cur_alt_yes = (df["替代料"].astype(str).str.strip() == "是") if "替代料" in df.columns else pd.Series(False, index=df.index)
+            cur_alt_no = (df["替代料"].astype(str).str.strip() == "否") if "替代料" in df.columns else pd.Series(False, index=df.index)
+            self.btn_alt_all.setText(f"全部 ({int(cur_read.sum())})")
+            self.btn_alt_yes.setText(
+                f"是 ({int((cur_read & cur_alt_yes).sum())})")
+            self.btn_alt_no.setText(
+                f"否 ({int((cur_read & cur_alt_no).sum())})")
             # 车间下拉框：不更新，但显示当前选中车间的记录数（用于验证）
             if self._workshop_filter != "all" and self._workshop_col and self._workshop_col in df.columns:
                 workshop_count = (df[self._workshop_col].astype(str).str.strip() == self._workshop_filter).sum()
