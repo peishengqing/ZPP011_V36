@@ -299,6 +299,31 @@ class DeviationWarningDialog(QDialog):
         if "_read" in df.columns:
             df["状态"] = df["_read"].map({0: "未读", 1: "已读"})
             df = df[["状态"] + [c for c in df.columns if c != "状态"]]
+
+        # ===== 跨看板提示：隔离区 / 替代料（偏差率预警看板需求）=====
+        # 隔离区：比对 quarantine_manager 当前隔离的 data_id 集合（uid 即 data_id）
+        try:
+            from core.quarantine_manager import get_quarantined_ids
+            _qset = get_quarantined_ids()
+        except Exception:
+            _qset = set()
+        if "data_id" in df.columns:
+            df["隔离区"] = df["data_id"].astype(str).isin(_qset).map({True: "是", False: ""})
+        else:
+            df["隔离区"] = ""
+        # 替代料：直接复用主表现成的「是否替代料」列（值 是/否），改名展示即可，不做重复推断
+        if "是否替代料" in df.columns:
+            df = df.rename(columns={"是否替代料": "替代料"})
+        else:
+            df["替代料"] = ""
+        # 把两列插到「状态」之后，确保一眼可见
+        _cols = list(df.columns)
+        for _extra in ("替代料", "隔离区"):
+            if _extra in _cols:
+                _cols.remove(_extra)
+                _cols.insert(1, _extra)
+        df = df[_cols]
+
         self.original_df = df.copy()
 
         # 备注列移到 data_id 前面（如果存在）
