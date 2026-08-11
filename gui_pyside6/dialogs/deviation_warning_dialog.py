@@ -11,11 +11,12 @@ import pandas as pd
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QFrame,
-    QComboBox,
+    QComboBox, QInputDialog,
 )
 from PySide6.QtCore import Qt, QPoint, QTimer
 from gui_pyside6.models.data_frame_model import DataFrameModel
 from core.read_status import save_read_status, save_read_status_batch
+from core.quarantine_manager import add_quarantine_batch, remove_quarantine
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.table_sort import enable_click_sort
@@ -555,6 +556,21 @@ class DeviationWarningDialog(QDialog):
         mark_unread_action.triggered.connect(
             lambda: self._mark_selected_rows_unread(selected_rows)
         )
+
+        # 移入/取消隔离区：判断选中第一条是否已隔离（看板「隔离区」列=="是"）
+        cur_df = self.source_model.getDataFrame() if hasattr(self, "source_model") else None
+        first_is_q = False
+        if cur_df is not None and selected_rows and "隔离区" in cur_df.columns:
+            try:
+                first_is_q = str(cur_df.iloc[selected_rows[0]].get("隔离区", "")).strip() == "是"
+            except Exception:
+                first_is_q = False
+        if first_is_q:
+            q_action = menu.addAction("↩ 取消隔离（选中行）")
+            q_action.triggered.connect(lambda: self._set_quarantine(selected_rows, False))
+        else:
+            q_action = menu.addAction("⚠️ 移入隔离区（选中行）")
+            q_action.triggered.connect(lambda: self._set_quarantine(selected_rows, True))
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
 
     def _mark_selected_rows_read(self, rows):
@@ -634,6 +650,54 @@ class DeviationWarningDialog(QDialog):
                     self.original_df.loc[orig_mask, '状态'] = '○ 未读'
         self._apply_filter()
         toast(f"⭕ 已标记 {count} 条为未读", parent=self)
+
+    def _set_quarantine(self, rows, flag: bool):
+        """右键菜单：将选中行移入/移出隔离区，与主表方法一致。
+
+        - 移入：弹 QInputDialog 填疑难原因（可选）→ add_quarantine_batch([(uid, reason, basis)])
+        - 移出：remove_quarantine(uid) 逐条
+        - 同步主表内存 _quarantined 列 + 本看板 original_df 的「隔离区」列，并刷新
+        """
+        df = self.source_model.getDataFrame() if hasattr(self, "source_model") else None
+        if df is None:
+            return
+        ids = set()
+        for r in rows:
+            if r >= len(df):
+                continue
+            data_id = df.iloc[r].get("data_id")
+            if not data_id:
+                rs = df.iloc[r]
+                if "工厂" in df.columns:
+                    data_id = f"{rs.get('工厂','')}|{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+                else:
+                    data_id = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+            if data_id:
+                ids.add(str(data_id))
+        if not ids:
+            return
+        if flag:
+            reason, ok = QInputDialog.getText(self, "移入隔离区", "填写疑难原因（可选）：")
+            if not ok:
+                return
+            basis = "手动:" + (reason.strip() if reason.strip() else "手动隔离")
+            add_quarantine_batch([(uid, reason, basis) for uid in ids])
+        else:
+            for uid in ids:
+                remove_quarantine(uid)
+
+        # 同步主表内存 _quarantined 列（若有，使主表重新打开时反映隔离态）
+        main_df = self.main_window.view_model.df if self.main_window else None
+        if main_df is not None and "data_id" in main_df.columns and "_quarantined" in main_df.columns:
+            main_df.loc[main_df["data_id"].isin(ids), "_quarantined"] = 1 if flag else 0
+
+        # 更新本看板 original_df 的「隔离区」列（是 / 空），保证筛选与显示即时正确
+        if hasattr(self, "original_df") and "data_id" in self.original_df.columns and "隔离区" in self.original_df.columns:
+            self.original_df.loc[self.original_df["data_id"].isin(ids), "隔离区"] = "是" if flag else ""
+
+        self._apply_filter()
+        self._update_button_counts()
+        toast(f"{'⚠️ 已移入隔离区' if flag else '↩ 已取消隔离'} {len(ids)} 条", parent=self)
 
     def _sync_main_df(self, data_id, read_value):
         """同步主表内存中的已读状态（仅改内存，不做落盘和 UI 重建）
