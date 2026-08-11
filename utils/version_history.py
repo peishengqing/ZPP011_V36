@@ -14,6 +14,20 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.75",
+        "date": "2026-08-11",
+        "features": [
+            "AI审核改用 WorkBuddy 配置的 agnes-2.5-flash（原写死的 agnes-2.0-flash + .com 域名已失效，key 与环境变量一致）",
+        ],
+        "fixes": [
+            "管理看板点击「未响应」卡死：看板 HTML 生成由 GUI 主线程同步出图改为后台线程（_DashboardBuildWorker + Agg 后端），界面不再冻结",
+        ],
+        "optimizations": [],
+        "notes": [
+            "废弃并删除无效的可视化规则配置（UI/存储正常但渲染管道从未接通，配了无效）；同步移除菜单项、隐式导入与专属 rules.json",
+        ],
+    },
+    {
         "version": "v42.74",
         "date": "2026-08-11",
         "features": [
