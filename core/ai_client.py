@@ -11,6 +11,7 @@ Agnes AI: 免费，OpenAI 兼容，20 RPM 限制，无需绑卡充值
 """
 
 import json
+import os
 import time
 import logging
 import requests
@@ -18,12 +19,44 @@ import requests
 logger = logging.getLogger("AIClient")
 
 # ── Agnes AI 配置 ──────────────────────────────────────
-AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1"
-AGNES_MODEL = "agnes-2.0-flash"
-AGNES_API_KEY = ""  # 不硬编码！通过 'ai.api_key' 配置项或环境变量 AGNES_API_KEY 设置
+# 兜底默认值（与 WorkBuddy models.json 中 agnes-2.5-flash 保持一致）。
+# 运行时优先读取 WorkBuddy 的 models.json，使其跟随 WorkBuddy 侧配置。
+AGNES_BASE_URL = "https://apihub.agnes-ai.cn/v1"
+AGNES_MODEL = "agnes-2.5-flash"
+AGNES_API_KEY = ""  # 不硬编码！优先从 WorkBuddy models.json 读取，其次 'ai.api_key' 配置项或环境变量 AGNES_API_KEY
 
 # RPM 限制：20次/分钟 → 调用间隔至少 3.0 秒
 MIN_CALL_INTERVAL = 3.0
+
+
+def _resolve_agnes_config():
+    """从 WorkBuddy 的 models.json 读取 agnes-2.5-flash 的端点/模型/密钥。
+
+    返回 dict: {"base_url", "model", "api_key"}。
+    文件不存在或读取失败时回退到上面的模块常量（已更新为 .cn + agnes-2.5-flash）。
+    """
+    fallback = {
+        "base_url": AGNES_BASE_URL,
+        "model": AGNES_MODEL,
+        "api_key": "",
+    }
+    try:
+        models_path = os.path.join(os.path.expanduser("~"), ".workbuddy", "models.json")
+        if not os.path.exists(models_path):
+            return fallback
+        with open(models_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        entries = data if isinstance(data, list) else data.get("models", [])
+        for m in entries:
+            if m.get("id") == "agnes-2.5-flash":
+                return {
+                    "base_url": m.get("url") or fallback["base_url"],
+                    "model": m.get("id") or fallback["model"],
+                    "api_key": m.get("apiKey") or m.get("api_key") or "",
+                }
+    except Exception as e:
+        logger.warning("读取 WorkBuddy models.json 失败，使用内置缺省配置：%s", e)
+    return fallback
 
 # ── 系统提示词 ─────────────────────────────────────────
 SYSTEM_PROMPT = """你是一个制造业生产偏差审核专家，服务于云南达利食品有限公司。
@@ -55,6 +88,11 @@ class AIClient:
         self._last_call_time = 0          # 速率控制
         self._total_calls = 0             # 统计
         self._mock_calls = 0
+        # 解析 Agnes 端点/模型/密钥：优先跟随 WorkBuddy 的 models.json
+        ag = _resolve_agnes_config()
+        self._agnes_base_url = ag["base_url"]
+        self._agnes_model = ag["model"]
+        self._agnes_api_key = ag["api_key"]
 
     # ── 配置 ────────────────────────────────────────
 
@@ -69,7 +107,11 @@ class AIClient:
         return self._config
 
     def _get_api_key(self):
-        """获取 API Key：优先配置文件，其次环境变量，未配置时降级 Mock"""
+        """获取 API Key：优先 WorkBuddy models.json，其次项目配置，其次环境变量，未配置时降级 Mock"""
+        # 1) WorkBuddy models.json 中 agnes-2.5-flash 的 key
+        if self._agnes_api_key:
+            return self._agnes_api_key
+        # 2) 项目配置文件 ai.api_key
         cfg = self._load_config()
         if cfg:
             try:
@@ -78,7 +120,7 @@ class AIClient:
                     return key
             except Exception:
                 pass
-        import os
+        # 3) 环境变量 AGNES_API_KEY
         env_key = os.environ.get("AGNES_API_KEY", "")
         if env_key:
             return env_key
@@ -145,7 +187,7 @@ class AIClient:
             "Content-Type": "application/json",
         }
         payload = {
-            "model": AGNES_MODEL,
+            "model": self._agnes_model,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_message},
@@ -155,7 +197,7 @@ class AIClient:
         }
 
         response = requests.post(
-            f"{AGNES_BASE_URL}/chat/completions",
+            f"{self._agnes_base_url}/chat/completions",
             headers=headers,
             json=payload,
             timeout=5,
@@ -166,7 +208,7 @@ class AIClient:
             logger.warning("Agnes AI 速率限制，等待 10 秒后重试...")
             time.sleep(10)
             response = requests.post(
-                f"{AGNES_BASE_URL}/chat/completions",
+                f"{self._agnes_base_url}/chat/completions",
                 headers=headers,
                 json=payload,
                 timeout=5,
@@ -355,13 +397,13 @@ class AIClient:
 
             api_key = self._get_api_key()
             response = requests.post(
-                f"{AGNES_BASE_URL}/chat/completions",
+                f"{self._agnes_base_url}/chat/completions",
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": AGNES_MODEL,
+                    "model": self._agnes_model,
                     "messages": [
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": user_msg},
@@ -376,13 +418,13 @@ class AIClient:
                 logger.warning("Agnes AI 速率限制，等待 10 秒后重试...")
                 time.sleep(10)
                 response = requests.post(
-                    f"{AGNES_BASE_URL}/chat/completions",
+                    f"{self._agnes_base_url}/chat/completions",
                     headers={
                         "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json",
                     },
                     json={
-                        "model": AGNES_MODEL,
+                        "model": self._agnes_model,
                         "messages": [
                             {"role": "system", "content": SYSTEM_PROMPT},
                             {"role": "user", "content": user_msg},
