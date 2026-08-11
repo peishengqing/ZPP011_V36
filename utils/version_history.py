@@ -14,6 +14,16 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.77",
+        "date": "2026-08-11",
+        "features": [],
+        "fixes": [
+            "修复偏差率预警看板右键「移入隔离区」未实时同步主表 source_model，导致隔离区对话框须重新分析才显示的延迟问题（现加完立即在主表/隔离区/统计卡实时反映）",
+        ],
+        "optimizations": [],
+        "notes": [],
+    },
+    {
         "version": "v42.76",
         "date": "2026-08-11",
         "features": [

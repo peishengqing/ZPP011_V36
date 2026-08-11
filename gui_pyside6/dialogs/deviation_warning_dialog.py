@@ -717,10 +717,18 @@ class DeviationWarningDialog(QDialog):
             for uid in ids:
                 remove_quarantine(uid)
 
-        # 同步主表内存 _quarantined 列（若有，使主表重新打开时反映隔离态）
+        # 同步主表内存 _quarantined 列，并推回主表 source_model（与主表右键加隔离一致），
+        # 使主表显示 / 隔离区对话框 / 统计卡实时反映，无需重新分析。
         main_df = self.main_window.view_model.df if self.main_window else None
         if main_df is not None and "data_id" in main_df.columns and "_quarantined" in main_df.columns:
             main_df.loc[main_df["data_id"].isin(ids), "_quarantined"] = 1 if flag else 0
+            self.main_window.view_model.df = main_df
+            if self.main_window.source_model is not None:
+                self.main_window.source_model.setDataFrame(main_df)
+                if hasattr(self.main_window, "_apply_column_visibility_by_name"):
+                    self.main_window._apply_column_visibility_by_name()
+            if hasattr(self.main_window, "stats_cards"):
+                self.main_window.stats_cards.refresh(main_df)
 
         # 更新本看板 original_df 的「隔离区」列（是 / 空），保证筛选与显示即时正确
         if hasattr(self, "original_df") and "data_id" in self.original_df.columns and "隔离区" in self.original_df.columns:
