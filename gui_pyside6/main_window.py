@@ -42,6 +42,7 @@ from gui_pyside6.widgets.unread_summary_popup import UnreadSummaryPopup
 from gui_pyside6.dialogs.unit_summary_dialog import UnitSummaryDialog
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
+from gui_pyside6.dialogs.neg_loss_dashboard_dialog import NegLossDashboardDialog
 from gui_pyside6.dialogs.quarantine_dialog import QuarantineDialog
 from core.quarantine_manager import add_quarantine, add_quarantine_batch, remove_quarantine, scan_expired_quarantine
 from core.auto_quarantine import (
@@ -509,6 +510,13 @@ class MainWindow(QMainWindow):
         self.action_btn_deviation.setProperty("class", "actionBtn")
         self.action_btn_deviation.clicked.connect(self._show_deviation_warning_dialog)
         action_layout.addWidget(self.action_btn_deviation)
+
+        self.action_btn_neg_loss = QPushButton("🟠 负损看板")
+        self.action_btn_neg_loss.setCursor(Qt.PointingHandCursor)
+        self.action_btn_neg_loss.setObjectName("actionBtnNegLoss")
+        self.action_btn_neg_loss.setProperty("class", "actionBtn")
+        self.action_btn_neg_loss.clicked.connect(self._show_neg_loss_dashboard)
+        action_layout.addWidget(self.action_btn_neg_loss)
 
         self.action_btn_auto_q = QPushButton("🧹 自动整理隔离区")
         self.action_btn_auto_q.setCursor(Qt.PointingHandCursor)
@@ -1634,6 +1642,28 @@ class MainWindow(QMainWindow):
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开偏差率预警看板失败: {e}")
+
+    def _show_neg_loss_dashboard(self):
+        """手动打开负损(含未投料)看板：名称含关键词 且 负损(含未投料)，独立于隔离区。"""
+        try:
+            df = self._get_master_df()  # 与主表同源，避免两边数对不上
+            if df is None or df.empty:
+                QMessageBox.information(self, "提示", "暂无数据，请先分析")
+                return
+            # 保留关键列（含数量-实际/数量-定额 供负损计算，备注列供优先展示）
+            candidates = [
+                "订单日期", "流程订单", "组件物料号", "物料编码", "物料名称", "物料描述",
+                "车间", "物料类型", "物料大类", "单位",
+                "数量-定额", "定额", "数量-实际", "实际", "偏差数量", "偏差率(%)",
+                "偏差金额", "净偏差数量", "净偏差金额", "是否替代料",
+                "备注", "备注原因", "备注来源", "_read",
+            ]
+            keep = [c for c in candidates if c in df.columns]
+            sub = df[keep].copy() if keep else df.copy()
+            dialog = NegLossDashboardDialog(sub, self)
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"打开负损看板失败: {e}")
 
     def _update_all_summary(self):
         """恢复整体合计"""

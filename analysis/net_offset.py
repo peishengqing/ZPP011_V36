@@ -195,15 +195,17 @@ def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True, gro
                 total_amt = abs(raw_amt) * (1 if total_qty > 0 else -1) if raw_amt != 0 else 0.0
             group_net[root] = (total_qty, total_amt)
 
-        # 将净偏差写回该组内的所有行
+        # 将净偏差写回该组内的所有行（向量化批量写，替代逐行 df.at 热点）
         for root, (net_qty, net_amt) in group_net.items():
             for code in group_members[root]:
                 if code in code_to_indices:
-                    for idx in code_to_indices[code]:
-                        df.at[idx, '净偏差数量'] = net_qty
-                        df.at[idx, '净偏差金额'] = net_amt
-                        order_id = str(df.at[idx, order_col])
-                        df.at[idx, '_替代料组'] = f"组_{order_id}_{root[:8]}"
+                    idxs = code_to_indices[code]
+                    df.loc[idxs, '净偏差数量'] = net_qty
+                    df.loc[idxs, '净偏差金额'] = net_amt
+                    # _替代料组 依赖每行 order_col，逐行取值（仅一次读取）+ 向量化赋值
+                    df.loc[idxs, '_替代料组'] = (
+                        '组_' + df.loc[idxs, order_col].astype(str) + '_' + root[:8]
+                    )
 
     df.drop(columns=['_key'], inplace=True)
 
