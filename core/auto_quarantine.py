@@ -89,6 +89,18 @@ DEFAULT_RULE = {
     "category_value": "包材",
     "name_keywords": ["箱", "手包袋"],
     "negative_loss_required": True,
+    # —— 新增条件（默认关闭 / 空值，向后兼容旧配置）——
+    "dev_rate_required": False,      # 是否要求偏差率落在范围
+    "dev_rate_min": 10,              # 偏差率下限（开区间，不含端点）
+    "dev_rate_max": 100,             # 偏差率上限
+    "mat_code_prefix": "",           # 物料编码前缀（逗号分隔多值 OR；空=不限制）
+    "workshop_required": False,      # 是否限定车间
+    "workshop_value": "",            # 车间取值（空=不限制）
+    "remark_mode": "off",            # 备注要求：off / has（有备注）/ none（无备注）
+    "name_exclude_keywords": "",     # 物料名称不含（逗号分隔；空=不限制）
+    "dev_qty_required": False,       # 是否要求偏差数量落在范围
+    "dev_qty_min": 0,                # 偏差数量下限（开区间）
+    "dev_qty_max": 1,                # 偏差数量上限
 }
 
 DEFAULT_CONFIG = {"enabled": True, "rules": [dict(DEFAULT_RULE)]}
@@ -97,6 +109,10 @@ DEFAULT_CONFIG = {"enabled": True, "rules": [dict(DEFAULT_RULE)]}
 _RULE_FIELDS = (
     "name", "enabled", "exclude_alt", "category_required",
     "category_value", "name_keywords", "negative_loss_required",
+    "dev_rate_required", "dev_rate_min", "dev_rate_max",
+    "mat_code_prefix", "workshop_required", "workshop_value",
+    "remark_mode", "name_exclude_keywords",
+    "dev_qty_required", "dev_qty_min", "dev_qty_max",
 )
 
 
@@ -123,6 +139,15 @@ def _normalize_rule(rule):
         str(k).strip() for k in (r.get("name_keywords") or []) if str(k).strip()
     ]
     r["category_value"] = str(r.get("category_value") or "包材").strip() or "包材"
+    # 新数字字段兜底为 float（JSON 中可能以字符串存储）
+    for _nf in ("dev_rate_min", "dev_rate_max", "dev_qty_min", "dev_qty_max"):
+        try:
+            r[_nf] = float(r.get(_nf, DEFAULT_RULE[_nf]))
+        except (TypeError, ValueError):
+            r[_nf] = float(DEFAULT_RULE[_nf])
+    # 备注模式仅接受合法三态
+    if str(r.get("remark_mode", "off")).strip() not in ("off", "has", "none"):
+        r["remark_mode"] = "off"
     return r
 
 
@@ -182,6 +207,24 @@ def build_rule_summary(rule=None):
         parts.append("名称含「%s」" % "/".join(kws))
     if rule.get("negative_loss_required", True):
         parts.append("实际>0 且 实际<定额")
+    # —— 新增条件预览 ——
+    if rule.get("dev_rate_required", False):
+        parts.append("偏差率∈(%s,%s)" % (rule.get("dev_rate_min"), rule.get("dev_rate_max")))
+    prefix = [x.strip() for x in str(rule.get("mat_code_prefix", "")).replace("，", ",").split(",") if x.strip()]
+    if prefix:
+        parts.append("编码前缀（%s）" % "、".join(prefix))
+    if rule.get("workshop_required", False) and str(rule.get("workshop_value", "")).strip():
+        parts.append("车间=%s" % rule.get("workshop_value"))
+    mode = str(rule.get("remark_mode", "off")).strip()
+    if mode == "has":
+        parts.append("有备注")
+    elif mode == "none":
+        parts.append("无备注")
+    ex = [x.strip() for x in str(rule.get("name_exclude_keywords", "")).replace("，", ",").replace("、", ",").split(",") if x.strip()]
+    if ex:
+        parts.append("名称不含（%s）" % "、".join(ex))
+    if rule.get("dev_qty_required", False):
+        parts.append("偏差数量∈(%s,%s)" % (rule.get("dev_qty_min"), rule.get("dev_qty_max")))
     if not parts:
         return "（未配置任何条件）"
     return " · ".join(parts)
@@ -239,19 +282,30 @@ def compute_auto_quarantine_ids(df: pd.DataFrame, cfg=None) -> dict:
     name_col = _first_col(df, ["组件物料描述", "物料名称", "物料描述", "material_name"])
     actual_col = _first_col(df, ["数量-实际", "实际", "实际数量", "数量 - 实际", "actual"])
     quota_col = _first_col(df, ["数量-定额", "定额", "定额数量", "数量 - 定额", "quota"])
+    # —— 新增条件所用列探测 ——
+    dev_rate_col = _first_col(df, ["偏差率(%)", "偏差率", "偏差率%"])
+    mat_code_col = _first_col(df, ["物料编码", "组件物料号", "物料号"])
+    workshop_col = _first_col(df, ["车间", "工厂车间", "生产车间", "work_shop", "车间号"])
+    remark_col = _first_col(df, ["备注", "备注原因", "remark", "备注说明"])
+    dev_qty_col = _first_col(df, ["偏差数量", "偏差量", "差异数量"])
 
     result = {}  # data_id -> reason（只记靠前规则）
     for idx, rule in enumerate(rules, 1):
         if not rule.get("enabled", True):
             continue
-        mask = _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_col)
+        mask = _match_single_rule(
+            df, rule, alt_col, cat_col, name_col, actual_col, quota_col,
+            dev_rate_col, mat_code_col, workshop_col, remark_col, dev_qty_col,
+        )
         for uid in df.loc[mask, "data_id"].astype(str):
             if uid not in result:  # 已被靠前规则命中的不再覆盖
                 result[uid] = build_rule_reason(rule, idx)
     return result
 
 
-def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_col):
+def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_col,
+                       dev_rate_col=None, mat_code_col=None, workshop_col=None,
+                       remark_col=None, dev_qty_col=None):
     """单条规则的 AND 匹配，返回 bool 掩码。"""
     # 1. 排除替代料
     if rule.get("exclude_alt", True):
@@ -296,4 +350,85 @@ def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_c
     else:
         m_qty = pd.Series(True, index=df.index)
 
-    return m_alt & m_cat & m_name & m_qty
+    # 5. 偏差率范围（开区间，不含端点；无列 → 不匹配）
+    if rule.get("dev_rate_required", False):
+        if dev_rate_col:
+            rate = pd.to_numeric(df[dev_rate_col], errors="coerce")
+            mn = float(rule.get("dev_rate_min", 0))
+            mx = float(rule.get("dev_rate_max", 100))
+            m_rate = rate.notna() & (rate > mn) & (rate < mx)
+        else:
+            m_rate = pd.Series(False, index=df.index)
+    else:
+        m_rate = pd.Series(True, index=df.index)
+
+    # 6. 物料编码前缀（逗号分隔多值 OR；空 → 不限制）
+    prefix = str(rule.get("mat_code_prefix", "")).strip()
+    if prefix:
+        if mat_code_col:
+            s = df[mat_code_col].astype(str).fillna("")
+            items = [x.strip() for x in prefix.replace("，", ",").split(",") if x.strip()]
+            if items:
+                m_prefix = pd.Series(False, index=df.index)
+                for it in items:
+                    m_prefix |= s.str.startswith(it, na=False)
+            else:
+                m_prefix = pd.Series(True, index=df.index)
+        else:
+            m_prefix = pd.Series(False, index=df.index)  # 开着无列 → 不匹配
+    else:
+        m_prefix = pd.Series(True, index=df.index)
+
+    # 7. 车间限定（填了才限制；开着没填 → 不限制）
+    if rule.get("workshop_required", False):
+        if workshop_col:
+            val = str(rule.get("workshop_value", "")).strip()
+            if val:
+                m_ws = df[workshop_col].astype(str).fillna("").str.strip() == val
+            else:
+                m_ws = pd.Series(True, index=df.index)
+        else:
+            m_ws = pd.Series(False, index=df.index)  # 开着无列 → 不匹配
+    else:
+        m_ws = pd.Series(True, index=df.index)
+
+    # 8. 是否备注（has=有备注 / none=无备注；无列 → 不匹配，保守）
+    mode = str(rule.get("remark_mode", "off")).strip()
+    if mode in ("has", "none"):
+        if remark_col:
+            filled = df[remark_col].astype(str).fillna("").str.strip() != ""
+            m_remark = filled if mode == "has" else ~filled
+        else:
+            m_remark = pd.Series(False, index=df.index)
+    else:
+        m_remark = pd.Series(True, index=df.index)
+
+    # 9. 偏差数量范围（开区间；无列 → 不匹配）
+    if rule.get("dev_qty_required", False):
+        if dev_qty_col:
+            q = pd.to_numeric(df[dev_qty_col], errors="coerce")
+            mn = float(rule.get("dev_qty_min", 0))
+            mx = float(rule.get("dev_qty_max", 1))
+            m_dq = q.notna() & (q > mn) & (q < mx)
+        else:
+            m_dq = pd.Series(False, index=df.index)
+    else:
+        m_dq = pd.Series(True, index=df.index)
+
+    # 10. 名称不含（逗号分隔多值；任一命中即排除，即 NOT(含A OR 含B)）
+    ex = [str(k).strip() for k in
+          str(rule.get("name_exclude_keywords", "")).replace("，", ",").replace("、", ",").split(",")
+          if str(k).strip()]
+    if ex:
+        if name_col:
+            name_str = df[name_col].astype(str).fillna("")
+            m_ex = pd.Series(False, index=df.index)
+            for kw in ex:
+                m_ex = m_ex | name_str.str.contains(kw, regex=False)
+            m_ex = ~m_ex
+        else:
+            m_ex = pd.Series(False, index=df.index)  # 开着无列 → 不匹配
+    else:
+        m_ex = pd.Series(True, index=df.index)  # 没填 → 不限制
+
+    return m_alt & m_cat & m_name & m_qty & m_rate & m_prefix & m_ws & m_remark & m_dq & m_ex

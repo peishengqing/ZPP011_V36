@@ -8,7 +8,7 @@ import pandas as pd
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView, QTabWidget,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QWidget,
-    QLineEdit,
+    QLineEdit, QComboBox,
 )
 from PySide6.QtCore import Qt, QPoint, Signal, QTimer
 from PySide6.QtGui import QPolygon, QColor, QBrush
@@ -161,6 +161,15 @@ class QuarantineDialog(QDialog):
         clear_btn.setFixedWidth(60)
         clear_btn.clicked.connect(lambda: self.edit_list_search.clear())
         sl.addWidget(clear_btn)
+        sl.addSpacing(12)
+        sl.addWidget(QLabel("是否备注:"))
+        self.combo_remark = QComboBox()
+        self.combo_remark.setMinimumWidth(70)
+        self.combo_remark.setMaximumWidth(100)
+        self.combo_remark.addItems(["全部", "有", "无"])
+        self.combo_remark.setCurrentText("全部")
+        self.combo_remark.currentTextChanged.connect(self._on_remark_filter_changed)
+        sl.addWidget(self.combo_remark)
         v.addLayout(sl)
 
         self.table_view = QTableView()
@@ -569,6 +578,20 @@ class QuarantineDialog(QDialog):
         self._list_search_timer.stop()
         self._list_search_timer.start()
 
+    def _on_remark_filter_changed(self, text):
+        """是否备注下拉框变化：记住选择并走统一过滤"""
+        self._current_remark_filter = text
+        self._apply_list_filters()
+
+    def _remark_col(self, df):
+        """找备注列：精确「备注」优先，否则首个列名含「备注」的列"""
+        if "备注" in df.columns:
+            return "备注"
+        for c in df.columns:
+            if "备注" in str(c):
+                return c
+        return None
+
     def _apply_list_filters(self):
         """按「隔离原因 + 关键字」叠加过滤隔离区列表（全部/空 = 不过滤），
         并记住各自选择以便刷新后恢复；渲染前重建序号列与排序态。"""
@@ -586,6 +609,13 @@ class QuarantineDialog(QDialog):
             for c in df.columns:
                 mask |= df[c].astype(str).str.lower().str.contains(kw, na=False)
             df = df.loc[mask]
+        # 是否备注筛选（全部/有/无），与隔离原因、关键字叠加
+        remark = getattr(self, '_current_remark_filter', '全部')
+        if remark != '全部':
+            rcol = self._remark_col(df)
+            if rcol:
+                vals = df[rcol].apply(lambda x: "" if pd.isna(x) else str(x).strip())
+                df = df[vals != "" if remark == '有' else vals == ""]
         self._render_table(df.copy())
 
     def show_context_menu(self, pos: QPoint):

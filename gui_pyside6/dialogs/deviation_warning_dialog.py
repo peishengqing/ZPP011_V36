@@ -41,6 +41,8 @@ class DeviationWarningDialog(QDialog):
         self._quar_filter = "all"   # 隔离区筛选：all / yes(是)
         self._alt_filter = "all"    # 替代料筛选：all / yes(是) / no(否)
         self._keyword = ""          # 关键字搜索（跨列，与分类筛选叠加）
+        self._remark_filter = "all"   # 是否备注筛选：all / has(有) / none(无)
+        self._remark_col_name = None  # 备注列名（set_data 时探测）
         self.setup_ui()
         self.set_data(warnings_df)
 
@@ -111,6 +113,12 @@ class DeviationWarningDialog(QDialog):
         self.btn_mat_pkg.setMinimumWidth(70)
         self.btn_mat_pkg.clicked.connect(lambda: self._set_mat_filter("pkg"))
         filter_layout.addWidget(self.btn_mat_pkg)
+
+        self.btn_mat_semi = QPushButton("半成品")
+        self.btn_mat_semi.setCheckable(True)
+        self.btn_mat_semi.setMinimumWidth(70)
+        self.btn_mat_semi.clicked.connect(lambda: self._set_mat_filter("semi"))
+        filter_layout.addWidget(self.btn_mat_semi)
 
         # ---- 第三组：车间筛选（与已读状态、料别独立，可叠加）----
         self.workshop_sep = QFrame()
@@ -188,6 +196,35 @@ class DeviationWarningDialog(QDialog):
         self.btn_alt_no.setMinimumWidth(70)
         self.btn_alt_no.clicked.connect(lambda: self._set_alt_filter("no"))
         filter_layout.addWidget(self.btn_alt_no)
+
+        # ---- 第六组：是否备注筛选（全部 / 有 / 无）----
+        self.remark_sep = QFrame()
+        self.remark_sep.setFrameShape(QFrame.VLine)
+        self.remark_sep.setFrameShadow(QFrame.Sunken)
+        filter_layout.addSpacing(8)
+        filter_layout.addWidget(self.remark_sep)
+        filter_layout.addSpacing(8)
+
+        self.lbl_remark = QLabel("是否备注:")
+        filter_layout.addWidget(self.lbl_remark)
+
+        self.btn_remark_all = QPushButton("全部")
+        self.btn_remark_all.setCheckable(True)
+        self.btn_remark_all.setMinimumWidth(70)
+        self.btn_remark_all.clicked.connect(lambda: self._set_remark_filter("all"))
+        filter_layout.addWidget(self.btn_remark_all)
+
+        self.btn_remark_has = QPushButton("有")
+        self.btn_remark_has.setCheckable(True)
+        self.btn_remark_has.setMinimumWidth(70)
+        self.btn_remark_has.clicked.connect(lambda: self._set_remark_filter("has"))
+        filter_layout.addWidget(self.btn_remark_has)
+
+        self.btn_remark_none = QPushButton("无")
+        self.btn_remark_none.setCheckable(True)
+        self.btn_remark_none.setMinimumWidth(70)
+        self.btn_remark_none.clicked.connect(lambda: self._set_remark_filter("none"))
+        filter_layout.addWidget(self.btn_remark_none)
 
         filter_layout.addStretch()
 
@@ -273,11 +310,12 @@ class DeviationWarningDialog(QDialog):
         self._apply_filter()
 
     def _set_mat_filter(self, mode):
-        """料别筛选（全部/原料/包材），与已读状态筛选独立叠加"""
+        """料别筛选（全部/原料/包材/半成品），与已读状态筛选独立叠加"""
         self.mat_filter = mode
         self.btn_mat_all.setChecked(mode == "all")
         self.btn_mat_raw.setChecked(mode == "raw")
         self.btn_mat_pkg.setChecked(mode == "pkg")
+        self.btn_mat_semi.setChecked(mode == "semi")
         self._apply_filter()
 
     def _set_quar_filter(self, mode):
@@ -294,6 +332,14 @@ class DeviationWarningDialog(QDialog):
         self.btn_alt_all.setChecked(mode == "all")
         self.btn_alt_yes.setChecked(mode == "yes")
         self.btn_alt_no.setChecked(mode == "no")
+        self._apply_filter()
+
+    def _set_remark_filter(self, mode):
+        """是否备注筛选（全部/有/无），与已读状态、料别、车间、隔离区、替代料独立叠加"""
+        self._remark_filter = mode
+        self.btn_remark_all.setChecked(mode == "all")
+        self.btn_remark_has.setChecked(mode == "has")
+        self.btn_remark_none.setChecked(mode == "none")
         self._apply_filter()
 
     def _quar_mask(self, df, mode):
@@ -314,6 +360,19 @@ class DeviationWarningDialog(QDialog):
             return vals == "是"
         return vals == "否"
 
+    def _remark_mask(self, df, mode):
+        """是否备注掩码：all=全True / has=备注列非空 / none=备注列为空
+
+        备注列名在 set_data 时探测存入 self._remark_col_name；列缺失一律全 True。
+        """
+        if mode == "all" or not self._remark_col_name or self._remark_col_name not in df.columns:
+            return pd.Series(True, index=df.index)
+        col = df[self._remark_col_name]
+        vals = col.apply(lambda x: "" if pd.isna(x) else str(x).strip())
+        if mode == "has":
+            return vals != ""
+        return vals == ""
+
     def _on_workshop_changed(self, text):
         """车间下拉框变化时触发筛选"""
         self._workshop_filter = "all" if text == "全部" else text
@@ -332,15 +391,25 @@ class DeviationWarningDialog(QDialog):
         return pd.Series(True, index=df.index)
 
     def _mat_mask(self, df, mode):
-        """料别掩码：all=全True / raw=物料类型=='原料' / pkg=='包材'
+        """料别掩码：all=全True / raw=物料类型=='原料' / pkg=='包材' / semi=='半成品'
 
-        料别列取「物料类型」（analyzer 按物料编码前缀推断：20→包材、30→原料）。
+        料别列取「物料类型」（analyzer 按物料编码前缀推断：20→包材、30→原料、40/41→半成品）。
         列缺失时一律返回全 True，等同于不做料别过滤（按钮此时已隐藏）。
         """
         if mode == "all" or not self._mat_col or self._mat_col not in df.columns:
             return pd.Series(True, index=df.index)
-        vals = df[self._mat_col].astype(str).str.strip()
-        return vals.isin(("原材料" if mode == "raw" else "包材", "原料"))
+        col = df[self._mat_col].astype(str).str.strip()
+        if mode == "raw":
+            return col.isin(["原材料", "原料"])
+        if mode == "pkg":
+            return col.isin(["包材", "原料"])  # 保留既有写法（包材按钮同时含原料）
+        if mode == "semi":
+            # 半成品：料别列值含「半成品」；若数据带「物料分类」列且其值为半成品，也命中
+            semi = col.str.contains("半成品", na=False)
+            if "物料分类" in df.columns:
+                semi = semi | (df["物料分类"].astype(str).str.strip() == "半成品")
+            return semi
+        return pd.Series(True, index=df.index)
 
     def _workshop_mask(self, df, mode):
         """车间掩码：all=全True / 车间名=车间列==该值
@@ -372,6 +441,7 @@ class DeviationWarningDialog(QDialog):
                       & self._workshop_mask(df, self._workshop_filter)
                       & self._quar_mask(df, self._quar_filter)
                       & self._alt_mask(df, self._alt_filter)
+                      & self._remark_mask(df, self._remark_filter)
                       & self._keyword_mask(df)].copy()
 
         filtered = filtered.reset_index(drop=True)
@@ -387,7 +457,10 @@ class DeviationWarningDialog(QDialog):
             if df is None or df.empty:
                 for b, t in [(self.btn_all, "全部"), (self.btn_unread, "未读"),
                              (self.btn_read, "已读"), (self.btn_mat_all, "全部"),
-                             (self.btn_mat_raw, "原料"), (self.btn_mat_pkg, "包材")]:
+                             (self.btn_mat_raw, "原料"), (self.btn_mat_pkg, "包材"),
+                             (self.btn_mat_semi, "半成品"),
+                             (self.btn_remark_all, "全部"), (self.btn_remark_has, "有"),
+                             (self.btn_remark_none, "无")]:
                     b.setText(f"{t} (0)")
                 return
             cur_read = self._read_mask(df, self.filter_mode)
@@ -404,6 +477,8 @@ class DeviationWarningDialog(QDialog):
                 f"原料 ({int((cur_read & self._mat_mask(df, 'raw')).sum())})")
             self.btn_mat_pkg.setText(
                 f"包材 ({int((cur_read & self._mat_mask(df, 'pkg')).sum())})")
+            self.btn_mat_semi.setText(
+                f"半成品 ({int((cur_read & self._mat_mask(df, 'semi')).sum())})")
             # 隔离区组：固定当前已读状态，看 是/否 各多少条
             cur_quar_yes = (df["隔离区"].astype(str).str.strip() == "是") if "隔离区" in df.columns else pd.Series(False, index=df.index)
             cur_quar_no = ~cur_quar_yes
@@ -420,6 +495,18 @@ class DeviationWarningDialog(QDialog):
                 f"是 ({int((cur_read & cur_alt_yes).sum())})")
             self.btn_alt_no.setText(
                 f"否 ({int((cur_read & cur_alt_no).sum())})")
+            # 是否备注组：固定当前已读状态，看 有/无 各多少条
+            rc = self._remark_col_name
+            if rc and rc in df.columns:
+                cur_remark_has = df[rc].apply(lambda x: "" if pd.isna(x) else str(x).strip()) != ""
+            else:
+                cur_remark_has = pd.Series(False, index=df.index)
+            cur_remark_none = ~cur_remark_has
+            self.btn_remark_all.setText(f"全部 ({int(cur_read.sum())})")
+            self.btn_remark_has.setText(
+                f"有 ({int((cur_read & cur_remark_has).sum())})")
+            self.btn_remark_none.setText(
+                f"无 ({int((cur_read & cur_remark_none).sum())})")
             # 车间下拉框：不更新，但显示当前选中车间的记录数（用于验证）
             if self._workshop_filter != "all" and self._workshop_col and self._workshop_col in df.columns:
                 workshop_count = (df[self._workshop_col].astype(str).str.strip() == self._workshop_filter).sum()
@@ -501,13 +588,14 @@ class DeviationWarningDialog(QDialog):
             (c for c in ['物料类型', '物料大类'] if c in df.columns), None)
         has_mat = self._mat_col is not None
         for w in (self.mat_sep, self.lbl_mat, self.btn_mat_all,
-                  self.btn_mat_raw, self.btn_mat_pkg):
+                  self.btn_mat_raw, self.btn_mat_pkg, self.btn_mat_semi):
             w.setVisible(has_mat)
         # 料别默认「全部」（直接置状态，避免与下面的 _set_filter 重复过滤一次）
         self.mat_filter = "all"
         self.btn_mat_all.setChecked(True)
         self.btn_mat_raw.setChecked(False)
         self.btn_mat_pkg.setChecked(False)
+        self.btn_mat_semi.setChecked(False)
 
         # 探测车间列，填充下拉框
         self._workshop_col = None
@@ -524,6 +612,22 @@ class DeviationWarningDialog(QDialog):
         self._workshop_filter = "all"
         self.combo_workshop.setCurrentText("全部")
 
+        # 探测是否备注列（精确「备注」优先，否则首个含「备注」的列），控制「是否备注」筛选组显隐
+        self._remark_col_name = "备注" if "备注" in df.columns else None
+        if self._remark_col_name is None:
+            self._remark_col_name = next((c for c in df.columns if "备注" in str(c)), None)
+        has_remark = self._remark_col_name is not None
+        self.remark_sep.setVisible(has_remark)
+        self.lbl_remark.setVisible(has_remark)
+        self.btn_remark_all.setVisible(has_remark)
+        self.btn_remark_has.setVisible(has_remark)
+        self.btn_remark_none.setVisible(has_remark)
+        # 是否备注默认「全部」
+        self._remark_filter = "all"
+        self.btn_remark_all.setChecked(True)
+        self.btn_remark_has.setChecked(False)
+        self.btn_remark_none.setChecked(False)
+
         # 默认打开时显示未读
         self._set_filter("unread")
 
@@ -532,7 +636,7 @@ class DeviationWarningDialog(QDialog):
         state = {"all": "全部", "unread": "未读", "read": "已读"}.get(self.filter_mode, "全部")
         parts = [state]
         if self._mat_col:
-            mat = {"all": "", "raw": "原料", "pkg": "包材"}.get(self.mat_filter, "")
+            mat = {"all": "", "raw": "原料", "pkg": "包材", "semi": "半成品"}.get(self.mat_filter, "")
             if mat:
                 parts.append(mat)
         return "_".join(parts)

@@ -437,7 +437,11 @@ def build_condition_summary(cond):
     if spec["op"] == "eq":
         return "%s = %s" % (spec["label"], _to_num(val.get("value", 0)))
     if spec["op"] == "startswith":
-        return "%s「%s」" % (spec["label"], str(val.get("value", "")).strip())
+        raw = str(val.get("value", "")).strip()
+        if "," in raw:
+            items = [x.strip() for x in raw.split(",") if x.strip()]
+            return "%s（%s）" % (spec["label"], "、".join(items) if items else "未填")
+        return "%s「%s」" % (spec["label"], raw)
     if spec["op"] == "contains":
         raw = str(val.get("value", "")).strip()
         if "," in raw:
@@ -569,7 +573,17 @@ def _match_single_condition(df, cond):
         return pd.to_numeric(col, errors="coerce").fillna(0) == target
     if op == "startswith":
         s = col.astype(str).fillna("")
-        return s.str.startswith(str(val.get("value", "")).strip(), na=False)
+        raw = str(val.get("value", "")).strip()
+        # 支持逗号分隔多值 OR（与 contains 行为一致）
+        if "," in raw:
+            items = [x.strip() for x in raw.split(",") if x.strip()]
+            if not items:
+                return pd.Series(False, index=df.index)
+            mask = pd.Series(False, index=df.index)
+            for item in items:
+                mask |= s.str.startswith(item, na=False)
+            return mask
+        return s.str.startswith(raw, na=False)
     if op == "contains":
         s = col.astype(str).fillna("")
         raw = str(val.get("value", "")).strip()
