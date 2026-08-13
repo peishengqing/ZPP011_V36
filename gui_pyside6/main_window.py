@@ -2042,6 +2042,52 @@ class MainWindow(QMainWindow):
     def _add_alt_pair(self):
         self.alt_controller.show_add_dialog(self)
 
+    def _add_alt_pair_from_selection(self):
+        """智能添加替代料：从主表选中 2 行自动提取工厂/编码/名称，弹窗核对后写入。"""
+        if self.view_model is None or self.view_model.df is None or self.view_model.df.empty:
+            QMessageBox.warning(self, "提示", "请先加载并分析数据")
+            return
+        if self.proxy_model is None or self.source_model is None:
+            QMessageBox.warning(self, "提示", "主表尚未就绪，无法读取选中行")
+            return
+        # 选中行（proxy 行号）→ 去重 → 映射源行号，保留选中顺序
+        sel = self.table_view.selectionModel().selectedRows()
+        src_rows = []
+        seen = set()
+        for idx in sel:
+            r = self.proxy_model.mapToSource(idx).row()
+            if r not in seen:
+                seen.add(r)
+                src_rows.append(r)
+        if len(src_rows) != 2:
+            QMessageBox.warning(
+                self, "提示",
+                f"请在主表选中恰好 2 行（当前选中 {len(src_rows)} 行）\n"
+                "选中两行后，将自动提取它们的物料信息作为替代料配对。"
+            )
+            return
+        df = self.source_model.getDataFrame()
+
+        def extract(r):
+            row = df.iloc[r]
+            return (
+                str(row.get('factory', '') or '').strip(),
+                str(row.get('code', '') or '').strip(),
+                str(row.get('name', '') or '').strip(),
+            )
+
+        a = extract(src_rows[0])
+        b = extract(src_rows[1])
+        if not a[1] or not b[1]:
+            QMessageBox.warning(self, "提示", "选中的两行中至少有一行「物料号」为空，无法作为替代料配对")
+            return
+        if a[1] == b[1]:
+            QMessageBox.warning(self, "提示", f"两行「物料号」均为 {a[1]}，是同一物料，不能作为替代料配对")
+            return
+        if self.alt_controller.show_add_from_rows_dialog(self, a, b):
+            # add_pair 已 emit data_changed → 刷新替代料列表并重算净偏差
+            toast(f"✅ 已添加替代料配对：{a[1]} ↔ {b[1]}", "success", parent=self)
+
     def _delete_alt_pair(self):
         current_row = self.alt_table.currentRow()
         if current_row < 0:
@@ -3189,6 +3235,9 @@ class MainWindow(QMainWindow):
         copy_action.triggered.connect(
             lambda: self.audit_controller.copy_material_code(row_data, self.statusBar().showMessage)
         )
+        menu.addSeparator()
+        add_sel_action = menu.addAction("➕ 添加为替代料配对（选中2行）")
+        add_sel_action.triggered.connect(lambda: self._add_alt_pair_from_selection())
         menu.addSeparator()
         mark_read_action = menu.addAction("标记为已读")
         mark_read_action.triggered.connect(

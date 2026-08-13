@@ -172,6 +172,87 @@ class AltController(QObject):
             return self.add_pair(a, b, parent_widget)
         return False
 
+    # ------------------- 交互对话框（从主表选中行智能添加） -------------------
+    def show_add_from_rows_dialog(self, parent_widget, a, b):
+        """从主表选中 2 行智能添加：自动提取 (工厂, 编码, 名称) 后预览核对。
+
+        a / b 已为 (工厂, 编码, 名称) 三元组；弹窗只读展示，支持交换 A/B，
+        点「添加」才调用 add_pair 写库（重复时 add_pair 内部告警并保持打开）。
+        返回是否成功添加。
+        """
+        dlg = QDialog(parent_widget)
+        dlg.setWindowTitle("从选中行添加替代料配对")
+        dlg.setMinimumWidth(440)
+        outer = QVBoxLayout(dlg)
+
+        tip = QLabel("已自动提取主表选中行的物料信息，请核对后添加到替代料配对。")
+        tip.setStyleSheet("color:#888; font-size:11px;")
+        outer.addWidget(tip)
+
+        state = {'a': a, 'b': b}
+
+        def make_group(title):
+            g = QGroupBox(title)
+            fl = QFormLayout(g)
+            fac = QLabel(); cod = QLabel(); nam = QLabel()
+            fac.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            cod.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            nam.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            fl.addRow("工厂:", fac)
+            fl.addRow("编码:", cod)
+            fl.addRow("名称:", nam)
+            return g, (fac, cod, nam)
+
+        a_group, a_lbls = make_group("物料A")
+        arrow = QLabel("↔")
+        arrow.setAlignment(Qt.AlignCenter)
+        b_group, b_lbls = make_group("物料B")
+
+        def refresh():
+            for lbl, val in zip(a_lbls, state['a']):
+                lbl.setText((val or "").strip() or "（空）")
+            for lbl, val in zip(b_lbls, state['b']):
+                lbl.setText((val or "").strip() or "（空）")
+
+        row = QHBoxLayout()
+        row.addWidget(a_group)
+        row.addWidget(arrow)
+        row.addWidget(b_group)
+        outer.addLayout(row)
+
+        btns = QHBoxLayout()
+        swap_btn = QPushButton("⇄ 交换 A/B")
+        add_btn = QPushButton("添加")
+        add_btn.setDefault(True)
+        cancel_btn = QPushButton("取消")
+        btns.addWidget(swap_btn)
+        btns.addStretch()
+        btns.addWidget(add_btn)
+        btns.addWidget(cancel_btn)
+        outer.addLayout(btns)
+
+        refresh()
+
+        result = {'added': False}
+
+        def do_swap():
+            state['a'], state['b'] = state['b'], state['a']
+            refresh()
+
+        def do_add():
+            ok = self.add_pair(state['a'], state['b'], parent_widget)
+            if ok:
+                result['added'] = True
+                dlg.accept()
+            # 重复时 add_pair 已弹警告，保持对话框打开
+
+        swap_btn.clicked.connect(do_swap)
+        add_btn.clicked.connect(do_add)
+        cancel_btn.clicked.connect(dlg.reject)
+
+        dlg.exec()
+        return result['added']
+
     # ------------------- 交互对话框（修改配对） -------------------
     def show_edit_dialog(self, parent_widget, old_a, old_b):
         """弹出修改配对的对话框，预填 old_a/old_b，成功返回 (a, b)，取消返回 None"""

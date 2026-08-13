@@ -233,6 +233,15 @@ class LeftPanelComponent:
         btn_layout2.addStretch()
         layout.addLayout(btn_layout2)
 
+        # 智能添加：从主表选中 2 行自动提取工厂/编码/名称
+        sel_row = QHBoxLayout()
+        sel_btn = QPushButton("📌 从主表选中2行添加")
+        sel_btn.setObjectName("altActionBtn")
+        sel_btn.setToolTip("在主表选中恰好 2 行，自动提取它们的工厂/编码/名称作为替代料配对")
+        sel_btn.clicked.connect(self.mw._add_alt_pair_from_selection)
+        sel_row.addWidget(sel_btn)
+        layout.addLayout(sel_row)
+
     def _create_input_row(self, parent_layout: QVBoxLayout, label_text: str,
                          placeholder: str, has_browse: bool = False) -> QWidget:
         """创建 label + 输入框行"""
