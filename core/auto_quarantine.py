@@ -46,37 +46,41 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def _resolve_config_path(filename):
-    """解析配置文件绝对路径。
+    """返回配置文件的【持久化】绝对路径（读写均用此路径，重启后仍可读回）。
 
     源码模式：使用项目内 config/ 目录（与源码配置同处），__file__ 稳定。
     exe 模式（PyInstaller onefile 每次解压到随机临时目录 _MEIxxxx）：
-    __file__ 不可信，强制指向项目真实 config 目录，与 column_widths.json、
-    auto_read_rules.json 等真实配置同处，避免写进临时解压目录或 dist
-    导致重启后配置丢失。可用环境变量 ZPP011_PROJECT_ROOT 覆盖项目根。
+      __file__ 不可信；_MEIPASS 是临时解压目录，退出即删，**绝不作为写入目标**
+      （否则像旧版那样删了规则重启又回来）。持久化首选 ZPP011_PROJECT_ROOT
+      直接指向的 config 目录（如 E:\\zpp011_v2\\config，与源码配置同处、重启后
+      仍在），其次 exe 同目录的 config/（便携兜底）。读不到持久化文件时，load
+      会自动回退到打包内置默认（见 _bundle_config_path），保证首次启动仍有
+      默认规则。
     """
     if getattr(sys, "frozen", False):
-        # PyInstaller onefile 解压到临时目录 _MEIxxxx，config/ 在其中的相对路径
+        project_root = os.environ.get("ZPP011_PROJECT_ROOT")
+        if project_root:
+            # ZPP011_PROJECT_ROOT 直接指向 config 目录（如 E:\zpp011_v2\config）
+            return os.path.join(project_root, filename)
+        # 便携模式：exe 同目录的 config/（持久化，重启后仍在）
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        return os.path.join(exe_dir, "config", filename)
+    return os.path.join(_HERE, "..", "config", filename)
+
+
+def _bundle_config_path(filename):
+    """exe 模式下返回打包进 exe 的默认配置文件路径（只读兜底）；
+
+    仅当持久化文件尚不存在时由 load 回退使用，避免「首次启动无默认规则」。
+    非 exe 模式，或打包副本不存在时返回 None。
+    """
+    if getattr(sys, "frozen", False):
         meipass = getattr(sys, "_MEIPASS", None)
         if meipass is not None:
-            return os.path.join(meipass, "config", filename)
-        # 回退：exe 所在目录的 config/（便携模式 / 未解压）
-        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
-        fallback = os.path.join(exe_dir, "config", filename)
-        if os.path.exists(fallback):
-            return fallback
-        # 最后：环境变量覆盖
-        project_root = os.environ.get("ZPP011_PROJECT_ROOT")
-        if project_root is not None:
-            return os.path.join(project_root, "config", filename)
-        # 实在找不到才报错
-        raise RuntimeError(
-            f"exe 模式下无法定位 config/ 目录，已尝试：\n"
-            f"  1. sys._MEIPASS\\config\\{filename}\n"
-            f"  2. exe 同目录\\config\\{filename}\n"
-            f"  3. 环境变量 ZPP011_PROJECT_ROOT\n"
-            "请确认 config/ 目录与 exe 同处，或设置 ZPP011_PROJECT_ROOT。"
-        )
-    return os.path.join(_HERE, "..", "config", filename)
+            p = os.path.join(meipass, "config", filename)
+            if os.path.exists(p):
+                return p
+    return None
 
 
 CONFIG_PATH = _resolve_config_path("auto_quarantine_config.json")
@@ -152,11 +156,21 @@ def _normalize_rule(rule):
 
 
 def load_auto_quarantine_config():
-    """读取配置，兼容旧单条格式，返回 {'enabled': bool, 'rules': [规则...]}。"""
+    """读取配置，兼容旧单条格式，返回 {'enabled': bool, 'rules': [规则...]}。
+
+    读取优先级：① 持久化文件 CONFIG_PATH → ② 打包内置默认（_bundle_config_path，
+    首次启动 / 持久化文件被删时兜底）→ ③ 代码内 DEFAULT_CONFIG。
+    """
     cfg = {"enabled": DEFAULT_CONFIG["enabled"], "rules": [dict(DEFAULT_RULE)]}
     try:
-        if os.path.exists(CONFIG_PATH):
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        src = CONFIG_PATH
+        if not os.path.exists(src):
+            # 持久化文件不存在 → 回退打包内置默认（仅首次启动或文件被删）
+            bundle = _bundle_config_path("auto_quarantine_config.json")
+            if bundle and os.path.exists(bundle):
+                src = bundle
+        if os.path.exists(src):
+            with open(src, "r", encoding="utf-8") as f:
                 user = json.load(f)
             if isinstance(user, dict):
                 if "rules" in user and isinstance(user["rules"], list):

@@ -14,6 +14,19 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.82",
+        "date": "2026-08-13",
+        "features": [],
+        "fixes": [
+            "修复自动隔离规则 / 自动已读规则删除后重启又恢复：旧版 exe 模式下 _resolve_config_path 把配置写进 PyInstaller 临时解压目录 _MEIPASS（退出即删），导致删除不持久",
+        ],
+        "optimizations": [],
+        "notes": [
+            "core/auto_quarantine.py 与 core/auto_read_rules.py 的 _resolve_config_path 改为 exe 模式持久化路径：优先 ZPP011_PROJECT_ROOT 直接指向的 config 目录（如 E:\\zpp011_v2\\config，与源码配置同处），其次 exe 同目录 config/；新增 _bundle_config_path 只读兜底，load 在持久化文件缺失时回退打包内置默认，保证首次启动仍有默认规则；_MEIPASS 不再作为写入目标",
+            "要用 ZPP011_PROJECT_ROOT 持久化，启动 exe 前须设置环境变量 ZPP011_PROJECT_ROOT=E:\\zpp011_v2\\config（否则回退 exe 同目录 config/）；删除规则后仍需在规则中心点「保存全部」才落盘",
+        ],
+    },
+    {
         "version": "v42.81",
         "date": "2026-08-13",
         "features": [
