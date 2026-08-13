@@ -117,6 +117,17 @@ def remove_quarantine_batch(uids: List[str]):
     conn.close()
 
 
+def update_quarantine_reason(uid: str, reason: str):
+    """仅更新隔离原因（人工修正），不动 reason_basis / quarantined_at / restored_at。"""
+    conn = _get_conn()
+    conn.execute(
+        "UPDATE quarantine_records SET reason = ? WHERE uid = ?",
+        (str(reason), str(uid))
+    )
+    conn.commit()
+    conn.close()
+
+
 def is_quarantined(uid: str) -> bool:
     conn = _get_conn()
     cur = conn.execute(

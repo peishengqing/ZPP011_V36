@@ -14,6 +14,18 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.81",
+        "date": "2026-08-13",
+        "features": [
+            "隔离区列表 Tab 右键菜单新增「✎ 修改隔离原因（选中行）」：弹框可编辑，仅写 quarantine_records.reason 字段（不动 reason_basis/时间戳），同步内存 full_df 后重渲染；避开全局只读模型，不触发已读变更基线",
+        ],
+        "fixes": [],
+        "optimizations": [],
+        "notes": [
+            "修改隔离原因走 core.quarantine_manager.update_quarantine_reason（UPDATE reason WHERE uid），与 add_quarantine 的 INSERT OR REPLACE 解耦；多行批量修改时以首个非空原因为预填值",
+        ],
+    },
+    {
         "version": "v42.80",
         "date": "2026-08-12",
         "features": [

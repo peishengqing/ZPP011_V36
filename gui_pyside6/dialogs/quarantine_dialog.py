@@ -8,13 +8,14 @@ import pandas as pd
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView, QTabWidget,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QWidget,
-    QLineEdit, QComboBox,
+    QLineEdit, QComboBox, QInputDialog,
 )
 from PySide6.QtCore import Qt, QPoint, Signal, QTimer
 from PySide6.QtGui import QPolygon, QColor, QBrush
 from gui_pyside6.models.data_frame_model import DataFrameModel
 from core.quarantine_manager import (
     remove_quarantine_batch, get_quarantine_records, scan_expired_quarantine,
+    update_quarantine_reason,
 )
 from core.auto_quarantine import load_auto_quarantine_config
 from core.read_status import save_read_status_batch
@@ -656,7 +657,57 @@ class QuarantineDialog(QDialog):
         menu.addSeparator()
         restore_action = menu.addAction("↩ 取消隔离（选中行）")
         restore_action.triggered.connect(lambda: self._restore_rows(selected_rows))
+        menu.addSeparator()
+        edit_reason_action = menu.addAction("✎ 修改隔离原因（选中行）")
+        edit_reason_action.triggered.connect(lambda: self._edit_reason_for_rows(selected_rows))
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
+
+    def _edit_reason_for_rows(self, rows):
+        """隔离区右键：修改选中行的隔离原因（人工修正），仅写 reason 字段，
+        同步内存 full_df 后重渲染（避开全局只读模型，不触发已读变更基线）。"""
+        df = self.source_model.getDataFrame()
+        if df is None:
+            return
+        ids = []
+        old_reasons = {}
+        for r in rows:
+            if r >= len(df):
+                continue
+            uid = df.iloc[r].get('data_id')
+            if not uid:
+                continue
+            uid = str(uid)
+            ids.append(uid)
+            raw = df.iloc[r].get('隔离原因') if '隔离原因' in df.columns else None
+            old_reasons[uid] = ("" if pd.isna(raw) else str(raw).strip())
+        if not ids:
+            toast("未找到可修改的隔离记录", parent=self)
+            return
+        # 多行时以首个非空原因预填；占位符「（未填写原因）」还原为空
+        prefill = next((v for v in old_reasons.values() if v), "")
+        new_reason, ok = QInputDialog.getText(
+            self, "修改隔离原因",
+            f"将修改 {len(ids)} 条隔离记录的「隔离原因」：",
+            text=prefill,
+        )
+        if not ok:
+            return
+        new_reason = new_reason.strip()
+        for uid in ids:
+            update_quarantine_reason(uid, new_reason)
+        # 回写内存 full_df（隔离区列表数据源），保持与库一致
+        if hasattr(self, 'full_df') and self.full_df is not None and '隔离原因' in self.full_df.columns and 'data_id' in self.full_df.columns:
+            mask = self.full_df['data_id'].astype(str).isin(set(ids))
+            self.full_df.loc[mask, '隔离原因'] = new_reason
+        # 若主表内存也有「隔离原因」列（部分版本水合），一并回写
+        if self.main_window and hasattr(self.main_window, 'view_model'):
+            main_df = self.main_window.view_model.df
+            if main_df is not None and '隔离原因' in main_df.columns and 'data_id' in main_df.columns:
+                mmask = main_df['data_id'].astype(str).isin(set(ids))
+                main_df.loc[mmask, '隔离原因'] = new_reason
+                self.main_window.view_model.df = main_df
+        self._apply_list_filters()
+        toast(f"✎ 已修改 {len(ids)} 条隔离原因", parent=self)
 
     def _mark_rows_read_state(self, rows, is_read):
         """批量切换隔离区选中行的已读/未读状态，并同步回主表和 SQLite。"""
