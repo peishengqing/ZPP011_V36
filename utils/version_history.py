@@ -14,6 +14,18 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.83",
+        "date": "2026-08-13",
+        "features": [],
+        "fixes": [
+            "v42.82 修正：自动隔离/已读规则配置在 exe 模式下【只】持久化到 ZPP011_PROJECT_ROOT 指向的 config 目录（如 E:\\zpp011_v2\\config），移除「回退 exe 同目录 config/」分支；未设置该环境变量时直接报明确错误，不再把规则写到 exe 旁边",
+        ],
+        "optimizations": [],
+        "notes": [
+            "用户要求规则配置不要和 exe 同目录。故 exe 模式运行前必须设置 ZPP011_PROJECT_ROOT=E:\\zpp011_v2\\config（建议用一键启动 .bat 或系统环境变量）；源码模式仍用项目内 config/，与 exe 共享同一份配置",
+        ],
+    },
+    {
         "version": "v42.82",
         "date": "2026-08-13",
         "features": [],
