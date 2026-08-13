@@ -52,22 +52,18 @@ def _resolve_config_path(filename):
     源码模式：使用项目内 config/ 目录（与源码配置同处），__file__ 稳定。
     exe 模式（PyInstaller onefile 每次解压到随机临时目录 _MEIxxxx）：
       __file__ 不可信；_MEIPASS 是临时解压目录，退出即删，**绝不作为写入目标**。
-      配置【只】持久化到 ZPP011_PROJECT_ROOT 直接指向的 config 目录
-      （如 E:\\zpp011_v2\\config，与源码配置同处、重启后仍在），**不回退 exe 同
-      目录 config/**（用户要求规则配置不与 exe 放一起）。务必在启动前设置该环境
-      变量，否则直接报错。读不到持久化文件时，load 会回退到打包内置默认（见
-      _bundle_config_path），保证首次启动仍有默认规则。
+      配置【只】持久化到项目 config 目录，默认 E:\\zpp011_v2\\config（与源码配置
+      同处、重启后仍在、且不与 exe 同目录），可用环境变量 ZPP011_PROJECT_ROOT
+      覆盖。读不到持久化文件时，load 会回退到打包内置默认（见 _bundle_config_path），
+      保证首次启动仍有默认规则。
     """
     if getattr(sys, "frozen", False):
         project_root = os.environ.get("ZPP011_PROJECT_ROOT")
         if project_root:
             # ZPP011_PROJECT_ROOT 直接指向 config 目录（如 E:\zpp011_v2\config）
             return os.path.join(project_root, filename)
-        raise RuntimeError(
-            "exe 模式下必须通过环境变量 ZPP011_PROJECT_ROOT 指定 config 目录，\n"
-            "例如：ZPP011_PROJECT_ROOT=E:\\zpp011_v2\\config\n"
-            "规则配置不会写入 exe 同目录（避免与项目配置脱节）。"
-        )
+        # 未设置环境变量时，默认本机部署固定 config 目录（不与 exe 同目录）
+        return os.path.join("E:\\zpp011_v2", "config", filename)
     return os.path.join(_HERE, "..", "config", filename)
 
 

@@ -14,6 +14,18 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.84",
+        "date": "2026-08-13",
+        "features": [],
+        "fixes": [
+            "v42.83 再修正：自动隔离/已读规则配置 exe 模式默认写 E:\\zpp011_v2\\config（本机固定目录，不与 exe 同目录），未设置 ZPP011_PROJECT_ROOT 时不再报错，直接双击 exe 即可持久化，无需 .bat / 手动环境变量",
+        ],
+        "optimizations": [],
+        "notes": [
+            "ZPP011_PROJECT_ROOT 仍可覆盖默认路径；源码模式仍用项目内 config/，与 exe 共享同一份配置。v42.83 的一键启动 .bat 已不再需要",
+        ],
+    },
+    {
         "version": "v42.83",
         "date": "2026-08-13",
         "features": [],
