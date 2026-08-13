@@ -29,7 +29,7 @@ if __name__ == "__main__":
 
     # ── 版本号检查：防止重复打包（按版本号基础名前缀判断，与时间戳无关）──
     if os.path.isdir("dist"):
-        existing = [f for f in os.listdir("dist") if f.startswith(base_name) and f.endswith(".exe")]
+        existing = [f for f in os.listdir("dist") if f.startswith(base_name)]
         if existing:
             print(f"❌ 版本号 {version} 已打包过！请先更新 version_history.py 版本号再打包。")
             print(f"   发现已有文件: {existing[0]}")
@@ -105,7 +105,7 @@ if __name__ == "__main__":
         "run_pyside6.py",
         f"--name={exe_name}",
         window_mode,
-        "--onefile",
+        "--onedir",
         "--noconfirm",
         # --clean 注释掉：保留 dist 已有 exe 不被清空
         # "--clean",

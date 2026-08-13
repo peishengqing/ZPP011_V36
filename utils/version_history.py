@@ -14,6 +14,17 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.86",
+        "date": "2026-08-13",
+        "optimizations": [
+            "打包方式由 --onefile 改为 --onedir：不再把 210MB 压缩成单文件，依赖平铺在文件夹内，双击 exe 几乎秒开",
+            "根治 onefile 每次启动需解压 210MB 到临时目录 + Windows Defender 实时扫描上千 DLL/pyd 导致的「打不开（无窗口期）/ 启动极慢」问题",
+        ],
+        "notes": [
+            "功能与 v42.85 完全一致，仅打包形态变化：交付物为文件夹（含 exe + _internal + config），整体复制到目标位置后双击内部 exe 即可",
+        ],
+    },
+    {
         "version": "v42.85",
         "date": "2026-08-13",
         "features": [
