@@ -58,6 +58,7 @@ class EnhancedSortProxyModel(QSortFilterProxyModel):
                 old.modelReset.disconnect(self._invalidate_alert_cache)
                 old.layoutChanged.disconnect(self._invalidate_alert_cache)
                 old.dataChanged.disconnect(self._invalidate_alert_cache)
+                old.dataRefreshed.disconnect(self._invalidate_alert_cache)
             except Exception:
                 pass
         super().setSourceModel(model)
@@ -66,6 +67,7 @@ class EnhancedSortProxyModel(QSortFilterProxyModel):
             model.modelReset.connect(self._invalidate_alert_cache)
             model.layoutChanged.connect(self._invalidate_alert_cache)
             model.dataChanged.connect(self._invalidate_alert_cache)
+            model.dataRefreshed.connect(self._invalidate_alert_cache)
 
     def _invalidate_alert_cache(self, *args):
         """源数据变化时失效预警缓存（行数/内容变化后下次访问自动重建）。"""

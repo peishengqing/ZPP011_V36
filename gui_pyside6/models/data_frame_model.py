@@ -25,6 +25,7 @@ class DataFrameModel(QAbstractTableModel):
     # 必须与基类 QAbstractItemModel.dataChanged 保持一致（2 参：topLeft, bottomRight），
     # 否则 setData 里 emit(index, index) 会因参数个数不符抛异常被吞掉，导致编辑永远返回 False。
     dataChanged = Signal(QModelIndex, QModelIndex)
+    dataRefreshed = Signal()  # 全表刷新广播：替代滥用 dataChanged 发无效索引(QModelIndex())，订阅方重算汇总/失效缓存
 
     def __init__(self, data: pd.DataFrame = None):
         super().__init__()
@@ -59,7 +60,8 @@ class DataFrameModel(QAbstractTableModel):
         self._original_data = self._data.copy()
         self._build_cache()  # 新增：构建缓存
         self.endResetModel()
-        self.dataChanged.emit(QModelIndex(), QModelIndex())
+        # 全表刷新广播：发自定义无参信号，不再发无效索引(QModelIndex())以免触发 Qt 警告
+        self.dataRefreshed.emit()
 
     def mark_quarantine(self, ids, flag: bool):
         """就地更新隔离标记（不整表重置），保留主表滚动/排序/选中等视图状态。

@@ -14,6 +14,13 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.90",
+        "date": "2026-08-14",
+        "fixes": [
+            "消除控制台刷屏的 Qt 噪音警告『dataChanged() called with an invalid index range』：原 DataTableModel.setDataFrame() 末尾用 self.dataChanged.emit(QModelIndex(), QModelIndex())（无效索引）做全表刷新广播。改为新增自定义无参信号 dataRefreshed，setDataFrame 末尾改用 self.dataRefreshed.emit() 广播；mark_quarantine 的单行合法 dataChanged（self.index(pos,0)→last_col）保留用于隔离黄标刷新。main_window 的 _update_summary / _refresh_unread_popup / _update_mark_stats 与 enhanced_sort_proxy_model 的 _invalidate_alert_cache 均同时订阅 dataChanged 与 dataRefreshed（双订阅），确保全表刷新与单行隔离标记都能触发汇总重算与预警缓存失效，功能零退化；切换源模型时同步解绑 dataRefreshed。",
+        ],
+    },
+    {
         "version": "v42.89",
         "date": "2026-08-14",
         "fixes": [

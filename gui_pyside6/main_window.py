@@ -2284,13 +2284,16 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         self.source_model.dataChanged.connect(self._update_summary)
+        self.source_model.dataRefreshed.connect(self._update_summary)
         # self.source_model.dataChanged.connect(self._refresh_stats_cards)  # stats_cards 已删除
         # 标记已读/加隔离等会走 source_model.setDataFrame → 实时刷新未读弹窗条数
         self.source_model.dataChanged.connect(self._refresh_unread_popup)
+        self.source_model.dataRefreshed.connect(self._refresh_unread_popup)
         self.proxy_model.layoutChanged.connect(self._update_summary)
         self.proxy_model.layoutChanged.connect(self._update_mark_stats)
         # self.proxy_model.layoutChanged.connect(self._refresh_stats_cards)  # stats_cards 已删除
         self.source_model.dataChanged.connect(self._update_mark_stats)
+        self.source_model.dataRefreshed.connect(self._update_mark_stats)
         self.source_model.modelReset.connect(self._update_mark_stats)
         # 三态排序：禁用 Qt 自动排序，改用列头点击（sectionClicked）自行管理 升/降/取消
         self.table_view.setSortingEnabled(False)
@@ -2792,6 +2795,7 @@ class MainWindow(QMainWindow):
                 self.table_view.setModel(self.proxy_model)
                 self.proxy_model.layoutChanged.connect(self._update_mark_stats)
                 self.source_model.dataChanged.connect(self._update_mark_stats)
+                self.source_model.dataRefreshed.connect(self._update_mark_stats)
                 self.source_model.modelReset.connect(self._update_mark_stats)
             try:
                 self.source_model.setDataFrame(processed_df)
