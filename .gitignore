@@ -36,6 +36,7 @@ nul
 
 # Build outputs
 dist/
+dist_run/
 build/
 *.exe
 *.pkg

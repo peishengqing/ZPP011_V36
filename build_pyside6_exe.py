@@ -28,9 +28,9 @@ if __name__ == "__main__":
     exe_name = f"{base_name}_{ts}"
 
     # ── 版本号检查：防止重复打包（按版本号基础名前缀判断，与时间戳无关）──
-    # 固定输出目录 dist_run（onedir 产物平铺于此，Defender 排除一次永久生效）
-    if os.path.isdir("dist_run"):
-        existing = [f for f in os.listdir("dist_run") if f.startswith(base_name)]
+    # onefile 产物为 dist/ 下的单个 exe（含时间戳）
+    if os.path.isdir("dist"):
+        existing = [f for f in os.listdir("dist") if f.startswith(base_name) and f.endswith(".exe")]
         if existing:
             print(f"❌ 版本号 {version} 已打包过！请先更新 version_history.py 版本号再打包。")
             print(f"   发现已有文件: {existing[0]}")
@@ -106,10 +106,8 @@ if __name__ == "__main__":
         "run_pyside6.py",
         f"--name={exe_name}",
         window_mode,
-        "--onedir",
+        "--onefile",
         "--noconfirm",
-        # 固定输出到 dist_run（不再带时间戳的 dist 子目录，便于 Defender 排除一次永久生效）
-        "--distpath=dist_run",
     ]
     opts.extend(add_data_opts)
     opts.extend([
@@ -159,11 +157,15 @@ if __name__ == "__main__":
         # SSL/crypto DLLs（PyInstaller onefile 不会自动收集 cryptography 的 OpenSSL DLL）
         "--collect-all=cryptography",
     ])
-    # 固定输出目录 dist_run：打包前整体清空，避免不同时间戳版本目录在 dist_run 下累积
+    # 固定输出目录 dist：打包前整体清空，避免不同时间戳版本 exe 在 dist 下累积
     import shutil as _shutil
-    if os.path.isdir("dist_run"):
-        _shutil.rmtree("dist_run")
-        print("[清理] 已清空旧 dist_run")
+    if os.path.isdir("dist"):
+        try:
+            _shutil.rmtree("dist")
+            print("[清理] 已清空旧 dist")
+        except OSError as e:
+            print(f"[清理] 清空 dist 失败（旧 exe 可能仍运行或被占用）: {e}")
+            sys.exit(1)
 
     print("=" * 60)
     print("开始打包 PySide6 EXE")

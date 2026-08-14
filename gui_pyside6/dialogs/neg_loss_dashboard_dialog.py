@@ -13,7 +13,7 @@ import pandas as pd
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QLineEdit,
-    QCheckBox, QInputDialog,
+    QCheckBox, QDialogButtonBox,
 )
 from PySide6.QtCore import Qt, QTimer
 from gui_pyside6.models.data_frame_model import DataFrameModel
@@ -284,15 +284,42 @@ class NegLossDashboardDialog(QDialog):
                 ids.add(str(did))
         return ids
 
+def _ask_quarantine_reason(parent, title: str) -> str | None:
+    """弹出自定义「加入隔离区」对话框（显式确定/取消按钮，替代 QInputDialog.getText）。
+    返回原因字符串，点取消/关闭返回 None。
+    """
+    dlg = QDialog(parent)
+    dlg.setWindowTitle(title)
+    dlg.setFixedWidth(420)
+    layout = QVBoxLayout(dlg)
+
+    hint = QLabel("填写疑难原因（可选）：")
+    layout.addWidget(hint)
+
+    edit = QLineEdit()
+    edit.setPlaceholderText("留空则默认填入「手动隔离」")
+    layout.addWidget(edit)
+
+    btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+    btn_box.accepted.connect(dlg.accept)
+    btn_box.rejected.connect(dlg.reject)
+    layout.addWidget(btn_box)
+
+    edit.setFocus()
+    if dlg.exec() == QDialog.Accepted:
+        return edit.text().strip() or "手动隔离"
+    return None
+
+
     def _add_selected_to_quarantine(self):
         ids = self._selected_ids()
         if not ids:
             toast("请先选中要加入隔离区的行", parent=self)
             return
-        reason, ok = QInputDialog.getText(self, "加入隔离区", "填写疑难原因（可选）：")
-        if not ok:
+        reason = _ask_quarantine_reason(self, "加入隔离区")
+        if reason is None:
             return
-        basis = "手动:" + (reason.strip() if reason.strip() else "负损看板手动隔离")
+        basis = "手动:" + reason
         add_quarantine_batch([(uid, reason, basis) for uid in ids])
         self._sync_quarantine(ids, True)
         toast(f"⚠️ 已加入隔离区 {len(ids)} 条", parent=self)

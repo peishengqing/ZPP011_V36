@@ -14,6 +14,15 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.87",
+        "date": "2026-08-14",
+        "fixes": [
+            "移入隔离区对话框（主表右键 / 偏差率看板 / 负损看板）改用自定义 QDialog，显式带【确定/取消】按钮，修复 QInputDialog 在本机渲染不出按钮导致无确认键的问题",
+            "打包回退到单 exe（--onefile，输出 dist/），与 v42.80-85 一致，桌面不再出现 _internal 依赖文件夹",
+            ".gitignore 补 dist_run/；build 脚本打包前清空 dist 加 try/except，防旧 exe 仍运行导致 rmtree 崩溃",
+        ],
+    },
+    {
         "version": "v42.86",
         "date": "2026-08-13",
         "optimizations": [
