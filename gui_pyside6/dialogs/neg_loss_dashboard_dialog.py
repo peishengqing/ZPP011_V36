@@ -284,33 +284,6 @@ class NegLossDashboardDialog(QDialog):
                 ids.add(str(did))
         return ids
 
-def _ask_quarantine_reason(parent, title: str) -> str | None:
-    """弹出自定义「加入隔离区」对话框（显式确定/取消按钮，替代 QInputDialog.getText）。
-    返回原因字符串，点取消/关闭返回 None。
-    """
-    dlg = QDialog(parent)
-    dlg.setWindowTitle(title)
-    dlg.setFixedWidth(420)
-    layout = QVBoxLayout(dlg)
-
-    hint = QLabel("填写疑难原因（可选）：")
-    layout.addWidget(hint)
-
-    edit = QLineEdit()
-    edit.setPlaceholderText("留空则默认填入「手动隔离」")
-    layout.addWidget(edit)
-
-    btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-    btn_box.accepted.connect(dlg.accept)
-    btn_box.rejected.connect(dlg.reject)
-    layout.addWidget(btn_box)
-
-    edit.setFocus()
-    if dlg.exec() == QDialog.Accepted:
-        return edit.text().strip() or "手动隔离"
-    return None
-
-
     def _add_selected_to_quarantine(self):
         ids = self._selected_ids()
         if not ids:
@@ -376,3 +349,30 @@ def _ask_quarantine_reason(parent, title: str) -> str | None:
             saved = safe_save(self, path, lambda p: export_df.to_excel(p, index=False), what="负损看板")
             if saved:
                 toast(f"已导出 {len(export_df)} 条记录到 {saved}", parent=self)
+
+
+def _ask_quarantine_reason(parent, title: str) -> str | None:
+    """弹出自定义「加入隔离区」对话框（显式确定/取消按钮，替代 QInputDialog.getText）。
+    返回原因字符串，点取消/关闭返回 None。
+    """
+    dlg = QDialog(parent)
+    dlg.setWindowTitle(title)
+    dlg.setFixedWidth(420)
+    layout = QVBoxLayout(dlg)
+
+    hint = QLabel("填写疑难原因（可选）：")
+    layout.addWidget(hint)
+
+    edit = QLineEdit()
+    edit.setPlaceholderText("留空则默认填入「手动隔离」")
+    layout.addWidget(edit)
+
+    btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+    btn_box.accepted.connect(dlg.accept)
+    btn_box.rejected.connect(dlg.reject)
+    layout.addWidget(btn_box)
+
+    edit.setFocus()
+    if dlg.exec() == QDialog.Accepted:
+        return edit.text().strip() or "手动隔离"
+    return None

@@ -14,6 +14,13 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.89",
+        "date": "2026-08-14",
+        "fixes": [
+            "修复负损看板 / 偏差率看板双击表格崩溃（AttributeError: '...Dialog' object has no attribute 'on_double_click'）：与 v42.88 同一类缩进事故，neg_loss_dashboard_dialog.py 与 deviation_warning_dialog.py 的 _ask_quarantine_reason 同样被误写成 0 缩进模块级函数、插在类方法序列中间，导致类提前结束，其后方法（on_double_click / _set_quarantine / eventFilter / export_excel 等）被吸成嵌套函数。已将两处的 _ask_quarantine_reason 移到文件末尾恢复为模块级工具函数，NegLossDashboardDialog / DeviationWarningDialog 类方法全部回归，双击定位与隔离功能恢复正常",
+        ],
+    },
+    {
         "version": "v42.88",
         "date": "2026-08-14",
         "fixes": [
