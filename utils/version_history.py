@@ -14,6 +14,13 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.88",
+        "date": "2026-08-14",
+        "fixes": [
+            "修复 v42.87 启动即崩溃（AttributeError: 'MainWindow' object has no attribute '_open_rule_center'）：v42.87 新增的 _ask_quarantine_reason 被误写成 0 缩进模块级函数、插在 MainWindow 类方法序列中间，导致 Python 判定 MainWindow 类提前结束，其后 35 个方法（含规则中心入口 _open_rule_center、隔离区相关 _set_quarantine / _open_quarantine_dialog 等）被吸进 _ask_quarantine_reason 成为嵌套函数。已将 _ask_quarantine_reason 移到文件末尾恢复为模块级工具函数，MainWindow 类方法数从 103 恢复至 138，启动崩溃消失",
+        ],
+    },
+    {
         "version": "v42.87",
         "date": "2026-08-14",
         "fixes": [
