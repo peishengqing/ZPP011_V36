@@ -273,8 +273,13 @@ def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
                 })
             continue
 
-        # ── 手动 + 非负损：无数据可复核依据，不翻标 ──
-        # （basis 以「手动:」开头且无负损关键词，落到这里即不处理）
+        # ── 手动 + 非负损：无数据可自动复核依据，列入「失效复核」供人工确认理由是否仍成立 ──
+        # （basis 以「手动:」开头且无负损关键词，落到这里即需人工复核）
+        result.append({
+            "uid": uid, "reason": reason, "basis": basis_key,
+            "detail": "手动隔离，无自动失效判据，请人工确认隔离理由是否仍成立",
+            "actual": actual, "quota": quota, "status": "manual_needs_review",
+        })
     return result
 
 
