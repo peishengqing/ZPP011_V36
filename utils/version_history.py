@@ -14,6 +14,13 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.91",
+        "date": "2026-08-15",
+        "fixes": [
+            "修复隔离区『内存孤儿』：界面标记隔离(_quarantined==1)但 SQLite quarantine_records 库内缺失的行，重载数据后会因水合读不到库而消失、且永远进不了基于库的统计/失效复核。新增 _repair_quarantine_consistency() 扫描全表内存孤儿并补写库（原因标『自动修复:界面标记隔离但库内缺失』），隔离区对话框 Tab1 按钮栏新增『🔧 修复一致性』按钮一键修复并即时刷新列表，主表右键菜单新增『🔧 修复隔离区一致性』全局入口；MainWindow.closeEvent 关闭前 silent flush 自动补写，杜绝复发。",
+        ],
+    },
+    {
         "version": "v42.90",
         "date": "2026-08-14",
         "fixes": [

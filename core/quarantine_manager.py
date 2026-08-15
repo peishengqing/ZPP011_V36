@@ -157,10 +157,16 @@ def _col(df, *candidates):
     return None
 
 
+# 失效复核：理由已不成立、建议移出隔离区的状态集合
+INVALID_QUARANTINE_STATUSES = {
+    "neg_loss_resolved", "neg_loss_over", "neg_loss_zeroed", "rule_no_match",
+}
+
+
 def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
     """扫描隔离区中「仍存在于主表」的记录，判定其入区依据是否因数据变动而失效。
 
-    返回失效记录列表，每条含：
+    仅返回「已失效」的记录（理由已不成立、建议移出隔离区），每条含：
         uid, reason, basis, detail, actual, quota, status
     status ∈ {'neg_loss_resolved', 'neg_loss_zeroed', 'neg_loss_over', 'rule_no_match'}
     basis 为空（旧行）时降级按 reason 文本是否含「负损」/「自动规则」判断。

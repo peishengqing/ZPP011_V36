@@ -201,6 +201,10 @@ class QuarantineDialog(QDialog):
         export_btn = QPushButton("📎 导出 Excel")
         export_btn.clicked.connect(self.export_excel)
         bl.addWidget(export_btn)
+        repair_btn = QPushButton("🔧 修复一致性")
+        repair_btn.setToolTip("将界面中标记隔离、但 SQLite 库内缺失的行补写进库（救回内存孤儿）")
+        repair_btn.clicked.connect(self._repair_consistency)
+        bl.addWidget(repair_btn)
         bl.addStretch()
         v.addLayout(bl)
 
@@ -864,6 +868,12 @@ class QuarantineDialog(QDialog):
                 self._apply_list_filters()
         # 同步刷新失效复核页
         self._render_expired(self._load_expired_from_main())
+
+    def _repair_consistency(self):
+        """隔离区对话框内一键修复：调用主窗口的隔离区一致性修复，并刷新本列表。"""
+        if self.main_window and hasattr(self.main_window, '_repair_quarantine_consistency'):
+            self.main_window._repair_quarantine_consistency()
+            self._refresh_self()
 
     def on_double_click(self, index):
         if not index.isValid():

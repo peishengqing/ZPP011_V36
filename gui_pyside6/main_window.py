@@ -44,7 +44,7 @@ from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
 from gui_pyside6.dialogs.neg_loss_dashboard_dialog import NegLossDashboardDialog
 from gui_pyside6.dialogs.quarantine_dialog import QuarantineDialog
-from core.quarantine_manager import add_quarantine, add_quarantine_batch, remove_quarantine, scan_expired_quarantine
+from core.quarantine_manager import add_quarantine, add_quarantine_batch, remove_quarantine, scan_expired_quarantine, get_quarantined_ids
 from core.auto_quarantine import (
     build_all_summary,
     compute_auto_quarantine_ids,
@@ -3272,6 +3272,8 @@ class MainWindow(QMainWindow):
             q_action = menu.addAction("⚠️ 移入隔离区（选中行）")
             q_action.triggered.connect(lambda: self._set_quarantine(selected_rows, True))
         menu.addSeparator()
+        repair_action = menu.addAction("🔧 修复隔离区一致性（补写库内缺失行）")
+        repair_action.triggered.connect(lambda: self._repair_quarantine_consistency())
         copy_region_action = menu.addAction("复制选中区域")
         copy_region_action.triggered.connect(self.copy_selected_cells)
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
@@ -3338,6 +3340,44 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'stats_cards') and self.stats_cards is not None:
             self.stats_cards.refresh(df)
         toast(f"{'⚠️ 已移入隔离区' if flag else '↩ 已取消隔离'} {len(ids)} 条", parent=self)
+
+    def _repair_quarantine_consistency(self, silent=False):
+        """修复隔离区一致性：把界面中标记隔离(_quarantined==1)但 SQLite 库内缺失的行补写进库。
+
+        救回因旧版本写库未落盘、或数据重导后复合主键漂移造成的「内存孤儿」记录——
+        否则重载数据后这些行因水合读不到库而消失，且永远进不了基于库的统计/失效复核。
+        返回修复条数。
+        """
+        df = self.view_model.df
+        if df is None or '_quarantined' not in df.columns or 'data_id' not in df.columns:
+            return 0
+        try:
+            qids = get_quarantined_ids()
+        except Exception as e:
+            self.statusBar().showMessage(f"修复隔离区一致性失败: {e}")
+            return 0
+        mask = pd.to_numeric(df['_quarantined'], errors='coerce').fillna(0).astype(int) == 1
+        orphan_ids = []
+        for d in df.loc[mask, 'data_id']:
+            s = str(d)
+            if s in qids or s in ('', 'nan', 'None') or not pd.notna(d):
+                continue
+            orphan_ids.append(s)
+        if not orphan_ids:
+            if not silent:
+                toast("隔离区一致性正常，无需修复", parent=self)
+            return 0
+        items = [(uid, "自动修复:界面标记隔离但库内缺失", "手动:自动修复") for uid in orphan_ids]
+        try:
+            add_quarantine_batch(items)
+        except Exception as e:
+            self.statusBar().showMessage(f"修复隔离区一致性写库失败: {e}")
+            return 0
+        msg = f"🔧 已修复隔离区一致性，补写 {len(orphan_ids)} 条到库"
+        self.statusBar().showMessage(msg)
+        if not silent:
+            toast(msg, parent=self)
+        return len(orphan_ids)
 
     def _auto_move_to_quarantine(self, manual=False):
         """按 config/auto_quarantine_config.json 配置把符合条件的记录移入隔离区。
@@ -3961,6 +4001,12 @@ class MainWindow(QMainWindow):
                 # 底层 C++ 对象已被 deleteLater 回收，忽略即可
                 pass
             setattr(self, _attr, None)
+        # v42.91: 关闭前 flush 隔离区一致性——把界面标记隔离但库内缺失的行补写库，
+        # 杜绝「内存孤儿」在重载数据后消失。
+        try:
+            self._repair_quarantine_consistency(silent=True)
+        except Exception:
+            pass
         event.accept()
 
 
