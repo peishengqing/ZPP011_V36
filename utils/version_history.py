@@ -14,6 +14,13 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.93",
+        "date": "2026-08-18",
+        "fixes": [
+            "修复 data_id 真回归(方案2)：_add_data_id_and_fingerprint 恢复『工厂』前缀，data_id 由3段(订单日期|流程订单|物料编码)升为4段(工厂|订单日期|流程订单|物料编码)，消除达利多工厂下『同订单+同物料跨厂』撞 key 导致已读/隔离标记串台的隐患。无『工厂』列的导出数据回退3段(向后兼容)。测试 test_preprocess_adds_data_id / test_preprocess_adds_data_id_no_factory 两 case 同步验证通过。趁隔离区库 audit.db 已重建(历史为空)窗口期落地，零历史 key 失效代价。",
+        ],
+    },
+    {
         "version": "v42.92",
         "date": "2026-08-15",
         "fixes": [

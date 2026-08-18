@@ -131,7 +131,17 @@ class DataService(QObject):
 
     def _add_data_id_and_fingerprint(self, df: pd.DataFrame) -> pd.DataFrame:
         try:
-            df['data_id'] = df['订单日期'].astype(str) + '|' + df['流程订单'].astype(str) + '|' + df['物料编码'].astype(str)
+            # 方案2(v42.93)：恢复「工厂」前缀，消除跨厂同订单+同物料撞 key 隐患。
+            # 有「工厂」列 → 4段(工厂|订单日期|流程订单|物料编码)；无 → 回退3段(兼容旧导出)。
+            if '工厂' in df.columns:
+                df['data_id'] = (df['工厂'].astype(str) + '|'
+                                 + df['订单日期'].astype(str) + '|'
+                                 + df['流程订单'].astype(str) + '|'
+                                 + df['物料编码'].astype(str))
+            else:
+                df['data_id'] = (df['订单日期'].astype(str) + '|'
+                                 + df['流程订单'].astype(str) + '|'
+                                 + df['物料编码'].astype(str))
         except Exception as e:
             self.log(f"创建data_id失败: {e}", "error")
             import traceback; traceback.print_exc()
