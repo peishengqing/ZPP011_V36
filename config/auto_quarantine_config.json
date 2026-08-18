@@ -2,7 +2,7 @@
   "enabled": true,
   "rules": [
     {
-      "name": "食品厂包材箱类、纸罐、手包袋负损",
+      "name": "食品厂包材箱类、纸罐、手包袋、不干胶、托盘负损",
       "enabled": true,
       "exclude_alt": true,
       "category_required": true,
@@ -10,9 +10,22 @@
       "name_keywords": [
         "箱",
         "手包袋",
-        "彩罐"
+        "彩罐",
+        "不干胶",
+        "托盘"
       ],
-      "negative_loss_required": true
+      "negative_loss_required": true,
+      "dev_rate_required": false,
+      "dev_rate_min": 10.0,
+      "dev_rate_max": 100.0,
+      "mat_code_prefix": "",
+      "workshop_required": false,
+      "workshop_value": "",
+      "remark_mode": "off",
+      "name_exclude_keywords": "",
+      "dev_qty_required": false,
+      "dev_qty_min": 0.0,
+      "dev_qty_max": 1.0
     },
     {
       "name": "饮料厂瓶胚、瓶盖少投",
@@ -24,7 +37,40 @@
         "胚",
         "盖"
       ],
-      "negative_loss_required": true
+      "negative_loss_required": true,
+      "dev_rate_required": false,
+      "dev_rate_min": 10.0,
+      "dev_rate_max": 100.0,
+      "mat_code_prefix": "",
+      "workshop_required": false,
+      "workshop_value": "",
+      "remark_mode": "off",
+      "name_exclude_keywords": "",
+      "dev_qty_required": false,
+      "dev_qty_min": 0.0,
+      "dev_qty_max": 1.0
+    },
+    {
+      "name": "半成品负损",
+      "enabled": true,
+      "exclude_alt": true,
+      "category_required": false,
+      "category_value": "原材料",
+      "name_keywords": [
+        "半成品"
+      ],
+      "negative_loss_required": false,
+      "dev_rate_required": true,
+      "dev_rate_min": -100.0,
+      "dev_rate_max": -1.0,
+      "mat_code_prefix": "",
+      "workshop_required": false,
+      "workshop_value": "",
+      "remark_mode": "off",
+      "name_exclude_keywords": "",
+      "dev_qty_required": false,
+      "dev_qty_min": 0.0,
+      "dev_qty_max": 1.0
     }
   ]
 }

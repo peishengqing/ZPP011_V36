@@ -62,7 +62,7 @@
         {
           "type": "mat_name_not_contains",
           "params": {
-            "value": "箱,彩罐"
+            "value": "箱,彩罐,不干胶,半成品"
           }
         },
         {
