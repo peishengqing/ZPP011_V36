@@ -13,7 +13,6 @@ import sqlite3
 import logging
 import os
 import threading
-import time as _time
 from datetime import datetime
 from typing import Dict, List, Tuple
 
@@ -98,6 +97,7 @@ def _get_conn():
             ('note_source', 'TEXT DEFAULT ""'),
             ('snapshot_qty', 'REAL DEFAULT NULL'),
             ('snapshot_note', 'TEXT DEFAULT NULL'),
+            ('snapshot_yield', 'REAL DEFAULT NULL'),  # v42.94: 产量基线（审核后产量变动检测）
             ('read_source', 'TEXT DEFAULT ""'),  # 已读来源：'auto' 自动规则 / 'manual' 手动（默认空）
         ]:
             if col_name not in existing_cols:
@@ -183,7 +183,6 @@ def _chunked_load(conn, sql_template, data_ids, id_cols):
     data_ids: 完整 id 列表
     id_cols: 返回的列数（去掉 data_id 后的列数）
     """
-    _t0 = _time.perf_counter()
     result = {}
     total = len(data_ids)
     n_chunk = 0
@@ -202,34 +201,34 @@ def _chunked_load(conn, sql_template, data_ids, id_cols):
 def load_read_status(data_ids: List[str]) -> Dict[str, Tuple]:
     """
     批量加载已读状态
-    返回: {data_id: (is_read, fingerprint, snapshot_qty, snapshot_note, read_source)}
+    返回: {data_id: (is_read, fingerprint, snapshot_qty, snapshot_note, snapshot_yield, read_source)}
     read_source: 'auto' 自动规则标已读 / 'manual' 手动标已读 / '' 无（老数据或新行）
     """
     if not data_ids:
         return {}
 
-    _t0 = _time.perf_counter()
     conn = _get_conn()
 
     # 用 chunked 查询替代单条大 IN 子句
     return _chunked_load(
         conn,
-        "SELECT data_id, is_read, fingerprint, snapshot_qty, snapshot_note, read_source "
+        "SELECT data_id, is_read, fingerprint, snapshot_qty, snapshot_note, snapshot_yield, read_source "
         "FROM read_status WHERE data_id IN ({placeholders})",
-        data_ids, 5
+        data_ids, 6
     )
 
 
-def save_read_status(data_id: str, is_read: int, fingerprint: str, snapshot_qty=None, snapshot_note=None, read_source='manual'):
+def save_read_status(data_id: str, is_read: int, fingerprint: str, snapshot_qty=None, snapshot_note=None, snapshot_yield=None, read_source='manual'):
     """保存已读状态。read_source: 'manual' 手动（默认） / 'auto' 自动规则"""
     try:
         conn = _get_conn()
         conn.execute("""
-            INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, snapshot_qty, snapshot_note, read_time, user, read_source)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, snapshot_qty, snapshot_note, snapshot_yield, read_time, user, read_source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (str(data_id), int(is_read), str(fingerprint),
               None if snapshot_qty is None else float(snapshot_qty),
               '' if snapshot_note is None else str(snapshot_note),
+              None if snapshot_yield is None else float(snapshot_yield),
               datetime.now().isoformat(), 'default', str(read_source)))
         conn.commit()
     except Exception as e:
@@ -255,13 +254,16 @@ def save_read_status_batch(records):
             fp = rec[2] if len(rec) > 2 else ''
             snap = rec[3] if len(rec) > 3 else None
             note = rec[4] if len(rec) > 4 else None
-            src = rec[5] if len(rec) > 5 else 'manual'
+            yld = rec[5] if len(rec) > 5 else None
+            src = rec[6] if len(rec) > 6 else 'manual'
             norm.append((str(did), int(is_read), str(fp),
                          None if snap is None else float(snap),
-                         '' if note is None else str(note), now, 'default', str(src)))
+                         '' if note is None else str(note),
+                         None if yld is None else float(yld),
+                         now, 'default', str(src)))
         conn.executemany("""
-            INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, snapshot_qty, snapshot_note, read_time, user, read_source)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, snapshot_qty, snapshot_note, snapshot_yield, read_time, user, read_source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, norm)
         conn.commit()
     except Exception as e:
@@ -284,10 +286,11 @@ def mark_read_batch(data_ids, snapshot_map, read_source='auto'):
         insert_rows = [(str(did), now, src) for did in data_ids]
         norm = []
         for did in data_ids:
-            snap_qty, snap_note = snapshot_map.get(did, (None, None))
+            snap_qty, snap_note, snap_yield = snapshot_map.get(did, (None, None, None))
             norm.append((
                 None if snap_qty is None else float(snap_qty),
                 '' if snap_note is None else str(snap_note),
+                None if snap_yield is None else float(snap_yield),
                 now, str(did),
             ))
         # 新行插入 source；已存在行（如数据变动翻回未读又标已读）用 ON CONFLICT 更新 source
@@ -297,7 +300,7 @@ def mark_read_batch(data_ids, snapshot_map, read_source='auto'):
             ON CONFLICT(data_id) DO UPDATE SET read_source = excluded.read_source
         """, insert_rows)
         conn.executemany("""
-            UPDATE read_status SET is_read = 1, snapshot_qty = ?, snapshot_note = ?, read_time = ?
+            UPDATE read_status SET is_read = 1, snapshot_qty = ?, snapshot_note = ?, snapshot_yield = ?, read_time = ?
             WHERE data_id = ?
         """, norm)
         conn.commit()
@@ -305,14 +308,15 @@ def mark_read_batch(data_ids, snapshot_map, read_source='auto'):
         logging.warning("[read_status] mark_read_batch 失败 (%d 条): %s", len(data_ids), e)
 
 
-def save_snapshot(data_id: str, snapshot_qty, snapshot_note=None):
+def save_snapshot(data_id: str, snapshot_qty, snapshot_note=None, snapshot_yield=None):
     """延迟初始化/更新基线"""
     try:
         conn = _get_conn()
         conn.execute("""
-            UPDATE read_status SET snapshot_qty = ?, snapshot_note = ? WHERE data_id = ?
+            UPDATE read_status SET snapshot_qty = ?, snapshot_note = ?, snapshot_yield = ? WHERE data_id = ?
         """, (None if snapshot_qty is None else float(snapshot_qty),
               '' if snapshot_note is None else str(snapshot_note),
+              None if snapshot_yield is None else float(snapshot_yield),
               str(data_id)))
         conn.commit()
     except Exception as e:
@@ -331,20 +335,18 @@ def save_snapshot_batch(records):
     if not records:
         return
     try:
-        _t0 = _time.perf_counter()
         conn = _get_conn()
         norm = []
-        for did, snap_qty, snap_note in records:
+        for did, snap_qty, snap_note, snap_yield in records:
             norm.append((
                 None if snap_qty is None else float(snap_qty),
                 '' if snap_note is None else str(snap_note),
+                None if snap_yield is None else float(snap_yield),
                 str(did),
             ))
-        _t = _time.perf_counter()
         conn.executemany("""
-            UPDATE read_status SET snapshot_qty = ?, snapshot_note = ? WHERE data_id = ?
+            UPDATE read_status SET snapshot_qty = ?, snapshot_note = ?, snapshot_yield = ? WHERE data_id = ?
         """, norm)
-        _t = _time.perf_counter()
         conn.commit()
     except Exception as e:
         # v42.26: 同 save_snapshot，批量基线写失败必须留痕，不再静默吞掉

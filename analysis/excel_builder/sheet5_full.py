@@ -52,7 +52,7 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
         # 否则下游(df['流程订单']/主表展示/自动已读)在空结果时会 KeyError。
         dev_df = pd.DataFrame(columns=[
             '订单日期', '订单类型', '流程订单', '工厂', '车间', '物料类型',
-            '原表行号', '产品物料号码', '产品物料描述', '物料编码', '物料名称',
+            '原表行号', '产品物料号码', '产品物料描述', '产量', '产量单位', '物料编码', '物料名称',
             '单位', '定额', '实际', '偏差数量', '偏差率', '偏差率(%)',
             '偏差金额', '备注', '备注来源', '偏差区间',
         ])
@@ -70,6 +70,8 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
         dev_df['原表行号'] = has_real_dev['_excel_row']
         dev_df['产品物料号码'] = has_real_dev['产品物料号码'] if '产品物料号码' in has_real_dev.columns else ''
         dev_df['产品物料描述'] = has_real_dev['产品物料描述'] if '产品物料描述' in has_real_dev.columns else ''
+        dev_df['产量'] = pd.to_numeric(has_real_dev['产量'], errors='coerce') if '产量' in has_real_dev.columns else pd.Series([np.nan] * len(has_real_dev))
+        dev_df['产量单位'] = has_real_dev['产量单位'].astype(str).fillna('') if '产量单位' in has_real_dev.columns else ''
         dev_df['物料编码'] = has_real_dev['组件物料号']
         dev_df['物料名称'] = has_real_dev['组件物料描述']
         dev_df['单位'] = has_real_dev['组件单位'].fillna('')

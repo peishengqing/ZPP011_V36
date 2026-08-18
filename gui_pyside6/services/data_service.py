@@ -190,12 +190,12 @@ class DataService(QObject):
         # 1. 把历史状态对齐到 df（避免 Python 级逐行查找）
         status_df = pd.DataFrame.from_dict(
             status_map, orient='index',
-            columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note', '_hist_source']
+            columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note', '_hist_yield', '_hist_source']
         )
         df = df.join(status_df, on='data_id')
 
         has_status = df['_hist_read'].notna()
-        missing_baseline = has_status & (df['_hist_snap'].isna() | df['_hist_note'].isna())
+        missing_baseline = has_status & (df['_hist_snap'].isna() | df['_hist_note'].isna() | df['_hist_yield'].isna())
         has_baseline = has_status & ~missing_baseline
 
         # 2. 当前实际数量 / 备注原因
@@ -208,21 +208,31 @@ class DataService(QObject):
         else:
             cur_note = pd.Series([''] * len(df), index=df.index)
 
+        # 2b. 当前产量（用于审核后产量变动检测，v42.94）
+        yield_col = self._find_yield_col(df)
+        if yield_col:
+            cur_yield = pd.to_numeric(df[yield_col], errors='coerce')
+        else:
+            cur_yield = pd.Series([np.nan] * len(df), index=df.index)
+
         # 3. 旧记录无基线 → 批量静默建立基线（不报警）
         if missing_baseline.any():
             init_records = list(zip(
                 df.loc[missing_baseline, 'data_id'],
                 cur_qty[missing_baseline],
                 cur_note[missing_baseline],
+                cur_yield[missing_baseline],
             ))
             save_snapshot_batch(init_records)
 
         # 4. 两基线都已初始化 → 向量化比对
         hist_snap = pd.to_numeric(df['_hist_snap'], errors='coerce')
         hist_note = df['_hist_note'].apply(self._norm_note)
+        hist_yield = pd.to_numeric(df['_hist_yield'], errors='coerce')
         qty_changed = has_baseline & cur_qty.notna() & (abs(hist_snap - cur_qty) >= 1e-6)
         note_changed = has_baseline & (hist_note != cur_note)
-        changed = qty_changed | note_changed
+        yield_changed = has_baseline & cur_yield.notna() & (abs(hist_yield - cur_yield) >= 1e-6)
+        changed = qty_changed | note_changed | yield_changed
 
         # 5. 组装 _read / _post_audit_changed
         hist_read_int = df['_hist_read'].fillna(0).astype(int)
@@ -270,13 +280,27 @@ class DataService(QObject):
                     'old_value': self._norm_note(df.at[idx, '_hist_note']),
                     'new_value': cur_note.at[idx],
                 })
+            yield_changed_idx = df.index[yield_changed]
+            for idx in yield_changed_idx:
+                changes_records.append((
+                    df.at[idx, 'data_id'], '产量',
+                    df.at[idx, '_hist_yield'], cur_yield.at[idx]
+                ))
+                self.last_audit_changes.append({
+                    'data_id': df.at[idx, 'data_id'], 'field': '产量',
+                    'workshop': df.at[idx, '车间'] if '车间' in df.columns else None,
+                    'material_name': df.at[idx, '物料名称'] if '物料名称' in df.columns else (
+                        df.at[idx, '物料描述'] if '物料描述' in df.columns else ''),
+                    'old_value': float(df.at[idx, '_hist_yield']) if pd.notna(df.at[idx, '_hist_yield']) else None,
+                    'new_value': cur_yield.at[idx],
+                })
             record_deviation_change_batch(changes_records)
             changed_count = int(changed.sum())
-            self.log(f"⚠️ 发现 {changed_count} 条已审核记录的实际数量/备注原因被修改，已强制设为未读并留痕", "warning")
+            self.log(f"⚠️ 发现 {changed_count} 条已审核记录的实际数量/备注原因/产量被修改，已强制设为未读并留痕", "warning")
             self.log_signal.emit(f"变动提醒|{changed_count}", "alert")
 
         # 清理临时历史列
-        df = df.drop(columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note', '_hist_source'], errors='ignore')
+        df = df.drop(columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note', '_hist_yield', '_hist_source'], errors='ignore')
         return df
 
     def get_audit_changes(self, df):
@@ -305,6 +329,8 @@ class DataService(QObject):
         remark_col = self._find_remark_col(sub)
         cur_qty = pd.to_numeric(sub[real_col], errors='coerce') if real_col else pd.Series([np.nan] * len(sub), index=sub.index)
         cur_note = sub[remark_col].apply(self._norm_note) if remark_col else pd.Series([''] * len(sub), index=sub.index)
+        yield_col = self._find_yield_col(sub)
+        cur_yield = pd.to_numeric(sub[yield_col], errors='coerce') if yield_col else pd.Series([np.nan] * len(sub), index=sub.index)
 
         # 拉基线快照（允许为空；缺基线时旧值留空，仍照常展示该行）
         try:
@@ -314,7 +340,7 @@ class DataService(QObject):
         if status_map:
             status_df = pd.DataFrame.from_dict(
                 status_map, orient='index',
-                columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note', '_hist_source'])
+                columns=['_hist_read', '_hist_fp', '_hist_snap', '_hist_note', '_hist_yield', '_hist_source'])
             # 防御：若 sub 已含同名基线列（理论主表不会，已被 _restore_read_status drop），
             # 先去掉避免 join 报「columns overlap」。
             _overlap = [c for c in status_df.columns if c in sub.columns]
@@ -325,6 +351,9 @@ class DataService(QObject):
             sub['_hist_snap'] = np.nan
         if '_hist_note' not in sub.columns:
             sub['_hist_note'] = np.nan
+        if '_hist_yield' not in sub.columns:
+            sub['_hist_yield'] = np.nan
+        hist_yield = pd.to_numeric(sub['_hist_yield'], errors='coerce')
         hist_snap = pd.to_numeric(sub['_hist_snap'], errors='coerce')
         hist_note = sub['_hist_note'].apply(self._norm_note)
 
@@ -335,10 +364,13 @@ class DataService(QObject):
             hs_note = hist_note.at[idx]
             cur_q = cur_qty.at[idx]
             cur_n = cur_note.at[idx]
+            hs_yield = hist_yield.at[idx]
+            cur_y = cur_yield.at[idx]
             # 实际数量是否有可确认变动（有基线且不同）——优先级最高
             qty_diff = (not pd.isna(hs_qty)) and (not pd.isna(cur_q)) and (abs(float(hs_qty) - float(cur_q)) >= 1e-6)
             # 备注原因是否有可确认变动（有基线且不同）
             note_diff = (hs_note not in ('', None)) and (cur_n != hs_note)
+            yield_diff = (not pd.isna(hs_yield)) and (not pd.isna(cur_y)) and (abs(float(hs_yield) - float(cur_y)) >= 1e-6)
             if qty_diff:
                 field = '实际数量'
                 ov = float(hs_qty)
@@ -347,6 +379,10 @@ class DataService(QObject):
                 field = '备注原因'
                 ov = hs_note
                 nv = cur_n
+            elif yield_diff:
+                field = '产量'
+                ov = float(hs_yield)
+                nv = cur_y
             else:
                 # 缺基线无法确认具体字段，仍列出此行，默认按实际数量展示（旧值留空）
                 field = '实际数量'
@@ -403,6 +439,19 @@ class DataService(QObject):
         return None
 
     @staticmethod
+    def _find_yield_col(df: pd.DataFrame):
+        """探测产量列名（不同 SAP 导出可能不同）"""
+        candidates = ['产量', '产出', 'yield', '生产数量', '产出数量']
+        for c in candidates:
+            if c in df.columns:
+                return c
+        # 模糊兜底：含 '产量'
+        for c in df.columns:
+            if '产量' in str(c):
+                return c
+        return None
+
+    @staticmethod
     def _norm_note(v):
         """把备注值规范化为可比对的字符串；空/NaN/None → ''"""
         if v is None:
@@ -455,6 +504,7 @@ class DataService(QObject):
             from core.read_status import mark_read_batch
             qty_col = self._find_real_qty_col(df)
             note_col = self._find_remark_col(df)
+            yield_col = self._find_yield_col(df)
             dids = set()
             snapshot_map = {}
             for c in changes:
@@ -470,7 +520,8 @@ class DataService(QObject):
                     row = rows.iloc[0]
                     snap_qty = row.get(qty_col) if qty_col else None
                     snap_note = self._norm_note(row.get(note_col)) if note_col else ''
-                snapshot_map[did] = (snap_qty, snap_note)
+                    snap_yield = row.get(yield_col) if yield_col else None
+                snapshot_map[did] = (snap_qty, snap_note, snap_yield)
             mark_read_batch(list(dids), snapshot_map, read_source='manual')
             self.last_audit_changes = []  # 当前会话不再重复弹窗
             return len(dids), dids
@@ -677,8 +728,16 @@ class DataService(QObject):
                 # 偏差率移到偏差金额后面
                 amt_idx = cols.index(amt_col)
                 cols.insert(amt_idx + 1, rate_col)
-                df = df[cols]
-                self.log(f"已调整列顺序：偏差率及净偏差列移到偏差金额后面", "info")
+            # v42.94：把「产量」「产量单位」移到「产品物料描述」后面
+            if '产品物料描述' in cols:
+                yi = cols.index('产品物料描述')
+                for extra in ['产量', '产量单位']:
+                    if extra in cols:
+                        cols.remove(extra)
+                        cols.insert(yi + 1, extra)
+                        yi += 1
+            df = df[cols]
+            self.log("已调整列顺序：偏差率移到偏差金额后面，产量移到产品物料描述后面", "info")
         except Exception as e:
             self.log(f"列重排序失败: {e}", "error")
         return df

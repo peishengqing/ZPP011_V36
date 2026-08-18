@@ -14,6 +14,13 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.94",
+        "date": "2026-08-18",
+        "fixes": [
+            "主表新增『产量』『产量单位』两列：build_sheet5 原构建列表漏列，已补到『产品物料描述』之后；data_service._reorder_columns 兜底再保证顺序。变动提醒扩展至产量：read_status 表新增 snapshot_yield 产量基线列，_restore_read_status 在重新导入时比对已审核记录的『实际数量/备注原因/产量』三者，任一被改动即回退未读+红标+deviation_history 留痕+弹变动提醒；旧记录无产量基线时静默建基线不报警。mark_changes_as_read 快照升级为3元组(数量,备注,产量)；get_audit_changes 变动看板正确还原『产量』字段。",
+        ],
+    },
+    {
         "version": "v42.93",
         "date": "2026-08-18",
         "fixes": [
