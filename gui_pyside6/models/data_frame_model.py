@@ -647,67 +647,12 @@ class AuditProxyModel(QSortFilterProxyModel):
                 if want == '否' and is_quar:
                     return False
 
-            # 3.5 颜色标记筛选（多选 OR：勾选任意颜色即保留匹配行）
+            # 3.5 颜色标记筛选（多选 OR：勾选任意颜色即保留匹配行，逻辑与主表一致）
             color_keys = [k for k in self._custom_filters if k in (
                 '_changed_only', '_quarantined_only', '_substitute_only', '_unused_only', '_alert_only', '_plain_only')]
             if color_keys:
-                # 先判定本行属于哪些颜色类别（与背景色渲染、偏差率预警看板保持一致）
-                is_changed = row_data.get('_post_audit_changed', 0) == 1
-                is_quarantined = row_data.get('_quarantined', 0) == 1
-
-                # 替代料：改用分析层「是否替代料」列（替代料表 + 同一订单），不再纯数值判定
-                is_substitute = (str(row_data.get('是否替代料', '')).strip() == '是') if '是否替代料' in df.columns else False
-
-                # 实际/定额数值（用于未投料与偏差率预警排除）
-                a_val = 0.0
-                q_val = 0.0
-                for c in ['数量-实际', '实际']:
-                    if c in df.columns:
-                        a_val = _to_float_safe(row_data.get(c, 0))
-                        break
-                for c in ['数量-定额', '定额']:
-                    if c in df.columns:
-                        q_val = _to_float_safe(row_data.get(c, 0))
-                        break
-                no_input = (abs(a_val) <= 0.001) and (q_val > 0.001)  # 实际=0 定额>0
-
-                # 未投料：实际=0 定额>0 且 非替代料（没登记在替代料表）
-                is_unused = no_input and not is_substitute
-
-                # 偏差率预警：|偏差率| >= 10% 且 排除「实际=0 定额>0」（未投料/替代料的 -100% 非真偏差），
-                # 且排除被更高优先级底色（审核后变更/隔离区）覆盖的行，使筛选严格匹配主表橙色行
-                is_alert = False
-                alert_rate_col = None
-                for c in ['偏差率(%)', '偏差率']:
-                    if c in df.columns:
-                        alert_rate_col = c
-                        break
-                if alert_rate_col:
-                    rv_raw = row_data.get(alert_rate_col, 0)
-                    try:
-                        rv = float(str(rv_raw).replace('%', '').strip())
-                    except (ValueError, TypeError):
-                        rv = 0.0
-                    if abs(rv) >= 10 and not no_input and not (is_changed or is_quarantined):
-                        is_alert = True
-
-                # 无标记 = 五类皆非（审核后变更/隔离区/替代料/未投料/偏差率预警）
-                is_plain = not (is_changed or is_quarantined or is_substitute or is_unused or is_alert)
-
-                matched_any = False
-                if '_changed_only' in color_keys and is_changed:
-                    matched_any = True
-                if '_quarantined_only' in color_keys and is_quarantined:
-                    matched_any = True
-                if '_substitute_only' in color_keys and is_substitute:
-                    matched_any = True
-                if '_unused_only' in color_keys and is_unused:
-                    matched_any = True
-                if '_alert_only' in color_keys and is_alert:
-                    matched_any = True
-                if '_plain_only' in color_keys and is_plain:
-                    matched_any = True
-
+                matched = classify_row_color_keys(row_data, df, getattr(self, '_alert_threshold', 10.0))
+                matched_any = any(k in matched for k in color_keys)
                 if not matched_any:
                     return False
 
@@ -935,3 +880,74 @@ class AuditProxyModel(QSortFilterProxyModel):
             return float(left_str) < float(right_str)
         except (ValueError, TypeError):
             return str(left_data) < str(right_data)
+
+def classify_row_color_keys(row_data, df, threshold=10.0):
+    """返回该行命中的颜色标记 key 集合，与主表行背景色/偏差率预警看板判定完全一致。
+
+    颜色类别：
+      _changed_only     审核后变更
+      _quarantined_only 隔离区
+      _substitute_only  替代料
+      _unused_only      未投料（实际=0 定额>0 且非替代料）
+      _alert_only       偏差率预警（|偏差率|>=threshold 且非未投料/非被覆盖行）
+      _plain_only       无标记（五类皆非）
+    """
+    def _to_float_safe(v):
+        try:
+            f = float(v)
+            return f if not pd.isna(f) else 0.0
+        except (ValueError, TypeError):
+            return 0.0
+
+    is_changed = row_data.get('_post_audit_changed', 0) == 1
+    is_quarantined = row_data.get('_quarantined', 0) == 1
+
+    # 替代料：分析层「是否替代料」列（替代料表 + 同一订单），不再纯数值判定
+    is_substitute = (str(row_data.get('是否替代料', '')).strip() == '是') if '是否替代料' in df.columns else False
+
+    a_val = 0.0
+    q_val = 0.0
+    for c in ['数量-实际', '实际']:
+        if c in df.columns:
+            a_val = _to_float_safe(row_data.get(c, 0))
+            break
+    for c in ['数量-定额', '定额']:
+        if c in df.columns:
+            q_val = _to_float_safe(row_data.get(c, 0))
+            break
+    no_input = (abs(a_val) <= 0.001) and (q_val > 0.001)
+
+    # 未投料：实际=0 定额>0 且 非替代料
+    is_unused = no_input and not is_substitute
+
+    is_alert = False
+    alert_rate_col = None
+    for c in ['偏差率(%)', '偏差率']:
+        if c in df.columns:
+            alert_rate_col = c
+            break
+    if alert_rate_col:
+        rv_raw = row_data.get(alert_rate_col, 0)
+        try:
+            rv = float(str(rv_raw).replace('%', '').strip())
+        except (ValueError, TypeError):
+            rv = 0.0
+        if abs(rv) >= threshold and not no_input and not (is_changed or is_quarantined):
+            is_alert = True
+
+    is_plain = not (is_changed or is_quarantined or is_substitute or is_unused or is_alert)
+
+    keys = set()
+    if is_changed:
+        keys.add('_changed_only')
+    if is_quarantined:
+        keys.add('_quarantined_only')
+    if is_substitute:
+        keys.add('_substitute_only')
+    if is_unused:
+        keys.add('_unused_only')
+    if is_alert:
+        keys.add('_alert_only')
+    if is_plain:
+        keys.add('_plain_only')
+    return keys

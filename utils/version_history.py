@@ -14,6 +14,13 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v42.95",
+        "date": "2026-08-18",
+        "fixes": [
+            "替代料看板新增『颜色标记筛选』(复用主表逻辑)：把 AuditProxyModel.filterAcceptsRow 的颜色分类判定抽成模块级函数 classify_row_color_keys(row_data, df, threshold)，主表与看板零分叉、结果完全一致。看板顶部新增与主表对齐的6色复选框(审核后变更/隔离区/替代料/未投料/偏差率预警/无标记)+『清空颜色』按钮；_show_alert_dashboard 透传 _post_audit_changed/_quarantined/是否替代料 三列辅助数据(表格内隐藏，导出时剔除)。颜色筛选与已读状态为 AND：先按全部/未读/已读筛，再按勾选颜色 OR 过滤，与主表行底色严格对应。",
+        ],
+    },
+    {
         "version": "v42.94",
         "date": "2026-08-18",
         "fixes": [

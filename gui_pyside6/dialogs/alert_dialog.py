@@ -5,13 +5,14 @@
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
-    QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel,
+    QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QCheckBox,
 )
 from PySide6.QtCore import Qt, QPoint
-from gui_pyside6.models.data_frame_model import DataFrameModel
+from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_color_keys
 from core.read_status import save_read_status, save_read_status_batch
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
 from gui_pyside6.widgets.toast import toast
+from gui_pyside6.widgets.filter_panel import _color_icon
 from gui_pyside6.utils.table_sort import enable_click_sort
 
 
@@ -25,6 +26,7 @@ class AlertDialog(QDialog):
         self.main_window = main_window
         self.original_df = alerts_df.copy()
         self.filter_mode = "all"
+        self.color_filters = set()
         self.setup_ui()
         self.set_data(alerts_df)
 
@@ -76,6 +78,31 @@ class AlertDialog(QDialog):
 
         layout.addLayout(filter_layout)
 
+        # ---- 颜色标记筛选栏（与主表颜色标记逻辑一致）----
+        color_row = QHBoxLayout()
+        color_row.addWidget(QLabel("颜色:"))
+        self.color_checks = {}
+        _color_items = [
+            ("_changed_only", "审核后变更", (255, 205, 205)),
+            ("_quarantined_only", "隔离区", (255, 248, 200)),
+            ("_substitute_only", "替代料", (205, 230, 255)),
+            ("_unused_only", "未投料", (200, 240, 210)),
+            ("_alert_only", "偏差率预警", (255, 198, 142)),
+            ("_plain_only", "无标记", (235, 235, 235)),
+        ]
+        for key, label, rgb in _color_items:
+            cb = QCheckBox(label)
+            cb.setIcon(_color_icon(rgb))
+            cb.stateChanged.connect(self._on_color_toggled)
+            self.color_checks[key] = cb
+            color_row.addWidget(cb)
+        self.color_clear_btn = QPushButton("清空颜色")
+        self.color_clear_btn.setMaximumWidth(80)
+        self.color_clear_btn.clicked.connect(self._clear_color_checks)
+        color_row.addWidget(self.color_clear_btn)
+        color_row.addStretch()
+        layout.addLayout(color_row)
+
         # ---- 表格 ----
         self.table_view = QTableView()
         self.table_view.setAlternatingRowColors(True)
@@ -114,6 +141,18 @@ class AlertDialog(QDialog):
         self.btn_read.setChecked(mode == "read")
         self._apply_filter()
 
+    def _on_color_toggled(self):
+        """颜色复选框变化：更新已勾选集合并刷新（与已读状态 AND）"""
+        self.color_filters = {k for k, cb in self.color_checks.items() if cb.isChecked()}
+        self._apply_filter()
+
+    def _clear_color_checks(self):
+        """清空所有颜色勾选"""
+        for cb in self.color_checks.values():
+            cb.setChecked(False)
+        self.color_filters = set()
+        self._apply_filter()
+
     def _apply_filter(self):
         """从 original_df 重新过滤并刷新模型"""
         if not hasattr(self, "original_df") or self.original_df is None:
@@ -131,6 +170,20 @@ class AlertDialog(QDialog):
             filtered = df[df["_read"] == 1].copy()
         else:
             filtered = df.copy()
+
+        # 颜色标记筛选（与已读状态 AND）：复用主表 classify_row_color_keys
+        if self.color_filters:
+            threshold = 10.0
+            am = getattr(self.main_window, 'alert_monitor', None)
+            if am is not None:
+                try:
+                    threshold = float(getattr(am, 'threshold', 10))
+                except (TypeError, ValueError):
+                    threshold = 10.0
+            mask = filtered.apply(
+                lambda r: bool(classify_row_color_keys(r, filtered, threshold) & self.color_filters),
+                axis=1)
+            filtered = filtered[mask]
 
         filtered = filtered.reset_index(drop=True)
         self.source_model.setDataFrame(filtered)
@@ -163,6 +216,9 @@ class AlertDialog(QDialog):
         if 'data_id' in df.columns:
             col_idx = df.columns.get_loc('data_id')
             self.table_view.setColumnHidden(col_idx, True)
+        for _hc in ('_post_audit_changed', '_quarantined', '是否替代料'):
+            if _hc in df.columns:
+                self.table_view.setColumnHidden(df.columns.get_loc(_hc), True)
 
         # 默认打开时显示未读
         self._set_filter("unread")
@@ -172,7 +228,7 @@ class AlertDialog(QDialog):
             self, "导出预警列表", "替代料预警.xlsx", "Excel files (*.xlsx)")
         if path:
             from gui_pyside6.save_guard import safe_save
-            export_df = self.original_df.drop(columns=['_read', 'data_id'], errors='ignore')
+            export_df = self.original_df.drop(columns=['_read', 'data_id', '_post_audit_changed', '_quarantined', '是否替代料'], errors='ignore')
             saved = safe_save(self, path,
                               lambda p: export_df.to_excel(p, index=False),
                               what="预警列表")

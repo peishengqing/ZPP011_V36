@@ -1588,6 +1588,7 @@ class MainWindow(QMainWindow):
                 "备注", "备注来源",
                 "车间", "定额", "实际", "偏差数量", "偏差率(%)",
                 "净偏差数量", "净偏差金额", "净偏差率(%)",
+                "是否替代料", "_post_audit_changed", "_quarantined",
                 "_read"
             ] if c in alerts_df.columns]
             alerts_df = alerts_df[required_cols]
