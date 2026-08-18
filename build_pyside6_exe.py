@@ -22,6 +22,11 @@ if __name__ == "__main__":
     import sys as _sys
     from utils.version_history import get_current_version
     debug_mode = '--debug' in _sys.argv
+    distpath = None
+    for _a in _sys.argv:
+        if _a.startswith('--distpath'):
+            distpath = _a.split('=', 1)[1] if '=' in _a else None
+            break
     version = get_current_version()
     base_name = f"ZPP011偏差分析器_{version}"
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -29,12 +34,13 @@ if __name__ == "__main__":
 
     # ── 版本号检查：防止重复打包（按版本号基础名前缀判断，与时间戳无关）──
     # onefile 产物为 dist/ 下的单个 exe（含时间戳）
-    if os.path.isdir("dist"):
-        existing = [f for f in os.listdir("dist") if f.startswith(base_name) and f.endswith(".exe")]
-        if existing:
-            print(f"❌ 版本号 {version} 已打包过！请先更新 version_history.py 版本号再打包。")
-            print(f"   发现已有文件: {existing[0]}")
-            sys.exit(1)
+    if not distpath:
+        if os.path.isdir("dist"):
+            existing = [f for f in os.listdir("dist") if f.startswith(base_name) and f.endswith(".exe")]
+            if existing:
+                print(f"❌ 版本号 {version} 已打包过！请先更新 version_history.py 版本号再打包。")
+                print(f"   发现已有文件: {existing[0]}")
+                sys.exit(1)
 
     # ── 版本日志检查：打包前必须更新日志 ──
     from utils.version_history import VERSION_HISTORY
@@ -110,6 +116,8 @@ if __name__ == "__main__":
         "--noconfirm",
     ]
     opts.extend(add_data_opts)
+    if distpath:
+        opts.append(f"--distpath={distpath}")
     opts.extend([
         # PySide6 必要隐藏导入
         "--hidden-import=PySide6.QtCore",
@@ -159,7 +167,7 @@ if __name__ == "__main__":
     ])
     # 固定输出目录 dist：打包前整体清空，避免不同时间戳版本 exe 在 dist 下累积
     import shutil as _shutil
-    if os.path.isdir("dist"):
+    if not distpath and os.path.isdir("dist"):
         try:
             _shutil.rmtree("dist")
             print("[清理] 已清空旧 dist")
@@ -173,3 +181,12 @@ if __name__ == "__main__":
     for o in opts:
         print(" ", o)
     pyinstaller_run(opts)
+    if distpath:
+        import shutil as _shutil2
+        _built = os.path.join(distpath, exe_name + ".exe")
+        if os.path.isfile(_built):
+            _dst = os.path.join(os.path.dirname(os.path.abspath(__file__)), exe_name + ".exe")
+            _shutil2.copyfile(_built, _dst)
+            print(f"[复制] exe 已复制到项目根: {_dst}")
+        else:
+            print(f"[警告] 未在 {distpath} 找到生成的 exe")
