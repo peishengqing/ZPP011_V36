@@ -80,13 +80,25 @@ class TestRuleEngine:
         assert isinstance(color, str)
         assert color.startswith('#')
 
-    def test_check_auto_close_condition_disabled(self):
-        """测试自动关闭条件（实际 rules.json 无 auto_close → disabled）"""
+    def test_check_auto_close_condition_enabled(self):
+        """测试自动关闭条件（rules.json 已启用 auto_close）"""
         engine = RuleEngine()
-        row = {'审核状态': '已审核', '偏差率': 0.03}
-        # 实际 rules.json 没有 auto_close 配置，返回 False
-        result = engine.check_auto_close_condition(row)
-        assert result == False
+        # 当前 rules.json: 审核状态=已审核 AND 偏差率(<0.05)
+        # 注意：规则字段是 "偏差率(%)"，row 字典必须匹配该字段名
+        row_match = {"审核状态": "已审核", "偏差率(%)": 0.03}
+        assert engine.check_auto_close_condition(row_match) is True
+
+        # 条件不匹配 → False（偏差率超阈值）
+        row_mismatch = {"审核状态": "已审核", "偏差率(%)": 0.10}
+        assert engine.check_auto_close_condition(row_mismatch) is False
+
+    def test_check_auto_close_condition_disabled(self):
+        """测试 auto_close 禁用时返回 False（mock engine 移除配置）"""
+        engine = RuleEngine()
+        # 手动移除 auto_close 模拟禁用状态
+        engine.rules.pop("auto_close", None)
+        row = {"审核状态": "已审核", "偏差率(%)": 0.03}
+        assert engine.check_auto_close_condition(row) is False
 
     def test_evaluate_condition(self):
         """测试条件评估"""

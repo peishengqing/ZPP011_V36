@@ -1,0 +1,61 @@
+{
+  "version": "1.0",
+  "deviation_rate_bands": [
+    {
+      "min": 0,
+      "max": 0.05,
+      "color": "#e8f5e9",
+      "label": "正常",
+      "level": "info"
+    },
+    {
+      "min": 0.05,
+      "max": 0.1,
+      "color": "#fff3e0",
+      "label": "关注",
+      "level": "warning"
+    },
+    {
+      "min": 0.1,
+      "max": 999,
+      "color": "#ffebee",
+      "label": "异常",
+      "level": "error"
+    }
+  ],
+  "auto_close": {
+    "enabled": true,
+    "conditions": [
+      {
+        "field": "审核状态",
+        "operator": "eq",
+        "value": "已审核"
+      },
+      {
+        "field": "偏差率(%)",
+        "operator": "lt",
+        "value": 0.05
+      }
+    ]
+  },
+  "deviation_amount_bands": [
+    {
+      "min": 0,
+      "max": 1000,
+      "color": "#e8f5e9",
+      "label": "小"
+    },
+    {
+      "min": 1000,
+      "max": 10000,
+      "color": "#fff3e0",
+      "label": "中"
+    },
+    {
+      "min": 10000,
+      "max": 999999,
+      "color": "#ffebee",
+      "label": "大"
+    }
+  ]
+}
