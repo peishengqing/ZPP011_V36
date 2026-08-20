@@ -20,8 +20,8 @@ class TestReadStatusBasic:
             rs.save_read_status('test_id_1', 1, 'fp_v1')
             result = rs.load_read_status(['test_id_1'])
             assert 'test_id_1' in result
-            # (is_read, fingerprint, snapshot_qty, snapshot_note, read_source)；手动默认 'manual'
-            assert result['test_id_1'] == (1, 'fp_v1', None, '', 'manual')
+            # (is_read, fingerprint, snapshot_qty, snapshot_note, snapshot_yield, read_source)；手动默认 'manual'
+            assert result['test_id_1'] == (1, 'fp_v1', None, '', None, 'manual')
         finally:
             rs.DB_PATH = orig_path
             if os.path.exists(tmp_db):
@@ -70,7 +70,7 @@ class TestReadStatusBasic:
             rs.save_read_status('test_id', 1, 'fp_v1')
             rs.save_read_status('test_id', 0, 'fp_v2')
             result = rs.load_read_status(['test_id'])
-            assert result['test_id'] == (0, 'fp_v2', None, '', 'manual')
+            assert result['test_id'] == (0, 'fp_v2', None, '', None, 'manual')
         finally:
             rs.DB_PATH = orig_path
             if os.path.exists(tmp_db):
@@ -91,7 +91,7 @@ class TestReadStatusBasic:
             result = rs.load_read_status(ids)
             assert len(result) == 5
             for i, id_ in enumerate(ids):
-                assert result[id_] == (i % 2, f'fp_{i}', None, '', 'manual')
+                assert result[id_] == (i % 2, f'fp_{i}', None, '', None, 'manual')
         finally:
             rs.DB_PATH = orig_path
             if os.path.exists(tmp_db):
