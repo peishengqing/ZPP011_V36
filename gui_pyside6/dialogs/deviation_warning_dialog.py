@@ -521,11 +521,20 @@ class DeviationWarningDialog(QDialog):
             df["_read"] = 0
         if "data_id" not in df.columns:
             if all(c in df.columns for c in ["订单日期", "流程订单", "物料编码"]):
-                df["data_id"] = (
-                    df["订单日期"].astype(str) + "|" +
-                    df["流程订单"].astype(str) + "|" +
-                    df["物料编码"].astype(str)
-                )
+                # 优先使用含工厂的 4 段格式，与主表 data_service.py 保持一致
+                if '工厂' in df.columns:
+                    df["data_id"] = (
+                        df["工厂"].astype(str) + "|" +
+                        df["订单日期"].astype(str) + "|" +
+                        df["流程订单"].astype(str) + "|" +
+                        df["物料编码"].astype(str)
+                    )
+                else:
+                    df["data_id"] = (
+                        df["订单日期"].astype(str) + "|" +
+                        df["流程订单"].astype(str) + "|" +
+                        df["物料编码"].astype(str)
+                    )
         # 派生「状态」列（已读/未读），供看板显示
         if "_read" in df.columns:
             df["状态"] = df["_read"].map({0: "未读", 1: "已读"})
