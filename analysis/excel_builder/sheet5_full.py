@@ -55,6 +55,7 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
             '原表行号', '产品物料号码', '产品物料描述', '产量', '产量单位', '物料编码', '物料名称',
             '单位', '定额', '实际', '偏差数量', '偏差率', '偏差率(%)',
             '偏差金额', '备注', '备注来源', '偏差区间',
+            '组件物料类型', '组件物料类型描述',
         ])
     else:
         dev_df = pd.DataFrame(index=has_real_dev.index)
@@ -88,6 +89,8 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
         dev_df['备注'] = has_real_dev['_备注']
         dev_df['备注来源'] = has_real_dev['_note_source'] if '_note_source' in has_real_dev.columns else '人工填写'
         dev_df['偏差区间'] = np.where(pd.to_numeric(has_real_dev[col_p], errors='coerce') > 0, '正偏差', '负偏差')
+        dev_df['组件物料类型'] = has_real_dev['组件物料类型'].fillna('') if '组件物料类型' in has_real_dev.columns else ''
+        dev_df['组件物料类型描述'] = has_real_dev['组件物料类型描述'].fillna('') if '组件物料类型描述' in has_real_dev.columns else ''
         dev_df = dev_df.reset_index(drop=True)
 
     report_progress(progress_idx, "Sheet5-完整偏差明细", 100)

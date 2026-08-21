@@ -13,6 +13,8 @@ AUDIT_COLS_CONFIG = [
     ("order_type",         "订单类型",     70,   "center"),
     ("order_no",           "流程订单",    100,   "center"),
     ("material_category",  "物料大类",     90,   "center"),
+    ("component_material_type", "组件物料类型", 100, "center"),
+    ("component_material_type_desc", "组件物料类型描述", 150, "w"),
     ("code",              "物料号",       70,   "center"),
     ("name",              "物料描述",    100,   "w"),
     ("unit",              "单位",        45,   "center"),
