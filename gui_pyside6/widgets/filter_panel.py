@@ -532,7 +532,7 @@ class FilterPanel(QWidget):
         self._data = df
         self._col_map['工厂'] = self._find_column(['工厂', '工厂名称', 'plant'])
         self._col_map['车间'] = self._find_column(['车间', '生产管理员描述', 'workshop'])
-        self._col_map['物料类型'] = self._find_column(['物料类型', '物料大类', 'material_category'])
+        self._col_map['物料类型'] = self._find_column(['组件物料类型', '组件物料类型描述', '物料类型', '物料大类', 'material_category'])
         self._col_map['替代料'] = self._find_column(['是否替代料', '替代料', 'is_alt'])
         self._col_map['审核结果'] = self._find_column(['审核结果', 'audit_result'])
         self._col_map['备注来源'] = self._find_column(['备注来源', '备注来源'])
