@@ -1352,17 +1352,21 @@ class MainWindow(QMainWindow):
             from core.read_status import mark_read_batch
             qty_col = self.data_service._find_real_qty_col(df)
             note_col = self.data_service._find_remark_col(df)
+            yield_col = self.data_service._find_yield_col(df)
             qty_lookup = {str(k): v for k, v in zip(df['data_id'], df[qty_col])} if qty_col else {}
             note_lookup = {str(k): str(v) for k, v in zip(df['data_id'], df[note_col].astype(str))} if note_col else {}
+            yield_lookup = {str(k): v for k, v in zip(df['data_id'], df[yield_col])} if yield_col else {}
 
             dids = [str(x) for x in df.loc[target, 'data_id'].tolist()]
             snapshot_map = {}
             for did in dids:
                 q = qty_lookup.get(did)
                 n = note_lookup.get(did, '')
+                y = yield_lookup.get(did)
                 snapshot_map[did] = (
                     self.data_service._safe_qty(q) if qty_col else None,
                     self.data_service._norm_note(n) if note_col else '',
+                    self.data_service._safe_qty(y) if yield_col else None,
                 )
             if dids:
                 mark_read_batch(dids, snapshot_map, read_source='auto')
