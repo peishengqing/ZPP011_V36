@@ -30,8 +30,8 @@ def build_sheet9(df, report_progress, progress_idx=9):
         lambda s: s.abs().sum()).to_dict()
 
     reason_analysis = []
-    for (factory, ws_name, mat_cat, std_reason), grp in has_reason.groupby(
-            ['工厂名称', '车间', '物料分类', '_std_reason']):
+    for (factory, ws_name, comp_type, comp_type_desc, mat_desc, std_reason), grp in has_reason.groupby(
+            ['工厂名称', '车间', '组件物料类型', '组件物料类型描述', '组件物料描述', '_std_reason']):
         total_dev = grp['材料偏差'].sum()
         # 用 set() 而非 .unique() 避免 numpy 内部排序时 int/str 比较崩溃
         _reasons = set()
@@ -53,22 +53,22 @@ def build_sheet9(df, report_progress, progress_idx=9):
         reason_analysis.append({
             '工厂': factory,
             '车间': ws_name,
-            '物料分类': mat_cat,
+            '组件物料类型': str(comp_type) if pd.notna(comp_type) else '',
+            '组件物料类型描述': str(comp_type_desc) if pd.notna(comp_type_desc) else '',
+            '组件物料描述': str(mat_desc) if pd.notna(mat_desc) else '',
             '备注原因': std_reason,
             '原始备注示例': ex_remarks,
-            '涉及物料数': len(set(str(x) for x in grp['组件物料描述'] if pd.notna(x))),
             '涉及订单数': len(orders),
             '多耗': round(grp[grp['材料偏差'] > 0]['材料偏差'].sum(), 2),
             '少耗': round(abs(grp[grp['材料偏差'] < 0]['材料偏差'].sum()), 2),
             '净偏差数量': round(total_dev, 2),
             '占车间偏差比%': ratio_pct,
-            '涉及物料': '、'.join(sorted(set(str(x) for x in grp['组件物料描述'] if pd.notna(x)))),
         })
 
     reason_analysis_df = pd.DataFrame(reason_analysis)
     if not reason_analysis_df.empty:
         reason_analysis_df = reason_analysis_df.sort_values(
-            ['工厂', '车间', '物料分类', '净偏差数量'], ascending=[True, True, True, False])
+            ['工厂', '车间', '组件物料类型', '净偏差数量'], ascending=[True, True, True, False])
 
     report_progress(progress_idx, "Sheet9-原因分析", 100)
     return reason_analysis_df

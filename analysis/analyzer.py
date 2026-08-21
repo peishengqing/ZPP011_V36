@@ -987,13 +987,14 @@ def export_full_report_from_intermediates(intermediates, output_path=None, outpu
         ws7.column_dimensions[col].width = w
 
     ws8 = wb.create_sheet('偏差原因分析')
-    headers8 = ['工厂', '车间', '物料分类', '备注原因', '原始备注示例',
-                '涉及物料数', '多耗', '少耗', '净偏差数量', '涉及物料']
-    rows8 = [[r['工厂'], r['车间'], r['物料分类'], r['备注原因'],
-              r['原始备注示例'], r['涉及物料数'], r['多耗'], r['少耗'],
-              r.get('净偏差数量', 0), r['涉及物料']] for r in reason_analysis_df.to_dict('records')]
+    headers8 = ['工厂', '车间', '组件物料类型', '组件物料类型描述', '组件物料描述', '备注原因', '原始备注示例',
+                '多耗', '少耗', '净偏差数量', '占车间偏差比%']
+    rows8 = [[r['工厂'], r['车间'], r['组件物料类型'], r['组件物料类型描述'], r.get('组件物料描述', ''),
+              r['备注原因'], r['原始备注示例'],
+              r['多耗'], r['少耗'], r.get('净偏差数量', 0), r.get('占车间偏差比%', 0)]
+             for r in reason_analysis_df.to_dict('records')]
     write_sheet(ws8, headers8, rows8,
-                [14, 10, 10, 20, 25, 10, 14, 14, 14, 80])
+                [14, 10, 12, 18, 30, 20, 25, 14, 14, 14, 14])
 
     # 如果用户指定了输出路径，直接使用；否则自动生成
     if output_path:
