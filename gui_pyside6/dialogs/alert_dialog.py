@@ -195,20 +195,21 @@ class AlertDialog(QDialog):
         if "_read" not in df.columns:
             df["_read"] = 0
         if "data_id" not in df.columns:
-            # 优先使用含工厂的 4 段格式，与主表 data_service.py 保持一致
-            if '工厂' in df.columns and all(c in df.columns for c in ["订单日期", "流程订单", "物料编码"]):
-                df["data_id"] = (
-                    df["工厂"].astype(str) + "|" +
-                    df["订单日期"].astype(str) + "|" +
-                    df["流程订单"].astype(str) + "|" +
-                    df["物料编码"].astype(str)
-                )
-            elif all(c in df.columns for c in ["订单日期", "流程订单", "物料编码"]):
-                df["data_id"] = (
-                    df["订单日期"].astype(str) + "|" +
-                    df["流程订单"].astype(str) + "|" +
-                    df["物料编码"].astype(str)
-                )
+            if all(c in df.columns for c in ["订单日期", "流程订单", "物料编码"]):
+                # 优先使用含工厂的 4 段格式，与主表 data_service.py 保持一致
+                if '工厂' in df.columns:
+                    df["data_id"] = (
+                        df["工厂"].astype(str) + "|" +
+                        df["订单日期"].astype(str) + "|" +
+                        df["流程订单"].astype(str) + "|" +
+                        df["物料编码"].astype(str)
+                    )
+                else:
+                    df["data_id"] = (
+                        df["订单日期"].astype(str) + "|" +
+                        df["流程订单"].astype(str) + "|" +
+                        df["物料编码"].astype(str)
+                    )
         self.original_df = df.copy()
 
         self.source_model = DataFrameModel()
