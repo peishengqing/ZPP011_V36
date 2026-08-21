@@ -36,6 +36,11 @@ class LeftPanelComponent:
         self._build_alternative_materials(self.alt_group.body_layout)
         layout.addWidget(self.alt_group.container)
 
+        # 3.5 材料半成品分类组
+        self.semi_group = self._create_card("📦 材料半成品", False)
+        self._build_semi_materials(self.semi_group.body_layout)
+        layout.addWidget(self.semi_group.container)
+
         # 4. 数据预览组（文字统计：显示行数/列数），默认展开
         self.preview_group = self._create_card("📊 数据预览", True)
         self.mw.preview_label = QLabel("")
@@ -241,6 +246,35 @@ class LeftPanelComponent:
         sel_btn.clicked.connect(self.mw._add_alt_pair_from_selection)
         sel_row.addWidget(sel_btn)
         layout.addLayout(sel_row)
+
+    def _build_semi_materials(self, layout: QVBoxLayout):
+        """构建材料半成品分类卡片"""
+        # 食品原料半成品
+        self.food_raw_btn = QPushButton("📦 食品原料半成品")
+        self.food_raw_btn.setObjectName("semiBtn")
+        self.food_raw_btn.setToolTip("点击筛选食品原料半成品记录")
+        self.food_raw_btn.clicked.connect(lambda: self.mw._filter_semi_materials('food_raw'))
+        layout.addWidget(self.food_raw_btn)
+
+        # 食品成品半成品
+        self.food_finish_btn = QPushButton("📦 食品成品半成品")
+        self.food_finish_btn.setObjectName("semiBtn")
+        self.food_finish_btn.setToolTip("点击筛选食品成品半成品记录")
+        self.food_finish_btn.clicked.connect(lambda: self.mw._filter_semi_materials('food_finish'))
+        layout.addWidget(self.food_finish_btn)
+
+        # 饮料原料半成品（预留，暂未分类）
+        self.drink_raw_btn = QPushButton("🥤 饮料原料半成品（暂未分类）")
+        self.drink_raw_btn.setObjectName("semiBtnDisabled")
+        self.drink_raw_btn.setEnabled(False)
+        layout.addWidget(self.drink_raw_btn)
+
+        # 饮料成品半成品
+        self.drink_finish_btn = QPushButton("🥤 饮料成品半成品")
+        self.drink_finish_btn.setObjectName("semiBtn")
+        self.drink_finish_btn.setToolTip("点击筛选饮料成品半成品记录")
+        self.drink_finish_btn.clicked.connect(lambda: self.mw._filter_semi_materials('drink_finish'))
+        layout.addWidget(self.drink_finish_btn)
 
     def _create_input_row(self, parent_layout: QVBoxLayout, label_text: str,
                          placeholder: str, has_browse: bool = False) -> QWidget:

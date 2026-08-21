@@ -1831,6 +1831,46 @@ class MainWindow(QMainWindow):
         lines.append(f"列数：{visible_cols} 列")
         return "\n".join(lines)
 
+    def _filter_semi_materials(self, category: str):
+        """从左侧面板筛选材料半成品：food_raw / food_finish / drink_finish"""
+        df = self._get_master_df()
+        if df is None or df.empty:
+            QMessageBox.information(self, "提示", "暂无数据，请先加载并分析")
+            return
+        if '_is_semi_raw' not in df.columns and '_is_semi_finish' not in df.columns:
+            QMessageBox.warning(self, "提示", "当前数据未包含材料半成品分类信息，请先重新分析")
+            return
+
+        if category == 'food_raw':
+            mask = (df['_is_semi_raw'] == '是')
+            title = "食品原料半成品"
+        elif category == 'food_finish':
+            # 食品成品半成品 = 食品厂半成品 - 原料
+            mask = ((df.get('工厂名称', df.get('工厂', ''))
+                     .astype(str).str.contains('食品', na=False))
+                    & (df['组件物料类型描述'].astype(str).str.contains('半成品', na=False))
+                    & (df['_is_semi_raw'] != '是'))
+            title = "食品成品半成品"
+        elif category == 'drink_finish':
+            # 饮料成品半成品
+            mask = ((df.get('工厂名称', df.get('工厂', ''))
+                     .astype(str).str.contains('饮料', na=False))
+                    & (df['组件物料类型描述'].astype(str).str.contains('半成品', na=False))
+                    & (df.get('_is_semi_finish', pd.Series('否', index=df.index)) == '是'))
+            title = "饮料成品半成品"
+        else:
+            return
+
+        count = int(mask.sum())
+        if count == 0:
+            QMessageBox.information(self, "提示", f"{title}：无匹配记录")
+            return
+
+        # 选中筛选后的行
+        rows = [i for i, v in enumerate(mask.values) if v]
+        self.table_view.selectRows(rows)
+        self.statusBar().showMessage(f"已筛选 {title}：{count} 条记录")
+
     def _open_output_dir(self):
         dir_path = self.output_dir_edit.text()
         if not dir_path:
