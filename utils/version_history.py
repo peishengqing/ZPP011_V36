@@ -24,13 +24,6 @@ VERSION_HISTORY = [
         "version": "v42.97",
         "date": "2026-08-21",
         "fixes": [
-            "修复替代料看板『标记已读/未读』功能失效：alert_dialog.set_data() 生成 data_id 时漏掉『工厂』前缀，导致与主表 4 段格式(工厂|订单日期|流程订单|物料编码)不匹配，_sync_main_df() 永久匹配失败，标记操作只更新 dialog 内部而主表状态永不变。改为优先检查『工厂』列存在性，有则生成 4 段 data_id，无则回退 3 段(向后兼容)。",
-        ],
-    },
-    {
-        "version": "v42.97",
-        "date": "2026-08-21",
-        "fixes": [
             "修复标记已读功能失效+性能问题：alert_dialog 和 deviation_warning_dialog 的 set_data() 均优先使用含工厂的 4 段 data_id（与主表一致）；预建 data_id 索引字典，批量标记时从 O(N²) 优化到 O(N)，解决大数据量下界面卡死问题。",
         ],
     },
