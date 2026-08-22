@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QMenu, QSizePolicy, QGroupBox, QFormLayout, QProgressDialog,
     QListWidget, QListWidgetItem, QScrollArea, QGridLayout, QCheckBox,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer
+from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer, QItemSelection, QItemSelectionModel
 from PySide6.QtGui import QFont, QFontMetrics, QShortcut, QKeySequence, QAction
 
 # 导入组件
@@ -1866,9 +1866,22 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "提示", f"{title}：无匹配记录")
             return
 
-        # 选中筛选后的行
+        # 选中筛选后的行（源 DataFrame 行号 -> proxy 行号，避免排序/过滤后选错）
         rows = [i for i, v in enumerate(mask.values) if v]
-        self.table_view.selectRows(rows)
+        proxy = self.table_view.model()
+        src_model = proxy.sourceModel() if hasattr(proxy, "sourceModel") else None
+        sel = QItemSelection()
+        for i in rows:
+            if src_model is not None:
+                idx = proxy.mapFromSource(src_model.index(i, 0))
+            else:
+                idx = proxy.index(i, 0)
+            if idx.isValid():
+                sel.select(idx, idx)
+        if not sel.isEmpty():
+            self.table_view.selectionModel().select(
+                sel, QItemSelectionModel.Select | QItemSelectionModel.Rows
+            )
         self.statusBar().showMessage(f"已筛选 {title}：{count} 条记录")
 
     def _open_output_dir(self):

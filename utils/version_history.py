@@ -14,6 +14,13 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.01",
+        "date": "2026-08-22",
+        "fixes": [
+            "修复『材料半成品』筛选按钮点击崩溃：main_window._filter_semi_materials 误用不存在的 QTableView.selectRows(rows)，改为用 QItemSelection + mapFromSource 将源 DataFrame 行号正确映射到 proxy 行后批量选中，避免排序/过滤后选错行。",
+        ],
+    },
+    {
         "version": "v43.00",
         "date": "2026-08-21",
         "fixes": [
