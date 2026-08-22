@@ -303,7 +303,6 @@ class MainWindow(QMainWindow):
         self.menu_bar = MenuBarComponent(self)
         self.title_bar = TitleBarWidget(get_current_version(), self)
         self.left_panel_component = LeftPanelComponent(self)
-        self._refresh_semi_list_ui()  # 初始化半成品列表显示
         self.main_table = MainTableComponent(self)
         self.stats_cards = StatsCardsWidget(self)  # 统计卡片（审核概览 + 变更感知）
         self.bottom_bar = BottomBarComponent(self)
