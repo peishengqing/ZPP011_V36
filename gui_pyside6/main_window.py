@@ -2770,7 +2770,7 @@ class MainWindow(QMainWindow):
             if '名称' in col_name or '描述' in col_name or col_name == '物料':
                 if self.table_view.columnWidth(col) < 200:
                     self.table_view.setColumnWidth(col, 200)
-            elif '编码' in col_name or '号' in col_name or '订单' in col_name:
+            elif '编码' in col_name or '号' in col_name or '订单' in col_name or col_name == '半成品重分类':
                 if self.table_view.columnWidth(col) < 120:
                     self.table_view.setColumnWidth(col, 120)
             elif '备注' in col_name or '原因' in col_name:
