@@ -318,6 +318,7 @@ class FilterPanel(QWidget):
         self.process_order_edit.editingFinished.connect(self._emit_filter)
         self.process_order_edit.returnPressed.connect(self._emit_filter)
         self.category_combo.currentIndexChanged.connect(self._emit_filter)
+        self.semi_class_combo.currentIndexChanged.connect(self._emit_filter)
         self.alt_combo.currentIndexChanged.connect(self._emit_filter)
         self.quar_combo.currentIndexChanged.connect(self._emit_filter)
         self.dev_rate_combo.currentIndexChanged.connect(self._emit_filter)
