@@ -1183,12 +1183,13 @@ def _build_deviation_summary(dev_df, orig_df):
 
 
 # ---------------------------------------------------------------------------
-# 半成品重分类辅助：读取「半成品重分类.xlsx」权威分类表
+# 半成品重分类辅助：读取「semi_user_categories.json」权威分类表
 # 返回 {组件物料号(str): 半成品分类值(str)}
 # 查找优先级：
-#   1) 打包后资源目录 sys._MEIPASS/config/半成品重分类.xlsx
-#   2) 工程内 config/半成品重分类.xlsx
+#   1) 打包后资源目录 sys._MEIPASS/config/semi_user_categories.json
+#   2) 工程内 config/semi_user_categories.json
 # 找不到或读取失败返回空 dict（不影响主流程，仅半成品重分类列留空 + 400/410 补空规则生效）
+# JSON格式：{"物料号": "分类名", ...}
 # ---------------------------------------------------------------------------
 def _load_semi_classify_map():
     import os
@@ -1196,23 +1197,25 @@ def _load_semi_classify_map():
     candidates = []
     # 1) 打包资源
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-        candidates.append(os.path.join(sys._MEIPASS, 'config', '半成品重分类.xlsx'))
+        candidates.append(os.path.join(sys._MEIPASS, 'config', 'semi_user_categories.json'))
     # 2) 工程内
     _here = os.path.dirname(os.path.abspath(__file__))
-    candidates.append(os.path.join(_here, '..', 'config', '半成品重分类.xlsx'))
+    candidates.append(os.path.join(_here, '..', 'config', 'semi_user_categories.json'))
     _path = next((p for p in candidates if os.path.exists(p)), None)
     if not _path:
         return {}
     try:
-        _xls = pd.read_excel(_path, sheet_name=None)
-        _map = {}
-        for _sh, _d in _xls.items():
-            if '组件物料号' in _d.columns and '半成品分类' in _d.columns:
-                for _, _r in _d.iterrows():
-                    _code = str(_r['组件物料号']).strip()
-                    _cls = str(_r['半成品分类']).strip()
-                    if _code and _cls and _cls not in ('nan', 'None'):
-                        _map[_code] = _cls
-        return _map
+        with open(_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        # 支持两种格式：
+        # 1) dict: {"物料号": "分类名", ...} → 直接返回
+        # 2) list: [{"name": "分类名", "factory": "1101"}, ...] → 返回空（需要完整映射表）
+        if isinstance(data, dict):
+            return {str(k).strip(): str(v).strip() for k, v in data.items() if k and v}
+        elif isinstance(data, list):
+            # list格式只存分类名，无法构建物料→分类映射，返回空dict
+            # 如需完整映射，请使用dict格式或保留xlsx文件
+            return {}
+        return {}
     except Exception:
         return {}

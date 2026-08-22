@@ -1878,67 +1878,71 @@ class MainWindow(QMainWindow):
     # 兼容旧格式: {"name":..., "col":..., "cond":..., "val":...}
     # -----------------------------------------------------------
     def _load_semi_categories(self):
-        """从 config/semi_user_categories.json 加载类目列表，并自动从 xlsx 补充分类"""
-        # 1) 加载用户自定义的 JSON 配置
+        """从 config/semi_user_categories.json 加载物料号→分类映射（dict格式）"""
         candidates = []
         if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
             candidates.append(os.path.join(sys._MEIPASS, 'config', 'semi_user_categories.json'))
         _here = os.path.dirname(os.path.abspath(__file__))
         candidates.append(os.path.join(_here, '..', 'config', 'semi_user_categories.json'))
         _path = next((p for p in candidates if os.path.exists(p)), None)
-        result = []
-        if _path:
-            try:
-                with open(_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                if isinstance(data, list):
-                    result = [{
-                        'name': item.get('name', ''),
-                        'factory': item.get('factory', ''),
-                    } for item in data if isinstance(item, dict) and item.get('name')]
-            except Exception:
-                pass
-        # 2) 从 xlsx 读取权威分类表，补充分类（去重）
+        if not _path:
+            return {}
         try:
-            from analysis.analyzer import _load_semi_classify_map
-            semi_map = _load_semi_classify_map()
-            if semi_map:
-                # 收集 xlsx 中的分类名，按出现顺序保留
-                seen = {item['name'] for item in result}
-                for code, cls in semi_map.items():
-                    if cls and cls not in seen:
-                        # 根据工厂前缀推断 factory
-                        if code.startswith('400'):
-                            factory = '1101'
-                        elif code.startswith('410'):
-                            factory = '1102'
-                        else:
-                            factory = ''
-                        result.append({'name': cls, 'factory': factory})
-                        seen.add(cls)
+            with open(_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return {str(k).strip(): str(v).strip() for k, v in data.items() if k and v}
+            elif isinstance(data, list):
+                # 兼容旧list格式，转为dict
+                result = {}
+                for item in data:
+                    if isinstance(item, dict):
+                        name = item.get('name', '')
+                        factory = item.get('factory', '')
+                        # 用工厂前缀生成示例物料号
+                        prefix = '400' if factory == '1101' else ('410' if factory == '1102' else '')
+                        result[f"{prefix}999999"] = name
+                return result
+            return {}
         except Exception:
-            pass
+            return {}
+
+    def _get_semi_category_list(self):
+        """从映射dict提取唯一分类列表（用于UI显示）"""
+        mapping = self._semi_categories
+        if not isinstance(mapping, dict):
+            return []
+        result = []
+        seen = set()
+        for code, cls in mapping.items():
+            if cls and cls not in seen:
+                code_str = str(code).strip()
+                factory = '1101' if code_str.startswith('400') else ('1102' if code_str.startswith('410') else '')
+                result.append({'name': cls, 'factory': factory})
+                seen.add(cls)
         return result
 
-    def _save_semi_categories(self, categories):
-        """将类目列表写回 config/semi_user_categories.json"""
+    def _save_semi_categories(self, mapping):
+        """将物料号→分类映射写回 config/semi_user_categories.json"""
         _here = os.path.dirname(os.path.abspath(__file__))
         _path = os.path.join(_here, '..', 'config', 'semi_user_categories.json')
         try:
             os.makedirs(os.path.dirname(_path), exist_ok=True)
             with open(_path, 'w', encoding='utf-8') as f:
-                json.dump(categories, f, ensure_ascii=False, indent=2)
+                json.dump(mapping, f, ensure_ascii=False, indent=2)
         except Exception:
             pass
 
     def _refresh_semi_list_ui(self):
-        """根据当前 _semi_categories 刷新左侧面板半成品列表显示"""
+        """根据当前映射刷新左侧面板半成品列表显示"""
         if not hasattr(self, 'left_panel_component') or not hasattr(self.left_panel_component, 'semi_table'):
             return
+        # 从dict映射提取唯一分类列表
+        categories = self._get_semi_category_list()
         table = self.left_panel_component.semi_table
         table.setSortingEnabled(False)
-        table.setRowCount(len(self._semi_categories))
-        for i, cat in enumerate(self._semi_categories):
+        table.setRowCount(len(categories))
+        for i, cat in enumerate(categories):
             factory = cat.get('factory', '')
             name = cat.get('name', '')
             factory_item = QTableWidgetItem(factory)
@@ -1952,7 +1956,7 @@ class MainWindow(QMainWindow):
         table.sortByColumn(0, Qt.AscendingOrder)
         table.clearSelection()
         if hasattr(self, 'semi_count_label'):
-            self.semi_count_label.setText(f"共 {len(self._semi_categories)} 项")
+            self.semi_count_label.setText(f"共 {len(categories)} 项")
 
     def _add_semi_category(self):
         """弹出添加分类对话框：输入名称 + 选择工厂"""
@@ -1994,14 +1998,16 @@ class MainWindow(QMainWindow):
         if not cat_name:
             QMessageBox.warning(dlg, "提示", "分类名称不能为空")
             return
-        # 检查重复
-        if any(c['name'] == cat_name for c in self._semi_categories):
+        # 检查重复（基于分类名）
+        categories = self._get_semi_category_list()
+        if any(c['name'] == cat_name for c in categories):
             QMessageBox.warning(dlg, "提示", f"分类「{cat_name}」已存在")
             return
 
         factory = factory_combo.currentText()
-        new_cat = {'name': cat_name, 'factory': factory}
-        self._semi_categories.append(new_cat)
+        # 新增分类时，用一个示例物料号占位（实际物料映射需手动编辑JSON）
+        prefix = '400' if factory == '1101' else ('410' if factory == '1102' else '')
+        self._semi_categories[f"{prefix}999999"] = cat_name
         self._save_semi_categories(self._semi_categories)
         self._refresh_semi_list_ui()
         QMessageBox.information(dlg, "成功", f"已添加分类「{cat_name}」")
@@ -2015,8 +2021,13 @@ class MainWindow(QMainWindow):
         if current_row < 0:
             QMessageBox.warning(self, "提示", "请先选中要删除的分类")
             return
-        name = self._semi_categories[current_row]['name']
-        self._semi_categories.pop(current_row)
+        # 获取当前分类名
+        categories = self._get_semi_category_list()
+        if current_row >= len(categories):
+            return
+        name = categories[current_row]['name']
+        # 从映射中删除该分类的所有条目
+        self._semi_categories = {k: v for k, v in self._semi_categories.items() if v != name}
         self._save_semi_categories(self._semi_categories)
         self._refresh_semi_list_ui()
         QMessageBox.information(self, "成功", f"已删除分类「{name}」")
@@ -2026,7 +2037,7 @@ class MainWindow(QMainWindow):
         if not QMessageBox.question(self, "确认", "确定要重置所有半成品分类吗？",
                                     QMessageBox.Yes | QMessageBox.No) == QMessageBox.No:
             return
-        self._semi_categories = []
+        self._semi_categories = {}
         self._save_semi_categories(self._semi_categories)
         self._refresh_semi_list_ui()
         QMessageBox.information(self, "成功", "已重置所有半成品分类")
@@ -2039,23 +2050,20 @@ class MainWindow(QMainWindow):
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            if not isinstance(data, list):
-                QMessageBox.warning(self, "错误", "文件格式不正确")
-                return
-            # 兼容旧格式
-            imported = []
-            for item in data:
-                if isinstance(item, dict):
-                    imported.append({
-                        'name': item.get('name', ''),
-                        'factory': item.get('factory', ''),
-                    })
-            # 合并去重
-            existing_names = {c['name'] for c in self._semi_categories}
-            for cat in imported:
-                if cat['name'] and cat['name'] not in existing_names:
-                    self._semi_categories.append(cat)
-                    existing_names.add(cat['name'])
+            # 兼容两种格式：dict {"物料号": "分类名"} 或 list [{"name": "...", "factory": "..."}]
+            imported = {}
+            if isinstance(data, dict):
+                imported = {str(k).strip(): str(v).strip() for k, v in data.items() if k and v}
+            elif isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict):
+                        name = item.get('name', '')
+                        factory = item.get('factory', '')
+                        if name:
+                            prefix = '400' if factory == '1101' else ('410' if factory == '1102' else '')
+                            imported[f"{prefix}999999"] = name
+            # 合并
+            self._semi_categories.update(imported)
             self._save_semi_categories(self._semi_categories)
             self._refresh_semi_list_ui()
             QMessageBox.information(self, "成功", f"已导入 {len(imported)} 个分类")
@@ -2398,7 +2406,7 @@ class MainWindow(QMainWindow):
         table.sortByColumn(0, Qt.AscendingOrder)
 
         # 填充数据
-        categories = self._semi_categories
+        categories = self._get_semi_category_list()
         table.setRowCount(len(categories))
         for i, cat in enumerate(categories):
             factory = cat.get('factory', '')
