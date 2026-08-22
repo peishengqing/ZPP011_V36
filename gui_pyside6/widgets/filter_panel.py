@@ -125,6 +125,9 @@ class FilterPanel(QWidget):
         self.category_combo = QComboBox()
         self.category_combo.addItem("全部")
         self.category_combo.setMinimumWidth(220)
+        self.semi_class_combo = QComboBox()
+        self.semi_class_combo.addItem("全部")
+        self.semi_class_combo.setMinimumWidth(220)
         self.alt_combo = QComboBox()
         self.alt_combo.addItems(["全部", "是", "否"])
         self.alt_combo.setMinimumWidth(220)
@@ -160,6 +163,7 @@ class FilterPanel(QWidget):
         material_name_row.addWidget(self.material_name_edit, 1)
         material_name_row.addWidget(self.edit_presets_btn)
         material_layout.addRow("物料类型:", self.category_combo)
+        material_layout.addRow("半成品分类:", self.semi_class_combo)
         material_layout.addRow("替代料:", self.alt_combo)
         material_layout.addRow("隔离区:", self.quar_combo)
         material_layout.addRow("订单类型:", self.order_type_combo)
@@ -544,6 +548,7 @@ class FilterPanel(QWidget):
         self._col_map['流程订单'] = self._find_column(['流程订单', 'process_order'])
         self._col_map['物料名称'] = self._find_column(['物料名称', '物料描述', 'material_name', '组件物料描述'])
         self._col_map['单位'] = self._find_column(['单位', '组件单位', '基本单位', '计量单位'])
+        self._col_map['半成品重分类'] = self._find_column(['半成品重分类'])
 
         # 记录数据中的最小/最大日期，用于重置
         self._data_min_date = None
@@ -560,16 +565,17 @@ class FilterPanel(QWidget):
 
         # 更新动态下拉前屏蔽信号，避免触发中间态筛选条件把表格刷空
         for _c in (self.factory_combo, self.workshop_combo, self.category_combo, self.order_type_combo,
-                   self.material_name_edit):
+                   self.material_name_edit, self.semi_class_combo):
             _c.blockSignals(True)
         self._update_combo(self.factory_combo, self._col_map.get('工厂'))
         self._update_combo(self.workshop_combo, self._col_map.get('车间'))
         self._update_combo(self.category_combo, self._col_map.get('物料类型'))
         self._update_combo(self.order_type_combo, self._col_map.get('订单类型'))
+        self._update_combo(self.semi_class_combo, self._col_map.get('半成品重分类'))
         self._update_unit_list()
         self._update_material_name_combo()
         for _c in (self.factory_combo, self.workshop_combo, self.category_combo, self.order_type_combo,
-                   self.material_name_edit):
+                   self.material_name_edit, self.semi_class_combo):
             _c.blockSignals(False)
 
         # 重置日期为数据范围
@@ -759,6 +765,9 @@ class FilterPanel(QWidget):
         cat_col = self._col_map.get('物料类型')
         if cat_col and self.category_combo.currentText() != "全部":
             filters[cat_col] = self.category_combo.currentText()
+        semi_col = self._col_map.get('半成品重分类')
+        if semi_col and self.semi_class_combo.currentText() != "全部":
+            filters[semi_col] = self.semi_class_combo.currentText()
         if self.alt_combo.currentText() != "全部":
             filters['是否替代料'] = self.alt_combo.currentText()
         if self.quar_combo.currentText() != "全部":
