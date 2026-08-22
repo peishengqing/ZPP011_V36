@@ -2410,8 +2410,14 @@ class MainWindow(QMainWindow):
         table.horizontalHeader().resizeSection(0, 80)
         table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
 
-        # 双击筛选
-        table.cellDoubleClicked.connect(lambda row, col: self._filter_semi_materials(table.item(row, 1).text()))
+        # 双击筛选（加空值检查，防止排序后双击空行崩溃）
+        def _on_semi_double_click(row, col):
+            item = table.item(row, 1)
+            if item is None:
+                return
+            category = item.text()
+            self._filter_semi_materials(category)
+        table.cellDoubleClicked.connect(_on_semi_double_click)
 
         layout.addWidget(table)
 

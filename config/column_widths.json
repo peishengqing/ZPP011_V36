@@ -115,14 +115,6 @@
     "width": 200,
     "hidden": false
   },
-  "_is_semi_raw": {
-    "width": 100,
-    "hidden": false
-  },
-  "_is_semi_finish": {
-    "width": 100,
-    "hidden": false
-  },
   "是否替代料": {
     "width": 100,
     "hidden": false
