@@ -1839,10 +1839,8 @@ class MainWindow(QMainWindow):
         """从左侧面板筛选材料半成品：按名称精确匹配"半成品重分类"列"""
         df = self._get_master_df()
         if df is None or df.empty:
-            QMessageBox.information(self, "提示", "暂无数据，请先加载并分析")
             return
         if '半成品重分类' not in df.columns:
-            QMessageBox.warning(self, "提示", "当前数据缺少「半成品重分类」列，请先重新分析")
             return
         mask = df['半成品重分类'].astype(str) == category
         title = category
@@ -2374,8 +2372,8 @@ class MainWindow(QMainWindow):
 
         # 表格
         table = QTableWidget()
-        table.setColumnCount(3)
-        table.setHorizontalHeaderLabels(["工厂", "分类名称", "操作"])
+        table.setColumnCount(2)
+        table.setHorizontalHeaderLabels(["工厂", "分类名称"])
         table.setEditTriggers(QTableWidget.NoEditTriggers)
         table.setSelectionBehavior(QTableWidget.SelectRows)
         table.verticalHeader().setVisible(False)
@@ -2391,25 +2389,10 @@ class MainWindow(QMainWindow):
             name = cat.get('name', '')
             table.setItem(i, 0, QTableWidgetItem(str(factory)))
             table.setItem(i, 1, QTableWidgetItem(name))
-            # 操作按钮
-            btn_layout = QHBoxLayout()
-            btn_layout.setContentsMargins(4, 2, 4, 2)
-            filter_btn = QPushButton("筛选")
-            filter_btn.clicked.connect(lambda checked, n=name: self._filter_semi_materials(n))
-            delete_btn = QPushButton("删除")
-            delete_btn.clicked.connect(lambda checked, idx=i: self._delete_semi_category())
-            btn_layout.addWidget(filter_btn)
-            btn_layout.addWidget(delete_btn)
-            btn_layout.addStretch()
-            widget = QWidget()
-            widget.setLayout(btn_layout)
-            table.setCellWidget(i, 2, widget)
 
         table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
         table.horizontalHeader().resizeSection(0, 80)
         table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Fixed)
-        table.horizontalHeader().resizeSection(2, 140)
 
         # 双击筛选
         table.cellDoubleClicked.connect(lambda row, col: self._filter_semi_materials(table.item(row, 1).text()))
