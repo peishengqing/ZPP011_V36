@@ -1925,10 +1925,10 @@ class MainWindow(QMainWindow):
             pass
 
     def _refresh_semi_list_ui(self):
-        """根据当前 _semi_categories 刷新 left_panel.semi_table 显示（仿替代料 QTableWidget）"""
-        if not hasattr(self.left_panel, 'semi_table'):
+        """根据当前 _semi_categories 刷新左侧面板半成品列表显示（仿替代料 QTableWidget）"""
+        if not hasattr(self, 'left_panel_component') or not hasattr(self.left_panel_component, 'semi_table'):
             return
-        table = self.left_panel.semi_table
+        table = self.left_panel_component.semi_table
         table.setSortingEnabled(False)
         table.setRowCount(len(self._semi_categories))
         for i, cat in enumerate(self._semi_categories):
