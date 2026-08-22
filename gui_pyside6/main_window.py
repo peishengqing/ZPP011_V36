@@ -1878,31 +1878,47 @@ class MainWindow(QMainWindow):
     # 兼容旧格式: {"name":..., "col":..., "cond":..., "val":...}
     # -----------------------------------------------------------
     def _load_semi_categories(self):
-        """从 config/semi_user_categories.json 加载类目列表"""
+        """从 config/semi_user_categories.json 加载类目列表，并自动从 xlsx 补充分类"""
+        # 1) 加载用户自定义的 JSON 配置
         candidates = []
         if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
             candidates.append(os.path.join(sys._MEIPASS, 'config', 'semi_user_categories.json'))
         _here = os.path.dirname(os.path.abspath(__file__))
         candidates.append(os.path.join(_here, '..', 'config', 'semi_user_categories.json'))
         _path = next((p for p in candidates if os.path.exists(p)), None)
-        if not _path:
-            return []
-        try:
-            with open(_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            if not isinstance(data, list):
-                return []
-            # 兼容旧格式，转换为新格式
-            result = []
-            for item in data:
-                if isinstance(item, dict):
-                    result.append({
+        result = []
+        if _path:
+            try:
+                with open(_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                if isinstance(data, list):
+                    result = [{
                         'name': item.get('name', ''),
                         'factory': item.get('factory', ''),
-                    })
-            return result
+                    } for item in data if isinstance(item, dict) and item.get('name')]
+            except Exception:
+                pass
+        # 2) 从 xlsx 读取权威分类表，补充分类（去重）
+        try:
+            from analysis.analyzer import _load_semi_classify_map
+            semi_map = _load_semi_classify_map()
+            if semi_map:
+                # 收集 xlsx 中的分类名，按出现顺序保留
+                seen = {item['name'] for item in result}
+                for code, cls in semi_map.items():
+                    if cls and cls not in seen:
+                        # 根据工厂前缀推断 factory
+                        if code.startswith('400'):
+                            factory = '1101'
+                        elif code.startswith('410'):
+                            factory = '1102'
+                        else:
+                            factory = ''
+                        result.append({'name': cls, 'factory': factory})
+                        seen.add(cls)
         except Exception:
-            return []
+            pass
+        return result
 
     def _save_semi_categories(self, categories):
         """将类目列表写回 config/semi_user_categories.json"""
