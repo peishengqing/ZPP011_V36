@@ -414,15 +414,6 @@ class AlertDialog(QDialog):
         main_df = self.main_window.view_model.df
         if main_df is None:
             return
-        # 同步 original_df（关键：必须同步，否则 _apply_filter 用旧数据）
-        if hasattr(self, 'original_df'):
-            self.original_df = main_df.copy()
-            # 重新构建索引
-            self._main_df_data_id_index = {}
-            if 'data_id' in main_df.columns:
-                for _i, _did in enumerate(main_df['data_id']):
-                    if _did:
-                        self._main_df_data_id_index[str(_did)] = _i
         if hasattr(self.main_window, 'source_model') and self.main_window.source_model:
             self.main_window.source_model.setDataFrame(main_df)
             # setDataFrame 会重排列（_read 移到第0列），按列名恢复显隐，避免列错位丢失
