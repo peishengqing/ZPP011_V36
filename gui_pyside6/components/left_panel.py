@@ -6,7 +6,7 @@
 from PySide6.QtWidgets import (
     QWidget, QGroupBox, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTableWidget,
-    QHeaderView, QListWidget, QListWidgetItem, QMessageBox,
+    QHeaderView, QTreeWidget, QTreeWidgetItem, QMessageBox,
 )
 from PySide6.QtCore import Qt, QObject, QEvent
 
@@ -248,14 +248,14 @@ class LeftPanelComponent:
         layout.addLayout(sel_row)
 
     def _build_semi_materials(self, layout: QVBoxLayout):
-        """构建材料半成品分类卡片 — 动态列表，支持添加新分类"""
-        self.semi_list = QListWidget()
-        self.semi_list.setObjectName("semiList")
-        self.semi_list.setMinimumHeight(120)
-        self.semi_list.setMaximumHeight(200)
-        # 列表项的 data(role='category_name') 存储筛选类别名
-        self.semi_list.currentItemChanged.connect(self._on_semi_list_changed)
-        layout.addWidget(self.semi_list)
+        """构建材料半成品分类卡片 — 分组列表（1101食品厂/1102饮料厂），支持添加新分类"""
+        self.semi_tree = QTreeWidget()
+        self.semi_tree.setHeaderHidden(True)
+        self.semi_tree.setObjectName("semiTree")
+        self.semi_tree.setMinimumHeight(140)
+        self.semi_tree.setMaximumHeight(220)
+        self.semi_tree.currentItemChanged.connect(self._on_semi_tree_changed)
+        layout.addWidget(self.semi_tree)
 
         # 添加分类按钮
         add_btn = QPushButton("➕ 添加分类")
@@ -263,11 +263,11 @@ class LeftPanelComponent:
         add_btn.clicked.connect(self.mw._open_add_semi_category_dialog)
         layout.addWidget(add_btn)
 
-    def _on_semi_list_changed(self, current: QListWidgetItem, previous: QListWidgetItem):
+    def _on_semi_tree_changed(self, current: QTreeWidgetItem, previous: QTreeWidgetItem):
         """点击分类项触发筛选（仅当有新选中项才筛）"""
-        if current is None:
+        if current is None or current.parent() is None:
             return
-        category = current.data(Qt.ItemDataRole.UserRole) or ''
+        category = current.data(0, Qt.ItemDataRole.UserRole) or ''
         if category:
             self.mw._filter_semi_materials(category)
 

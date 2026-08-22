@@ -1917,17 +1917,30 @@ class MainWindow(QMainWindow):
             pass
 
     def _refresh_semi_list_ui(self):
-        """根据当前 _semi_categories 刷新 left_panel.semi_list 显示"""
-        if not hasattr(self.left_panel, 'semi_list'):
+        """根据当前 _semi_categories 刷新 left_panel.semi_tree 显示（分组）"""
+        if not hasattr(self.left_panel, 'semi_tree'):
             return
-        lst = self.left_panel.semi_list
-        lst.clear()
+        tree = self.left_panel.semi_tree
+        tree.clear()
+        # 按 factory 字段分组；没有 factory 的归为"自定义"
+        groups = {}
         for cat in self._semi_categories:
-            item = QListWidgetItem(cat['name'])
-            item.setData(Qt.ItemDataRole.UserRole, cat['name'])
-            lst.addItem(item)
+            key = cat.get('factory', '自定义')
+            groups.setdefault(key, []).append(cat)
+        order = ['1101', '1102']  # 保持 1101 先、1102 后，其余排最后
+        ordered_keys = [k for k in order if k in groups]
+        other_keys = [k for k in groups if k not in order]
+        for key in ordered_keys + other_keys:
+            items = groups[key]
+            parent = QTreeWidgetItem(tree, [key])
+            parent.setExpanded(True)
+            for cat in items:
+                child = QTreeWidgetItem(parent, [cat['name']])
+                child.setData(0, Qt.ItemDataRole.UserRole, cat['name'])
         if self._semi_categories:
-            lst.setCurrentRow(0)
+            first_child = tree.topLevelItem(0).child(0) if tree.topLevelItem(0) else None
+            if first_child:
+                tree.setCurrentItem(first_child)
 
     def _open_add_semi_category_dialog(self):
         """弹出添加分类对话框：输入名称 + 选列 + 选条件 + 填值"""
