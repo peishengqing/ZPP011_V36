@@ -1944,8 +1944,8 @@ class MainWindow(QMainWindow):
         table.setSortingEnabled(True)
         table.sortByColumn(0, Qt.AscendingOrder)
         table.clearSelection()
-        if hasattr(self.mw, 'semi_count_label'):
-            self.mw.semi_count_label.setText(f"共 {len(self._semi_categories)} 项")
+        if hasattr(self, 'semi_count_label'):
+            self.semi_count_label.setText(f"共 {len(self._semi_categories)} 项")
 
     def _open_add_semi_category_dialog(self):
         """弹出添加分类对话框：输入名称 + 选列 + 选条件 + 填值"""
@@ -2024,6 +2024,15 @@ class MainWindow(QMainWindow):
         self._save_semi_categories(self._semi_categories)
         self._refresh_semi_list_ui()
         QMessageBox.information(dlg, "成功", f"已添加分类「{cat_name}」")
+
+    def _delete_semi_category(self, idx: int):
+        """删除第 idx 个半成品分类"""
+        if 0 <= idx < len(self._semi_categories):
+            name = self._semi_categories[idx]['name']
+            self._semi_categories.pop(idx)
+            self._save_semi_categories(self._semi_categories)
+            self._refresh_semi_list_ui()
+            QMessageBox.information(self, "成功", f"已删除分类「{name}」")
 
     def _open_output_dir(self):
         dir_path = self.output_dir_edit.text()
@@ -2321,6 +2330,76 @@ class MainWindow(QMainWindow):
 
     def _zoom_alt_table(self):
         self.alt_controller.show_zoom_window(self)
+
+    def _zoom_semi_table(self):
+        """弹出半成品分类放大窗口，支持双击筛选"""
+        from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QPushButton
+        from PySide6.QtCore import Qt
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("半成品分类详情")
+        dialog.resize(600, 400)
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(8)
+
+        # 说明标签
+        tip_label = QLabel("双击任意行可筛选该分类。点击「关闭」退出。")
+        tip_label.setStyleSheet("color: #aaa; font-size: 11px;")
+        layout.addWidget(tip_label)
+
+        # 表格
+        table = QTableWidget()
+        table.setColumnCount(3)
+        table.setHorizontalHeaderLabels(["工厂", "分类名称", "操作"])
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.verticalHeader().setVisible(False)
+        table.setAlternatingRowColors(True)
+        table.setSortingEnabled(True)
+        table.sortByColumn(0, Qt.AscendingOrder)
+
+        # 填充数据
+        categories = self._semi_categories
+        table.setRowCount(len(categories))
+        for i, cat in enumerate(categories):
+            factory = cat.get('factory', '')
+            name = cat.get('name', '')
+            table.setItem(i, 0, QTableWidgetItem(str(factory)))
+            table.setItem(i, 1, QTableWidgetItem(name))
+            # 操作按钮
+            btn_layout = QHBoxLayout()
+            btn_layout.setContentsMargins(4, 2, 4, 2)
+            filter_btn = QPushButton("筛选")
+            filter_btn.clicked.connect(lambda checked, n=name: self._filter_semi_material(n))
+            delete_btn = QPushButton("删除")
+            delete_btn.clicked.connect(lambda checked, idx=i: self._delete_semi_category(idx))
+            btn_layout.addWidget(filter_btn)
+            btn_layout.addWidget(delete_btn)
+            btn_layout.addStretch()
+            widget = QWidget()
+            widget.setLayout(btn_layout)
+            table.setCellWidget(i, 2, widget)
+
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
+        table.horizontalHeader().resizeSection(0, 80)
+        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Fixed)
+        table.horizontalHeader().resizeSection(2, 140)
+
+        # 双击筛选
+        table.cellDoubleClicked.connect(lambda row, col: self._filter_semi_material(table.item(row, 1).text()))
+
+        layout.addWidget(table)
+
+        # 按钮区
+        btn_row = QHBoxLayout()
+        close_btn = QPushButton("关闭")
+        close_btn.clicked.connect(dialog.close)
+        btn_row.addStretch()
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        dialog.exec()
 
     def _sort_alt_pairs(self):
         self.alt_controller.sort_pairs()

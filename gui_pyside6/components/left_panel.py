@@ -283,6 +283,16 @@ class LeftPanelComponent:
             btn_layout.addWidget(btn)
         layout.addLayout(btn_layout)
 
+        # 放大按钮（仿替代料配对）
+        zoom_layout = QHBoxLayout()
+        zoom_layout.setSpacing(6)
+        zoom_btn = QPushButton("放大")
+        zoom_btn.setObjectName("semiBtn")
+        zoom_btn.clicked.connect(self.mw._zoom_semi_table)
+        zoom_layout.addWidget(zoom_btn)
+        zoom_layout.addStretch()
+        layout.addLayout(zoom_layout)
+
     def _on_semi_table_click(self, row: int, col: int):
         """点击表格行触发筛选"""
         category_item = self.semi_table.item(row, 1)
