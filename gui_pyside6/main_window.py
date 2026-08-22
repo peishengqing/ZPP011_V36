@@ -1554,9 +1554,9 @@ class MainWindow(QMainWindow):
             if all_alerts is None or all_alerts.empty:
                 QMessageBox.information(self, "提示", "没有替代料预警记录")
                 return
-            # 只保留关键列，避免显示乱七八糟
+            # 只保留关键列（含"工厂"以便 dialog 生成正确的 data_id 与主表匹配）
             required_cols = [c for c in [
-                "订单日期", "流程订单", "物料编码", "物料名称", "物料描述",
+                "工厂", "订单日期", "流程订单", "物料编码", "物料名称", "物料描述",
                 "备注", "备注来源",
                 "车间", "定额", "实际", "偏差数量", "偏差率(%)",
                 "净偏差数量", "净偏差金额", "净偏差率(%)",
