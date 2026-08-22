@@ -56,7 +56,6 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
             '单位', '定额', '实际', '偏差数量', '偏差率', '偏差率(%)',
             '偏差金额', '备注', '备注来源', '偏差区间',
             '组件物料类型', '组件物料类型描述',
-            '_is_semi_raw', '_is_semi_finish',
         ])
     else:
         dev_df = pd.DataFrame(index=has_real_dev.index)

@@ -391,41 +391,13 @@ def do_analysis_v2(
     df['_no_quota'] = (df['数量-定额'] == 0)
     df['组件物料号_str'] = df['组件物料号'].astype(str)
 
-    # ② 材料半成品分类：区分食品/饮料厂的原料半成品 vs 成品半成品
-    # 数据来源：E:\Users\Administrator\Desktop\半成品重分类.xlsx
-    _semi_raw_codes_food = set([
-        '40000003', '40000022', '40000142', '40000141', '40000138', '40000091',
-        '40000064', '40000068', '40000059', '40000058', '40000094', '40000020', '40000012',
-    ])
-    _semi_finish_codes_drink = set([
-        '41000365', '41000026', '41000024', '41000020', '41000018', '41000016',
-        '41000014', '41000012', '41000009', '41000008', '41000007', '41000005',
-        '41000022', '41000017', '41000028', '41000039', '41000038', '41000035',
-        '41000034', '41000033', '41000032', '41000031', '41000030',
-    ])
-    _factory_col = next((c for c in ['工厂名称', '工厂'] if c in df.columns), None)
-    _has_semi = _mtd.str.contains('半成品', na=False)
-    df['_is_semi_raw'] = False  # 默认：否
-    if _factory_col:
-        # 食品厂原料半成品
-        mask_food_raw = (df[_factory_col].astype(str).str.contains('食品', na=False)) & _has_semi & (df['组件物料号_str'].isin(_semi_raw_codes_food))
-        df.loc[mask_food_raw, '_is_semi_raw'] = True
-        # 饮料厂成品半成品（饮料原料半成品暂未分类）
-        mask_drink_finish = (df[_factory_col].astype(str).str.contains('饮料', na=False)) & _has_semi & (df['组件物料号_str'].isin(_semi_finish_codes_drink))
-        df.loc[mask_drink_finish, '_is_semi_finish'] = True
-
-    # ③ 半成品重分类列：基于「半成品重分类.xlsx」权威分类表 + 400/410 补空规则
+    # ② 半成品重分类列：基于「半成品重分类.xlsx」权威分类表
     #    - xlsx 命中（按组件物料号）→ 用表里「半成品分类」原值
-    #    - 不在表里、组件物料号以 400 开头 → 食品成品半成品
-    #    - 不在表里、组件物料号以 410 开头 → 饮料成品半成品
-    #    - 其余 → 空（非半成品）
+    #    - 不在表里 → 空（非半成品，不输出任何分类）
     _semi_map = _load_semi_classify_map()
     df['半成品重分类'] = ''
     if _semi_map:
         df['半成品重分类'] = df['组件物料号_str'].map(_semi_map).fillna('')
-    _empty_cls = df['半成品重分类'] == ''
-    df.loc[_empty_cls & df['组件物料号_str'].str.startswith('400'), '半成品重分类'] = '食品成品半成品'
-    df.loc[_empty_cls & df['组件物料号_str'].str.startswith('410'), '半成品重分类'] = '饮料成品半成品'
 
     no_note_mask = ~(df['备注原因'].notna() & (df['备注原因'] != ''))
     # ① 系统无定额自动填充的统一前置条件（2026-08-05 修正）：

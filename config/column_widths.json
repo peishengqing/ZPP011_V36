@@ -8,48 +8,48 @@
     "hidden": false
   },
   "订单日期": {
-    "width": 0,
-    "hidden": true
+    "width": 120,
+    "hidden": false
   },
   "订单类型": {
-    "width": 0,
-    "hidden": true
+    "width": 59,
+    "hidden": false
   },
   "流程订单": {
-    "width": 0,
-    "hidden": true
+    "width": 120,
+    "hidden": false
   },
   "工厂": {
-    "width": 0,
-    "hidden": true
+    "width": 100,
+    "hidden": false
   },
   "车间": {
-    "width": 0,
-    "hidden": true
+    "width": 100,
+    "hidden": false
   },
   "物料类型": {
-    "width": 0,
-    "hidden": true
+    "width": 65,
+    "hidden": false
   },
   "原表行号": {
-    "width": 0,
-    "hidden": true
+    "width": 120,
+    "hidden": false
   },
   "产品物料号码": {
-    "width": 0,
-    "hidden": true
+    "width": 120,
+    "hidden": false
   },
   "产品物料描述": {
-    "width": 0,
-    "hidden": true
+    "width": 200,
+    "hidden": false
   },
   "产量": {
-    "width": 0,
-    "hidden": true
+    "width": 100,
+    "hidden": false
   },
   "产量单位": {
-    "width": 0,
-    "hidden": true
+    "width": 100,
+    "hidden": false
   },
   "物料编码": {
     "width": 120,
@@ -152,11 +152,11 @@
     "hidden": true
   },
   "审核结果": {
-    "width": 0,
-    "hidden": true
+    "width": 100,
+    "hidden": false
   },
   "AI建议": {
-    "width": 0,
-    "hidden": true
+    "width": 100,
+    "hidden": false
   }
 }
