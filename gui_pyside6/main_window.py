@@ -1939,7 +1939,6 @@ class MainWindow(QMainWindow):
         table.clearSelection()
         if hasattr(self.mw, 'semi_count_label'):
             self.mw.semi_count_label.setText(f"共 {len(self._semi_categories)} 项")
-                tree.setCurrentItem(first_child)
 
     def _open_add_semi_category_dialog(self):
         """弹出添加分类对话框：输入名称 + 选列 + 选条件 + 填值"""
