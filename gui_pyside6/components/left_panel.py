@@ -273,17 +273,23 @@ class LeftPanelComponent:
         self.semi_table.cellClicked.connect(self._on_semi_table_click)
         layout.addWidget(self.semi_table)
 
-        # 操作按钮
+        # 操作按钮（仿替代料配对风格）
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(6)
-        for label, handler in [("重置筛选", self.mw._reset_semi_filter), ("添加分类", self.mw._open_add_semi_category_dialog)]:
+        for label, handler in [
+            ("添加", self.mw._add_semi_category),
+            ("删除", self.mw._delete_semi_category),
+            ("重置", self.mw._reset_semi_categories),
+            ("导入", self.mw._import_semi_categories),
+            ("导出", self.mw._export_semi_categories),
+        ]:
             btn = QPushButton(label)
             btn.setObjectName("semiBtn")
             btn.clicked.connect(handler)
             btn_layout.addWidget(btn)
         layout.addLayout(btn_layout)
 
-        # 放大按钮（仿替代料配对）
+        # 放大按钮
         zoom_layout = QHBoxLayout()
         zoom_layout.setSpacing(6)
         zoom_btn = QPushButton("放大")

@@ -1836,37 +1836,20 @@ class MainWindow(QMainWindow):
         return "\n".join(lines)
 
     def _filter_semi_materials(self, category: str):
-        """从左侧面板筛选材料半成品：基于半成品类目列表中的筛选条件执行"""
+        """从左侧面板筛选材料半成品：按名称精确匹配"半成品重分类"列"""
         df = self._get_master_df()
         if df is None or df.empty:
             QMessageBox.information(self, "提示", "暂无数据，请先加载并分析")
             return
-        # 按类别名从已加载的类目列表里找对应条目
-        cat_item = next((c for c in self._semi_categories if c['name'] == category), None)
-        if cat_item is None:
+        if '半成品重分类' not in df.columns:
+            QMessageBox.warning(self, "提示", "当前数据缺少「半成品重分类」列，请先重新分析")
             return
-        # 执行筛选
-        col = cat_item.get('col', '半成品重分类')
-        cond = cat_item.get('cond', '==')
-        val = cat_item.get('val', '')
-        if col not in df.columns:
-            QMessageBox.warning(self, "提示", f"当前数据缺少列「{col}」，请先重新分析")
-            return
-        col_s = df[col].astype(str)
-        if cond == '==':
-            mask = col_s == val
-        elif cond == 'contains':
-            mask = col_s.str.contains(val, na=False)
-        elif cond == 'startswith':
-            mask = col_s.str.startswith(val, na=False)
-        else:
-            return
-        title = cat_item['name']
+        mask = df['半成品重分类'].astype(str) == category
+        title = category
         count = int(mask.sum())
         if count == 0:
             QMessageBox.information(self, "提示", f"{title}：无匹配记录")
             return
-        # 选中筛选后的行（源 DataFrame 行号 -> proxy 行号，避免排序/过滤后选错）
         rows = [i for i, v in enumerate(mask.values) if v]
         proxy = self.table_view.model()
         src_model = proxy.sourceModel() if hasattr(proxy, "sourceModel") else None
@@ -1893,9 +1876,11 @@ class MainWindow(QMainWindow):
 
     # -----------------------------------------------------------
     # 半成品类目管理（持久化到 config/semi_user_categories.json）
+    # JSON 格式: [{"name": "分类名", "factory": "工厂"}, ...]
+    # 兼容旧格式: {"name":..., "col":..., "cond":..., "val":...}
     # -----------------------------------------------------------
     def _load_semi_categories(self):
-        """从 config/semi_user_categories.json 加载类目列表，返回列表 [{'name','col','cond','val'}, ...]"""
+        """从 config/semi_user_categories.json 加载类目列表"""
         candidates = []
         if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
             candidates.append(os.path.join(sys._MEIPASS, 'config', 'semi_user_categories.json'))
@@ -1907,9 +1892,17 @@ class MainWindow(QMainWindow):
         try:
             with open(_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            if isinstance(data, list):
-                return data
-            return []
+            if not isinstance(data, list):
+                return []
+            # 兼容旧格式，转换为新格式
+            result = []
+            for item in data:
+                if isinstance(item, dict):
+                    result.append({
+                        'name': item.get('name', ''),
+                        'factory': item.get('factory', ''),
+                    })
+            return result
         except Exception:
             return []
 
@@ -1925,7 +1918,7 @@ class MainWindow(QMainWindow):
             pass
 
     def _refresh_semi_list_ui(self):
-        """根据当前 _semi_categories 刷新左侧面板半成品列表显示（仿替代料 QTableWidget）"""
+        """根据当前 _semi_categories 刷新左侧面板半成品列表显示"""
         if not hasattr(self, 'left_panel_component') or not hasattr(self.left_panel_component, 'semi_table'):
             return
         table = self.left_panel_component.semi_table
@@ -1933,7 +1926,7 @@ class MainWindow(QMainWindow):
         table.setRowCount(len(self._semi_categories))
         for i, cat in enumerate(self._semi_categories):
             factory = cat.get('factory', '')
-            name = cat['name']
+            name = cat.get('name', '')
             factory_item = QTableWidgetItem(factory)
             factory_item.setFlags(factory_item.flags() & ~Qt.ItemIsEditable)
             name_item = QTableWidgetItem(name)
@@ -1947,15 +1940,15 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'semi_count_label'):
             self.semi_count_label.setText(f"共 {len(self._semi_categories)} 项")
 
-    def _open_add_semi_category_dialog(self):
-        """弹出添加分类对话框：输入名称 + 选列 + 选条件 + 填值"""
+    def _add_semi_category(self):
+        """弹出添加分类对话框：输入名称 + 选择工厂"""
         from PySide6.QtWidgets import (
             QDialog, QDialogButtonBox, QLabel, QLineEdit,
             QComboBox, QVBoxLayout, QHBoxLayout,
         )
         dlg = QDialog(self)
         dlg.setWindowTitle("添加半成品分类")
-        dlg.setFixedSize(400, 220)
+        dlg.setFixedSize(400, 180)
         layout = QVBoxLayout(dlg)
         layout.setSpacing(10)
 
@@ -1966,32 +1959,12 @@ class MainWindow(QMainWindow):
         layout.addWidget(name_label)
         layout.addWidget(name_input)
 
-        # 筛选列
-        col_layout = QHBoxLayout()
-        col_label = QLabel("筛选列：")
-        col_combo = QComboBox()
-        # 预置常用列 + 动态读 df 列
-        known_cols = ['半成品重分类', '工厂名称', '组件物料类型描述', '组件物料号_str']
-        col_combo.addItems(known_cols)
-        col_layout.addWidget(col_label)
-        col_layout.addWidget(col_combo, 1)
-        layout.addLayout(col_layout)
-
-        # 条件
-        cond_layout = QHBoxLayout()
-        cond_label = QLabel("条件：")
-        cond_combo = QComboBox()
-        cond_combo.addItems(['==', 'contains', 'startswith'])
-        cond_layout.addWidget(cond_label)
-        cond_layout.addWidget(cond_combo)
-        layout.addLayout(cond_layout)
-
-        # 值
-        val_label = QLabel("筛选值：")
-        val_input = QLineEdit()
-        val_input.setPlaceholderText("例如：冷链原料半成品（用于 ==）/ 冷链（用于 contains）")
-        layout.addWidget(val_label)
-        layout.addWidget(val_input)
+        # 工厂
+        factory_label = QLabel("工厂：")
+        factory_combo = QComboBox()
+        factory_combo.addItems(["1101", "1102"])
+        layout.addWidget(factory_label)
+        layout.addWidget(factory_combo)
 
         btns = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel
@@ -2012,27 +1985,79 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(dlg, "提示", f"分类「{cat_name}」已存在")
             return
 
-        col = col_combo.currentText()
-        cond = cond_combo.currentText()
-        val = val_input.text().strip()
-        if not val:
-            QMessageBox.warning(dlg, "提示", "筛选值不能为空")
-            return
-
-        new_cat = {'name': cat_name, 'col': col, 'cond': cond, 'val': val}
+        factory = factory_combo.currentText()
+        new_cat = {'name': cat_name, 'factory': factory}
         self._semi_categories.append(new_cat)
         self._save_semi_categories(self._semi_categories)
         self._refresh_semi_list_ui()
         QMessageBox.information(dlg, "成功", f"已添加分类「{cat_name}」")
 
-    def _delete_semi_category(self, idx: int):
-        """删除第 idx 个半成品分类"""
-        if 0 <= idx < len(self._semi_categories):
-            name = self._semi_categories[idx]['name']
-            self._semi_categories.pop(idx)
+    def _delete_semi_category(self):
+        """删除选中的半成品分类"""
+        table = getattr(self.left_panel_component, 'semi_table', None)
+        if table is None:
+            return
+        current_row = table.currentRow()
+        if current_row < 0:
+            QMessageBox.warning(self, "提示", "请先选中要删除的分类")
+            return
+        name = self._semi_categories[current_row]['name']
+        self._semi_categories.pop(current_row)
+        self._save_semi_categories(self._semi_categories)
+        self._refresh_semi_list_ui()
+        QMessageBox.information(self, "成功", f"已删除分类「{name}」")
+
+    def _reset_semi_categories(self):
+        """重置半成品分类为默认值"""
+        if not QMessageBox.question(self, "确认", "确定要重置所有半成品分类吗？",
+                                    QMessageBox.Yes | QMessageBox.No) == QMessageBox.No:
+            return
+        self._semi_categories = []
+        self._save_semi_categories(self._semi_categories)
+        self._refresh_semi_list_ui()
+        QMessageBox.information(self, "成功", "已重置所有半成品分类")
+
+    def _import_semi_categories(self):
+        """从 JSON 文件导入半成品分类"""
+        file_path, _ = QFileDialog.getOpenFileName(self, "导入半成品分类", "", "JSON files (*.json)")
+        if not file_path:
+            return
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if not isinstance(data, list):
+                QMessageBox.warning(self, "错误", "文件格式不正确")
+                return
+            # 兼容旧格式
+            imported = []
+            for item in data:
+                if isinstance(item, dict):
+                    imported.append({
+                        'name': item.get('name', ''),
+                        'factory': item.get('factory', ''),
+                    })
+            # 合并去重
+            existing_names = {c['name'] for c in self._semi_categories}
+            for cat in imported:
+                if cat['name'] and cat['name'] not in existing_names:
+                    self._semi_categories.append(cat)
+                    existing_names.add(cat['name'])
             self._save_semi_categories(self._semi_categories)
             self._refresh_semi_list_ui()
-            QMessageBox.information(self, "成功", f"已删除分类「{name}」")
+            QMessageBox.information(self, "成功", f"已导入 {len(imported)} 个分类")
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"导入失败: {e}")
+
+    def _export_semi_categories(self):
+        """导出半成品分类到 JSON 文件"""
+        file_path, _ = QFileDialog.getSaveFileName(self, "导出半成品分类", "semi_categories.json", "JSON (*.json)")
+        if file_path:
+            try:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(self._semi_categories, f, ensure_ascii=False, indent=2)
+                QMessageBox.information(self, "成功", f"已导出到 {file_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "错误", f"导出失败: {e}")
 
     def _open_output_dir(self):
         dir_path = self.output_dir_edit.text()
