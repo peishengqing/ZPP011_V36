@@ -1884,6 +1884,13 @@ class MainWindow(QMainWindow):
             )
         self.statusBar().showMessage(f"已筛选 {title}：{count} 条记录")
 
+    def _reset_semi_filter(self):
+        """重置半成品筛选：清除主表行选中状态"""
+        if not hasattr(self, 'table_view'):
+            return
+        self.table_view.selectionModel().clearSelection()
+        self.statusBar().showMessage("已重置半成品筛选", 2000)
+
     # -----------------------------------------------------------
     # 半成品类目管理（持久化到 config/semi_user_categories.json）
     # -----------------------------------------------------------
