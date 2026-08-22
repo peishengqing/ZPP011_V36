@@ -2395,9 +2395,9 @@ class MainWindow(QMainWindow):
             btn_layout = QHBoxLayout()
             btn_layout.setContentsMargins(4, 2, 4, 2)
             filter_btn = QPushButton("筛选")
-            filter_btn.clicked.connect(lambda checked, n=name: self._filter_semi_material(n))
+            filter_btn.clicked.connect(lambda checked, n=name: self._filter_semi_materials(n))
             delete_btn = QPushButton("删除")
-            delete_btn.clicked.connect(lambda checked, idx=i: self._delete_semi_category(idx))
+            delete_btn.clicked.connect(lambda checked, idx=i: self._delete_semi_category())
             btn_layout.addWidget(filter_btn)
             btn_layout.addWidget(delete_btn)
             btn_layout.addStretch()
@@ -2412,7 +2412,7 @@ class MainWindow(QMainWindow):
         table.horizontalHeader().resizeSection(2, 140)
 
         # 双击筛选
-        table.cellDoubleClicked.connect(lambda row, col: self._filter_semi_material(table.item(row, 1).text()))
+        table.cellDoubleClicked.connect(lambda row, col: self._filter_semi_materials(table.item(row, 1).text()))
 
         layout.addWidget(table)
 
