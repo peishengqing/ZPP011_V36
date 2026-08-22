@@ -330,6 +330,7 @@ class MainWindow(QMainWindow):
 
         # UI 引用（必须在 _setup_connections 之前赋值）
         self.left_panel = self.left_panel_component.left_panel
+        self._refresh_semi_list_ui()  # 初始化半成品列表显示
         self.filter_panel = self.filter_panel  # Already created above
         # input_file_edit / output_dir_edit / preview_label 由 LeftPanelComponent 创建
         # 标题栏是子控件，不是顶层窗口，不需要 setWindowFlags
