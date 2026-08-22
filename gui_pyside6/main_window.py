@@ -303,6 +303,7 @@ class MainWindow(QMainWindow):
         self.menu_bar = MenuBarComponent(self)
         self.title_bar = TitleBarWidget(get_current_version(), self)
         self.left_panel_component = LeftPanelComponent(self)
+        self._refresh_semi_list_ui()  # 初始化半成品列表显示
         self.main_table = MainTableComponent(self)
         self.stats_cards = StatsCardsWidget(self)  # 统计卡片（审核概览 + 变更感知）
         self.bottom_bar = BottomBarComponent(self)
@@ -1917,29 +1918,27 @@ class MainWindow(QMainWindow):
             pass
 
     def _refresh_semi_list_ui(self):
-        """根据当前 _semi_categories 刷新 left_panel.semi_tree 显示（分组）"""
-        if not hasattr(self.left_panel, 'semi_tree'):
+        """根据当前 _semi_categories 刷新 left_panel.semi_table 显示（仿替代料 QTableWidget）"""
+        if not hasattr(self.left_panel, 'semi_table'):
             return
-        tree = self.left_panel.semi_tree
-        tree.clear()
-        # 按 factory 字段分组；没有 factory 的归为"自定义"
-        groups = {}
-        for cat in self._semi_categories:
-            key = cat.get('factory', '自定义')
-            groups.setdefault(key, []).append(cat)
-        order = ['1101', '1102']  # 保持 1101 先、1102 后，其余排最后
-        ordered_keys = [k for k in order if k in groups]
-        other_keys = [k for k in groups if k not in order]
-        for key in ordered_keys + other_keys:
-            items = groups[key]
-            parent = QTreeWidgetItem(tree, [key])
-            parent.setExpanded(True)
-            for cat in items:
-                child = QTreeWidgetItem(parent, [cat['name']])
-                child.setData(0, Qt.ItemDataRole.UserRole, cat['name'])
-        if self._semi_categories:
-            first_child = tree.topLevelItem(0).child(0) if tree.topLevelItem(0) else None
-            if first_child:
+        table = self.left_panel.semi_table
+        table.setSortingEnabled(False)
+        table.setRowCount(len(self._semi_categories))
+        for i, cat in enumerate(self._semi_categories):
+            factory = cat.get('factory', '')
+            name = cat['name']
+            factory_item = QTableWidgetItem(factory)
+            factory_item.setFlags(factory_item.flags() & ~Qt.ItemIsEditable)
+            name_item = QTableWidgetItem(name)
+            name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
+            name_item.setData(Qt.ItemDataRole.UserRole, name)
+            table.setItem(i, 0, factory_item)
+            table.setItem(i, 1, name_item)
+        table.setSortingEnabled(True)
+        table.sortByColumn(0, Qt.AscendingOrder)
+        table.clearSelection()
+        if hasattr(self.mw, 'semi_count_label'):
+            self.mw.semi_count_label.setText(f"共 {len(self._semi_categories)} 项")
                 tree.setCurrentItem(first_child)
 
     def _open_add_semi_category_dialog(self):

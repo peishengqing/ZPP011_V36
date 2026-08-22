@@ -6,7 +6,7 @@
 from PySide6.QtWidgets import (
     QWidget, QGroupBox, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTableWidget,
-    QHeaderView, QTreeWidget, QTreeWidgetItem, QMessageBox,
+    QHeaderView, QMessageBox,
 )
 from PySide6.QtCore import Qt, QObject, QEvent
 
@@ -248,26 +248,45 @@ class LeftPanelComponent:
         layout.addLayout(sel_row)
 
     def _build_semi_materials(self, layout: QVBoxLayout):
-        """构建材料半成品分类卡片 — 分组列表（1101食品厂/1102饮料厂），支持添加新分类"""
-        self.semi_tree = QTreeWidget()
-        self.semi_tree.setHeaderHidden(True)
-        self.semi_tree.setObjectName("semiTree")
-        self.semi_tree.setMinimumHeight(140)
-        self.semi_tree.setMaximumHeight(220)
-        self.semi_tree.currentItemChanged.connect(self._on_semi_tree_changed)
-        layout.addWidget(self.semi_tree)
+        """构建材料半成品分类卡片 — QTableWidget 模仿替代料配对样式，带工厂编码列"""
+        # 计数标签
+        self.mw.semi_count_label = QLabel("共 0 项")
+        self.mw.semi_count_label.setObjectName("semiCountLabel")
+        self.mw.semi_count_label.setStyleSheet("color: #ffffff; font-size: 11px;")
+        layout.addWidget(self.mw.semi_count_label)
 
-        # 添加分类按钮
-        add_btn = QPushButton("➕ 添加分类")
-        add_btn.setObjectName("semiBtn")
-        add_btn.clicked.connect(self.mw._open_add_semi_category_dialog)
-        layout.addWidget(add_btn)
+        # 表格（模仿替代料：2列，工厂编码+分类名称）
+        self.semi_table = QTableWidget()
+        self.semi_table.setColumnCount(2)
+        self.semi_table.setHorizontalHeaderLabels(["工厂", "分类"])
+        self.semi_table.setObjectName("semiTable")
+        hdr = self.semi_table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.Fixed)
+        hdr.resizeSection(0, 70)
+        hdr.setSectionResizeMode(1, QHeaderView.Stretch)
+        self.semi_table.verticalHeader().setVisible(False)
+        self.semi_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.semi_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.semi_table.setAlternatingRowColors(True)
+        self.semi_table.setMinimumHeight(100)
+        self.semi_table.setMaximumHeight(180)
+        self.semi_table.cellClicked.connect(self._on_semi_table_click)
+        layout.addWidget(self.semi_table)
 
-    def _on_semi_tree_changed(self, current: QTreeWidgetItem, previous: QTreeWidgetItem):
-        """点击分类项触发筛选（仅当有新选中项才筛）"""
-        if current is None or current.parent() is None:
-            return
-        category = current.data(0, Qt.ItemDataRole.UserRole) or ''
+        # 操作按钮
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(6)
+        for label, handler in [("重置筛选", self.mw._reset_semi_filter), ("添加分类", self.mw._open_add_semi_category_dialog)]:
+            btn = QPushButton(label)
+            btn.setObjectName("semiBtn")
+            btn.clicked.connect(handler)
+            btn_layout.addWidget(btn)
+        layout.addLayout(btn_layout)
+
+    def _on_semi_table_click(self, row: int, col: int):
+        """点击表格行触发筛选"""
+        category_item = self.semi_table.item(row, 1)
+        category = category_item.data(Qt.ItemDataRole.UserRole) if category_item else ''
         if category:
             self.mw._filter_semi_materials(category)
 
