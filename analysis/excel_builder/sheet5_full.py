@@ -91,8 +91,6 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
         dev_df['偏差区间'] = np.where(pd.to_numeric(has_real_dev[col_p], errors='coerce') > 0, '正偏差', '负偏差')
         dev_df['组件物料类型'] = has_real_dev['组件物料类型'].fillna('') if '组件物料类型' in has_real_dev.columns else ''
         dev_df['组件物料类型描述'] = has_real_dev['组件物料类型描述'].fillna('') if '组件物料类型描述' in has_real_dev.columns else ''
-        dev_df['_is_semi_raw'] = has_real_dev['_is_semi_raw'].map({True: '是', False: '否'}) if '_is_semi_raw' in has_real_dev.columns else '否'
-        dev_df['_is_semi_finish'] = has_real_dev['_is_semi_finish'].map({True: '是', False: '否'}) if '_is_semi_finish' in has_real_dev.columns else '否'
         dev_df = dev_df.reset_index(drop=True)
 
     report_progress(progress_idx, "Sheet5-完整偏差明细", 100)
