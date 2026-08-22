@@ -9,6 +9,7 @@ import sys
 import logging
 import os
 import time
+import json
 from datetime import datetime
 import pandas as pd
 import numpy as np
@@ -234,6 +235,8 @@ class MainWindow(QMainWindow):
         self._countdown_seconds = 0
         self._countdown_timer = None
         self._analysis_start_ts = 0.0
+        # 半成品分类列表（从 config/semi_user_categories.json 加载，运行时可追加）
+        self._semi_categories = self._load_semi_categories()
         # 按"列名"记录需要隐藏的列（避免 setDataFrame 重排列后索引错位导致列丢失）
         self._hidden_column_names = {
             '_post_audit_changed', 'data_id', 'fingerprint', '_quarantined',
@@ -1832,40 +1835,36 @@ class MainWindow(QMainWindow):
         return "\n".join(lines)
 
     def _filter_semi_materials(self, category: str):
-        """从左侧面板筛选材料半成品：food_raw / food_finish / drink_finish"""
+        """从左侧面板筛选材料半成品：基于半成品类目列表中的筛选条件执行"""
         df = self._get_master_df()
         if df is None or df.empty:
             QMessageBox.information(self, "提示", "暂无数据，请先加载并分析")
             return
-        if '_is_semi_raw' not in df.columns and '_is_semi_finish' not in df.columns:
-            QMessageBox.warning(self, "提示", "当前数据未包含材料半成品分类信息，请先重新分析")
+        # 按类别名从已加载的类目列表里找对应条目
+        cat_item = next((c for c in self._semi_categories if c['name'] == category), None)
+        if cat_item is None:
             return
-
-        if category == 'food_raw':
-            mask = (df['_is_semi_raw'] == '是')
-            title = "食品原料半成品"
-        elif category == 'food_finish':
-            # 食品成品半成品 = 食品厂半成品 - 原料
-            mask = ((df.get('工厂名称', df.get('工厂', ''))
-                     .astype(str).str.contains('食品', na=False))
-                    & (df['组件物料类型描述'].astype(str).str.contains('半成品', na=False))
-                    & (df['_is_semi_raw'] != '是'))
-            title = "食品成品半成品"
-        elif category == 'drink_finish':
-            # 饮料成品半成品
-            mask = ((df.get('工厂名称', df.get('工厂', ''))
-                     .astype(str).str.contains('饮料', na=False))
-                    & (df['组件物料类型描述'].astype(str).str.contains('半成品', na=False))
-                    & (df.get('_is_semi_finish', pd.Series('否', index=df.index)) == '是'))
-            title = "饮料成品半成品"
+        # 执行筛选
+        col = cat_item.get('col', '半成品重分类')
+        cond = cat_item.get('cond', '==')
+        val = cat_item.get('val', '')
+        if col not in df.columns:
+            QMessageBox.warning(self, "提示", f"当前数据缺少列「{col}」，请先重新分析")
+            return
+        col_s = df[col].astype(str)
+        if cond == '==':
+            mask = col_s == val
+        elif cond == 'contains':
+            mask = col_s.str.contains(val, na=False)
+        elif cond == 'startswith':
+            mask = col_s.str.startswith(val, na=False)
         else:
             return
-
+        title = cat_item['name']
         count = int(mask.sum())
         if count == 0:
             QMessageBox.information(self, "提示", f"{title}：无匹配记录")
             return
-
         # 选中筛选后的行（源 DataFrame 行号 -> proxy 行号，避免排序/过滤后选错）
         rows = [i for i, v in enumerate(mask.values) if v]
         proxy = self.table_view.model()
@@ -1883,6 +1882,130 @@ class MainWindow(QMainWindow):
                 sel, QItemSelectionModel.Select | QItemSelectionModel.Rows
             )
         self.statusBar().showMessage(f"已筛选 {title}：{count} 条记录")
+
+    # -----------------------------------------------------------
+    # 半成品类目管理（持久化到 config/semi_user_categories.json）
+    # -----------------------------------------------------------
+    def _load_semi_categories(self):
+        """从 config/semi_user_categories.json 加载类目列表，返回列表 [{'name','col','cond','val'}, ...]"""
+        candidates = []
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            candidates.append(os.path.join(sys._MEIPASS, 'config', 'semi_user_categories.json'))
+        _here = os.path.dirname(os.path.abspath(__file__))
+        candidates.append(os.path.join(_here, '..', 'config', 'semi_user_categories.json'))
+        _path = next((p for p in candidates if os.path.exists(p)), None)
+        if not _path:
+            return []
+        try:
+            with open(_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                return data
+            return []
+        except Exception:
+            return []
+
+    def _save_semi_categories(self, categories):
+        """将类目列表写回 config/semi_user_categories.json"""
+        _here = os.path.dirname(os.path.abspath(__file__))
+        _path = os.path.join(_here, '..', 'config', 'semi_user_categories.json')
+        try:
+            os.makedirs(os.path.dirname(_path), exist_ok=True)
+            with open(_path, 'w', encoding='utf-8') as f:
+                json.dump(categories, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _refresh_semi_list_ui(self):
+        """根据当前 _semi_categories 刷新 left_panel.semi_list 显示"""
+        if not hasattr(self.left_panel, 'semi_list'):
+            return
+        lst = self.left_panel.semi_list
+        lst.clear()
+        for cat in self._semi_categories:
+            item = QListWidgetItem(cat['name'])
+            item.setData(Qt.ItemDataRole.UserRole, cat['name'])
+            lst.addItem(item)
+        if self._semi_categories:
+            lst.setCurrentRow(0)
+
+    def _open_add_semi_category_dialog(self):
+        """弹出添加分类对话框：输入名称 + 选列 + 选条件 + 填值"""
+        from PySide6.QtWidgets import (
+            QDialog, QDialogButtonBox, QLabel, QLineEdit,
+            QComboBox, QVBoxLayout, QHBoxLayout,
+        )
+        dlg = QDialog(self)
+        dlg.setWindowTitle("添加半成品分类")
+        dlg.setFixedSize(400, 220)
+        layout = QVBoxLayout(dlg)
+        layout.setSpacing(10)
+
+        # 分类名
+        name_label = QLabel("分类名称：")
+        name_input = QLineEdit()
+        name_input.setPlaceholderText("例如：冷链原料半成品")
+        layout.addWidget(name_label)
+        layout.addWidget(name_input)
+
+        # 筛选列
+        col_layout = QHBoxLayout()
+        col_label = QLabel("筛选列：")
+        col_combo = QComboBox()
+        # 预置常用列 + 动态读 df 列
+        known_cols = ['半成品重分类', '工厂名称', '组件物料类型描述', '组件物料号_str']
+        col_combo.addItems(known_cols)
+        col_layout.addWidget(col_label)
+        col_layout.addWidget(col_combo, 1)
+        layout.addLayout(col_layout)
+
+        # 条件
+        cond_layout = QHBoxLayout()
+        cond_label = QLabel("条件：")
+        cond_combo = QComboBox()
+        cond_combo.addItems(['==', 'contains', 'startswith'])
+        cond_layout.addWidget(cond_label)
+        cond_layout.addWidget(cond_combo)
+        layout.addLayout(cond_layout)
+
+        # 值
+        val_label = QLabel("筛选值：")
+        val_input = QLineEdit()
+        val_input.setPlaceholderText("例如：冷链原料半成品（用于 ==）/ 冷链（用于 contains）")
+        layout.addWidget(val_label)
+        layout.addWidget(val_input)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        layout.addWidget(btns)
+
+        if dlg.exec() != QDialog.Accepted:
+            return
+
+        cat_name = name_input.text().strip()
+        if not cat_name:
+            QMessageBox.warning(dlg, "提示", "分类名称不能为空")
+            return
+        # 检查重复
+        if any(c['name'] == cat_name for c in self._semi_categories):
+            QMessageBox.warning(dlg, "提示", f"分类「{cat_name}」已存在")
+            return
+
+        col = col_combo.currentText()
+        cond = cond_combo.currentText()
+        val = val_input.text().strip()
+        if not val:
+            QMessageBox.warning(dlg, "提示", "筛选值不能为空")
+            return
+
+        new_cat = {'name': cat_name, 'col': col, 'cond': cond, 'val': val}
+        self._semi_categories.append(new_cat)
+        self._save_semi_categories(self._semi_categories)
+        self._refresh_semi_list_ui()
+        QMessageBox.information(dlg, "成功", f"已添加分类「{cat_name}」")
 
     def _open_output_dir(self):
         dir_path = self.output_dir_edit.text()

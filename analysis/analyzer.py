@@ -414,6 +414,19 @@ def do_analysis_v2(
         mask_drink_finish = (df[_factory_col].astype(str).str.contains('饮料', na=False)) & _has_semi & (df['组件物料号_str'].isin(_semi_finish_codes_drink))
         df.loc[mask_drink_finish, '_is_semi_finish'] = True
 
+    # ③ 半成品重分类列：基于「半成品重分类.xlsx」权威分类表 + 400/410 补空规则
+    #    - xlsx 命中（按组件物料号）→ 用表里「半成品分类」原值
+    #    - 不在表里、组件物料号以 400 开头 → 食品成品半成品
+    #    - 不在表里、组件物料号以 410 开头 → 饮料成品半成品
+    #    - 其余 → 空（非半成品）
+    _semi_map = _load_semi_classify_map()
+    df['半成品重分类'] = ''
+    if _semi_map:
+        df['半成品重分类'] = df['组件物料号_str'].map(_semi_map).fillna('')
+    _empty_cls = df['半成品重分类'] == ''
+    df.loc[_empty_cls & df['组件物料号_str'].str.startswith('400'), '半成品重分类'] = '食品成品半成品'
+    df.loc[_empty_cls & df['组件物料号_str'].str.startswith('410'), '半成品重分类'] = '饮料成品半成品'
+
     no_note_mask = ~(df['备注原因'].notna() & (df['备注原因'] != ''))
     # ① 系统无定额自动填充的统一前置条件（2026-08-05 修正）：
     #    产量>0（排除「投了料但没填产量」→ SAP 不推送定额、显示0 的假象）
@@ -1195,3 +1208,39 @@ def _build_deviation_summary(dev_df, orig_df):
     summary = summary.sort_values('总偏差金额', key=abs, ascending=False)
     
     return summary
+
+
+# ---------------------------------------------------------------------------
+# 半成品重分类辅助：读取「半成品重分类.xlsx」权威分类表
+# 返回 {组件物料号(str): 半成品分类值(str)}
+# 查找优先级：
+#   1) 打包后资源目录 sys._MEIPASS/config/半成品重分类.xlsx
+#   2) 工程内 config/半成品重分类.xlsx
+# 找不到或读取失败返回空 dict（不影响主流程，仅半成品重分类列留空 + 400/410 补空规则生效）
+# ---------------------------------------------------------------------------
+def _load_semi_classify_map():
+    import os
+    import sys
+    candidates = []
+    # 1) 打包资源
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        candidates.append(os.path.join(sys._MEIPASS, 'config', '半成品重分类.xlsx'))
+    # 2) 工程内
+    _here = os.path.dirname(os.path.abspath(__file__))
+    candidates.append(os.path.join(_here, '..', 'config', '半成品重分类.xlsx'))
+    _path = next((p for p in candidates if os.path.exists(p)), None)
+    if not _path:
+        return {}
+    try:
+        _xls = pd.read_excel(_path, sheet_name=None)
+        _map = {}
+        for _sh, _d in _xls.items():
+            if '组件物料号' in _d.columns and '半成品分类' in _d.columns:
+                for _, _r in _d.iterrows():
+                    _code = str(_r['组件物料号']).strip()
+                    _cls = str(_r['半成品分类']).strip()
+                    if _code and _cls and _cls not in ('nan', 'None'):
+                        _map[_code] = _cls
+        return _map
+    except Exception:
+        return {}

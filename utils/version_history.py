@@ -14,6 +14,15 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.02",
+        "date": "2026-08-22",
+        "fixes": [
+            "将『材料半成品』筛选从写死4个按钮改为动态列表，支持运行时新增自定义分类；新增分类时弹框选列/条件/值，持久化到 config/semi_user_categories.json，下次启动自动加载；删除旧硬编码筛选分支（food_raw/food_finish/drink_finish 按工厂+物料类型描述的废逻辑）。",
+            "去掉半成品重分类.xlsx 的桌面路径查找（E:/Users/Administrator/Desktop/...），避免用户删除桌面文件后分析报错；保留打包资源目录和工程 config/ 两条路径。",
+            "清理 _filter_semi_materials 中 else: return 之后无法到达的死代码块（原 food_finish/drink_finish 硬编码分支）。",
+        ],
+    },
+    {
         "version": "v43.01",
         "date": "2026-08-22",
         "fixes": [

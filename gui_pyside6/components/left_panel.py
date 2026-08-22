@@ -6,7 +6,7 @@
 from PySide6.QtWidgets import (
     QWidget, QGroupBox, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTableWidget,
-    QHeaderView,
+    QHeaderView, QListWidget, QListWidgetItem, QMessageBox,
 )
 from PySide6.QtCore import Qt, QObject, QEvent
 
@@ -248,33 +248,28 @@ class LeftPanelComponent:
         layout.addLayout(sel_row)
 
     def _build_semi_materials(self, layout: QVBoxLayout):
-        """构建材料半成品分类卡片"""
-        # 食品原料半成品
-        self.food_raw_btn = QPushButton("📦 食品原料半成品")
-        self.food_raw_btn.setObjectName("semiBtn")
-        self.food_raw_btn.setToolTip("点击筛选食品原料半成品记录")
-        self.food_raw_btn.clicked.connect(lambda: self.mw._filter_semi_materials('food_raw'))
-        layout.addWidget(self.food_raw_btn)
+        """构建材料半成品分类卡片 — 动态列表，支持添加新分类"""
+        self.semi_list = QListWidget()
+        self.semi_list.setObjectName("semiList")
+        self.semi_list.setMinimumHeight(120)
+        self.semi_list.setMaximumHeight(200)
+        # 列表项的 data(role='category_name') 存储筛选类别名
+        self.semi_list.currentItemChanged.connect(self._on_semi_list_changed)
+        layout.addWidget(self.semi_list)
 
-        # 食品成品半成品
-        self.food_finish_btn = QPushButton("📦 食品成品半成品")
-        self.food_finish_btn.setObjectName("semiBtn")
-        self.food_finish_btn.setToolTip("点击筛选食品成品半成品记录")
-        self.food_finish_btn.clicked.connect(lambda: self.mw._filter_semi_materials('food_finish'))
-        layout.addWidget(self.food_finish_btn)
+        # 添加分类按钮
+        add_btn = QPushButton("➕ 添加分类")
+        add_btn.setObjectName("semiBtn")
+        add_btn.clicked.connect(self.mw._open_add_semi_category_dialog)
+        layout.addWidget(add_btn)
 
-        # 饮料原料半成品（预留，暂未分类）
-        self.drink_raw_btn = QPushButton("🥤 饮料原料半成品（暂未分类）")
-        self.drink_raw_btn.setObjectName("semiBtnDisabled")
-        self.drink_raw_btn.setEnabled(False)
-        layout.addWidget(self.drink_raw_btn)
-
-        # 饮料成品半成品
-        self.drink_finish_btn = QPushButton("🥤 饮料成品半成品")
-        self.drink_finish_btn.setObjectName("semiBtn")
-        self.drink_finish_btn.setToolTip("点击筛选饮料成品半成品记录")
-        self.drink_finish_btn.clicked.connect(lambda: self.mw._filter_semi_materials('drink_finish'))
-        layout.addWidget(self.drink_finish_btn)
+    def _on_semi_list_changed(self, current: QListWidgetItem, previous: QListWidgetItem):
+        """点击分类项触发筛选（仅当有新选中项才筛）"""
+        if current is None:
+            return
+        category = current.data(Qt.ItemDataRole.UserRole) or ''
+        if category:
+            self.mw._filter_semi_materials(category)
 
     def _create_input_row(self, parent_layout: QVBoxLayout, label_text: str,
                          placeholder: str, has_browse: bool = False) -> QWidget:
