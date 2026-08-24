@@ -211,12 +211,6 @@ class AlertDialog(QDialog):
                         df["物料编码"].astype(str)
                     )
         self.original_df = df.copy()
-        # 预建 data_id → 主表索引映射，加速批量标记（O(1)查找替代O(N)扫描）
-        self._main_df_data_id_index = {}
-        if 'data_id' in df.columns:
-            for _i, _did in enumerate(df['data_id']):
-                if _did:
-                    self._main_df_data_id_index[str(_did)] = _i
 
         self.source_model = DataFrameModel()
         self.source_model.setDataFrame(df)
@@ -392,14 +386,10 @@ class AlertDialog(QDialog):
             main_df['_read'] = 0
             self.main_window.view_model.df = main_df
 
-        # 使用预建索引加速查找（O(1)替代O(N)）
-        idx = self._main_df_data_id_index.get(data_id)
-        if idx is None:
-            # 回退：线性搜索（数据量大时不应走此路径）
-            mask = main_df['data_id'] == data_id
-            if not mask.any():
-                return False, False, ''
-            idx = main_df[mask].index[0]
+        mask = main_df['data_id'] == data_id
+        if not mask.any():
+            return False, False, ''
+        idx = main_df[mask].index[0]
 
         current_val = main_df.at[idx, '_read']
         if current_val == read_value:
