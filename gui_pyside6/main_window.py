@@ -209,7 +209,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"ZPP011 生产偏差分析器 {get_current_version()} (PySide6)")
-        self.resize(1200, 800)
+        self.setWindowState(Qt.WindowMaximized)
 
         # 状态变量
         self._audit_df = None
