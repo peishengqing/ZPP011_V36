@@ -300,11 +300,11 @@ class LeftPanelComponent:
         layout.addLayout(zoom_layout)
 
     def _on_semi_table_click(self, row: int, col: int):
-        """点击表格行触发筛选"""
+        """点击表格行触发明细窗口"""
         category_item = self.semi_table.item(row, 1)
         category = category_item.data(Qt.ItemDataRole.UserRole) if category_item else ''
         if category:
-            self.mw._filter_semi_materials(category)
+            self.mw._show_semi_detail_window(category)
 
     def _create_input_row(self, parent_layout: QVBoxLayout, label_text: str,
                          placeholder: str, has_browse: bool = False) -> QWidget:

@@ -1865,6 +1865,92 @@ class MainWindow(QMainWindow):
             )
         self.statusBar().showMessage(f"已筛选 {title}：{count} 条记录")
 
+    def _show_semi_detail_window(self, category: str):
+        """弹出明细窗口显示该分类的物料列表"""
+        from PySide6.QtWidgets import (
+            QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+            QTableWidget, QTableWidgetItem, QHeaderView
+        )
+        from PySide6.QtCore import Qt
+
+        df = self._get_master_df()
+        if df is None or df.empty:
+            QMessageBox.warning(self, "提示", "主表暂无数据")
+            return
+        if '半成品重分类' not in df.columns:
+            QMessageBox.warning(self, "提示", "当前数据无半成品重分类列")
+            return
+
+        # 筛选该分类的所有物料
+        mask = df['半成品重分类'].astype(str) == category
+        detail_df = df[mask].copy()
+        if detail_df.empty:
+            QMessageBox.information(self, "提示", f"{category}：无匹配记录")
+            return
+
+        count = len(detail_df)
+
+        # 创建窗口
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"{category} — {count} 条物料明细")
+        dialog.resize(1000, 500)
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(8)
+
+        # 说明标签
+        tip_label = QLabel(f"共 {count} 条物料。双击任意行可定位到主表对应记录。")
+        tip_label.setStyleSheet("color: #888; font-size: 11px;")
+        layout.addWidget(tip_label)
+
+        # 表格
+        table = QTableWidget()
+        table.setColumnCount(5)
+        table.setHorizontalHeaderLabels(["工厂", "订单日期", "流程订单", "组件物料号", "物料描述"])
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.verticalHeader().setVisible(False)
+        table.setAlternatingRowColors(True)
+        table.setSortingEnabled(True)
+
+        # 填充数据
+        for i, (_, row) in enumerate(detail_df.iterrows()):
+            table.setItem(i, 0, QTableWidgetItem(str(row.get('工厂', ''))))
+            table.setItem(i, 1, QTableWidgetItem(str(row.get('订单日期', ''))))
+            table.setItem(i, 2, QTableWidgetItem(str(row.get('流程订单', ''))))
+            table.setItem(i, 3, QTableWidgetItem(str(row.get('组件物料号', ''))))
+            table.setItem(i, 4, QTableWidgetItem(str(row.get('组件物料描述', ''))))
+
+        hdr = table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.Fixed)
+        hdr.resizeSection(0, 80)
+        hdr.setSectionResizeMode(1, QHeaderView.Fixed)
+        hdr.resizeSection(1, 100)
+        hdr.setSectionResizeMode(2, QHeaderView.Fixed)
+        hdr.resizeSection(2, 120)
+        hdr.setSectionResizeMode(3, QHeaderView.Fixed)
+        hdr.resizeSection(3, 120)
+        hdr.setSectionResizeMode(4, QHeaderView.Stretch)
+
+        # 双击定位到主表
+        def _on_double_click(row, col):
+            data_id = detail_df.iloc[row].get('data_id')
+            if data_id:
+                self._locate_row_in_main_table(str(data_id))
+            dialog.close()
+
+        table.cellDoubleClicked.connect(_on_double_click)
+        layout.addWidget(table)
+
+        # 按钮区
+        btn_row = QHBoxLayout()
+        close_btn = QPushButton("关闭")
+        close_btn.clicked.connect(dialog.close)
+        btn_row.addStretch()
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        dialog.exec()
+
     def _reset_semi_filter(self):
         """重置半成品筛选：清除主表行选中状态"""
         if not hasattr(self, 'table_view'):
