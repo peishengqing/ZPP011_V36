@@ -142,7 +142,7 @@ class NegLossDashboardDialog(QDialog):
     @staticmethod
     def _name_cols(df):
         """扩大搜索范围：物料名称/描述/组件物料描述 + 物料编码 + 车间 + 备注/备注原因。"""
-        cols = ["物料名称", "物料描述", "组件物料描述", "物料编码"]
+        cols = [c for c in ["物料名称", "物料描述", "组件物料描述", "物料编码"] if c in df.columns]
         for c in ["车间", "备注", "备注原因"]:
             if c in df.columns:
                 cols.append(c)
