@@ -29,6 +29,8 @@ class AlertDialog(QDialog):
         self.original_df = alerts_df.copy()
         self.filter_mode = "all"
         self.color_filters = set()
+        self._semi_class_filter = "all"  # 提前初始化，避免_apply_filter时报AttributeError
+        self._semi_class_col = None
         self.setup_ui()
         self.set_data(alerts_df)
 
@@ -264,10 +266,8 @@ class AlertDialog(QDialog):
 
         # 默认打开时显示未读
         self._set_filter("unread")
-        # 初始化半成品重分类筛选器
-        self._semi_class_filter = "all"
-        self._semi_class_col = None
-        if "半成品重分类" in df.columns:
+        # 初始化半成品重分类筛选器（仅当列存在时才填充）
+        if "半成品重分类" in df.columns and self._semi_class_col is None:
             self._semi_class_col = "半成品重分类"
             unique_vals = df["半成品重分类"].dropna().astype(str).str.strip().unique()
             unique_vals = [v for v in unique_vals if v]
