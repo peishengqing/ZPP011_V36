@@ -13,7 +13,7 @@ import pandas as pd
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QLineEdit,
-    QCheckBox, QDialogButtonBox,
+    QCheckBox, QDialogButtonBox, QComboBox, QFrame,
 )
 from PySide6.QtCore import Qt, QTimer
 from gui_pyside6.models.data_frame_model import DataFrameModel
@@ -33,6 +33,8 @@ class NegLossDashboardDialog(QDialog):
         self.main_window = main_window
         self._keywords = "彩罐,托盘,手包袋"
         self._include_zero = True
+        self._semi_class_filter = "all"  # 半成品重分类筛选
+        self._semi_class_col = None   # 半成品重分类列名（set_data 时探测）
         self.original_df = None
         self.source_model = None
         self._kw_timer = None
@@ -58,6 +60,22 @@ class NegLossDashboardDialog(QDialog):
         self.chk_include_zero.setChecked(True)
         self.chk_include_zero.stateChanged.connect(self._on_include_zero_changed)
         top.addWidget(self.chk_include_zero)
+
+        top.addSpacing(12)
+        self.semi_sep = QFrame()
+        self.semi_sep.setFrameShape(QFrame.VLine)
+        self.semi_sep.setFrameShadow(QFrame.Sunken)
+        top.addWidget(self.semi_sep)
+        top.addSpacing(12)
+        self.lbl_semi_class = QLabel("半成品分类:")
+        top.addWidget(self.lbl_semi_class)
+        self.combo_semi_class = QComboBox()
+        self.combo_semi_class.setMinimumWidth(140)
+        self.combo_semi_class.setMaximumWidth(200)
+        self.combo_semi_class.setEditable(False)
+        self.combo_semi_class.addItem("全部")
+        self.combo_semi_class.currentTextChanged.connect(self._on_semi_class_changed)
+        top.addWidget(self.combo_semi_class)
 
         top.addStretch()
         self.lbl_count = QLabel("共 0 条")
@@ -117,6 +135,10 @@ class NegLossDashboardDialog(QDialog):
         self._include_zero = (state != 0)
         self._apply_filter()
 
+    def _on_semi_class_changed(self, text):
+        self._semi_class_filter = "all" if text == "全部" else text
+        self._apply_filter()
+
     @staticmethod
     def _name_cols(df):
         return [c for c in ["物料名称", "物料描述", "组件物料描述"] if c in df.columns]
@@ -134,6 +156,15 @@ class NegLossDashboardDialog(QDialog):
         if self._include_zero:
             return a.notna() & (a >= 0) & q.notna() & (a < q)
         return a.notna() & (a > 0) & q.notna() & (a < q)
+
+    def _semi_class_mask(self, df, mode):
+        """半成品重分类掩码：all=全True / 分类名=列值==该分类"""
+        if mode == "all" or not self._semi_class_col:
+            return pd.Series(True, index=df.index)
+        if self._semi_class_col not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df[self._semi_class_col].astype(str).str.strip()
+        return vals == mode
 
     def _name_mask(self, df):
         """名称关键词掩码：逗号/、/，分隔多值 OR；无关键词=全 True；无名称列=全 True。"""
@@ -188,6 +219,17 @@ class NegLossDashboardDialog(QDialog):
         self.table_view.verticalHeader().setDefaultSectionSize(28)
         if "data_id" in df.columns:
             self.table_view.setColumnHidden(df.columns.get_loc("data_id"), True)
+        # 初始化半成品重分类筛选器
+        self._semi_class_filter = "all"
+        self._semi_class_col = "半成品重分类" if "半成品重分类" in df.columns else None
+        if self._semi_class_col:
+            unique_vals = df["半成品重分类"].dropna().astype(str).str.strip().unique()
+            unique_vals = [v for v in unique_vals if v]
+            self.combo_semi_class.addItems(sorted(unique_vals))
+        else:
+            self.combo_semi_class.setVisible(False)
+            self.semi_sep.setVisible(False)
+            self.lbl_semi_class.setVisible(False)
         self._apply_filter()
 
     def _apply_filter(self):
@@ -199,7 +241,7 @@ class NegLossDashboardDialog(QDialog):
             self._sort_ctrl.reapply()
             self.lbl_count.setText("共 0 条")
             return
-        mask = self._name_mask(df) & self._neg_loss_mask(df)
+        mask = self._name_mask(df) & self._neg_loss_mask(df) & self._semi_class_mask(df, self._semi_class_filter)
         filtered = df[mask].copy().reset_index(drop=True)
         self.source_model.setDataFrame(filtered)
         self._sort_ctrl.reapply()

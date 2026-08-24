@@ -115,6 +115,10 @@
     "width": 200,
     "hidden": false
   },
+  "半成品重分类": {
+    "width": 120,
+    "hidden": false
+  },
   "是否替代料": {
     "width": 100,
     "hidden": false
