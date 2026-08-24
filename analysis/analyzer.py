@@ -391,13 +391,25 @@ def do_analysis_v2(
     df['_no_quota'] = (df['数量-定额'] == 0)
     df['组件物料号_str'] = df['组件物料号'].astype(str)
 
-    # ② 半成品重分类列：基于「半成品重分类.xlsx」权威分类表
+    # ② 半成品重分类列：基于「semi_user_categories.json」权威分类表
     #    - xlsx 命中（按组件物料号）→ 用表里「半成品分类」原值
     #    - 不在表里 → 空（非半成品，不输出任何分类）
     _semi_map = _load_semi_classify_map()
     df['半成品重分类'] = ''
     if _semi_map:
         df['半成品重分类'] = df['组件物料号_str'].map(_semi_map).fillna('')
+
+    # ③ 空白半成品重分类的补充推断：按工厂名称区分食品/饮料成品半成品
+    #    逻辑：半成品重分类为空 且 物料分类=半成品 且 工厂含"食品"/"饮料"时推断分类
+    _empty_mask = df['半成品重分类'] == ''
+    if _empty_mask.any() and '工厂' in df.columns and '物料分类' in df.columns:
+        _semi_mask = df['物料分类'] == '半成品'
+        _factory_col = df['工厂'].astype(str)
+        df.loc[_empty_mask & _semi_mask, '半成品重分类'] = (
+            _factory_col.str.contains('食品', na=False)
+            .map({True: '食品成品半成品', False: ''})
+        )
+        df.loc[_empty_mask & _semi_mask & _factory_col.str.contains('饮料', na=False), '半成品重分类'] = '饮料成品半成品'
 
     no_note_mask = ~(df['备注原因'].notna() & (df['备注原因'] != ''))
     # ① 系统无定额自动填充的统一前置条件（2026-08-05 修正）：
