@@ -38,6 +38,7 @@
 import json
 import logging
 import os
+import re
 import sys
 
 import pandas as pd
@@ -290,6 +291,7 @@ def compute_auto_quarantine_ids(df: pd.DataFrame, cfg=None) -> dict:
         return {}
 
     alt_col = _first_col(df, ["是否替代料", "替代料", "is_alt"])
+    semi_class_col = _first_col(df, ["半成品重分类", "semi_classify", "semi_classification"])
     cat_col = _first_col(df, ["物料分类", "物料大类", "物料类型", "组件物料类型描述"])
     name_col = _first_col(df, ["组件物料描述", "物料名称", "物料描述", "material_name"])
     actual_col = _first_col(df, ["数量-实际", "实际", "实际数量", "数量 - 实际", "actual"])
@@ -308,6 +310,7 @@ def compute_auto_quarantine_ids(df: pd.DataFrame, cfg=None) -> dict:
         mask = _match_single_rule(
             df, rule, alt_col, cat_col, name_col, actual_col, quota_col,
             dev_rate_col, mat_code_col, workshop_col, remark_col, dev_qty_col,
+            semi_class_col,
         )
         for uid in df.loc[mask, "data_id"].astype(str):
             if uid not in result:  # 已被靠前规则命中的不再覆盖
@@ -317,7 +320,7 @@ def compute_auto_quarantine_ids(df: pd.DataFrame, cfg=None) -> dict:
 
 def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_col,
                        dev_rate_col=None, mat_code_col=None, workshop_col=None,
-                       remark_col=None, dev_qty_col=None):
+                       remark_col=None, dev_qty_col=None, semi_class_col=None):
     """单条规则的 AND 匹配，返回 bool 掩码。"""
     # 1. 排除替代料
     if rule.get("exclude_alt", True):
@@ -328,13 +331,21 @@ def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_c
     else:
         m_alt = pd.Series(True, index=df.index)
 
-    # 2. 类别限定
+    # 2. 类别限定（支持逗号分隔多值 OR）
+    # 优先使用「半成品重分类」列（更精确的权威分类），其次回退到「物料分类」等列
     if rule.get("category_required", True):
-        if cat_col:
-            val = str(rule.get("category_value", "包材")).strip()
-            m_cat = df[cat_col].astype(str).str.strip() == val
+        val_str = str(rule.get("category_value", "包材")).strip()
+        vals = [v.strip() for v in re.split(r'[，,]', val_str) if v.strip()]
+        if vals:
+            # 优先匹配半成品重分类（更精确）
+            if semi_class_col and semi_class_col in df.columns:
+                m_cat = df[semi_class_col].astype(str).str.strip().isin(vals)
+            elif cat_col and cat_col in df.columns:
+                m_cat = df[cat_col].astype(str).str.strip().isin(vals)
+            else:
+                m_cat = pd.Series(False, index=df.index)
         else:
-            m_cat = pd.Series(False, index=df.index)  # 开着无列 → 不匹配
+            m_cat = pd.Series(False, index=df.index)
     else:
         m_cat = pd.Series(True, index=df.index)
 
