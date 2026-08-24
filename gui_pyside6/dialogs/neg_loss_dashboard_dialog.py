@@ -141,7 +141,12 @@ class NegLossDashboardDialog(QDialog):
 
     @staticmethod
     def _name_cols(df):
-        return [c for c in ["物料名称", "物料描述", "组件物料描述"] if c in df.columns]
+        """扩大搜索范围：物料名称/描述/组件物料描述 + 物料编码 + 车间 + 备注/备注原因。"""
+        cols = ["物料名称", "物料描述", "组件物料描述", "物料编码"]
+        for c in ["车间", "备注", "备注原因"]:
+            if c in df.columns:
+                cols.append(c)
+        return cols
 
     def _neg_loss_mask(self, df):
         """负损掩码：0<=实际<定额(含未投料) 或 0<实际<定额(不含未投料)。列缺失则全 False。"""
