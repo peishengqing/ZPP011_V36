@@ -1994,18 +1994,36 @@ class MainWindow(QMainWindow):
             return {}
 
     def _get_semi_category_list(self):
-        """从映射dict提取唯一分类列表（用于UI显示）"""
-        mapping = self._semi_categories
-        if not isinstance(mapping, dict):
-            return []
+        """从当前数据和映射dict合并提取唯一分类列表（用于UI显示）"""
         result = []
         seen = set()
-        for code, cls in mapping.items():
-            if cls and cls not in seen:
-                code_str = str(code).strip()
-                factory = '1101' if code_str.startswith('400') else ('1102' if code_str.startswith('410') else '')
-                result.append({'name': cls, 'factory': factory})
-                seen.add(cls)
+
+        # 优先从当前数据中提取分类（支持动态推断的"食品成品半成品"/"饮料成品半成品"等）
+        df = getattr(self.view_model, 'df', None) if hasattr(self, 'view_model') else None
+        if df is not None and '半成品重分类' in df.columns:
+            for val in df['半成品重分类'].dropna().astype(str).str.strip().unique():
+                if val and val not in seen:
+                    # 尝试从工厂列推断工厂
+                    factory = ''
+                    factory_col = '工厂' if '工厂' in df.columns else None
+                    if factory_col and factory_col in df.columns:
+                        factory_row = df[df['半成品重分类'] == val][factory_col].iloc[0] if not df[df['半成品重分类'] == val][factory_col].empty else ''
+                        if '饮料' in str(factory_row):
+                            factory = '1102'
+                        elif '食品' in str(factory_row):
+                            factory = '1101'
+                    result.append({'name': val, 'factory': factory})
+                    seen.add(val)
+
+        # 补充 JSON 中尚未在数据中出现的分类
+        mapping = self._semi_categories
+        if isinstance(mapping, dict):
+            for code, cls in mapping.items():
+                if cls and cls not in seen:
+                    code_str = str(code).strip()
+                    factory = '1101' if code_str.startswith('400') else ('1102' if code_str.startswith('410') else '')
+                    result.append({'name': cls, 'factory': factory})
+                    seen.add(cls)
         return result
 
     def _save_semi_categories(self, mapping):
