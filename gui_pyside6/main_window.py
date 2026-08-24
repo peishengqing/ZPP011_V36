@@ -1597,7 +1597,7 @@ class MainWindow(QMainWindow):
                 "车间", "定额", "实际", "偏差数量", "偏差率(%)",
                 "净偏差数量", "净偏差金额", "净偏差率(%)",
                 "是否替代料", "_post_audit_changed", "_quarantined",
-                "_read"
+                "半成品重分类", "_read"
             ] if c in alerts_df.columns]
             alerts_df = alerts_df[required_cols]
             if "_read" in alerts_df.columns:
@@ -1640,7 +1640,7 @@ class MainWindow(QMainWindow):
                 "组件物料类型", "组件物料类型描述", "单位",
                 "数量-定额", "定额", "数量-实际", "实际", "偏差数量", "偏差率(%)",
                 "偏差金额", "净偏差数量", "净偏差金额", "净偏差率(%)", "是否替代料",
-                "备注", "备注原因", "备注来源", "预警", "_read",
+                "备注", "备注原因", "备注来源", "预警", "半成品重分类", "_read",
             ]
             required_cols = [c for c in candidates if c in warnings_df.columns]
             warnings_df = warnings_df[required_cols]

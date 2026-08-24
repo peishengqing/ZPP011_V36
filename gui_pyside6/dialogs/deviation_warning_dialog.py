@@ -43,6 +43,8 @@ class DeviationWarningDialog(QDialog):
         self._keyword = ""          # 关键字搜索（跨列，与分类筛选叠加）
         self._remark_filter = "all"   # 是否备注筛选：all / has(有) / none(无)
         self._remark_col_name = None  # 备注列名（set_data 时探测）
+        self._semi_class_filter = "all"  # 半成品重分类筛选：all / 分类名
+        self._semi_class_col = None   # 半成品重分类列名（set_data 时探测）
         self.setup_ui()
         self.set_data(warnings_df)
 
@@ -138,6 +140,25 @@ class DeviationWarningDialog(QDialog):
         self.combo_workshop.addItem("全部")
         self.combo_workshop.currentTextChanged.connect(self._on_workshop_changed)
         filter_layout.addWidget(self.combo_workshop)
+
+        # ---- 第五组：半成品重分类筛选（全部 / 各分类值）----
+        self.semi_class_sep = QFrame()
+        self.semi_class_sep.setFrameShape(QFrame.VLine)
+        self.semi_class_sep.setFrameShadow(QFrame.Sunken)
+        filter_layout.addSpacing(8)
+        filter_layout.addWidget(self.semi_class_sep)
+        filter_layout.addSpacing(8)
+
+        self.lbl_semi_class = QLabel("半成品分类:")
+        filter_layout.addWidget(self.lbl_semi_class)
+
+        self.combo_semi_class = QComboBox()
+        self.combo_semi_class.setMinimumWidth(140)
+        self.combo_semi_class.setMaximumWidth(200)
+        self.combo_semi_class.setEditable(False)
+        self.combo_semi_class.addItem("全部")
+        self.combo_semi_class.currentTextChanged.connect(self._on_semi_class_changed)
+        filter_layout.addWidget(self.combo_semi_class)
 
         # ---- 第四组：隔离区筛选（全部 / 是）----
         self.quar_sep = QFrame()
@@ -342,6 +363,18 @@ class DeviationWarningDialog(QDialog):
         self.btn_remark_none.setChecked(mode == "none")
         self._apply_filter()
 
+    def _on_semi_class_changed(self, text):
+        """半成品重分类下拉框变化回调"""
+        self._semi_class_filter = "all" if text == "全部" else text
+        self._apply_filter()
+
+    def _semi_class_mask(self, df, mode):
+        """半成品重分类掩码：all=全True / 分类名=列值==该分类"""
+        if mode == "all" or not self._semi_class_col or self._semi_class_col not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df[self._semi_class_col].astype(str).str.strip()
+        return vals == mode
+
     def _quar_mask(self, df, mode):
         """隔离区掩码：all=全True / yes=隔离区列=='是' / no=隔离区列!='是'"""
         if mode == "all" or "隔离区" not in df.columns:
@@ -442,6 +475,7 @@ class DeviationWarningDialog(QDialog):
                       & self._quar_mask(df, self._quar_filter)
                       & self._alt_mask(df, self._alt_filter)
                       & self._remark_mask(df, self._remark_filter)
+                      & self._semi_class_mask(df, self._semi_class_filter)
                       & self._keyword_mask(df)].copy()
 
         filtered = filtered.reset_index(drop=True)
@@ -636,6 +670,19 @@ class DeviationWarningDialog(QDialog):
         self.btn_remark_all.setChecked(True)
         self.btn_remark_has.setChecked(False)
         self.btn_remark_none.setChecked(False)
+
+        # 探测半成品重分类列，填充下拉框
+        self._semi_class_col = "半成品重分类" if "半成品重分类" in df.columns else None
+        has_semi_class = self._semi_class_col is not None
+        self.semi_class_sep.setVisible(has_semi_class)
+        self.lbl_semi_class.setVisible(has_semi_class)
+        self.combo_semi_class.setVisible(has_semi_class)
+        if has_semi_class:
+            unique_vals = df[self._semi_class_col].dropna().astype(str).str.strip().unique()
+            unique_vals = [v for v in unique_vals if v]
+            self.combo_semi_class.addItems(sorted(unique_vals))
+        self._semi_class_filter = "all"
+        self.combo_semi_class.setCurrentText("全部")
 
         # 默认打开时显示未读
         self._set_filter("unread")

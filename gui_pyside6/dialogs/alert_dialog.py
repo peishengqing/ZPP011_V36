@@ -6,8 +6,10 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QCheckBox,
+    QComboBox,
 )
 from PySide6.QtCore import Qt, QPoint
+import pandas as pd
 from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_color_keys
 from core.read_status import save_read_status, save_read_status_batch
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
@@ -103,6 +105,19 @@ class AlertDialog(QDialog):
         color_row.addStretch()
         layout.addLayout(color_row)
 
+        # ---- 半成品重分类筛选 ----
+        semi_class_row = QHBoxLayout()
+        semi_class_row.addWidget(QLabel("半成品分类:"))
+        self.semi_class_combo = QComboBox()
+        self.semi_class_combo.setMinimumWidth(140)
+        self.semi_class_combo.setMaximumWidth(200)
+        self.semi_class_combo.setEditable(False)
+        self.semi_class_combo.addItem("全部")
+        self.semi_class_combo.currentTextChanged.connect(self._on_semi_class_changed)
+        semi_class_row.addWidget(self.semi_class_combo)
+        semi_class_row.addStretch()
+        layout.addLayout(semi_class_row)
+
         # ---- 表格 ----
         self.table_view = QTableView()
         self.table_view.setAlternatingRowColors(True)
@@ -185,9 +200,27 @@ class AlertDialog(QDialog):
                 axis=1)
             filtered = filtered[mask]
 
+        # 半成品重分类筛选（与已读状态 AND）
+        filtered = filtered[self._semi_class_mask(filtered, self._semi_class_filter)]
+
         filtered = filtered.reset_index(drop=True)
         self.source_model.setDataFrame(filtered)
         self._sort_ctrl.reapply()  # 恢复排序态
+
+    def _on_semi_class_changed(self, text):
+        """半成品重分类下拉框变化回调"""
+        self._semi_class_filter = "all" if text == "全部" else text
+        self._apply_filter()
+
+    def _semi_class_mask(self, df, mode):
+        """半成品重分类掩码：all=全True / 分类名=列值==该分类"""
+        if mode == "all" or not getattr(self, '_semi_class_col', None):
+            return pd.Series(True, index=df.index)
+        col = self._semi_class_col
+        if col not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df[col].astype(str).str.strip()
+        return vals == mode
 
     def set_data(self, df):
         """设置表格数据 - 确保 _read 和 data_id 列存在"""
@@ -231,6 +264,14 @@ class AlertDialog(QDialog):
 
         # 默认打开时显示未读
         self._set_filter("unread")
+        # 初始化半成品重分类筛选器
+        self._semi_class_filter = "all"
+        self._semi_class_col = None
+        if "半成品重分类" in df.columns:
+            self._semi_class_col = "半成品重分类"
+            unique_vals = df["半成品重分类"].dropna().astype(str).str.strip().unique()
+            unique_vals = [v for v in unique_vals if v]
+            self.semi_class_combo.addItems(sorted(unique_vals))
 
     def export_excel(self):
         path, _ = QFileDialog.getSaveFileName(
