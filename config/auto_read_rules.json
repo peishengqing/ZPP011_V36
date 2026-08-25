@@ -2,7 +2,7 @@
   "enabled": true,
   "exclude_unfed": true,
   "exclude_units": true,
-  "excluded_units": "G,个",
+  "excluded_units": "G，个",
   "rules": [
     {
       "name": "偏差数量=0",
