@@ -200,13 +200,21 @@ class NegLossDashboardDialog(QDialog):
                                  df["订单日期"].astype(str) + "|" +
                                  df["流程订单"].astype(str) + "|" +
                                  df["物料编码"].astype(str))
-        # 隔离区列：比对当前隔离集合
+        # 隔离区列：比对当前隔离集合（兼容4段uid与历史3段uid）
         try:
             _qset = get_quarantined_ids()
         except Exception:
             _qset = set()
         if "data_id" in df.columns:
-            df["隔离区"] = df["data_id"].astype(str).isin(_qset).map({True: "是", False: ""})
+            _did = df["data_id"].astype(str)
+            _m = _did.isin(_qset)  # 直接匹配主表4段 data_id
+            # 兼容历史3段 uid：隔离集合中取"后3段"(订单日期|流程订单|物料编码)与主表 data_id 后3段比对
+            if _qset:
+                _qset_tail3 = {u if len(u.split("|")) < 4 else "|".join(u.split("|")[-3:])
+                               for u in _qset}
+                _tail3 = _did.str.split("|").str[-3:].str.join("|")
+                _m = _m | _tail3.isin(_qset_tail3)
+            df["隔离区"] = _m.map({True: "是", False: ""})
         else:
             df["隔离区"] = ""
         # 备注列移到 data_id 前面，便于一眼看到疑难原因
