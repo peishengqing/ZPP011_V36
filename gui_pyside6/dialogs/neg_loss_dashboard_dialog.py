@@ -35,6 +35,7 @@ class NegLossDashboardDialog(QDialog):
         self._include_zero = True
         self._semi_class_filter = "all"  # 半成品重分类筛选
         self._semi_class_col = None   # 半成品重分类列名（set_data 时探测）
+        self._read_filter = "all"     # 已读/未读筛选（全部/已读/未读）
         self.original_df = None
         self.source_model = None
         self._kw_timer = None
@@ -76,6 +77,22 @@ class NegLossDashboardDialog(QDialog):
         self.combo_semi_class.addItem("全部")
         self.combo_semi_class.currentTextChanged.connect(self._on_semi_class_changed)
         top.addWidget(self.combo_semi_class)
+
+        top.addSpacing(12)
+        self.read_sep = QFrame()
+        self.read_sep.setFrameShape(QFrame.VLine)
+        self.read_sep.setFrameShadow(QFrame.Sunken)
+        top.addWidget(self.read_sep)
+        top.addSpacing(12)
+        self.lbl_read = QLabel("已读:")
+        top.addWidget(self.lbl_read)
+        self.combo_read = QComboBox()
+        self.combo_read.setMinimumWidth(90)
+        self.combo_read.setMaximumWidth(120)
+        self.combo_read.setEditable(False)
+        self.combo_read.addItems(["全部", "已读", "未读"])
+        self.combo_read.currentTextChanged.connect(self._on_read_changed)
+        top.addWidget(self.combo_read)
 
         top.addStretch()
         self.lbl_count = QLabel("共 0 条")
@@ -171,6 +188,21 @@ class NegLossDashboardDialog(QDialog):
         vals = df[self._semi_class_col].astype(str).str.strip()
         return vals == mode
 
+    def _read_mask(self, df, mode):
+        """已读/未读掩码：all=全True / 已读=_read==1 / 未读=_read!=1(含0或NaN)。"""
+        if mode == "all" or "_read" not in df.columns:
+            return pd.Series(True, index=df.index)
+        _r = pd.to_numeric(df["_read"], errors="coerce").fillna(0)
+        if mode == "已读":
+            return _r == 1
+        if mode == "未读":
+            return _r != 1
+        return pd.Series(True, index=df.index)
+
+    def _on_read_changed(self, text):
+        self._read_filter = text
+        self._apply_filter()
+
     def _name_mask(self, df):
         """名称关键词掩码：逗号/、/，分隔多值 OR；无关键词=全 True；无名称列=全 True。"""
         kws = [k.strip() for k in re.split("[,，、]", self._keywords) if k.strip()]
@@ -243,6 +275,15 @@ class NegLossDashboardDialog(QDialog):
             self.combo_semi_class.setVisible(False)
             self.semi_sep.setVisible(False)
             self.lbl_semi_class.setVisible(False)
+        # 初始化 已读/未读 筛选器
+        self._read_filter = "all"
+        self._read_col = "_read" if "_read" in df.columns else None
+        if self._read_col:
+            self.combo_read.setCurrentText("全部")
+        else:
+            self.combo_read.setVisible(False)
+            self.read_sep.setVisible(False)
+            self.lbl_read.setVisible(False)
         self._apply_filter()
 
     def _apply_filter(self):
@@ -254,7 +295,9 @@ class NegLossDashboardDialog(QDialog):
             self._sort_ctrl.reapply()
             self.lbl_count.setText("共 0 条")
             return
-        mask = self._name_mask(df) & self._neg_loss_mask(df) & self._semi_class_mask(df, self._semi_class_filter)
+        mask = (self._name_mask(df) & self._neg_loss_mask(df)
+                & self._semi_class_mask(df, self._semi_class_filter)
+                & self._read_mask(df, self._read_filter))
         filtered = df[mask].copy().reset_index(drop=True)
         self.source_model.setDataFrame(filtered)
         self._sort_ctrl.reapply()

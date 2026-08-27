@@ -400,10 +400,14 @@ def do_analysis_v2(
         df['半成品重分类'] = df['组件物料号_str'].map(_semi_map).fillna('')
 
     # ③ 空白半成品重分类的补充推断：按工厂名称区分食品/饮料成品半成品
-    #    逻辑：半成品重分类为空 且 物料分类=半成品 且 工厂含"食品"/"饮料"时推断分类
+    #    逻辑：半成品重分类为空 且 属半成品类(物料分类='半成品' 或 类型描述含'半成品'/'成品')
+    #          且 工厂含"食品"/"饮料"时推断分类
+    #    注：放宽闸门——SAP 中描述写成"XX成品"(不含"半成品")的记录，物料分类被误判为'原材料'，
+    #        原逻辑 df['物料分类']=='半成品' 会漏掉它们，导致"成品半成品"无法显示。
     _empty_mask = df['半成品重分类'] == ''
     if _empty_mask.any() and '工厂' in df.columns and '物料分类' in df.columns:
-        _semi_mask = df['物料分类'] == '半成品'
+        _mtd_col = df['组件物料类型描述'].astype(str) if '组件物料类型描述' in df.columns else pd.Series('', index=df.index)
+        _semi_mask = (df['物料分类'] == '半成品') | _mtd_col.str.contains('半成品|成品', na=False)
         _factory_col = df['工厂'].astype(str)
         df.loc[_empty_mask & _semi_mask, '半成品重分类'] = (
             _factory_col.str.contains('食品', na=False)
