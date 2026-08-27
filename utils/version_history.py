@@ -14,8 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
-        "version": "v43.19",
+        "version": "v43.20",
         "date": "2026-08-27",
+        "fixes": "修复主界面默认最大化不生效(showEvent加QTimer.singleShot延迟一帧，绕过Windows窗口管理器覆盖)"
+    },
+    {
+        "version": "v43.19",
         "fixes": [
             "修复主界面默认最大化不生效：__init__ 中的 setWindowState(WindowMaximized) 在 show() 前不被部分 Qt/平台应用，改为重写 showEvent 在窗口首次显示时强制最大化（每次打开默认最大化）",
         ],
