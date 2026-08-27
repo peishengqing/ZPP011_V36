@@ -378,6 +378,18 @@ class MainWindow(QMainWindow):
 
         self.title_bar.theme_toggled.connect(self._toggle_theme)
 
+    def showEvent(self, event):
+        """窗口首次显示时强制最大化。
+
+        注：__init__ 里的 setWindowState(WindowMaximized) 在 show() 之前调用，
+        部分 Qt/平台下状态不被应用（窗口不最大化）。改为在 showEvent 中（窗口
+        已实际显示）再设置，确保每次打开主界面都默认最大化。
+        """
+        super().showEvent(event)
+        if not getattr(self, "_maximized_once", False):
+            self._maximized_once = True
+            self.setWindowState(Qt.WindowMaximized)
+
     def _setup_shortcuts(self):
         QShortcut(QKeySequence("F5"), self).activated.connect(self._start_analysis)
         QShortcut(QKeySequence("F6"), self).activated.connect(
