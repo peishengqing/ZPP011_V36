@@ -399,21 +399,17 @@ def do_analysis_v2(
     if _semi_map:
         df['半成品重分类'] = df['组件物料号_str'].map(_semi_map).fillna('')
 
-    # ③ 空白半成品重分类的补充推断：按工厂名称区分食品/饮料成品半成品
-    #    逻辑：半成品重分类为空 且 属半成品类(物料分类='半成品' 或 类型描述含'半成品'/'成品')
-    #          且 工厂含"食品"/"饮料"时推断分类
-    #    注：放宽闸门——SAP 中描述写成"XX成品"(不含"半成品")的记录，物料分类被误判为'原材料'，
-    #        原逻辑 df['物料分类']=='半成品' 会漏掉它们，导致"成品半成品"无法显示。
-    _empty_mask = df['半成品重分类'] == ''
-    if _empty_mask.any() and '工厂' in df.columns and '物料分类' in df.columns:
+    # ③ 半成品重分类成品/饮料归并（二次归并覆盖）：
+    #    原逻辑仅对空白值补位(_empty_mask)，但映射表(_load_semi_classify_map)已用原始 SAP 分类名
+    #    （如"食品综合粗成品"）占满坑，导致自定义归并值"食品成品半成品"/"饮料成品半成品"永不写入、筛选空白。
+    #    现改为：凡满足「工厂含食品/饮料 + (物料分类='半成品' 或 类型描述含'半成品'/'成品')」的记录，
+    #    无论映射表是否填过，直接重分类为「食品成品半成品」/「饮料成品半成品」，确保下拉框有该选项且可精确筛选。
+    if '工厂' in df.columns and '物料分类' in df.columns:
         _mtd_col = df['组件物料类型描述'].astype(str) if '组件物料类型描述' in df.columns else pd.Series('', index=df.index)
         _semi_mask = (df['物料分类'] == '半成品') | _mtd_col.str.contains('半成品|成品', na=False)
         _factory_col = df['工厂'].astype(str)
-        df.loc[_empty_mask & _semi_mask, '半成品重分类'] = (
-            _factory_col.str.contains('食品', na=False)
-            .map({True: '食品成品半成品', False: ''})
-        )
-        df.loc[_empty_mask & _semi_mask & _factory_col.str.contains('饮料', na=False), '半成品重分类'] = '饮料成品半成品'
+        df.loc[_semi_mask & _factory_col.str.contains('食品', na=False), '半成品重分类'] = '食品成品半成品'
+        df.loc[_semi_mask & _factory_col.str.contains('饮料', na=False), '半成品重分类'] = '饮料成品半成品'
 
     no_note_mask = ~(df['备注原因'].notna() & (df['备注原因'] != ''))
     # ① 系统无定额自动填充的统一前置条件（2026-08-05 修正）：
