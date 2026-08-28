@@ -14,6 +14,11 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.27",
+        "date": "2026-08-28",
+        "features": "负损看板关键词搜索改为全列关键字搜索：UI标签「名称关键词」→「关键字搜索」；_name_cols遍历所有文本列(排除data_id/隔离区等内部列)参与匹配，不再局限于名称类列"
+    },
+    {
         "version": "v43.26",
         "date": "2026-08-28",
         "fixes": "主界面默认最大化根因已定位(数据加载后Qt按sizeHint自动resize主窗口,showCmd卡MAXIMIZED致ShowWindow(MAXIMIZE)失效)；_force_maximize改为先RESTORE(9)再MAXIMIZE(3)绕过Windows无操作坑,延迟延长至2000ms"

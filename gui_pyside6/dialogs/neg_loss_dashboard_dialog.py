@@ -50,8 +50,9 @@ class NegLossDashboardDialog(QDialog):
 
         # ---- 顶部筛选栏 ----
         top = QHBoxLayout()
-        top.addWidget(QLabel("名称关键词(逗号分隔):"))
+        top.addWidget(QLabel("关键字搜索(逗号分隔):"))
         self.edit_keywords = QLineEdit(self._keywords)
+        self.edit_keywords.setToolTip("全列关键字搜索：匹配任意文本列(名称/编码/车间/备注/原因等)，逗号或顿号分隔多值OR")
         self.edit_keywords.setMinimumWidth(220)
         self.edit_keywords.setMaximumWidth(320)
         top.addWidget(self.edit_keywords)
@@ -158,11 +159,10 @@ class NegLossDashboardDialog(QDialog):
 
     @staticmethod
     def _name_cols(df):
-        """扩大搜索范围：物料名称/描述/组件物料描述 + 物料编码 + 车间 + 备注/备注原因。"""
-        cols = [c for c in ["物料名称", "物料描述", "组件物料描述", "物料编码"] if c in df.columns]
-        for c in ["车间", "备注", "备注原因"]:
-            if c in df.columns:
-                cols.append(c)
+        """全列关键字搜索：排除内部维护列(data_id/隔离区/_read 等)后，所有文本/对象列均参与匹配。"""
+        _internal = {"data_id", "隔离区", "_read", "_quarantined"}
+        cols = [c for c in df.columns if c not in _internal]
+        # 仅保留可转字符串搜索的列（跳过纯数值对象列也 OK，str() 同样能匹配，故全部纳入）
         return cols
 
     def _neg_loss_mask(self, df):
@@ -204,7 +204,7 @@ class NegLossDashboardDialog(QDialog):
         self._apply_filter()
 
     def _name_mask(self, df):
-        """名称关键词掩码：逗号/、/，分隔多值 OR；无关键词=全 True；无名称列=全 True。"""
+        """全列关键字掩码：逗号/、/，分隔多值 OR；无关键词=全 True；无候选列=全 True。"""
         kws = [k.strip() for k in re.split("[,，、]", self._keywords) if k.strip()]
         if not kws:
             return pd.Series(True, index=df.index)
