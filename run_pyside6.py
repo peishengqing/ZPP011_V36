@@ -143,9 +143,16 @@ def main():
 
     win = MainWindow()
     win.showMaximized()
-    # 双保险：部分 Windows/DPI 环境下 showMaximized() 偶发不生效，
-    # 延迟 50ms 在窗口管理器 WM 流程完成后再次确认最大化。
-    QTimer.singleShot(50, win.showMaximized)
+
+    # --- Win32 API 硬兜底：强制最大化（绕过 Qt 层所有 resize/setGeometry 覆盖） ---
+    # Qt 的 showMaximized() / showEvent / setWindowState 在本机 Windows 10 上均被
+    # 某内部逻辑覆盖导致不生效。用操作系统级 ShowWindow(SW_MAXIMIZE) 作为最终手段。
+    if sys.platform == 'win32':
+        try:
+            _hwnd = int(win.winId())
+            ctypes.windll.user32.ShowWindow(_hwnd, 3)  # SW_MAXIMIZE = 3
+        except Exception:
+            pass
 
     sys.exit(app.exec())
 

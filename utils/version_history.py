@@ -14,6 +14,11 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.22",
+        "date": "2026-08-28",
+        "fixes": "主界面默认最大化最终修复：Win32 API ShowWindow(SW_MAXIMIZE)硬兜底，绕过Qt层所有resize/setGeometry覆盖（v43.19~v43.21四连败后采用操作系统级调用）"
+    },
+    {
         "version": "v43.21",
         "date": "2026-08-28",
         "fixes": "修复主界面默认最大化(v42.x起showMaximized偶发失效；改showEvent用showMaximized完整调用+启动脚本QTimer.singleShot(50)双保险，删除误用setWindowState干扰)"
