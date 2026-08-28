@@ -144,20 +144,54 @@ def main():
     win = MainWindow()
     win.showMaximized()
 
-    # --- Win32 API 硬兜底：强制最大化（v43.19~v43.23 六连败后最终方案） ---
-    # 真凶已确认：showEvent 里 QTimer.singleShot(0, showMaximized) 在 app.exec() 事件
-    # 循环中覆盖了所有前置调用（已删除 showEvent）。
-    # 现在用最强力的 Win32 API 组合：ShowWindow + SetWindowPos 强制重算窗口边框，
-    # 延迟 500ms 确保 Qt 事件循环完全稳定后再执行。
+    # --- DEBUG 诊断：七连败后用数据定位根因（v43.25） ---
+    # 打印每个关键节点的窗口实际尺寸和状态，从控制台输出定位覆盖源。
     if sys.platform == 'win32':
+        import ctypes.wintypes as wintypes
+
+        class RECT(ctypes.Structure):
+            _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                        ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+        WINDOWPLACEMENT = ctypes.Structure.__class__(
+            "WINDOWPLACEMENT", (ctypes.Structure,), {
+                "_fields_": [
+                    ("length", ctypes.c_uint),
+                    ("flags", ctypes.c_uint),
+                    ("showCmd", ctypes.c_uint),
+                    ("ptMinPosition", wintypes.POINT),
+                    ("ptMaxPosition", wintypes.POINT),
+                    ("rcNormalPosition", RECT),
+                ]
+            }
+        )
+        wp = WINDOWPLACEMENT()
+        wp.length = ctypes.sizeof(WINDOWPLACEMENT)
+
+        def _debug_window_state(tag):
+            try:
+                hwnd = int(win.winId())
+                # GetWindowPlacement 获取 showCmd: 1=Normal, 3=Maximized
+                ctypes.windll.user32.GetWindowPlacement(hwnd, ctypes.byref(wp))
+                # GetWindowRect 获取屏幕坐标
+                rc = RECT()
+                ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rc))
+                w = rc.right - rc.left
+                h = rc.bottom - rc.top
+                state_name = {1: "NORMAL", 2: "MINIMIZED", 3: "MAXIMIZED"}.get(wp.showCmd, f"UNKNOWN({wp.showCmd})")
+                print(f"[MAXIMIZE-DEBUG] {tag}: showCmd={state_name}, "
+                      f"rect=({rc.left},{rc.top},{rc.right},{rc.bottom}), size={w}x{h}")
+            except Exception as e:
+                print(f"[MAXIMIZE-DEBUG] {tag}: ERROR - {e}")
+
+        _debug_window_state("1-showMaximized()之后")
+
         def _force_maximize():
             try:
                 _hwnd = int(win.winId())
                 if not _hwnd:
                     return
-                # SW_MAXIMIZE = 3
                 ctypes.windll.user32.ShowWindow(_hwnd, 3)
-                # 强制 Windows 重算窗口边框（绕过自定义标题栏可能的干扰）
                 SWP_FRAMECHANGED = 0x0020
                 SWP_NOZORDER = 0x0004
                 SWP_NOMOVE = 0x0002
@@ -166,12 +200,16 @@ def main():
                     _hwnd, None, 0, 0, 0, 0,
                     SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOMOVE | SWP_NOSIZE
                 )
-            except Exception:
-                pass
-        # 三重保险：立即 + 100ms + 500ms
+                _debug_window_state("Win32_ShowWindow+SetWindowPos之后")
+            except Exception as e:
+                print(f"[MAXIMIZE-DEBUG] Win32调用异常: {e}")
+
         _force_maximize()
-        QTimer.singleShot(100, _force_maximize)
-        QTimer.singleShot(500, _force_maximize)
+        QTimer.singleShot(100, lambda: (_force_maximize(), _debug_window_state("QTimer-100ms")))
+        QTimer.singleShot(500, lambda: (_force_maximize(), _debug_window_state("QTimer-500ms")))
+        QTimer.singleShot(1000, lambda: _debug_window_state("QTimer-1000ms(最终)"))
+    else:
+        pass
 
     sys.exit(app.exec())
 
