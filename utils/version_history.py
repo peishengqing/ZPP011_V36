@@ -14,7 +14,11 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
-        "version": "v43.23",
+        "version": "v43.24",
+        "date": "2026-08-28",
+        "fixes": "主界面默认最大化：Win32 ShowWindow+SetWindowPos(SWP_FRAMECHANGED)三重保险(立即/100ms/500ms)，强制重算窗口边框绕过自定义标题栏干扰"
+    },
+    {
         "date": "2026-08-28",
         "fixes": "主界面默认最大化真凶修复：删除showEvent里QTimer.singleShot(0,showMaximized)干扰（它在app.exec()事件循环中覆盖了Win32 API ShowWindow调用）；Win32 ShowWindow延迟100ms双保险"
     },

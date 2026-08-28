@@ -144,21 +144,34 @@ def main():
     win = MainWindow()
     win.showMaximized()
 
-    # --- Win32 API 硬兜底：强制最大化（绕过 Qt 层所有 resize/setGeometry 覆盖） ---
-    # Qt 的 showMaximized() / showEvent / setWindowState 在本机 Windows 10 上均被
-    # 某内部逻辑覆盖导致不生效。用操作系统级 ShowWindow(SW_MAXIMIZE) 作为最终手段。
-    # 用 QTimer.singleShot 延迟 100ms 确保窗口完全映射到屏幕后再调用（v43.22 立即
-    # 调用仍被覆盖，说明时机太早）。
+    # --- Win32 API 硬兜底：强制最大化（v43.19~v43.23 六连败后最终方案） ---
+    # 真凶已确认：showEvent 里 QTimer.singleShot(0, showMaximized) 在 app.exec() 事件
+    # 循环中覆盖了所有前置调用（已删除 showEvent）。
+    # 现在用最强力的 Win32 API 组合：ShowWindow + SetWindowPos 强制重算窗口边框，
+    # 延迟 500ms 确保 Qt 事件循环完全稳定后再执行。
     if sys.platform == 'win32':
         def _force_maximize():
             try:
                 _hwnd = int(win.winId())
-                ctypes.windll.user32.ShowWindow(_hwnd, 3)  # SW_MAXIMIZE = 3
+                if not _hwnd:
+                    return
+                # SW_MAXIMIZE = 3
+                ctypes.windll.user32.ShowWindow(_hwnd, 3)
+                # 强制 Windows 重算窗口边框（绕过自定义标题栏可能的干扰）
+                SWP_FRAMECHANGED = 0x0020
+                SWP_NOZORDER = 0x0004
+                SWP_NOMOVE = 0x0002
+                SWP_NOSIZE = 0x0001
+                ctypes.windll.user32.SetWindowPos(
+                    _hwnd, None, 0, 0, 0, 0,
+                    SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOMOVE | SWP_NOSIZE
+                )
             except Exception:
                 pass
-        # 立即调一次 + 延迟 100ms 再调一次（双保险）
+        # 三重保险：立即 + 100ms + 500ms
         _force_maximize()
         QTimer.singleShot(100, _force_maximize)
+        QTimer.singleShot(500, _force_maximize)
 
     sys.exit(app.exec())
 
