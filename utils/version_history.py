@@ -14,6 +14,11 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.26",
+        "date": "2026-08-28",
+        "fixes": "主界面默认最大化根因已定位(数据加载后Qt按sizeHint自动resize主窗口,showCmd卡MAXIMIZED致ShowWindow(MAXIMIZE)失效)；_force_maximize改为先RESTORE(9)再MAXIMIZE(3)绕过Windows无操作坑,延迟延长至2000ms"
+    },
+    {
         "version": "v43.25",
         "date": "2026-08-28",
         "fixes": "DEBUG诊断：run_pyside6.py加MAXIMIZE-DEBUG日志(每个节点打印showCmd/rect/size)，用数据定位最大化七连败根因"

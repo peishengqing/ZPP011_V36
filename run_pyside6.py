@@ -191,7 +191,11 @@ def main():
                 _hwnd = int(win.winId())
                 if not _hwnd:
                     return
-                ctypes.windll.user32.ShowWindow(_hwnd, 3)
+                # 先 RESTORE 再 MAXIMIZE：绕过 Windows "已是MAXIMIZED状态则ShowWindow无操作"的坑。
+                # （数据加载后 Qt 按 sizeHint 自动 resize 主窗口，实际显示区缩成 1833x851，
+                #   但 showCmd 仍为 MAXIMIZED，单调 ShowWindow(MAXIMIZE) 不重新执行）
+                ctypes.windll.user32.ShowWindow(_hwnd, 9)   # SW_RESTORE = 9
+                ctypes.windll.user32.ShowWindow(_hwnd, 3)   # SW_MAXIMIZE = 3
                 SWP_FRAMECHANGED = 0x0020
                 SWP_NOZORDER = 0x0004
                 SWP_NOMOVE = 0x0002
@@ -200,16 +204,15 @@ def main():
                     _hwnd, None, 0, 0, 0, 0,
                     SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOMOVE | SWP_NOSIZE
                 )
-                _debug_window_state("Win32_ShowWindow+SetWindowPos之后")
+                _debug_window_state("Win32_RESTORE+MAXIMIZE之后")
             except Exception as e:
                 print(f"[MAXIMIZE-DEBUG] Win32调用异常: {e}")
 
         _force_maximize()
         QTimer.singleShot(100, lambda: (_force_maximize(), _debug_window_state("QTimer-100ms")))
         QTimer.singleShot(500, lambda: (_force_maximize(), _debug_window_state("QTimer-500ms")))
-        QTimer.singleShot(1000, lambda: _debug_window_state("QTimer-1000ms(最终)"))
-    else:
-        pass
+        QTimer.singleShot(1000, lambda: (_force_maximize(), _debug_window_state("QTimer-1000ms")))
+        QTimer.singleShot(2000, lambda: (_force_maximize(), _debug_window_state("QTimer-2000ms(最终)")))
 
     sys.exit(app.exec())
 
