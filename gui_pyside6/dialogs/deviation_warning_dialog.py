@@ -7,6 +7,7 @@
 交互与「替代料看板」(alert_dialog.AlertDialog) 保持一致，仅列宽策略改为可拖拽。
 """
 
+import re
 import pandas as pd
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
@@ -57,9 +58,10 @@ class DeviationWarningDialog(QDialog):
         filter_layout = QHBoxLayout()
         filter_layout.addWidget(QLabel("筛选:"))
 
-        # 关键字搜索（跨列，防抖 300ms，与分类筛选叠加生效）
+        # 关键字搜索（跨列全列，防抖 300ms，与分类筛选叠加生效）
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("搜索 物料编码/名称/车间/流程订单/备注…")
+        self.search_edit.setPlaceholderText("关键字搜索(全列,逗号分隔多值OR)")
+        self.search_edit.setToolTip("全列关键字搜索：匹配任意文本列(名称/编码/车间/备注/原因等)，逗号或顿号分隔多值OR")
         self.search_edit.setMinimumWidth(200)
         self.search_edit.setMaximumWidth(260)
         filter_layout.addWidget(self.search_edit)
@@ -308,19 +310,23 @@ class DeviationWarningDialog(QDialog):
 
     def _on_search_changed(self):
         """关键字搜索框防抖回调：更新关键字并重新筛选"""
-        self._keyword = self.search_edit.text().strip().lower()
+        self._keyword = self.search_edit.text().strip()
         self._apply_filter()
 
     def _keyword_mask(self, df):
-        """跨列关键字掩码：任一（非内部）列包含关键字即命中；空关键字=全True"""
+        """跨列全列关键字掩码：逗号/、/，分隔多值 OR；任一（非内部）列包含即命中；空关键字=全True。"""
         if not self._keyword:
             return pd.Series(True, index=df.index)
-        kw = self._keyword
+        kws = [k.strip().lower() for k in re.split("[,，、]", self._keyword) if k.strip()]
+        if not kws:
+            return pd.Series(True, index=df.index)
         mask = pd.Series(False, index=df.index)
         for col in df.columns:
             if col in ('_read', '_post_audit_changed', '状态', 'data_id'):
                 continue
-            mask = mask | df[col].astype(str).str.lower().str.contains(kw, na=False, regex=False)
+            s = df[col].astype(str).str.lower()
+            for kw in kws:
+                mask = mask | s.str.contains(kw, na=False, regex=False)
         return mask
 
     def _set_filter(self, mode):
