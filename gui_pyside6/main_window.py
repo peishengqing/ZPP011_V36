@@ -377,19 +377,6 @@ class MainWindow(QMainWindow):
 
         self.title_bar.theme_toggled.connect(self._toggle_theme)
 
-    def showEvent(self, event):
-        """窗口首次显示时强制最大化（双保险）。
-
-        注：run_pyside6.py 已调用 win.showMaximized()，但部分 Windows 平台/
-        DPI 环境下该调用偶发不生效。此处用 showMaximized()（完整 WM 流程，
-        而非仅 setWindowState 改状态位）在窗口首次 show 后延迟一帧再确认一次，
-        确保主界面默认最大化。用 _maximized_once 标志避免后续 show 反复最大化。
-        """
-        super().showEvent(event)
-        if not getattr(self, "_maximized_once", False):
-            self._maximized_once = True
-            QTimer.singleShot(0, self.showMaximized)
-
     def _setup_shortcuts(self):
         QShortcut(QKeySequence("F5"), self).activated.connect(self._start_analysis)
         QShortcut(QKeySequence("F6"), self).activated.connect(

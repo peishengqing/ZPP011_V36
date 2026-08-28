@@ -147,12 +147,18 @@ def main():
     # --- Win32 API 硬兜底：强制最大化（绕过 Qt 层所有 resize/setGeometry 覆盖） ---
     # Qt 的 showMaximized() / showEvent / setWindowState 在本机 Windows 10 上均被
     # 某内部逻辑覆盖导致不生效。用操作系统级 ShowWindow(SW_MAXIMIZE) 作为最终手段。
+    # 用 QTimer.singleShot 延迟 100ms 确保窗口完全映射到屏幕后再调用（v43.22 立即
+    # 调用仍被覆盖，说明时机太早）。
     if sys.platform == 'win32':
-        try:
-            _hwnd = int(win.winId())
-            ctypes.windll.user32.ShowWindow(_hwnd, 3)  # SW_MAXIMIZE = 3
-        except Exception:
-            pass
+        def _force_maximize():
+            try:
+                _hwnd = int(win.winId())
+                ctypes.windll.user32.ShowWindow(_hwnd, 3)  # SW_MAXIMIZE = 3
+            except Exception:
+                pass
+        # 立即调一次 + 延迟 100ms 再调一次（双保险）
+        _force_maximize()
+        QTimer.singleShot(100, _force_maximize)
 
     sys.exit(app.exec())
 
