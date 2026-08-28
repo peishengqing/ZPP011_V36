@@ -209,7 +209,6 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"ZPP011 生产偏差分析器 {get_current_version()} (PySide6)")
-        self.setWindowState(Qt.WindowMaximized)
 
         # 状态变量
         self._audit_df = None
@@ -379,17 +378,17 @@ class MainWindow(QMainWindow):
         self.title_bar.theme_toggled.connect(self._toggle_theme)
 
     def showEvent(self, event):
-        """窗口首次显示时强制最大化（延迟一帧确保生效）。
+        """窗口首次显示时强制最大化（双保险）。
 
-        注：__init__ 里的 setWindowState(WindowMaximized) 在 show() 之前调用，
-        部分 Qt/平台下状态不被应用。即使在 showEvent 中直接调用也可能被
-        窗口管理器覆盖。故用 QTimer.singleShot(0, ...) 延迟到消息队列空闲后
-        再设置，确保每次打开主界面都默认最大化。
+        注：run_pyside6.py 已调用 win.showMaximized()，但部分 Windows 平台/
+        DPI 环境下该调用偶发不生效。此处用 showMaximized()（完整 WM 流程，
+        而非仅 setWindowState 改状态位）在窗口首次 show 后延迟一帧再确认一次，
+        确保主界面默认最大化。用 _maximized_once 标志避免后续 show 反复最大化。
         """
         super().showEvent(event)
         if not getattr(self, "_maximized_once", False):
             self._maximized_once = True
-            QTimer.singleShot(0, lambda: self.setWindowState(Qt.WindowMaximized))
+            QTimer.singleShot(0, self.showMaximized)
 
     def _setup_shortcuts(self):
         QShortcut(QKeySequence("F5"), self).activated.connect(self._start_analysis)

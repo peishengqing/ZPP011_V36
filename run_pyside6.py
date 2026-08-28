@@ -113,7 +113,7 @@ sys.excepthook = global_exception_hook
 
 from PySide6.QtWidgets import QApplication, QStyleFactory
 from PySide6.QtGui import QFont
-from PySide6.QtCore import QCoreApplication, QSettings, QLocale, Qt
+from PySide6.QtCore import QCoreApplication, QSettings, QLocale, Qt, QTimer
 
 from gui_pyside6.main_window import MainWindow
 
@@ -143,6 +143,9 @@ def main():
 
     win = MainWindow()
     win.showMaximized()
+    # 双保险：部分 Windows/DPI 环境下 showMaximized() 偶发不生效，
+    # 延迟 50ms 在窗口管理器 WM 流程完成后再次确认最大化。
+    QTimer.singleShot(50, win.showMaximized)
 
     sys.exit(app.exec())
 
