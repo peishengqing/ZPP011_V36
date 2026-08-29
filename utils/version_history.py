@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.45",
+        "date": "2026-08-29",
+        "features": "",
+        "fixes": "alt_manager.py _normalize_item 新增工厂名规范化：加载替代料配对时自动将'云南达利-食品厂'→'1101'、'云南达利-饮料厂'→'1102'，兼容旧格式配置文件"
+    },
+    {
         "version": "v43.44",
         "date": "2026-08-29",
         "features": "",

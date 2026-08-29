@@ -26,6 +26,7 @@ def _normalize_item(item):
     - 三元组 (编码, 名称, 工厂): 自动交换
     - 二元组 (编码, 名称): 工厂为空
     - 字符串: 编码=名称=字符串，工厂为空
+    工厂名自动规范化："云南达利-食品厂"→"1101"，"云南达利-饮料厂"→"1102"
     """
     # 已经是三元组
     if isinstance(item, (list, tuple)) and len(item) == 3:
@@ -33,16 +34,30 @@ def _normalize_item(item):
         # 检查第三个元素是否像工厂（包含'厂'或'公司'）
         if name and ('厂' in str(name) or '公司' in str(name)):
             # 顺序可能是 (编码, 名称, 工厂)，需要交换
-            return (str(name), str(factory), str(code))
-        return (str(factory), str(code), str(name))
-    
+            factory, code, name = str(name), str(factory), str(code)
+        # 工厂名规范化
+        factory = _normalize_factory(factory)
+        return (factory, str(code), str(name))
+
     # 二元组 (编码, 名称)
     if isinstance(item, (list, tuple)) and len(item) == 2:
         return ('', str(item[0]), str(item[1]))
-    
+
     # 纯字符串或其他
     s = str(item) if item else ''
     return ('', s, s)
+
+_FACTORY_MAP = {
+    "云南达利-食品厂": "1101",
+    "云南达利-饮料厂": "1102",
+}
+
+def _normalize_factory(factory):
+    """工厂名转数字编码，已知全称自动映射，未知原样返回"""
+    if not factory:
+        return factory
+    f = str(factory).strip()
+    return _FACTORY_MAP.get(f, f)
 
 def _normalize_pair(pair):
     """标准化一对物料"""
