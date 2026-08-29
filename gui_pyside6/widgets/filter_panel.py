@@ -125,9 +125,15 @@ class FilterPanel(QWidget):
         self.category_combo = QComboBox()
         self.category_combo.addItem("全部")
         self.category_combo.setMinimumWidth(220)
-        self.semi_class_combo = QComboBox()
-        self.semi_class_combo.addItem("全部")
-        self.semi_class_combo.setMinimumWidth(220)
+        # 半成品重分类筛选：复选框组（全部 + 各原始值 + 虚拟两项「食品/饮料成品半成品」）
+        self.grp_semi_class = QGroupBox()
+        self.grp_semi_class.setFlat(True)
+        self.grp_semi_class.setFixedWidth(220)
+        self._semi_class_vlayout = QVBoxLayout(self.grp_semi_class)
+        self._semi_class_vlayout.setContentsMargins(4, 2, 4, 2)
+        self._semi_class_vlayout.setSpacing(1)
+        self._semi_class_checkboxes = {}  # 名称 -> QCheckBox（含特殊键 "__all__"）
+        self._semi_class_filter = set()  # 选中的分类集合（空=全部）
         self.alt_combo = QComboBox()
         self.alt_combo.addItems(["全部", "是", "否"])
         self.alt_combo.setMinimumWidth(220)
@@ -163,7 +169,7 @@ class FilterPanel(QWidget):
         material_name_row.addWidget(self.material_name_edit, 1)
         material_name_row.addWidget(self.edit_presets_btn)
         material_layout.addRow("物料类型:", self.category_combo)
-        material_layout.addRow("半成品分类:", self.semi_class_combo)
+        material_layout.addRow("半成品分类:", self.grp_semi_class)
         material_layout.addRow("替代料:", self.alt_combo)
         material_layout.addRow("隔离区:", self.quar_combo)
         material_layout.addRow("订单类型:", self.order_type_combo)
@@ -318,7 +324,6 @@ class FilterPanel(QWidget):
         self.process_order_edit.editingFinished.connect(self._emit_filter)
         self.process_order_edit.returnPressed.connect(self._emit_filter)
         self.category_combo.currentIndexChanged.connect(self._emit_filter)
-        self.semi_class_combo.currentIndexChanged.connect(self._emit_filter)
         self.alt_combo.currentIndexChanged.connect(self._emit_filter)
         self.quar_combo.currentIndexChanged.connect(self._emit_filter)
         self.dev_rate_combo.currentIndexChanged.connect(self._emit_filter)
@@ -566,18 +571,21 @@ class FilterPanel(QWidget):
 
         # 更新动态下拉前屏蔽信号，避免触发中间态筛选条件把表格刷空
         for _c in (self.factory_combo, self.workshop_combo, self.category_combo, self.order_type_combo,
-                   self.material_name_edit, self.semi_class_combo):
+                   self.material_name_edit):
             _c.blockSignals(True)
         self._update_combo(self.factory_combo, self._col_map.get('工厂'))
         self._update_combo(self.workshop_combo, self._col_map.get('车间'))
         self._update_combo(self.category_combo, self._col_map.get('物料类型'))
         self._update_combo(self.order_type_combo, self._col_map.get('订单类型'))
-        self._update_combo(self.semi_class_combo, self._col_map.get('半成品重分类'))
+        # 半成品重分类复选框组重建（silent 模式屏蔽信号，避免 set_data 期间误触发筛选）
+        self._rebuild_semi_class_checkboxes(silent=True)
         self._update_unit_list()
         self._update_material_name_combo()
         for _c in (self.factory_combo, self.workshop_combo, self.category_combo, self.order_type_combo,
-                   self.material_name_edit, self.semi_class_combo):
+                   self.material_name_edit):
             _c.blockSignals(False)
+        for cb in self._semi_class_checkboxes.values():
+            cb.blockSignals(False)
 
         # 重置日期为数据范围
         self._reset_date_range()
@@ -766,9 +774,10 @@ class FilterPanel(QWidget):
         cat_col = self._col_map.get('物料类型')
         if cat_col and self.category_combo.currentText() != "全部":
             filters[cat_col] = self.category_combo.currentText()
-        semi_col = self._col_map.get('半成品重分类')
-        if semi_col and self.semi_class_combo.currentText() != "全部":
-            filters[semi_col] = self.semi_class_combo.currentText()
+        # 半成品重分类筛选（复选框组：全部 + 各值 + 虚拟两项「食品/饮料成品半成品」）
+        # 选中项写入特殊键 _semi_class_set（含虚拟项名），由 proxy_model 做精确+模糊匹配；空集合=全部
+        if self._semi_class_filter:
+            filters['_semi_class_set'] = self._semi_class_filter
         if self.alt_combo.currentText() != "全部":
             filters['是否替代料'] = self.alt_combo.currentText()
         if self.quar_combo.currentText() != "全部":
@@ -859,6 +868,69 @@ class FilterPanel(QWidget):
     def _emit_filter(self):
         filters = self.get_filters()
         self.filter_changed.emit(filters)
+
+    # ---- 半成品重分类复选框组 ----
+    def _on_semi_class_changed(self):
+        """半成品重分类复选框变化：收集勾选项（空=全部），全部与其他互斥。"""
+        all_cb = self._semi_class_checkboxes.get("__all__")
+        others = [cb for name, cb in self._semi_class_checkboxes.items() if name != "__all__"]
+        if all_cb is not None and all_cb.isChecked():
+            # 勾选"全部"→取消其他
+            for cb in others:
+                cb.blockSignals(True)
+                cb.setChecked(False)
+                cb.blockSignals(False)
+            self._semi_class_filter = set()
+        else:
+            checked = [name for name, cb in self._semi_class_checkboxes.items()
+                       if name != "__all__" and cb.isChecked()]
+            if not checked:
+                if all_cb is not None:
+                    all_cb.blockSignals(True)
+                    all_cb.setChecked(True)
+                    all_cb.blockSignals(False)
+                self._semi_class_filter = set()
+            else:
+                if all_cb is not None:
+                    all_cb.blockSignals(True)
+                    all_cb.setChecked(False)
+                    all_cb.blockSignals(False)
+                self._semi_class_filter = set(checked)
+        self._emit_filter()
+
+    def _rebuild_semi_class_checkboxes(self, silent=False):
+        """重建半成品重分类复选框组（全部 + 各原始值 + 虚拟两项「食品/饮料成品半成品」）。
+
+        silent=True 时创建期间屏蔽信号（set_data 批量刷新用，避免误触发筛选）；
+        调用方负责在外部 unblock 各复选框信号。
+        """
+        col = self._col_map.get('半成品重分类')
+        unique_vals = []
+        if col and getattr(self, '_data', None) is not None and not self._data.empty and col in self._data.columns:
+            unique_vals = [str(v).strip() for v in self._data[col].dropna().unique() if str(v).strip()]
+        while self._semi_class_vlayout.count():
+            it = self._semi_class_vlayout.takeAt(0)
+            w = it.widget()
+            if w:
+                w.deleteLater()
+        self._semi_class_checkboxes = {}
+        cb_all = QCheckBox("全部")
+        cb_all.setChecked(True)
+        self._semi_class_vlayout.addWidget(cb_all)
+        self._semi_class_checkboxes["__all__"] = cb_all
+        for v in sorted(set(unique_vals)):
+            cb = QCheckBox(v)
+            self._semi_class_vlayout.addWidget(cb)
+            self._semi_class_checkboxes[v] = cb
+        for v in ("食品成品半成品", "饮料成品半成品"):
+            cb = QCheckBox(v)
+            self._semi_class_vlayout.addWidget(cb)
+            self._semi_class_checkboxes[v] = cb
+        self._semi_class_filter = set()
+        for cb in self._semi_class_checkboxes.values():
+            if silent:
+                cb.blockSignals(True)
+            cb.stateChanged.connect(self._on_semi_class_changed)
 
     def _compute_date_filters(self):
         """根据当前日期控件值计算日期筛选条件字典（可能为空）。
@@ -962,4 +1034,12 @@ class FilterPanel(QWidget):
         self._user_start_date = None
         self._user_end_date = None
         self._reset_date_range()
+        # 重置半成品分类复选框（勾选"全部"，取消其他）
+        all_cb = self._semi_class_checkboxes.get("__all__")
+        if all_cb:
+            for cb in self._semi_class_checkboxes.values():
+                cb.blockSignals(True)
+                cb.setChecked(cb is all_cb)
+                cb.blockSignals(False)
+        self._semi_class_filter = set()
         self._emit_filter()
