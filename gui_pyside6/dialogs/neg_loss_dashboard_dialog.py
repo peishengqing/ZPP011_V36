@@ -639,9 +639,8 @@ class NegLossDashboardDialog(QDialog):
         df = self.source_model.getDataFrame()
         if df is None:
             return
-        records = []
-        changed_ids = set()
-        count = 0
+        # 收集要更新的 data_id 列表
+        target_ids = []
         for r in rows:
             if r >= len(df):
                 continue
@@ -652,20 +651,17 @@ class NegLossDashboardDialog(QDialog):
                     data_id = f"{rs.get('工厂','')}|{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
                 else:
                     data_id = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
-            if not data_id:
-                continue
-            ok, already, fingerprint = self._sync_main_df(data_id, 1)
-            if ok and not already:
-                qty = snapshot_qty_for(df, data_id)
-                note = snapshot_note_for(df, data_id)
-                records.append((data_id, 1, fingerprint, qty, note))
-                changed_ids.add(data_id)
-                count += 1
+            if data_id and data_id not in target_ids:
+                target_ids.append(data_id)
+        if not target_ids:
+            return
+        # 批量同步主表（循环外，向量化操作）
+        count, records = self._sync_main_df_batch(target_ids, 1, df)
         if records:
             save_read_status_batch(records)
         self._refresh_main_table_once()
-        if changed_ids and hasattr(self, 'original_df') and 'data_id' in self.original_df.columns:
-            orig_mask = self.original_df['data_id'].isin(changed_ids)
+        if hasattr(self, 'original_df') and 'data_id' in self.original_df.columns:
+            orig_mask = self.original_df['data_id'].isin(target_ids)
             if orig_mask.any():
                 self.original_df.loc[orig_mask, '_read'] = 1
                 if '状态' in self.original_df.columns:
@@ -678,9 +674,8 @@ class NegLossDashboardDialog(QDialog):
         df = self.source_model.getDataFrame()
         if df is None:
             return
-        records = []
-        changed_ids = set()
-        count = 0
+        # 收集要更新的 data_id 列表
+        target_ids = []
         for r in rows:
             if r >= len(df):
                 continue
@@ -691,20 +686,17 @@ class NegLossDashboardDialog(QDialog):
                     data_id = f"{rs.get('工厂','')}|{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
                 else:
                     data_id = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
-            if not data_id:
-                continue
-            ok, already, fingerprint = self._sync_main_df(data_id, 0)
-            if ok and not already:
-                qty = snapshot_qty_for(df, data_id)
-                note = snapshot_note_for(df, data_id)
-                records.append((data_id, 0, fingerprint, qty, note))
-                changed_ids.add(data_id)
-                count += 1
+            if data_id and data_id not in target_ids:
+                target_ids.append(data_id)
+        if not target_ids:
+            return
+        # 批量同步主表（循环外，向量化操作）
+        count, records = self._sync_main_df_batch(target_ids, 0, df)
         if records:
             save_read_status_batch(records)
         self._refresh_main_table_once()
-        if changed_ids and hasattr(self, 'original_df') and 'data_id' in self.original_df.columns:
-            orig_mask = self.original_df['data_id'].isin(changed_ids)
+        if hasattr(self, 'original_df') and 'data_id' in self.original_df.columns:
+            orig_mask = self.original_df['data_id'].isin(target_ids)
             if orig_mask.any():
                 self.original_df.loc[orig_mask, '_read'] = 0
                 if '状态' in self.original_df.columns:
@@ -760,6 +752,77 @@ class NegLossDashboardDialog(QDialog):
         fingerprint = main_df.at[idx, 'fingerprint'] if 'fingerprint' in main_df.columns else ''
         self.main_window.view_model.df = main_df
         return True, False, fingerprint
+
+    def _sync_main_df_batch(self, target_ids, read_value, source_df):
+        """批量同步主表内存中的已读状态（向量化操作，性能优化）
+
+        相比 _sync_main_df 的逐行操作，此方法在循环外一次性完成所有更新。
+        返回 (count, records) 其中 count 是实际更新的条数，records 是用于落盘的记录列表。
+        """
+        main_df = self.main_window.view_model.df
+        if main_df is None or not target_ids:
+            return 0, []
+
+        # 确保主表有 data_id 列
+        if 'data_id' not in main_df.columns:
+            if '工厂' in main_df.columns:
+                main_df['data_id'] = (
+                    main_df['工厂'].astype(str) + '|' +
+                    main_df['订单日期'].astype(str) + '|' +
+                    main_df['流程订单'].astype(str) + '|' +
+                    main_df['物料编码'].astype(str)
+                )
+            elif all(c in main_df.columns for c in ['订单日期', '流程订单', '物料编码']):
+                main_df['data_id'] = (
+                    main_df['订单日期'].astype(str) + '|' +
+                    main_df['流程订单'].astype(str) + '|' +
+                    main_df['物料编码'].astype(str)
+                )
+
+        # 确保 _read 列存在
+        if '_read' not in main_df.columns:
+            main_df['_read'] = 0
+
+        # 向量化批量更新
+        mask = main_df['data_id'].isin(target_ids)
+        if not mask.any():
+            return 0, []
+
+        # 记录更新前的状态（用于判断是否需要落盘）
+        current_vals = main_df.loc[mask, '_read']
+        need_update = current_vals != read_value
+        updated_ids = main_df.loc[mask, 'data_id'].tolist()
+
+        # 批量赋值（向量化操作，比 at[] 快得多）
+        main_df.loc[mask & need_update, '_read'] = read_value
+
+        # 构建落盘记录
+        records = []
+        count = int(need_update.sum())
+        if count > 0:
+            # 获取 fingerprint
+            fingerprints = {}
+            if 'fingerprint' in main_df.columns:
+                for did in updated_ids:
+                    row_mask = main_df['data_id'] == did
+                    if row_mask.any():
+                        idx = main_df[row_mask].index[0]
+                        fingerprints[did] = main_df.at[idx, 'fingerprint']
+                    else:
+                        fingerprints[did] = ''
+            else:
+                fingerprints = {did: '' for did in updated_ids}
+
+            # 从 source_df 获取 qty 和 note（使用更新后的数据）
+            for did in updated_ids:
+                if did in fingerprints:
+                    qty = snapshot_qty_for(source_df, did)
+                    note = snapshot_note_for(source_df, did)
+                    records.append((did, read_value, fingerprints[did], qty, note))
+
+        # 只赋值一次 view_model.df
+        self.main_window.view_model.df = main_df
+        return count, records
 
     def _refresh_main_table_once(self):
         """循环外统一重建主表（只调用一次，避免逐行重建，大幅提升连续标记性能）"""
