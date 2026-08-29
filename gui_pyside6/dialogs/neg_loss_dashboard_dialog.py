@@ -44,6 +44,7 @@ class NegLossDashboardDialog(QDialog):
         self._workshop_filter = "all"  # 车间筛选（全部/车间名）
         self._workshop_col = None     # 车间列名（set_data 时探测）
         self._quar_filter = "all"     # 隔离区筛选（全部/是/否）
+        self._has_note_filter = "all" # 是否有备注筛选（全部/是/否）
         self.color_filters = set()    # 颜色筛选
         self.original_df = None
         self.source_model = None
@@ -62,8 +63,8 @@ class NegLossDashboardDialog(QDialog):
         top.addWidget(QLabel("关键字搜索(逗号分隔):"))
         self.edit_keywords = QLineEdit(self._keywords)
         self.edit_keywords.setToolTip("全列关键字搜索：匹配任意文本列(名称/编码/车间/备注/原因等)，逗号或顿号分隔多值OR")
-        self.edit_keywords.setMinimumWidth(220)
-        self.edit_keywords.setMaximumWidth(320)
+        self.edit_keywords.setMinimumWidth(120)
+        self.edit_keywords.setMaximumWidth(180)
         top.addWidget(self.edit_keywords)
         self.edit_keywords.textChanged.connect(self._on_keywords_changed)
 
@@ -195,6 +196,31 @@ class NegLossDashboardDialog(QDialog):
         self.btn_quar_no.clicked.connect(lambda: self._set_quar_filter("no"))
         top.addWidget(self.btn_quar_no)
 
+        # ---- 是否有备注筛选 ----
+        top.addSpacing(12)
+        self.note_sep = QFrame()
+        self.note_sep.setFrameShape(QFrame.VLine)
+        self.note_sep.setFrameShadow(QFrame.Sunken)
+        top.addWidget(self.note_sep)
+        top.addSpacing(12)
+        self.lbl_note = QLabel("备注:")
+        top.addWidget(self.lbl_note)
+        self.btn_note_all = QPushButton("全部")
+        self.btn_note_all.setCheckable(True)
+        self.btn_note_all.setMinimumWidth(70)
+        self.btn_note_all.clicked.connect(lambda: self._set_note_filter("all"))
+        top.addWidget(self.btn_note_all)
+        self.btn_note_yes = QPushButton("有")
+        self.btn_note_yes.setCheckable(True)
+        self.btn_note_yes.setMinimumWidth(70)
+        self.btn_note_yes.clicked.connect(lambda: self._set_note_filter("yes"))
+        top.addWidget(self.btn_note_yes)
+        self.btn_note_no = QPushButton("无")
+        self.btn_note_no.setCheckable(True)
+        self.btn_note_no.setMinimumWidth(70)
+        self.btn_note_no.clicked.connect(lambda: self._set_note_filter("no"))
+        top.addWidget(self.btn_note_no)
+
         top.addStretch()
         self.lbl_count = QLabel("共 0 条")
         self.lbl_count.setStyleSheet("color:#666;")
@@ -291,6 +317,14 @@ class NegLossDashboardDialog(QDialog):
         self.btn_quar_all.setChecked(mode == "all")
         self.btn_quar_yes.setChecked(mode == "yes")
         self.btn_quar_no.setChecked(mode == "no")
+        self._apply_filter()
+
+    def _set_note_filter(self, mode):
+        """是否有备注筛选（全部/是/否）"""
+        self._has_note_filter = mode
+        self.btn_note_all.setChecked(mode == "all")
+        self.btn_note_yes.setChecked(mode == "yes")
+        self.btn_note_no.setChecked(mode == "no")
         self._apply_filter()
 
     def _on_color_toggled(self):
@@ -414,6 +448,15 @@ class NegLossDashboardDialog(QDialog):
         if mode == "yes":
             return vals == "是"
         return vals != "是"
+
+    def _note_mask(self, df, mode):
+        """是否有备注掩码：all=全True / yes=备注非空 / no=备注为空。列缺失则全True。"""
+        if mode == "all" or "备注" not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df["备注"].astype(str).str.strip()
+        if mode == "yes":
+            return vals != ""
+        return vals == ""
 
     def _color_mask(self, df):
         """颜色筛选掩码：空集合=全True；否则按 classify_row_color_keys 判断命中颜色集合。"""
@@ -546,6 +589,9 @@ class NegLossDashboardDialog(QDialog):
         # 初始化隔离区筛选器（始终可见，因为隔离区列由本对话框计算）
         self._quar_filter = "all"
         self.btn_quar_all.setChecked(True)
+        # 初始化备注筛选器
+        self._has_note_filter = "all"
+        self.btn_note_all.setChecked(True)
         self._apply_filter()
 
     def _apply_filter(self):
@@ -562,13 +608,15 @@ class NegLossDashboardDialog(QDialog):
                 & self._mtd_mask(df)
                 & self._workshop_mask(df, self._workshop_filter)
                 & self._quar_mask(df, self._quar_filter)
+                & self._note_mask(df, self._has_note_filter)
                 & self._color_mask(df)
                 & self._read_mask(df, self._read_filter))
         filtered = df[mask].copy().reset_index(drop=True)
         self.source_model.setDataFrame(filtered)
         self._sort_ctrl.reapply()
         tag = "含未投料" if self._include_zero else "不含未投料"
-        self.lbl_count.setText("共 %d 条（名称含「%s」· %s）" % (len(filtered), self._keywords, tag))
+        note_tag = {"all": "全部", "yes": "有备注", "no": "无备注"}[self._has_note_filter]
+        self.lbl_count.setText("共 %d 条（名称含「%s」· %s · %s）" % (len(filtered), self._keywords, tag, note_tag))
 
     # ------------------------------------------------------------------ 复制
     def eventFilter(self, obj, event):
