@@ -249,6 +249,15 @@ class NegLossDashboardDialog(QDialog):
                 mask = mask | (vals == m)
         return mask
 
+    def _mtd_mask(self, df):
+        """组件物料类型描述掩码：all=全True / 具体值=列值==该值。"""
+        if self._mtd_filter == "all" or not self._mtd_col:
+            return pd.Series(True, index=df.index)
+        if self._mtd_col not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df[self._mtd_col].astype(str).str.strip()
+        return vals == self._mtd_filter
+
     def _build_semi_checkboxes(self, unique_vals):
         """构建半成品分类复选框组：全部 + 虚拟两项 + 实际各值。"""
         while self._semi_class_vlayout.count():
