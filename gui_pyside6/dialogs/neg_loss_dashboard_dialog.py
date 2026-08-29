@@ -202,18 +202,27 @@ class NegLossDashboardDialog(QDialog):
 
     def _semi_class_mask(self, df):
         """半成品重分类掩码：空集合=全True；虚拟项「食品/饮料成品半成品」精确匹配+空白
-        （列值==分类名 或 列值为空 且 工厂含'食品'/'饮料'）；其他=列值精确==分类名。多值 OR。"""
-        if not self._semi_class_filter or not self._semi_class_col or self._semi_class_col not in df.columns:
+        （列值==分类名 或 列值为空 且 工厂含'食品'/'饮料'）；其他=列值精确==分类名。多值 OR。
+        无半成品重分类列时,用物料分类/组件物料类型描述/工厂兜底推断(对齐analyzer.py归并规则)。"""
+        if not self._semi_class_filter:
             return pd.Series(True, index=df.index)
-        vals = df[self._semi_class_col].astype(str).str.strip()
-        blank = df[self._semi_class_col].fillna('').astype(str).str.strip() == ''
+        semi_col = "半成品重分类"
+        if semi_col in df.columns:
+            vals = df[semi_col].astype(str).str.strip()
+            blank = df[semi_col].fillna('').astype(str).str.strip() == ''
+        else:
+            # 兜底:半成品类判断(与analyzer.py ③号规则一致)
+            _mtd = df['组件物料类型描述'].astype(str) if '组件物料类型描述' in df.columns else pd.Series('', index=df.index)
+            _semi = (df['物料分类'] == '半成品') | _mtd.str.contains('半成品|成品', na=False)
+            vals = _semi.map({True: '__SEMI__', False: ''}).reindex(df.index)
+            blank = ~_semi
         fac = df['工厂'].astype(str) if '工厂' in df.columns else pd.Series('', index=df.index)
         mask = pd.Series(False, index=df.index)
         for m in self._semi_class_filter:
             if m == "食品成品半成品":
-                mask = mask | ((vals == m) | blank) & fac.str.contains('食品', na=False)
+                mask = mask | (((vals == m) | blank) & fac.str.contains('食品', na=False))
             elif m == "饮料成品半成品":
-                mask = mask | ((vals == m) | blank) & fac.str.contains('饮料', na=False)
+                mask = mask | (((vals == m) | blank) & fac.str.contains('饮料', na=False))
             else:
                 mask = mask | (vals == m)
         return mask
