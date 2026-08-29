@@ -2436,6 +2436,11 @@ class MainWindow(QMainWindow):
                         return str(row.get(k, '') or '').strip()
                 return ''
             factory = get_col('工厂', '工厂名称', 'plant', 'factory')
+            # 工厂名转数字编码（兼容手动添加的 1101/1102 格式）
+            if factory in ('云南达利-食品厂',):
+                factory = '1101'
+            elif factory in ('云南达利-饮料厂',):
+                factory = '1102'
             code = get_col('物料编码', '物料号', 'code', '组件物料号')
             name = get_col('物料名称', '物料描述', 'name')
             return (factory, code, name)
