@@ -16,12 +16,13 @@ from PySide6.QtWidgets import (
     QCheckBox, QDialogButtonBox, QComboBox, QFrame, QGroupBox,
 )
 from PySide6.QtCore import Qt, QTimer
-from gui_pyside6.models.data_frame_model import DataFrameModel
+from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_color_keys
 from core.quarantine_manager import add_quarantine_batch, remove_quarantine, get_quarantined_ids
 from core.read_status import save_read_status_batch
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.table_sort import enable_click_sort
+from gui_pyside6.widgets.filter_panel import _color_icon
 
 
 class NegLossDashboardDialog(QDialog):
@@ -40,6 +41,10 @@ class NegLossDashboardDialog(QDialog):
         self._read_filter = "all"     # 已读/未读筛选（全部/已读/未读）
         self._mtd_filter = "all"      # 组件物料类型描述筛选（全部/具体类型）
         self._mtd_col = None          # 组件物料类型描述列名（set_data 时探测）
+        self._workshop_filter = "all"  # 车间筛选（全部/车间名）
+        self._workshop_col = None     # 车间列名（set_data 时探测）
+        self._quar_filter = "all"     # 隔离区筛选（全部/是/否）
+        self.color_filters = set()    # 颜色筛选
         self.original_df = None
         self.source_model = None
         self._kw_timer = None
@@ -100,6 +105,55 @@ class NegLossDashboardDialog(QDialog):
         self.combo_mtd.currentTextChanged.connect(self._on_mtd_changed)
         top.addWidget(self.combo_mtd)
 
+        # ---- 车间筛选 ----
+        top.addSpacing(12)
+        self.workshop_sep = QFrame()
+        self.workshop_sep.setFrameShape(QFrame.VLine)
+        self.workshop_sep.setFrameShadow(QFrame.Sunken)
+        top.addWidget(self.workshop_sep)
+        top.addSpacing(12)
+        self.lbl_workshop = QLabel("车间:")
+        top.addWidget(self.lbl_workshop)
+        self.combo_workshop = QComboBox()
+        self.combo_workshop.setMinimumWidth(100)
+        self.combo_workshop.setMaximumWidth(140)
+        self.combo_workshop.setEditable(False)
+        self.combo_workshop.addItem("全部")
+        self.combo_workshop.currentTextChanged.connect(self._on_workshop_changed)
+        top.addWidget(self.combo_workshop)
+
+        # ---- 颜色筛选 ----
+        top.addSpacing(12)
+        self.color_sep = QFrame()
+        self.color_sep.setFrameShape(QFrame.VLine)
+        self.color_sep.setFrameShadow(QFrame.Sunken)
+        top.addWidget(self.color_sep)
+        top.addSpacing(12)
+        self.lbl_color = QLabel("颜色:")
+        top.addWidget(self.lbl_color)
+        self.color_group = QGroupBox()
+        self.color_group.setFlat(True)
+        self.color_group.setFixedWidth(200)
+        self._color_layout = QHBoxLayout(self.color_group)
+        self._color_layout.setContentsMargins(4, 2, 4, 2)
+        self._color_layout.setSpacing(4)
+        self.color_checks = {}
+        _color_items = [
+            ("_changed_only", "审核后变更", (255, 205, 205)),
+            ("_quarantined_only", "隔离区", (255, 248, 200)),
+            ("_substitute_only", "替代料", (205, 230, 255)),
+            ("_unused_only", "未投料", (200, 240, 210)),
+            ("_alert_only", "偏差率预警", (255, 198, 142)),
+            ("_plain_only", "无标记", (235, 235, 235)),
+        ]
+        for key, label, rgb in _color_items:
+            cb = QCheckBox(label)
+            cb.setIcon(_color_icon(rgb))
+            cb.stateChanged.connect(self._on_color_toggled)
+            self.color_checks[key] = cb
+            self._color_layout.addWidget(cb)
+        top.addWidget(self.color_group)
+
         top.addSpacing(12)
         self.read_sep = QFrame()
         self.read_sep.setFrameShape(QFrame.VLine)
@@ -115,6 +169,31 @@ class NegLossDashboardDialog(QDialog):
         self.combo_read.addItems(["全部", "已读", "未读"])
         self.combo_read.currentTextChanged.connect(self._on_read_changed)
         top.addWidget(self.combo_read)
+
+        # ---- 隔离区筛选 ----
+        top.addSpacing(12)
+        self.quar_sep = QFrame()
+        self.quar_sep.setFrameShape(QFrame.VLine)
+        self.quar_sep.setFrameShadow(QFrame.Sunken)
+        top.addWidget(self.quar_sep)
+        top.addSpacing(12)
+        self.lbl_quar = QLabel("隔离区:")
+        top.addWidget(self.lbl_quar)
+        self.btn_quar_all = QPushButton("全部")
+        self.btn_quar_all.setCheckable(True)
+        self.btn_quar_all.setMinimumWidth(70)
+        self.btn_quar_all.clicked.connect(lambda: self._set_quar_filter("all"))
+        top.addWidget(self.btn_quar_all)
+        self.btn_quar_yes = QPushButton("是")
+        self.btn_quar_yes.setCheckable(True)
+        self.btn_quar_yes.setMinimumWidth(70)
+        self.btn_quar_yes.clicked.connect(lambda: self._set_quar_filter("yes"))
+        top.addWidget(self.btn_quar_yes)
+        self.btn_quar_no = QPushButton("否")
+        self.btn_quar_no.setCheckable(True)
+        self.btn_quar_no.setMinimumWidth(70)
+        self.btn_quar_no.clicked.connect(lambda: self._set_quar_filter("no"))
+        top.addWidget(self.btn_quar_no)
 
         top.addStretch()
         self.lbl_count = QLabel("共 0 条")
@@ -200,6 +279,23 @@ class NegLossDashboardDialog(QDialog):
 
     def _on_mtd_changed(self, text):
         self._mtd_filter = text
+        self._apply_filter()
+
+    def _on_workshop_changed(self, text):
+        self._workshop_filter = "all" if text == "全部" else text
+        self._apply_filter()
+
+    def _set_quar_filter(self, mode):
+        """隔离区筛选（全部/是/否）"""
+        self._quar_filter = mode
+        self.btn_quar_all.setChecked(mode == "all")
+        self.btn_quar_yes.setChecked(mode == "yes")
+        self.btn_quar_no.setChecked(mode == "no")
+        self._apply_filter()
+
+    def _on_color_toggled(self):
+        """颜色复选框变化：更新已勾选集合并刷新"""
+        self.color_filters = {k for k, cb in self.color_checks.items() if cb.isChecked()}
         self._apply_filter()
 
     @staticmethod
@@ -301,6 +397,40 @@ class NegLossDashboardDialog(QDialog):
         self._read_filter = text
         self._apply_filter()
 
+    def _workshop_mask(self, df, mode):
+        """车间掩码：all=全True / 车间名=车间列==该值。列缺失则全True。"""
+        if mode == "all" or not self._workshop_col:
+            return pd.Series(True, index=df.index)
+        if self._workshop_col not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df[self._workshop_col].astype(str).str.strip()
+        return vals == mode
+
+    def _quar_mask(self, df, mode):
+        """隔离区掩码：all=全True / yes=隔离区列=='是' / no=隔离区列!='是'。列缺失则全True。"""
+        if mode == "all" or "隔离区" not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df["隔离区"].astype(str).str.strip()
+        if mode == "yes":
+            return vals == "是"
+        return vals != "是"
+
+    def _color_mask(self, df):
+        """颜色筛选掩码：空集合=全True；否则按 classify_row_color_keys 判断命中颜色集合。"""
+        if not self.color_filters:
+            return pd.Series(True, index=df.index)
+        threshold = 10.0
+        am = getattr(self.main_window, 'alert_monitor', None)
+        if am is not None:
+            try:
+                threshold = float(getattr(am, 'threshold', 10))
+            except (TypeError, ValueError):
+                threshold = 10.0
+        mask = df.apply(
+            lambda r: bool(classify_row_color_keys(r, df, threshold) & self.color_filters),
+            axis=1)
+        return mask
+
     def _name_mask(self, df):
         """全列关键字掩码：逗号/、/，分隔多值 OR；无关键词=全 True；无候选列=全 True。"""
         kws = [k.strip() for k in re.split("[,，、]", self._keywords) if k.strip()]
@@ -354,6 +484,14 @@ class NegLossDashboardDialog(QDialog):
             cols.insert(cols.index("data_id"), "备注")
             df = df[cols]
 
+        # 将隔离区列移到订单日期前（让用户一眼可见）
+        if "隔离区" in df.columns and "订单日期" in df.columns:
+            cols = list(df.columns)
+            cols.remove("隔离区")
+            idx = cols.index("订单日期")
+            cols.insert(idx, "隔离区")
+            df = df[cols]
+
         self.original_df = df.copy()
         self.source_model = DataFrameModel()
         self.source_model.setDataFrame(df)
@@ -393,6 +531,21 @@ class NegLossDashboardDialog(QDialog):
             self.mtd_sep.setVisible(False)
             self.lbl_mtd.setVisible(False)
             self.combo_mtd.setVisible(False)
+        # 初始化车间筛选器
+        self._workshop_col = "车间" if "车间" in df.columns else None
+        if self._workshop_col:
+            unique_vals = df["车间"].dropna().astype(str).str.strip().unique()
+            unique_vals = sorted(v for v in unique_vals if v)
+            self.combo_workshop.addItems(unique_vals)
+        else:
+            self.workshop_sep.setVisible(False)
+            self.lbl_workshop.setVisible(False)
+            self.combo_workshop.setVisible(False)
+        self._workshop_filter = "all"
+        self.combo_workshop.setCurrentText("全部")
+        # 初始化隔离区筛选器（始终可见，因为隔离区列由本对话框计算）
+        self._quar_filter = "all"
+        self.btn_quar_all.setChecked(True)
         self._apply_filter()
 
     def _apply_filter(self):
@@ -407,6 +560,9 @@ class NegLossDashboardDialog(QDialog):
         mask = (self._name_mask(df) & self._neg_loss_mask(df)
                 & self._semi_class_mask(df)
                 & self._mtd_mask(df)
+                & self._workshop_mask(df)
+                & self._quar_mask(df)
+                & self._color_mask(df)
                 & self._read_mask(df, self._read_filter))
         filtered = df[mask].copy().reset_index(drop=True)
         self.source_model.setDataFrame(filtered)
