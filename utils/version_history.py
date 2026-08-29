@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.39",
+        "date": "2026-08-29",
+        "features": "",
+        "fixes": "负损看板右键菜单新增「标记为已读/未读」选项，与偏差率看板一致；底层实现_sync_main_df/_refresh_main_table_once等方法对齐偏差率看板"
+    },
+    {
         "version": "v43.38",
         "date": "2026-08-28",
         "features": "偏差率看板新增「物料类型」筛选下拉框(组件物料类型描述列);半成品分类复选框组改用QGridLayout多列排列美化UI;确认「半成品重分类」列已传入偏差率看板",

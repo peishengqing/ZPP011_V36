@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer
 from gui_pyside6.models.data_frame_model import DataFrameModel
 from core.quarantine_manager import add_quarantine_batch, remove_quarantine, get_quarantined_ids
+from core.read_status import save_read_status_batch
+from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.table_sort import enable_click_sort
 
@@ -453,6 +455,15 @@ class NegLossDashboardDialog(QDialog):
             self.table_view.selectRow(index.row())
             selected_rows = [index.row()]
         menu = QMenu()
+        # 标记已读/未读
+        mark_read_action = menu.addAction("✅ 标记为已读（选中行）")
+        mark_read_action.triggered.connect(
+            lambda: self._mark_selected_rows_read(selected_rows))
+        mark_unread_action = menu.addAction("⭕ 标记为未读（选中行）")
+        mark_unread_action.triggered.connect(
+            lambda: self._mark_selected_rows_unread(selected_rows))
+        menu.addSeparator()
+        # 隔离区操作
         add_action = menu.addAction("⚠️ 加入隔离区(选中行)")
         add_action.triggered.connect(lambda: self._add_selected_to_quarantine())
         df = self.source_model.getDataFrame()
@@ -466,6 +477,144 @@ class NegLossDashboardDialog(QDialog):
                 cancel_action = menu.addAction("↩ 取消隔离(选中行)")
                 cancel_action.triggered.connect(lambda: self._cancel_selected_quarantine())
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
+
+    def _mark_selected_rows_read(self, rows):
+        """标记所有选中行为已读（右键菜单）"""
+        df = self.source_model.getDataFrame()
+        if df is None:
+            return
+        records = []
+        changed_ids = set()
+        count = 0
+        for r in rows:
+            if r >= len(df):
+                continue
+            data_id = df.iloc[r].get('data_id')
+            if not data_id:
+                rs = df.iloc[r]
+                if '工厂' in df.columns:
+                    data_id = f"{rs.get('工厂','')}|{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+                else:
+                    data_id = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+            if not data_id:
+                continue
+            ok, already, fingerprint = self._sync_main_df(data_id, 1)
+            if ok and not already:
+                qty = snapshot_qty_for(df, data_id)
+                note = snapshot_note_for(df, data_id)
+                records.append((data_id, 1, fingerprint, qty, note))
+                changed_ids.add(data_id)
+                count += 1
+        if records:
+            save_read_status_batch(records)
+        self._refresh_main_table_once()
+        if changed_ids and hasattr(self, 'original_df') and 'data_id' in self.original_df.columns:
+            orig_mask = self.original_df['data_id'].isin(changed_ids)
+            if orig_mask.any():
+                self.original_df.loc[orig_mask, '_read'] = 1
+                if '状态' in self.original_df.columns:
+                    self.original_df.loc[orig_mask, '状态'] = '✓ 已读'
+        self._apply_filter()
+        toast(f"✅ 已标记 {count} 条为已读", parent=self)
+
+    def _mark_selected_rows_unread(self, rows):
+        """标记所有选中行为未读（右键菜单）"""
+        df = self.source_model.getDataFrame()
+        if df is None:
+            return
+        records = []
+        changed_ids = set()
+        count = 0
+        for r in rows:
+            if r >= len(df):
+                continue
+            data_id = df.iloc[r].get('data_id')
+            if not data_id:
+                rs = df.iloc[r]
+                if '工厂' in df.columns:
+                    data_id = f"{rs.get('工厂','')}|{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+                else:
+                    data_id = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+            if not data_id:
+                continue
+            ok, already, fingerprint = self._sync_main_df(data_id, 0)
+            if ok and not already:
+                qty = snapshot_qty_for(df, data_id)
+                note = snapshot_note_for(df, data_id)
+                records.append((data_id, 0, fingerprint, qty, note))
+                changed_ids.add(data_id)
+                count += 1
+        if records:
+            save_read_status_batch(records)
+        self._refresh_main_table_once()
+        if changed_ids and hasattr(self, 'original_df') and 'data_id' in self.original_df.columns:
+            orig_mask = self.original_df['data_id'].isin(changed_ids)
+            if orig_mask.any():
+                self.original_df.loc[orig_mask, '_read'] = 0
+                if '状态' in self.original_df.columns:
+                    self.original_df.loc[orig_mask, '状态'] = '未读'
+        self._apply_filter()
+        toast(f"⭕ 已标记 {count} 条为未读", parent=self)
+
+    def _sync_main_df(self, data_id, read_value):
+        """同步主表内存中的已读状态（仅改内存，不做落盘和 UI 重建）
+
+        在循环内调用，避免逐行重建主表模型（setDataFrame 会重建全量缓存，开销大）。
+        落盘与 UI 重建由调用方在循环外统一做一次。
+        返回 (success, already_status, fingerprint)
+        """
+        main_df = self.main_window.view_model.df
+        if main_df is None:
+            return False, False, ''
+
+        # 确保主表有 data_id（不覆盖已有的 data_id，避免和 data_service 格式不一致）
+        if 'data_id' not in main_df.columns:
+            if '工厂' in main_df.columns:
+                main_df['data_id'] = (
+                    main_df['工厂'].astype(str) + '|' +
+                    main_df['订单日期'].astype(str) + '|' +
+                    main_df['流程订单'].astype(str) + '|' +
+                    main_df['物料编码'].astype(str)
+                )
+            elif all(c in main_df.columns for c in ['订单日期', '流程订单', '物料编码']):
+                main_df['data_id'] = (
+                    main_df['订单日期'].astype(str) + "|" +
+                    main_df['流程订单'].astype(str) + "|" +
+                    main_df['物料编码'].astype(str)
+                )
+            else:
+                return False, False, ''
+            self.main_window.view_model.df = main_df
+
+        if 'data_id' not in main_df.columns:
+            return False, False, ''
+
+        if '_read' not in main_df.columns:
+            main_df['_read'] = 0
+            self.main_window.view_model.df = main_df
+
+        mask = main_df['data_id'] == data_id
+        if not mask.any():
+            return False, False, ''
+        idx = main_df[mask].index[0]
+        current_val = main_df.at[idx, '_read']
+        if current_val == read_value:
+            return True, True, ''  # 已经是目标状态
+        main_df.at[idx, '_read'] = read_value
+        fingerprint = main_df.at[idx, 'fingerprint'] if 'fingerprint' in main_df.columns else ''
+        self.main_window.view_model.df = main_df
+        return True, False, fingerprint
+
+    def _refresh_main_table_once(self):
+        """循环外统一重建主表（只调用一次，避免逐行重建，大幅提升连续标记性能）"""
+        main_df = self.main_window.view_model.df
+        if main_df is None:
+            return
+        if hasattr(self.main_window, 'source_model') and self.main_window.source_model:
+            self.main_window.source_model.setDataFrame(main_df)
+            # setDataFrame 会重排列（_read 移到第0列），按列名恢复显隐，避免列错位丢失
+            if hasattr(self.main_window, '_apply_column_visibility_by_name'):
+                self.main_window._apply_column_visibility_by_name()
 
     def _selected_ids(self):
         df = self.source_model.getDataFrame() if hasattr(self, "source_model") else None
