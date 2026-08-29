@@ -36,6 +36,8 @@ class NegLossDashboardDialog(QDialog):
         self._semi_class_filter = set()  # 半成品重分类筛选：空集合=全部 / 集合内为选中分类（虚拟项模糊匹配）
         self._semi_class_col = None   # 半成品重分类列名（set_data 时探测）
         self._read_filter = "all"     # 已读/未读筛选（全部/已读/未读）
+        self._mtd_filter = "all"      # 组件物料类型描述筛选（全部/具体类型）
+        self._mtd_col = None          # 组件物料类型描述列名（set_data 时探测）
         self.original_df = None
         self.source_model = None
         self._kw_timer = None
@@ -79,6 +81,22 @@ class NegLossDashboardDialog(QDialog):
         self._semi_class_vlayout.setSpacing(1)
         self._semi_class_checkboxes = {}  # 名称 -> QCheckBox（含特殊键 "__all__"）
         top.addWidget(self.grp_semi_class)
+
+        top.addSpacing(12)
+        self.mtd_sep = QFrame()
+        self.mtd_sep.setFrameShape(QFrame.VLine)
+        self.mtd_sep.setFrameShadow(QFrame.Sunken)
+        top.addWidget(self.mtd_sep)
+        top.addSpacing(12)
+        self.lbl_mtd = QLabel("物料类型:")
+        top.addWidget(self.lbl_mtd)
+        self.combo_mtd = QComboBox()
+        self.combo_mtd.setMinimumWidth(100)
+        self.combo_mtd.setMaximumWidth(140)
+        self.combo_mtd.setEditable(False)
+        self.combo_mtd.addItem("全部")
+        self.combo_mtd.currentTextChanged.connect(self._on_mtd_changed)
+        top.addWidget(self.combo_mtd)
 
         top.addSpacing(12)
         self.read_sep = QFrame()
@@ -176,6 +194,10 @@ class NegLossDashboardDialog(QDialog):
                 if all_cb:
                     all_cb.setChecked(True)
                 self._semi_class_filter = set()
+        self._apply_filter()
+
+    def _on_mtd_changed(self, text):
+        self._mtd_filter = text
         self._apply_filter()
 
     @staticmethod
@@ -350,6 +372,16 @@ class NegLossDashboardDialog(QDialog):
             self.combo_read.setVisible(False)
             self.read_sep.setVisible(False)
             self.lbl_read.setVisible(False)
+        # 初始化组件物料类型描述筛选器
+        self._mtd_col = "组件物料类型描述" if "组件物料类型描述" in df.columns else None
+        if self._mtd_col:
+            unique_vals = df[self._mtd_col].dropna().astype(str).str.strip().unique()
+            unique_vals = sorted(v for v in unique_vals if v)
+            self.combo_mtd.addItems(unique_vals)
+        else:
+            self.mtd_sep.setVisible(False)
+            self.lbl_mtd.setVisible(False)
+            self.combo_mtd.setVisible(False)
         self._apply_filter()
 
     def _apply_filter(self):
@@ -363,6 +395,7 @@ class NegLossDashboardDialog(QDialog):
             return
         mask = (self._name_mask(df) & self._neg_loss_mask(df)
                 & self._semi_class_mask(df)
+                & self._mtd_mask(df)
                 & self._read_mask(df, self._read_filter))
         filtered = df[mask].copy().reset_index(drop=True)
         self.source_model.setDataFrame(filtered)
