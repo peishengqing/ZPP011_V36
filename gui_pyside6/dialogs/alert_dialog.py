@@ -6,7 +6,7 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QCheckBox,
-    QComboBox,
+    QComboBox, QGroupBox,
 )
 from PySide6.QtCore import Qt, QPoint
 import pandas as pd
@@ -29,7 +29,7 @@ class AlertDialog(QDialog):
         self.original_df = alerts_df.copy()
         self.filter_mode = "all"
         self.color_filters = set()
-        self._semi_class_filter = "all"  # 提前初始化，避免_apply_filter时报AttributeError
+        self._semi_class_filter = set()  # 半成品重分类筛选：空集合=全部 / 集合内为选中分类（虚拟项模糊匹配）
         self._semi_class_col = None
         self.setup_ui()
         self.set_data(alerts_df)
@@ -107,16 +107,17 @@ class AlertDialog(QDialog):
         color_row.addStretch()
         layout.addLayout(color_row)
 
-        # ---- 半成品重分类筛选 ----
+        # ---- 半成品重分类筛选（复选框组：全部 + 各值 + 虚拟两项）----
         semi_class_row = QHBoxLayout()
         semi_class_row.addWidget(QLabel("半成品分类:"))
-        self.semi_class_combo = QComboBox()
-        self.semi_class_combo.setMinimumWidth(140)
-        self.semi_class_combo.setMaximumWidth(200)
-        self.semi_class_combo.setEditable(False)
-        self.semi_class_combo.addItem("全部")
-        self.semi_class_combo.currentTextChanged.connect(self._on_semi_class_changed)
-        semi_class_row.addWidget(self.semi_class_combo)
+        self.grp_semi_class = QGroupBox()
+        self.grp_semi_class.setFlat(True)
+        self.grp_semi_class.setFixedWidth(180)
+        self._semi_class_vlayout = QVBoxLayout(self.grp_semi_class)
+        self._semi_class_vlayout.setContentsMargins(4, 2, 4, 2)
+        self._semi_class_vlayout.setSpacing(1)
+        self._semi_class_checkboxes = {}  # 名称 -> QCheckBox（含特殊键 "__all__"）
+        semi_class_row.addWidget(self.grp_semi_class)
         semi_class_row.addStretch()
         layout.addLayout(semi_class_row)
 
@@ -203,26 +204,81 @@ class AlertDialog(QDialog):
             filtered = filtered[mask]
 
         # 半成品重分类筛选（与已读状态 AND）
-        filtered = filtered[self._semi_class_mask(filtered, self._semi_class_filter)]
+        filtered = filtered[self._semi_class_mask(filtered)]
 
         filtered = filtered.reset_index(drop=True)
         self.source_model.setDataFrame(filtered)
         self._sort_ctrl.reapply()  # 恢复排序态
 
-    def _on_semi_class_changed(self, text):
-        """半成品重分类下拉框变化回调"""
-        self._semi_class_filter = "all" if text == "全部" else text
+    def _on_semi_class_changed(self):
+        """半成品重分类复选框变化回调：收集勾选项（空=全部），全部与其他互斥。"""
+        all_cb = self._semi_class_checkboxes.get("__all__")
+        others = [cb for name, cb in self._semi_class_checkboxes.items() if name != "__all__"]
+        sender = self.sender()
+        if sender is all_cb:
+            if all_cb.isChecked():
+                for cb in others:
+                    cb.setChecked(False)
+                self._semi_class_filter = set()
+        else:
+            if any(cb.isChecked() for cb in others):
+                if all_cb:
+                    all_cb.setChecked(False)
+                self._semi_class_filter = {
+                    name for name, cb in self._semi_class_checkboxes.items()
+                    if name != "__all__" and cb.isChecked()
+                }
+            else:
+                if all_cb:
+                    all_cb.setChecked(True)
+                self._semi_class_filter = set()
         self._apply_filter()
 
-    def _semi_class_mask(self, df, mode):
-        """半成品重分类掩码：all=全True / 分类名=列值==该分类"""
-        if mode == "all" or not getattr(self, '_semi_class_col', None):
+    def _semi_class_mask(self, df):
+        """半成品重分类掩码：空集合=全True；虚拟项「食品/饮料成品半成品」模糊匹配
+        （列值含'成品'或'半成品' 且 工厂含'食品'/'饮料'）；其他=列值精确==分类名。多值 OR。"""
+        if not self._semi_class_filter or not getattr(self, '_semi_class_col', None):
             return pd.Series(True, index=df.index)
         col = self._semi_class_col
         if col not in df.columns:
             return pd.Series(True, index=df.index)
         vals = df[col].astype(str).str.strip()
-        return vals == mode
+        fac = df['工厂'].astype(str) if '工厂' in df.columns else pd.Series('', index=df.index)
+        mask = pd.Series(False, index=df.index)
+        for m in self._semi_class_filter:
+            if m == "食品成品半成品":
+                mask = mask | (vals.str.contains('成品|半成品', na=False) & fac.str.contains('食品', na=False))
+            elif m == "饮料成品半成品":
+                mask = mask | (vals.str.contains('成品|半成品', na=False) & fac.str.contains('饮料', na=False))
+            else:
+                mask = mask | (vals == m)
+        return mask
+
+    def _build_semi_checkboxes(self, unique_vals):
+        """构建半成品分类复选框组：全部 + 虚拟两项 + 实际各值。"""
+        while self._semi_class_vlayout.count():
+            it = self._semi_class_vlayout.takeAt(0)
+            w = it.widget()
+            if w:
+                w.deleteLater()
+        self._semi_class_checkboxes = {}
+        cb_all = QCheckBox("全部")
+        cb_all.setChecked(True)
+        cb_all.stateChanged.connect(self._on_semi_class_changed)
+        self._semi_class_vlayout.addWidget(cb_all)
+        self._semi_class_checkboxes["__all__"] = cb_all
+        for v in ("食品成品半成品", "饮料成品半成品"):
+            cb = QCheckBox(v)
+            cb.stateChanged.connect(self._on_semi_class_changed)
+            self._semi_class_vlayout.addWidget(cb)
+            self._semi_class_checkboxes[v] = cb
+        for v in unique_vals:
+            if v in ("食品成品半成品", "饮料成品半成品"):
+                continue
+            cb = QCheckBox(v)
+            cb.stateChanged.connect(self._on_semi_class_changed)
+            self._semi_class_vlayout.addWidget(cb)
+            self._semi_class_checkboxes[v] = cb
 
     def set_data(self, df):
         """设置表格数据 - 确保 _read 和 data_id 列存在"""
@@ -266,12 +322,12 @@ class AlertDialog(QDialog):
 
         # 默认打开时显示未读
         self._set_filter("unread")
-        # 初始化半成品重分类筛选器（仅当列存在时才填充）
-        if "半成品重分类" in df.columns and self._semi_class_col is None:
+        # 初始化半成品重分类筛选器（复选框组：全部 + 各值 + 虚拟两项）
+        if "半成品重分类" in df.columns:
             self._semi_class_col = "半成品重分类"
             unique_vals = df["半成品重分类"].dropna().astype(str).str.strip().unique()
-            unique_vals = [v for v in unique_vals if v]
-            self.semi_class_combo.addItems(sorted(unique_vals))
+            unique_vals = sorted(v for v in unique_vals if v)
+            self._build_semi_checkboxes(unique_vals)
 
     def export_excel(self):
         path, _ = QFileDialog.getSaveFileName(

@@ -399,17 +399,19 @@ def do_analysis_v2(
     if _semi_map:
         df['半成品重分类'] = df['组件物料号_str'].map(_semi_map).fillna('')
 
-    # ③ 半成品重分类成品/饮料归并（二次归并覆盖）：
-    #    原逻辑仅对空白值补位(_empty_mask)，但映射表(_load_semi_classify_map)已用原始 SAP 分类名
-    #    （如"食品综合粗成品"）占满坑，导致自定义归并值"食品成品半成品"/"饮料成品半成品"永不写入、筛选空白。
-    #    现改为：凡满足「工厂含食品/饮料 + (物料分类='半成品' 或 类型描述含'半成品'/'成品')」的记录，
-    #    无论映射表是否填过，直接重分类为「食品成品半成品」/「饮料成品半成品」，确保下拉框有该选项且可精确筛选。
-    if '工厂' in df.columns and '物料分类' in df.columns:
+    # ③ 半成品重分类成品/饮料归并（仅对空白值补位，绝不动映射表已填值）：
+    #    仅当半成品重分类为空 且 属半成品类(物料分类='半成品' 或 类型描述含'半成品'/'成品')时，
+    #    按工厂补「食品成品半成品」/「饮料成品半成品」。映射表已填"包材"/"食品综合粗成品"等原值
+    #    一律保留——避免 v43.28 全量覆盖曾把"包材"误写成"食品成品半成品"、破坏自动隔离规则
+    #    category_value='包材' 的精确匹配（彩罐高偏差无法进隔离区）。
+    #    注：含"成品"/"半成品"字样的非空白记录（如"食品综合粗成品"）的归并筛选，交由看板虚拟复选框负责。
+    _empty_mask = df['半成品重分类'] == ''
+    if _empty_mask.any() and '工厂' in df.columns and '物料分类' in df.columns:
         _mtd_col = df['组件物料类型描述'].astype(str) if '组件物料类型描述' in df.columns else pd.Series('', index=df.index)
         _semi_mask = (df['物料分类'] == '半成品') | _mtd_col.str.contains('半成品|成品', na=False)
         _factory_col = df['工厂'].astype(str)
-        df.loc[_semi_mask & _factory_col.str.contains('食品', na=False), '半成品重分类'] = '食品成品半成品'
-        df.loc[_semi_mask & _factory_col.str.contains('饮料', na=False), '半成品重分类'] = '饮料成品半成品'
+        df.loc[_empty_mask & _semi_mask & _factory_col.str.contains('食品', na=False), '半成品重分类'] = '食品成品半成品'
+        df.loc[_empty_mask & _semi_mask & _factory_col.str.contains('饮料', na=False), '半成品重分类'] = '饮料成品半成品'
 
     no_note_mask = ~(df['备注原因'].notna() & (df['备注原因'] != ''))
     # ① 系统无定额自动填充的统一前置条件（2026-08-05 修正）：

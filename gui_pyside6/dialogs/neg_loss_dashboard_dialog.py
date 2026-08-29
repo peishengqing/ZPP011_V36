@@ -13,7 +13,7 @@ import pandas as pd
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QLineEdit,
-    QCheckBox, QDialogButtonBox, QComboBox, QFrame,
+    QCheckBox, QDialogButtonBox, QComboBox, QFrame, QGroupBox,
 )
 from PySide6.QtCore import Qt, QTimer
 from gui_pyside6.models.data_frame_model import DataFrameModel
@@ -33,7 +33,7 @@ class NegLossDashboardDialog(QDialog):
         self.main_window = main_window
         self._keywords = "彩罐,托盘,手包袋"
         self._include_zero = True
-        self._semi_class_filter = "all"  # 半成品重分类筛选
+        self._semi_class_filter = set()  # 半成品重分类筛选：空集合=全部 / 集合内为选中分类（虚拟项模糊匹配）
         self._semi_class_col = None   # 半成品重分类列名（set_data 时探测）
         self._read_filter = "all"     # 已读/未读筛选（全部/已读/未读）
         self.original_df = None
@@ -71,13 +71,14 @@ class NegLossDashboardDialog(QDialog):
         top.addSpacing(12)
         self.lbl_semi_class = QLabel("半成品分类:")
         top.addWidget(self.lbl_semi_class)
-        self.combo_semi_class = QComboBox()
-        self.combo_semi_class.setMinimumWidth(140)
-        self.combo_semi_class.setMaximumWidth(200)
-        self.combo_semi_class.setEditable(False)
-        self.combo_semi_class.addItem("全部")
-        self.combo_semi_class.currentTextChanged.connect(self._on_semi_class_changed)
-        top.addWidget(self.combo_semi_class)
+        self.grp_semi_class = QGroupBox()
+        self.grp_semi_class.setFlat(True)
+        self.grp_semi_class.setFixedWidth(180)
+        self._semi_class_vlayout = QVBoxLayout(self.grp_semi_class)
+        self._semi_class_vlayout.setContentsMargins(4, 2, 4, 2)
+        self._semi_class_vlayout.setSpacing(1)
+        self._semi_class_checkboxes = {}  # 名称 -> QCheckBox（含特殊键 "__all__"）
+        top.addWidget(self.grp_semi_class)
 
         top.addSpacing(12)
         self.read_sep = QFrame()
@@ -153,8 +154,28 @@ class NegLossDashboardDialog(QDialog):
         self._include_zero = (state != 0)
         self._apply_filter()
 
-    def _on_semi_class_changed(self, text):
-        self._semi_class_filter = "all" if text == "全部" else text
+    def _on_semi_class_changed(self):
+        """半成品重分类复选框变化回调：收集勾选项（空=全部），全部与其他互斥。"""
+        all_cb = self._semi_class_checkboxes.get("__all__")
+        others = [cb for name, cb in self._semi_class_checkboxes.items() if name != "__all__"]
+        sender = self.sender()
+        if sender is all_cb:
+            if all_cb.isChecked():
+                for cb in others:
+                    cb.setChecked(False)
+                self._semi_class_filter = set()
+        else:
+            if any(cb.isChecked() for cb in others):
+                if all_cb:
+                    all_cb.setChecked(False)
+                self._semi_class_filter = {
+                    name for name, cb in self._semi_class_checkboxes.items()
+                    if name != "__all__" and cb.isChecked()
+                }
+            else:
+                if all_cb:
+                    all_cb.setChecked(True)
+                self._semi_class_filter = set()
         self._apply_filter()
 
     @staticmethod
@@ -179,14 +200,48 @@ class NegLossDashboardDialog(QDialog):
             return a.notna() & (a >= 0) & q.notna() & (a < q)
         return a.notna() & (a > 0) & q.notna() & (a < q)
 
-    def _semi_class_mask(self, df, mode):
-        """半成品重分类掩码：all=全True / 分类名=列值==该分类"""
-        if mode == "all" or not self._semi_class_col:
-            return pd.Series(True, index=df.index)
-        if self._semi_class_col not in df.columns:
+    def _semi_class_mask(self, df):
+        """半成品重分类掩码：空集合=全True；虚拟项「食品/饮料成品半成品」模糊匹配
+        （列值含'成品'或'半成品' 且 工厂含'食品'/'饮料'）；其他=列值精确==分类名。多值 OR。"""
+        if not self._semi_class_filter or not self._semi_class_col or self._semi_class_col not in df.columns:
             return pd.Series(True, index=df.index)
         vals = df[self._semi_class_col].astype(str).str.strip()
-        return vals == mode
+        fac = df['工厂'].astype(str) if '工厂' in df.columns else pd.Series('', index=df.index)
+        mask = pd.Series(False, index=df.index)
+        for m in self._semi_class_filter:
+            if m == "食品成品半成品":
+                mask = mask | (vals.str.contains('成品|半成品', na=False) & fac.str.contains('食品', na=False))
+            elif m == "饮料成品半成品":
+                mask = mask | (vals.str.contains('成品|半成品', na=False) & fac.str.contains('饮料', na=False))
+            else:
+                mask = mask | (vals == m)
+        return mask
+
+    def _build_semi_checkboxes(self, unique_vals):
+        """构建半成品分类复选框组：全部 + 虚拟两项 + 实际各值。"""
+        while self._semi_class_vlayout.count():
+            it = self._semi_class_vlayout.takeAt(0)
+            w = it.widget()
+            if w:
+                w.deleteLater()
+        self._semi_class_checkboxes = {}
+        cb_all = QCheckBox("全部")
+        cb_all.setChecked(True)
+        cb_all.stateChanged.connect(self._on_semi_class_changed)
+        self._semi_class_vlayout.addWidget(cb_all)
+        self._semi_class_checkboxes["__all__"] = cb_all
+        for v in ("食品成品半成品", "饮料成品半成品"):
+            cb = QCheckBox(v)
+            cb.stateChanged.connect(self._on_semi_class_changed)
+            self._semi_class_vlayout.addWidget(cb)
+            self._semi_class_checkboxes[v] = cb
+        for v in unique_vals:
+            if v in ("食品成品半成品", "饮料成品半成品"):
+                continue
+            cb = QCheckBox(v)
+            cb.stateChanged.connect(self._on_semi_class_changed)
+            self._semi_class_vlayout.addWidget(cb)
+            self._semi_class_checkboxes[v] = cb
 
     def _read_mask(self, df, mode):
         """已读/未读掩码：all=全True / 已读=_read==1 / 未读=_read!=1(含0或NaN)。"""
@@ -264,17 +319,16 @@ class NegLossDashboardDialog(QDialog):
         self.table_view.verticalHeader().setDefaultSectionSize(28)
         if "data_id" in df.columns:
             self.table_view.setColumnHidden(df.columns.get_loc("data_id"), True)
-        # 初始化半成品重分类筛选器
-        self._semi_class_filter = "all"
+        # 初始化半成品重分类筛选器（复选框组：全部 + 各值 + 虚拟两项）
         self._semi_class_col = "半成品重分类" if "半成品重分类" in df.columns else None
         if self._semi_class_col:
             unique_vals = df["半成品重分类"].dropna().astype(str).str.strip().unique()
-            unique_vals = [v for v in unique_vals if v]
-            self.combo_semi_class.addItems(sorted(unique_vals))
+            unique_vals = sorted(v for v in unique_vals if v)
+            self._build_semi_checkboxes(unique_vals)
         else:
-            self.combo_semi_class.setVisible(False)
             self.semi_sep.setVisible(False)
             self.lbl_semi_class.setVisible(False)
+            self.grp_semi_class.setVisible(False)
         # 初始化 已读/未读 筛选器
         self._read_filter = "all"
         self._read_col = "_read" if "_read" in df.columns else None
@@ -296,7 +350,7 @@ class NegLossDashboardDialog(QDialog):
             self.lbl_count.setText("共 0 条")
             return
         mask = (self._name_mask(df) & self._neg_loss_mask(df)
-                & self._semi_class_mask(df, self._semi_class_filter)
+                & self._semi_class_mask(df)
                 & self._read_mask(df, self._read_filter))
         filtered = df[mask].copy().reset_index(drop=True)
         self.source_model.setDataFrame(filtered)

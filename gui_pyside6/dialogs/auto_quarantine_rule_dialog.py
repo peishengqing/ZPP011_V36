@@ -4,6 +4,10 @@
 AutoQuarantineRuleWidget 承载全部 UI 与逻辑，可被「规则中心」对话框以 Tab 形式嵌入；
 AutoQuarantineRuleDialog 仅作为独立打开时的薄壳（保留工具栏按钮原行为）。
 """
+import re
+
+from PySide6.QtCore import Qt
+
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -89,14 +93,16 @@ class AutoQuarantineRuleWidget(QWidget):
         self.edit_keywords.setPlaceholderText("例如：箱, 手包袋, 塑料袋")
         ev.addWidget(self.edit_keywords)
 
-        h1 = QHBoxLayout()
+        # 要求属于类别：复选框多选（已知分类 OR 匹配，避免手输错）
         self.chk_cat = QCheckBox("要求属于类别：")
-        self.edit_cat = QLineEdit()
-        self.edit_cat.setFixedWidth(120)
-        h1.addWidget(self.chk_cat)
-        h1.addWidget(self.edit_cat)
-        h1.addStretch()
-        ev.addLayout(h1)
+        self.chk_cat.stateChanged.connect(self._on_cat_toggled)
+        ev.addWidget(self.chk_cat)
+        self.cat_checkbox_container = QWidget()
+        self.cat_checkbox_layout = QVBoxLayout(self.cat_checkbox_container)
+        self.cat_checkbox_layout.setContentsMargins(24, 2, 0, 2)
+        self.cat_checkbox_layout.setSpacing(2)
+        self._cat_checkboxes = {}
+        ev.addWidget(self.cat_checkbox_container)
 
         self.chk_alt = QCheckBox("排除替代料（不隔离替代料记录）")
         ev.addWidget(self.chk_alt)
@@ -184,7 +190,7 @@ class AutoQuarantineRuleWidget(QWidget):
         root.addWidget(box, 2)
 
         # 信号
-        for w in (self.edit_name, self.edit_keywords, self.edit_cat,
+        for w in (self.edit_name, self.edit_keywords,
                   self.edit_mat_prefix, self.edit_workshop, self.edit_name_exclude):
             w.textChanged.connect(self._refresh_summary)
         for w in (self.chk_rule_enabled, self.chk_cat, self.chk_alt, self.chk_loss,
@@ -212,7 +218,8 @@ class AutoQuarantineRuleWidget(QWidget):
             k.strip() for k in raw.replace("，", ",").replace("、", ",").split(",") if k.strip()
         ]
         r["category_required"] = self.chk_cat.isChecked()
-        r["category_value"] = self.edit_cat.text().strip() or "包材"
+        _selected_cats = [name for name, cb in self._cat_checkboxes.items() if cb.isChecked()]
+        r["category_value"] = "，".join(_selected_cats) if _selected_cats else "包材"
         r["exclude_alt"] = self.chk_alt.isChecked()
         r["negative_loss_required"] = self.chk_loss.isChecked()
         # —— 新增条件回写 ——
@@ -237,7 +244,18 @@ class AutoQuarantineRuleWidget(QWidget):
         self.chk_rule_enabled.setChecked(bool(r.get("enabled", True)))
         self.edit_keywords.setText("，".join(r.get("name_keywords") or []))
         self.chk_cat.setChecked(bool(r.get("category_required", True)))
-        self.edit_cat.setText(str(r.get("category_value", "包材")))
+        _cat_val = str(r.get("category_value", "包材"))
+        _cat_vals = [v.strip() for v in re.split(r'[，,]', _cat_val) if v.strip()]
+        self._init_cat_checkboxes()  # 先建已知分类复选框
+        for v in _cat_vals:  # 规则里出现的未知分类也补出复选框，避免丢失
+            if v and v not in self._cat_checkboxes:
+                cb = QCheckBox(v)
+                cb.stateChanged.connect(self._refresh_summary)
+                self.cat_checkbox_layout.addWidget(cb)
+                self._cat_checkboxes[v] = cb
+        for name, cb in self._cat_checkboxes.items():
+            cb.setChecked(name in _cat_vals)
+        self.cat_checkbox_container.setEnabled(self.chk_cat.isChecked())
         self.chk_alt.setChecked(bool(r.get("exclude_alt", True)))
         self.chk_loss.setChecked(bool(r.get("negative_loss_required", True)))
         # —— 新增条件回填 ——
@@ -316,6 +334,42 @@ class AutoQuarantineRuleWidget(QWidget):
             self._refresh_list()
             self._load_rule_to_editor(self.current_index)
 
+    def _known_categories(self):
+        """已知分类值（内置常见 + 现有规则里出现过的），用于复选框枚举。"""
+        cats, seen = [], set()
+        for c in ["包材", "食品综合粗成品", "食品综合粗半成品",
+                  "饮料综合粗成品", "饮料综合粗半成品",
+                  "食品成品半成品", "饮料成品半成品"]:
+            if c not in seen:
+                seen.add(c)
+                cats.append(c)
+        for r in self.cfg.get("rules", []):
+            for part in re.split(r'[，,]', str(r.get("category_value", "")).strip()):
+                part = part.strip()
+                if part and part not in seen:
+                    seen.add(part)
+                    cats.append(part)
+        return cats
+
+    def _init_cat_checkboxes(self):
+        """重建已知分类的复选框组（清旧建新）。"""
+        while self.cat_checkbox_layout.count():
+            item = self.cat_checkbox_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+        self._cat_checkboxes = {}
+        for c in self._known_categories():
+            cb = QCheckBox(c)
+            cb.stateChanged.connect(self._refresh_summary)
+            self.cat_checkbox_layout.addWidget(cb)
+            self._cat_checkboxes[c] = cb
+
+    def _on_cat_toggled(self, state):
+        """「要求属于类别」总开关：启用/禁用复选框组。"""
+        self.cat_checkbox_container.setEnabled(state == Qt.Checked)
+        self._refresh_summary()
+
     def _refresh_summary(self):
         r = self._collect_preview()
         self.lbl_summary.setText(build_rule_summary(r))
@@ -325,7 +379,8 @@ class AutoQuarantineRuleWidget(QWidget):
             "enabled": self.chk_rule_enabled.isChecked(),
             "exclude_alt": self.chk_alt.isChecked(),
             "category_required": self.chk_cat.isChecked(),
-            "category_value": self.edit_cat.text().strip() or "包材",
+            "category_value": "，".join(
+                [n for n, cb in self._cat_checkboxes.items() if cb.isChecked()]) or "包材",
             "name_keywords": [
                 k.strip()
                 for k in self.edit_keywords.text().replace("，", ",").replace("、", ",").split(",")
