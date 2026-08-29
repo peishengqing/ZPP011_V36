@@ -2429,11 +2429,16 @@ class MainWindow(QMainWindow):
 
         def extract(r):
             row = df.iloc[r]
-            return (
-                str(row.get('factory', '') or '').strip(),
-                str(row.get('code', '') or '').strip(),
-                str(row.get('name', '') or '').strip(),
-            )
+            # 兼容多种列名：优先中文列名，降级英文列名
+            def get_col(*keys):
+                for k in keys:
+                    if k in df.columns:
+                        return str(row.get(k, '') or '').strip()
+                return ''
+            factory = get_col('工厂', '工厂名称', 'plant', 'factory')
+            code = get_col('物料编码', '物料号', 'code', '组件物料号')
+            name = get_col('物料名称', '物料描述', 'name')
+            return (factory, code, name)
 
         a = extract(src_rows[0])
         b = extract(src_rows[1])
