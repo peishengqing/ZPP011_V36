@@ -12,7 +12,7 @@ import pandas as pd
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QFrame,
-    QComboBox, QLineEdit, QDialogButtonBox, QGroupBox, QCheckBox,
+    QComboBox, QLineEdit, QDialogButtonBox, QGroupBox, QCheckBox, QGridLayout,
 )
 from PySide6.QtCore import Qt, QPoint, QTimer
 from gui_pyside6.models.data_frame_model import DataFrameModel
@@ -46,6 +46,8 @@ class DeviationWarningDialog(QDialog):
         self._remark_col_name = None  # 备注列名（set_data 时探测）
         self._semi_class_filter = set()  # 半成品重分类筛选：空集合=全部 / 集合内为选中分类（虚拟项模糊匹配）
         self._semi_class_col = None   # 半成品重分类列名（set_data 时探测）
+        self._mtd_filter = "all"      # 组件物料类型描述筛选（全部/具体类型）
+        self._mtd_col = None          # 组件物料类型描述列名（set_data 时探测）
         self.setup_ui()
         self.set_data(warnings_df)
 
@@ -156,12 +158,31 @@ class DeviationWarningDialog(QDialog):
 
         self.grp_semi_class = QGroupBox()
         self.grp_semi_class.setFlat(True)
-        self.grp_semi_class.setFixedWidth(180)
-        self._semi_class_vlayout = QVBoxLayout(self.grp_semi_class)
-        self._semi_class_vlayout.setContentsMargins(4, 2, 4, 2)
-        self._semi_class_vlayout.setSpacing(1)
+        self.grp_semi_class.setMinimumWidth(220)
+        self._semi_class_grid = QGridLayout(self.grp_semi_class)
+        self._semi_class_grid.setContentsMargins(6, 4, 6, 4)
+        self._semi_class_grid.setSpacing(3)
         self._semi_class_checkboxes = {}  # 名称 -> QCheckBox（含特殊键 "__all__"）
         filter_layout.addWidget(self.grp_semi_class)
+
+        # ---- 第六组：物料类型筛选（组件物料类型描述下拉框）----
+        self.mtd_sep = QFrame()
+        self.mtd_sep.setFrameShape(QFrame.VLine)
+        self.mtd_sep.setFrameShadow(QFrame.Sunken)
+        filter_layout.addSpacing(8)
+        filter_layout.addWidget(self.mtd_sep)
+        filter_layout.addSpacing(8)
+
+        self.lbl_mtd = QLabel("物料类型:")
+        filter_layout.addWidget(self.lbl_mtd)
+
+        self.combo_mtd = QComboBox()
+        self.combo_mtd.setMinimumWidth(100)
+        self.combo_mtd.setMaximumWidth(140)
+        self.combo_mtd.setEditable(False)
+        self.combo_mtd.addItem("全部")
+        self.combo_mtd.currentTextChanged.connect(self._on_mtd_changed)
+        filter_layout.addWidget(self.combo_mtd)
 
         # ---- 第四组：隔离区筛选（全部 / 是）----
         self.quar_sep = QFrame()
@@ -394,6 +415,20 @@ class DeviationWarningDialog(QDialog):
                 self._semi_class_filter = set()
         self._apply_filter()
 
+    def _on_mtd_changed(self, text):
+        """组件物料类型描述下拉框变化时触发筛选"""
+        self._mtd_filter = "all" if text == "全部" else text
+        self._apply_filter()
+
+    def _mtd_mask(self, df):
+        """组件物料类型描述掩码：all=全True / 具体值=列值==该值。"""
+        if self._mtd_filter == "all" or not self._mtd_col:
+            return pd.Series(True, index=df.index)
+        if self._mtd_col not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df[self._mtd_col].astype(str).str.strip()
+        return vals == self._mtd_filter
+
     def _semi_class_mask(self, df):
         """半成品重分类掩码：空集合=全True；虚拟项「食品/饮料成品半成品」精确匹配+空白
         （列值==分类名 或 列值为空 且 工厂含'食品'/'饮料'）；其他=列值精确==分类名。多值 OR。"""
@@ -413,32 +448,43 @@ class DeviationWarningDialog(QDialog):
         return mask
 
     def _build_semi_checkboxes(self, unique_vals):
-        """构建半成品分类复选框组：全部 + 虚拟两项 + 实际各值。"""
-        while self._semi_class_vlayout.count():
-            it = self._semi_class_vlayout.takeAt(0)
+        """构建半成品分类复选框组：全部 + 虚拟两项 + 实际各值（QGridLayout 多列排列）。"""
+        # 清空旧控件
+        while self._semi_class_grid.count():
+            it = self._semi_class_grid.takeAt(0)
             w = it.widget()
             if w:
                 w.deleteLater()
         self._semi_class_checkboxes = {}
-        cb_all = QCheckBox("全部")
-        cb_all.setChecked(True)
-        cb_all.stateChanged.connect(self._on_semi_class_changed)
-        self._semi_class_vlayout.addWidget(cb_all)
-        self._semi_class_checkboxes["__all__"] = cb_all
-        # 虚拟归并项（始终提供，模糊匹配含成品/半成品且对应工厂）
-        for v in ("食品成品半成品", "饮料成品半成品"):
+
+        all_cb = QCheckBox("全部")
+        all_cb.setChecked(True)
+        all_cb.stateChanged.connect(self._on_semi_class_changed)
+        self._semi_class_grid.addWidget(all_cb, 0, 0)
+        self._semi_class_checkboxes["__all__"] = all_cb
+
+        # 虚拟归并项
+        virtual_items = [("食品成品半成品", 0, 1), ("饮料成品半成品", 0, 2)]
+        for v, r, c in virtual_items:
             cb = QCheckBox(v)
             cb.stateChanged.connect(self._on_semi_class_changed)
-            self._semi_class_vlayout.addWidget(cb)
+            self._semi_class_grid.addWidget(cb, r, c)
             self._semi_class_checkboxes[v] = cb
-        # 数据中实际出现的分类值
+
+        # 数据中实际出现的分类值，从第1行开始多列排列
+        row = 1
+        col = 0
         for v in unique_vals:
             if v in ("食品成品半成品", "饮料成品半成品"):
                 continue
             cb = QCheckBox(v)
             cb.stateChanged.connect(self._on_semi_class_changed)
-            self._semi_class_vlayout.addWidget(cb)
+            self._semi_class_grid.addWidget(cb, row, col)
             self._semi_class_checkboxes[v] = cb
+            col += 1
+            if col >= 3:  # 每行3列
+                col = 0
+                row += 1
 
     def _quar_mask(self, df, mode):
         """隔离区掩码：all=全True / yes=隔离区列=='是' / no=隔离区列!='是'"""
@@ -541,6 +587,7 @@ class DeviationWarningDialog(QDialog):
                       & self._alt_mask(df, self._alt_filter)
                       & self._remark_mask(df, self._remark_filter)
                       & self._semi_class_mask(df)
+                      & self._mtd_mask(df)
                       & self._keyword_mask(df)].copy()
 
         filtered = filtered.reset_index(drop=True)
@@ -747,6 +794,19 @@ class DeviationWarningDialog(QDialog):
             unique_vals = df[self._semi_class_col].dropna().astype(str).str.strip().unique()
             unique_vals = sorted(v for v in unique_vals if v)
             self._build_semi_checkboxes(unique_vals)
+
+        # 探测组件物料类型描述列，填充下拉框
+        self._mtd_col = "组件物料类型描述" if "组件物料类型描述" in df.columns else None
+        has_mtd = self._mtd_col is not None
+        self.mtd_sep.setVisible(has_mtd)
+        self.lbl_mtd.setVisible(has_mtd)
+        self.combo_mtd.setVisible(has_mtd)
+        self._mtd_filter = "all"
+        self.combo_mtd.setCurrentText("全部")
+        if has_mtd:
+            unique_vals = df[self._mtd_col].dropna().astype(str).str.strip().unique()
+            unique_vals = sorted(v for v in unique_vals if v)
+            self.combo_mtd.addItems(unique_vals)
 
         # 默认打开时显示未读
         self._set_filter("unread")
