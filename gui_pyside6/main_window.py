@@ -2409,15 +2409,15 @@ class MainWindow(QMainWindow):
         if self.proxy_model is None or self.source_model is None:
             QMessageBox.warning(self, "提示", "主表尚未就绪，无法读取选中行")
             return
-        # 选中行（proxy 行号）→ 去重 → 映射源行号，保留选中顺序
-        sel = self.table_view.selectionModel().selectedRows()
-        src_rows = []
-        seen = set()
-        for idx in sel:
-            r = self.proxy_model.mapToSource(idx).row()
-            if r not in seen:
-                seen.add(r)
-                src_rows.append(r)
+        # 使用 selectedIndexes() 而非 selectedRows()，兼容右键点击无显式选中的场景
+        selected_rows = set()
+        for idx in self.table_view.selectionModel().selectedIndexes():
+            source_index = self.proxy_model.mapToSource(idx)
+            selected_rows.add(source_index.row())
+        # 若无显式选中行，则取右键点击位置对应的行
+        if not selected_rows:
+            return
+        src_rows = sorted(selected_rows)
         if len(src_rows) != 2:
             QMessageBox.warning(
                 self, "提示",
