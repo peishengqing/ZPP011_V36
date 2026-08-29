@@ -771,10 +771,10 @@ class AuditProxyModel(QSortFilterProxyModel):
                         matched = False
                         for m in sset:
                             if m == '食品成品半成品':
-                                if ('成品' in row_val or '半成品' in row_val) and '食品' in factory:
+                                if (('成品' in row_val or '半成品' in row_val) or row_val == '') and '食品' in factory:
                                     matched = True
                             elif m == '饮料成品半成品':
-                                if ('成品' in row_val or '半成品' in row_val) and '饮料' in factory:
+                                if (('成品' in row_val or '半成品' in row_val) or row_val == '') and '饮料' in factory:
                                     matched = True
                             else:
                                 if row_val == m:

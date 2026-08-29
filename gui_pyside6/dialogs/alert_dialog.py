@@ -243,13 +243,14 @@ class AlertDialog(QDialog):
         if col not in df.columns:
             return pd.Series(True, index=df.index)
         vals = df[col].astype(str).str.strip()
+        blank = df[col].fillna('').astype(str).str.strip() == ''
         fac = df['工厂'].astype(str) if '工厂' in df.columns else pd.Series('', index=df.index)
         mask = pd.Series(False, index=df.index)
         for m in self._semi_class_filter:
             if m == "食品成品半成品":
-                mask = mask | (vals.str.contains('成品|半成品', na=False) & fac.str.contains('食品', na=False))
+                mask = mask | ((vals.str.contains('成品|半成品', na=False) | blank) & fac.str.contains('食品', na=False))
             elif m == "饮料成品半成品":
-                mask = mask | (vals.str.contains('成品|半成品', na=False) & fac.str.contains('饮料', na=False))
+                mask = mask | ((vals.str.contains('成品|半成品', na=False) | blank) & fac.str.contains('饮料', na=False))
             else:
                 mask = mask | (vals == m)
         return mask
