@@ -760,7 +760,7 @@ class AuditProxyModel(QSortFilterProxyModel):
                     if dq >= -0.001:
                         return False
 
-            # 4.x 半成品重分类集合筛选（复选框组：含虚拟项「食品/饮料成品半成品」模糊匹配）
+            # 4.x 半成品重分类集合筛选（复选框组：含虚拟项「食品/饮料成品半成品」精确匹配+空白）
             if '_semi_class_set' in self._custom_filters:
                 sset = self._custom_filters['_semi_class_set']
                 if sset:  # 非空=有选中（"全部"对应空集合，不过滤）
@@ -771,10 +771,10 @@ class AuditProxyModel(QSortFilterProxyModel):
                         matched = False
                         for m in sset:
                             if m == '食品成品半成品':
-                                if (('成品' in row_val or '半成品' in row_val) or row_val == '') and '食品' in factory:
+                                if ((row_val == m) or row_val == '') and '食品' in factory:
                                     matched = True
                             elif m == '饮料成品半成品':
-                                if (('成品' in row_val or '半成品' in row_val) or row_val == '') and '饮料' in factory:
+                                if ((row_val == m) or row_val == '') and '饮料' in factory:
                                     matched = True
                             else:
                                 if row_val == m:

@@ -201,8 +201,8 @@ class NegLossDashboardDialog(QDialog):
         return a.notna() & (a > 0) & q.notna() & (a < q)
 
     def _semi_class_mask(self, df):
-        """半成品重分类掩码：空集合=全True；虚拟项「食品/饮料成品半成品」模糊匹配
-        （列值含'成品'或'半成品' 且 工厂含'食品'/'饮料'）；其他=列值精确==分类名。多值 OR。"""
+        """半成品重分类掩码：空集合=全True；虚拟项「食品/饮料成品半成品」精确匹配+空白
+        （列值==分类名 或 列值为空 且 工厂含'食品'/'饮料'）；其他=列值精确==分类名。多值 OR。"""
         if not self._semi_class_filter or not self._semi_class_col or self._semi_class_col not in df.columns:
             return pd.Series(True, index=df.index)
         vals = df[self._semi_class_col].astype(str).str.strip()
@@ -211,9 +211,9 @@ class NegLossDashboardDialog(QDialog):
         mask = pd.Series(False, index=df.index)
         for m in self._semi_class_filter:
             if m == "食品成品半成品":
-                mask = mask | ((vals.str.contains('成品|半成品', na=False) | blank) & fac.str.contains('食品', na=False))
+                mask = mask | ((vals == m) | blank) & fac.str.contains('食品', na=False)
             elif m == "饮料成品半成品":
-                mask = mask | ((vals.str.contains('成品|半成品', na=False) | blank) & fac.str.contains('饮料', na=False))
+                mask = mask | ((vals == m) | blank) & fac.str.contains('饮料', na=False)
             else:
                 mask = mask | (vals == m)
         return mask
