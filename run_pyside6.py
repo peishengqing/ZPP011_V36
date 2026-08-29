@@ -179,10 +179,10 @@ def main():
                 w = rc.right - rc.left
                 h = rc.bottom - rc.top
                 state_name = {1: "NORMAL", 2: "MINIMIZED", 3: "MAXIMIZED"}.get(wp.showCmd, f"UNKNOWN({wp.showCmd})")
-                print(f"[MAXIMIZE-DEBUG] {tag}: showCmd={state_name}, "
-                      f"rect=({rc.left},{rc.top},{rc.right},{rc.bottom}), size={w}x{h}")
+                # DEBUG: print(f"[MAXIMIZE-DEBUG] {tag}: showCmd={state_name}, "
+                #       f"rect=({rc.left},{rc.top},{rc.right},{rc.bottom}), size={w}x{h}")
             except Exception as e:
-                print(f"[MAXIMIZE-DEBUG] {tag}: ERROR - {e}")
+                # DEBUG: print(f"[MAXIMIZE-DEBUG] {tag}: ERROR - {e}")
 
         _debug_window_state("1-showMaximized()之后")
 
