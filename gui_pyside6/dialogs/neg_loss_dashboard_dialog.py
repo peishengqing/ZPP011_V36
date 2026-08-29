@@ -321,12 +321,14 @@ class NegLossDashboardDialog(QDialog):
         if "data_id" in df.columns:
             self.table_view.setColumnHidden(df.columns.get_loc("data_id"), True)
         # 初始化半成品重分类筛选器（复选框组：全部 + 各值 + 虚拟两项）
+        # 无半成品重分类列时仍可用虚拟项——通过其他列推断（物料分类/组件物料类型描述/工厂）
         self._semi_class_col = "半成品重分类" if "半成品重分类" in df.columns else None
         if self._semi_class_col:
             unique_vals = df["半成品重分类"].dropna().astype(str).str.strip().unique()
             unique_vals = sorted(v for v in unique_vals if v)
             self._build_semi_checkboxes(unique_vals)
         else:
+            # 无半成品重分类列:隐藏UI控件,保留虚拟筛选能力(由虚拟项推断逻辑兜底)
             self.semi_sep.setVisible(False)
             self.lbl_semi_class.setVisible(False)
             self.grp_semi_class.setVisible(False)
