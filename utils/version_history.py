@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.43",
+        "date": "2026-08-29",
+        "features": "",
+        "fixes": "关闭 run_pyside6.py 中 MAXIMIZE-DEBUG 调试日志，避免启动时刷屏"
+    },
+    {
         "version": "v43.42",
         "date": "2026-08-29",
         "features": "",
