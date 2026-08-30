@@ -183,6 +183,7 @@ def main():
                 #       f"rect=({rc.left},{rc.top},{rc.right},{rc.bottom}), size={w}x{h}")
             except Exception as e:
                 # DEBUG: print(f"[MAXIMIZE-DEBUG] {tag}: ERROR - {e}")
+                pass
 
         _debug_window_state("1-showMaximized()之后")
 

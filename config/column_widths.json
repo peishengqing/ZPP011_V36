@@ -64,36 +64,36 @@
     "hidden": false
   },
   "定额": {
-    "width": 0,
-    "hidden": true
+    "width": 100,
+    "hidden": false
   },
   "实际": {
-    "width": 0,
-    "hidden": true
+    "width": 100,
+    "hidden": false
   },
   "偏差数量": {
-    "width": 0,
-    "hidden": true
+    "width": 100,
+    "hidden": false
   },
   "净偏差数量": {
-    "width": 0,
-    "hidden": true
+    "width": 100,
+    "hidden": false
   },
   "净偏差金额": {
-    "width": 0,
-    "hidden": true
+    "width": 100,
+    "hidden": false
   },
   "净偏差率(%)": {
-    "width": 0,
-    "hidden": true
+    "width": 100,
+    "hidden": false
   },
   "偏差金额": {
-    "width": 0,
-    "hidden": true
+    "width": 100,
+    "hidden": false
   },
   "偏差率(%)": {
-    "width": 0,
-    "hidden": true
+    "width": 100,
+    "hidden": false
   },
   "备注": {
     "width": 150,

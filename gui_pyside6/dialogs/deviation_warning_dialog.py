@@ -40,6 +40,8 @@ class DeviationWarningDialog(QDialog):
         self._mat_col = None      # 料别列名（物料类型 / 物料大类），set_data 时探测
         self._workshop_filter = "all"  # 车间筛选：all / 车间名
         self._workshop_col = None   # 车间列名，set_data 时探测
+        self._factory_filter = "all"  # 工厂筛选：all / 工厂名
+        self._factory_col = None    # 工厂列名，set_data 时探测
         self._quar_filter = "all"   # 隔离区筛选：all / yes(是)
         self._alt_filter = "all"    # 替代料筛选：all / yes(是) / no(否)
         self._keyword = ""          # 关键字搜索（跨列，与分类筛选叠加）
@@ -153,6 +155,24 @@ class DeviationWarningDialog(QDialog):
         self.combo_workshop.addItem("全部")
         self.combo_workshop.currentTextChanged.connect(self._on_workshop_changed)
         self._row2.addWidget(self.combo_workshop)
+
+        # 工厂
+        self.factory_sep = QFrame()
+        self.factory_sep.setFrameShape(QFrame.VLine)
+        self.factory_sep.setFrameShadow(QFrame.Sunken)
+        self._row2.addWidget(self.factory_sep)
+        self._row2.addSpacing(8)
+
+        self.lbl_factory = QLabel("工厂:")
+        self._row2.addWidget(self.lbl_factory)
+
+        self.combo_factory = QComboBox()
+        self.combo_factory.setMinimumWidth(100)
+        self.combo_factory.setMaximumWidth(160)
+        self.combo_factory.setEditable(False)
+        self.combo_factory.addItem("全部")
+        self.combo_factory.currentTextChanged.connect(self._on_factory_changed)
+        self._row2.addWidget(self.combo_factory)
 
         # 半成品分类
         self.semi_class_sep = QFrame()
@@ -539,6 +559,11 @@ class DeviationWarningDialog(QDialog):
         self._workshop_filter = "all" if text == "全部" else text
         self._apply_filter()
 
+    def _on_factory_changed(self, text):
+        """工厂下拉框变化时触发筛选"""
+        self._factory_filter = "all" if text == "全部" else text
+        self._apply_filter()
+
     def _read_mask(self, df, mode):
         """已读状态掩码：all=全True / unread=_read==0 / read=_read==1"""
         if "_read" in df.columns:
@@ -582,6 +607,16 @@ class DeviationWarningDialog(QDialog):
         vals = df[self._workshop_col].astype(str).str.strip()
         return vals == mode
 
+    def _factory_mask(self, df, mode):
+        """工厂掩码：all=全True / 工厂名=工厂列==该值
+
+        列缺失时一律返回全 True，等同于不做工厂过滤（下拉框此时已隐藏）。
+        """
+        if mode == "all" or not self._factory_col or self._factory_col not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df[self._factory_col].astype(str).str.strip()
+        return vals == mode
+
     def _apply_filter(self):
         """从 original_df 重新过滤并刷新模型（已读状态 × 料别 × 车间 三组条件叠加）"""
         if not hasattr(self, "original_df") or self.original_df is None:
@@ -600,6 +635,7 @@ class DeviationWarningDialog(QDialog):
         filtered = df[self._read_mask(df, self.filter_mode)
                       & self._mat_mask(df, self.mat_filter)
                       & self._workshop_mask(df, self._workshop_filter)
+                      & self._factory_mask(df, self._factory_filter)
                       & self._quar_mask(df, self._quar_filter)
                       & self._alt_mask(df, self._alt_filter)
                       & self._remark_mask(df, self._remark_filter)
@@ -783,6 +819,21 @@ class DeviationWarningDialog(QDialog):
         # 车间默认「全部」
         self._workshop_filter = "all"
         self.combo_workshop.setCurrentText("全部")
+
+        # 探测工厂列，填充下拉框
+        self._factory_col = None
+        if "工厂" in df.columns:
+            self._factory_col = "工厂"
+            unique_factories = df["工厂"].dropna().astype(str).str.strip().unique()
+            unique_factories = [f for f in unique_factories if f]
+            self.combo_factory.addItems(sorted(unique_factories))
+        has_factory = self._factory_col is not None
+        self.factory_sep.setVisible(has_factory)
+        self.lbl_factory.setVisible(has_factory)
+        self.combo_factory.setVisible(has_factory)
+        # 工厂默认「全部」
+        self._factory_filter = "all"
+        self.combo_factory.setCurrentText("全部")
 
         # 探测是否备注列（精确「备注」优先，否则首个含「备注」的列），控制「是否备注」筛选组显隐
         self._remark_col_name = "备注" if "备注" in df.columns else None
