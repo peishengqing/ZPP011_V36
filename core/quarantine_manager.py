@@ -160,6 +160,7 @@ def _col(df, *candidates):
 # 失效复核：理由已不成立、建议移出隔离区的状态集合
 INVALID_QUARANTINE_STATUSES = {
     "neg_loss_resolved", "neg_loss_over", "neg_loss_zeroed", "rule_no_match",
+    "manual_over_quota",
 }
 
 
@@ -273,13 +274,20 @@ def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
                 })
             continue
 
-        # ── 手动 + 非负损：无数据可自动复核依据，列入「失效复核」供人工确认理由是否仍成立 ──
-        # （basis 以「手动:」开头且无负损关键词，落到这里即需人工复核）
-        result.append({
-            "uid": uid, "reason": reason, "basis": basis_key,
-            "detail": "手动隔离，无自动失效判据，请人工确认隔离理由是否仍成立",
-            "actual": actual, "quota": quota, "status": "manual_needs_review",
-        })
+        # ── 手动 + 非负损：补充自动判据（实际>定额即失效）──
+        if actual is not None and quota is not None and actual > quota:
+            result.append({
+                "uid": uid, "reason": reason, "basis": basis_key,
+                "detail": f"手动隔离但实际({actual})>定额({quota})，已无需隔离",
+                "actual": actual, "quota": quota, "status": "manual_over_quota",
+            })
+        else:
+            # 无自动判据，列入失效复核供人工确认
+            result.append({
+                "uid": uid, "reason": reason, "basis": basis_key,
+                "detail": "手动隔离，无自动失效判据，请人工确认隔离理由是否仍成立",
+                "actual": actual, "quota": quota, "status": "manual_needs_review",
+            })
     return result
 
 

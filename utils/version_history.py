@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.46",
+        "date": "2026-08-30",
+        "features": "",
+        "fixes": "quarantine_manager.scan_expired_quarantine 为手动隔离记录新增自动失效判据：实际>定额时直接标记失效（status=manual_over_quota），无需人工确认"
+    },
+    {
         "version": "v43.45",
         "date": "2026-08-29",
         "features": "",
