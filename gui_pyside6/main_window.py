@@ -762,9 +762,13 @@ class MainWindow(QMainWindow):
             for i, c in enumerate(show_list):
                 did = str(c.get('data_id', ''))
                 parts = did.split('|')
-                date = parts[0] if len(parts) > 0 else ''
-                order = parts[1] if len(parts) > 1 else ''
-                mat = parts[2] if len(parts) > 2 else ''
+                # 兼容 4 段（工厂|日期|流程订单|物料编码）和 3 段（日期|流程订单|物料编码）格式
+                if len(parts) == 4:
+                    date, order, mat = parts[1], parts[2], parts[3]
+                elif len(parts) >= 3:
+                    date, order, mat = parts[0], parts[1], parts[2]
+                else:
+                    date, order, mat = '', '', ''
                 wk = c.get('workshop', '') or ''
                 old_v = c.get('old_value', '')
                 new_v = c.get('new_value', '')
@@ -1633,14 +1637,16 @@ class MainWindow(QMainWindow):
             if warnings_df.empty:
                 QMessageBox.information(self, "提示", "没有偏差率预警记录（|偏差率| ≥ 10%）")
                 return
-            # 只保留关键列（兼容两种命名：数量-实际/实际、组件物料号/物料编码 等，含"工厂"保证 data_id 匹配）
+            # 只保留关键列（含"工厂"保证 data_id 匹配）
+            # 注意：不要同时列「组件物料号」和「物料编码」——sheet5_full 已把组件物料号统一映射为物料编码，
+            # 两个来源列并存会让列顺序被打乱（表现为流程订单列显示日期、物料编码列显示流程订单号）。
             candidates = [
-                "工厂", "订单日期", "流程订单", "组件物料号", "物料编码", "物料名称", "物料描述",
+                "工厂", "订单日期", "流程订单", "物料编码", "物料名称", "物料描述",
                 "备注", "备注来源",
                 "车间", "组件物料类型", "组件物料类型描述", "单位",
                 "数量-定额", "定额", "数量-实际", "实际", "偏差数量", "偏差率(%)",
                 "偏差金额", "净偏差数量", "净偏差金额", "净偏差率(%)", "是否替代料",
-                "备注原因", "预警", "半成品重分类", "_read",
+                "备注原因", "预警", "半成品重分类", "_read", "_quarantined",
             ]
             required_cols = [c for c in candidates if c in warnings_df.columns]
             warnings_df = warnings_df[required_cols]
@@ -1660,8 +1666,9 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "提示", "暂无数据，请先分析")
                 return
             # 保留关键列（含数量-实际/数量-定额 供负损计算，备注列供优先展示）
+            # 同偏差率预警看板：不列「组件物料号」，统一用「物料编码」，避免两来源列并存打乱列序
             candidates = [
-                "订单日期", "流程订单", "组件物料号", "物料编码", "物料名称", "物料描述",
+                "订单日期", "流程订单", "物料编码", "物料名称", "物料描述",
                 "车间", "组件物料类型", "组件物料类型描述", "单位",
                 "数量-定额", "定额", "数量-实际", "实际", "偏差数量", "偏差率(%)",
                 "偏差金额", "净偏差数量", "净偏差金额", "是否替代料",

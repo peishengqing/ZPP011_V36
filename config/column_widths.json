@@ -72,27 +72,27 @@
     "hidden": false
   },
   "偏差数量": {
-    "width": 100,
+    "width": 80,
     "hidden": false
   },
   "净偏差数量": {
-    "width": 100,
+    "width": 80,
     "hidden": false
   },
   "净偏差金额": {
-    "width": 100,
+    "width": 80,
     "hidden": false
   },
   "净偏差率(%)": {
-    "width": 100,
+    "width": 80,
     "hidden": false
   },
   "偏差金额": {
-    "width": 100,
+    "width": 80,
     "hidden": false
   },
   "偏差率(%)": {
-    "width": 100,
+    "width": 80,
     "hidden": false
   },
   "备注": {
@@ -100,12 +100,12 @@
     "hidden": false
   },
   "备注来源": {
-    "width": 150,
-    "hidden": false
+    "width": 0,
+    "hidden": true
   },
   "偏差区间": {
-    "width": 100,
-    "hidden": false
+    "width": 0,
+    "hidden": true
   },
   "组件物料类型": {
     "width": 100,

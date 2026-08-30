@@ -109,6 +109,31 @@ class DeviationWarningDialog(QDialog):
         self.combo_factory.currentTextChanged.connect(self._on_factory_changed)
         row1.addWidget(self.combo_factory)
 
+        # 隔离区筛选（始终可见，放第1行工厂筛选之后，与已读/工厂并列）
+        row1.addSpacing(16)
+        self.quar_sep = QFrame()
+        self.quar_sep.setFrameShape(QFrame.VLine)
+        self.quar_sep.setFrameShadow(QFrame.Sunken)
+        row1.addWidget(self.quar_sep)
+        row1.addSpacing(8)
+        self.lbl_quar = QLabel("隔离区:")
+        row1.addWidget(self.lbl_quar)
+        self.btn_quar_all = QPushButton("全部")
+        self.btn_quar_all.setCheckable(True)
+        self.btn_quar_all.setMinimumWidth(70)
+        self.btn_quar_all.clicked.connect(lambda: self._set_quar_filter("all"))
+        row1.addWidget(self.btn_quar_all)
+        self.btn_quar_yes = QPushButton("是")
+        self.btn_quar_yes.setCheckable(True)
+        self.btn_quar_yes.setMinimumWidth(70)
+        self.btn_quar_yes.clicked.connect(lambda: self._set_quar_filter("yes"))
+        row1.addWidget(self.btn_quar_yes)
+        self.btn_quar_no = QPushButton("否")
+        self.btn_quar_no.setCheckable(True)
+        self.btn_quar_no.setMinimumWidth(70)
+        self.btn_quar_no.clicked.connect(lambda: self._set_quar_filter("no"))
+        row1.addWidget(self.btn_quar_no)
+
         row1.addStretch()
         self._main_filter_vlayout.addLayout(row1)
 
@@ -190,7 +215,7 @@ class DeviationWarningDialog(QDialog):
         self._main_filter_vlayout.addWidget(self._row2_widget)
         self._row2_widget.setVisible(False)  # 默认隐藏，全屏时显示
 
-        # ==== 第3行：物料类型 + 隔离区 + 替代料 + 是否备注（全屏时显示）====
+        # ==== 第3行：物料类型 + 替代料 + 是否备注（全屏时显示；隔离区已提至第1行始终可见）====
         self._row3_widget = QWidget()
         self._row3 = QHBoxLayout(self._row3_widget)
         # 物料类型
@@ -210,34 +235,6 @@ class DeviationWarningDialog(QDialog):
         self.combo_mtd.addItem("全部")
         self.combo_mtd.currentTextChanged.connect(self._on_mtd_changed)
         self._row3.addWidget(self.combo_mtd)
-
-        # 隔离区
-        self.quar_sep = QFrame()
-        self.quar_sep.setFrameShape(QFrame.VLine)
-        self.quar_sep.setFrameShadow(QFrame.Sunken)
-        self._row3.addWidget(self.quar_sep)
-        self._row3.addSpacing(8)
-
-        self.lbl_quar = QLabel("隔离区:")
-        self._row3.addWidget(self.lbl_quar)
-
-        self.btn_quar_all = QPushButton("全部")
-        self.btn_quar_all.setCheckable(True)
-        self.btn_quar_all.setMinimumWidth(70)
-        self.btn_quar_all.clicked.connect(lambda: self._set_quar_filter("all"))
-        self._row3.addWidget(self.btn_quar_all)
-
-        self.btn_quar_yes = QPushButton("是")
-        self.btn_quar_yes.setCheckable(True)
-        self.btn_quar_yes.setMinimumWidth(70)
-        self.btn_quar_yes.clicked.connect(lambda: self._set_quar_filter("yes"))
-        self._row3.addWidget(self.btn_quar_yes)
-
-        self.btn_quar_no = QPushButton("否")
-        self.btn_quar_no.setCheckable(True)
-        self.btn_quar_no.setMinimumWidth(70)
-        self.btn_quar_no.clicked.connect(lambda: self._set_quar_filter("no"))
-        self._row3.addWidget(self.btn_quar_no)
 
         # 替代料
         self.alt_sep = QFrame()
@@ -733,13 +730,18 @@ class DeviationWarningDialog(QDialog):
             df = df[["状态"] + [c for c in df.columns if c != "状态"]]
 
         # ===== 跨看板提示：隔离区 / 替代料（偏差率预警看板需求）=====
-        # 隔离区：比对 quarantine_manager 当前隔离的 data_id 集合（uid 即 data_id）
+        # 隔离区：优先用主表已水合的 _quarantined 列（data_service 已从隔离库比对好，最可靠），
+        # 避免本看板自构 data_id 因「订单日期」类型/格式与隔离库 uid 对不齐而漏判（表现为筛选"是"永远0条）。
+        # 兜底：主表未传 _quarantined 时，再用本看板 data_id 比对隔离库。
         try:
             from core.quarantine_manager import get_quarantined_ids
             _qset = get_quarantined_ids()
         except Exception:
             _qset = set()
-        if "data_id" in df.columns:
+        if "_quarantined" in df.columns:
+            df["隔离区"] = df["_quarantined"].astype(int).map({1: "是", 0: ""})
+            df = df.drop(columns=["_quarantined"])
+        elif "data_id" in df.columns:
             df["隔离区"] = df["data_id"].astype(str).isin(_qset).map({True: "是", False: ""})
         else:
             df["隔离区"] = ""
