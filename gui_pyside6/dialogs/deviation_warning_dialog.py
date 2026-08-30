@@ -98,6 +98,17 @@ class DeviationWarningDialog(QDialog):
         self.btn_read.clicked.connect(lambda: self._set_filter("read"))
         row1.addWidget(self.btn_read)
 
+        # 工厂筛选（始终可见，放在第1行末尾）
+        row1.addSpacing(16)
+        row1.addWidget(QLabel("工厂:"))
+        self.combo_factory = QComboBox()
+        self.combo_factory.setMinimumWidth(100)
+        self.combo_factory.setMaximumWidth(160)
+        self.combo_factory.setEditable(False)
+        self.combo_factory.addItem("全部")
+        self.combo_factory.currentTextChanged.connect(self._on_factory_changed)
+        row1.addWidget(self.combo_factory)
+
         row1.addStretch()
         self._main_filter_vlayout.addLayout(row1)
 
@@ -155,24 +166,6 @@ class DeviationWarningDialog(QDialog):
         self.combo_workshop.addItem("全部")
         self.combo_workshop.currentTextChanged.connect(self._on_workshop_changed)
         self._row2.addWidget(self.combo_workshop)
-
-        # 工厂
-        self.factory_sep = QFrame()
-        self.factory_sep.setFrameShape(QFrame.VLine)
-        self.factory_sep.setFrameShadow(QFrame.Sunken)
-        self._row2.addWidget(self.factory_sep)
-        self._row2.addSpacing(8)
-
-        self.lbl_factory = QLabel("工厂:")
-        self._row2.addWidget(self.lbl_factory)
-
-        self.combo_factory = QComboBox()
-        self.combo_factory.setMinimumWidth(100)
-        self.combo_factory.setMaximumWidth(160)
-        self.combo_factory.setEditable(False)
-        self.combo_factory.addItem("全部")
-        self.combo_factory.currentTextChanged.connect(self._on_factory_changed)
-        self._row2.addWidget(self.combo_factory)
 
         # 半成品分类
         self.semi_class_sep = QFrame()
@@ -820,17 +813,13 @@ class DeviationWarningDialog(QDialog):
         self._workshop_filter = "all"
         self.combo_workshop.setCurrentText("全部")
 
-        # 探测工厂列，填充下拉框
+        # 探测工厂列，填充下拉框（始终可见）
         self._factory_col = None
         if "工厂" in df.columns:
             self._factory_col = "工厂"
             unique_factories = df["工厂"].dropna().astype(str).str.strip().unique()
             unique_factories = [f for f in unique_factories if f]
             self.combo_factory.addItems(sorted(unique_factories))
-        has_factory = self._factory_col is not None
-        self.factory_sep.setVisible(has_factory)
-        self.lbl_factory.setVisible(has_factory)
-        self.combo_factory.setVisible(has_factory)
         # 工厂默认「全部」
         self._factory_filter = "all"
         self.combo_factory.setCurrentText("全部")
