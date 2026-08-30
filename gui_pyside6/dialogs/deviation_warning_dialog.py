@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QFrame,
     QComboBox, QLineEdit, QDialogButtonBox, QGroupBox, QCheckBox, QGridLayout,
+    QWidget,
 )
 from PySide6.QtCore import Qt, QPoint, QTimer
 from gui_pyside6.models.data_frame_model import DataFrameModel
@@ -99,7 +100,8 @@ class DeviationWarningDialog(QDialog):
         self._main_filter_vlayout.addLayout(row1)
 
         # ==== 第2行：料别 + 车间 + 半成品分类（全屏时显示）====
-        self._row2 = QHBoxLayout()
+        self._row2_widget = QWidget()
+        self._row2 = QHBoxLayout(self._row2_widget)
         # 料别筛选
         self.mat_sep = QFrame()
         self.mat_sep.setFrameShape(QFrame.VLine)
@@ -172,11 +174,12 @@ class DeviationWarningDialog(QDialog):
         self._row2.addWidget(self.grp_semi_class)
 
         self._row2.addStretch()
-        self._main_filter_vlayout.addLayout(self._row2)
-        self._row2.setVisible(False)  # 默认隐藏，全屏时显示
+        self._main_filter_vlayout.addWidget(self._row2_widget)
+        self._row2_widget.setVisible(False)  # 默认隐藏，全屏时显示
 
         # ==== 第3行：物料类型 + 隔离区 + 替代料 + 是否备注（全屏时显示）====
-        self._row3 = QHBoxLayout()
+        self._row3_widget = QWidget()
+        self._row3 = QHBoxLayout(self._row3_widget)
         # 物料类型
         self.mtd_sep = QFrame()
         self.mtd_sep.setFrameShape(QFrame.VLine)
@@ -280,11 +283,12 @@ class DeviationWarningDialog(QDialog):
         self._row3.addWidget(self.btn_remark_none)
 
         self._row3.addStretch()
-        self._main_filter_vlayout.addLayout(self._row3)
-        self._row3.setVisible(False)  # 默认隐藏，全屏时显示
+        self._main_filter_vlayout.addWidget(self._row3_widget)
+        self._row3_widget.setVisible(False)  # 默认隐藏，全屏时显示
 
         # ==== 第4行：批量操作 + 放大按钮（全屏时显示）====
-        self._row4 = QHBoxLayout()
+        self._row4_widget = QWidget()
+        self._row4 = QHBoxLayout(self._row4_widget)
         self.btn_batch_read = QPushButton("批量标记已读")
         self.btn_batch_read.setMinimumWidth(100)
         self.btn_batch_read.clicked.connect(self.batch_mark_read)
@@ -300,8 +304,8 @@ class DeviationWarningDialog(QDialog):
         self.btn_fullscreen.clicked.connect(self.toggle_fullscreen)
         self._row4.addWidget(self.btn_fullscreen)
 
-        self._main_filter_vlayout.addLayout(self._row4)
-        self._row4.setVisible(False)  # 默认隐藏，全屏时显示
+        self._main_filter_vlayout.addWidget(self._row4_widget)
+        self._row4_widget.setVisible(False)  # 默认隐藏，全屏时显示
 
         layout.addLayout(self._main_filter_vlayout)
 
@@ -1295,15 +1299,15 @@ class DeviationWarningDialog(QDialog):
         if self.isFullScreen():
             self.showNormal()
             self.btn_fullscreen.setText("⛶ 放大")
-            self._row2.setVisible(False)
-            self._row3.setVisible(False)
-            self._row4.setVisible(False)
+            self._row2_widget.setVisible(False)
+            self._row3_widget.setVisible(False)
+            self._row4_widget.setVisible(False)
         else:
             self.showFullScreen()
             self.btn_fullscreen.setText("⛶ 还原")
-            self._row2.setVisible(True)
-            self._row3.setVisible(True)
-            self._row4.setVisible(True)
+            self._row2_widget.setVisible(True)
+            self._row3_widget.setVisible(True)
+            self._row4_widget.setVisible(True)
             # 全屏后重新调整列宽
             QTimer.singleShot(100, lambda: self.table_view.resizeColumnsToContents())
 

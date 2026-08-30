@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.48",
+        "date": "2026-08-30",
+        "features": "",
+        "fixes": "修复偏差率预警看板放大后筛选栏布局崩溃：QWidget容器替代QHBoxLayout控制显隐，toggle_fullscreen改用_row2_widget/_row3_widget/_row4_widget.setVisible()"
+    },
+    {
         "version": "v43.47",
         "date": "2026-08-30",
         "features": "",
