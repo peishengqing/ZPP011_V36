@@ -56,17 +56,21 @@ class DeviationWarningDialog(QDialog):
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
 
-        # ---- 顶部筛选栏 ----
-        filter_layout = QHBoxLayout()
-        filter_layout.addWidget(QLabel("筛选:"))
+        # ---- 顶部筛选栏（垂直布局，每行一个筛选组）----
+        self._main_filter_vlayout = QVBoxLayout()
+        self._main_filter_vlayout.setSpacing(4)
+        self._main_filter_vlayout.setContentsMargins(0, 0, 0, 0)
 
-        # 关键字搜索（跨列全列，防抖 300ms，与分类筛选叠加生效）
+        # ==== 第1行：已读状态 + 关键字搜索 ====
+        row1 = QHBoxLayout()
+        row1.addWidget(QLabel("筛选:"))
+
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("关键字搜索(全列,逗号分隔多值OR)")
         self.search_edit.setToolTip("全列关键字搜索：匹配任意文本列(名称/编码/车间/备注/原因等)，逗号或顿号分隔多值OR")
         self.search_edit.setMinimumWidth(200)
         self.search_edit.setMaximumWidth(260)
-        filter_layout.addWidget(self.search_edit)
+        row1.addWidget(self.search_edit)
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(300)
@@ -77,65 +81,68 @@ class DeviationWarningDialog(QDialog):
         self.btn_all.setCheckable(True)
         self.btn_all.setMinimumWidth(70)
         self.btn_all.clicked.connect(lambda: self._set_filter("all"))
-        filter_layout.addWidget(self.btn_all)
+        row1.addWidget(self.btn_all)
 
         self.btn_unread = QPushButton("未读")
         self.btn_unread.setCheckable(True)
         self.btn_unread.setMinimumWidth(70)
         self.btn_unread.clicked.connect(lambda: self._set_filter("unread"))
-        filter_layout.addWidget(self.btn_unread)
+        row1.addWidget(self.btn_unread)
 
         self.btn_read = QPushButton("已读")
         self.btn_read.setCheckable(True)
         self.btn_read.setMinimumWidth(70)
         self.btn_read.clicked.connect(lambda: self._set_filter("read"))
-        filter_layout.addWidget(self.btn_read)
+        row1.addWidget(self.btn_read)
 
-        # ---- 第二组：料别筛选（与上面的已读状态筛选独立，可叠加）----
+        row1.addStretch()
+        self._main_filter_vlayout.addLayout(row1)
+
+        # ==== 第2行：料别 + 车间 + 半成品分类（全屏时显示）====
+        self._row2 = QHBoxLayout()
+        # 料别筛选
         self.mat_sep = QFrame()
         self.mat_sep.setFrameShape(QFrame.VLine)
         self.mat_sep.setFrameShadow(QFrame.Sunken)
-        filter_layout.addSpacing(8)
-        filter_layout.addWidget(self.mat_sep)
-        filter_layout.addSpacing(8)
+        self._row2.addWidget(self.mat_sep)
+        self._row2.addSpacing(8)
 
         self.lbl_mat = QLabel("料别:")
-        filter_layout.addWidget(self.lbl_mat)
+        self._row2.addWidget(self.lbl_mat)
 
         self.btn_mat_all = QPushButton("全部")
         self.btn_mat_all.setCheckable(True)
         self.btn_mat_all.setMinimumWidth(70)
         self.btn_mat_all.clicked.connect(lambda: self._set_mat_filter("all"))
-        filter_layout.addWidget(self.btn_mat_all)
+        self._row2.addWidget(self.btn_mat_all)
 
         self.btn_mat_raw = QPushButton("原料")
         self.btn_mat_raw.setCheckable(True)
         self.btn_mat_raw.setMinimumWidth(70)
         self.btn_mat_raw.clicked.connect(lambda: self._set_mat_filter("raw"))
-        filter_layout.addWidget(self.btn_mat_raw)
+        self._row2.addWidget(self.btn_mat_raw)
 
         self.btn_mat_pkg = QPushButton("包材")
         self.btn_mat_pkg.setCheckable(True)
         self.btn_mat_pkg.setMinimumWidth(70)
         self.btn_mat_pkg.clicked.connect(lambda: self._set_mat_filter("pkg"))
-        filter_layout.addWidget(self.btn_mat_pkg)
+        self._row2.addWidget(self.btn_mat_pkg)
 
         self.btn_mat_semi = QPushButton("半成品")
         self.btn_mat_semi.setCheckable(True)
         self.btn_mat_semi.setMinimumWidth(70)
         self.btn_mat_semi.clicked.connect(lambda: self._set_mat_filter("semi"))
-        filter_layout.addWidget(self.btn_mat_semi)
+        self._row2.addWidget(self.btn_mat_semi)
 
-        # ---- 第三组：车间筛选（与已读状态、料别独立，可叠加）----
+        # 车间
         self.workshop_sep = QFrame()
         self.workshop_sep.setFrameShape(QFrame.VLine)
         self.workshop_sep.setFrameShadow(QFrame.Sunken)
-        filter_layout.addSpacing(8)
-        filter_layout.addWidget(self.workshop_sep)
-        filter_layout.addSpacing(8)
+        self._row2.addWidget(self.workshop_sep)
+        self._row2.addSpacing(8)
 
         self.lbl_workshop = QLabel("车间:")
-        filter_layout.addWidget(self.lbl_workshop)
+        self._row2.addWidget(self.lbl_workshop)
 
         self.combo_workshop = QComboBox()
         self.combo_workshop.setMinimumWidth(100)
@@ -143,18 +150,17 @@ class DeviationWarningDialog(QDialog):
         self.combo_workshop.setEditable(False)
         self.combo_workshop.addItem("全部")
         self.combo_workshop.currentTextChanged.connect(self._on_workshop_changed)
-        filter_layout.addWidget(self.combo_workshop)
+        self._row2.addWidget(self.combo_workshop)
 
-        # ---- 第五组：半成品重分类筛选（复选框组：全部 + 各值 + 虚拟两项）----
+        # 半成品分类
         self.semi_class_sep = QFrame()
         self.semi_class_sep.setFrameShape(QFrame.VLine)
         self.semi_class_sep.setFrameShadow(QFrame.Sunken)
-        filter_layout.addSpacing(8)
-        filter_layout.addWidget(self.semi_class_sep)
-        filter_layout.addSpacing(8)
+        self._row2.addWidget(self.semi_class_sep)
+        self._row2.addSpacing(8)
 
         self.lbl_semi_class = QLabel("半成品分类:")
-        filter_layout.addWidget(self.lbl_semi_class)
+        self._row2.addWidget(self.lbl_semi_class)
 
         self.grp_semi_class = QGroupBox()
         self.grp_semi_class.setFlat(True)
@@ -162,19 +168,24 @@ class DeviationWarningDialog(QDialog):
         self._semi_class_grid = QGridLayout(self.grp_semi_class)
         self._semi_class_grid.setContentsMargins(6, 4, 6, 4)
         self._semi_class_grid.setSpacing(3)
-        self._semi_class_checkboxes = {}  # 名称 -> QCheckBox（含特殊键 "__all__"）
-        filter_layout.addWidget(self.grp_semi_class)
+        self._semi_class_checkboxes = {}
+        self._row2.addWidget(self.grp_semi_class)
 
-        # ---- 第六组：物料类型筛选（组件物料类型描述下拉框）----
+        self._row2.addStretch()
+        self._main_filter_vlayout.addLayout(self._row2)
+        self._row2.setVisible(False)  # 默认隐藏，全屏时显示
+
+        # ==== 第3行：物料类型 + 隔离区 + 替代料 + 是否备注（全屏时显示）====
+        self._row3 = QHBoxLayout()
+        # 物料类型
         self.mtd_sep = QFrame()
         self.mtd_sep.setFrameShape(QFrame.VLine)
         self.mtd_sep.setFrameShadow(QFrame.Sunken)
-        filter_layout.addSpacing(8)
-        filter_layout.addWidget(self.mtd_sep)
-        filter_layout.addSpacing(8)
+        self._row3.addWidget(self.mtd_sep)
+        self._row3.addSpacing(8)
 
         self.lbl_mtd = QLabel("物料类型:")
-        filter_layout.addWidget(self.lbl_mtd)
+        self._row3.addWidget(self.lbl_mtd)
 
         self.combo_mtd = QComboBox()
         self.combo_mtd.setMinimumWidth(100)
@@ -182,115 +193,117 @@ class DeviationWarningDialog(QDialog):
         self.combo_mtd.setEditable(False)
         self.combo_mtd.addItem("全部")
         self.combo_mtd.currentTextChanged.connect(self._on_mtd_changed)
-        filter_layout.addWidget(self.combo_mtd)
+        self._row3.addWidget(self.combo_mtd)
 
-        # ---- 第四组：隔离区筛选（全部 / 是）----
+        # 隔离区
         self.quar_sep = QFrame()
         self.quar_sep.setFrameShape(QFrame.VLine)
         self.quar_sep.setFrameShadow(QFrame.Sunken)
-        filter_layout.addSpacing(8)
-        filter_layout.addWidget(self.quar_sep)
-        filter_layout.addSpacing(8)
+        self._row3.addWidget(self.quar_sep)
+        self._row3.addSpacing(8)
 
         self.lbl_quar = QLabel("隔离区:")
-        filter_layout.addWidget(self.lbl_quar)
+        self._row3.addWidget(self.lbl_quar)
 
         self.btn_quar_all = QPushButton("全部")
         self.btn_quar_all.setCheckable(True)
         self.btn_quar_all.setMinimumWidth(70)
         self.btn_quar_all.clicked.connect(lambda: self._set_quar_filter("all"))
-        filter_layout.addWidget(self.btn_quar_all)
+        self._row3.addWidget(self.btn_quar_all)
 
         self.btn_quar_yes = QPushButton("是")
         self.btn_quar_yes.setCheckable(True)
         self.btn_quar_yes.setMinimumWidth(70)
         self.btn_quar_yes.clicked.connect(lambda: self._set_quar_filter("yes"))
-        filter_layout.addWidget(self.btn_quar_yes)
+        self._row3.addWidget(self.btn_quar_yes)
 
         self.btn_quar_no = QPushButton("否")
         self.btn_quar_no.setCheckable(True)
         self.btn_quar_no.setMinimumWidth(70)
         self.btn_quar_no.clicked.connect(lambda: self._set_quar_filter("no"))
-        filter_layout.addWidget(self.btn_quar_no)
+        self._row3.addWidget(self.btn_quar_no)
 
-        # ---- 第五组：替代料筛选（全部 / 是 / 否）----
+        # 替代料
         self.alt_sep = QFrame()
         self.alt_sep.setFrameShape(QFrame.VLine)
         self.alt_sep.setFrameShadow(QFrame.Sunken)
-        filter_layout.addSpacing(8)
-        filter_layout.addWidget(self.alt_sep)
-        filter_layout.addSpacing(8)
+        self._row3.addWidget(self.alt_sep)
+        self._row3.addSpacing(8)
 
         self.lbl_alt = QLabel("替代料:")
-        filter_layout.addWidget(self.lbl_alt)
+        self._row3.addWidget(self.lbl_alt)
 
         self.btn_alt_all = QPushButton("全部")
         self.btn_alt_all.setCheckable(True)
         self.btn_alt_all.setMinimumWidth(70)
         self.btn_alt_all.clicked.connect(lambda: self._set_alt_filter("all"))
-        filter_layout.addWidget(self.btn_alt_all)
+        self._row3.addWidget(self.btn_alt_all)
 
         self.btn_alt_yes = QPushButton("是")
         self.btn_alt_yes.setCheckable(True)
         self.btn_alt_yes.setMinimumWidth(70)
         self.btn_alt_yes.clicked.connect(lambda: self._set_alt_filter("yes"))
-        filter_layout.addWidget(self.btn_alt_yes)
+        self._row3.addWidget(self.btn_alt_yes)
 
         self.btn_alt_no = QPushButton("否")
         self.btn_alt_no.setCheckable(True)
         self.btn_alt_no.setMinimumWidth(70)
         self.btn_alt_no.clicked.connect(lambda: self._set_alt_filter("no"))
-        filter_layout.addWidget(self.btn_alt_no)
+        self._row3.addWidget(self.btn_alt_no)
 
-        # ---- 第六组：是否备注筛选（全部 / 有 / 无）----
+        # 是否备注
         self.remark_sep = QFrame()
         self.remark_sep.setFrameShape(QFrame.VLine)
         self.remark_sep.setFrameShadow(QFrame.Sunken)
-        filter_layout.addSpacing(8)
-        filter_layout.addWidget(self.remark_sep)
-        filter_layout.addSpacing(8)
+        self._row3.addWidget(self.remark_sep)
+        self._row3.addSpacing(8)
 
         self.lbl_remark = QLabel("是否备注:")
-        filter_layout.addWidget(self.lbl_remark)
+        self._row3.addWidget(self.lbl_remark)
 
         self.btn_remark_all = QPushButton("全部")
         self.btn_remark_all.setCheckable(True)
         self.btn_remark_all.setMinimumWidth(70)
         self.btn_remark_all.clicked.connect(lambda: self._set_remark_filter("all"))
-        filter_layout.addWidget(self.btn_remark_all)
+        self._row3.addWidget(self.btn_remark_all)
 
         self.btn_remark_has = QPushButton("有")
         self.btn_remark_has.setCheckable(True)
         self.btn_remark_has.setMinimumWidth(70)
         self.btn_remark_has.clicked.connect(lambda: self._set_remark_filter("has"))
-        filter_layout.addWidget(self.btn_remark_has)
+        self._row3.addWidget(self.btn_remark_has)
 
         self.btn_remark_none = QPushButton("无")
         self.btn_remark_none.setCheckable(True)
         self.btn_remark_none.setMinimumWidth(70)
         self.btn_remark_none.clicked.connect(lambda: self._set_remark_filter("none"))
-        filter_layout.addWidget(self.btn_remark_none)
+        self._row3.addWidget(self.btn_remark_none)
 
-        filter_layout.addStretch()
+        self._row3.addStretch()
+        self._main_filter_vlayout.addLayout(self._row3)
+        self._row3.setVisible(False)  # 默认隐藏，全屏时显示
 
-        # 批量操作
+        # ==== 第4行：批量操作 + 放大按钮（全屏时显示）====
+        self._row4 = QHBoxLayout()
         self.btn_batch_read = QPushButton("批量标记已读")
         self.btn_batch_read.setMinimumWidth(100)
         self.btn_batch_read.clicked.connect(self.batch_mark_read)
-        filter_layout.addWidget(self.btn_batch_read)
+        self._row4.addWidget(self.btn_batch_read)
 
         self.btn_batch_unread = QPushButton("批量标记未读")
         self.btn_batch_unread.setMinimumWidth(100)
         self.btn_batch_unread.clicked.connect(self.batch_mark_unread)
-        filter_layout.addWidget(self.btn_batch_unread)
+        self._row4.addWidget(self.btn_batch_unread)
 
-        # 放大按钮
         self.btn_fullscreen = QPushButton("⛶ 放大")
         self.btn_fullscreen.setMinimumWidth(80)
         self.btn_fullscreen.clicked.connect(self.toggle_fullscreen)
-        filter_layout.addWidget(self.btn_fullscreen)
+        self._row4.addWidget(self.btn_fullscreen)
 
-        layout.addLayout(filter_layout)
+        self._main_filter_vlayout.addLayout(self._row4)
+        self._row4.setVisible(False)  # 默认隐藏，全屏时显示
+
+        layout.addLayout(self._main_filter_vlayout)
 
         # ---- 表格 ----
         self.table_view = QTableView()
@@ -1282,9 +1295,17 @@ class DeviationWarningDialog(QDialog):
         if self.isFullScreen():
             self.showNormal()
             self.btn_fullscreen.setText("⛶ 放大")
+            self._row2.setVisible(False)
+            self._row3.setVisible(False)
+            self._row4.setVisible(False)
         else:
             self.showFullScreen()
             self.btn_fullscreen.setText("⛶ 还原")
+            self._row2.setVisible(True)
+            self._row3.setVisible(True)
+            self._row4.setVisible(True)
+            # 全屏后重新调整列宽
+            QTimer.singleShot(100, lambda: self.table_view.resizeColumnsToContents())
 
     def on_double_click(self, index):
         if not index.isValid():
