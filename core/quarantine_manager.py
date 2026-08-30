@@ -274,7 +274,11 @@ def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
                 })
             continue
 
-        # ── 手动 + 非负损：补充自动判据（实际>定额即失效）──
+        # ── 手动 + 非负损：补充自动判据 ──
+        # 若负损条件仍成立（0<actual<quota），不加入失效列表
+        if actual is not None and quota is not None and 0 < actual < quota:
+            continue
+        # 若实际>定额，直接判为失效
         if actual is not None and quota is not None and actual > quota:
             result.append({
                 "uid": uid, "reason": reason, "basis": basis_key,

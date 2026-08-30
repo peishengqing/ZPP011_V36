@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.49",
+        "date": "2026-08-30",
+        "features": "",
+        "fixes": "修复手动隔离自动失效判据误判负损记录：负损条件仍成立(0<actual<quota)时不加入失效列表，仅当actual>quota时才判为失效"
+    },
+    {
         "version": "v43.48",
         "date": "2026-08-30",
         "features": "",
