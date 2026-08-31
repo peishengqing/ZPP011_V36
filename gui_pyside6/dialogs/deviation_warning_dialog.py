@@ -134,10 +134,27 @@ class DeviationWarningDialog(QDialog):
         self.btn_quar_no.clicked.connect(lambda: self._set_quar_filter("no"))
         row1.addWidget(self.btn_quar_no)
 
+        # 车间筛选（始终可见，放第1行隔离区之后，与工厂/隔离区并列）
+        row1.addSpacing(16)
+        self.workshop_sep = QFrame()
+        self.workshop_sep.setFrameShape(QFrame.VLine)
+        self.workshop_sep.setFrameShadow(QFrame.Sunken)
+        row1.addWidget(self.workshop_sep)
+        row1.addSpacing(8)
+        self.lbl_workshop = QLabel("车间:")
+        row1.addWidget(self.lbl_workshop)
+        self.combo_workshop = QComboBox()
+        self.combo_workshop.setMinimumWidth(100)
+        self.combo_workshop.setMaximumWidth(160)
+        self.combo_workshop.setEditable(False)
+        self.combo_workshop.addItem("全部")
+        self.combo_workshop.currentTextChanged.connect(self._on_workshop_changed)
+        row1.addWidget(self.combo_workshop)
+
         row1.addStretch()
         self._main_filter_vlayout.addLayout(row1)
 
-        # ==== 第2行：料别 + 车间 + 半成品分类（全屏时显示）====
+        # ==== 第2行：料别 + 半成品分类（全屏时显示；车间已提至第1行始终可见）====
         self._row2_widget = QWidget()
         self._row2 = QHBoxLayout(self._row2_widget)
         # 料别筛选
@@ -173,24 +190,6 @@ class DeviationWarningDialog(QDialog):
         self.btn_mat_semi.setMinimumWidth(70)
         self.btn_mat_semi.clicked.connect(lambda: self._set_mat_filter("semi"))
         self._row2.addWidget(self.btn_mat_semi)
-
-        # 车间
-        self.workshop_sep = QFrame()
-        self.workshop_sep.setFrameShape(QFrame.VLine)
-        self.workshop_sep.setFrameShadow(QFrame.Sunken)
-        self._row2.addWidget(self.workshop_sep)
-        self._row2.addSpacing(8)
-
-        self.lbl_workshop = QLabel("车间:")
-        self._row2.addWidget(self.lbl_workshop)
-
-        self.combo_workshop = QComboBox()
-        self.combo_workshop.setMinimumWidth(100)
-        self.combo_workshop.setMaximumWidth(160)
-        self.combo_workshop.setEditable(False)
-        self.combo_workshop.addItem("全部")
-        self.combo_workshop.currentTextChanged.connect(self._on_workshop_changed)
-        self._row2.addWidget(self.combo_workshop)
 
         # 半成品分类
         self.semi_class_sep = QFrame()
