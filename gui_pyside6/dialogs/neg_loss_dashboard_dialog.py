@@ -617,6 +617,21 @@ class NegLossDashboardDialog(QDialog):
         tag = "含未投料" if self._include_zero else "不含未投料"
         note_tag = {"all": "全部", "yes": "有备注", "no": "无备注"}[self._has_note_filter]
         self.lbl_count.setText("共 %d 条（名称含「%s」· %s · %s）" % (len(filtered), self._keywords, tag, note_tag))
+        # 动态刷新车间下拉：只列出当前可见数据中实际存在的车间
+        if self._workshop_col and not filtered.empty:
+            current = self.combo_workshop.currentText()
+            new_vals = sorted(filtered[self._workshop_col].dropna().astype(str).str.strip().unique())
+            self.combo_workshop.blockSignals(True)
+            self.combo_workshop.clear()
+            self.combo_workshop.addItem("全部")
+            self.combo_workshop.addItems(new_vals)
+            # 保留之前选中的项（若仍存在），否则回退"全部"
+            if current and current != "全部" and current in new_vals:
+                self.combo_workshop.setCurrentText(current)
+            else:
+                self.combo_workshop.setCurrentText("全部")
+                self._workshop_filter = "all"
+            self.combo_workshop.blockSignals(False)
 
     # ------------------------------------------------------------------ 复制
     def eventFilter(self, obj, event):
