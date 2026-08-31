@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.57",
+        "date": "2026-08-31",
+        "features": "",
+        "fixes": "偏差率预警看板车间/工厂下拉改为真正动态：_apply_filter 筛选数据后同步刷新车间与工厂下拉选项为当前可见数据(filtered)的唯一值（保留当前选中项，若不在新列表则回退\"全部\"）。修复根因：set_data 时从全量 original_df 提取车间/工厂唯一值填入下拉，筛选后表格已无数据但下拉仍列全部车间（假动态）。现新增 _refresh_dependent_combo 在每次筛选后收缩下拉，与负损看板 v43.56 行为一致。"
+    },
+    {
         "version": "v43.56",
         "date": "2026-08-31",
         "features": "",

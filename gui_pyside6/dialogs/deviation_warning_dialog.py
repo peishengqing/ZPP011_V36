@@ -637,6 +637,30 @@ class DeviationWarningDialog(QDialog):
             self.source_model.setDataFrame(filtered)
             self._sort_ctrl.reapply()  # 恢复排序态
         self._update_button_counts()
+        # 车间 / 工厂下拉跟随筛选结果动态收缩（避免表格无数据时仍列出不存在的车间）
+        self._refresh_dependent_combo(
+            filtered, self._workshop_col, self.combo_workshop, "_workshop_filter")
+        self._refresh_dependent_combo(
+            filtered, self._factory_col, self.combo_factory, "_factory_filter")
+
+    def _refresh_dependent_combo(self, filtered, col, combo, filter_attr):
+        """筛选后刷新下拉：仅保留 filtered 中实际出现的取值（动态收缩）。
+        col 为 None 或不在 filtered 列中则不处理；当前选中项若仍有效则保留，否则回退'全部'。"""
+        if not col or col not in filtered.columns:
+            return
+        new_vals = sorted(filtered[col].dropna().astype(str).str.strip().unique())
+        new_vals = [v for v in new_vals if v]
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("全部")
+        combo.addItems(new_vals)
+        cur = getattr(self, filter_attr, "all")
+        if cur != "all" and cur in new_vals:
+            combo.setCurrentText(cur)
+        else:
+            setattr(self, filter_attr, "all")
+            combo.setCurrentText("全部")
+        combo.blockSignals(False)
 
     def _update_button_counts(self):
         """按钮上显示条数：每个按钮显示「点它之后会得到多少条」（另一组条件保持当前选择）"""
