@@ -58,6 +58,8 @@ def _build_anomaly_slice(sub_df, atype, alt_order_mat, net_offset_map, col_p,
     res['车间'] = sub_df['车间']
     res['原表行号'] = sub_df['_excel_row']
     res['物料编码'] = sub_df['组件物料号']
+    # 物料类型：与报告其他表口径一致，取 物料分类（组件物料类型描述推导：原料/包材/半成品）
+    res['物料类型'] = sub_df['物料分类'].fillna('') if '物料分类' in sub_df.columns else ''
     res['物料名称'] = sub_df['组件物料描述']
     res['产品物料号码'] = sub_df['产品物料号码'].fillna('').astype(str)
     res['产品物料描述'] = sub_df['产品物料描述'].fillna('').astype(str)

@@ -891,7 +891,7 @@ def export_full_report_from_intermediates(intermediates, output_path=None, outpu
 
     ws6 = wb.create_sheet('异常预警')
     headers6 = ['订单开始日期', '订单类型', '订单号', '异常类型', '工厂', '车间',
-                '原表行号', '产品物料号码', '产品物料描述', '物料编码', '物料名称',
+                '原表行号', '产品物料号码', '产品物料描述', '物料类型', '物料编码', '物料名称',
                 '单位', '定额', '实际',
                 '偏差数量', '净偏差数量', '净偏差金额', '净偏差率', '偏差率', '备注', '处理建议', '替代料']
     for j, h in enumerate(headers6, 1):
@@ -937,7 +937,7 @@ def export_full_report_from_intermediates(intermediates, output_path=None, outpu
             r['订单开始日期'], r['订单类型'], r['流程订单'], r['异常类型'], r['工厂'], r['车间'],
             r['原表行号'],
             r.get('产品物料号码', ''), r.get('产品物料描述', ''),
-            r['物料编码'], r['物料名称'], r['单位'],
+            r.get('物料类型', ''), r['物料编码'], r['物料名称'], r['单位'],
             r['定额'], r['实际'], r['偏差数量'], r.get('净偏差数量', ''), r.get('净偏差金额', ''),
             r.get('净偏差率', ''),
             r['偏差率'], r.get('备注', ''), r.get('处理建议', ''), r.get('替代料', '否')]
@@ -946,7 +946,7 @@ def export_full_report_from_intermediates(intermediates, output_path=None, outpu
             c._style = _copy(proto)
             c.value = v  # 先于样式设值会被 _style 覆盖日期格式；改为先样式后设值，真日期保留日期格式
         r_row += 1
-    for j, w in enumerate([14, 10, 18, 10, 10, 10, 10, 16, 28, 8, 12, 12, 12, 12, 14, 10, 30, 10, 30, 10], 1):
+    for j, w in enumerate([14, 10, 18, 10, 10, 10, 10, 16, 28, 10, 8, 12, 12, 12, 12, 14, 10, 30, 10, 30, 10], 1):
         ws6.column_dimensions[get_column_letter(j)].width = w
     check_cancel()
 

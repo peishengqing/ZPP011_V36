@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.58",
+        "date": "2026-09-01",
+        "features": "完整偏差表 Sheet6「异常预警」新增「物料类型」列，放在「物料编码」前面。取值口径与报告其他表一致（取 物料分类：原料/包材/半成品）。涉及 sheet6_anomaly.py 异常明细补列 + analyzer.py 表头/数据行/列宽三处。注：仅先改 Sheet6，Sheet7/10 的物料类型仍在物料编码之后（待后续）。",
+        "fixes": ""
+    },
+    {
         "version": "v43.57",
         "date": "2026-08-31",
         "features": "",
