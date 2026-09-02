@@ -24,8 +24,8 @@ from PySide6.QtWidgets import (
     QMenu, QSizePolicy, QGroupBox, QFormLayout, QProgressDialog,
     QListWidget, QListWidgetItem, QScrollArea, QGridLayout, QCheckBox,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer, QItemSelection, QItemSelectionModel
-from PySide6.QtGui import QFont, QFontMetrics, QShortcut, QKeySequence, QAction
+from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer, QItemSelection, QItemSelectionModel, QRect
+from PySide6.QtGui import QFont, QFontMetrics, QShortcut, QKeySequence, QAction, QPainter, QColor, QPen
 
 # 导入组件
 from gui_pyside6.components.menu_bar import MenuBarComponent
@@ -2715,6 +2715,10 @@ class MainWindow(QMainWindow):
         self.proxy_model = AuditProxyModel()
         self.proxy_model.setDynamicSortFilter(False)  # 关键性能修复：关闭 dataChanged 触发的整表重过滤风暴
         self.proxy_model.setSourceModel(self.source_model)
+        # 自定义表头：在已排序列角上叠加 1/2/3 层级角标 + 升降箭头，让 Ctrl+多级排序可见
+        self._sort_header = SortBadgeHeader(Qt.Horizontal, self.table_view)
+        self._sort_header.set_sort_columns_getter(lambda: self.sort_columns)
+        self.table_view.setHorizontalHeader(self._sort_header)
         self.table_view.setModel(self.proxy_model)
         try:
             self.table_view.selectionModel().selectionChanged.connect(self._on_selection_changed)
@@ -3181,20 +3185,17 @@ class MainWindow(QMainWindow):
                 self._natural_df = df.copy()
 
     def _update_sort_indicators(self):
-        """同步列头排序箭头（单/多列升/降态）。
-        PySide6/Qt6 无 setSortIndicatorClear，用 setSortIndicatorShown 代替。"""
+        """刷新列头多级排序角标（见 SortBadgeHeader）。
+        Qt 原生只支持单箭头（仅标最后一级），故关闭原生箭头、改用自定义层级角标。"""
         header = self.table_view.horizontalHeader()
         header.blockSignals(True)
         try:
-            if not self.sort_columns:
-                header.setSortIndicatorShown(False)
-                return
-            header.setSortIndicatorShown(True)
-            # QHeaderView 只支持单箭头，多列时显示最后一级
-            col, asc = self.sort_columns[-1]
-            header.setSortIndicator(col, Qt.AscendingOrder if asc else Qt.DescendingOrder)
+            # 关闭 Qt 原生单箭头，避免与自定义角标重复；角标由 SortBadgeHeader.paintEvent 绘制
+            header.setSortIndicatorShown(False)
         finally:
             header.blockSignals(False)
+        # 触发表头重绘以刷新层级角标（1▲/2▼ ...）
+        header.update()
 
     # -----------------------------------------------------------
     # 工厂切换
@@ -4472,6 +4473,59 @@ def _ask_quarantine_reason(parent, title: str) -> str | None:
     if dlg.exec() == QDialog.Accepted:
         return edit.text().strip() or "手动隔离"
     return None
+
+
+class SortBadgeHeader(QHeaderView):
+    """自定义表头：在已排序列的角上叠加 1/2/3 层级角标 + 升降箭头，让多级排序可见。
+
+    仅 override paintEvent —— 先 super().paintEvent(event) 画出原样表头（标签/分隔线/列宽
+    等完全不变），再用 rectForSection 在每个已排序列右上角叠一个小角标。不改动任何列标签
+    或原生外观，因此零回归风险。多级排序的"第几级 / 升还是降"一眼可见，解决 Qt 原生只标
+    最后一级箭头、看不出多列在生效的问题。
+    """
+
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self._get_sort_columns = lambda: []  # 由 MainWindow 注入：返回 [(列号, 是否升序), ...]
+
+    def set_sort_columns_getter(self, getter):
+        self._get_sort_columns = getter
+
+    def paintEvent(self, event):
+        super().paintEvent(event)  # 先画原生表头（外观完全保持）
+        cols = self._get_sort_columns()
+        if not cols:
+            return
+        count = self.count()
+        painter = QPainter(self)
+        try:
+            painter.setRenderHint(QPainter.Antialiasing)
+            for level, (col, asc) in enumerate(cols, start=1):
+                if col <= 0 or col >= count:
+                    continue
+                rect = self.rectForSection(col)
+                if rect.width() <= 0:  # 隐藏列不画
+                    continue
+                txt = f"{level}{'▲' if asc else '▼'}"
+                font = QFont(self.font())
+                font.setPointSize(8)
+                font.setBold(True)
+                painter.setFont(font)
+                metrics = QFontMetrics(font)
+                pad_x, pad_y = 4, 2
+                tw = metrics.horizontalAdvance(txt) + pad_x * 2
+                th = metrics.height() + pad_y
+                bx = rect.right() - tw - 2
+                by = rect.top() + 2
+                badge = QRect(bx, by, tw, th)
+                color = QColor(45, 125, 210) if asc else QColor(217, 119, 45)
+                painter.setBrush(color)
+                painter.setPen(QPen(Qt.NoPen))
+                painter.drawRoundedRect(badge, 3, 3)
+                painter.setPen(QPen(QColor(255, 255, 255)))
+                painter.drawText(badge, Qt.AlignCenter, txt)
+        finally:
+            painter.end()
 
 
 if __name__ == "__main__":

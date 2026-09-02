@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.59",
+        "date": "2026-09-02",
+        "features": "主表列头新增多级排序层级角标：已排序列右上角显示 1▲/2▼…（数字=排序优先级，▲升/▼降），让 Ctrl+多列排序一眼可见。原 Qt 单箭头（仅标最后一级）关闭，改用自定义 SortBadgeHeader(QHeaderView) 仅在 paintEvent 叠角标，不改动任何列标签/外观，零回归。配套 _on_header_clicked 多级逻辑不变（普通点击=单列三态，Ctrl+点击=叠加）。",
+        "fixes": ""
+    },
+    {
         "version": "v43.58",
         "date": "2026-09-01",
         "features": "完整偏差表 Sheet6「异常预警」新增「物料类型」列，放在「物料编码」前面。取值口径与报告其他表一致（取 物料分类：原料/包材/半成品）。涉及 sheet6_anomaly.py 异常明细补列 + analyzer.py 表头/数据行/列宽三处。注：仅先改 Sheet6，Sheet7/10 的物料类型仍在物料编码之后（待后续）。",
