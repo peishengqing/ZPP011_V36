@@ -231,6 +231,11 @@ class MainWindow(QMainWindow):
         # 用于防止多个 do_analysis_v2 并发抢占 GIL 导致 UI 假死（"未响应"）。
         self._heavy_busy = False
         self.sort_columns = []
+        # Ctrl 状态由键盘事件流实时跟踪（最可靠），用于多级排序判定。
+        # 原因：Qt 在 mousePressEvent/sectionClicked 时机读 Ctrl 修饰符极不可靠
+        # （实测真实环境 event.modifiers() 常读不到 Ctrl，导致 Ctrl+多级排序永不生效）。
+        # 故改为从 KeyPress/KeyRelease 自行维护 _ctrl_down，彻底绕开该坑。
+        self._ctrl_down = False
         self._countdown_seconds = 0
         self._countdown_timer = None
         self._analysis_start_ts = 0.0
@@ -3113,9 +3118,13 @@ class MainWindow(QMainWindow):
 
     def _on_header_clicked(self, logical_index):
         """列头点击：单列为【未排 → 升序 → 降序 → 未排】三态循环；Ctrl+点击为多列多级排序。"""
-        # 可靠读取 Ctrl：由 SortBadgeHeader.mousePressEvent 在按下时捕获（keyboardModifiers()
-        # 在 sectionClicked handler 里常读不到 Ctrl，会导致多级排序永远不生效）。
-        ctrl_pressed = bool(getattr(self._sort_header, "_ctrl_held", False))
+        # 三路冗余读取 Ctrl，最大化真实环境命中率，彻底绕开 Qt「鼠标事件读不到 Ctrl」的坑：
+        #   1) self._ctrl_down    —— 由 KeyPress/KeyRelease 事件流实时维护（最可靠，主用）
+        #   2) self._sort_header._ctrl_held —— SortBadgeHeader.mousePressEvent 按下时捕获（兜底）
+        #   3) QApplication.keyboardModifiers() —— 信号触发瞬间查真实键盘态（再兜底）
+        ctrl_pressed = bool(getattr(self, "_ctrl_down", False)) \
+            or bool(getattr(self._sort_header, "_ctrl_held", False)) \
+            or bool(int(QApplication.keyboardModifiers()) & int(Qt.ControlModifier.value))
         col = logical_index
         if col <= 0:
             return  # 第一列(_read)不参与排序
@@ -3986,11 +3995,31 @@ class MainWindow(QMainWindow):
     # -----------------------------------------------------------
     def _install_table_copy_handler(self):
         self.table_view.installEventFilter(self)
+        # 同时在应用级安装事件过滤器：跟踪 Ctrl 按下状态（多级排序判定用）。
+        # 关键：从键盘事件流自行维护 _ctrl_down，彻底绕开 Qt「鼠标事件读不到 Ctrl 修饰符」的坑。
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
+
+    @staticmethod
+    def _mod_has_ctrl(mods):
+        mv = mods.value if hasattr(mods, "value") else int(mods)
+        return bool(mv & int(Qt.ControlModifier.value))
 
     def eventFilter(self, obj, event):
         from PySide6.QtCore import QEvent
         from PySide6.QtGui import QKeyEvent
-        if obj is self.table_view and event.type() == QEvent.KeyPress:
+        et = event.type()
+        # —— Ctrl 状态跟踪（多级排序用）——
+        if et == QEvent.KeyPress and event.key() == Qt.Key_Control:
+            self._ctrl_down = True
+        elif et == QEvent.KeyRelease and event.key() == Qt.Key_Control:
+            self._ctrl_down = False
+        elif et in (QEvent.KeyPress, QEvent.KeyRelease):
+            # 其它按键时同步修饰符态（例如 Ctrl 已按住但焦点切换）
+            self._ctrl_down = self._mod_has_ctrl(event.modifiers())
+        # —— 原有：表格复制快捷键 ——
+        if obj is self.table_view and et == QEvent.KeyPress:
             key_event = event
             if key_event.matches(QKeySequence.Copy):
                 self._copy_selected_cells()

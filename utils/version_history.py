@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.64",
+        "date": "2026-09-02",
+        "features": "排序Ctrl检测增加键盘事件流兜底：此前版本只在mousePressEvent捕获Ctrl修饰符，但实测真实环境event.modifiers()常读不到Ctrl（Qt经典坑），导致多级排序永不生效。新增app级eventFilter跟踪Key_Press/Key_Release维护self._ctrl_down状态；_on_header_clicked三路冗余读取：_ctrl_down > _sort_header._ctrl_held > keyboardModifiers()，确保多级排序在任何环境下可靠触发。纯防御性增强，单条件三态逻辑不变。",
+        "fixes": "修复多级排序在部分环境下不生效：通过键盘事件流跟踪Ctrl状态，替代不可靠的鼠标事件修饰符读取。"
+    },
+    {
         "version": "v43.63",
         "date": "2026-09-02",
         "features": "主表排序两处根因修复：① 多级排序(Ctrl+多列)此前永远不生效——根因是 _on_header_clicked 用 QApplication.keyboardModifiers() 在 sectionClicked 信号 handler 里读取 Ctrl，而该时机修饰符状态不可靠(Qt 经典坑)，永远返回非 Ctrl→只走单条件分支。改为在 SortBadgeHeader.mousePressEvent 鼠标按下时捕获修饰符存 self._ctrl_held，_on_header_clicked 读此值，100% 可靠。② 排序状态角标在真实界面看不到——根因是 v43.62 误信原生 sortIndicator，但 setSortingEnabled(False) 下原生 setSortIndicator 不可靠且不显示多级。改为纯自绘：SortBadgeHeader.paintEvent 在各级已排序列右上角叠「层级数字+▲▼」角标(蓝=升/橙=降，9pt 加粗)，彻底不依赖原生箭头；_update_sort_indicators 只调 header.update() 触发自绘。headless 已验证：单点三态(未排→升→降→未排)正常、Ctrl+叠加正确累积且行序按多级重排、真实点击后 paintEvent 确实执行且 getter 返回非空(角标必绘制；offscreen 抓不到自绘仅为平台限制)。",
