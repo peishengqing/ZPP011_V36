@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.66",
+        "date": "2026-09-02",
+        "features": "",
+        "fixes": "修复管理看板图表空白：Chart.js CDN（jsdelivr）在公司内网不可达，所有 12 张图统一回退为 matplotlib 静态 PNG（base64 内嵌），完全无外部依赖，离线可用。"
+    },
+    {
         "version": "v43.65",
         "date": "2026-09-02",
         "features": "管理看板视觉全面升级：CSS 采用现代设计系统（CSS变量、渐变卡片、平滑动画、更好的视觉层级）；引入 Chart.js CDN，将「每日偏差金额趋势」「正/负偏差金额构成」两张关键图换成交互式图表（鼠标悬停显示数值、图例点击筛选）；其余 10 张 matplotlib 图保持不变确保离线可用。",

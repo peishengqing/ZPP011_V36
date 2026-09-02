@@ -489,79 +489,12 @@ def _cards_html(metrics):
     )
 
 
-def _build_chart_js_daily_trend(labels, values, chart_id):
-    """构建每日趋势 Chart.js 脚本"""
-    labels_str = repr(labels)
-    values_str = repr(values)
-    return f'''<div class="chart-wrap"><canvas id="{chart_id}"></canvas></div>
-<script>
-(function(){{
-  var ctx = document.getElementById('{chart_id}').getContext('2d');
-  new Chart(ctx, {{
-    type: 'line',
-    data: {{
-      labels: {labels_str},
-      datasets: [{{
-        label: '偏差金额（含税）',
-        data: {values_str},
-        borderColor: '{C_ACCENT}',
-        backgroundColor: '{C_ACCENT}22',
-        borderWidth: 2.2,
-        pointRadius: 3.5,
-        pointHoverRadius: 6,
-        pointBackgroundColor: '{C_ACCENT}',
-        fill: true,
-        tension: 0.35
-      }}]
-    }},
-    options: {{
-      responsive: true, maintainAspectRatio: false,
-      plugins: {{ legend: {{ display: false }} }},
-      scales: {{
-        x: {{ grid: {{ color: '{GRID}' }}, ticks: {{ font: {{ size: 10 }}, rotate: 35 }}, border: {{ display: false }} }},
-        y: {{ grid: {{ color: '{GRID}' }}, ticks: {{ font: {{ size: 10 }}, callback: v => v.toLocaleString() }}, border: {{ display: false }} }},
-      }}
-    }}
-  }});
-}})();
-</script>'''
 
-
-
-def _build_chart_js_posneg(pos, neg):
-    """构建正负偏差构成 Chart.js 脚本"""
-    return f'''<div class="chart-wrap"><canvas id="c_posneg"></canvas></div>
-<script>
-(function(){{
-  var ctx = document.getElementById('c_posneg').getContext('2d');
-  new Chart(ctx, {{
-    type: 'bar',
-    data: {{
-      labels: ['正偏差\\n（多耗）', '负偏差\\n（少耗）'],
-      datasets: [{{
-        data: [{pos}, {neg}],
-        backgroundColor: ['{C_POS}', '{C_NEG}'],
-        borderRadius: 8,
-        borderSkipped: false,
-        barThickness: 56
-      }}]
-    }},
-    options: {{
-      responsive: true, maintainAspectRatio: false,
-      plugins: {{ legend: {{ display: false }} }},
-      scales: {{
-        x: {{ grid: {{ display: false }}, border: {{ display: false }}, ticks: {{ font: {{ size: 11, weight: '600' }} }} }},
-        y: {{ grid: {{ color: '{GRID}' }}, ticks: {{ font: {{ size: 10 }}, callback: v => v.toLocaleString() }}, border: {{ display: false }} }},
-      }}
-    }}
-  }});
-}})();
-</script>'''
 
 
 
 def _charts_html(dev_df):
-    """12 图按 CHARTS 登记顺序渲染，前 2 张用 Chart.js 交互图，其余用 matplotlib PNG。
+    """12 图按 CHARTS 登记顺序渲染，全部用 matplotlib PNG（无外部依赖）。
     单图失败显示占位。"""
     sections = []
     for grp_name, items in CHARTS:
@@ -571,29 +504,12 @@ def _charts_html(dev_df):
             if not b64:
                 figs.append(f'<div class="cell"><div class="cap"><b>{title}</b><span>{desc}</span></div><div class="placeholder">「{title}」本期无数据</div></div>')
                 continue
-            # 前两张图用 Chart.js 交互渲染，其余用 matplotlib PNG
-            if fn_name == 'chart_daily_trend':
-                d = dev_df.copy()
-                d["_dt"] = pd.to_datetime(d["订单日期"])
-                g = d.groupby(d["_dt"].dt.date)["偏差金额"].sum()
-                labels = [x.strftime("%m-%d") for x in g.index]
-                values = [round(v, 0) for v in g.values]
-                chart_id = f"c_dt_{abs(hash(str(labels))) % 10000}"
-                chart_js = _build_chart_js_daily_trend(labels, values, chart_id)
-                figs.append(f'<div class="cell"><div class="cap"><b>{title}</b><span>{desc}</span></div>{chart_js}</div>')
-            elif fn_name == 'chart_pos_neg_stack':
-                g = dev_df.groupby("偏差区间")["偏差金额"].sum()
-                pos = round(g.get("正偏差", 0.0), 0)
-                neg = round(g.get("负偏差", 0.0), 0)
-                chart_js = _build_chart_js_posneg(pos, neg)
-                figs.append(f'<div class="cell"><div class="cap"><b>{title}</b><span>{desc}</span></div>{chart_js}</div>')
-            else:
-                imgs = (
-                    f'<img src="data:image/png;base64,{b64}" alt="{title}" '
-                    f'onclick="zoomChart(this.src,\'{title}\')" '
-                    f'style="cursor:zoom-in"/>'
-                )
-                figs.append(f'<div class="cell"><div class="cap"><b>{title}</b><span>{desc}</span></div>{imgs}</div>')
+            imgs = (
+                f'<img src="data:image/png;base64,{b64}" alt="{title}" '
+                f'onclick="zoomChart(this.src,\'{title}\')" '
+                f'style="cursor:zoom-in"/>'
+            )
+            figs.append(f'<div class="cell"><div class="cap"><b>{title}</b><span>{desc}</span></div>{imgs}</div>')
         sections.append(
             f'<div class="group"><h3 class="grp">{grp_name}</h3><div class="grid">{"".join(figs)}</div></div>'
         )
@@ -652,7 +568,6 @@ def build_html(blocks, meta):
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ZPP011 偏差分析看板</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>{DASHBOARD_CSS}</style></head><body><div class="wrap">
 <h1>ZPP011 偏差分析看板</h1>
 <div class="sub">分析窗口 {meta['start']} ~ {meta['end']} ｜ 数据来源 {meta['src']} ｜ 生成时间 {meta['gen']}</div>
