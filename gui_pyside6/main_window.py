@@ -2738,6 +2738,11 @@ class MainWindow(QMainWindow):
         self.source_model.modelReset.connect(self._update_mark_stats)
         # 三态排序：禁用 Qt 自动排序，改用列头点击（sectionClicked）自行管理 升/降/取消
         self.table_view.setSortingEnabled(False)
+        # 关键修复：setSortingEnabled(False) 会把表头 sectionsClickable 一并关成 False，
+        # 导致列头点击不再发 sectionClicked 信号、排序引擎(_on_header_clicked→_apply_multi_sort)
+        # 完全不被触发（"排序彻底失效"根因）。重新打开可点击：原生自动排序仍由
+        # setSortingEnabled(False) 关闭，不会双排序，排序只走我们自己的 handler。
+        self.table_view.horizontalHeader().setSectionsClickable(True)
         self.table_view.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
         self._natural_df = None          # 原始（加载时）顺序，供"取消排序"恢复
         self._in_sort = False            # 排序过程中的 setDataFrame 不刷新 _natural_df

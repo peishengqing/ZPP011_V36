@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.61",
+        "date": "2026-09-02",
+        "features": "",
+        "fixes": "修复主表列头点击排序完全失效：_init_table_model 中 setSortingEnabled(False) 会把表头 sectionsClickable 一并关成 False，导致列头点击不再发 sectionClicked 信号、排序引擎(_on_header_clicked→_apply_multi_sort)完全不被触发。在 setSortingEnabled(False) 之后补 horizontalHeader().setSectionsClickable(True) 重新打开列头可点击(原生自动排序仍由 setSortingEnabled(False) 关闭，不会双排序)。该坑一直存在，此前仅 headless 验过 pandas 排序逻辑未真点界面，故未暴露。"
+    },
+    {
         "version": "v43.60",
         "date": "2026-09-02",
         "features": "完整偏差表 Sheet7「偏差金额分析」、Sheet10「趋势分析」的「物料类型」列前移到「物料编码」前面，与 Sheet5/Sheet6 列序统一。两处均为纯展示层改动：只调换表头、数据行、列宽三者的顺序，取值口径、分组逻辑、排序算法一律不动（Sheet7 取 物料分类，Sheet10 取 dev_df 物料类型，维持原样）。",
