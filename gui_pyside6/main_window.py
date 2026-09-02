@@ -2743,6 +2743,11 @@ class MainWindow(QMainWindow):
         # 完全不被触发（"排序彻底失效"根因）。重新打开可点击：原生自动排序仍由
         # setSortingEnabled(False) 关闭，不会双排序，排序只走我们自己的 handler。
         self.table_view.horizontalHeader().setSectionsClickable(True)
+        # 打开原生排序箭头：让主排序列始终显示清晰三角箭头（Qt 样式引擎绘制，100% 可靠），
+        # 彻底解决"看不到箭头"问题。原生自动排序仍由 setSortingEnabled(False) 关闭，不会双排序，
+        # 箭头仅作视觉指示，方向由 _update_sort_indicators 定位到主排序列；多级顺序由
+        # SortBadgeHeader 彩色层级数字(1/2/3) 叠加显示。
+        self.table_view.horizontalHeader().setSortIndicatorShown(True)
         self.table_view.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
         self._natural_df = None          # 原始（加载时）顺序，供"取消排序"恢复
         self._in_sort = False            # 排序过程中的 setDataFrame 不刷新 _natural_df
@@ -3190,16 +3195,21 @@ class MainWindow(QMainWindow):
                 self._natural_df = df.copy()
 
     def _update_sort_indicators(self):
-        """刷新列头多级排序角标（见 SortBadgeHeader）。
-        Qt 原生只支持单箭头（仅标最后一级），故关闭原生箭头、改用自定义层级角标。"""
+        """刷新列头排序指示：主排序列显示原生三角箭头（样式引擎绘制，100% 可靠），
+        同时 SortBadgeHeader.paintEvent 在各级已排序列角上叠彩色层级数字(1/2/3)显示多级顺序。
+        原生箭头管"方向+主列"，彩色数字管"多级顺序"，二者不重复、互不打架。"""
         header = self.table_view.horizontalHeader()
         header.blockSignals(True)
         try:
-            # 关闭 Qt 原生单箭头，避免与自定义角标重复；角标由 SortBadgeHeader.paintEvent 绘制
-            header.setSortIndicatorShown(False)
+            if self.sort_columns:
+                col, asc = self.sort_columns[0]
+                header.setSortIndicator(col, Qt.AscendingOrder if asc else Qt.DescendingOrder)
+            else:
+                # 取消排序：清掉原生箭头
+                header.setSortIndicator(-1, Qt.AscendingOrder)
         finally:
             header.blockSignals(False)
-        # 触发表头重绘以刷新层级角标（1▲/2▼ ...）
+        # 触发表头重绘以刷新层级角标（1/2/3 彩色数字）
         header.update()
 
     # -----------------------------------------------------------
@@ -4481,12 +4491,12 @@ def _ask_quarantine_reason(parent, title: str) -> str | None:
 
 
 class SortBadgeHeader(QHeaderView):
-    """自定义表头：在已排序列的角上叠加 1/2/3 层级角标 + 升降箭头，让多级排序可见。
+    """自定义表头：在已排序列的角上叠加 1/2/3 彩色层级数字，让多级排序顺序一眼可见。
 
     仅 override paintEvent —— 先 super().paintEvent(event) 画出原样表头（标签/分隔线/列宽
-    等完全不变），再用 rectForSection 在每个已排序列右上角叠一个小角标。不改动任何列标签
-    或原生外观，因此零回归风险。多级排序的"第几级 / 升还是降"一眼可见，解决 Qt 原生只标
-    最后一级箭头、看不出多列在生效的问题。
+    等完全不变），再在每个已排序列右上角叠一个小角标显示层级序号。方向由颜色表示
+    （蓝=升序 / 橙=降序），主排序列另有原生三角箭头指示方向。不改动任何列标签或原生外观，
+    因此零回归风险。多级排序的"第几级"一眼可见，解决 Qt 原生只标最后一级、看不出多列在生效的问题。
     """
 
     def __init__(self, orientation, parent=None):
@@ -4511,7 +4521,9 @@ class SortBadgeHeader(QHeaderView):
                 rect = QRect(self.sectionPosition(col), 0, self.sectionSize(col), self.height())
                 if rect.width() <= 0:  # 隐藏列不画
                     continue
-                txt = f"{level}{'▲' if asc else '▼'}"
+                # 角标只画层级数字(1/2/3)，方向由颜色表示：蓝=升序 / 橙=降序；
+                # 主排序列另有原生三角箭头显示方向，二者不重复。
+                txt = str(level)
                 font = QFont(self.font())
                 font.setPointSize(8)
                 font.setBold(True)

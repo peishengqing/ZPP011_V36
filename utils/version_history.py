@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.62",
+        "date": "2026-09-02",
+        "features": "主表排序状态改为「原生三角箭头 + 自定义彩色层级数字」双保险：主排序列由 Qt 原生 sortIndicator 显示清晰三角箭头（样式引擎绘制，100% 可靠，解决此前自定义角标在真实界面看不到、用户反馈「没有箭头」的问题）；各已排序列右上角再由 SortBadgeHeader 叠 1/2/3 彩色数字（蓝=升/橙=降）显示多级顺序。_update_sort_indicators 由「关闭原生箭头」改为在主排序列 setSortIndicator 定位原生箭头（取消排序时清掉）。多级排序逻辑(_on_header_clicked/_apply_multi_sort)不变，headless 已验证 Ctrl+叠加正确累积且行序重排正确。",
+        "fixes": ""
+    },
+    {
         "version": "v43.61",
         "date": "2026-09-02",
         "features": "",
