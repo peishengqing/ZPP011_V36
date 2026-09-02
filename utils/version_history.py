@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.60",
+        "date": "2026-09-02",
+        "features": "完整偏差表 Sheet7「偏差金额分析」、Sheet10「趋势分析」的「物料类型」列前移到「物料编码」前面，与 Sheet5/Sheet6 列序统一。两处均为纯展示层改动：只调换表头、数据行、列宽三者的顺序，取值口径、分组逻辑、排序算法一律不动（Sheet7 取 物料分类，Sheet10 取 dev_df 物料类型，维持原样）。",
+        "fixes": ""
+    },
+    {
         "version": "v43.59",
         "date": "2026-09-02",
         "features": "主表列头新增多级排序层级角标：已排序列右上角显示 1▲/2▼…（数字=排序优先级，▲升/▼降），让 Ctrl+多列排序一眼可见。原 Qt 单箭头（仅标最后一级）关闭，改用自定义 SortBadgeHeader(QHeaderView) 仅在 paintEvent 叠角标，不改动任何列标签/外观，零回归。配套 _on_header_clicked 多级逻辑不变（普通点击=单列三态，Ctrl+点击=叠加）。",

@@ -31,9 +31,10 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
 
     def write_trend_sheet(wb_inner, dev_df_inner, date_min_inner):
         ws = wb_inner.create_sheet('趋势分析（自然日分组）')
-        headers = ['物料编码', '物料名称', '物料类型', '单位',
+        # 列序与 Sheet5/Sheet6/Sheet7 统一：物料类型 放在 物料编码 之前
+        headers = ['物料类型', '物料编码', '物料名称', '单位',
                    '早期偏差率', '中期偏差率', '近期偏差率', '趋势']
-        col_widths = [16, 30, 12, 8, 16, 16, 16, 14]
+        col_widths = [12, 16, 30, 8, 16, 16, 16, 14]
 
         for j, h in enumerate(headers, 1):
             c = ws.cell(row=1, column=j, value=h)
@@ -194,7 +195,7 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
                     arrow = '→'
 
             rows.append([
-                code, name, typ, unit,
+                typ, code, name, unit,
                 f"{r_early:.2f}%" if r_early is not None and pd.notna(r_early) else "-",
                 f"{r_mid:.2f}%" if r_mid is not None and pd.notna(r_mid) else "-",
                 f"{r_recent:.2f}%" if r_recent is not None and pd.notna(r_recent) else "-",

@@ -101,12 +101,13 @@ def build_sheet7(wb, df, report_progress, progress_idx=7):
     else:
         amt_rows = []
 
-    headers_amt = ['物料编码', '物料名称', '物料类型', '单位',
+    # 列序与 Sheet5/Sheet6 统一：物料类型 放在 物料编码 之前
+    headers_amt = ['物料类型', '物料编码', '物料名称', '单位',
                    '正偏差金额(含税)', '负偏差金额(含税)', '总偏差金额(含税)', '涉及条数']
     write_sheet7(ws_amt, headers_amt,
-                 [[r['物料编码'], r['物料名称'], r['物料类型'], r['单位'],
+                 [[r['物料类型'], r['物料编码'], r['物料名称'], r['单位'],
                    r['正偏差金额(含税)'], r['负偏差金额(含税)'],
                    r['总偏差金额(含税)'], r['涉及条数']] for r in amt_rows],
-                 [16, 30, 12, 8, 20, 20, 20, 10])
+                 [12, 16, 30, 8, 20, 20, 20, 10])
 
     report_progress(progress_idx, "Sheet7-偏差金额分析", 100)
