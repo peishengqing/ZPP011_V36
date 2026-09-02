@@ -4503,7 +4503,7 @@ class SortBadgeHeader(QHeaderView):
             for level, (col, asc) in enumerate(cols, start=1):
                 if col <= 0 or col >= count:
                     continue
-                rect = self.rectForSection(col)
+                rect = QRect(self.sectionPosition(col), 0, self.sectionSize(col), self.height())
                 if rect.width() <= 0:  # 隐藏列不画
                     continue
                 txt = f"{level}{'▲' if asc else '▼'}"
