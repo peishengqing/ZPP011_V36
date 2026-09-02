@@ -2743,11 +2743,9 @@ class MainWindow(QMainWindow):
         # 完全不被触发（"排序彻底失效"根因）。重新打开可点击：原生自动排序仍由
         # setSortingEnabled(False) 关闭，不会双排序，排序只走我们自己的 handler。
         self.table_view.horizontalHeader().setSectionsClickable(True)
-        # 打开原生排序箭头：让主排序列始终显示清晰三角箭头（Qt 样式引擎绘制，100% 可靠），
-        # 彻底解决"看不到箭头"问题。原生自动排序仍由 setSortingEnabled(False) 关闭，不会双排序，
-        # 箭头仅作视觉指示，方向由 _update_sort_indicators 定位到主排序列；多级顺序由
-        # SortBadgeHeader 彩色层级数字(1/2/3) 叠加显示。
-        self.table_view.horizontalHeader().setSortIndicatorShown(True)
+        # 排序状态完全自绘（SortBadgeHeader.paintEvent 画「层级数字+▲▼」角标），不依赖原生
+        # sortIndicator（setSortingEnabled(False) 下原生箭头不可靠）。原生自动排序仍由
+        # setSortingEnabled(False) 关闭，不会双排序，排序只走我们自己的 handler。
         self.table_view.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
         self._natural_df = None          # 原始（加载时）顺序，供"取消排序"恢复
         self._in_sort = False            # 排序过程中的 setDataFrame 不刷新 _natural_df
@@ -3115,8 +3113,9 @@ class MainWindow(QMainWindow):
 
     def _on_header_clicked(self, logical_index):
         """列头点击：单列为【未排 → 升序 → 降序 → 未排】三态循环；Ctrl+点击为多列多级排序。"""
-        modifiers = QApplication.keyboardModifiers()
-        ctrl_pressed = bool(modifiers & Qt.ControlModifier)
+        # 可靠读取 Ctrl：由 SortBadgeHeader.mousePressEvent 在按下时捕获（keyboardModifiers()
+        # 在 sectionClicked handler 里常读不到 Ctrl，会导致多级排序永远不生效）。
+        ctrl_pressed = bool(getattr(self._sort_header, "_ctrl_held", False))
         col = logical_index
         if col <= 0:
             return  # 第一列(_read)不参与排序
@@ -3195,21 +3194,17 @@ class MainWindow(QMainWindow):
                 self._natural_df = df.copy()
 
     def _update_sort_indicators(self):
-        """刷新列头排序指示：主排序列显示原生三角箭头（样式引擎绘制，100% 可靠），
-        同时 SortBadgeHeader.paintEvent 在各级已排序列角上叠彩色层级数字(1/2/3)显示多级顺序。
-        原生箭头管"方向+主列"，彩色数字管"多级顺序"，二者不重复、互不打架。"""
+        """刷新列头多级排序角标（见 SortBadgeHeader）。
+        纯自绘方案：关闭原生箭头（setSortingEnabled(False) 下原生 setSortIndicator 不可靠、
+        且不显示多级），由 SortBadgeHeader.paintEvent 在各级已排序列角上叠「层级数字+▲▼」角标。
+        取消排序(sort_columns 为空)时角标自然消失。"""
         header = self.table_view.horizontalHeader()
         header.blockSignals(True)
         try:
-            if self.sort_columns:
-                col, asc = self.sort_columns[0]
-                header.setSortIndicator(col, Qt.AscendingOrder if asc else Qt.DescendingOrder)
-            else:
-                # 取消排序：清掉原生箭头
-                header.setSortIndicator(-1, Qt.AscendingOrder)
+            header.setSortIndicatorShown(False)  # 关原生箭头，避免与自绘角标重复
         finally:
             header.blockSignals(False)
-        # 触发表头重绘以刷新层级角标（1/2/3 彩色数字）
+        # 触发表头重绘以刷新自绘角标（1▲/2▼ ...）
         header.update()
 
     # -----------------------------------------------------------
@@ -4491,20 +4486,27 @@ def _ask_quarantine_reason(parent, title: str) -> str | None:
 
 
 class SortBadgeHeader(QHeaderView):
-    """自定义表头：在已排序列的角上叠加 1/2/3 彩色层级数字，让多级排序顺序一眼可见。
+    """自定义表头：在已排序列的角上叠加「层级数字 + 升降箭头」角标，让多级排序一眼可见。
 
-    仅 override paintEvent —— 先 super().paintEvent(event) 画出原样表头（标签/分隔线/列宽
-    等完全不变），再在每个已排序列右上角叠一个小角标显示层级序号。方向由颜色表示
-    （蓝=升序 / 橙=降序），主排序列另有原生三角箭头指示方向。不改动任何列标签或原生外观，
-    因此零回归风险。多级排序的"第几级"一眼可见，解决 Qt 原生只标最后一级、看不出多列在生效的问题。
+    仅 override paintEvent —— 先 super().paintEvent(event) 画出原样表头，再在每个已排序列
+    右上角叠一个角标：例如「1▲」(蓝=升序) /「2▼」(橙=降序)。方向用 ▲▼ 明示、层级用数字，
+    纯自绘、不依赖 Qt 原生 sortIndicator（setSortingEnabled(False) 下原生箭头不可靠）。
+    不改动任何列标签或原生外观，零回归风险。多级排序的「第几级 / 升还是降」一眼可见。
     """
 
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
         self._get_sort_columns = lambda: []  # 由 MainWindow 注入：返回 [(列号, 是否升序), ...]
+        self._ctrl_held = False  # 由 mousePressEvent 捕获 Ctrl 修饰符，供 _on_header_clicked 可靠读取
 
     def set_sort_columns_getter(self, getter):
         self._get_sort_columns = getter
+
+    def mousePressEvent(self, event):
+        # 在鼠标按下时捕获修饰符：QApplication.keyboardModifiers() 在 sectionClicked handler
+        # 里经常读不到 Ctrl（Qt 经典坑），故改在 mousePressEvent 可靠捕获，解决"Ctrl+多级排序不生效"。
+        self._ctrl_held = bool(event.modifiers() & Qt.ControlModifier)
+        super().mousePressEvent(event)
 
     def paintEvent(self, event):
         super().paintEvent(event)  # 先画原生表头（外观完全保持）
@@ -4521,11 +4523,10 @@ class SortBadgeHeader(QHeaderView):
                 rect = QRect(self.sectionPosition(col), 0, self.sectionSize(col), self.height())
                 if rect.width() <= 0:  # 隐藏列不画
                     continue
-                # 角标只画层级数字(1/2/3)，方向由颜色表示：蓝=升序 / 橙=降序；
-                # 主排序列另有原生三角箭头显示方向，二者不重复。
-                txt = str(level)
+                # 角标：层级数字 + 升降箭头，方向明示（蓝=升/橙=降）
+                txt = f"{level}{'▲' if asc else '▼'}"
                 font = QFont(self.font())
-                font.setPointSize(8)
+                font.setPointSize(9)
                 font.setBold(True)
                 painter.setFont(font)
                 metrics = QFontMetrics(font)

@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.63",
+        "date": "2026-09-02",
+        "features": "主表排序两处根因修复：① 多级排序(Ctrl+多列)此前永远不生效——根因是 _on_header_clicked 用 QApplication.keyboardModifiers() 在 sectionClicked 信号 handler 里读取 Ctrl，而该时机修饰符状态不可靠(Qt 经典坑)，永远返回非 Ctrl→只走单条件分支。改为在 SortBadgeHeader.mousePressEvent 鼠标按下时捕获修饰符存 self._ctrl_held，_on_header_clicked 读此值，100% 可靠。② 排序状态角标在真实界面看不到——根因是 v43.62 误信原生 sortIndicator，但 setSortingEnabled(False) 下原生 setSortIndicator 不可靠且不显示多级。改为纯自绘：SortBadgeHeader.paintEvent 在各级已排序列右上角叠「层级数字+▲▼」角标(蓝=升/橙=降，9pt 加粗)，彻底不依赖原生箭头；_update_sort_indicators 只调 header.update() 触发自绘。headless 已验证：单点三态(未排→升→降→未排)正常、Ctrl+叠加正确累积且行序按多级重排、真实点击后 paintEvent 确实执行且 getter 返回非空(角标必绘制；offscreen 抓不到自绘仅为平台限制)。",
+        "fixes": ""
+    },
+    {
         "version": "v43.62",
         "date": "2026-09-02",
         "features": "主表排序状态改为「原生三角箭头 + 自定义彩色层级数字」双保险：主排序列由 Qt 原生 sortIndicator 显示清晰三角箭头（样式引擎绘制，100% 可靠，解决此前自定义角标在真实界面看不到、用户反馈「没有箭头」的问题）；各已排序列右上角再由 SortBadgeHeader 叠 1/2/3 彩色数字（蓝=升/橙=降）显示多级顺序。_update_sort_indicators 由「关闭原生箭头」改为在主排序列 setSortIndicator 定位原生箭头（取消排序时清掉）。多级排序逻辑(_on_header_clicked/_apply_multi_sort)不变，headless 已验证 Ctrl+叠加正确累积且行序重排正确。",
