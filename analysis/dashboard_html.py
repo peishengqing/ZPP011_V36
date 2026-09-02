@@ -12,15 +12,18 @@ CLI（tools/gen_dashboard.py）与 GUI（gui_pyside6/dialogs/dashboard_dialog.py
   - CLI 入口：matplotlib.use("Agg")（无界面，纯出图）
   - GUI 环境：项目已在 dashboard_dialog 顶部设 qtagg（PySide6）
 fig.savefig 两种后端都能把图写进内存缓冲，互不干扰，因此本模块保持后端无关。
+
+优化说明（v43.65）：
+  - CSS 全面升级：现代配色、渐变卡片、平滑动画、更好的视觉层级
+  - 引入 Chart.js：关键图表（每日趋势、正负构成）换成交互图，鼠标悬停显示数值
+  - 其余 10 图保持 matplotlib，确保离线可用
 """
 import base64
 import io
 
 import numpy as np
 import pandas as pd
-import matplotlib
 import matplotlib.pyplot as plt
-from matplotlib import font_manager
 
 # ---------- 中文显示 ----------
 try:
@@ -35,6 +38,176 @@ C_NEG = "#2e8b57"      # 负偏差 绿
 C_ACCENT = "#0969da"   # 强调蓝
 C_GRAY = "#8b949e"
 GRID = "#eaecef"
+
+# =====================================================================
+#  看板 CSS 样式（常量，避免 f-string 花括号冲突）
+# =====================================================================
+DASHBOARD_CSS = """
+/* ===== 基础重置 & 变量 ===== */
+:root {
+  --c-pos: #d4392f;
+  --c-neg: #2e8b57;
+  --c-accent: #0969da;
+  --c-accent-light: #0969da14;
+  --c-gray: #656d76;
+  --c-muted: #8b949e;
+  --c-border: #d0d7de;
+  --c-bg: #f0f4f8;
+  --c-card: #ffffff;
+  --shadow-sm: 0 1px 3px rgba(15,23,42,0.06);
+  --shadow-md: 0 4px 16px rgba(15,23,42,0.10);
+  --shadow-lg: 0 8px 32px rgba(15,23,42,0.14);
+  --radius: 14px;
+  --transition: all 0.22s cubic-bezier(0.4,0,0.2,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'PingFang SC','Microsoft YaHei','Segoe UI',system-ui,sans-serif;
+  background:var(--c-bg);
+  color:#0f172a;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1200px;margin:0 auto;padding:28px 24px 48px}
+h1{
+  font-size:24px;font-weight:700;letter-spacing:-0.02em;
+  background:linear-gradient(135deg,#0f172a 0%,#334155 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  margin:0 0 6px;
+}
+.sub{color:var(--c-muted);font-size:13px;margin-bottom:18px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.sub::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--c-accent);display:inline-block}
+/* ===== 工具栏 ===== */
+.toolbar{
+  position:sticky;top:0;z-index:100;
+  background:rgba(240,244,248,0.92);
+  backdrop-filter:blur(12px) saturate(1.6);
+  padding:12px 0;margin:0 0 22px;
+  border-bottom:1px solid var(--c-border);
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  box-shadow:0 2px 12px rgba(15,23,42,0.06);
+}
+.tlabel{font-size:13px;color:var(--c-gray);font-weight:500}
+.fbtn{
+  font-family:inherit;font-size:13px;font-weight:500;
+  padding:7px 18px;border:1.5px solid var(--c-border);
+  background:#fff;border-radius:22px;cursor:pointer;
+  color:var(--c-gray);transition:all 0.22s cubic-bezier(0.4,0,0.2,1);
+  box-shadow:0 1px 3px rgba(15,23,42,0.06);
+}
+.fbtn:hover{border-color:var(--c-accent);color:var(--c-accent);box-shadow:0 2px 10px rgba(9,105,218,0.15);transform:translateY(-1px)}
+.fbtn.active{background:var(--c-accent);color:#fff;border-color:var(--c-accent);box-shadow:0 4px 14px rgba(9,105,218,0.32);transform:translateY(-1px)}
+/* ===== 指标卡 ===== */
+.cards{display:flex;gap:14px;margin-bottom:28px;flex-wrap:wrap}
+.card{
+  flex:1;min-width:170px;
+  background:var(--c-card);
+  border:1px solid var(--c-border);
+  border-radius:14px;
+  padding:20px 22px;
+  box-shadow:0 1px 3px rgba(15,23,42,0.06);
+  transition:all 0.22s cubic-bezier(0.4,0,0.2,1);
+  position:relative;overflow:hidden;
+}
+.card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:3px;
+  background:linear-gradient(90deg,var(--c-accent),var(--c-pos));
+  opacity:0;transition:opacity 0.2s;
+}
+.card:hover{box-shadow:0 4px 16px rgba(15,23,42,0.10);transform:translateY(-3px);border-color:transparent}
+.card:hover::before{opacity:1}
+.card-val{font-size:26px;font-weight:800;letter-spacing:-0.02em;line-height:1.2}
+.card-key{color:var(--c-muted);font-size:12.5px;margin-top:6px;font-weight:500}
+/* ===== 工厂区块 ===== */
+.factory-block{animation:fadeSlideIn 0.35s ease both}
+@keyframes fadeSlideIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.fac-title{
+  font-size:17px;font-weight:700;margin:32px 0 14px;
+  padding-left:14px;
+  border-left:4px solid var(--c-pos);
+  color:#0f172a;
+  display:flex;align-items:center;gap:10px;
+}
+/* ===== 图表分组 ===== */
+.group{margin-bottom:28px}
+.grp{
+  font-size:14px;font-weight:700;
+  border-left:4px solid var(--c-accent);
+  padding-left:10px;margin:0 0 14px;
+  color:#0f172a;letter-spacing:0.01em;
+}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.cell{
+  background:var(--c-card);
+  border:1px solid var(--c-border);
+  border-radius:14px;
+  padding:14px;
+  box-shadow:0 1px 3px rgba(15,23,42,0.06);
+  transition:all 0.22s cubic-bezier(0.4,0,0.2,1);
+}
+.cell:hover{box-shadow:0 4px 16px rgba(15,23,42,0.10);border-color:rgba(9,105,218,0.25)}
+.cap{margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start}
+.cap b{font-size:13.5px;font-weight:650;color:#0f172a}
+.cap span{display:block;color:var(--c-muted);font-size:11.5px;margin-top:3px;line-height:1.4}
+.chart-wrap{position:relative;width:100%;height:240px}
+.chart-wrap img{width:100%;height:220px;object-fit:cover;border-radius:10px;cursor:zoom-in;transition:transform 0.2s}
+.chart-wrap img:hover{transform:scale(1.02)}
+.chart-wrap canvas{width:100%!important;height:220px!important}
+.placeholder{
+  height:120px;display:flex;align-items:center;justify-content:center;
+  color:var(--c-muted);background:linear-gradient(135deg,#f8fafc,#f1f5f9);
+  border-radius:10px;font-size:13px;
+  border:1.5px dashed var(--c-border);
+}
+/* ===== 小结卡 ===== */
+.summary-card{
+  background:linear-gradient(135deg,#f0f7ff 0%,#e8f4fd 50%,#fff 100%);
+  border:1.5px solid #b6d4fe;
+  border-radius:14px;
+  padding:20px 24px;margin-top:10px;
+  box-shadow:0 1px 3px rgba(15,23,42,0.06);
+}
+.summary-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:15px;font-weight:650;color:#0f172a}
+.summary-icon{font-size:22px}
+.summary-body{display:flex;flex-wrap:wrap;gap:20px;font-size:14px;color:#334155}
+.summary-body span b{font-weight:700}
+.summary-src{color:var(--c-muted);font-size:12px;margin-top:12px;padding-top:10px;border-top:1px solid #e2e8f0;font-style:italic}
+/* ===== 图表放大遮罩 ===== */
+.chart-overlay{
+  display:none;position:fixed;top:0;left:0;width:100%;height:100%;
+  background:rgba(15,23,42,0.88);z-index:9999;
+  justify-content:center;align-items:center;cursor:zoom-out;
+  backdrop-filter:blur(4px);
+}
+.chart-overlay.show{display:flex}
+.chart-overlay .overlay-inner{text-align:center;max-width:94%;max-height:94%;animation:zoomIn 0.2s ease}
+@keyframes zoomIn{from{opacity:0;transform:scale(0.92)}to{opacity:1;transform:scale(1)}}
+.chart-overlay .overlay-cap{color:#fff;font-size:16px;margin-bottom:12px;font-weight:500}
+.chart-overlay img{max-width:94vw;max-height:88vh;border-radius:12px;box-shadow:0 16px 64px rgba(0,0,0,0.4)}
+/* ===== 响应式 ===== */
+@media(max-width:768px){
+  .grid{grid-template-columns:1fr !important}
+  .cards{flex-direction:column}
+  .wrap{padding:16px 12px 36px}
+  .toolbar{flex-direction:column;align-items:flex-start;gap:8px}
+  .fbtn{font-size:12px;padding:5px 14px}
+  h1{font-size:20px}
+  .summary-body{flex-direction:column;gap:10px}
+  .chart-wrap{height:200px}
+  .chart-wrap img{height:180px}
+}
+/* ===== 打印 ===== */
+@media print{
+  .toolbar{display:none !important}
+  .factory-block{animation:none !important;break-inside:avoid}
+  .chart-overlay{display:none !important}
+  .card{break-inside:avoid;box-shadow:none;border:1px solid #ccc}
+  .cell{break-inside:avoid;box-shadow:none}
+  .grid{grid-template-columns:1fr 1fr}
+  body{background:#fff}
+  .cell img{height:180px}
+}
+"""
 
 
 def fig_to_b64(fig):
@@ -316,28 +489,118 @@ def _cards_html(metrics):
     )
 
 
+def _build_chart_js_daily_trend(labels, values, chart_id):
+    """构建每日趋势 Chart.js 脚本"""
+    labels_str = repr(labels)
+    values_str = repr(values)
+    return f'''<div class="chart-wrap"><canvas id="{chart_id}"></canvas></div>
+<script>
+(function(){{
+  var ctx = document.getElementById('{chart_id}').getContext('2d');
+  new Chart(ctx, {{
+    type: 'line',
+    data: {{
+      labels: {labels_str},
+      datasets: [{{
+        label: '偏差金额（含税）',
+        data: {values_str},
+        borderColor: '{C_ACCENT}',
+        backgroundColor: '{C_ACCENT}22',
+        borderWidth: 2.2,
+        pointRadius: 3.5,
+        pointHoverRadius: 6,
+        pointBackgroundColor: '{C_ACCENT}',
+        fill: true,
+        tension: 0.35
+      }}]
+    }},
+    options: {{
+      responsive: true, maintainAspectRatio: false,
+      plugins: {{ legend: {{ display: false }} }},
+      scales: {{
+        x: {{ grid: {{ color: '{GRID}' }}, ticks: {{ font: {{ size: 10 }}, rotate: 35 }}, border: {{ display: false }} }},
+        y: {{ grid: {{ color: '{GRID}' }}, ticks: {{ font: {{ size: 10 }}, callback: v => v.toLocaleString() }}, border: {{ display: false }} }},
+      }}
+    }}
+  }});
+}})();
+</script>'''
+
+
+
+def _build_chart_js_posneg(pos, neg):
+    """构建正负偏差构成 Chart.js 脚本"""
+    return f'''<div class="chart-wrap"><canvas id="c_posneg"></canvas></div>
+<script>
+(function(){{
+  var ctx = document.getElementById('c_posneg').getContext('2d');
+  new Chart(ctx, {{
+    type: 'bar',
+    data: {{
+      labels: ['正偏差\\n（多耗）', '负偏差\\n（少耗）'],
+      datasets: [{{
+        data: [{pos}, {neg}],
+        backgroundColor: ['{C_POS}', '{C_NEG}'],
+        borderRadius: 8,
+        borderSkipped: false,
+        barThickness: 56
+      }}]
+    }},
+    options: {{
+      responsive: true, maintainAspectRatio: false,
+      plugins: {{ legend: {{ display: false }} }},
+      scales: {{
+        x: {{ grid: {{ display: false }}, border: {{ display: false }}, ticks: {{ font: {{ size: 11, weight: '600' }} }} }},
+        y: {{ grid: {{ color: '{GRID}' }}, ticks: {{ font: {{ size: 10 }}, callback: v => v.toLocaleString() }}, border: {{ display: false }} }},
+      }}
+    }}
+  }});
+}})();
+</script>'''
+
+
+
 def _charts_html(dev_df):
-    """12 图按 CHARTS 登记顺序渲染，单图失败显示占位。"""
+    """12 图按 CHARTS 登记顺序渲染，前 2 张用 Chart.js 交互图，其余用 matplotlib PNG。
+    单图失败显示占位。"""
     sections = []
     for grp_name, items in CHARTS:
         figs = []
         for fn_name, title, desc in items:
             b64 = _safe(CHART_FUNCS[fn_name], dev_df, title)
-            if b64:
+            if not b64:
+                figs.append(f'<div class="cell"><div class="cap"><b>{title}</b><span>{desc}</span></div><div class="placeholder">「{title}」本期无数据</div></div>')
+                continue
+            # 前两张图用 Chart.js 交互渲染，其余用 matplotlib PNG
+            if fn_name == 'chart_daily_trend':
+                d = dev_df.copy()
+                d["_dt"] = pd.to_datetime(d["订单日期"])
+                g = d.groupby(d["_dt"].dt.date)["偏差金额"].sum()
+                labels = [x.strftime("%m-%d") for x in g.index]
+                values = [round(v, 0) for v in g.values]
+                chart_id = f"c_dt_{abs(hash(str(labels))) % 10000}"
+                chart_js = _build_chart_js_daily_trend(labels, values, chart_id)
+                figs.append(f'<div class="cell"><div class="cap"><b>{title}</b><span>{desc}</span></div>{chart_js}</div>')
+            elif fn_name == 'chart_pos_neg_stack':
+                g = dev_df.groupby("偏差区间")["偏差金额"].sum()
+                pos = round(g.get("正偏差", 0.0), 0)
+                neg = round(g.get("负偏差", 0.0), 0)
+                chart_js = _build_chart_js_posneg(pos, neg)
+                figs.append(f'<div class="cell"><div class="cap"><b>{title}</b><span>{desc}</span></div>{chart_js}</div>')
+            else:
                 imgs = (
                     f'<img src="data:image/png;base64,{b64}" alt="{title}" '
                     f'onclick="zoomChart(this.src,\'{title}\')" '
                     f'style="cursor:zoom-in"/>'
                 )
-            else:
-                imgs = f'<div class="placeholder">「{title}」本期无数据</div>'
-            figs.append(
-                f'<div class="cell"><div class="cap"><b>{title}</b><span>{desc}</span></div>{imgs}</div>'
-            )
+                figs.append(f'<div class="cell"><div class="cap"><b>{title}</b><span>{desc}</span></div>{imgs}</div>')
         sections.append(
             f'<div class="group"><h3 class="grp">{grp_name}</h3><div class="grid">{"".join(figs)}</div></div>'
         )
     return sections
+
+
+
 
 
 def _summary_html(m, meta):
@@ -389,69 +652,8 @@ def build_html(blocks, meta):
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ZPP011 偏差分析看板</title>
-<style>
- body{{font-family:'Microsoft YaHei','PingFang SC',sans-serif;margin:0;background:#f6f8fa;color:#1f2328}}
- .wrap{{max-width:1080px;margin:0 auto;padding:24px}}
- h1{{font-size:22px;margin:0 0 4px}}
- .sub{{color:#656d76;font-size:13px;margin-bottom:6px}}
- /* ===== 工具栏 ===== */
- .toolbar{{position:sticky;top:0;z-index:10;background:rgba(246,248,250,0.95);backdrop-filter:blur(6px);padding:10px 0;margin:8px 0 18px;border-bottom:1px solid #d0d7de;display:flex;align-items:center;gap:8px;flex-wrap:wrap}}
- .tlabel{{font-size:13px;color:#656d76}}
- .fbtn{{font-family:inherit;font-size:13px;padding:6px 16px;border:1px solid #d0d7de;background:#fff;border-radius:20px;cursor:pointer;color:#1f2328;transition:all 0.15s}}
- .fbtn:hover{{border-color:{C_ACCENT};box-shadow:0 1px 4px rgba(9,105,218,0.15)}}
- .fbtn.active{{background:{C_ACCENT};color:#fff;border-color:{C_ACCENT}}}
- /* ===== 指标卡 ===== */
- .cards{{display:flex;gap:12px;margin-bottom:22px;flex-wrap:wrap}}
- .card{{flex:1;min-width:160px;background:#fff;border:1px solid #d0d7de;border-radius:12px;padding:16px 18px;box-shadow:0 1px 3px rgba(0,0,0,0.05);transition:box-shadow 0.2s,transform 0.2s}}
- .card:hover{{box-shadow:0 4px 12px rgba(0,0,0,0.1);transform:translateY(-2px)}}
- .card-val{{font-size:24px;font-weight:700}}
- .card-key{{color:#656d76;font-size:13px;margin-top:4px}}
- /* ===== 工厂标题 ===== */
- .factory-block{{animation:fadeIn 0.3s ease}}
- @keyframes fadeIn{{from{{opacity:0;transform:translateY(8px)}}to{{opacity:1;transform:translateY(0)}}}}
- .fac-title{{font-size:18px;margin:26px 0 12px;border-left:4px solid {C_POS};padding-left:10px}}
- /* ===== 图表区 ===== */
- .group{{margin-bottom:24px}}
- .grp{{font-size:15px;border-left:4px solid {C_ACCENT};padding-left:8px;margin:0 0 12px}}
- .grid{{display:grid;grid-template-columns:1fr 1fr;gap:14px}}
- .cell{{background:#fff;border:1px solid #d0d7de;border-radius:12px;padding:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04);transition:box-shadow 0.2s}}
- .cell:hover{{box-shadow:0 2px 8px rgba(0,0,0,0.08)}}
- .cap{{margin-bottom:6px}}.cap b{{font-size:13px}}.cap span{{display:block;color:#656d76;font-size:11px;margin-top:2px}}
- .cell img{{width:100%;display:block;border-radius:8px}}
- .placeholder{{height:120px;display:flex;align-items:center;justify-content:center;color:#8b949e;background:#f6f8fa;border-radius:8px;font-size:13px}}
- /* ===== 小结卡 ===== */
- .summary-card{{background:linear-gradient(135deg,#f0f7ff 0%,#fff 100%);border:1px solid #b6d4fe;border-radius:12px;padding:16px 20px;margin-top:8px}}
- .summary-header{{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:15px}}
- .summary-icon{{font-size:20px}}
- .summary-body{{display:flex;flex-wrap:wrap;gap:16px;font-size:14px;color:#374151}}
- .summary-src{{color:#8b949e;font-size:12px;margin-top:10px;padding-top:8px;border-top:1px solid #e3e8ed}}
- /* ===== 图表放大遮罩 ===== */
- .chart-overlay{{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:9999;justify-content:center;align-items:center;cursor:zoom-out}}
- .chart-overlay.show{{display:flex}}
- .chart-overlay .overlay-inner{{text-align:center;max-width:92%;max-height:92%}}
- .chart-overlay .overlay-cap{{color:#fff;font-size:16px;margin-bottom:8px}}
- .chart-overlay img{{max-width:92vw;max-height:88vh;border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,0.3)}}
- /* ===== 响应式 ===== */
- @media(max-width:768px){{
-   .grid{{grid-template-columns:1fr !important}}
-   .cards{{flex-direction:column}}
-   .wrap{{padding:12px}}
-   .toolbar{{flex-direction:column;align-items:flex-start}}
-   .fbtn{{font-size:12px;padding:4px 12px}}
-   h1{{font-size:18px}}
-   .summary-body{{flex-direction:column;gap:8px}}
- }}
- /* ===== 打印 ===== */
- @media print{{
-   .toolbar{{display:none !important}}
-   .factory-block{{animation:none !important}}
-   .chart-overlay{{display:none !important}}
-   .card{{break-inside:avoid;box-shadow:none}}
-   .cell{{break-inside:avoid;box-shadow:none}}
-   .grid{{grid-template-columns:1fr 1fr}}
-   body{{background:#fff}}
- }}
-</style></head><body><div class="wrap">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>{DASHBOARD_CSS}</style></head><body><div class="wrap">
 <h1>ZPP011 偏差分析看板</h1>
 <div class="sub">分析窗口 {meta['start']} ~ {meta['end']} ｜ 数据来源 {meta['src']} ｜ 生成时间 {meta['gen']}</div>
 {toolbar}

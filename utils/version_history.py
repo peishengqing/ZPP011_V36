@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.65",
+        "date": "2026-09-02",
+        "features": "管理看板视觉全面升级：CSS 采用现代设计系统（CSS变量、渐变卡片、平滑动画、更好的视觉层级）；引入 Chart.js CDN，将「每日偏差金额趋势」「正/负偏差金额构成」两张关键图换成交互式图表（鼠标悬停显示数值、图例点击筛选）；其余 10 张 matplotlib 图保持不变确保离线可用。",
+        "fixes": "修复管理看板视觉风格陈旧、图表无交互问题。"
+    },
+    {
         "version": "v43.64",
         "date": "2026-09-02",
         "features": "排序Ctrl检测增加键盘事件流兜底：此前版本只在mousePressEvent捕获Ctrl修饰符，但实测真实环境event.modifiers()常读不到Ctrl（Qt经典坑），导致多级排序永不生效。新增app级eventFilter跟踪Key_Press/Key_Release维护self._ctrl_down状态；_on_header_clicked三路冗余读取：_ctrl_down > _sort_header._ctrl_held > keyboardModifiers()，确保多级排序在任何环境下可靠触发。纯防御性增强，单条件三态逻辑不变。",
