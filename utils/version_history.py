@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.73",
+        "date": "2026-09-04",
+        "features": "",
+        "fixes": "物料类型下拉框初始状态不一致：set_data 里 addItems 后漏调 setCurrentText 全部，导致下拉框初始显示数据第一项而非全部；叠加 _mtd_filter 初始值为 all 而非全部，两者状态不一致，筛选出空数据。补加 setCurrentText 全部修复。"
+    },
+    {
         "version": "v43.72",
         "date": "2026-09-04",
         "features": "",
