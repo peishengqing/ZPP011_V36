@@ -34,8 +34,8 @@ class NegLossDashboardDialog(QDialog):
         self.resize(1280, 640)
         self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.main_window = main_window
-        self._keywords = "彩罐,托盘,手包袋"
-        self._include_zero = True
+        self._keywords = ""
+        self._include_zero = False
         self._semi_class_filter = set()  # 半成品重分类筛选：空集合=全部 / 集合内为选中分类（虚拟项模糊匹配）
         self._semi_class_col = None   # 半成品重分类列名（set_data 时探测）
         self._read_filter = "all"     # 已读/未读筛选（全部/已读/未读）
@@ -98,13 +98,12 @@ class NegLossDashboardDialog(QDialog):
         top.addSpacing(12)
         self.lbl_unit = QLabel("单位:")
         top.addWidget(self.lbl_unit)
-        self.grp_unit = QGroupBox()
-        self.grp_unit.setFlat(True)
-        self.grp_unit.setFixedWidth(140)
-        self._unit_vlayout = QVBoxLayout(self.grp_unit)
-        self._unit_vlayout.setContentsMargins(4, 2, 4, 2)
-        self._unit_vlayout.setSpacing(1)
-        self._unit_checkboxes = {}  # 名称 -> QCheckBox（含特殊键 "__all__"）
+        self.grp_unit = QComboBox()
+        self.grp_unit.setMinimumWidth(100)
+        self.grp_unit.setMaximumWidth(140)
+        self.grp_unit.setEditable(False)
+        self.grp_unit.addItem("全部")
+        self.grp_unit.currentTextChanged.connect(self._on_unit_changed)
         top.addWidget(self.grp_unit)
 
         top.addSpacing(12)
@@ -296,28 +295,9 @@ class NegLossDashboardDialog(QDialog):
         self._include_zero = (state != 0)
         self._apply_filter()
 
-    def _on_semi_class_changed(self):
-        """半成品重分类复选框变化回调：收集勾选项（空=全部），全部与其他互斥。"""
-        all_cb = self._semi_class_checkboxes.get("__all__")
-        others = [cb for name, cb in self._semi_class_checkboxes.items() if name != "__all__"]
-        sender = self.sender()
-        if sender is all_cb:
-            if all_cb.isChecked():
-                for cb in others:
-                    cb.setChecked(False)
-                self._semi_class_filter = set()
-        else:
-            if any(cb.isChecked() for cb in others):
-                if all_cb:
-                    all_cb.setChecked(False)
-                self._semi_class_filter = {
-                    name for name, cb in self._semi_class_checkboxes.items()
-                    if name != "__all__" and cb.isChecked()
-                }
-            else:
-                if all_cb:
-                    all_cb.setChecked(True)
-                self._semi_class_filter = set()
+    def _on_semi_class_changed(self, text):
+        """半成品分类下拉变化：文本='全部'则清空筛选，否则设为该值。"""
+        self._semi_class_filter = set() if text == "全部" else {text}
         self._apply_filter()
 
     def _on_mtd_changed(self, text):
@@ -441,49 +421,32 @@ class NegLossDashboardDialog(QDialog):
         return vals.isin(self._unit_filter)
 
     def _build_semi_checkboxes(self, unique_vals):
-        """构建半成品分类复选框组：全部 + 虚拟两项 + 实际各值。"""
-        while self._semi_class_vlayout.count():
-            it = self._semi_class_vlayout.takeAt(0)
-            w = it.widget()
-            if w:
-                w.deleteLater()
-        self._semi_class_checkboxes = {}
-        cb_all = QCheckBox("全部")
-        cb_all.setChecked(True)
-        cb_all.stateChanged.connect(self._on_semi_class_changed)
-        self._semi_class_vlayout.addWidget(cb_all)
-        self._semi_class_checkboxes["__all__"] = cb_all
+        """构建半成品分类下拉列表：全部 + 虚拟两项 + 实际各值。"""
+        self.grp_semi_class.blockSignals(True)
+        kept = self.grp_semi_class.currentText()
+        self.grp_semi_class.clear()
+        self.grp_semi_class.addItem("全部")
         for v in ("食品成品半成品", "饮料成品半成品"):
-            cb = QCheckBox(v)
-            cb.stateChanged.connect(self._on_semi_class_changed)
-            self._semi_class_vlayout.addWidget(cb)
-            self._semi_class_checkboxes[v] = cb
+            self.grp_semi_class.addItem(v)
         for v in unique_vals:
             if v in ("食品成品半成品", "饮料成品半成品"):
                 continue
-            cb = QCheckBox(v)
-            cb.stateChanged.connect(self._on_semi_class_changed)
-            self._semi_class_vlayout.addWidget(cb)
-            self._semi_class_checkboxes[v] = cb
+            self.grp_semi_class.addItem(v)
+        if kept and kept != "全部" and kept in self.grp_semi_class.itemTexts():
+            self.grp_semi_class.setCurrentText(kept)
+        self.grp_semi_class.blockSignals(False)
 
     def _build_unit_checkboxes(self, unique_vals):
-        """构建单位复选框组：全部 + 各值。"""
-        while self._unit_vlayout.count():
-            it = self._unit_vlayout.takeAt(0)
-            w = it.widget()
-            if w:
-                w.deleteLater()
-        self._unit_checkboxes = {}
-        cb_all = QCheckBox("全部")
-        cb_all.setChecked(True)
-        cb_all.stateChanged.connect(self._on_unit_changed)
-        self._unit_vlayout.addWidget(cb_all)
-        self._unit_checkboxes["__all__"] = cb_all
+        """构建单位下拉列表：全部 + 各值。"""
+        self.grp_unit.blockSignals(True)
+        kept = self.grp_unit.currentText()
+        self.grp_unit.clear()
+        self.grp_unit.addItem("全部")
         for v in unique_vals:
-            cb = QCheckBox(v)
-            cb.stateChanged.connect(self._on_unit_changed)
-            self._unit_vlayout.addWidget(cb)
-            self._unit_checkboxes[v] = cb
+            self.grp_unit.addItem(v)
+        if kept and kept != "全部" and kept in self.grp_unit.itemTexts():
+            self.grp_unit.setCurrentText(kept)
+        self.grp_unit.blockSignals(False)
 
     def _read_mask(self, df, mode):
         """已读/未读掩码：all=全True / 已读=_read==1 / 未读=_read!=1(含0或NaN)。"""
@@ -713,6 +676,22 @@ class NegLossDashboardDialog(QDialog):
                 self.combo_workshop.setCurrentText("全部")
                 self._workshop_filter = "all"
             self.combo_workshop.blockSignals(False)
+        # 动态刷新单位下拉：只列出当前可见数据中实际存在的单位
+        if self._unit_col and not filtered.empty:
+            current = self.grp_unit.currentText()
+            new_vals = sorted(filtered[self._unit_col].dropna().astype(str).str.strip().unique())
+            self.grp_unit.blockSignals(True)
+            self.grp_unit.clear()
+            self.grp_unit.addItem("全部")
+            self.grp_unit.addItems(new_vals)
+            # 保留之前选中的项（若仍存在），否则回退"全部"
+            if current and current != "全部" and current in new_vals:
+                self.grp_unit.setCurrentText(current)
+                self._unit_filter = {current}
+            else:
+                self.grp_unit.setCurrentText("全部")
+                self._unit_filter = set()
+            self.grp_unit.blockSignals(False)
 
     # ------------------------------------------------------------------ 复制
     def eventFilter(self, obj, event):
