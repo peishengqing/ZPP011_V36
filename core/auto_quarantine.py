@@ -315,7 +315,7 @@ def compute_auto_quarantine_ids(df: pd.DataFrame, cfg=None) -> dict:
         mask = _match_single_rule(
             df, rule, alt_col, cat_col, name_col, actual_col, quota_col,
             dev_rate_col, mat_code_col, workshop_col, remark_col, dev_qty_col,
-            semi_class_col,
+            semi_class_col, unit_col,
         )
         for uid in df.loc[mask, "data_id"].astype(str):
             if uid not in result:  # 已被靠前规则命中的不再覆盖
