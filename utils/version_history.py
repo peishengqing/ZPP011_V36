@@ -14,6 +14,18 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.75",
+        "date": "2026-09-04",
+        "features": "",
+        "fixes": "规则编辑器单位多选复选框无法勾选：chk_unit.stateChanged 未连到 _refresh_summary（第218行信号元组漏了 self.chk_unit），勾选总开关后子复选框组虽显示但点击无响应。补加 self.chk_unit 到 stateChanged 连接列表修复。"
+    },
+    {
+        "version": "v43.74",
+        "date": "2026-09-04",
+        "features": "规则编辑器新增单位多选筛选",
+        "fixes": "① compute_auto_quarantine_ids 漏传 unit_col 给 _match_single_rule（pyflakes 报错 local variable 'unit_col' is assigned to but never used）；② 新增单位字段：DEFAULT_RULE 加 unit_required/unit_value，_RULE_FIELDS 补字段，_match_single_rule 加 unit_col 参数+匹配逻辑（第7.5节，逗号分隔多值 OR），build_rule_summary 加单位摘要。"
+    },
+    {
         "version": "v43.73",
         "date": "2026-09-04",
         "features": "",
