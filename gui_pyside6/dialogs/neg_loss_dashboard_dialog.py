@@ -600,6 +600,7 @@ class NegLossDashboardDialog(QDialog):
             unique_vals = df[self._mtd_col].dropna().astype(str).str.strip().unique()
             unique_vals = sorted(v for v in unique_vals if v)
             self.combo_mtd.addItems(unique_vals)
+            self.combo_mtd.setCurrentText("全部")
         else:
             self.mtd_sep.setVisible(False)
             self.lbl_mtd.setVisible(False)
