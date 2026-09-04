@@ -215,7 +215,7 @@ class AutoQuarantineRuleWidget(QWidget):
                   self.edit_mat_prefix, self.edit_workshop, self.edit_name_exclude):
             w.textChanged.connect(self._refresh_summary)
         for w in (self.chk_rule_enabled, self.chk_cat, self.chk_alt, self.chk_loss,
-                  self.chk_dev_rate, self.chk_workshop, self.chk_dev_qty):
+                  self.chk_dev_rate, self.chk_workshop, self.chk_unit, self.chk_dev_qty):
             w.stateChanged.connect(self._refresh_summary)
         for w in (self.spin_dev_rate_min, self.spin_dev_rate_max,
                   self.spin_dev_qty_min, self.spin_dev_qty_max):
