@@ -81,13 +81,12 @@ class NegLossDashboardDialog(QDialog):
         top.addSpacing(12)
         self.lbl_semi_class = QLabel("半成品分类:")
         top.addWidget(self.lbl_semi_class)
-        self.grp_semi_class = QGroupBox()
-        self.grp_semi_class.setFlat(True)
-        self.grp_semi_class.setFixedWidth(180)
-        self._semi_class_vlayout = QVBoxLayout(self.grp_semi_class)
-        self._semi_class_vlayout.setContentsMargins(4, 2, 4, 2)
-        self._semi_class_vlayout.setSpacing(1)
-        self._semi_class_checkboxes = {}  # 名称 -> QCheckBox（含特殊键 "__all__"）
+        self.grp_semi_class = QComboBox()
+        self.grp_semi_class.setMinimumWidth(140)
+        self.grp_semi_class.setMaximumWidth(180)
+        self.grp_semi_class.setEditable(False)
+        self.grp_semi_class.addItem("全部")
+        self.grp_semi_class.currentTextChanged.connect(self._on_semi_class_changed)
         top.addWidget(self.grp_semi_class)
 
         top.addSpacing(12)
@@ -304,28 +303,9 @@ class NegLossDashboardDialog(QDialog):
         self._mtd_filter = text
         self._apply_filter()
 
-    def _on_unit_changed(self):
-        """单位复选框变化回调：收集勾选项（空=全部），全部与其他互斥。"""
-        all_cb = self._unit_checkboxes.get("__all__")
-        others = [cb for name, cb in self._unit_checkboxes.items() if name != "__all__"]
-        sender = self.sender()
-        if sender is all_cb:
-            if all_cb.isChecked():
-                for cb in others:
-                    cb.setChecked(False)
-                self._unit_filter = set()
-        else:
-            if any(cb.isChecked() for cb in others):
-                if all_cb:
-                    all_cb.setChecked(False)
-                self._unit_filter = {
-                    name for name, cb in self._unit_checkboxes.items()
-                    if name != "__all__" and cb.isChecked()
-                }
-            else:
-                if all_cb:
-                    all_cb.setChecked(True)
-                self._unit_filter = set()
+    def _on_unit_changed(self, text):
+        """单位下拉变化：文本='全部'则清空筛选，否则设为该值。"""
+        self._unit_filter = set() if text == "全部" else {text}
         self._apply_filter()
 
     def _on_workshop_changed(self, text):
