@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.72",
+        "date": "2026-09-04",
+        "features": "",
+        "fixes": "补全 v43.71 遗漏的残留旧字符串：_build_semi_checkboxes 中仍有 3 处「食品成品半成品/饮料成品半成品」硬编码未替换为常量，现已全部改为 _SEMI_VIRT_FOOD / _SEMI_VIRT_DRINK。"
+    },
+    {
         "version": "v43.71",
         "date": "2026-09-04",
         "features": "",
