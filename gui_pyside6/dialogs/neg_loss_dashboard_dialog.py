@@ -14,6 +14,8 @@ import pandas as pd
 _SEMI_VIRT_FOOD = "食品半成品"
 _SEMI_VIRT_DRINK = "饮料半成品"
 
+
+
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QLineEdit,
@@ -390,7 +392,7 @@ class NegLossDashboardDialog(QDialog):
         fac = df['工厂'].astype(str) if '工厂' in df.columns else pd.Series('', index=df.index)
         mask = pd.Series(False, index=df.index)
         for m in self._semi_class_filter:
-            if m == "食品成品半成品":
+            if m == _SEMI_VIRT_FOOD:
                 mask = mask | (((vals == m) | blank) & fac.str.contains('食品', na=False))
             elif m == _SEMI_VIRT_DRINK:
                 mask = mask | (((vals == m) | blank) & fac.str.contains('饮料', na=False))
@@ -422,10 +424,10 @@ class NegLossDashboardDialog(QDialog):
         kept = self.grp_semi_class.currentText()
         self.grp_semi_class.clear()
         self.grp_semi_class.addItem("全部")
-        for v in ("食品成品半成品", "饮料成品半成品"):
+        for v in (_SEMI_VIRT_FOOD, _SEMI_VIRT_DRINK):
             self.grp_semi_class.addItem(v)
         for v in unique_vals:
-            if v in ("食品成品半成品", "饮料成品半成品"):
+            if v in (_SEMI_VIRT_FOOD, _SEMI_VIRT_DRINK):
                 continue
             self.grp_semi_class.addItem(v)
         if kept and kept != "全部" and kept in self.grp_semi_class.itemTexts():
