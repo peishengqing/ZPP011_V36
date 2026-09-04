@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.76",
+        "date": "2026-09-04",
+        "features": "",
+        "fixes": "规则编辑器单位/类别多选复选框无法勾选：_on_unit_toggled/_on_cat_toggled 用 state == Qt.Checked 比较 CheckState 枚举值，PySide6 里 Qt.Checked 是枚举对象而非整数 2，导致比较永远为 False，容器始终处于禁用状态。改为 state != Qt.Unchecked 修复。"
+    },
+    {
         "version": "v43.75",
         "date": "2026-09-04",
         "features": "",
