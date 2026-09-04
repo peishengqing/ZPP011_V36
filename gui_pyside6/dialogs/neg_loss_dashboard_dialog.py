@@ -10,6 +10,10 @@
 
 import re
 import pandas as pd
+# 虚拟半成品分类名（与 analyzer.py 归并规则一致，用于筛选框和掩码判断）
+_SEMI_VIRT_FOOD = "食品半成品"
+_SEMI_VIRT_DRINK = "饮料半成品"
+
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QLineEdit,
@@ -388,7 +392,7 @@ class NegLossDashboardDialog(QDialog):
         for m in self._semi_class_filter:
             if m == "食品成品半成品":
                 mask = mask | (((vals == m) | blank) & fac.str.contains('食品', na=False))
-            elif m == "饮料成品半成品":
+            elif m == _SEMI_VIRT_DRINK:
                 mask = mask | (((vals == m) | blank) & fac.str.contains('饮料', na=False))
             else:
                 mask = mask | (vals == m)
@@ -1007,9 +1011,26 @@ class NegLossDashboardDialog(QDialog):
                     self.main_window._apply_column_visibility_by_name()
             if hasattr(self.main_window, "stats_cards") and self.main_window.stats_cards is not None:
                 self.main_window.stats_cards.refresh(main_df)
+        # 同时更新本看板自己的 original_df（关键：否则 _color_mask 会读到旧值，导致加入隔离区后数据消失）
         if (hasattr(self, "original_df") and "data_id" in self.original_df.columns
                 and "隔离区" in self.original_df.columns):
             self.original_df.loc[self.original_df["data_id"].isin(ids), "隔离区"] = "是" if flag else ""
+        # 同时更新本看板 source_model 的 _quarantined 列，确保颜色筛选不丢失数据
+        if (hasattr(self, "source_model") and self.source_model is not None
+                and hasattr(self, "original_df") and self.original_df is not None
+                and "data_id" in self.original_df.columns and "_quarantined" in self.original_df.columns):
+            id_set = set(str(i) for i in ids)
+            mask = self.original_df["data_id"].astype(str).isin(id_set)
+            self.source_model._data.loc[mask, "_quarantined"] = 1 if flag else 0
+            positions = {i for i, v in enumerate(mask) if v}
+            if flag:
+                self.source_model._quarantined_rows |= positions
+            else:
+                self.source_model._quarantined_rows -= positions
+            last_col = max(self.source_model.columnCount() - 1, 0)
+            for pos in positions:
+                self.source_model.dataChanged.emit(self.source_model.index(pos, 0),
+                                                   self.source_model.index(pos, last_col))
         self._apply_filter()
 
     def on_double_click(self, index):

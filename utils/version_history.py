@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.71",
+        "date": "2026-09-04",
+        "features": "",
+        "fixes": "① 虚拟半成品分类名由「食品成品半成品/饮料成品半成品」改为「食品半成品/饮料半成品」（原料列筛选不出数据）；② 加入隔离区后数据消失：_sync_quarantine 补充更新 self.source_model._data/_quarantined_rows/发 dataChanged，保证颜色筛选不丢失已加入隔离区的行。"
+    },
+    {
         "version": "v43.70",
         "date": "2026-09-04",
         "features": "",
