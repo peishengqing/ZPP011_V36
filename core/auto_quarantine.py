@@ -228,6 +228,10 @@ def build_rule_summary(rule=None):
         parts.append("编码前缀（%s）" % "、".join(prefix))
     if rule.get("workshop_required", False) and str(rule.get("workshop_value", "")).strip():
         parts.append("车间=%s" % rule.get("workshop_value"))
+    if rule.get("unit_required", False) and str(rule.get("unit_value", "")).strip():
+        vals = [v.strip() for v in str(rule.get("unit_value", "")).replace("，", ",").split(",") if v.strip()]
+        if vals:
+            parts.append("单位=%s" % "、".join(vals))
     mode = str(rule.get("remark_mode", "off")).strip()
     if mode == "has":
         parts.append("有备注")
@@ -302,6 +306,7 @@ def compute_auto_quarantine_ids(df: pd.DataFrame, cfg=None) -> dict:
     workshop_col = _first_col(df, ["车间", "工厂车间", "生产车间", "work_shop", "车间号"])
     remark_col = _first_col(df, ["备注", "备注原因", "remark", "备注说明"])
     dev_qty_col = _first_col(df, ["偏差数量", "偏差量", "差异数量"])
+    unit_col = _first_col(df, ["单位", "产量单位", "组件单位"])
 
     result = {}  # data_id -> reason（只记靠前规则）
     for idx, rule in enumerate(rules, 1):
@@ -320,7 +325,8 @@ def compute_auto_quarantine_ids(df: pd.DataFrame, cfg=None) -> dict:
 
 def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_col,
                        dev_rate_col=None, mat_code_col=None, workshop_col=None,
-                       remark_col=None, dev_qty_col=None, semi_class_col=None):
+                       remark_col=None, dev_qty_col=None, semi_class_col=None,
+                       unit_col=None):
     """单条规则的 AND 匹配，返回 bool 掩码。"""
     # 1. 排除替代料
     if rule.get("exclude_alt", True):
@@ -420,6 +426,26 @@ def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_c
     else:
         m_ws = pd.Series(True, index=df.index)
 
+    # 7.5 单位限定（逗号分隔多值 OR；填了才限制；开着没填 → 不限制）
+    if rule.get("unit_required", False):
+        if unit_col:
+            val_str = str(rule.get("unit_value", "")).strip()
+            if val_str:
+                vals = [v.strip() for v in val_str.replace("，", ",").split(",") if v.strip()]
+                if vals:
+                    unit_str = df[unit_col].astype(str).fillna("").str.strip()
+                    m_unit = pd.Series(False, index=df.index)
+                    for v in vals:
+                        m_unit = m_unit | (unit_str == v)
+                else:
+                    m_unit = pd.Series(True, index=df.index)
+            else:
+                m_unit = pd.Series(True, index=df.index)
+        else:
+            m_unit = pd.Series(False, index=df.index)  # 开着无列 → 不匹配
+    else:
+        m_unit = pd.Series(True, index=df.index)
+
     # 8. 是否备注（has=有备注 / none=无备注；无列 → 不匹配，保守）
     mode = str(rule.get("remark_mode", "off")).strip()
     if mode in ("has", "none"):
@@ -459,4 +485,4 @@ def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_c
     else:
         m_ex = pd.Series(True, index=df.index)  # 没填 → 不限制
 
-    return m_alt & m_cat & m_name & m_qty & m_rate & m_prefix & m_ws & m_remark & m_dq & m_ex
+    return m_alt & m_cat & m_name & m_qty & m_rate & m_prefix & m_ws & m_unit & m_remark & m_dq & m_ex

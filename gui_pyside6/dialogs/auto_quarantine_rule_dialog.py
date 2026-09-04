@@ -144,6 +144,27 @@ class AutoQuarantineRuleWidget(QWidget):
         h_ws.addStretch()
         ev.addLayout(h_ws)
 
+        # 单位多选筛选（与类别复选框组类似）
+        self.chk_unit = QCheckBox("要求属于单位：")
+        self.chk_unit.stateChanged.connect(self._on_unit_toggled)
+        ev.addWidget(self.chk_unit)
+        self.unit_checkbox_container = QWidget()
+        self.unit_checkbox_layout = QVBoxLayout(self.unit_checkbox_container)
+        self.unit_checkbox_layout.setContentsMargins(24, 2, 0, 2)
+        self.unit_checkbox_layout.setSpacing(2)
+        self._unit_checkboxes = {}
+        # 已知常用单位（可动态扩展）
+        self._known_units = [
+            "个", "箱", "瓶", "罐", "袋", "包", "卷", "米", "kg", "吨",
+            "套", "件", "盒", "桶", "只", "对", "支", "根", "张", "片",
+        ]
+        for u in self._known_units:
+            cb = QCheckBox(u)
+            cb.stateChanged.connect(self._refresh_summary)
+            self.unit_checkbox_layout.addWidget(cb)
+            self._unit_checkboxes[u] = cb
+        ev.addWidget(self.unit_checkbox_container)
+
         h_rem = QHBoxLayout()
         h_rem.addWidget(QLabel("备注要求："))
         self.combo_remark = QComboBox()
@@ -265,6 +286,19 @@ class AutoQuarantineRuleWidget(QWidget):
         self.edit_mat_prefix.setText(str(r.get("mat_code_prefix", "")))
         self.chk_workshop.setChecked(bool(r.get("workshop_required", False)))
         self.edit_workshop.setText(str(r.get("workshop_value", "")))
+        self.chk_unit.setChecked(bool(r.get("unit_required", False)))
+        _unit_val = str(r.get("unit_value", "")).strip()
+        _unit_vals = [v.strip() for v in re.split(r'[，,]', _unit_val) if v.strip()]
+        # 动态扩展已知单位列表（规则里出现的未知单位也补出复选框）
+        for u in _unit_vals:
+            if u and u not in self._unit_checkboxes:
+                cb = QCheckBox(u)
+                cb.stateChanged.connect(self._refresh_summary)
+                self.unit_checkbox_layout.addWidget(cb)
+                self._unit_checkboxes[u] = cb
+        for name, cb in self._unit_checkboxes.items():
+            cb.setChecked(name in _unit_vals)
+        self.unit_checkbox_container.setEnabled(self.chk_unit.isChecked())
         self.combo_remark.setCurrentIndex(
             ["off", "has", "none"].index(str(r.get("remark_mode", "off")).strip())
             if str(r.get("remark_mode", "off")).strip() in ("off", "has", "none") else 0)
@@ -368,6 +402,41 @@ class AutoQuarantineRuleWidget(QWidget):
     def _on_cat_toggled(self, state):
         """「要求属于类别」总开关：启用/禁用复选框组。"""
         self.cat_checkbox_container.setEnabled(state == Qt.Checked)
+        self._refresh_summary()
+
+    def _known_units(self):
+        """已知单位值（内置常见 + 现有规则里出现过的），用于复选框枚举。"""
+        units, seen = [], set()
+        for u in ["个", "箱", "瓶", "罐", "袋", "包", "卷", "米", "kg", "吨",
+                  "套", "件", "盒", "桶", "只", "对", "支", "根", "张", "片"]:
+            if u not in seen:
+                seen.add(u)
+                units.append(u)
+        for r in self.cfg.get("rules", []):
+            for part in re.split(r'[，,]', str(r.get("unit_value", "")).strip()):
+                part = part.strip()
+                if part and part not in seen:
+                    seen.add(part)
+                    units.append(part)
+        return units
+
+    def _init_unit_checkboxes(self):
+        """重建已知单位的复选框组（清旧建新）。"""
+        while self.unit_checkbox_layout.count():
+            item = self.unit_checkbox_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+        self._unit_checkboxes = {}
+        for u in self._known_units():
+            cb = QCheckBox(u)
+            cb.stateChanged.connect(self._refresh_summary)
+            self.unit_checkbox_layout.addWidget(cb)
+            self._unit_checkboxes[u] = cb
+
+    def _on_unit_toggled(self, state):
+        """「要求属于单位」总开关：启用/禁用复选框组。"""
+        self.unit_checkbox_container.setEnabled(state == Qt.Checked)
         self._refresh_summary()
 
     def _refresh_summary(self):
