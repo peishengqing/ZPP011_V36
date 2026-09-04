@@ -401,7 +401,7 @@ class AutoQuarantineRuleWidget(QWidget):
 
     def _on_cat_toggled(self, state):
         """「要求属于类别」总开关：启用/禁用复选框组。"""
-        self.cat_checkbox_container.setEnabled(state == Qt.Checked)
+        self.cat_checkbox_container.setEnabled(state != Qt.Unchecked)
         self._refresh_summary()
 
     def _known_units(self):
@@ -436,7 +436,7 @@ class AutoQuarantineRuleWidget(QWidget):
 
     def _on_unit_toggled(self, state):
         """「要求属于单位」总开关：启用/禁用复选框组。"""
-        self.unit_checkbox_container.setEnabled(state == Qt.Checked)
+        self.unit_checkbox_container.setEnabled(state != Qt.Unchecked)
         self._refresh_summary()
 
     def _refresh_summary(self):
