@@ -91,6 +91,23 @@ class NegLossDashboardDialog(QDialog):
         top.addWidget(self.grp_semi_class)
 
         top.addSpacing(12)
+        self.unit_sep = QFrame()
+        self.unit_sep.setFrameShape(QFrame.VLine)
+        self.unit_sep.setFrameShadow(QFrame.Sunken)
+        top.addWidget(self.unit_sep)
+        top.addSpacing(12)
+        self.lbl_unit = QLabel("单位:")
+        top.addWidget(self.lbl_unit)
+        self.grp_unit = QGroupBox()
+        self.grp_unit.setFlat(True)
+        self.grp_unit.setFixedWidth(140)
+        self._unit_vlayout = QVBoxLayout(self.grp_unit)
+        self._unit_vlayout.setContentsMargins(4, 2, 4, 2)
+        self._unit_vlayout.setSpacing(1)
+        self._unit_checkboxes = {}  # 名称 -> QCheckBox（含特殊键 "__all__"）
+        top.addWidget(self.grp_unit)
+
+        top.addSpacing(12)
         self.mtd_sep = QFrame()
         self.mtd_sep.setFrameShape(QFrame.VLine)
         self.mtd_sep.setFrameShadow(QFrame.Sunken)
@@ -307,6 +324,30 @@ class NegLossDashboardDialog(QDialog):
         self._mtd_filter = text
         self._apply_filter()
 
+    def _on_unit_changed(self):
+        """单位复选框变化回调：收集勾选项（空=全部），全部与其他互斥。"""
+        all_cb = self._unit_checkboxes.get("__all__")
+        others = [cb for name, cb in self._unit_checkboxes.items() if name != "__all__"]
+        sender = self.sender()
+        if sender is all_cb:
+            if all_cb.isChecked():
+                for cb in others:
+                    cb.setChecked(False)
+                self._unit_filter = set()
+        else:
+            if any(cb.isChecked() for cb in others):
+                if all_cb:
+                    all_cb.setChecked(False)
+                self._unit_filter = {
+                    name for name, cb in self._unit_checkboxes.items()
+                    if name != "__all__" and cb.isChecked()
+                }
+            else:
+                if all_cb:
+                    all_cb.setChecked(True)
+                self._unit_filter = set()
+        self._apply_filter()
+
     def _on_workshop_changed(self, text):
         self._workshop_filter = "all" if text == "全部" else text
         self._apply_filter()
@@ -390,6 +431,15 @@ class NegLossDashboardDialog(QDialog):
         vals = df[self._mtd_col].astype(str).str.strip()
         return vals == self._mtd_filter
 
+    def _unit_mask(self, df):
+        """单位掩码：空集合=全True / 非空=列值OR命中被勾选单位集合。列缺失则全True。"""
+        if not self._unit_filter or not self._unit_col:
+            return pd.Series(True, index=df.index)
+        if self._unit_col not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df[self._unit_col].astype(str).str.strip()
+        return vals.isin(self._unit_filter)
+
     def _build_semi_checkboxes(self, unique_vals):
         """构建半成品分类复选框组：全部 + 虚拟两项 + 实际各值。"""
         while self._semi_class_vlayout.count():
@@ -415,6 +465,25 @@ class NegLossDashboardDialog(QDialog):
             cb.stateChanged.connect(self._on_semi_class_changed)
             self._semi_class_vlayout.addWidget(cb)
             self._semi_class_checkboxes[v] = cb
+
+    def _build_unit_checkboxes(self, unique_vals):
+        """构建单位复选框组：全部 + 各值。"""
+        while self._unit_vlayout.count():
+            it = self._unit_vlayout.takeAt(0)
+            w = it.widget()
+            if w:
+                w.deleteLater()
+        self._unit_checkboxes = {}
+        cb_all = QCheckBox("全部")
+        cb_all.setChecked(True)
+        cb_all.stateChanged.connect(self._on_unit_changed)
+        self._unit_vlayout.addWidget(cb_all)
+        self._unit_checkboxes["__all__"] = cb_all
+        for v in unique_vals:
+            cb = QCheckBox(v)
+            cb.stateChanged.connect(self._on_unit_changed)
+            self._unit_vlayout.addWidget(cb)
+            self._unit_checkboxes[v] = cb
 
     def _read_mask(self, df, mode):
         """已读/未读掩码：all=全True / 已读=_read==1 / 未读=_read!=1(含0或NaN)。"""
@@ -586,6 +655,17 @@ class NegLossDashboardDialog(QDialog):
             self.combo_workshop.setVisible(False)
         self._workshop_filter = "all"
         self.combo_workshop.setCurrentText("全部")
+        # 初始化单位筛选器
+        self._unit_col = "单位" if "单位" in df.columns else None
+        if self._unit_col:
+            unique_vals = df["单位"].dropna().astype(str).str.strip().unique()
+            unique_vals = sorted(v for v in unique_vals if v)
+            self._build_unit_checkboxes(unique_vals)
+        else:
+            self.unit_sep.setVisible(False)
+            self.lbl_unit.setVisible(False)
+            self.grp_unit.setVisible(False)
+        self._unit_filter = set()
         # 初始化隔离区筛选器（始终可见，因为隔离区列由本对话框计算）
         self._quar_filter = "all"
         self.btn_quar_all.setChecked(True)
@@ -606,6 +686,7 @@ class NegLossDashboardDialog(QDialog):
         mask = (self._name_mask(df) & self._neg_loss_mask(df)
                 & self._semi_class_mask(df)
                 & self._mtd_mask(df)
+                & self._unit_mask(df)
                 & self._workshop_mask(df, self._workshop_filter)
                 & self._quar_mask(df, self._quar_filter)
                 & self._note_mask(df, self._has_note_filter)
