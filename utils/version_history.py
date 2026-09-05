@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.77",
+        "date": "2026-09-05",
+        "features": "",
+        "fixes": "负损看板表格空白：_include_zero 默认值为 False，导致筛选条件为'实际>0 AND 实际<定额'，把所有未投料(实际=0)记录都过滤掉了。改为 True，与对话框标题'负损(含未投料)看板'一致。"
+    },
+    {
         "version": "v43.76",
         "date": "2026-09-04",
         "features": "",
