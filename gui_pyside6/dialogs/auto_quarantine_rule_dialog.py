@@ -6,8 +6,6 @@ AutoQuarantineRuleDialog 仅作为独立打开时的薄壳（保留工具栏按�
 """
 import re
 
-from PySide6.QtCore import Qt
-
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
