@@ -52,6 +52,7 @@ class NegLossDashboardDialog(QDialog):
         self._workshop_col = None     # 车间列名（set_data 时探测）
         self._quar_filter = "no"      # 隔离区筛选（全部/是/否），默认排除隔离区
         self._has_note_filter = "all" # 是否有备注筛选（全部/是/否）
+        self._unit_filter = set()     # 单位筛选（set_data 初始化前预置，避免 setCurrentText 触发 _apply_filter 时引用未初始化属性崩溃，v43.82）
         self.color_filters = set()    # 颜色筛选
         self.original_df = None
         self.source_model = None

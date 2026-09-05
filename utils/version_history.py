@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.82",
+        "date": "2026-09-05",
+        "features": "",
+        "fixes": "负损看板潜在崩溃修复：__init__ 预置 self._unit_filter=set()。原 set_data 中 combo_read.setCurrentText('未读') 会触发 _on_read_changed→_apply_filter，而 _apply_filter 用到的 _unit_filter 到第634行才初始化，带'单位'列且带'_read'列的数据打开看板时抛 AttributeError 崩溃。同时确认'半成品重分类'列在负损看板代码中早已存在（candidates/set_data/DataFrameModel 均不删列），用户看不到是因跑了过时副本 C:\\Users\\Administrator\\WorkBuddy\\zpp011_source（其 main_window.py 无该列）。"
+    },
+    {
         "version": "v43.81",
         "date": "2026-09-05",
         "features": "",
