@@ -523,6 +523,10 @@ class NegLossDashboardDialog(QDialog):
     # ------------------------------------------------------------------ 数据装载
     def set_data(self, df):
         df = df.copy()
+        # 初始化守卫：set_data 内多处 setCurrentText/setChecked 会触发信号→_apply_filter，
+        # 但此时 _unit_col/_workshop_col 等尚未初始化，直接跑会 AttributeError 崩溃(v43.83 修复)。
+        # 置 _initializing 期间让 _apply_filter 直接 return，初始化完成后再统一跑一次。
+        self._initializing = True
         # 确保 data_id 存在（隔离区同步用）
         if "data_id" not in df.columns:
             if all(c in df.columns for c in ["订单日期", "流程订单", "物料编码"]):
@@ -639,9 +643,12 @@ class NegLossDashboardDialog(QDialog):
         # 初始化备注筛选器
         self._has_note_filter = "all"
         self.btn_note_all.setChecked(True)
+        self._initializing = False
         self._apply_filter()
 
     def _apply_filter(self):
+        if getattr(self, "_initializing", False):
+            return
         if self.original_df is None or not hasattr(self, "source_model"):
             return
         df = self.original_df

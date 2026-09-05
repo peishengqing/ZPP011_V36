@@ -14,10 +14,16 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.83",
+        "date": "2026-09-05",
+        "features": "",
+        "fixes": "负损看板打开即崩溃 AttributeError '_unit_col'/'_unit_filter'（用户实测报'未捕获异常'）：根因是 v43.80 在 set_data 里 combo_read.setCurrentText('未读') 触发信号→_on_read_changed→_apply_filter，而 _apply_filter 用到的 _unit_col/_unit_filter 等要等 set_data 后半段才初始化，构造阶段即抛异常导致看板直接挂掉（用户误以为'缺列'）。修法：set_data 开头置 self._initializing=True，_apply_filter 开头 if getattr(self,'_initializing',False): return，set_data 末尾置 False 并统一跑一次 _apply_filter。v43.82 仅补 _unit_filter 漏了 _unit_col，故仍崩；本版用守卫标志彻底解决。"
+    },
+    {
         "version": "v43.82",
         "date": "2026-09-05",
         "features": "",
-        "fixes": "负损看板潜在崩溃修复：__init__ 预置 self._unit_filter=set()。原 set_data 中 combo_read.setCurrentText('未读') 会触发 _on_read_changed→_apply_filter，而 _apply_filter 用到的 _unit_filter 到第634行才初始化，带'单位'列且带'_read'列的数据打开看板时抛 AttributeError 崩溃。同时确认'半成品重分类'列在负损看板代码中早已存在（candidates/set_data/DataFrameModel 均不删列），用户看不到是因跑了过时副本 C:\\Users\\Administrator\\WorkBuddy\\zpp011_source（其 main_window.py 无该列）。"
+        "fixes": "负损看板潜在崩溃修复（半成品修复，完整修复见 v43.83）：__init__ 预置 self._unit_filter=set()。原 set_data 中 combo_read.setCurrentText('未读') 会触发 _on_read_changed→_apply_filter，而 _apply_filter 用到的 _unit_filter 到第634行才初始化，带'单位'列且带'_read'列的数据打开看板时抛 AttributeError 崩溃。注意：本版仅补了 _unit_filter，漏了同类的 _unit_col，用户实测仍崩在 '_unit_col'，完整修复由 v43.83 用初始化守卫标志完成。另确认'半成品重分类'列在负损看板代码中早已存在（candidates/set_data/DataFrameModel 均不删列）。"
     },
     {
         "version": "v43.81",
