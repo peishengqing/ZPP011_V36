@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.87",
+        "date": "2026-09-05",
+        "features": "",
+        "fixes": "取消勾选'要求属于单位/类别'总开关后，子复选框状态未清空导致重新打开时仍显示为勾选：_on_unit_toggled/_on_cat_toggled 在 state==Qt.Unchecked 时同步 blockSignals 后setChecked(False)所有子项。"
+    },
+    {
         "version": "v43.86",
         "date": "2026-09-05",
         "features": "",
