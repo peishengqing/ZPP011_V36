@@ -318,7 +318,7 @@ class NegLossDashboardDialog(QDialog):
         self._apply_filter()
 
     def _on_mtd_changed(self, text):
-        self._mtd_filter = text
+        self._mtd_filter = "all" if text == "全部" else text
         self._apply_filter()
 
     def _on_unit_changed(self, text):
