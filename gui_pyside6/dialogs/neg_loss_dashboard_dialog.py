@@ -42,15 +42,15 @@ class NegLossDashboardDialog(QDialog):
         self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.main_window = main_window
         self._keywords = ""
-        self._include_zero = True  # 默认包含未投料（实际=0），与对话框标题"负损(含未投料)"一致
+        self._include_zero = False  # 默认不包含未投料（用户可手动勾选）
         self._semi_class_filter = set()  # 半成品重分类筛选：空集合=全部 / 集合内为选中分类（虚拟项模糊匹配）
         self._semi_class_col = None   # 半成品重分类列名（set_data 时探测）
-        self._read_filter = "all"     # 已读/未读筛选（全部/已读/未读）
+        self._read_filter = "未读"    # 已读/未读筛选（全部/已读/未读），默认只显示未读
         self._mtd_filter = "all"      # 组件物料类型描述筛选（全部/具体类型）
         self._mtd_col = None          # 组件物料类型描述列名（set_data 时探测）
         self._workshop_filter = "all"  # 车间筛选（全部/车间名）
         self._workshop_col = None     # 车间列名（set_data 时探测）
-        self._quar_filter = "all"     # 隔离区筛选（全部/是/否）
+        self._quar_filter = "no"      # 隔离区筛选（全部/是/否），默认排除隔离区
         self._has_note_filter = "all" # 是否有备注筛选（全部/是/否）
         self.color_filters = set()    # 颜色筛选
         self.original_df = None
@@ -85,7 +85,7 @@ class NegLossDashboardDialog(QDialog):
         self.edit_keywords.textChanged.connect(self._on_keywords_changed)
 
         self.chk_include_zero = QCheckBox("包含未投料(实际=0 也视为负损)")
-        self.chk_include_zero.setChecked(True)
+        self.chk_include_zero.setChecked(False)
         self.chk_include_zero.stateChanged.connect(self._on_include_zero_changed)
         top.addWidget(self.chk_include_zero)
 
@@ -629,8 +629,8 @@ class NegLossDashboardDialog(QDialog):
             self.grp_unit.setVisible(False)
         self._unit_filter = set()
         # 初始化隔离区筛选器（始终可见，因为隔离区列由本对话框计算）
-        self._quar_filter = "all"
-        self.btn_quar_all.setChecked(True)
+        self._quar_filter = "no"
+        self.btn_quar_no.setChecked(True)
         # 初始化备注筛选器
         self._has_note_filter = "all"
         self.btn_note_all.setChecked(True)
