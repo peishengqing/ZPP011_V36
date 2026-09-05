@@ -1,4 +1,5 @@
 # core/config_manager.py
+import copy
 import json
 import os
 from pathlib import Path
@@ -51,7 +52,7 @@ class ConfigManager:
         """加载配置文件，若不存在或版本不匹配则迁移/创建默认"""
         if not self.config_path.exists():
             logger.info(f"配置文件不存在，使用默认配置: {self.config_path}")
-            self.config = self.DEFAULT_CONFIG.copy()
+            self.config = copy.deepcopy(self.DEFAULT_CONFIG)
             self._save()
             return
 
@@ -66,7 +67,7 @@ class ConfigManager:
             self.config = loaded
         except Exception as e:
             logger.error(f"加载配置失败: {e}，使用默认配置")
-            self.config = self.DEFAULT_CONFIG.copy()
+            self.config = copy.deepcopy(self.DEFAULT_CONFIG)
             self._save()
 
     def _migrate(self, old_config: Dict, old_version: str) -> Dict:
@@ -126,7 +127,7 @@ class ConfigManager:
 
     def reset_to_default(self):
         """重置所有配置为默认值"""
-        self.config = self.DEFAULT_CONFIG.copy()
+        self.config = copy.deepcopy(self.DEFAULT_CONFIG)
         self._save()
         logger.info("配置已重置为默认")
 

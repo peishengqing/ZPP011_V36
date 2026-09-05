@@ -553,7 +553,7 @@ def compute_auto_read_mask(df: pd.DataFrame, cfg=None):
     if exclude_units and excluded_units:
         unit_col = _first_col(df, _UNIT_CANDIDATES)
         if unit_col is not None:
-            unit_outside = ~df[unit_col].astype(str).fillna("").str.strip().str.lower().isin(excluded_units)
+            unit_outside = ~df[unit_col].fillna("").astype(str).str.strip().str.lower().isin(excluded_units)
 
     result_union = pd.Series(False, index=df.index)
     per_rule = []
@@ -584,7 +584,7 @@ def _match_single_condition(df, cond):
         target = _to_num(val.get("value", 0))
         return pd.to_numeric(col, errors="coerce").fillna(0) == target
     if op == "startswith":
-        s = col.astype(str).fillna("")
+        s = col.fillna("").astype(str)
         raw = str(val.get("value", "")).strip()
         # 支持逗号分隔多值 OR（与 contains 行为一致）
         if "," in raw:
@@ -597,7 +597,7 @@ def _match_single_condition(df, cond):
             return mask
         return s.str.startswith(raw, na=False)
     if op == "contains":
-        s = col.astype(str).fillna("")
+        s = col.fillna("").astype(str)
         raw = str(val.get("value", "")).strip()
         # 支持逗号分隔多值 OR（与「物料编码属于/in」行为一致）
         if "," in raw:
@@ -610,7 +610,7 @@ def _match_single_condition(df, cond):
             return mask
         return s.str.contains(raw, regex=False, na=False)
     if op == "not_contains":
-        s = col.astype(str).fillna("")
+        s = col.fillna("").astype(str)
         raw = str(val.get("value", "")).strip()
         # 取反：不含任一关键字才命中。逗号分隔多值 = 且不含其中任一（NOT(含A OR 含B)）
         if "," in raw:
@@ -626,10 +626,10 @@ def _match_single_condition(df, cond):
         items = [x.strip() for x in str(val.get("value", "")).split(",") if x.strip()]
         if not items:
             return pd.Series(False, index=df.index)
-        s = col.astype(str).fillna("")
+        s = col.fillna("").astype(str)
         return s.isin(items)
     if op == "eq_str":
-        s = col.astype(str).fillna("")
+        s = col.fillna("").astype(str)
         return s == str(val.get("value", "")).strip()
     if op == "range":
         num = pd.to_numeric(col, errors="coerce")

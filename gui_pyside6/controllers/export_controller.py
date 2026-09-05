@@ -11,6 +11,21 @@ from PySide6.QtWidgets import QMessageBox, QFileDialog, QProgressDialog
 from gui_pyside6.save_guard import safe_save, precheck_save_path, friendly_error
 
 
+
+def open_file(filepath):
+    """跨平台打开文件"""
+    import platform
+    system = platform.system()
+    if system == 'Windows':
+        import os
+        os.startfile(filepath)
+    elif system == 'Darwin':  # macOS
+        import subprocess
+        subprocess.run(['open', filepath])
+    else:  # Linux and others
+        import subprocess
+        subprocess.run(['xdg-open', filepath])
+
 class ExportController(QObject):
     log_message = Signal(str, str)           # (msg, level)
 
@@ -86,7 +101,7 @@ class ExportController(QObject):
                 if QMessageBox.question(
                     parent_widget, "导出成功", f"文件已导出到：\n{saved}\n是否打开？"
                 ) == QMessageBox.Yes:
-                    os.startfile(saved)
+                    open_file(saved)
                 self.log_message.emit(f"已导出完整Excel到 {saved}", "info")
                 return True
             except Exception as e:
@@ -129,7 +144,7 @@ class ExportController(QObject):
                     "偏差原因汇总 · 偏差原因分析 · 趋势分析\n\n"
                     "是否立即打开？"
                 ) == QMessageBox.Yes:
-                    os.startfile(save_path)
+                    open_file(save_path)
                 self.log_message.emit(f"已导出完整分析报告到 {save_path} (缓存)", "info")
                 return True
             except Exception as e:
@@ -190,7 +205,7 @@ class ExportController(QObject):
                 "偏差原因汇总 · 偏差原因分析 · 趋势分析\n\n"
                 "是否立即打开？"
             ) == QMessageBox.Yes:
-                os.startfile(save_path)
+                open_file(save_path)
             self.log_message.emit(f"已导出完整分析报告到 {save_path}", "info")
             return True
         except Exception as e:
@@ -231,7 +246,7 @@ class ExportController(QObject):
                 if QMessageBox.question(
                     parent_widget, "生成成功", f"报告已生成：\n{output_path}\n是否打开？"
                 ) == QMessageBox.Yes:
-                    os.startfile(output_path)
+                    open_file(output_path)
                 self.log_message.emit(f"PPT生成成功：{output_path}", "info")
                 return True
             else:
@@ -277,7 +292,7 @@ class ExportController(QObject):
                 if QMessageBox.question(
                     parent_widget, "生成成功", f"报告已生成：\n{output_path}\n是否打开？"
                 ) == QMessageBox.Yes:
-                    os.startfile(output_path)
+                    open_file(output_path)
                 self.log_message.emit(f"专业版报告生成成功：{output_path}", "info")
                 return True
             else:

@@ -445,14 +445,16 @@ def get_deviation_history_batch(data_ids: List[str]) -> List[Dict]:
     if not data_ids:
         return []
     conn = _get_conn()
-    placeholders = ','.join(['?' for _ in data_ids])
-    cur = conn.execute(
-        f"SELECT data_id, field, new_value FROM deviation_history "
-        f"WHERE data_id IN ({placeholders}) ORDER BY change_time DESC",
-        data_ids
+    result = _chunked_load(
+        conn,
+        "SELECT data_id, field, new_value FROM deviation_history WHERE data_id IN ({placeholders}) ORDER BY change_time DESC",
+        data_ids, 3
     )
-    columns = ['data_id', 'field', 'new_value']
-    return [dict(zip(columns, row)) for row in cur.fetchall()]
+    # 合并结果并按 data_id + field 排序
+    rows = []
+    for data_id, (field, new_value) in result.items():
+        rows.append({'data_id': data_id, 'field': field, 'new_value': new_value})
+    return rows
 
 
 def record_deviation_change_batch(changes: List[Tuple], reason: str = "审核后数据被修改"):

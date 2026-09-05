@@ -203,6 +203,22 @@ class _FileReadWorker(QThread):
             self.failed.emit(str(e))
 
 
+
+def _open_file(filepath):
+    """跨平台打开文件"""
+    import platform
+    system = platform.system()
+    if system == 'Windows':
+        import os
+        os.startfile(filepath)
+    elif system == 'Darwin':  # macOS
+        import subprocess
+        subprocess.run(['open', filepath])
+    else:  # Linux and others
+        import subprocess
+        subprocess.run(['xdg-open', filepath])
+
+
 class MainWindow(QMainWindow):
     """ZPP011 主窗口 — 暗色主题"""
 
@@ -932,7 +948,7 @@ class MainWindow(QMainWindow):
                     })
                 pd.DataFrame(rows).to_excel(path, index=False)
                 if os.name == "nt" and os.path.exists(path):
-                    os.startfile(path)
+                    _open_file(path)
                 else:
                     opener = 'open' if sys.platform == 'darwin' else 'xdg-open'
                     subprocess.Popen([opener, path])
@@ -2202,7 +2218,7 @@ class MainWindow(QMainWindow):
         if not dir_path:
             dir_path = os.path.expanduser("~/Documents/ZPP011分析报告")
         if os.path.exists(dir_path):
-            os.startfile(dir_path)
+            _open_file(dir_path)
         else:
             QMessageBox.warning(self, "提示", "输出目录不存在")
 
@@ -3480,7 +3496,7 @@ class MainWindow(QMainWindow):
             if QMessageBox.question(
                 self, "导出成功", f"文件已导出到：\n{save_path}\n是否打开？"
             ) == QMessageBox.Yes:
-                os.startfile(save_path)
+                _open_file(save_path)
             self.log(f"已导出完整Excel到 {save_path}", "info")
         except Exception as e:
             import traceback as _tb
@@ -3515,7 +3531,7 @@ class MainWindow(QMainWindow):
                     "偏差原因汇总 · 偏差原因分析 · 趋势分析\n\n"
                     "是否立即打开？"
                 ) == QMessageBox.Yes:
-                    os.startfile(save_path)
+                    _open_file(save_path)
                 self.log(f"已导出完整分析报告到 {save_path} (缓存)", "info")
                 return
             except Exception as e:
@@ -3606,7 +3622,7 @@ class MainWindow(QMainWindow):
             "是否立即打开？"
         )
         if reply == QMessageBox.Yes:
-            os.startfile(save_path)
+            _open_file(save_path)
         self.log(f"已导出完整分析报告到 {save_path}", "info")
 
     # -----------------------------------------------------------
@@ -4230,7 +4246,7 @@ class MainWindow(QMainWindow):
             self, "生成成功",
             f"PPT 报告已生成：\n{path}\n\n是否立即打开？"
         ) == QMessageBox.Yes:
-            os.startfile(path)
+            _open_file(path)
         self.log(f"已生成 PPT 报告：{path}", "info")
 
     def _on_ppt_fail(self, err):
@@ -4389,7 +4405,7 @@ class MainWindow(QMainWindow):
         
         # 尝试打开文件夹
         if sys.platform == "win32":
-            os.startfile(backup_dir)
+            _open_file(backup_dir)
         elif sys.platform == "darwin":
             subprocess.Popen(["open", backup_dir])
         else:

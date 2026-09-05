@@ -2,11 +2,7 @@
 """批量操作模块 - 批量导出 + 批量导入备注"""
 
 import pandas as pd
-import os
-from tkinter import messagebox
 from typing import List, Tuple, Optional
-import tempfile
-import shutil
 
 from core import history_db, backup_manager
 
@@ -44,14 +40,16 @@ def batch_export_analyses(analysis_ids: List[int], output_path: str,
                 if df is None or df.empty:
                     continue
                 
-                # 获取元数据
-                meta = history_db.get_analysis_list(limit=1, db_path=db_path)
+                # 获取元数据 - 查询指定 aid 的元数据
                 meta_row = None
-                if meta:
-                    for m in meta:
+                try:
+                    all_meta = history_db.get_analysis_list(limit=1000, db_path=db_path)
+                    for m in all_meta:
                         if m['id'] == aid:
                             meta_row = m
                             break
+                except Exception:
+                    pass
                 
                 # Sheet 名称：日期_文件名（截断）
                 if meta_row:
@@ -139,14 +137,16 @@ def preview_import_notes(file_path: str, db_path: Optional[str] = None) -> Tuple
     matched = []
     unmatched = []
     
-    # 获取所有历史分析的偏差明细（用于匹配）
-    # 这里简化：仅从最新的分析中匹配
+    # 获取最新一次分析的偏差明细（用于匹配）
     latest_records = history_db.get_analysis_list(limit=1, db_path=db_path)
     if not latest_records:
         return False, {"error": "无历史分析记录"}
     
     latest_id = latest_records[0]['id']
+    # 检查是否有数据，如果没有则返回错误
     df_audit = history_db.get_analysis_data(latest_id, db_path=db_path)
+    if df_audit is None or df_audit.empty:
+        return False, {"error": "最新分析无数据"}
     
     if df_audit is None or df_audit.empty:
         return False, {"error": "历史分析数据为空"}
@@ -204,7 +204,7 @@ def confirm_import_notes(matched_list: List[dict], db_path: Optional[str] = None
     
     try:
         # 先备份
-        backup_manager.backup_before_analysis(db_path=db_path)
+        backup_manager.backup_before_analysis_sync(audit_db_path=db_path)
     except Exception as e:
         return False, f"备份失败: {str(e)}"
     

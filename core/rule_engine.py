@@ -1,6 +1,5 @@
 # core/rule_engine.py
 import json
-import ast
 import operator as op
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -276,21 +275,7 @@ class RuleEngine:
         return ('none', '')
 # ==================== 安全条件解析器（任务卡025）====================
 
-import operator as op
-from typing import Dict, Any
-
-# 允许的字段白名单
-ALLOWED_FIELDS = {
-    'dev_rate', 'deviation_amount', 'remark', 'remark_status', 'is_alt'
-}
-
-# 允许的运算符映射
-OP_MAP = {
-    '>=': op.ge, '>': op.gt, '==': op.eq, '!=': op.ne,
-    '<': op.lt, '<=': op.le,
-    'contains': lambda a, b: b in str(a) if a is not None else False,
-    'empty': lambda a, _: not str(a).strip() if a is not None else True
-}
+# 使用模块级 ALLOWED_FIELDS 和 OP_MAP（已在顶部定义）
 
 def safe_eval_condition(condition: Dict[str, Any], row_data: Dict[str, Any]) -> bool:
     """
