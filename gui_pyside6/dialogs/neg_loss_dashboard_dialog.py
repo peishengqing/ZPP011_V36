@@ -42,7 +42,7 @@ class NegLossDashboardDialog(QDialog):
         self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.main_window = main_window
         self._keywords = ""
-        self._include_zero = False
+        self._include_zero = True  # 默认包含未投料（实际=0），与对话框标题"负损(含未投料)"一致
         self._semi_class_filter = set()  # 半成品重分类筛选：空集合=全部 / 集合内为选中分类（虚拟项模糊匹配）
         self._semi_class_col = None   # 半成品重分类列名（set_data 时探测）
         self._read_filter = "all"     # 已读/未读筛选（全部/已读/未读）
