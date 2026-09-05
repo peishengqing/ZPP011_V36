@@ -205,8 +205,9 @@ def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
     if not records:
         return []
     # O(1) 索引：主表 data_id → row，消除原 O(n*m) 全表扫描
+    # 先 drop_duplicates 防止重复 data_id 导致 df_index.loc[uid] 返回 DataFrame 而非 Series
     try:
-        df_index = df.set_index(df["data_id"].astype(str))
+        df_index = df.drop_duplicates(subset='data_id', keep='first').set_index(df["data_id"].astype(str))
     except Exception:
         df_index = None  # 降级回逐行查找
     result = []
@@ -240,11 +241,19 @@ def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
         is_neg_loss_basis = ("负损" in basis_key) or ("实际>0 且 实际<定额" in basis_key) \
             or basis_key.startswith("负损")
         if not is_neg_loss_basis and is_auto:
-            m = auto_rule_pat.search(basis_key)
-            if m:
-                rl = rules_by_idx.get(int(m.group(1)))
-                if rl and rl.get("negative_loss_required", False):
-                    is_neg_loss_basis = True
+            # 优先按规则名称匹配（规则增删/重排后序号会变，名称更稳定）
+            rl = None
+            for i, r in enumerate(cfg.get("rules", []), 1):
+                if r.get("name", "").strip() in basis_key:
+                    rl = r
+                    break
+            # 降级：按旧格式「自动规则[第N条]」用序号反查（向后兼容）
+            if rl is None:
+                m = auto_rule_pat.search(basis_key)
+                if m:
+                    rl = rules_by_idx.get(int(m.group(1)))
+            if rl and rl.get("negative_loss_required", False):
+                is_neg_loss_basis = True
 
         # ── 负损类：实时重判（数据驱动，最精准）──
         if is_neg_loss_basis:

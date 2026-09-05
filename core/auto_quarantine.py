@@ -199,11 +199,24 @@ def save_auto_quarantine_config(cfg):
     }
     if not merged["rules"]:
         merged["rules"] = [dict(DEFAULT_RULE)]
-    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+    config_dir = os.path.dirname(CONFIG_PATH)
+    try:
+        os.makedirs(config_dir, exist_ok=True)
+    except OSError:
+        logging.error("无法创建配置目录: %s", config_dir)
+        raise
     tmp_path = CONFIG_PATH + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(merged, f, ensure_ascii=False, indent=2)
-    os.replace(tmp_path, CONFIG_PATH)
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(merged, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, CONFIG_PATH)
+    except Exception:
+        # 写临时文件失败时清理临时文件，避免残留
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
     return merged
 
 
@@ -254,15 +267,21 @@ def build_rule_reason(rule=None, idx=None):
     """生成写进隔离原因列的单条规则文本。
 
     idx: 规则在配置列表中的 1-based 序号（与「⚙ 自动隔离规则」对话框的
-         1. 2. 3. 编号一致，含已停用的规则也占位）。传入时返回简短形式
-         '自动规则[第N条]'，隔离区列宽更友好；不传则回退带名称+条件的
-         长文本（向后兼容 / 非自动隔离场景）。
+         1. 2. 3. 编号一致，含已停用的规则也占位）。
+    格式: '自动规则[第N条:规则名]' —— 既含序号（供旧版兼容），又含规则名
+         （供规则增删/重排后仍能正确反查）。
+    不传 idx 时回退带名称+条件的长文本（向后兼容 / 非自动隔离场景）。
     """
     if idx is not None:
         try:
-            return "自动规则[第%d条]" % int(idx)
+            idx_int = int(idx)
         except (TypeError, ValueError):
-            pass
+            idx_int = None
+        rule = rule or DEFAULT_RULE
+        name = str(rule.get("name") or "未命名规则").strip() or "未命名规则"
+        if idx_int is not None:
+            return "自动规则[第%d条:%s]" % (idx_int, name)
+        return "自动规则[%s]" % name
     rule = rule or DEFAULT_RULE
     name = str(rule.get("name") or "未命名规则").strip() or "未命名规则"
     return "自动规则[%s]:%s" % (name, build_rule_summary(rule).replace(" · ", "·"))
@@ -352,7 +371,7 @@ def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_c
                 m_cat = df[semi_class_col].astype(str).str.strip().isin(vals)
             elif cat_col and cat_col in df.columns:
                 # 回退到物料分类/组件物料类型描述：用包含匹配(支持"包材"匹配描述含"包材"的记录)
-                cat_str = df[cat_col].astype(str).fillna("")
+                cat_str = df[cat_col].fillna("").astype(str)
                 m_cat = pd.Series(False, index=df.index)
                 for v in vals:
                     m_cat = m_cat | cat_str.str.contains(v, regex=False)
@@ -367,7 +386,7 @@ def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_c
     kws = [str(k).strip() for k in (rule.get("name_keywords") or []) if str(k).strip()]
     if kws:
         if name_col:
-            name_str = df[name_col].astype(str).fillna("")
+            name_str = df[name_col].fillna("").astype(str)
             m_name = pd.Series(False, index=df.index)
             for kw in kws:
                 m_name = m_name | name_str.str.contains(kw, regex=False)
@@ -403,7 +422,7 @@ def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_c
     prefix = str(rule.get("mat_code_prefix", "")).strip()
     if prefix:
         if mat_code_col:
-            s = df[mat_code_col].astype(str).fillna("")
+            s = df[mat_code_col].fillna("").astype(str)
             items = [x.strip() for x in prefix.replace("，", ",").split(",") if x.strip()]
             if items:
                 m_prefix = pd.Series(False, index=df.index)
@@ -421,7 +440,7 @@ def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_c
         if workshop_col:
             val = str(rule.get("workshop_value", "")).strip()
             if val:
-                m_ws = df[workshop_col].astype(str).fillna("").str.strip() == val
+                m_ws = df[workshop_col].fillna("").astype(str).str.strip() == val
             else:
                 m_ws = pd.Series(True, index=df.index)
         else:
@@ -436,7 +455,7 @@ def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_c
             if val_str:
                 vals = [v.strip() for v in val_str.replace("，", ",").split(",") if v.strip()]
                 if vals:
-                    unit_str = df[unit_col].astype(str).fillna("").str.strip()
+                    unit_str = df[unit_col].fillna("").astype(str).str.strip()
                     m_unit = pd.Series(False, index=df.index)
                     for v in vals:
                         m_unit = m_unit | (unit_str == v)
@@ -453,7 +472,7 @@ def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_c
     mode = str(rule.get("remark_mode", "off")).strip()
     if mode in ("has", "none"):
         if remark_col:
-            filled = df[remark_col].astype(str).fillna("").str.strip() != ""
+            filled = df[remark_col].fillna("").astype(str).str.strip() != ""
             m_remark = filled if mode == "has" else ~filled
         else:
             m_remark = pd.Series(False, index=df.index)
@@ -478,7 +497,7 @@ def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_c
           if str(k).strip()]
     if ex:
         if name_col:
-            name_str = df[name_col].astype(str).fillna("")
+            name_str = df[name_col].fillna("").astype(str)
             m_ex = pd.Series(False, index=df.index)
             for kw in ex:
                 m_ex = m_ex | name_str.str.contains(kw, regex=False)
