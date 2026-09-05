@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.86",
+        "date": "2026-09-05",
+        "features": "",
+        "fixes": "自动隔离规则单位筛选仍无法保存：_RULE_FIELDS 缺少 unit_required/unit_value，导致 save_auto_quarantine_config 调用 _normalize_rule 时丢弃这两个字段。修复：在 _RULE_FIELDS 元组末尾补上这两个字段名（core/auto_quarantine.py:114-123）。"
+    },
+    {
         "version": "v43.85",
         "date": "2026-09-05",
         "features": "",

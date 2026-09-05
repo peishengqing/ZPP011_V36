@@ -118,6 +118,7 @@ _RULE_FIELDS = (
     "mat_code_prefix", "workshop_required", "workshop_value",
     "remark_mode", "name_exclude_keywords",
     "dev_qty_required", "dev_qty_min", "dev_qty_max",
+    "unit_required", "unit_value",
 )
 
 

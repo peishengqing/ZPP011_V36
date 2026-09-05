@@ -26,8 +26,8 @@
       "dev_qty_required": false,
       "dev_qty_min": 0.0,
       "dev_qty_max": 1.0,
-      "unit_required": false,
-      "unit_value": ""
+      "unit_required": true,
+      "unit_value": "箱,瓶"
     },
     {
       "name": "饮料厂瓶胚、瓶盖少投",
@@ -121,8 +121,8 @@
       "dev_qty_required": false,
       "dev_qty_min": 0.0,
       "dev_qty_max": 1.0,
-      "unit_required": false,
-      "unit_value": ""
+      "unit_required": true,
+      "unit_value": "箱,瓶"
     }
   ]
 }
