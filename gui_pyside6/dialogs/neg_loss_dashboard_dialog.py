@@ -600,6 +600,9 @@ class NegLossDashboardDialog(QDialog):
         if self._mtd_col:
             unique_vals = df[self._mtd_col].dropna().astype(str).str.strip().unique()
             unique_vals = sorted(v for v in unique_vals if v)
+            # 过滤掉在负损数据中永远筛不出记录的成品类型（v43.81）
+            _MTD_EXCLUDE = {"食品成品", "饮料成品"}
+            unique_vals = [v for v in unique_vals if v not in _MTD_EXCLUDE]
             self.combo_mtd.addItems(unique_vals)
             self.combo_mtd.setCurrentText("全部")
         else:
