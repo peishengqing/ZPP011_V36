@@ -14,7 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
-        "version": "v43.90",
+        "version": "v43.91",
+        "date": "2026-09-05",
+        "features": "",
+        "fixes": "代码审查修复10个P0/P1 bug：① CORE-14 auto_read_rules.py astype/fillna顺序（6处）；② CORE-6 config_manager.py浅拷贝改为deepcopy；③ CORE-20 batch_operations.py调用不存在的backup_before_analysis改为backup_before_analysis_sync；④ CORE-21 get_analysis_list limit=1无法找到目标aid；⑤ CORE-4 read_status.py SQLite批量查询改用_chunked_load；⑥ CORE-41 rule_engine.py ALLOWED_FIELDS重复定义清理；⑦ GUI-001/001b os.startfile替换为跨平台_open_file"
+    },
+    {
         "date": "2026-09-05",
         "features": "",
         "fixes": "代码审查5处修复：① 规则序号不稳定→build_rule_reason 格式改为'自动规则[第N条:规则名]'，scan_expired_quarantine 优先按规则名称匹配，降级按序号反查（向后兼容旧数据）；② astype/fillna 顺序错误→7处 .astype(str).fillna('') 改为 .fillna('').astype(str)，防止 NaN 被转为字符串 'nan' 后无法被 fillna 处理；③ 重复 data_id→scan_expired_quarantine 先 drop_duplicates 再 set_index，防止 loc[uid] 返回 DataFrame 导致 ValueError；④ 关键词太宽→规则2 name_keywords ['胚','盖'] 改为 ['胚','瓶盖']；⑤ save 异常处理→save_auto_quarantine_config 添加 try/except 和临时文件清理。"
