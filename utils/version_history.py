@@ -14,10 +14,16 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.88",
+        "date": "2026-09-05",
+        "features": "",
+        "fixes": "v43.87 的 Qt.Unchecked 比较方式错误（PySide6 枚举不能直接用 == 比较整数），导致 _on_cat_toggled/_on_unit_toggled 的清空逻辑未生效。修法：改为 state == Qt.Checked 判断，启用时启用容器+不清空，取消勾选（state != Qt.Checked）时清空子项。同时验证：PySide6 枚举比较用 Qt.Checked/Qt.Unchecked 而非整数 0/2。"
+    },
+    {
         "version": "v43.87",
         "date": "2026-09-05",
         "features": "",
-        "fixes": "取消勾选'要求属于单位/类别'总开关后，子复选框状态未清空导致重新打开时仍显示为勾选：_on_unit_toggled/_on_cat_toggled 在 state==Qt.Unchecked 时同步 blockSignals 后setChecked(False)所有子项。"
+        "fixes": "取消勾选'要求属于单位/类别'总开关后，子复选框状态未清空导致重新打开时仍显示为勾选：_on_unit_toggled/_on_cat_toggled 在 state==Qt.Unchecked 时同步 blockSignals 后setChecked(False)所有子项。（注：v43.88 修正了该版本的 Qt 枚举比较方式错误）"
     },
     {
         "version": "v43.86",

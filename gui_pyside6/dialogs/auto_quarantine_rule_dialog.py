@@ -404,8 +404,8 @@ class AutoQuarantineRuleWidget(QWidget):
 
     def _on_cat_toggled(self, state):
         """「要求属于类别」总开关：启用/禁用复选框组，取消时同步清空子项。"""
-        self.cat_checkbox_container.setEnabled(state != Qt.Unchecked)
-        if state == Qt.Unchecked:
+        self.cat_checkbox_container.setEnabled(state == Qt.Checked)
+        if state != Qt.Checked:
             for cb in self._cat_checkboxes.values():
                 cb.blockSignals(True)
                 cb.setChecked(False)
@@ -443,8 +443,13 @@ class AutoQuarantineRuleWidget(QWidget):
             self._unit_checkboxes[u] = cb
 
     def _on_unit_toggled(self, state):
-        """「要求属于单位」总开关：启用/禁用复选框组。"""
-        self.unit_checkbox_container.setEnabled(state != Qt.Unchecked)
+        """「要求属于单位」总开关：启用/禁用复选框组，取消时同步清空子项。"""
+        self.unit_checkbox_container.setEnabled(state == Qt.Checked)
+        if state != Qt.Checked:
+            for cb in self._unit_checkboxes.values():
+                cb.blockSignals(True)
+                cb.setChecked(False)
+                cb.blockSignals(False)
         self._refresh_summary()
 
     def _refresh_summary(self):
