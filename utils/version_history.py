@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.80",
+        "date": "2026-09-05",
+        "features": "",
+        "fixes": "负损看板'已读状态默认未读'不生效：v43.79 只改了 __init__ 的 self._read_filter='未读'，但 set_data 里第589行仍硬写 self._read_filter='all' 且第592行 setCurrentText('全部')，每次打开对话框都被重置回'全部'，覆盖 __init__ 默认值。改为 set_data 初始化即置 '未读'，与 __init__ 一致。隔离区默认'否'(v43.79 已改 set_data 632-633)保持有效。"
+    },
+    {
         "version": "v43.79",
         "date": "2026-09-05",
         "features": "",

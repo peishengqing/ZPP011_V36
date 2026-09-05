@@ -585,11 +585,12 @@ class NegLossDashboardDialog(QDialog):
             self.semi_sep.setVisible(False)
             self.lbl_semi_class.setVisible(False)
             self.grp_semi_class.setVisible(False)
-        # 初始化 已读/未读 筛选器
-        self._read_filter = "all"
+        # 初始化 已读/未读 筛选器（默认只显示未读；v43.80 修复：set_data 原先重置回 'all'/'全部'，
+        # 覆盖了 __init__ 的 '未读' 默认值，导致默认筛选不生效）
+        self._read_filter = "未读"
         self._read_col = "_read" if "_read" in df.columns else None
         if self._read_col:
-            self.combo_read.setCurrentText("全部")
+            self.combo_read.setCurrentText("未读")
         else:
             self.combo_read.setVisible(False)
             self.read_sep.setVisible(False)
