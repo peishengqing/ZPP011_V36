@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.84",
+        "date": "2026-09-05",
+        "features": "",
+        "fixes": "清理 main_window.py 中 v43.82 临时加入的诊断代码（向 C:\\temp\\zpp011_nl_cols.txt 写运行时列名），该诊断已验证'半成品重分类'列在源码运行时存在，不再需要。"
+    },
+    {
         "version": "v43.83",
         "date": "2026-09-05",
         "features": "",

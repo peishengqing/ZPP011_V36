@@ -1,6 +1,6 @@
 {
   "状态": {
-    "width": 35,
+    "width": 100,
     "hidden": false
   },
   "已读来源": {
@@ -28,7 +28,7 @@
     "hidden": false
   },
   "物料类型": {
-    "width": 100,
+    "width": 120,
     "hidden": false
   },
   "原表行号": {
@@ -36,7 +36,7 @@
     "hidden": false
   },
   "产品物料号码": {
-    "width": 120,
+    "width": 200,
     "hidden": false
   },
   "产品物料描述": {
@@ -44,19 +44,19 @@
     "hidden": false
   },
   "产量": {
-    "width": 100,
+    "width": 80,
     "hidden": false
   },
   "产量单位": {
-    "width": 100,
-    "hidden": false
-  },
-  "物料编码": {
     "width": 120,
     "hidden": false
   },
-  "物料名称": {
+  "物料编码": {
     "width": 200,
+    "hidden": false
+  },
+  "物料名称": {
+    "width": 249,
     "hidden": false
   },
   "单位": {
@@ -100,12 +100,12 @@
     "hidden": false
   },
   "备注来源": {
-    "width": 0,
-    "hidden": true
+    "width": 150,
+    "hidden": false
   },
   "偏差区间": {
-    "width": 0,
-    "hidden": true
+    "width": 80,
+    "hidden": false
   },
   "组件物料类型": {
     "width": 100,
@@ -116,7 +116,7 @@
     "hidden": false
   },
   "半成品重分类": {
-    "width": 100,
+    "width": 120,
     "hidden": false
   },
   "是否替代料": {
