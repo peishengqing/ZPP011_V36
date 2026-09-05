@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.78",
+        "date": "2026-09-05",
+        "features": "",
+        "fixes": "负损看板物料类型选'全部'后数据消失：_on_mtd_changed 直接把 text='全部' 赋给 _mtd_filter，但 _mtd_mask 检查的是 'all'，'全部' != 'all' 导致 vals == '全部' 返回全 False。加映射 self._mtd_filter = 'all' if text == '全部' else text。"
+    },
+    {
         "version": "v43.77",
         "date": "2026-09-05",
         "features": "",
