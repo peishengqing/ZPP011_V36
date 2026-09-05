@@ -104,6 +104,8 @@ DEFAULT_RULE = {
     "dev_qty_required": False,       # 是否要求偏差数量落在范围
     "dev_qty_min": 0,                # 偏差数量下限（开区间）
     "dev_qty_max": 1,                # 偏差数量上限
+    "unit_required": False,          # 是否限定单位
+    "unit_value": "",                # 单位取值（逗号分隔多值 OR；空=不限制）
 }
 
 DEFAULT_CONFIG = {"enabled": True, "rules": [dict(DEFAULT_RULE)]}

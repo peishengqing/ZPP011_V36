@@ -25,7 +25,9 @@
       "name_exclude_keywords": "",
       "dev_qty_required": false,
       "dev_qty_min": 0.0,
-      "dev_qty_max": 1.0
+      "dev_qty_max": 1.0,
+      "unit_required": false,
+      "unit_value": ""
     },
     {
       "name": "饮料厂瓶胚、瓶盖少投",
@@ -48,7 +50,9 @@
       "name_exclude_keywords": "",
       "dev_qty_required": false,
       "dev_qty_min": 0.0,
-      "dev_qty_max": 1.0
+      "dev_qty_max": 1.0,
+      "unit_required": false,
+      "unit_value": ""
     },
     {
       "name": "半成品负损",
@@ -70,7 +74,9 @@
       "name_exclude_keywords": "",
       "dev_qty_required": false,
       "dev_qty_min": 0.0,
-      "dev_qty_max": 1.0
+      "dev_qty_max": 1.0,
+      "unit_required": false,
+      "unit_value": ""
     },
     {
       "name": "脱氧剂负损",
@@ -92,7 +98,31 @@
       "name_exclude_keywords": "",
       "dev_qty_required": false,
       "dev_qty_min": 0.0,
-      "dev_qty_max": 1.0
+      "dev_qty_max": 1.0,
+      "unit_required": false,
+      "unit_value": ""
+    },
+    {
+      "name": "新规则5",
+      "enabled": true,
+      "exclude_alt": true,
+      "category_required": false,
+      "category_value": "包材",
+      "name_keywords": [],
+      "negative_loss_required": true,
+      "dev_rate_required": false,
+      "dev_rate_min": 10.0,
+      "dev_rate_max": 100.0,
+      "mat_code_prefix": "400",
+      "workshop_required": false,
+      "workshop_value": "",
+      "remark_mode": "off",
+      "name_exclude_keywords": "",
+      "dev_qty_required": false,
+      "dev_qty_min": 0.0,
+      "dev_qty_max": 1.0,
+      "unit_required": false,
+      "unit_value": ""
     }
   ]
 }

@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.85",
+        "date": "2026-09-05",
+        "features": "",
+        "fixes": "自动隔离规则'要求属于单位'复选框无法保存：DEFAULT_RULE 缺少 unit_required/unit_value 字段，配置文件中所有规则也缺少这两个字段，导致用户勾选单位后保存并重新打开对话框时单位选择丢失。修复：① DEFAULT_RULE 补 unit_required=False/unit_value=''；② 配置文件所有规则补默认值；③ _commit_editor 写入 unit_required/unit_value（上一轮已做）。"
+    },
+    {
         "version": "v43.84",
         "date": "2026-09-05",
         "features": "",

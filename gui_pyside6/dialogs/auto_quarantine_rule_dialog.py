@@ -255,6 +255,9 @@ class AutoQuarantineRuleWidget(QWidget):
         r["dev_qty_required"] = self.chk_dev_qty.isChecked()
         r["dev_qty_min"] = self.spin_dev_qty_min.value()
         r["dev_qty_max"] = self.spin_dev_qty_max.value()
+        r["unit_required"] = self.chk_unit.isChecked()
+        _selected_units = [name for name, cb in self._unit_checkboxes.items() if cb.isChecked()]
+        r["unit_value"] = "，".join(_selected_units) if _selected_units else ""
 
     def _load_rule_to_editor(self, idx):
         if not (0 <= idx < len(self.cfg["rules"])):
