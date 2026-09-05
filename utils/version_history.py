@@ -14,6 +14,18 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.90",
+        "date": "2026-09-05",
+        "features": "",
+        "fixes": "代码审查5处修复：① 规则序号不稳定→build_rule_reason 格式改为'自动规则[第N条:规则名]'，scan_expired_quarantine 优先按规则名称匹配，降级按序号反查（向后兼容旧数据）；② astype/fillna 顺序错误→7处 .astype(str).fillna('') 改为 .fillna('').astype(str)，防止 NaN 被转为字符串 'nan' 后无法被 fillna 处理；③ 重复 data_id→scan_expired_quarantine 先 drop_duplicates 再 set_index，防止 loc[uid] 返回 DataFrame 导致 ValueError；④ 关键词太宽→规则2 name_keywords ['胚','盖'] 改为 ['胚','瓶盖']；⑤ save 异常处理→save_auto_quarantine_config 添加 try/except 和临时文件清理。"
+    },
+    {
+        "version": "v43.89",
+        "date": "2026-09-05",
+        "features": "",
+        "fixes": "v43.88 的 Qt 枚举比较方式仍有问题：stateChanged 信号回调中 state 参数是 int 类型(0/2)，不能用 Qt.Checked/Qt.Unchecked 枚举直接比较。修法：改用 bool(state) 判断，0 为 False(未勾选)，非 0 为 True(已勾选)。_on_cat_toggled/_on_unit_toggled 都已修复。"
+    },
+    {
         "version": "v43.88",
         "date": "2026-09-05",
         "features": "",
