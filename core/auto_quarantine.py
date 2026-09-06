@@ -365,13 +365,24 @@ def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_c
     # 2. 类别限定（支持逗号分隔多值 OR）
     # 优先使用「半成品重分类」列（更精确的权威分类），其次回退到「物料分类/组件物料类型描述」等列
     # 组件物料类型描述用包含匹配(如category_value="包材"时匹配描述含"包材"的记录)
+    # v43.97：当半成品重分类列存在但全为空时，回退到物料分类列做包含匹配，避免误拒（如托盘编码20000081）
     if rule.get("category_required", True):
         val_str = str(rule.get("category_value", "")).strip()
         vals = [v.strip() for v in re.split(r'[，,]', val_str) if v.strip()]
         if vals:
             # 优先匹配半成品重分类（精确匹配）
             if semi_class_col and semi_class_col in df.columns:
-                m_cat = df[semi_class_col].astype(str).str.strip().isin(vals)
+                semi_str = df[semi_class_col].astype(str).str.strip()
+                # 若该列有非空值则用精确匹配；全空则回退到物料分类
+                if semi_str.ne('').any():
+                    m_cat = semi_str.isin(vals)
+                elif cat_col and cat_col in df.columns:
+                    cat_str = df[cat_col].fillna("").astype(str)
+                    m_cat = pd.Series(False, index=df.index)
+                    for v in vals:
+                        m_cat = m_cat | cat_str.str.contains(v, regex=False)
+                else:
+                    m_cat = pd.Series(False, index=df.index)
             elif cat_col and cat_col in df.columns:
                 # 回退到物料分类/组件物料类型描述：用包含匹配(支持"包材"匹配描述含"包材"的记录)
                 cat_str = df[cat_col].fillna("").astype(str)
