@@ -10,10 +10,6 @@
 
 import re
 import pandas as pd
-# 虚拟半成品分类名（与 analyzer.py 归并规则一致，用于筛选框和掩码判断）
-_SEMI_VIRT_FOOD = "食品半成品"
-_SEMI_VIRT_DRINK = "饮料半成品"
-
 
 
 from PySide6.QtWidgets import (
@@ -375,30 +371,21 @@ class NegLossDashboardDialog(QDialog):
         return a.notna() & (a > 0) & q.notna() & (a < q)
 
     def _semi_class_mask(self, df):
-        """半成品重分类掩码：空集合=全True；虚拟项「食品/饮料成品半成品」精确匹配+空白
-        （列值==分类名 或 列值为空 且 工厂含'食品'/'饮料'）；其他=列值精确==分类名。多值 OR。
+        """半成品重分类掩码：空集合=全True；否则精确匹配列值。多值 OR。
         无半成品重分类列时,用物料分类/组件物料类型描述/工厂兜底推断(对齐analyzer.py归并规则)。"""
         if not self._semi_class_filter:
             return pd.Series(True, index=df.index)
         semi_col = "半成品重分类"
         if semi_col in df.columns:
             vals = df[semi_col].astype(str).str.strip()
-            blank = df[semi_col].fillna('').astype(str).str.strip() == ''
         else:
             # 兜底:半成品类判断(与analyzer.py ③号规则一致)
             _mtd = df['组件物料类型描述'].astype(str) if '组件物料类型描述' in df.columns else pd.Series('', index=df.index)
             _semi = (df['物料分类'] == '半成品') | _mtd.str.contains('半成品|成品', na=False)
             vals = _semi.map({True: '__SEMI__', False: ''}).reindex(df.index)
-            blank = ~_semi
-        fac = df['工厂'].astype(str) if '工厂' in df.columns else pd.Series('', index=df.index)
         mask = pd.Series(False, index=df.index)
         for m in self._semi_class_filter:
-            if m == _SEMI_VIRT_FOOD:
-                mask = mask | (((vals == m) | blank) & fac.str.contains('食品', na=False))
-            elif m == _SEMI_VIRT_DRINK:
-                mask = mask | (((vals == m) | blank) & fac.str.contains('饮料', na=False))
-            else:
-                mask = mask | (vals == m)
+            mask = mask | (vals == m)
         return mask
 
     def _mtd_mask(self, df):
@@ -425,11 +412,7 @@ class NegLossDashboardDialog(QDialog):
         kept = self.grp_semi_class.currentText()
         self.grp_semi_class.clear()
         self.grp_semi_class.addItem("全部")
-        for v in (_SEMI_VIRT_FOOD, _SEMI_VIRT_DRINK):
-            self.grp_semi_class.addItem(v)
         for v in unique_vals:
-            if v in (_SEMI_VIRT_FOOD, _SEMI_VIRT_DRINK):
-                continue
             self.grp_semi_class.addItem(v)
         if kept and kept != "全部" and kept in self.grp_semi_class.itemTexts():
             self.grp_semi_class.setCurrentText(kept)
@@ -1054,7 +1037,12 @@ class NegLossDashboardDialog(QDialog):
         df = self.source_model.getDataFrame()
         if index.row() < len(df):
             try:
-                self.main_window.locate_record(df.iloc[index.row()])
+                # 优先用「原表行号」直接定位（比 data_id 更可靠，不受筛选/排序影响）
+                row_idx = df.iloc[index.row()].get('原表行号')
+                if row_idx is not None and hasattr(self.main_window, '_locate_row_by_index'):
+                    self.main_window._locate_row_by_index(row_idx)
+                else:
+                    self.main_window.locate_record(df.iloc[index.row()])
             except Exception:
                 pass
             self.accept()
