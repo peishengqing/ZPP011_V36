@@ -373,14 +373,25 @@ class AutoQuarantineRuleWidget(QWidget):
             self._load_rule_to_editor(self.current_index)
 
     def _known_categories(self):
-        """已知分类值（内置常见 + 现有规则里出现过的），用于复选框枚举。"""
+        """已知分类值（内置常见 + 现有规则里出现过的），用于复选框枚举。
+
+        v43.98：扩展类别列表，加入更多实际数据中出现的分类值：
+        - 组件物料类型描述列实测值：包材、原材料、辅料、胶水、标签等
+        - semi_user_categories.json 中的半成品重分类值
+        - 便于用户选择「原辅料」「包材」等常见分类
+        """
         cats, seen = [], set()
-        for c in ["包材", "食品综合粗成品", "食品综合粗半成品",
+        # 基础分类（来自组件物料类型描述列实测值 + 常见业务分类）
+        for c in ["包材", "原材料", "原辅料", "辅料", "胶水", "标签",
+                  "食品综合粗成品", "食品综合粗半成品",
                   "饮料综合粗成品", "饮料综合粗半成品",
-                  "食品成品半成品", "饮料成品半成品"]:
+                  "食品成品半成品", "饮料成品半成品",
+                  "食品综合组半成品", "食品辅原料", "食品配料中心半成品",
+                  "饮料综合组半成品仓"]:
             if c not in seen:
                 seen.add(c)
                 cats.append(c)
+        # 从现有规则中收集已使用的类别值
         for r in self.cfg.get("rules", []):
             for part in re.split(r'[，,]', str(r.get("category_value", "")).strip()):
                 part = part.strip()
