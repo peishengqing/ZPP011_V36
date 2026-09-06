@@ -410,11 +410,13 @@ def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_c
         m_name = pd.Series(True, index=df.index)  # 没填关键词 → 不限制
 
     # 4. 负损
+    # v43.99：添加最小偏差阈值（>=1），避免浮点误差导致误判
     if rule.get("negative_loss_required", True):
         if actual_col and quota_col:
             actual = pd.to_numeric(df[actual_col], errors="coerce")
             quota = pd.to_numeric(df[quota_col], errors="coerce")
-            m_qty = actual.notna() & (actual > 0) & quota.notna() & (actual < quota)
+            # 实际>0 且 实际<定额 且 差值>=1（过滤浮点误差）
+            m_qty = actual.notna() & (actual > 0) & quota.notna() & (actual < quota) & ((quota - actual) >= 1)
         else:
             m_qty = pd.Series(False, index=df.index)  # 开着无列 → 不匹配
     else:
