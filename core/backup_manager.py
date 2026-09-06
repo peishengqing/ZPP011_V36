@@ -420,6 +420,15 @@ def _backup_db(log_cb=None):
             log_cb(f"⚠ 备份失败：{e}", "warn")
 
 
+# ── 模块级包装（供 batch_operations.py 等无实例上下文调用）──────────────────────
+def backup_before_analysis_sync(input_excel_path: str = None, audit_db_path: str = None) -> dict:
+    """同步备份（模块级入口）。"""
+    return BackupManager().backup_before_analysis_sync(
+        input_excel_path=input_excel_path,
+        audit_db_path=audit_db_path,
+    )
+
+
 __all__ = [
     "BackupManager",
     "export_audit_backup",
@@ -427,4 +436,5 @@ __all__ = [
     "needs_upgrade",
     "upgrade_audit_db",
     "get_audit_db_path",
+    "backup_before_analysis_sync",
 ]

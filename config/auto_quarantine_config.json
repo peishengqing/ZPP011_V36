@@ -26,8 +26,8 @@
       "dev_qty_required": false,
       "dev_qty_min": 0.0,
       "dev_qty_max": 1.0,
-      "unit_required": false,
-      "unit_value": "箱，瓶"
+      "unit_required": true,
+      "unit_value": "箱，瓶，盒"
     },
     {
       "name": "饮料厂瓶胚、瓶盖少投",
@@ -55,14 +55,12 @@
       "unit_value": ""
     },
     {
-      "name": "半成品负损",
+      "name": "食品半成品负损",
       "enabled": true,
       "exclude_alt": true,
       "category_required": false,
       "category_value": "",
-      "name_keywords": [
-        "半成品"
-      ],
+      "name_keywords": [],
       "negative_loss_required": true,
       "dev_rate_required": false,
       "dev_rate_min": -100.0,
@@ -101,6 +99,28 @@
       "dev_qty_max": 1.0,
       "unit_required": false,
       "unit_value": ""
+    },
+    {
+      "name": "饮料半成品负损",
+      "enabled": true,
+      "exclude_alt": true,
+      "category_required": false,
+      "category_value": "",
+      "name_keywords": [],
+      "negative_loss_required": true,
+      "dev_rate_required": false,
+      "dev_rate_min": 10.0,
+      "dev_rate_max": 100.0,
+      "mat_code_prefix": "410",
+      "workshop_required": false,
+      "workshop_value": "",
+      "remark_mode": "off",
+      "name_exclude_keywords": "",
+      "dev_qty_required": false,
+      "dev_qty_min": 0.0,
+      "dev_qty_max": 1.0,
+      "unit_required": true,
+      "unit_value": "瓶，罐，盒"
     }
   ]
 }

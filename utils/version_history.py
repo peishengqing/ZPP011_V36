@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.95",
+        "date": "2026-09-06",
+        "features": "",
+        "fixes": "CORE-20: 修复 batch_operations.py 中 backup_manager.backup_before_analysis_sync() 调用错误——该方法原为 BackupManager 实例方法，现改为模块级包装函数，消除 AttributeError。"
+    },
+    {
         "version": "v43.94",
         "date": "2026-09-06",
         "features": "偏差率预警看板和负损(含未投料)看板新增「原表行号」列，显示该行在主表中的原始行号；双击看板任意行时，通过原表行号精确定位到主表对应行（经 proxy_model 映射），比 data_id 匹配更可靠，不受筛选/排序影响。同时为 main_window 新增 _locate_row_by_index 方法支持按 index 直接定位。",
