@@ -47,6 +47,7 @@ class DeviationWarningDialog(QDialog):
         self._keyword = ""          # 关键字搜索（跨列，与分类筛选叠加）
         self._remark_filter = "all"   # 是否备注筛选：all / has(有) / none(无)
         self._remark_col_name = None  # 备注列名（set_data 时探测）
+        self._devdir_filter = "all"   # 偏差方向筛选：all / pos(正偏差>0) / neg(负偏差<0)
         self._semi_class_filter = set()  # 半成品重分类筛选：空集合=全部 / 集合内为选中分类（虚拟项模糊匹配）
         self._semi_class_col = None   # 半成品重分类列名（set_data 时探测）
         self._mtd_filter = "all"      # 组件物料类型描述筛选（全部/具体类型）
@@ -133,6 +134,31 @@ class DeviationWarningDialog(QDialog):
         self.btn_quar_no.setMinimumWidth(70)
         self.btn_quar_no.clicked.connect(lambda: self._set_quar_filter("no"))
         row1.addWidget(self.btn_quar_no)
+
+        # 偏差方向筛选（正偏差=偏差数量>0 / 负偏差=偏差数量<0，v43.93 新增）
+        row1.addSpacing(16)
+        self.devdir_sep = QFrame()
+        self.devdir_sep.setFrameShape(QFrame.VLine)
+        self.devdir_sep.setFrameShadow(QFrame.Sunken)
+        row1.addWidget(self.devdir_sep)
+        row1.addSpacing(8)
+        self.lbl_devdir = QLabel("偏差:")
+        row1.addWidget(self.lbl_devdir)
+        self.btn_devdir_all = QPushButton("全部")
+        self.btn_devdir_all.setCheckable(True)
+        self.btn_devdir_all.setMinimumWidth(70)
+        self.btn_devdir_all.clicked.connect(lambda: self._set_devdir_filter("all"))
+        row1.addWidget(self.btn_devdir_all)
+        self.btn_devdir_pos = QPushButton("正偏差")
+        self.btn_devdir_pos.setCheckable(True)
+        self.btn_devdir_pos.setMinimumWidth(70)
+        self.btn_devdir_pos.clicked.connect(lambda: self._set_devdir_filter("pos"))
+        row1.addWidget(self.btn_devdir_pos)
+        self.btn_devdir_neg = QPushButton("负偏差")
+        self.btn_devdir_neg.setCheckable(True)
+        self.btn_devdir_neg.setMinimumWidth(70)
+        self.btn_devdir_neg.clicked.connect(lambda: self._set_devdir_filter("neg"))
+        row1.addWidget(self.btn_devdir_neg)
 
         # 车间筛选（始终可见，放第1行隔离区之后，与工厂/隔离区并列）
         row1.addSpacing(16)
@@ -401,6 +427,14 @@ class DeviationWarningDialog(QDialog):
         self.btn_quar_no.setChecked(mode == "no")
         self._apply_filter()
 
+    def _set_devdir_filter(self, mode):
+        """偏差方向筛选（全部/正偏差/负偏差），与其他筛选组独立叠加（v43.93）"""
+        self._devdir_filter = mode
+        self.btn_devdir_all.setChecked(mode == "all")
+        self.btn_devdir_pos.setChecked(mode == "pos")
+        self.btn_devdir_neg.setChecked(mode == "neg")
+        self._apply_filter()
+
     def _set_alt_filter(self, mode):
         """替代料筛选（全部/是/否），与已读状态、料别、车间独立叠加"""
         self._alt_filter = mode
@@ -530,6 +564,26 @@ class DeviationWarningDialog(QDialog):
             return vals == "是"
         return vals == "否"
 
+    def _devdir_mask(self, df, mode):
+        """偏差方向掩码（v43.93）：all=全True / pos=偏差数量>0 / neg=偏差数量<0
+
+        数值列优先取「偏差数量」，缺失时回退「净偏差数量」，再回退「偏差率(%)」；
+        全部缺失或无法转数值时返回全 True（等同不过滤）。
+        """
+        if mode == "all":
+            return pd.Series(True, index=df.index)
+        col = None
+        for c in ("偏差数量", "净偏差数量", "偏差率(%)"):
+            if c in df.columns:
+                col = df[c]
+                break
+        if col is None:
+            return pd.Series(True, index=df.index)
+        num = pd.to_numeric(col, errors="coerce")
+        if mode == "pos":
+            return num > 0
+        return num < 0
+
     def _remark_mask(self, df, mode):
         """是否备注掩码：all=全True / has=备注列非空 / none=备注列为空
 
@@ -627,6 +681,7 @@ class DeviationWarningDialog(QDialog):
                       & self._factory_mask(df, self._factory_filter)
                       & self._quar_mask(df, self._quar_filter)
                       & self._alt_mask(df, self._alt_filter)
+                      & self._devdir_mask(df, self._devdir_filter)
                       & self._remark_mask(df, self._remark_filter)
                       & self._semi_class_mask(df)
                       & self._mtd_mask(df)
@@ -671,6 +726,8 @@ class DeviationWarningDialog(QDialog):
                              (self.btn_read, "已读"), (self.btn_mat_all, "全部"),
                              (self.btn_mat_raw, "原料"), (self.btn_mat_pkg, "包材"),
                              (self.btn_mat_semi, "半成品"),
+                             (self.btn_devdir_all, "全部"), (self.btn_devdir_pos, "正偏差"),
+                             (self.btn_devdir_neg, "负偏差"),
                              (self.btn_remark_all, "全部"), (self.btn_remark_has, "有"),
                              (self.btn_remark_none, "无")]:
                     b.setText(f"{t} (0)")
@@ -707,6 +764,12 @@ class DeviationWarningDialog(QDialog):
                 f"是 ({int((cur_read & cur_alt_yes).sum())})")
             self.btn_alt_no.setText(
                 f"否 ({int((cur_read & cur_alt_no).sum())})")
+            # 偏差方向组：固定当前已读状态，看 全部/正/负 各多少条（v43.93）
+            self.btn_devdir_all.setText(f"全部 ({int(cur_read.sum())})")
+            self.btn_devdir_pos.setText(
+                f"正偏差 ({int((cur_read & self._devdir_mask(df, 'pos')).sum())})")
+            self.btn_devdir_neg.setText(
+                f"负偏差 ({int((cur_read & self._devdir_mask(df, 'neg')).sum())})")
             # 是否备注组：固定当前已读状态，看 有/无 各多少条
             rc = self._remark_col_name
             if rc and rc in df.columns:

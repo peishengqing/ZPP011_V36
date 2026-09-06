@@ -6,7 +6,7 @@
       "enabled": true,
       "exclude_alt": true,
       "category_required": false,
-      "category_value": "包材",
+      "category_value": "",
       "name_keywords": [
         "箱",
         "手包袋",
@@ -59,7 +59,7 @@
       "enabled": true,
       "exclude_alt": true,
       "category_required": false,
-      "category_value": "包材",
+      "category_value": "",
       "name_keywords": [
         "半成品"
       ],
@@ -83,7 +83,7 @@
       "enabled": true,
       "exclude_alt": true,
       "category_required": false,
-      "category_value": "包材",
+      "category_value": "",
       "name_keywords": [
         "脱氧剂"
       ],
@@ -101,28 +101,6 @@
       "dev_qty_max": 1.0,
       "unit_required": false,
       "unit_value": ""
-    },
-    {
-      "name": "新规则5",
-      "enabled": true,
-      "exclude_alt": true,
-      "category_required": false,
-      "category_value": "包材",
-      "name_keywords": [],
-      "negative_loss_required": true,
-      "dev_rate_required": false,
-      "dev_rate_min": 10.0,
-      "dev_rate_max": 100.0,
-      "mat_code_prefix": "400",
-      "workshop_required": false,
-      "workshop_value": "",
-      "remark_mode": "off",
-      "name_exclude_keywords": "",
-      "dev_qty_required": false,
-      "dev_qty_min": 0.0,
-      "dev_qty_max": 1.0,
-      "unit_required": true,
-      "unit_value": "罐，袋，包"
     }
   ]
 }
