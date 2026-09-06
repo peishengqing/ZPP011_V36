@@ -282,9 +282,30 @@ class QuarantineDialog(QDialog):
             lambda v: '已读' if (pd.notna(v) and int(v)) else '未读'
         )
         df = self._reorder_reason_before_order_date(df)
+        df = self._reorder_material_cols(df)
 
         self.full_df = df.copy()
         self._render_table(df)
+
+    def _reorder_material_cols(self, df):
+        """将「组件物料类型」和「组件物料类型描述」列移到「物料类型」列之后。"""
+        target_col = '物料类型'
+        if target_col not in df.columns:
+            return df
+        cols_to_move = ['组件物料类型', '组件物料类型描述']
+        cols = list(df.columns)
+        # 先移除要移动的列
+        for c in cols_to_move:
+            if c in cols:
+                cols.remove(c)
+        # 找到目标列的位置
+        target_idx = cols.index(target_col)
+        # 在目标列后面插入
+        for c in cols_to_move:
+            if c in df.columns:
+                cols.insert(target_idx + 1, c)
+                target_idx += 1
+        return df[cols]
 
     def _reorder_reason_before_order_date(self, df):
         """将「隔离原因」列移到「订单日期」列之前；找不到订单日期列则降级到状态列之后。"""
