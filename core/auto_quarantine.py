@@ -144,7 +144,8 @@ def _normalize_rule(rule):
     r["name_keywords"] = [
         str(k).strip() for k in (r.get("name_keywords") or []) if str(k).strip()
     ]
-    r["category_value"] = str(r.get("category_value") or "包材").strip() or "包材"
+    # v43.92：不再强制回填"包材"，允许类别为空（category_required=False 时类别条件直接放行）
+    r["category_value"] = str(r.get("category_value") or "").strip()
     # 新数字字段兜底为 float（JSON 中可能以字符串存储）
     for _nf in ("dev_rate_min", "dev_rate_max", "dev_qty_min", "dev_qty_max"):
         try:
@@ -230,7 +231,9 @@ def build_rule_summary(rule=None):
     if rule.get("exclude_alt", True):
         parts.append("非替代料")
     if rule.get("category_required", True):
-        parts.append("属于「%s」" % str(rule.get("category_value", "包材")).strip())
+        _cv = str(rule.get("category_value", "")).strip()
+        if _cv:  # v43.92：类别为空时不显示「属于」条件
+            parts.append("属于「%s」" % _cv)
     kws = [str(k).strip() for k in (rule.get("name_keywords") or []) if str(k).strip()]
     if kws:
         parts.append("名称含「%s」" % "/".join(kws))
@@ -363,7 +366,7 @@ def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_c
     # 优先使用「半成品重分类」列（更精确的权威分类），其次回退到「物料分类/组件物料类型描述」等列
     # 组件物料类型描述用包含匹配(如category_value="包材"时匹配描述含"包材"的记录)
     if rule.get("category_required", True):
-        val_str = str(rule.get("category_value", "包材")).strip()
+        val_str = str(rule.get("category_value", "")).strip()
         vals = [v.strip() for v in re.split(r'[，,]', val_str) if v.strip()]
         if vals:
             # 优先匹配半成品重分类（精确匹配）

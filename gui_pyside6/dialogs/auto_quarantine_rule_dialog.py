@@ -238,7 +238,8 @@ class AutoQuarantineRuleWidget(QWidget):
         ]
         r["category_required"] = self.chk_cat.isChecked()
         _selected_cats = [name for name, cb in self._cat_checkboxes.items() if cb.isChecked()]
-        r["category_value"] = "，".join(_selected_cats) if _selected_cats else "包材"
+        # 不再强制兜底"包材"：总开关关闭或未选任何类别时允许为空
+        r["category_value"] = "，".join(_selected_cats)
         r["exclude_alt"] = self.chk_alt.isChecked()
         r["negative_loss_required"] = self.chk_loss.isChecked()
         # —— 新增条件回写 ——
@@ -266,8 +267,10 @@ class AutoQuarantineRuleWidget(QWidget):
         self.chk_rule_enabled.setChecked(bool(r.get("enabled", True)))
         self.edit_keywords.setText("，".join(r.get("name_keywords") or []))
         self.chk_cat.setChecked(bool(r.get("category_required", True)))
-        _cat_val = str(r.get("category_value", "包材"))
-        _cat_vals = [v.strip() for v in re.split(r'[，,]', _cat_val) if v.strip()]
+        # 总开关关闭时不回显子项勾选（v43.92：取消强制"包材"兜底，允许类别为空）
+        _cat_val = str(r.get("category_value", "")).strip()
+        _cat_vals = [v.strip() for v in re.split(r'[，,]', _cat_val) if v.strip()] \
+            if self.chk_cat.isChecked() else []
         self._init_cat_checkboxes()  # 先建已知分类复选框
         for v in _cat_vals:  # 规则里出现的未知分类也补出复选框，避免丢失
             if v and v not in self._cat_checkboxes:
@@ -462,7 +465,7 @@ class AutoQuarantineRuleWidget(QWidget):
             "exclude_alt": self.chk_alt.isChecked(),
             "category_required": self.chk_cat.isChecked(),
             "category_value": "，".join(
-                [n for n, cb in self._cat_checkboxes.items() if cb.isChecked()]) or "包材",
+                [n for n, cb in self._cat_checkboxes.items() if cb.isChecked()]),
             "name_keywords": [
                 k.strip()
                 for k in self.edit_keywords.text().replace("，", ",").replace("、", ",").split(",")

@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.92",
+        "date": "2026-09-06",
+        "features": "",
+        "fixes": "自动隔离规则编辑器：去除类别条件强制兜底'包材'（5处），允许'不选任何类别'。修复现象：用户取消'要求属于类别'总开关后，子复选框'包材'仍显示勾选且无法真正置空。改动：① 对话框 _commit_editor 未选类别时写空串而非强制'包材'；② _load_rule_to_editor 总开关关闭时不回显子项勾选、category_value 默认空；③ _collect_preview 预览兜底去除；④ core _normalize_rule 不再强制回填'包材'；⑤ build_rule_summary 类别为空时不显示「属于」条件。核心匹配逻辑不变：category_required=False 时类别条件直接放行。"
+    },
+    {
         "version": "v43.91",
         "date": "2026-09-05",
         "features": "",
