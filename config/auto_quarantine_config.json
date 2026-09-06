@@ -5,8 +5,8 @@
       "name": "食品厂包材箱类、纸罐、手包袋、不干胶、托盘负损",
       "enabled": true,
       "exclude_alt": true,
-      "category_required": false,
-      "category_value": "",
+      "category_required": true,
+      "category_value": "包材",
       "name_keywords": [
         "箱",
         "手包袋",
@@ -27,7 +27,7 @@
       "dev_qty_min": 0.0,
       "dev_qty_max": 1.0,
       "unit_required": true,
-      "unit_value": "箱，瓶，盒"
+      "unit_value": "个，箱，瓶，盒，张"
     },
     {
       "name": "饮料厂瓶胚、瓶盖少投",
