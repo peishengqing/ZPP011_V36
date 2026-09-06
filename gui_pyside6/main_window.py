@@ -1052,6 +1052,28 @@ class MainWindow(QMainWindow):
         dlg.exec()
         self._audit_changes_dialog_open = False
 
+    def _locate_row_by_index(self, row_index):
+        """按 DataFrame index 定位主表行（用于看板「原表行号」双击跳转）"""
+        try:
+            if self.source_model is None:
+                return False
+            df = self.source_model.getDataFrame()
+            if df is None or row_index not in df.index:
+                return False
+            src_row = df.index.get_loc(row_index)
+            src_idx = self.source_model.index(src_row, 0)
+            proxy = self.table_view.model()
+            proxy_idx = proxy.mapFromSource(src_idx) if hasattr(proxy, 'mapFromSource') else src_idx
+            self.table_view.selectRow(proxy_idx.row())
+            self.table_view.scrollTo(proxy_idx)
+            self.table_view.setFocus()
+            self.activateWindow()
+            self.raise_()
+            return True
+        except Exception as e:
+            self.log(f"定位主表失败: {e}", "error")
+            return False
+
     def _locate_row_in_main_table(self, data_id):
         """变动提醒弹窗双击某行时，定位并选中主表对应行（经 proxy_model 映射）"""
         try:
@@ -1655,6 +1677,8 @@ class MainWindow(QMainWindow):
             else:
                 mask = rates.abs() >= 10
             warnings_df = df[mask].copy()
+            # 注入原表行号，供看板双击定位主表使用
+            warnings_df["原表行号"] = warnings_df.index
             if warnings_df.empty:
                 QMessageBox.information(self, "提示", "没有偏差率预警记录（|偏差率| ≥ 10%）")
                 return

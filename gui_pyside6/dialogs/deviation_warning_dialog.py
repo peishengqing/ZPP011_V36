@@ -1445,9 +1445,14 @@ class DeviationWarningDialog(QDialog):
         row = index.row()
         df = self.source_model.getDataFrame()
         if row < len(df):
-            record = df.iloc[row]
             try:
-                self.main_window.locate_record(record)
+                # 优先用「原表行号」直接定位（比 data_id 更可靠，不受筛选/排序影响）
+                row_idx = df.iloc[row].get('原表行号')
+                if row_idx is not None and hasattr(self.main_window, '_locate_row_by_index'):
+                    self.main_window._locate_row_by_index(row_idx)
+                else:
+                    record = df.iloc[row]
+                    self.main_window.locate_record(record)
             except (AttributeError, Exception):
                 pass
             self.accept()

@@ -1070,7 +1070,7 @@ class NegLossDashboardDialog(QDialog):
         path, _ = QFileDialog.getSaveFileName(
             self, f"导出负损看板（共 {len(cur_df)} 条）", default_name, "Excel files (*.xlsx)")
         if path:
-            export_df = cur_df.drop(columns=['data_id'], errors='ignore')
+            export_df = cur_df.drop(columns=['data_id', '原表行号'], errors='ignore')
             saved = safe_save(self, path, lambda p: export_df.to_excel(p, index=False), what="负损看板")
             if saved:
                 toast(f"已导出 {len(export_df)} 条记录到 {saved}", parent=self)
