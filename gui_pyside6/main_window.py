@@ -3164,7 +3164,7 @@ class MainWindow(QMainWindow):
         #   3) QApplication.keyboardModifiers() —— 信号触发瞬间查真实键盘态（再兜底）
         ctrl_pressed = bool(getattr(self, "_ctrl_down", False)) \
             or bool(getattr(self._sort_header, "_ctrl_held", False)) \
-            or bool(int(QApplication.keyboardModifiers()) & int(Qt.ControlModifier.value))
+            or bool(QApplication.keyboardModifiers() & Qt.ControlModifier)
         col = logical_index
         if col <= 0:
             return  # 第一列(_read)不参与排序
