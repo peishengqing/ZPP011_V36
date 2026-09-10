@@ -278,6 +278,35 @@ class QuarantineDialog(QDialog):
 
         df = self._sync_read_from_main(df)
 
+        # 从 SQLite 加载已读来源（优先于主表内存值）
+        try:
+            from core.read_status import load_read_status
+            data_ids = [str(x) for x in df['data_id'].tolist()]
+            status_map = load_read_status(data_ids)
+            if status_map:
+                source_map = {did: vals[5] if len(vals) > 5 and vals[5] else '' for did, vals in status_map.items()}
+                df['_read_source'] = df['data_id'].astype(str).map(source_map).fillna('').astype(str)
+                # 将空来源归为 'manual'（兼容老数据）
+                df['_read_source'] = df['_read_source'].replace('', 'manual')
+        except Exception:
+            # 降级：使用主表内存值
+            if '_read_source' in df.columns:
+                df['_read_source'] = df['_read_source'].fillna('manual').astype(str)
+            else:
+                df['_read_source'] = 'manual'
+
+        # 生成已读来源显示列（手动/自动）
+        def _fmt_source(v):
+            if pd.isna(v):
+                return ''
+            s = str(v).strip().lower()
+            if s == 'auto':
+                return '自动'
+            elif s == 'manual':
+                return '手动'
+            return str(v)
+        df['已读来源'] = df.get('_read_source', pd.Series('', index=df.index)).apply(_fmt_source)
+
         df['状态'] = df.get('_read', pd.Series(0, index=df.index)).apply(
             lambda v: '已读' if (pd.notna(v) and int(v)) else '未读'
         )
@@ -360,6 +389,12 @@ class QuarantineDialog(QDialog):
         if df is not None and not df.empty:
             df = df.copy()
             df.insert(0, '序号', range(1, len(df) + 1))
+            # 已读来源紧跟序号后面
+            if '已读来源' in df.columns:
+                cols = list(df.columns)
+                cols.remove('已读来源')
+                cols.insert(1, '已读来源')
+                df = df[cols]
         self.source_model = DataFrameModel()
         self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
@@ -778,7 +813,7 @@ class QuarantineDialog(QDialog):
                     fp = sel.iloc[0]
             qty = snapshot_qty_for(main_df, uid) if main_df is not None else None
             note = snapshot_note_for(main_df, uid) if main_df is not None else ''
-            records.append((uid, int(is_read), str(fp), qty, note))
+            records.append((uid, int(is_read), str(fp), qty, note, 'manual'))
 
         save_read_status_batch(records)
 
@@ -787,6 +822,13 @@ class QuarantineDialog(QDialog):
             self.main_window.view_model.df = main_df
             self._refresh_main_table()
 
+        # 更新本对话框内存的 _read_source
+        if hasattr(self, 'full_df') and 'data_id' in self.full_df.columns:
+            mask = self.full_df['data_id'].astype(str).isin(ids)
+            if mask.any():
+                self.full_df.loc[mask, '_read'] = int(is_read)
+                self.full_df.loc[mask, '已读来源'] = '手动'
+                self.full_df.loc[mask, '_read_source'] = 'manual'
         self._refresh_self()
         toast(f"已标记为{'已读' if is_read else '未读'} {len(ids)} 条", parent=self)
 
@@ -862,14 +904,10 @@ class QuarantineDialog(QDialog):
         # P2-5 修复：批量标记已读 + 移出隔离区
         records = []
         for uid in ids:
-            fp = ''
-            if 'fingerprint' in df.columns:
-                sel = df.loc[df['data_id'].astype(str) == uid, 'fingerprint']
-                if len(sel) > 0:
-                    fp = sel.iloc[0]
-            qty = snapshot_qty_for(main_df, uid) if main_df is not None else None
-            note = snapshot_note_for(main_df, uid) if main_df is not None else ''
-            records.append((uid, 1, str(fp), qty, note))
+            fp = fp_map.get(uid, '')
+            qty = qty_map.get(uid)
+            note = note_map.get(uid, '')
+            records.append((uid, 1, str(fp), qty, note, None, 'manual'))
         save_read_status_batch(records)
         remove_quarantine_batch(list(ids))
         count = len(ids)

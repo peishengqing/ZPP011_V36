@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.102",
+        "date": "2026-09-06",
+        "features": "",
+        "fixes": "隔离区/负损看板：新增「已读来源」列（手动/自动），支持从 SQLite 读取并回写 read_source。隔离区已读来源列紧跟序号之后。"
+    },
+    {
         "version": "v43.101",
         "date": "2026-09-06",
         "features": "",

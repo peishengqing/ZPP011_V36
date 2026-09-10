@@ -554,6 +554,22 @@ class NegLossDashboardDialog(QDialog):
             df = df[cols]
 
         self.original_df = df.copy()
+
+        # 从 SQLite 加载已读来源（兼容主表可能没有 _read_source 列的情况）
+        if "data_id" in self.original_df.columns:
+            try:
+                from core.read_status import load_read_status
+                data_ids = [str(x) for x in self.original_df["data_id"].tolist()]
+                status_map = load_read_status(data_ids)
+                if status_map:
+                    source_map = {did: vals[5] if len(vals) > 5 and vals[5] else ''
+                                  for did, vals in status_map.items()}
+                    self.original_df["_read_source"] = self.original_df["data_id"].astype(str).map(source_map).fillna('').astype(str)
+                    # 将空来源归为 'manual'（兼容老数据）
+                    self.original_df["_read_source"] = self.original_df["_read_source"].replace('', 'manual')
+            except Exception:
+                if "_read_source" not in self.original_df.columns:
+                    self.original_df["_read_source"] = "manual"
         self.source_model = DataFrameModel()
         self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
@@ -935,7 +951,7 @@ class NegLossDashboardDialog(QDialog):
                 if did in fingerprints:
                     qty = snapshot_qty_for(source_df, did)
                     note = snapshot_note_for(source_df, did)
-                    records.append((did, read_value, fingerprints[did], qty, note))
+                    records.append((did, read_value, fingerprints[did], qty, note, 'manual'))
 
         # 只赋值一次 view_model.df
         self.main_window.view_model.df = main_df
