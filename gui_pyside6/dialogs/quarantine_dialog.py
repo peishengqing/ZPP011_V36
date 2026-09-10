@@ -278,7 +278,7 @@ class QuarantineDialog(QDialog):
 
         df = self._sync_read_from_main(df)
 
-        # 从 SQLite 加载已读来源（优先于主表内存值）
+        # 从 SQLite 加载已读来源（仅已读的行才显示来源，未读留空）
         try:
             from core.read_status import load_read_status
             data_ids = [str(x) for x in df['data_id'].tolist()]
@@ -286,18 +286,17 @@ class QuarantineDialog(QDialog):
             if status_map:
                 source_map = {did: vals[5] if len(vals) > 5 and vals[5] else '' for did, vals in status_map.items()}
                 df['_read_source'] = df['data_id'].astype(str).map(source_map).fillna('').astype(str)
-                # 将空来源归为 'manual'（兼容老数据）
-                df['_read_source'] = df['_read_source'].replace('', 'manual')
-        except Exception:
-            # 降级：使用主表内存值
-            if '_read_source' in df.columns:
-                df['_read_source'] = df['_read_source'].fillna('manual').astype(str)
+                # 未读的行清空来源
+                if '_read' in df.columns:
+                    df.loc[df['_read'] != 1, '_read_source'] = ''
             else:
-                df['_read_source'] = 'manual'
+                df['_read_source'] = ''
+        except Exception:
+            df['_read_source'] = ''
 
-        # 生成已读来源显示列（手动/自动）
+        # 生成已读来源显示列（手动/自动；未读行显示空）
         def _fmt_source(v):
-            if pd.isna(v):
+            if pd.isna(v) or v == '':
                 return ''
             s = str(v).strip().lower()
             if s == 'auto':
@@ -371,7 +370,7 @@ class QuarantineDialog(QDialog):
                     )
                     df['_read'] = read_series.fillna(0).astype(int)
                     return df
-        except Exception as e:
+        except Exception:
             pass  # 降级到主表映射
 
         # 降级方案：使用主表映射（原逻辑）
