@@ -555,7 +555,7 @@ class NegLossDashboardDialog(QDialog):
 
         self.original_df = df.copy()
 
-        # 从 SQLite 加载已读来源（兼容主表可能没有 _read_source 列的情况）
+        # 从 SQLite 加载已读来源（仅已读行保留来源，未读留空）
         if "data_id" in self.original_df.columns:
             try:
                 from core.read_status import load_read_status
@@ -565,11 +565,29 @@ class NegLossDashboardDialog(QDialog):
                     source_map = {did: vals[5] if len(vals) > 5 and vals[5] else ''
                                   for did, vals in status_map.items()}
                     self.original_df["_read_source"] = self.original_df["data_id"].astype(str).map(source_map).fillna('').astype(str)
-                    # 将空来源归为 'manual'（兼容老数据）
-                    self.original_df["_read_source"] = self.original_df["_read_source"].replace('', 'manual')
+                    # 只有已读的行才保留来源；未读行清空
+                    if "_read" in self.original_df.columns:
+                        self.original_df.loc[self.original_df["_read"] != 1, "_read_source"] = ''
+                else:
+                    self.original_df["_read_source"] = ''
             except Exception:
-                if "_read_source" not in self.original_df.columns:
-                    self.original_df["_read_source"] = "manual"
+                self.original_df["_read_source"] = ''
+
+        # 生成已读来源显示列（手动/自动；未读行显示为空）
+        def _fmt_source(v):
+            if pd.isna(v) or v == '':
+                return ''
+            s = str(v).strip().lower()
+            if s == 'auto':
+                return '自动'
+            elif s == 'manual':
+                return '手动'
+            return str(v)
+        if "_read_source" in self.original_df.columns:
+            self.original_df["已读来源"] = self.original_df["_read_source"].apply(_fmt_source)
+        else:
+            self.original_df["已读来源"] = ''
+
         self.source_model = DataFrameModel()
         self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
@@ -797,8 +815,11 @@ class NegLossDashboardDialog(QDialog):
             orig_mask = self.original_df['data_id'].isin(target_ids)
             if orig_mask.any():
                 self.original_df.loc[orig_mask, '_read'] = 1
+                self.original_df.loc[orig_mask, '_read_source'] = 'manual'
                 if '状态' in self.original_df.columns:
                     self.original_df.loc[orig_mask, '状态'] = '✓ 已读'
+                if '已读来源' in self.original_df.columns:
+                    self.original_df.loc[orig_mask, '已读来源'] = '手动'
         self._apply_filter()
         toast(f"✅ 已标记 {count} 条为已读", parent=self)
 
@@ -834,6 +855,8 @@ class NegLossDashboardDialog(QDialog):
                 self.original_df.loc[orig_mask, '_read'] = 0
                 if '状态' in self.original_df.columns:
                     self.original_df.loc[orig_mask, '状态'] = '未读'
+                if '已读来源' in self.original_df.columns:
+                    self.original_df.loc[orig_mask, '已读来源'] = ''
         self._apply_filter()
         toast(f"⭕ 已标记 {count} 条为未读", parent=self)
 
