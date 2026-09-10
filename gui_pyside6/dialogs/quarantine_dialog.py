@@ -326,7 +326,26 @@ class QuarantineDialog(QDialog):
         return df[cols]
 
     def _sync_read_from_main(self, df):
-        """用主表 view_model.df 的最新 _read 覆盖隔离区 df 的 _read。"""
+        """用主表 view_model.df 的最新 _read 覆盖隔离区 df 的 _read。
+        v43.101 修复：避免重新分析后数据指纹比对错误导致已读状态被清。
+        策略：先尝试从 SQLite 读取真实已读状态，若失败则退回到主表映射。
+        """
+        try:
+            from core.read_status import load_read_status
+            if df is not None and 'data_id' in df.columns:
+                data_ids = [str(x) for x in df['data_id'].tolist()]
+                status_map = load_read_status(data_ids)
+                if status_map:
+                    # 从 SQLite 恢复真实已读状态
+                    read_series = df['data_id'].astype(str).map(
+                        lambda x: status_map.get(x, (0,))[0]
+                    )
+                    df['_read'] = read_series.fillna(0).astype(int)
+                    return df
+        except Exception as e:
+            pass  # 降级到主表映射
+
+        # 降级方案：使用主表映射（原逻辑）
         if self.main_window and hasattr(self.main_window, 'view_model'):
             main_df = self.main_window.view_model.df
             if main_df is not None and 'data_id' in main_df.columns and '_read' in main_df.columns:

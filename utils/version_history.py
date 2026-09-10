@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.101",
+        "date": "2026-09-06",
+        "features": "",
+        "fixes": "隔离区：修复重新分析后已读状态被清的问题。_sync_read_from_main 现在优先从 SQLite 读取真实已读状态，避免主表数据指纹比对错误导致误清零。"
+    },
+    {
         "version": "v43.97",
         "date": "2026-09-06",
         "features": "",
