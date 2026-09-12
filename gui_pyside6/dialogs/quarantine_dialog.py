@@ -273,6 +273,16 @@ class QuarantineDialog(QDialog):
             reason_map = {str(r['uid']): (r.get('reason') or '') for r in recs}
             df['隔离原因'] = df['data_id'].astype(str).map(reason_map)
             df['隔离原因'] = df['隔离原因'].fillna('').replace('', '（未填写原因）')
+            # 简化：自动规则[第N条:完整描述] → 第N条
+            def _shorten_reason(v):
+                if not v or v == '（未填写原因）':
+                    return v
+                import re
+                m = re.match(r'自动规则\[第(\d+)条[:\]]', str(v))
+                if m:
+                    return f'第{m.group(1)}条'
+                return v
+            df['隔离原因'] = df['隔离原因'].apply(_shorten_reason)
         except Exception:
             df['隔离原因'] = '（未填写原因）'
 
