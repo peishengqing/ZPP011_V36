@@ -4582,8 +4582,14 @@ class SortBadgeHeader(QHeaderView):
         cols = self._get_sort_columns()
         if not cols:
             return
+        # v43.106: 窗口未完全可见/离屏刷新时 paint device 无引擎，画角标只会刷
+        # QPainter not active 警告，直接跳过（可见后下次重绘自然补画）。
+        if not self.isVisible() or self.width() <= 0:
+            return
         count = self.count()
         painter = QPainter(self)
+        if not painter.isActive():
+            return
         try:
             painter.setRenderHint(QPainter.Antialiasing)
             for level, (col, asc) in enumerate(cols, start=1):

@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.106",
+        "date": "2026-09-13",
+        "features": "",
+        "fixes": "启动日志刷屏修复：SortBadgeHeader（排序角标自绘表头）paintEvent 增加两道守卫——控件不可见/宽度为0 时跳过自绘，QPainter 未成功 begin（isActive 为 False）时静默返回。窗口未完全可见/离屏刷新时不再刷 'QPainter not active' 警告组（每组8行×几十次重绘），可见后下次重绘自动补画角标，功能零回归。"
+    },
+    {
         "version": "v43.105",
         "date": "2026-09-10",
         "features": "",
