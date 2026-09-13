@@ -822,7 +822,7 @@ class QuarantineDialog(QDialog):
                     fp = sel.iloc[0]
             qty = snapshot_qty_for(main_df, uid) if main_df is not None else None
             note = snapshot_note_for(main_df, uid) if main_df is not None else ''
-            records.append((uid, int(is_read), str(fp), qty, note, 'manual'))
+            records.append((uid, int(is_read), str(fp), qty, note, None, 'manual'))
 
         save_read_status_batch(records)
 

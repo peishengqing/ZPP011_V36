@@ -582,7 +582,10 @@ def _match_single_condition(df, cond):
 
     if op == "eq":
         target = _to_num(val.get("value", 0))
-        return pd.to_numeric(col, errors="coerce").fillna(0) == target
+        # v43.105 修复：缺失(NaN)不再被 fillna(0) 兜底当成 0 ——「偏差数量=0」类
+        # 规则只对真实等于 0 的行生效，缺失行保守不命中（宁可留在未读）。
+        num = pd.to_numeric(col, errors="coerce")
+        return num.notna() & (num == target)
     if op == "startswith":
         s = col.fillna("").astype(str)
         raw = str(val.get("value", "")).strip()

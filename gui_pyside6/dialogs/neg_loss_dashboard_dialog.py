@@ -974,7 +974,7 @@ class NegLossDashboardDialog(QDialog):
                 if did in fingerprints:
                     qty = snapshot_qty_for(source_df, did)
                     note = snapshot_note_for(source_df, did)
-                    records.append((did, read_value, fingerprints[did], qty, note, 'manual'))
+                    records.append((did, read_value, fingerprints[did], qty, note, None, 'manual'))
 
         # 只赋值一次 view_model.df
         self.main_window.view_model.df = main_df

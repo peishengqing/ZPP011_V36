@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.105",
+        "date": "2026-09-10",
+        "features": "",
+        "fixes": "1) 修复 save_read_status_batch 回归：隔离区/负损看板手动标记已读的 records 从 6 元组改为 7 元组（yield 位补 None），消除 'could not convert string to float: manual' 报错。2) 自动已读规则 eq 判定修复：pd.to_numeric(...).fillna(0) 改为 num.notna() & (num==target)，偏差数量缺失(NaN)的行不再被'偏差数量=0'规则误命中。"
+    },
+    {
         "version": "v43.102",
         "date": "2026-09-06",
         "features": "",
