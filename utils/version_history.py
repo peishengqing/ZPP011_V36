@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.107",
+        "date": "2026-09-15",
+        "features": "",
+        "fixes": "启动日志刷屏彻底消除：SortBadgeHeader.paintEvent 的可见性守卫从 super().paintEvent 之后挪到之前——无渲染引擎时原生 paintEvent 内部的 QStylePainter 同样会刷 'paintEngine/begin engine==0' 2 行警告，守卫置顶后整段 paint 直接跳过，启动/离屏刷新期间不再有任何 Qt 警告组，可见后下次重绘自动补画，排序角标功能零回归。"
+    },
+    {
         "version": "v43.106",
         "date": "2026-09-13",
         "features": "",

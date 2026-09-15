@@ -4578,13 +4578,14 @@ class SortBadgeHeader(QHeaderView):
         super().mousePressEvent(event)
 
     def paintEvent(self, event):
+        # v43.107: 无渲染引擎（顶层未可见/离屏/窗口未就绪）时整段 paint 跳过——
+        # 原生 paintEvent 内部的 QStylePainter 同样会因 begin 失败刷 2 行警告，
+        # 故守卫须置于 super() 之前；可见后下次重绘自然补画，零视觉回归。
+        if not self.isVisible() or self.width() <= 0:
+            return
         super().paintEvent(event)  # 先画原生表头（外观完全保持）
         cols = self._get_sort_columns()
         if not cols:
-            return
-        # v43.106: 窗口未完全可见/离屏刷新时 paint device 无引擎，画角标只会刷
-        # QPainter not active 警告，直接跳过（可见后下次重绘自然补画）。
-        if not self.isVisible() or self.width() <= 0:
             return
         count = self.count()
         painter = QPainter(self)
