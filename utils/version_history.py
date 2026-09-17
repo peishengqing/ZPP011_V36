@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.108",
+        "date": "2026-09-17",
+        "features": "偏差率预警看板新增三列并置于「流程订单」之后：原表行号（双击定位主表更可靠）、产品物料号码、产品物料描述。三列补入 _show_deviation_warning_dialog 的 candidates 候选列清单，由 warnings_df[required_cols] 按序定列，看板内「状态/替代料/隔离区」前置与「_read」隐藏均不影响其紧跟流程订单。",
+        "fixes": ""
+    },
+    {
         "version": "v43.107",
         "date": "2026-09-15",
         "features": "",
