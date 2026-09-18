@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.112",
+        "date": "2026-09-12",
+        "features": "Excel 式列头筛选扩展到 4 个分析对话框（偏差率预警看板 / 隔离区活跃+过期双表 / 负损看板 / 实时告警），采用方案B就地过滤：复用各对话框既有 _apply_filter 管线在 DataFrame 层叠加取值成员过滤，视图行号始终==源行号，选中/双击/导出/定位零回归（约15处行号解析一行未动）。SortBadgeHeader 从 main_window 抽为共享模块 gui_pyside6/widgets/sort_badge_header.py，各对话框统一复用其多级排序角标+橙色漏斗标；新增 ColumnFilterController（gui_pyside6/utils/column_filter.py）封装 🔽 模式开关、列头点击路由（筛选模式弹取值浮层 / 否则委托排序）、取值勾选浮层（搜索+全选/清空+行计数+确定）与 mask_dataframe 就地过滤。隔离区列表与失效复核各带独立 🔽 按钮，失效复核的取值过滤与关键字搜索叠加生效。",
+        "fixes": "修复 SortBadgeHeader 漏斗标 bug：原 paintEvent 有 `if not cols: return`（cols=排序列），导致「未排序却已设取值过滤」时不画漏斗——改为排序列与已筛选列任一非空即绘制。修复 SortBadgeHeader.mousePressEvent 漏导入 QPoint 的运行时 NameError（点列头即崩）。修复隔离区失效复核表 _apply_expired_search 被 QTimer 无参触发的签名缺参崩溃（text 改为可选、缺省读搜索框）。清理从 main_window 抽取 SortBadgeHeader 后变死的 5 个 widget 导入（QSizePolicy/QFormLayout/QListWidget/QListWidgetItem/QGridLayout）。"
+    },
+    {
         "version": "v43.111",
         "date": "2026-09-18",
         "features": "",

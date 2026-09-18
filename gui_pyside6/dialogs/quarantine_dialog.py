@@ -22,6 +22,8 @@ from core.read_status import save_read_status_batch
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.table_sort import enable_click_sort
+from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
+from gui_pyside6.utils.column_filter import ColumnFilterController
 
 _HIDDEN_INTERNAL = ['_read', 'data_id', '_quarantined', '_post_audit_changed', 'fingerprint']
 
@@ -123,7 +125,7 @@ class QuarantineDialog(QDialog):
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
 
-        info = QLabel("以下数据被标记为「疑难待处理」。修改主表后重新导入，隔离区记录会同步更新（引用模式，仅按 data_id 关联，不存副本）。点击「隔离原因」列头右侧的 ▼ 三角可按原因筛选（自动规则 / 手动移入 / 未填写）；点击列头其余区域仍可排序。")
+        info = QLabel("以下数据被标记为「疑难待处理」。修改主表后重新导入，隔离区记录会同步更新（引用模式，仅按 data_id 关联，不存副本）。开启「🔽 列头筛选」后点任意列头弹取值勾选浮层（Excel式筛选，含隔离原因可按原因多选）；Ctrl+点列头仍可排序。")
         info.setWordWrap(True)
         layout.addWidget(info)
 
@@ -162,6 +164,12 @@ class QuarantineDialog(QDialog):
         clear_btn.setFixedWidth(60)
         clear_btn.clicked.connect(lambda: self.edit_list_search.clear())
         sl.addWidget(clear_btn)
+        self.btn_col_filter = QPushButton("🔽 列头筛选")
+        self.btn_col_filter.setCheckable(True)
+        self.btn_col_filter.setCursor(Qt.PointingHandCursor)
+        self.btn_col_filter.setToolTip("开启后点列头弹取值勾选浮层（Excel式筛选）；Ctrl+点列头仍可排序")
+        self.btn_col_filter.clicked.connect(self._on_toggle_col_filter)
+        sl.addWidget(self.btn_col_filter)
         sl.addSpacing(12)
         sl.addWidget(QLabel("是否备注:"))
         self.combo_remark = QComboBox()
@@ -181,13 +189,25 @@ class QuarantineDialog(QDialog):
         self.table_view.customContextMenuRequested.connect(self.show_context_menu)
         self.table_view.doubleClicked.connect(self.on_double_click)
         self.table_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.header = FilterHeader(Qt.Horizontal, self.table_view)
+        # 自定义表头：SortBadgeHeader 画 Excel 式取值过滤漏斗标（橙色三角）
+        self.header = SortBadgeHeader(Qt.Horizontal, self.table_view)
         self.table_view.setHorizontalHeader(self.header)
         # 点击列头排序（显式连接，规避 Qt6 下 setSortingEnabled 内部连接失效）。
-        # 第0列 _read 为内部列，不参与排序；隔离原因列头的 ▼ 三角仍触发筛选菜单。
+        # 第0列 _read 为内部列，不参与排序。
         self._sort_ctrl = enable_click_sort(
             self.table_view, lambda: getattr(self, "source_model", None), skip_cols=(0,))
-        self.header.sectionFilterClicked.connect(self._show_reason_filter_menu)
+        # Excel 式列头取值筛选控制器：筛选模式→弹层；否则委托排序
+        self.col_filter_ctrl = ColumnFilterController(
+            self.table_view, self.header, self._sort_ctrl,
+            lambda: getattr(self, "source_model", None),
+            self._apply_list_filters, skip_cols=(0,))
+        self.header.set_sort_columns_getter(lambda: [])
+        self.header.set_filtered_columns_getter(lambda: self.col_filter_ctrl.filtered_col_set)
+        try:
+            self.header.sectionClicked.disconnect(self._sort_ctrl._on_click)
+        except Exception:
+            pass
+        self.header.sectionClicked.connect(self.col_filter_ctrl.on_header_clicked)
         self.table_view.horizontalHeader().setStretchLastSection(True)
         self.table_view.verticalHeader().setVisible(False)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
@@ -230,6 +250,12 @@ class QuarantineDialog(QDialog):
         clear_btn.setFixedWidth(60)
         clear_btn.clicked.connect(lambda: self.edit_expired_search.clear())
         sl.addWidget(clear_btn)
+        self.btn_col_filter_expired = QPushButton("🔽 列头筛选")
+        self.btn_col_filter_expired.setCheckable(True)
+        self.btn_col_filter_expired.setCursor(Qt.PointingHandCursor)
+        self.btn_col_filter_expired.setToolTip("开启后点列头弹取值勾选浮层（Excel式筛选）；Ctrl+点列头仍可排序")
+        self.btn_col_filter_expired.clicked.connect(self._on_toggle_expired_col_filter)
+        sl.addWidget(self.btn_col_filter_expired)
         v.addLayout(sl)
 
         self.expired_view = QTableView()
@@ -237,9 +263,25 @@ class QuarantineDialog(QDialog):
         self.expired_view.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.expired_view.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.expired_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        # 自定义表头：SortBadgeHeader 画 Excel 式取值过滤漏斗标（橙色三角）
+        self.header_expired = SortBadgeHeader(Qt.Horizontal, self.expired_view)
+        self.expired_view.setHorizontalHeader(self.header_expired)
         # 点击列头排序（失效复核表；data_id 等列均可排，skip_cols 留空）
         self._sort_ctrl_expired = enable_click_sort(
             self.expired_view, lambda: getattr(self, "expired_model", None))
+        # Excel 式列头取值筛选控制器：筛选模式→弹层；否则委托排序
+        self.col_filter_ctrl_expired = ColumnFilterController(
+            self.expired_view, self.header_expired, self._sort_ctrl_expired,
+            lambda: getattr(self, "expired_model", None),
+            self._apply_expired_search, skip_cols=())
+        self.header_expired.set_sort_columns_getter(lambda: [])
+        self.header_expired.set_filtered_columns_getter(
+            lambda: self.col_filter_ctrl_expired.filtered_col_set)
+        try:
+            self.header_expired.sectionClicked.disconnect(self._sort_ctrl_expired._on_click)
+        except Exception:
+            pass
+        self.header_expired.sectionClicked.connect(self.col_filter_ctrl_expired.on_header_clicked)
         self.expired_view.verticalHeader().setVisible(False)
         self.expired_view.verticalHeader().setDefaultSectionSize(28)
         v.addWidget(self.expired_view)
@@ -393,7 +435,7 @@ class QuarantineDialog(QDialog):
         return df
 
     def _render_table(self, df):
-        """重建表格模型并应用内部列隐藏（不重查 reason），并重注册隔离原因列筛选三角"""
+        """重建表格模型并应用内部列隐藏（不重查 reason），并叠加 Excel 式列头取值过滤（漏斗标由 SortBadgeHeader 绘制）"""
         # 插入序号列（从1开始，筛选后自动重编）
         if df is not None and not df.empty:
             df = df.copy()
@@ -404,13 +446,12 @@ class QuarantineDialog(QDialog):
                 cols.remove('已读来源')
                 cols.insert(1, '已读来源')
                 df = df[cols]
+        # 叠加 Excel 式列头取值过滤（就地过滤，视图行号不变，选中/双击/导出零回归）
+        if hasattr(self, "col_filter_ctrl") and self.col_filter_ctrl.has_any():
+            df = self.col_filter_ctrl.mask_dataframe(df)
         self.source_model = DataFrameModel()
         self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
-        self.header.clear_filter_sections()
-        display_df = self.source_model.getDataFrame()
-        if '隔离原因' in display_df.columns:
-            self.header.add_filter_section(display_df.columns.get_loc('隔离原因'))
         self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
         for col in _HIDDEN_INTERNAL:
@@ -492,6 +533,9 @@ class QuarantineDialog(QDialog):
             edf = pd.DataFrame(columns=cols)
         # 保存完整副本（关键字搜索基于此过滤）
         self._expired_full_df = edf
+        # 叠 Excel 式列头取值过滤（就地过滤，视图行号不变，选中/双击/导出零回归）
+        if hasattr(self, "col_filter_ctrl_expired") and self.col_filter_ctrl_expired.has_any():
+            edf = self.col_filter_ctrl_expired.mask_dataframe(edf)
         self.expired_model = DataFrameModel()
         self.expired_model.setDataFrame(edf)
         self.expired_view.setModel(self.expired_model)
@@ -514,12 +558,12 @@ class QuarantineDialog(QDialog):
         self._search_timer.stop()
         self._search_timer.start()
 
-    def _apply_expired_search(self, text):
-        """根据关键字跨列模糊过滤失效复核表格。"""
+    def _apply_expired_search(self, text=None):
+        """根据关键字跨列模糊过滤失效复核表格（text 缺省时取搜索框当前内容）。"""
         if not hasattr(self, '_expired_full_df') or self._expired_full_df is None:
             return
         df = self._expired_full_df
-        kw = text.strip()
+        kw = (text if text is not None else self.edit_expired_search.text()).strip()
         if not kw:
             filtered = df
         else:
@@ -528,6 +572,9 @@ class QuarantineDialog(QDialog):
             for c in df.columns:
                 mask |= df[c].astype(str).str.lower().str.contains(kw_lower, na=False)
             filtered = df.loc[mask]
+        # 叠 Excel 式列头取值过滤（就地过滤，视图行号不变，选中/双击/导出零回归）
+        if hasattr(self, "col_filter_ctrl_expired") and self.col_filter_ctrl_expired.has_any():
+            filtered = self.col_filter_ctrl_expired.mask_dataframe(filtered)
         self.expired_model = DataFrameModel()
         self.expired_model.setDataFrame(filtered)
         self.expired_view.setModel(self.expired_model)
@@ -706,6 +753,18 @@ class QuarantineDialog(QDialog):
                 vals = df[rcol].apply(lambda x: "" if pd.isna(x) else str(x).strip())
                 df = df[vals != "" if remark == '有' else vals == ""]
         self._render_table(df.copy())
+
+    def _on_toggle_col_filter(self):
+        """切换隔离区列表（Tab1）的 🔽 列头筛选模式；关闭模式仅停止弹层，取值过滤仍保留。"""
+        on = self.col_filter_ctrl.toggle_mode()
+        self.btn_col_filter.setChecked(on)
+        self.btn_col_filter.setText("🔽 列头筛选✓" if on else "🔽 列头筛选")
+
+    def _on_toggle_expired_col_filter(self):
+        """切换失效复核（Tab2）的 🔽 列头筛选模式；关闭模式仅停止弹层，取值过滤仍保留。"""
+        on = self.col_filter_ctrl_expired.toggle_mode()
+        self.btn_col_filter_expired.setChecked(on)
+        self.btn_col_filter_expired.setText("🔽 列头筛选✓" if on else "🔽 列头筛选")
 
     def show_context_menu(self, pos: QPoint):
         index = self.table_view.indexAt(pos)

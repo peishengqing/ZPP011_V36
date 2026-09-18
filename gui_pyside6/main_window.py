@@ -21,8 +21,8 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QFileDialog,
     QHeaderView, QDialog, QDialogButtonBox, QSplitter,
     QComboBox, QAbstractItemView, QMessageBox, QTableWidgetItem, QTableWidget,
-    QMenu, QSizePolicy, QGroupBox, QFormLayout, QProgressDialog,
-    QListWidget, QListWidgetItem, QScrollArea, QGridLayout, QCheckBox,
+    QMenu, QGroupBox, QProgressDialog,
+    QScrollArea, QCheckBox,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer, QItemSelection, QItemSelectionModel, QRect
 from PySide6.QtGui import QFont, QFontMetrics, QShortcut, QKeySequence, QAction, QPainter, QColor, QPen, QPolygon
@@ -4771,7 +4771,10 @@ class SortBadgeHeader(QHeaderView):
             return
         super().paintEvent(event)  # 先画原生表头（外观完全保持）
         cols = self._get_sort_columns()
-        if not cols:
+        fcols = self._get_filtered_columns()
+        # v43.112 修复：漏斗标绘制与「是否有排序列」解耦——
+        # 原「if not cols: return」会导致「未排序却已设取值过滤」时不画漏斗。
+        if not cols and not fcols:
             return
         count = self.count()
         painter = QPainter(self)

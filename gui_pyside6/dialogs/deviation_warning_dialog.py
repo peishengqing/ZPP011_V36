@@ -22,6 +22,8 @@ from core.quarantine_manager import add_quarantine_batch, remove_quarantine
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.table_sort import enable_click_sort
+from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
+from gui_pyside6.utils.column_filter import ColumnFilterController
 
 
 class DeviationWarningDialog(QDialog):
@@ -353,23 +355,48 @@ class DeviationWarningDialog(QDialog):
         self.table_view.customContextMenuRequested.connect(self.show_context_menu)
         self.table_view.doubleClicked.connect(self.on_double_click)
         self.table_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        # 自定义表头：SortBadgeHeader 画 Excel 式取值过滤漏斗标（橙色三角）
+        self.header = SortBadgeHeader(Qt.Horizontal, self.table_view)
+        self.table_view.setHorizontalHeader(self.header)
         # 点击列头排序（显式连接，规避 Qt6 下 setSortingEnabled 内部连接失效）。
         # 第0列 _read 为内部列，不参与排序。
         self._sort_ctrl = enable_click_sort(
             self.table_view, lambda: getattr(self, "source_model", None), skip_cols=(0,))
+        # Excel 式列头取值筛选控制器：筛选模式→弹层；否则委托排序
+        self.col_filter_ctrl = ColumnFilterController(
+            self.table_view, self.header, self._sort_ctrl,
+            lambda: getattr(self, "source_model", None),
+            self._apply_filter, skip_cols=(0,))
+        self.header.set_sort_columns_getter(lambda: [])
+        self.header.set_filtered_columns_getter(lambda: self.col_filter_ctrl.filtered_col_set)
+        try:
+            self.header.sectionClicked.disconnect(self._sort_ctrl._on_click)
+        except Exception:
+            pass
+        self.header.sectionClicked.connect(self.col_filter_ctrl.on_header_clicked)
         self.table_view.verticalHeader().setVisible(False)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
 
         # 列宽可拖拽调整：Interactive 模式 + 初始按内容自适应 + 限制最大宽度防超宽
-        header = self.table_view.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.Interactive)
-        header.setMinimumSectionSize(50)
-        header.setMaximumSectionSize(420)
-        header.setStretchLastSection(False)
+        self.header.setSectionResizeMode(QHeaderView.Interactive)
+        self.header.setMinimumSectionSize(50)
+        self.header.setMaximumSectionSize(420)
+        self.header.setStretchLastSection(False)
 
         # 安装 Ctrl+C 复制事件过滤器
         self.table_view.installEventFilter(self)
         layout.addWidget(self.table_view)
+
+        # ---- 列头筛选工具条 ----
+        col_filter_bar = QHBoxLayout()
+        self.btn_col_filter = QPushButton("🔽 列头筛选")
+        self.btn_col_filter.setCheckable(True)
+        self.btn_col_filter.setCursor(Qt.PointingHandCursor)
+        self.btn_col_filter.setToolTip("开启后点列头弹取值勾选浮层（Excel式筛选）；Ctrl+点列头仍可排序")
+        self.btn_col_filter.clicked.connect(self._on_toggle_col_filter)
+        col_filter_bar.addWidget(self.btn_col_filter)
+        col_filter_bar.addStretch(1)
+        layout.addLayout(col_filter_bar)
 
         # ---- 底部按钮 ----
         btn_layout = QHBoxLayout()
@@ -688,6 +715,9 @@ class DeviationWarningDialog(QDialog):
                       & self._keyword_mask(df)].copy()
 
         filtered = filtered.reset_index(drop=True)
+        # 叠加 Excel 式列头取值过滤（就地过滤，视图行号不变，选中/双击/导出零回归）
+        if hasattr(self, "col_filter_ctrl"):
+            filtered = self.col_filter_ctrl.mask_dataframe(filtered)
         if hasattr(self, "source_model"):
             self.source_model.setDataFrame(filtered)
             self._sort_ctrl.reapply()  # 恢复排序态
@@ -697,6 +727,12 @@ class DeviationWarningDialog(QDialog):
             filtered, self._workshop_col, self.combo_workshop, "_workshop_filter")
         self._refresh_dependent_combo(
             filtered, self._factory_col, self.combo_factory, "_factory_filter")
+
+    def _on_toggle_col_filter(self):
+        """🔽 列头筛选按钮：切换 Excel 式取值筛选模式。"""
+        on = self.col_filter_ctrl.toggle_mode()
+        self.btn_col_filter.setChecked(on)
+        self.btn_col_filter.setText("🔽 列头筛选✓" if on else "🔽 列头筛选")
 
     def _refresh_dependent_combo(self, filtered, col, combo, filter_attr):
         """筛选后刷新下拉：仅保留 filtered 中实际出现的取值（动态收缩）。
