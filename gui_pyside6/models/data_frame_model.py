@@ -451,6 +451,8 @@ class AuditProxyModel(QSortFilterProxyModel):
         super().__init__(parent)
         self._filters = {}       # 列索引 -> 筛选文本（顶部筛选行，保留兼容）
         self._custom_filters = {}  # 自定义筛选条件（侧边栏）
+        self._value_filters = {}  # 列名 -> 允许显示的展示值集合（Excel式列头成员过滤）
+        self._value_keys = {}     # 列名 -> 每行展示值键列表（与 source 行序对齐，加速 filterAcceptsRow）
         self._alert_threshold = 10.0  # 预警阈值，默认10%
         # P2-7 修复：保留排序状态
         self._sort_column = -1
@@ -475,6 +477,29 @@ class AuditProxyModel(QSortFilterProxyModel):
     def clearFilters(self):
         self._filters.clear()
         self._custom_filters.clear()
+        self._value_filters.clear()
+        self._value_keys.clear()
+        self.invalidateFilter()
+
+    def setValueFilter(self, col_name, allowed_set):
+        """Excel式列头成员过滤：allowed_set 为该列允许显示的展示值集合（与表格 DisplayRole
+        一致的字符串）。allowed_set 为空 / None 表示清除该列过滤。设置时预计算每行展示键列表
+        (_value_keys)，使 filterAcceptsRow 命中判断为 O(1)。"""
+        if not allowed_set:
+            self._value_filters.pop(col_name, None)
+            self._value_keys.pop(col_name, None)
+        else:
+            sm = self.sourceModel()
+            if sm is None or col_name not in getattr(sm, "_display_columns", []):
+                return
+            ci = sm._display_columns.index(col_name)
+            n = sm.rowCount()
+            keys = []
+            for r in range(n):
+                disp = sm.data(sm.index(r, ci), Qt.DisplayRole)
+                keys.append("(空)" if disp in (None, "") else str(disp))
+            self._value_filters[col_name] = set(allowed_set)
+            self._value_keys[col_name] = keys
         self.invalidateFilter()
 
     # ------------------------------------------------------------------ #
@@ -801,6 +826,17 @@ class AuditProxyModel(QSortFilterProxyModel):
                                 return False
                     except Exception:
                         pass
+
+        # Excel式列头取值成员过滤（与 _filters/_custom_filters AND 叠加）
+        if self._value_filters:
+            for col_name, allowed in self._value_filters.items():
+                keys = self._value_keys.get(col_name)
+                if not keys:
+                    continue
+                if source_row >= len(keys):
+                    continue
+                if keys[source_row] not in allowed:
+                    return False
 
         return True
 

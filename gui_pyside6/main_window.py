@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QListWidget, QListWidgetItem, QScrollArea, QGridLayout, QCheckBox,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer, QItemSelection, QItemSelectionModel, QRect
-from PySide6.QtGui import QFont, QFontMetrics, QShortcut, QKeySequence, QAction, QPainter, QColor, QPen
+from PySide6.QtGui import QFont, QFontMetrics, QShortcut, QKeySequence, QAction, QPainter, QColor, QPen, QPolygon
 
 # 导入组件
 from gui_pyside6.components.menu_bar import MenuBarComponent
@@ -247,6 +247,10 @@ class MainWindow(QMainWindow):
         # 用于防止多个 do_analysis_v2 并发抢占 GIL 导致 UI 假死（"未响应"）。
         self._heavy_busy = False
         self.sort_columns = []
+        # 列头筛选模式（Excel式）：开启后点列头=弹取值勾选浮层，Ctrl+点列头仍排序
+        self._col_filter_mode = False
+        self._filtered_col_set = set()  # 当前已设取值过滤的列号集合（供表头画漏斗标，与 SortBadgeHeader 对齐）
+        self._col_filter_popup = None   # 当前打开的列头筛选浮层（避免被 GC）
         # Ctrl 状态由键盘事件流实时跟踪（最可靠），用于多级排序判定。
         # 原因：Qt 在 mousePressEvent/sectionClicked 时机读 Ctrl 修饰符极不可靠
         # （实测真实环境 event.modifiers() 常读不到 Ctrl，导致 Ctrl+多级排序永不生效）。
@@ -455,6 +459,14 @@ class MainWindow(QMainWindow):
         self.action_btn_filter.setProperty("class", "actionBtn")
         self.action_btn_filter.clicked.connect(self._toggle_filter_panel)
 
+        self.action_btn_col_filter = QPushButton("🔽 列头筛选")
+        self.action_btn_col_filter.setCheckable(True)
+        self.action_btn_col_filter.setCursor(Qt.PointingHandCursor)
+        self.action_btn_col_filter.setObjectName("actionBtnColFilter")
+        self.action_btn_col_filter.setProperty("class", "actionBtn")
+        self.action_btn_col_filter.setToolTip("开启后点列头弹取值勾选浮层（Excel式筛选）；Ctrl+点列头仍可排序")
+        self.action_btn_col_filter.clicked.connect(self._toggle_col_filter_mode)
+
         self.action_btn_analyze = QPushButton("📊 分析")
         self.action_btn_analyze.setCursor(Qt.PointingHandCursor)
         self.action_btn_analyze.setObjectName("actionBtnAnalyze")
@@ -493,6 +505,7 @@ class MainWindow(QMainWindow):
 
         action_layout.addWidget(self.action_btn_left_panel)
         action_layout.addWidget(self.action_btn_filter)
+        action_layout.addWidget(self.action_btn_col_filter)
         action_layout.addWidget(self.action_btn_analyze)
         action_layout.addWidget(self.action_btn_ai)
         action_layout.addWidget(spacer2)
@@ -1206,6 +1219,11 @@ class MainWindow(QMainWindow):
         try:
             if self.proxy_model is not None:
                 self.proxy_model.clearFilters()
+            # 同步清掉列头筛选漏斗标（取值过滤已在 clearFilters 内清空，这里清列号集合并重绘）
+            if self._filtered_col_set:
+                self._filtered_col_set.clear()
+                if hasattr(self, "_sort_header"):
+                    self._sort_header.viewport().update()
             if hasattr(self, 'filter_panel') and self.filter_panel is not None:
                 self.filter_panel.blockSignals(True)
                 try:
@@ -2764,6 +2782,7 @@ class MainWindow(QMainWindow):
         # 自定义表头：在已排序列角上叠加 1/2/3 层级角标 + 升降箭头，让 Ctrl+多级排序可见
         self._sort_header = SortBadgeHeader(Qt.Horizontal, self.table_view)
         self._sort_header.set_sort_columns_getter(lambda: self.sort_columns)
+        self._sort_header.set_filtered_columns_getter(lambda: self._filtered_col_set)
         self.table_view.setHorizontalHeader(self._sort_header)
         self.table_view.setModel(self.proxy_model)
         try:
@@ -3166,6 +3185,10 @@ class MainWindow(QMainWindow):
         ctrl_pressed = bool(getattr(self, "_ctrl_down", False)) \
             or bool(getattr(self._sort_header, "_ctrl_held", False)) \
             or bool(QApplication.keyboardModifiers() & Qt.ControlModifier)
+        # 列头筛选模式：点列头弹取值勾选浮层（Ctrl+点列头仍走排序；第0列_图标列不参与）
+        if self._col_filter_mode and logical_index > 0 and not ctrl_pressed:
+            self._open_column_filter(logical_index)
+            return
         col = logical_index
         if col <= 0:
             return  # 第一列(_read)不参与排序
@@ -3188,6 +3211,167 @@ class MainWindow(QMainWindow):
                 self.sort_columns = []
         self._apply_multi_sort()
         self._update_sort_indicators()
+
+    def _toggle_col_filter_mode(self):
+        """工具栏「🔽 列头筛选」开关：开启后点列头弹取值勾选浮层（Excel 式筛选）；
+        Ctrl+点列头仍走排序。关闭后点列头恢复排序行为。"""
+        self._col_filter_mode = not self._col_filter_mode
+        btn = self.action_btn_col_filter
+        btn.setChecked(self._col_filter_mode)
+        if self._col_filter_mode:
+            btn.setText("🔽 列头筛选✓")
+        else:
+            btn.setText("🔽 列头筛选")
+            # 关闭模式时顺手关掉可能还开着的浮层
+            if self._col_filter_popup is not None:
+                try:
+                    self._col_filter_popup.close()
+                except Exception:
+                    pass
+                self._col_filter_popup = None
+
+    def _open_column_filter(self, logical_index):
+        """在点击列头处弹出 Excel 式取值勾选浮层。
+        取值取自 source_model 的 DisplayRole（与表格实际显示字符串一致，含偏差率%后缀、(空)占位），
+        确保勾选的值和表格中看到的完全一致。确定后调 proxy_model.setValueFilter。"""
+        proxy = self.proxy_model
+        sm = proxy.sourceModel() if proxy is not None else None
+        if sm is None or not hasattr(sm, "_display_columns"):
+            return
+        if logical_index < 0 or logical_index >= len(sm._display_columns):
+            return
+        col_name = sm._display_columns[logical_index]
+
+        # 收集本列全部展示值及计数（保持首次出现顺序）
+        n = sm.rowCount()
+        cnt = {}
+        order = []
+        for r in range(n):
+            disp = sm.data(sm.index(r, logical_index), Qt.DisplayRole)
+            key = "(空)" if disp in (None, "") else str(disp)
+            if key not in cnt:
+                cnt[key] = 0
+                order.append(key)
+            cnt[key] += 1
+        if not order:
+            return
+
+        # 已选集合（来自 proxy 已存的取值过滤）
+        prev = set(proxy._value_filters.get(col_name, set()))
+
+        # 若已有浮层，先关掉
+        if self._col_filter_popup is not None:
+            try:
+                self._col_filter_popup.close()
+            except Exception:
+                pass
+            self._col_filter_popup = None
+
+        popup = QWidget(self, Qt.Popup)
+        popup.setObjectName("colFilterPopup")
+        popup.setMinimumWidth(260)
+        popup.setMaximumHeight(420)
+        outer = QVBoxLayout(popup)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(6)
+
+        title = QLabel(f"筛选：{col_name}（共 {n} 行 / {len(order)} 个值）")
+        title.setStyleSheet("font-weight:bold;color:#15598c;")
+        outer.addWidget(title)
+
+        search = QLineEdit()
+        search.setPlaceholderText("搜索取值…")
+        outer.addWidget(search)
+
+        # 全选 / 清空
+        btn_row = QHBoxLayout()
+        btn_all = QPushButton("全选")
+        btn_none = QPushButton("清空")
+        btn_row.addWidget(btn_all)
+        btn_row.addWidget(btn_none)
+        btn_row.addStretch(1)
+        outer.addLayout(btn_row)
+
+        # 勾选列表（滚动）
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_content = QWidget()
+        list_layout = QVBoxLayout(scroll_content)
+        list_layout.setContentsMargins(2, 2, 2, 2)
+        list_layout.setSpacing(2)
+        scroll.setWidget(scroll_content)
+        outer.addWidget(scroll, 1)
+
+        items = []  # (key, checkbox)
+        for key in order:
+            cb = QCheckBox(f"{key}  ({cnt[key]})")
+            cb.setChecked(key in prev)
+            list_layout.addWidget(cb)
+            items.append((key, cb))
+
+        def apply_search(text):
+            t = text.strip().lower()
+            for key, cb in items:
+                cb.setVisible((t in key.lower()) if t else True)
+
+        search.textChanged.connect(apply_search)
+
+        def select_all():
+            for _, cb in items:
+                cb.setChecked(True)
+
+        def select_none():
+            for _, cb in items:
+                cb.setChecked(False)
+
+        btn_all.clicked.connect(select_all)
+        btn_none.clicked.connect(select_none)
+
+        # 确定 / 取消
+        ok_row = QHBoxLayout()
+        btn_ok = QPushButton("确定")
+        btn_cancel = QPushButton("取消")
+        ok_row.addStretch(1)
+        ok_row.addWidget(btn_cancel)
+        ok_row.addWidget(btn_ok)
+        outer.addLayout(ok_row)
+
+        def do_apply():
+            selected = {key for key, cb in items if cb.isChecked()}
+            if selected == set(order):
+                # 全选等价于不过滤：清掉该列取值过滤与漏斗标
+                proxy.setValueFilter(col_name, set())
+                self._filtered_col_set.discard(logical_index)
+            else:
+                proxy.setValueFilter(col_name, selected)
+                self._filtered_col_set.add(logical_index)
+            self._sort_header.viewport().update()
+            popup.close()
+
+        btn_ok.clicked.connect(do_apply)
+        btn_cancel.clicked.connect(popup.close)
+        popup.finished.connect(
+            lambda result: setattr(self, "_col_filter_popup", None)
+        )
+
+        self._col_filter_popup = popup
+
+        # 定位到点击列头下方，并避免超出屏幕
+        x = self._sort_header.sectionViewportPosition(logical_index)
+        y = self._sort_header.height()
+        gpos = self._sort_header.viewport().mapToGlobal(QPoint(int(x), int(y)))
+        popup.show()
+        popup.adjustSize()
+        pw = popup.width()
+        ph = popup.height()
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            sg = screen.availableGeometry()
+            if gpos.x() + pw > sg.right():
+                gpos.setX(max(sg.left(), sg.right() - pw))
+            if gpos.y() + ph > sg.bottom():
+                gpos.setY(max(sg.top(), gpos.y() - ph - self._sort_header.height()))
+        popup.move(gpos)
 
     def _apply_multi_sort(self):
         """按 self.sort_columns 重排主表（基于原始顺序，避免多次排序叠加）。
@@ -4567,10 +4751,14 @@ class SortBadgeHeader(QHeaderView):
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
         self._get_sort_columns = lambda: []  # 由 MainWindow 注入：返回 [(列号, 是否升序), ...]
+        self._get_filtered_columns = lambda: set()  # 由 MainWindow 注入：返回已设取值过滤的列号集合
         self._ctrl_held = False  # 由 mousePressEvent 捕获 Ctrl 修饰符，供 _on_header_clicked 可靠读取
 
     def set_sort_columns_getter(self, getter):
         self._get_sort_columns = getter
+
+    def set_filtered_columns_getter(self, getter):
+        self._get_filtered_columns = getter
 
     def mousePressEvent(self, event):
         # 在鼠标按下时捕获修饰符：QApplication.keyboardModifiers() 在 sectionClicked handler
@@ -4619,6 +4807,26 @@ class SortBadgeHeader(QHeaderView):
                 painter.drawRoundedRect(badge, 3, 3)
                 painter.setPen(QPen(QColor(255, 255, 255)))
                 painter.drawText(badge, Qt.AlignCenter, txt)
+            # 列头筛选漏斗标：已设取值过滤的列在左上角画一个小橙三角
+            fcols = self._get_filtered_columns()
+            if fcols:
+                fbrush = QColor(217, 119, 45)
+                fpen = QPen(fbrush)
+                for col in fcols:
+                    if col <= 0 or col >= count:
+                        continue
+                    rect = QRect(self.sectionPosition(col), 0, self.sectionSize(col), self.height())
+                    if rect.width() <= 0:
+                        continue
+                    s = 7
+                    tri = QPolygon([
+                        QPoint(rect.left() + 3, rect.top() + 3),
+                        QPoint(rect.left() + 3 + s, rect.top() + 3),
+                        QPoint(rect.left() + 3 + s // 2, rect.top() + 3 + s),
+                    ])
+                    painter.setBrush(fbrush)
+                    painter.setPen(fpen)
+                    painter.drawPolygon(tri)
         finally:
             painter.end()
 
