@@ -3350,9 +3350,6 @@ class MainWindow(QMainWindow):
 
         btn_ok.clicked.connect(do_apply)
         btn_cancel.clicked.connect(popup.close)
-        popup.finished.connect(
-            lambda result: setattr(self, "_col_filter_popup", None)
-        )
 
         self._col_filter_popup = popup
 

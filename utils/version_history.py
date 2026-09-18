@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.111",
+        "date": "2026-09-18",
+        "features": "",
+        "fixes": "修复 v43.109 列头筛选弹层崩溃：_open_column_filter 把浮层建成 QWidget 却连接了 QDialog 才有的 finished 信号（AttributeError: QWidget has no attribute 'finished'），点列头即崩。删除该无用连接——_col_filter_popup 引用已在再次打开与关闭开关两处统一 close() 并置 None，无需 finished 清理。"
+    },
+    {
         "version": "v43.110",
         "date": "2026-09-18",
         "features": "自动已读规则4 精确限定到饮料厂：新增条件类型 factory_eq（工厂等于，复用 eq_str 算子，GUI 规则编辑下拉自动出现「工厂等于」），规则4 重命名为「饮料半成品负损」并首条加 factory_eq=云南达利-饮料厂。现仅云南达利-饮料厂的 400 开头小偏差（排除箱/彩罐/不干胶/半成品、偏差数量±10、偏差率±10%）才自动已读，食品厂同类记录不再被误自动已读。",
