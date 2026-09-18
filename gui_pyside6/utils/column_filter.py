@@ -17,7 +17,7 @@ Excel 式列头取值筛选控制器（方案 B：就地过滤，不依赖 Audit
 要求改约 15 处选中/双击/定位的行号解析（加 mapToSource），回归面大；
 本方案在 DataFrame 层就地过滤，对话框既有行号解析逻辑一行都不用动。
 """
-from PySide6.QtCore import Qt, QPoint
+from PySide6.QtCore import Qt, QPoint, QTimer
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QCheckBox, QScrollArea, QApplication,
@@ -75,7 +75,10 @@ class ColumnFilterController:
     def on_header_clicked(self, logical_index):
         ctrl = bool(QApplication.keyboardModifiers() & Qt.ControlModifier)
         if self._col_filter_mode and logical_index > 0 and not ctrl:
-            self.open_filter(logical_index)
+            # 延到下一事件循环再弹层：表头 sectionClicked 在 QHeaderView.mouseReleaseEvent
+            # 内部触发，若同步 show Qt.Popup 浮层会被本次鼠标交互立即 dismiss（主表用按钮
+            # 触发则无此问题）。singleShot(0) 等鼠标事件完全退栈后再弹，规避该坑。
+            QTimer.singleShot(0, lambda: self.open_filter(logical_index))
             return
         # 非筛选模式（或第0列 / Ctrl+点）：委托给排序控制器
         self.sort_ctrl._on_click(logical_index)

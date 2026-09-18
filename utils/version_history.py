@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.113",
+        "date": "2026-09-15",
+        "features": "",
+        "fixes": "修复偏差率预警看板 / 替代料看板 / 负损看板三个对话框的 Excel 式列头取值筛选「点了没反应」：根因是弹层用 Qt.Popup 在表头 sectionClicked（QHeaderView.mouseReleaseEvent 鼠标释放事件内部）同步 show()，被同一次鼠标交互立即 dismiss（主表的列头筛选用 🔽 按钮触发、脱离表头鼠标事件所以正常）。改 ColumnFilterController.on_header_clicked 用 QTimer.singleShot(0, ...) 把 open_filter 延到下一事件循环再弹，等鼠标事件退栈后弹层即稳定驻留。此一处改动统一惠及所有使用 ColumnFilterController 的对话框（含隔离区活跃+过期双表、实时告警）。无头集成测试已确认三看板弹层均可见、取值正确、勾选确定后过滤落地。"
+    },
+    {
         "version": "v43.112",
         "date": "2026-09-12",
         "features": "Excel 式列头筛选扩展到 4 个分析对话框（偏差率预警看板 / 隔离区活跃+过期双表 / 负损看板 / 实时告警），采用方案B就地过滤：复用各对话框既有 _apply_filter 管线在 DataFrame 层叠加取值成员过滤，视图行号始终==源行号，选中/双击/导出/定位零回归（约15处行号解析一行未动）。SortBadgeHeader 从 main_window 抽为共享模块 gui_pyside6/widgets/sort_badge_header.py，各对话框统一复用其多级排序角标+橙色漏斗标；新增 ColumnFilterController（gui_pyside6/utils/column_filter.py）封装 🔽 模式开关、列头点击路由（筛选模式弹取值浮层 / 否则委托排序）、取值勾选浮层（搜索+全选/清空+行计数+确定）与 mask_dataframe 就地过滤。隔离区列表与失效复核各带独立 🔽 按钮，失效复核的取值过滤与关键字搜索叠加生效。",
