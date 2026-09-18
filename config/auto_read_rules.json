@@ -54,11 +54,17 @@
       ]
     },
     {
-      "name": "不含箱,彩罐的小偏差",
+      "name": "饮料半成品负损",
       "enabled": true,
       "ignore_exclude_unfed": false,
       "ignore_exclude_units": false,
       "conditions": [
+        {
+          "type": "factory_eq",
+          "params": {
+            "value": "云南达利-饮料厂"
+          }
+        },
         {
           "type": "mat_name_not_contains",
           "params": {

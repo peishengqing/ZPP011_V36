@@ -141,6 +141,14 @@ CONDITION_TYPES = {
         "default": "包材",
         "hint": "例如 包材 / 原料",
     },
+    "factory_eq": {
+        "label": "工厂等于",
+        "field_candidates": ["工厂", "工厂名称"],
+        "op": "eq_str",
+        "value_type": "text",
+        "default": "云南达利-饮料厂",
+        "hint": "例如 云南达利-饮料厂 表示仅该工厂的记录自动已读（可用于把某条规则限定到饮料厂/食品厂）",
+    },
     "dev_qty_range": {
         "label": "偏差数量在范围(开区间)",
         "field_candidates": ["偏差数量"],
