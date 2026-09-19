@@ -56,6 +56,14 @@ _TYPE_ORDER = [
     "mat_type_eq",
 ]
 
+# 兜底：core 侧 CONDITION_TYPES 新增条件类型（如 v43.110 的 factory_eq）时自动纳入 combo，
+# 避免「对话框类型清单与 core 注册表不同步 → 加载含该类型的规则时 findData 返回 -1 降级 index0，
+# combo(dev_qty_eq/number) 与实建 text 控件错位 → _read_params 调 .value() 撞 QLineEdit 崩」。
+# 追加在末尾不影响既有分组显示顺序。
+for _t in CONDITION_TYPES:
+    if _t not in _TYPE_ORDER:
+        _TYPE_ORDER.append(_t)
+
 
 def _default_params_for(t):
     """返回某条件类型的默认 params 字典。"""

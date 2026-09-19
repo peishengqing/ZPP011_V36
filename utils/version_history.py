@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.115",
+        "date": "2026-09-19",
+        "features": "",
+        "fixes": "修复自动已读规则对话框打开即崩（AttributeError: QLineEdit has no attribute 'value'）：v43.110 给 core 侧 CONDITION_TYPES 新增 factory_eq 条件类型并写进 config 规则4，但对话框 _TYPE_ORDER 类型清单漏补 factory_eq——加载规则4 时 findData('factory_eq') 返回 -1 降级到 index0(dev_qty_eq/number 类)，而参数控件按 factory_eq(text 类)建了 QLineEdit，_read_params 走 number 分支调 .value() 撞 QLineEdit 直接崩。修：_TYPE_ORDER 末尾补 factory_eq，并加模块级兜底循环——core 侧未来新增条件类型自动纳入 combo，根治此类清单不同步复发。"
+    },
+    {
         "version": "v43.114",
         "date": "2026-09-19",
         "features": "",
