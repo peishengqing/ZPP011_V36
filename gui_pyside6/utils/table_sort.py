@@ -43,6 +43,13 @@ class HeaderSortController:
 
     def _on_click(self, logical_index):
         model = self.get_model()
+        import os, time
+        try:
+            p = os.path.join(os.environ.get("TEMP", ""), "zpp011_click.log")
+            with open(p, "a", encoding="utf-8") as f:
+                f.write(f"[{time.strftime('%H:%M:%S')}] [sort] _on_click({logical_index}) model={'有' if model is not None else 'None'} skip={logical_index in self.skip_cols}\n")
+        except Exception:
+            pass
         if model is None:
             return
         if logical_index in self.skip_cols:

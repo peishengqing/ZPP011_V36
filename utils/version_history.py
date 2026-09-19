@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.116",
+        "date": "2026-09-19",
+        "features": "",
+        "fixes": "列头点击诊断日志（零功能副作用）：用户报偏差率预警看板「点列头筛选没反应 + 排序用不了」。无头实跑 DeviationWarningDialog 逻辑层全通（排序分支翻转正确、筛选分支弹层可见），判定问题在真实鼠标链路（sectionClicked 是否发射 / 点击被当调列宽 / 弹层位置）。在 ColumnFilterController.on_header_clicked（路由分支）与 open_filter（无模型/越界/无数据）及 HeaderSortController._on_click（model 是否为 None）落诊断日志到 %TEMP%\\zpp011_click.log，一次复现即可定位。"
+    },
+    {
         "version": "v43.115",
         "date": "2026-09-19",
         "features": "",

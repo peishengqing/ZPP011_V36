@@ -22,6 +22,19 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QCheckBox, QScrollArea, QApplication,
 )
+import os
+import time
+
+
+def _click_log(msg):
+    """列头点击诊断日志（v43.116，零功能副作用）：写 %TEMP%\\zpp011_click.log，
+    定位「真实鼠标下点列头没反应」到底卡在 信号发射/路由分支/弹层创建 哪一环。"""
+    try:
+        p = os.path.join(os.environ.get("TEMP", ""), "zpp011_click.log")
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
+    except Exception:
+        pass
 
 
 class ColumnFilterController:
@@ -74,6 +87,9 @@ class ColumnFilterController:
     # ---- 列头点击路由（替代 enable_click_sort 的 sectionClicked 连接）----
     def on_header_clicked(self, logical_index):
         ctrl = bool(QApplication.keyboardModifiers() & Qt.ControlModifier)
+        # v43.116 诊断：真实鼠标点列头无反应时，先确认信号是否到达 + 走的哪个分支
+        _click_log(f"[route] on_header_clicked idx={logical_index} filter_mode={self._col_filter_mode} "
+                   f"ctrl={ctrl} skip={self.skip_cols}")
         if self._col_filter_mode and logical_index > 0 and not ctrl:
             # 延到下一事件循环再弹层：表头 sectionClicked 在 QHeaderView.mouseReleaseEvent
             # 内部触发，若同步 show Qt.Popup 浮层会被本次鼠标交互立即 dismiss（主表用按钮
@@ -81,6 +97,7 @@ class ColumnFilterController:
             QTimer.singleShot(0, lambda: self.open_filter(logical_index))
             return
         # 非筛选模式（或第0列 / Ctrl+点）：委托给排序控制器
+        _click_log(f"[route] 委托排序 idx={logical_index}")
         self.sort_ctrl._on_click(logical_index)
 
     # ---- 取值过滤在 DataFrame 层落地（被对话框 _apply_filter 调用）----
@@ -117,8 +134,10 @@ class ColumnFilterController:
         """在点击列头处弹出 Excel 式取值勾选浮层。"""
         sm = self.source_model_getter()
         if sm is None or not hasattr(sm, "_display_columns"):
+            _click_log(f"[popup] open_filter({logical_index}) 无源模型，直接返回")
             return
         if logical_index < 0 or logical_index >= len(sm._display_columns):
+            _click_log(f"[popup] open_filter({logical_index}) 列号越界(cols={len(sm._display_columns)})")
             return
         col_name = sm._display_columns[logical_index]
 
@@ -134,7 +153,9 @@ class ColumnFilterController:
                 order.append(key)
             cnt[key] += 1
         if not order:
+            _click_log(f"[popup] open_filter({logical_index}) 无数据行，不弹")
             return
+        _click_log(f"[popup] open_filter({logical_index}) 弹层 '{col_name}' 共{n}行/{len(order)}值")
 
         prev = set(self._value_filters.get(col_name, set()))
 
