@@ -38,7 +38,38 @@ class SortBadgeHeader(QHeaderView):
         # 鼠标按下时捕获修饰符：QApplication.keyboardModifiers() 在 sectionClicked handler
         # 里经常读不到 Ctrl（Qt 经典坑），故改在 mousePressEvent 可靠捕获。
         self._ctrl_held = bool(event.modifiers() & Qt.ControlModifier)
+        # v43.116 诊断：记录按下位置与命中列（logical），用于分辨"没点到表头/点错列"
+        try:
+            pos = event.position().toPoint()
+        except Exception:
+            pos = event.pos()
+        sec = self.sectionAt(pos)
+        lg = self.sectionToLogical(sec) if sec >= 0 else -1
+        import os, time
+        try:
+            with open(os.path.join(os.environ.get("TEMP", ""), "zpp011_click.log"), "a", encoding="utf-8") as f:
+                f.write(f"[{time.strftime('%H:%M:%S')}] [press] 表头按下 sec={sec} logical={lg} "
+                        f"ctrl={self._ctrl_held} 可见={self.isVisible()}\n")
+        except Exception:
+            pass
         super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        # v43.116 诊断：记录释放位置与命中列；若与按下列不同，Qt 会把点击当作
+        # 「调列宽拖拽」而不发 sectionClicked → 表现为「点列头没反应」。
+        try:
+            pos = event.position().toPoint()
+        except Exception:
+            pos = event.pos()
+        sec = self.sectionAt(pos)
+        lg = self.sectionToLogical(sec) if sec >= 0 else -1
+        import os, time
+        try:
+            with open(os.path.join(os.environ.get("TEMP", ""), "zpp011_click.log"), "a", encoding="utf-8") as f:
+                f.write(f"[{time.strftime('%H:%M:%S')}] [release] 表头释放 sec={sec} logical={lg}\n")
+        except Exception:
+            pass
+        super().mouseReleaseEvent(event)
 
     def paintEvent(self, event):
         # 无渲染引擎（顶层未可见/离屏/窗口未就绪）时整段 paint 跳过——原生 paintEvent 内部

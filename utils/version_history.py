@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.117",
+        "date": "2026-09-19",
+        "features": "",
+        "fixes": "偏差率预警看板「点列头筛选没反应 + 排序用不了」诊断补强（零功能副作用）：v43.116 已在 ColumnFilterController.on_header_clicked/open_filter 与 HeaderSortController._on_click 落 %TEMP%\\zpp011_click.log，但还分不清「鼠标到底点没点到表头 / 点错列 / 按下与释放跨列被当调列宽而不发 sectionClicked」。给 SortBadgeHeader 加 [press]/[release] 两条诊断日志——mousePressEvent 记 sectionAt/sectionToLogical/ctrl/可见；新增 mouseReleaseEvent 记释放列号，若与按下列不同则 Qt 会把该次点击判为列宽拖拽、不发射 sectionClicked（正是「点列头没反应」的嫌疑根因）。一次真实复现即可定位。"
+    },
+    {
         "version": "v43.116",
         "date": "2026-09-19",
         "features": "",
