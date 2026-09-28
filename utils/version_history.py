@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.118",
+        "date": "2026-09-28",
+        "features": "",
+        "fixes": "修复 v43.117 引入的致命崩溃：SortBadgeHeader 诊断日志误用了 Qt4/Qt5 的 C++ 方法 QHeaderView.sectionAt / sectionToLogical，这两个 API 在 Qt5 起被 logicalSectionAt/sectionToLogical 改名、Qt6 的 PySide6 里已全部移除——实测 hasattr 均为 False。结果主表与全部使用 SortBadgeHeader 的分析对话框（偏差率预警/替代料/负损/实时告警等）只要鼠标按到列头就抛 AttributeError: 'SortBadgeHeader' object has no attribute 'sectionAt'（10:03 启动即崩）。修：改为 _section_at(pos) 辅助——用本类 paintEvent 已在用的 sectionPosition/sectionSize 逐段线性定位映射 position→(visual,logical)，配 logicalIndex；press/release 两条诊断日志改走共享 _click_log，写盘失败静默吞掉，日志彻底解耦于运行路径，零功能副作用。"
+    },
+    {
         "version": "v43.117",
         "date": "2026-09-19",
         "features": "",

@@ -9,6 +9,9 @@ paintEvent 仅 override：先 super().paintEvent 画出原生表头（外观完�
 再叠加角标 / 漏斗。漏斗标的绘制与「是否有排序列」无关——
 （修复原实现：未排序却已设取值过滤时不画漏斗的 bug）。
 """
+import os
+import time
+
 from PySide6.QtCore import Qt, QRect, QPoint
 from PySide6.QtGui import QPainter, QColor, QPen, QPolygon, QFont, QFontMetrics
 from PySide6.QtWidgets import QHeaderView
@@ -34,41 +37,57 @@ class SortBadgeHeader(QHeaderView):
     def set_filtered_columns_getter(self, getter):
         self._get_filtered_columns = getter
 
+    @staticmethod
+    def _click_log(msg):
+        """v43.116 诊断：把表头点击链路日志追加到 %TEMP%\\zpp011_click.log。
+        写盘失败（无 TEMP / 权限）静默吞掉——日志是诊断辅助，绝不能反过来让程序崩。"""
+        try:
+            log_path = os.path.join(os.environ.get("TEMP", ""), "zpp011_click.log")
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
+        except Exception:
+            pass
+
+    def _section_at(self, pos):
+        """v43.118 修：把鼠标 position 映射到列号。
+        Qt6 的 QHeaderView 已移除 sectionAt / sectionToLogical / logicalSectionAt
+        （旧 C++ API，PySide6 里全为 False），改用 sectionPosition/sectionSize
+        （本类 paintEvent 已在用、稳）逐段线性定位，返回 (visual, logical)。"""
+        try:
+            count = self.count()
+            x = pos.x()
+            for visual in range(count):
+                p = self.sectionPosition(visual)
+                s = self.sectionSize(visual)
+                if p <= x < p + s:
+                    return visual, self.logicalIndex(visual)
+            return -1, -1
+        except Exception:
+            return -1, -1
+
     def mousePressEvent(self, event):
         # 鼠标按下时捕获修饰符：QApplication.keyboardModifiers() 在 sectionClicked handler
         # 里经常读不到 Ctrl（Qt 经典坑），故改在 mousePressEvent 可靠捕获。
         self._ctrl_held = bool(event.modifiers() & Qt.ControlModifier)
-        # v43.116 诊断：记录按下位置与命中列（logical），用于分辨"没点到表头/点错列"
+        # v43.118 诊断（零功能副作用）：记录按下命中列，用于分辨"没点到表头/点错列"。
         try:
             pos = event.position().toPoint()
         except Exception:
             pos = event.pos()
-        sec = self.sectionAt(pos)
-        lg = self.sectionToLogical(sec) if sec >= 0 else -1
-        import os, time
-        try:
-            with open(os.path.join(os.environ.get("TEMP", ""), "zpp011_click.log"), "a", encoding="utf-8") as f:
-                f.write(f"[{time.strftime('%H:%M:%S')}] [press] 表头按下 sec={sec} logical={lg} "
-                        f"ctrl={self._ctrl_held} 可见={self.isVisible()}\n")
-        except Exception:
-            pass
+        visual, logical = self._section_at(pos)
+        self._click_log(f"[press] 表头按下 visual={visual} logical={logical} "
+                        f"ctrl={self._ctrl_held} 可见={self.isVisible()}")
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
-        # v43.116 诊断：记录释放位置与命中列；若与按下列不同，Qt 会把点击当作
+        # v43.118 诊断：记录释放命中列；若与按下列不同，Qt 会把这次点击判为
         # 「调列宽拖拽」而不发 sectionClicked → 表现为「点列头没反应」。
         try:
             pos = event.position().toPoint()
         except Exception:
             pos = event.pos()
-        sec = self.sectionAt(pos)
-        lg = self.sectionToLogical(sec) if sec >= 0 else -1
-        import os, time
-        try:
-            with open(os.path.join(os.environ.get("TEMP", ""), "zpp011_click.log"), "a", encoding="utf-8") as f:
-                f.write(f"[{time.strftime('%H:%M:%S')}] [release] 表头释放 sec={sec} logical={lg}\n")
-        except Exception:
-            pass
+        visual, logical = self._section_at(pos)
+        self._click_log(f"[release] 表头释放 visual={visual} logical={logical}")
         super().mouseReleaseEvent(event)
 
     def paintEvent(self, event):
