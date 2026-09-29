@@ -65,6 +65,16 @@ class SortBadgeHeader(QHeaderView):
         except Exception:
             return -1, -1
 
+    def setModel(self, model):
+        # 关键修复（v43.119）：QTableView.setModel 会调用 header.setModel，并把 header 的
+        # sectionsClickable 重置为默认 False —— 而本项目的 PySide6 版本下 setSortingEnabled(True)
+        # 并不会把它设回 True。结果是列头点击不发射 sectionClicked 信号，导致所有依赖该信号的
+        # 功能（点击列头排序 / 列头 Excel 式取值筛选）彻底哑火（表现即"点列头既不可排序也不可筛选"）。
+        # 这里在模型一挂上就重新打开 clickable，覆盖 setModel 的重置；主表与全部看板共用的
+        # SortBadgeHeader 统一受益，无需在 dialog 的 set_data 里逐个补救。
+        super().setModel(model)
+        self.setSectionsClickable(True)
+
     def mousePressEvent(self, event):
         # 鼠标按下时捕获修饰符：QApplication.keyboardModifiers() 在 sectionClicked handler
         # 里经常读不到 Ctrl（Qt 经典坑），故改在 mousePressEvent 可靠捕获。

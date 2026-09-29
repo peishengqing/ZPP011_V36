@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.119",
+        "date": "2026-09-29",
+        "features": "",
+        "fixes": "修复替代料看板 / 偏差率预警 / 负损看板等所有共用 SortBadgeHeader 的对话框「点列头既不能排序也不能筛选」：根因是 QTableView.setModel 会调用 header.setModel，把 header 的 sectionsClickable 重置为默认 False，而本版本 PySide6 下 setSortingEnabled(True) 并不会把它补回（无头控制探针实测：裸 QHeaderView 经 setSortingEnabled(True)→setModel 后 sectionsClickable 仍为 False、鼠标点列头不发射 sectionClicked）。结果所有依赖 sectionClicked 信号的功能（点击列头排序 / 列头 Excel 式取值筛选）彻底哑火——表现即用户报的「既不可排序也不可筛选」。修：在共享 SortBadgeHeader 重写 setModel，super().setModel(model) 后立刻 self.setSectionsClickable(True)，覆盖 setModel 的重置；主表与全部看板统一受益，无需在各 dialog 的 set_data 逐个补救。无头 QTest 探针已验证：setModel 后 sectionsClickable 自动变 True，模拟点列头非豁免列成功发射 sectionClicked 并重排。"
+    },
+    {
         "version": "v43.118",
         "date": "2026-09-28",
         "features": "",
