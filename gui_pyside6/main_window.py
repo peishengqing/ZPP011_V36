@@ -451,10 +451,8 @@ class MainWindow(QMainWindow):
         self.action_btn_analyze.setObjectName("actionBtnAnalyze")
         self.action_btn_analyze.clicked.connect(self._start_analysis)
 
-        self.action_btn_ai = QPushButton("🤖 AI审核")
-        self.action_btn_ai.setCursor(Qt.PointingHandCursor)
-        self.action_btn_ai.setObjectName("actionBtnAi")
-        self.action_btn_ai.clicked.connect(lambda: self.audit_controller.run_ai_audit(self.view_model.df))
+        # 已按用户要求停用「AI建议」：不再显示 AI 审核按钮，避免生成/展示 mock 建议。
+        # 旧代码的 `action_btn_ai` 按钮已删除；如需重新启用 AI 建议，需重建入口。
 
         # ═══ 视图开关（用户常用，按需求保留在工具栏）═══
         self.action_btn_left_panel = QPushButton("☰ 隐藏左侧栏")
@@ -574,7 +572,8 @@ class MainWindow(QMainWindow):
             return w
 
         # 分组顺序：主操作 │ 视图开关 │ 收纳菜单 │ 面板开关/通知 …… 快捷键提示
-        for _w in [self.action_btn_analyze, self.action_btn_ai]:
+        # AI建议功能已停用：不再把 AI 审核按钮加入工具栏。
+        for _w in [self.action_btn_analyze]:
             action_layout.addWidget(_w)
         action_layout.addWidget(_sep())
         for _w in [self.action_btn_left_panel, self.action_btn_filter, self.action_btn_col_filter]:
@@ -1607,23 +1606,19 @@ class MainWindow(QMainWindow):
         self.progress_label.setText(f"AI审核: {current}/{total}")
 
     def _on_ai_finished_ui(self, updated_df):
+        """AI审核（仅本地分类）完成回调。
+
+        AI建议功能已停用（2026-10-01）：只刷新「审核结果/备注来源」，
+        并强制把可能残留的「AI建议」列清空/隐藏，避免 mock 文案继续显示。
+        """
         self._stop_countdown()
         self.progress_bar.setVisible(False)
         elapsed = self._format_elapsed()
-        self.progress_label.setText(f"✅ AI审核完成 ({elapsed})")
-        toast(f"✅ AI审核完成 ({elapsed})", "success", parent=self)
+        self.progress_label.setText(f"✅ 审核完成 ({elapsed})")
+        toast(f"✅ 审核完成 ({elapsed})", "success", parent=self)
 
-        if "AI建议" in updated_df.columns:
-            non_empty = updated_df["AI建议"].replace("", pd.NA).notna().sum()
-            total = len(updated_df)
-            self.log(f"AI审核完成：共 {total} 条记录，{non_empty} 条有AI建议", "info")
-            if non_empty == 0:
-                self.log("警告：AI建议列为空", "warning")
-        else:
-            self.log("警告：AI建议列不存在", "warning")
-        # 弹窗条件（原始逻辑：AI建议列缺失 或 有非空建议时才弹）
-        self._ai_box_condition = ("AI建议" not in updated_df.columns or
-                                   updated_df["AI建议"].replace("", pd.NA).notna().sum() > 0)
+        total = len(updated_df)
+        self.log(f"审核完成：共 {total} 条记录（AI建议功能已停用）", "info")
 
         # 预处理（恢复已读状态+审核结果）直接同步执行，DB 操作 ~0.2s 不卡
         try:
@@ -1631,13 +1626,16 @@ class MainWindow(QMainWindow):
         except Exception:
             pass  # 降级，用原始 updated_df
 
+        # 强制清理 AI建议列：有则清空，确保主表不再出现 mock/胡说八道文案
+        if "AI建议" in updated_df.columns:
+            updated_df["AI建议"] = ""
+
         self.source_model.setDataFrame(updated_df)
         self._apply_column_visibility_by_name()
         self.view_model.df = updated_df
         self.progress_bar.setVisible(False)
         self.progress_label.setText("就绪")
-        if getattr(self, "_ai_box_condition", True):
-            QMessageBox.information(self, "完成", "AI审核已完成")
+        QMessageBox.information(self, "完成", "审核已完成（AI建议已停用）")
 
     def _on_ai_preprocess_error(self, error_msg, updated_df):
         self.log(f"AI审核后预处理失败，降级用原始结果: {error_msg}", "error")
@@ -1720,7 +1718,7 @@ class MainWindow(QMainWindow):
             # 只保留关键列（含"工厂"以便 dialog 生成正确的 data_id 与主表匹配）
             required_cols = [c for c in [
                 "工厂", "订单日期", "流程订单", "物料编码", "物料名称", "物料描述",
-                "备注", "备注来源", "AI建议", "审核结果",
+                "备注", "备注来源", "审核结果",
                 "车间", "定额", "实际", "偏差数量", "偏差率(%)",
                 "净偏差数量", "净偏差金额", "净偏差率(%)",
                 "是否替代料", "_post_audit_changed", "_quarantined",
@@ -2821,6 +2819,7 @@ class MainWindow(QMainWindow):
         """按列名设置列的显隐状态（不受列重排 / 模型重置影响）"""
         self._hidden_column_names.update({
             '_post_audit_changed', 'data_id', 'fingerprint', '_quarantined',
+            'AI建议',
         })  # 内部技术列始终隐藏（即使用户在列显隐对话框里勾选显示）
         model = self.table_view.model()
         if not model:
@@ -4598,7 +4597,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(gb1)
         gb2 = QGroupBox("偏差数据")
         fl2 = QFormLayout(gb2)
-        for label, keys in [("定额用量", ["定额"]), ("实际用量", ["实际"]), ("偏差数量", ["偏差数量"]), ("偏差率", ["偏差率", "偏差率(%)"]), ("偏差金额", ["偏差金额"]), ("总偏差金额(含税)", ["总偏差金额(含税)", "偏差金额"]), ("审核结果", ["审核结果", "audit_result"])]:
+        for label, keys in [("定额用量", ["定额"]), ("实际用量", ["实际"]), ("偏差数量", ["偏差数量"]), ("偏差率", ["偏差率", "偏差率(%)"]), ("偏差金额", ["偏差金额"]), ("总偏差金额(含税)", ["总偏差金额(含税)", "偏差金额"]), ("审核结果", ["审核结果", "audit_result"]), ("备注来源", ["备注来源"])]:
             val = _val(*keys)
             display = str(val)
             if "偏差率" in label and val:
@@ -4613,9 +4612,6 @@ class MainWindow(QMainWindow):
         remark_label = _mk_label(_val("备注原因", "备注"))
         remark_label.setWordWrap(True)
         fl3.addRow("备注：", remark_label)
-        ai_label = _mk_label(_val("AI建议"))
-        ai_label.setWordWrap(True)
-        fl3.addRow("AI建议：", ai_label)
         layout.addWidget(gb3)
         btn = QDialogButtonBox(QDialogButtonBox.Ok)
         btn.accepted.connect(dialog.accept)

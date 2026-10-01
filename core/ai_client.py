@@ -28,75 +28,6 @@ AGNES_API_KEY = ""  # 不硬编码！优先从 WorkBuddy models.json 读取，�
 # RPM 限制：20次/分钟 → 调用间隔至少 3.0 秒
 MIN_CALL_INTERVAL = 3.0
 
-# ── 本地判定统一口径 ─────────────────────────────────────
-# 全项目唯一的「本地规则判定」入口（阈值 + 文案单一来源）。
-# 任何不经真 AI 的建议（Mock 降级、批量兜底、未投料直出）都必须走这里，
-# 杜绝三套阈值互相打架，以及把「未投料」的机械 ±100% 当成真实少耗去胡说。
-LOCAL_OK_THRESHOLD = 5.0       # |偏差率| < 5%  → 合格
-LOCAL_WATCH_THRESHOLD = 10.0   # |偏差率| < 10% → 需关注；否则 → 需补备注
-LOCAL_RULE_PREFIX = "【本地规则】"
-
-
-def _amount_suffix(amount):
-    """建议文案补「金额维度」：偏差金额最落地，光报百分比不给金额等于没说。"""
-    try:
-        v = float(amount)
-    except (TypeError, ValueError):
-        return ""
-    if abs(v) < 0.005:
-        return ""
-    return "，偏差金额 %.2f 元" % (v,)
-
-
-def build_local_verdict(dev_rate, remark="", amount=None):
-    """本地规则判定（不调用 AI），返回 {"result": ..., "suggestion": ...}
-
-    dev_rate 为 None ⇒ 未投料（实际用量=0 且 定额>0），偏差率恒为机械 ±100%，
-    不是真实消耗偏差 —— 必须直出「未投料」结论，绝不进 AI 队列、也绝不胡说「少耗100%」。
-    """
-    remark_str = "" if remark is None else str(remark).strip()
-    if remark_str in ("nan", "NaN", "None", "none"):
-        remark_str = ""
-    amt = _amount_suffix(amount)
-
-    # ① 未投料：机械偏差，不是真偏差
-    if dev_rate is None:
-        return {
-            "result": "需关注",
-            "suggestion": LOCAL_RULE_PREFIX + "未投料（实际用量=0，定额>0），偏差率100%为机械结果、非真实消耗偏差，"
-                          "建议核实是否漏投料或系统未过账" + amt,
-        }
-
-    # ② 有备注：以人工说明为准
-    if remark_str:
-        if any(kw in remark_str for kw in ["替代料", "系统无定额", "已核实"]):
-            return {"result": "合格",
-                    "suggestion": LOCAL_RULE_PREFIX + "备注已说明原因：%s" % remark_str[:30]}
-        if len(remark_str) < 5:
-            return {"result": "需改进",
-                    "suggestion": LOCAL_RULE_PREFIX + "备注过短（小于5个字），建议补充详细原因"}
-        return {"result": "合格",
-                "suggestion": LOCAL_RULE_PREFIX + "备注已说明原因：%s" % remark_str[:30]}
-
-    # ③ 无备注：按阈值判定（全项目唯一口径）
-    try:
-        abs_rate = abs(float(dev_rate))
-    except (TypeError, ValueError):
-        abs_rate = 0.0
-    if abs_rate < LOCAL_OK_THRESHOLD:
-        return {"result": "合格",
-                "suggestion": LOCAL_RULE_PREFIX + "小偏差%.1f%%%s，可接受，无需特别说明" % (abs_rate, amt)}
-    if abs_rate < LOCAL_WATCH_THRESHOLD:
-        return {"result": "需关注",
-                "suggestion": LOCAL_RULE_PREFIX + "偏差%.1f%%%s，建议人工确认原因" % (abs_rate, amt)}
-    try:
-        direction = "超耗" if float(dev_rate) > 0 else "少耗"
-    except (TypeError, ValueError):
-        direction = "偏差"
-    return {"result": "需补备注",
-            "suggestion": LOCAL_RULE_PREFIX + "%s%.1f%%%s，建议补录偏差原因（核对BOM定额与实际领用）"
-                          % (direction, abs_rate, amt)}
-
 
 def _resolve_agnes_config():
     """从 WorkBuddy 的 models.json 读取 agnes-2.5-flash 的端点/模型/密钥。
@@ -211,10 +142,25 @@ class AIClient:
 
     # ── Mock 降级 ───────────────────────────────────
 
-    def _get_mock_result(self, text, dev_rate, amount=None):
-        """本地规则降级（真 AI 不可用时使用）——统一走 build_local_verdict，阈值与文案不再各写一套"""
+    def _get_mock_result(self, text, dev_rate):
+        """本地规则降级（真 AI 不可用时使用）"""
         self._mock_calls += 1
-        return build_local_verdict(dev_rate, remark=text, amount=amount)
+        remark_str = str(text).strip() if text is not None else ""
+        if remark_str in ('nan', 'NaN', 'None', 'none', ''):
+            abs_rate = abs(dev_rate)
+            if abs_rate < 5:
+                return {"result": "合格", "suggestion": "小偏差(5%以内)，可接受，无需特别说明"}
+            elif abs_rate < 10:
+                return {"result": "需关注", "suggestion": f"偏差{abs_rate:.1f}%，建议确认原因"}
+            else:
+                direction = "超耗" if dev_rate > 0 else "少耗"
+                return {"result": "需补备注",
+                        "suggestion": f"{direction}{abs_rate:.1f}%，建议检查BOM用量或核实实际消耗"}
+        if any(kw in remark_str for kw in ["超耗", "少耗", "损耗", "替代", "变更", "设备", "配方"]):
+            return {"result": "合格", "suggestion": "备注清晰"}
+        if len(remark_str) < 5:
+            return {"result": "需改进", "suggestion": "备注过短（小于5个字），建议补充详细原因"}
+        return {"result": "需改进", "suggestion": "建议明确偏差原因（如超耗/少耗/替代/变更）"}
 
     # ── 真实 AI 调用 ────────────────────────────────
 
@@ -324,14 +270,9 @@ class AIClient:
             parts.append(f"订单：{order_no}")
 
         # 偏差数据
-        # dev_rate 为 None ⇒ 未投料（实际=0 且 定额>0），机械 ±100%，不能当真偏差报给 AI
-        try:
-            abs_rate = abs(float(dev_rate)) if dev_rate is not None else 0.0
-        except (TypeError, ValueError):
-            abs_rate = 0.0
-        direction = "超耗" if (dev_rate or 0) > 0 else ("少耗" if (dev_rate or 0) < 0 else "持平")
-        parts.append("偏差率：" + ("未投料（实际用量=0，定额>0），机械结果非真实偏差" if dev_rate is None
-                                   else f"{direction} {abs_rate:.1f}%"))
+        abs_rate = abs(dev_rate)
+        direction = "超耗" if dev_rate > 0 else ("少耗" if dev_rate < 0 else "持平")
+        parts.append(f"偏差率：{direction} {abs_rate:.1f}%")
 
         dev_amount = context.get("偏差金额", 0) or context.get("总偏差金额(含税)", 0)
         dev_qty = context.get("偏差数量", 0)
@@ -409,8 +350,7 @@ class AIClient:
         self._total_calls += 1
 
         if not self._use_real_ai():
-            return [self._get_mock_result(i["context"].get("remark", ""), i["dev_rate"],
-                                          amount=i["context"].get("偏差金额")) for i in items]
+            return [self._get_mock_result(i["context"].get("remark", ""), i["dev_rate"]) for i in items]
 
         try:
             # 构建批量提示词
@@ -422,11 +362,8 @@ class AIClient:
                 if remark in ('nan', 'None', 'none', ''):
                     remark = "（无备注）"
 
-                try:
-                    abs_rate = abs(float(dev)) if dev is not None else 0.0
-                except (TypeError, ValueError):
-                    abs_rate = 0.0
-                direction = "超耗" if (dev or 0) > 0 else ("少耗" if (dev or 0) < 0 else "持平")
+                abs_rate = abs(dev)
+                direction = "超耗" if dev > 0 else ("少耗" if dev < 0 else "持平")
 
                 lines.append(f"--- 记录{idx} ---")
                 mat = ctx.get("物料编码", "")
@@ -441,8 +378,7 @@ class AIClient:
                 order = ctx.get("流程订单", "") or ctx.get("生产订单", "")
                 if order:
                     lines.append(f"订单：{order}")
-                lines.append("偏差率：" + ("未投料（实际用量=0，定额>0），机械结果非真实偏差" if dev is None
-                                            else f"{direction} {abs_rate:.1f}%"))
+                lines.append(f"偏差率：{direction} {abs_rate:.1f}%")
                 dev_amount = ctx.get("偏差金额", 0)
                 if dev_amount:
                     try:
@@ -522,8 +458,7 @@ class AIClient:
                                        "suggestion": found.get("suggestion", "")})
                     else:
                         mapped.append(self._get_mock_result(
-                            items[i]["context"].get("remark", ""), items[i]["dev_rate"],
-                            amount=items[i]["context"].get("偏差金额")
+                            items[i]["context"].get("remark", ""), items[i]["dev_rate"]
                         ))
                 return mapped
             else:
@@ -531,8 +466,7 @@ class AIClient:
 
         except Exception as e:
             logger.warning(f"批量审核异常 ({e})，降级逐条 Mock")
-            return [self._get_mock_result(i["context"].get("remark", ""), i["dev_rate"],
-                                          amount=i["context"].get("偏差金额")) for i in items]
+            return [self._get_mock_result(i["context"].get("remark", ""), i["dev_rate"]) for i in items]
 
     def _audit_internal(self, context: dict, dev_rate: float) -> dict:
         """内部审核入口，先尝试真实 AI，失败降级 Mock"""
@@ -540,7 +474,7 @@ class AIClient:
 
         if not self._use_real_ai():
             remark = context.get("remark", "")
-            return self._get_mock_result(remark, dev_rate, amount=context.get("偏差金额"))
+            return self._get_mock_result(remark, dev_rate)
 
         try:
             user_msg = self._build_user_message(context, dev_rate)

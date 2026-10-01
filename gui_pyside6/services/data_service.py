@@ -530,7 +530,8 @@ class DataService(QObject):
             return 0, set()
 
     def _restore_audit_results(self, df: pd.DataFrame) -> pd.DataFrame:
-        """从 DB 恢复审核结果（审核结果、AI建议、备注来源），使用向量化赋值替代逐行 iloc。"""
+        """从 DB 恢复审核结果（审核结果、备注来源；AI建议已停用不再恢复），
+        使用向量化赋值替代逐行 iloc。"""
         try:
             data_ids = df['data_id'].tolist()
             audit_map = load_audit_results(data_ids)
@@ -543,7 +544,7 @@ class DataService(QObject):
 
         # 性能优化（2026-07-29）：把 audit_map 一次性转 DataFrame + merge 替代 4×13327 次 Python lambda
         # 原版：df['data_id'].map(lambda did: audit_map.get(did, {}).get(key, '')) × 3 列 = 4 万次 Python lambda → 273s
-        # 新版：1 次 merge + 3 次向量化 fillna → 0.5-1s
+        # 新版：1 次 merge + 2 次向量化 fillna（AI建议停用后） → 0.5-1s
         try:
             audit_df = pd.DataFrame.from_dict(audit_map, orient='index')
             audit_df.index.name = 'data_id'
@@ -554,9 +555,14 @@ class DataService(QObject):
             self.log(f"向量化恢复审核结果失败（merge），回退旧逻辑: {e}", "warning")
             audit_df = None
 
+        # AI建议功能已停用（2026-10-01）：不再恢复该列；如旧数据带此列，强制清空，
+        # 避免 SQLite 里的历史 mock 文案（"小偏差(5%以内)…"等）继续显示。
+        if 'AI建议' in df.columns:
+            df['AI建议'] = ''
+
         if audit_df is not None:
             restored = 0
-            for col, key in [('审核结果', 'audit_result'), ('AI建议', 'ai_suggestion'), ('备注来源', 'note_source')]:
+            for col, key in [('审核结果', 'audit_result'), ('备注来源', 'note_source')]:
                 db_col = f'{key}__db'
                 if db_col not in df.columns:
                     if col not in df.columns:
@@ -580,7 +586,7 @@ class DataService(QObject):
         else:
             # 兜底：旧 map(lambda) 逻辑（仅在 merge 异常时走）
             restored = 0
-            for col, key in [('审核结果', 'audit_result'), ('AI建议', 'ai_suggestion'), ('备注来源', 'note_source')]:
+            for col, key in [('审核结果', 'audit_result'), ('备注来源', 'note_source')]:
                 if col not in df.columns:
                     df[col] = ''
                 mapped = df['data_id'].map(lambda did: audit_map.get(did, {}).get(key, ''))

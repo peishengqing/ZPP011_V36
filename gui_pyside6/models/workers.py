@@ -9,7 +9,7 @@ from PySide6.QtCore import QThread, Signal
 
 from analysis.analyzer import do_analysis_v2
 from core.rule_engine import RuleEngine
-from core.ai_client import AIClient, build_local_verdict
+from core.ai_client import AIClient
 from core.config_manager import ConfigManager
 
 
@@ -115,15 +115,14 @@ class AIAuditWorker(QThread):
                 if not did:
                     continue
                 ar = row.get(result_col, '')
-                ai = row.get('AI建议', '')
                 ns = row.get('备注来源', '')
                 fp = row.get('fingerprint', '')
-                # 只保存有内容的记录
-                if ar or ai or ns:
+                # 只保存有内容的记录（AI建议已停用，不再写入 ai_suggestion）
+                if ar or ns:
                     records.append({
                         'data_id': str(did),
                         'audit_result': str(ar) if ar else '',
-                        'ai_suggestion': str(ai) if ai else '',
+                        'ai_suggestion': '',
                         'note_source': str(ns) if ns else '',
                         'fingerprint': str(fp) if fp else '',
                     })
@@ -145,8 +144,8 @@ class AIAuditWorker(QThread):
             total = len(self.audit_data)
             self.log.emit(f"待审核记录: {total} 条")
 
-            # 确保必要的列存在
-            for col in ['AI建议', 'audit_result', '备注来源']:
+            # 确保必要的列存在（AI建议已停用：不再创建/写入该列）
+            for col in ['audit_result', '备注来源']:
                 if col not in self.audit_data.columns:
                     self.audit_data[col] = ''
 
@@ -159,8 +158,7 @@ class AIAuditWorker(QThread):
             if remark_col is None:
                 raise ValueError("找不到备注列")
 
-            # ── 第一轮：本地分类（瞬间完成）──
-            ai_queue = []  # [(idx, context, dev_rate)] 需要调用 AI 的行
+            # 第一轮本地分类只写「审核结果 / 备注来源」；AI建议已停用，不再进入 ai_queue。
 
             for idx, row in self.audit_data.iterrows():
                 if self._cancel.is_set():
@@ -175,7 +173,6 @@ class AIAuditWorker(QThread):
                 if remark and any(kw in remark for kw in ['替代料', '系统无定额', '已核实']):
                     self.audit_data.at[idx, 'audit_result'] = '合格'
                     self.audit_data.at[idx, '备注来源'] = remark
-                    self.audit_data.at[idx, 'AI建议'] = ''
                 elif remark:
                     if len(remark) < 5:
                         self.audit_data.at[idx, 'audit_result'] = '需改进'
@@ -183,126 +180,34 @@ class AIAuditWorker(QThread):
                     else:
                         self.audit_data.at[idx, 'audit_result'] = '合格'
                         self.audit_data.at[idx, '备注来源'] = '人工填写'
-                        self.audit_data.at[idx, 'AI建议'] = ''
                 else:
-                    # 无备注 → 一律走统一本地口径（阈值/文案单一来源）。
-                    # 未投料行 dev_rate 为 None，本地直出「未投料」结论，不进 AI 队列。
-                    try:
-                        amount = float(row.get("偏差金额", 0) or 0)
-                    except Exception:
-                        amount = 0.0
-                    verdict = build_local_verdict(dev_rate, remark=remark, amount=amount)
-                    self.audit_data.at[idx, 'audit_result'] = verdict['result']
+                    abs_rate = abs(dev_rate)
+                    if abs_rate < 5:
+                        self.audit_data.at[idx, 'audit_result'] = '合格'
+                    elif abs_rate < 10:
+                        self.audit_data.at[idx, 'audit_result'] = '需关注'
+                    else:
+                        self.audit_data.at[idx, 'audit_result'] = '需补备注'
                     self.audit_data.at[idx, '备注来源'] = 'AI审核'
-                    self.audit_data.at[idx, 'AI建议'] = '' if dev_rate is not None else verdict['suggestion']
 
-                # 收集需要 AI 建议的行
-                current_result = self.audit_data.at[idx, 'audit_result']
-                if dev_rate is None:
-                    # 未投料（机械 ±100%）已本地直出，不浪费 AI 调用也不让 AI 胡编
-                    pass
-                elif not remark or current_result == '需改进':
-                    context = {
-                        "remark": remark,
-                        "物料编码": str(row.get("物料编码", "")),
-                        "物料描述": str(row.get("物料描述", "") or row.get("物料名称", "")),
-                        "物料大类": str(row.get("物料大类", "") or row.get("物料类型", "") or row.get("组件物料类型描述", "")),
-                        "工厂": str(row.get("工厂", "") or row.get("工厂名称", "")),
-                        "车间": str(row.get("车间", "")),
-                        "流程订单": str(row.get("流程订单", "") or row.get("生产订单", "")),
-                        "偏差金额": float(row.get("偏差金额", 0) or row.get("总偏差金额(含税)", 0) or 0),
-                        "偏差数量": float(row.get("偏差数量", 0) or 0),
-                        "dev_rate": dev_rate,
-                    }
-                    ai_queue.append((idx, context, dev_rate))
-                else:
-                    self.audit_data.at[idx, 'AI建议'] = ''
-
-            local_done = total - len(ai_queue)
-            self.log.emit(f"本地分类完成: {local_done} 条，待 AI 生成建议: {len(ai_queue)} 条")
-
-            # ── 第二轮：批量 AI 调用 ──
-            BATCH_SIZE = 15
-            ai_total = len(ai_queue)
-
-            if ai_total == 0:
-                self.progress.emit(total, total)
-                self.log.emit("全部记录已本地分类完成，无需调用 AI")
-            else:
-                ai_processed = 0
-                self.progress.emit(0, ai_total)
-
-                for batch_start in range(0, ai_total, BATCH_SIZE):
-                    if self._cancel.is_set():
-                        break
-
-                    batch_end = min(batch_start + BATCH_SIZE, ai_total)
-                    batch_items = []
-                    batch_idxs = []
-                    for i in range(batch_start, batch_end):
-                        idx, ctx, dr = ai_queue[i]
-                        batch_items.append({"context": ctx, "dev_rate": dr})
-                        batch_idxs.append(idx)
-
-                    self.log.emit(f"AI批量审核: {ai_processed}/{ai_total} (本轮 {len(batch_items)} 条)")
-                    try:
-                        results = self.ai_client.audit_batch(batch_items)
-                    except Exception as e:
-                        # 批量失败 → 直接用 Mock 降级，不再逐条调 API（浪费时间）
-                        self.log.emit(f"批量调用失败({str(e)[:60]})，降级 Mock")
-                        # 批量兜底口径统一收敛到 build_local_verdict（不再单写一套 5/10/30 阈值）
-                        results = []
-                        for item in batch_items:
-                            results.append(build_local_verdict(
-                                item["dev_rate"],
-                                remark=item["context"].get("remark", ""),
-                                amount=item["context"].get("偏差金额"),
-                            ))
-
-                    for j, (idx, result) in enumerate(zip(batch_idxs, results)):
-                        if isinstance(result, dict):
-                            self.audit_data.at[idx, 'AI建议'] = result.get('suggestion', '')
-                        else:
-                            self.audit_data.at[idx, 'AI建议'] = str(result)
-
-                    ai_processed = batch_end
-                    self.progress.emit(ai_processed, ai_total)
-                    self.log.emit(f"AI审核进度: {ai_processed}/{ai_total}")
+            # AI建议已停用：第一轮本地分类完成后直接结束，不再调用 AI、不生成任何建议文案。
+            self.progress.emit(total, total)
+            self.log.emit(f"本地分类完成: {total} 条（AI建议功能已停用）")
 
             if not self._cancel.is_set():
                 if 'audit_result' in self.audit_data.columns or '审核结果' in self.audit_data.columns:
                     self._save_audit_results()
-                self.log.emit("AI审核完成")
+                self.log.emit("审核完成")
                 self.finished.emit(self.audit_data)
             else:
-                self.log.emit("AI审核已取消")
+                self.log.emit("审核已取消")
         except Exception as e:
             traceback.print_exc()
             self.log.emit(f"AI审核错误: {str(e)}")
             self.error.emit(f"AI审核失败: {str(e)}\n{traceback.format_exc()}")
 
     def _parse_dev_rate(self, row):
-        """从行数据解析偏差率。
-
-        未投料（实际用量=0 且 定额>0）返回 None：此时偏差率恒为机械 ±100%
-        （(0-定额)/定额），不是真实少耗/超耗，交给 AI 只会产出「少耗100%」这类胡说。
-        调用方必须按 None 走「未投料」分支。
-        """
-        # ① 未投料识别（优先于偏差率列）
-        try:
-            for a_col, p_col in (('实际', '定额'), ('实际用量', '定额用量')):
-                if a_col in row.index and p_col in row.index:
-                    try:
-                        a = float(row[a_col])
-                        p = float(row[p_col])
-                    except Exception:
-                        a = p = None
-                    if a is not None and p is not None and a == 0.0 and p > 0:
-                        return None
-        except Exception:
-            pass
-
-        # ② 正常偏差率
+        """从行数据解析偏差率"""
         for c in ['偏差率', '偏差率(%)']:
             if c in row:
                 raw = row[c]

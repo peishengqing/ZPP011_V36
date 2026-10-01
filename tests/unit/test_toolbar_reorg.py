@@ -93,12 +93,12 @@ def test_toolbar_grouped_layout(main_window):
     assert menu_texts == ["📊 看板 ▾", "📤 导出 ▾", "🔧 维护 ▾"], "收纳菜单异常: %s" % menu_texts
 
     flat = [b.text() for b in bar.findChildren(QPushButton) if b.parentWidget() is bar]
-    for must in ["📊 分析", "🤖 AI审核", "☰ 隐藏左侧栏", "☰ 隐藏筛选", "🔽 列头筛选",
+    for must in ["📊 分析", "☰ 隐藏左侧栏", "☰ 隐藏筛选", "🔽 列头筛选",
                  "📊 概览", "⚡ 进度", "📋 未读概览"]:
         assert must in flat, "平铺按钮缺失: %s（现有 %s）" % (must, flat)
     for gone in ["管理看板", "隔离区", "变动提醒", "替代料看板", "偏差率预警",
-                 "负损看板", "完整报告", "自动整理隔离区"]:
-        assert gone not in flat, "%s 不应再平铺（应收进菜单）" % gone
+                 "负损看板", "完整报告", "自动整理隔离区", "🤖 AI审核"]:
+        assert gone not in flat, "%s 不应再平铺（应收进菜单或已移除）" % gone
 
 
 def test_menu_contents(main_window):

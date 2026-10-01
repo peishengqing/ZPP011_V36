@@ -250,13 +250,7 @@ class FilterPanel(QWidget):
         dev_layout.addRow("替代料筛查:", self.substitute_combo)
         dev_layout.addRow("审核结果:", self.audit_status_combo)
         dev_layout.addRow("备注来源:", self.remark_source_combo)
-        # AI建议筛选（2026-10-01）：「有AI建议/无AI建议」。
-        # 场景：AI 给出建议但「审核结果」列为空（待人工确认），按审核结果下拉筛不到，
-        # 用此筛选可直接定位这批行。
-        self.ai_suggestion_combo = QComboBox()
-        self.ai_suggestion_combo.addItems(["全部", "有AI建议", "无AI建议"])
-        self.ai_suggestion_combo.setToolTip("按「AI建议」列是否有内容筛选：有AI建议=该列非空的行（含审核结果为空的待确认行）；无AI建议=该列为空的行")
-        dev_layout.addRow("AI建议:", self.ai_suggestion_combo)
+        # AI建议已停用：不再提供「有/无AI建议」筛选入口。
         dev_layout.addRow("备注搜索:", self.remark_search_edit)
         dev_layout.addRow("备注不为:", self.remark_not_edit)
         dev_layout.addRow("备注为空:", self.remark_empty_combo)
@@ -576,7 +570,6 @@ class FilterPanel(QWidget):
         self._col_map['审核结果'] = self._find_column(['审核结果', 'audit_result'])
         self._col_map['备注来源'] = self._find_column(['备注来源', '备注来源'])
         self._col_map['备注原因'] = self._find_column(['备注原因', '备注'])
-        self._col_map['AI建议'] = self._find_column(['AI建议', 'ai_suggestion'])
         self._col_map['偏差率(%)'] = self._find_column(['偏差率(%)', '偏差率'])
         self._col_map['日期'] = self._find_column(['订单日期', '订单开始日期', '日期'])
         self._col_map['订单类型'] = self._find_column(['订单类型', 'order_type'])
@@ -838,10 +831,7 @@ class FilterPanel(QWidget):
         remark_source_col = self._col_map.get('备注来源')
         if remark_source_col and self.remark_source_combo.currentText() != "全部":
             filters[remark_source_col] = self.remark_source_combo.currentText()
-        # AI建议筛选（2026-10-01）：按「AI建议」列是否有内容筛（定位"有AI建议但审核结果空"的待确认行）
-        _ai_sel = self.ai_suggestion_combo.currentText()
-        if _ai_sel != "全部":
-            filters['_ai_suggestion'] = ('has' if _ai_sel == '有AI建议' else 'none')
+        # AI建议功能已停用：不再提供「AI建议」筛选。
         remark_col = self._col_map.get('备注原因')
         if remark_col and self.remark_empty_combo.currentText() != "全部":
             filters['_remark_empty'] = (self.remark_empty_combo.currentText() == '是')
