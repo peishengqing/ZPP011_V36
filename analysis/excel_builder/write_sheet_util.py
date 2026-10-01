@@ -86,11 +86,19 @@ def write_sheet(ws, headers, data_rows, col_widths=None):
     ws.freeze_panes = 'A2'
 
 
+# 各 sheet builder 反复使用的数值列清单（统一引用，避免 6 处各写一遍）
+NUMERIC_COLS = ["材料偏差", "偏差率(%)", "偏差金额", "偏差金额(含税)", "数量-实际", "数量-定额"]
+
+
 def ensure_numeric_cols(df, cols):
     """将指定列转为数值型（转换失败填 0），原地修改并返回 df。
     用于消除各 sheet builder 中重复的 to_numeric 转换块。
     性能优化（2026-07-27）：已是数值 dtype 的列跳过 to_numeric 全量拷贝，
-    仅在含 NaN 时补 fillna(0)，语义与原实现完全一致。"""
+    仅在含 NaN 时补 fillna(0)，语义与原实现完全一致。
+
+    幂等保护（2026-10-01）：analyzer 主流程在进入 sheet 构建前已统一做一次
+    ensure_numeric_cols，各 sheet 内的调用退化为廉价的 is_numeric_dtype 检查
+    （命中即 continue），不再重复全量转换。"""
     for col in cols:
         if col in df.columns:
             s = df[col]

@@ -49,7 +49,12 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
     code_col = next((c for c in df.columns if c in ('组件物料编码', '组件物料号')), None)
     alt_rows = []
 
-    def _match_rows(grp, desc):
+    # 性能（2026-10-01）：订单级缓存 code 列的 str 形态。
+    # 原 _match_rows 每次第三级匹配都 grp[code_col].astype(str)，同一订单匹配
+    # 多个 B 时重复 astype。按订单切片缓存一次。
+    _code_str_cache = {}
+
+    def _match_rows(grp, desc, _order=None):
         """三级匹配：精确 → 包含 → 编码，返回匹配的行"""
         if not desc:
             return grp.iloc[0:0]
@@ -61,9 +66,13 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
         rows = grp[grp['组件物料描述'].str.contains(desc, na=False, regex=False)]
         if len(rows) > 0:
             return rows
-        # 第三级：编码匹配
+        # 第三级：编码匹配（用缓存的 str 形态，避免重复 astype）
         if code_col:
-            rows = grp[grp[code_col].astype(str).str.contains(desc, na=False, regex=False)]
+            code_str = _code_str_cache.get(_order)
+            if code_str is None:
+                code_str = grp[code_col].astype(str)
+                _code_str_cache[_order] = code_str
+            rows = grp[code_str.str.contains(desc, na=False, regex=False)]
             if len(rows) > 0:
                 return rows
         return grp.iloc[0:0]
@@ -127,7 +136,7 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
     for order in _target_orders:
         grp = order_groups[order]
         for mat_a_desc, mat_b_descs in a_to_bs.items():
-            rows_a = _match_rows(grp, mat_a_desc)
+            rows_a = _match_rows(grp, mat_a_desc, order)
             if len(rows_a) == 0:
                 continue
             a = rows_a.iloc[0]
@@ -135,7 +144,7 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
             # 找到所有匹配的物料B
             b_list = []
             for mat_b_desc in mat_b_descs:
-                rows_b = _match_rows(grp, mat_b_desc)
+                rows_b = _match_rows(grp, mat_b_desc, order)
                 if len(rows_b) > 0:
                     b_list.append(rows_b.iloc[0])
 

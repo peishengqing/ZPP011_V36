@@ -4,7 +4,7 @@
 sheet5_full.py — Sheet5 完整偏差明细（v36 抽取，未修改逻辑）
 """
 import pandas as pd
-from analysis.excel_builder.write_sheet_util import ensure_numeric_cols
+from analysis.excel_builder.write_sheet_util import ensure_numeric_cols, NUMERIC_COLS
 import numpy as np
 
 
@@ -22,7 +22,7 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
 
     col_p = '偏差率(%)'
 # 确保数值列为数值类型（防止字符串导致比较错误）
-    ensure_numeric_cols(df, ["材料偏差", "偏差率(%)", "偏差金额", "偏差金额(含税)", "数量-实际", "数量-定额"])
+    ensure_numeric_cols(df, NUMERIC_COLS)
     has_real_dev = df[df[col_p].abs() >= threshold].copy()
 
     # 计算偏差金额（含税）
@@ -79,7 +79,9 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
         dev_df['定额'] = has_real_dev['数量-定额']
         dev_df['实际'] = has_real_dev['数量-实际']
         dev_df['偏差数量'] = has_real_dev['材料偏差']
-        dev_df['偏差率'] = has_real_dev[col_p].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else '')
+        # 性能（2026-10-01）：百分比格式化向量化（apply→round+map），NaN→''
+        dev_df['偏差率'] = has_real_dev[col_p].round(1).map(
+            lambda x: f"{x:.1f}%" if pd.notna(x) else '')
         # 注意：必须用 Python round（银行家舍入的正确实现），np/pandas 的 .round(2)
         # 在 .xx5 边界值上会因浮点缩放误差产生 ±0.01 差异（实测 12527 行中 371 行不同）
         dev_df['偏差率(%)'] = has_real_dev[col_p].map(

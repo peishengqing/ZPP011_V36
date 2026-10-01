@@ -4,7 +4,7 @@
 sheet8_reason_summary.py — Sheet8 偏差原因汇总（v36 抽取，未修改逻辑）
 """
 import pandas as pd
-from analysis.excel_builder.write_sheet_util import ensure_numeric_cols
+from analysis.excel_builder.write_sheet_util import ensure_numeric_cols, NUMERIC_COLS
 
 _CIRCLES = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩']
 
@@ -17,21 +17,31 @@ def _fmt_qty(v):
     return s.rstrip('0').rstrip('.') if '.' in s else s
 
 
-def _dev_breakdown(ws_df, mode):
+def _prepare_breakdown_base(ws_df):
+    """性能（2026-10-01）：预计算 原料/包材 的 _cat/_unit 列，供 3 种 mode 复用。
+    原实现 _dev_breakdown 每次调用都 ws_df.copy() + 重算 _cat/_unit，
+    build_sheet8 对每个车间组调 3 次（over/under/net）→ 3 份 copy。
+    现把「建 _cat/_unit」抽出来一次，3 种 mode 共用同一份。"""
+    base = ws_df.copy()
+    base['_cat'] = base['物料分类'].astype(str).apply(
+        lambda x: '包材' if x == '包材' else '原料')
+    unit_series = base['组件单位'].fillna('').astype(str).str.strip() \
+        if '组件单位' in base.columns else pd.Series('', index=base.index)
+    base['_unit'] = unit_series.replace('', '未知')
+    return base
+
+
+def _dev_breakdown(ws_df, mode, base=None):
     """
     按 物料分类(原料/包材) → 单位 两层分解偏差量。
     mode: 'over'=多耗(>0求和) / 'under'=少耗(<0绝对值求和) / 'net'=净偏差(带方向)
+    base: 若提供（来自 _prepare_breakdown_base），复用其 _cat/_unit，避免重复 copy。
     返回多行字符串，如：
         原料：①3557.4KG ②12包
         包材：①529个 ②88.7KG
     半成品并入原料口径。
     """
-    tmp = ws_df.copy()
-    tmp['_cat'] = tmp['物料分类'].astype(str).apply(
-        lambda x: '包材' if x == '包材' else '原料')
-    unit_series = tmp['组件单位'].fillna('').astype(str).str.strip() \
-        if '组件单位' in tmp.columns else pd.Series('', index=tmp.index)
-    tmp['_unit'] = unit_series.replace('', '未知')
+    tmp = base if base is not None else _prepare_breakdown_base(ws_df)
 
     parts = []
     for cat in ('原料', '包材'):
@@ -74,7 +84,7 @@ def build_sheet8(df, report_progress, progress_idx=8):
     report_progress(progress_idx, "Sheet8-原因汇总", 0)
 
 # 确保数值列为数值类型（防止字符串导致比较错误）
-    ensure_numeric_cols(df, ["材料偏差", "偏差率(%)", "偏差金额", "偏差金额(含税)", "数量-实际", "数量-定额"])
+    ensure_numeric_cols(df, NUMERIC_COLS)
     # 使用 analyzer.py 中已经生成的 '标准原因' 列（替代料、系统无定额等已正确标记）
     # 如果没有该列（兼容旧版），则动态生成
     if '标准原因' not in df.columns:
@@ -134,12 +144,13 @@ def build_sheet8(df, report_progress, progress_idx=8):
             mat_reasons[mat_reasons['物料分类'].isin(['包材'])], '包材')
 
         ws_all = df[(df['工厂名称'] == factory) & (df['车间'] == ws_name)]
+        _base = _prepare_breakdown_base(ws_all)
         reason_summary.append({
             '工厂': factory,
             '车间': ws_name,
-            '多耗': _dev_breakdown(ws_all, 'over'),
-            '少耗': _dev_breakdown(ws_all, 'under'),
-            '净偏差数量': _dev_breakdown(ws_all, 'net'),
+            '多耗': _dev_breakdown(ws_all, 'over', base=_base),
+            '少耗': _dev_breakdown(ws_all, 'under', base=_base),
+            '净偏差数量': _dev_breakdown(ws_all, 'net', base=_base),
             '原因数': len(ws_grp),
             '原料主要原因（Top5）': raw_top5_str,
             '包材主要原因（Top5）': pkg_top5_str,
@@ -149,12 +160,13 @@ def build_sheet8(df, report_progress, progress_idx=8):
     for factory, ws_name in df.groupby(['工厂名称', '车间']).groups.keys():
         if (factory, ws_name) not in reason_index_set:
             ws_data = df[(df['工厂名称'] == factory) & (df['车间'] == ws_name)]
+            _base = _prepare_breakdown_base(ws_data)
             reason_summary.append({
                 '工厂': factory,
                 '车间': ws_name,
-                '多耗': _dev_breakdown(ws_data, 'over'),
-                '少耗': _dev_breakdown(ws_data, 'under'),
-                '净偏差数量': _dev_breakdown(ws_data, 'net'),
+                '多耗': _dev_breakdown(ws_data, 'over', base=_base),
+                '少耗': _dev_breakdown(ws_data, 'under', base=_base),
+                '净偏差数量': _dev_breakdown(ws_data, 'net', base=_base),
                 '原因数': 0,
                 '原料主要原因（Top5）': '无备注',
                 '包材主要原因（Top5）': '无备注',

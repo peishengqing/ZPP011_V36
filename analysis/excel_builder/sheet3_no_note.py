@@ -4,7 +4,7 @@
 sheet3_no_note.py — Sheet3 无备注预警（v36 抽取，未修改逻辑）
 """
 import pandas as pd
-from analysis.excel_builder.write_sheet_util import ensure_numeric_cols
+from analysis.excel_builder.write_sheet_util import ensure_numeric_cols, NUMERIC_COLS
 from config.settings import DEFAULT_THRESHOLD
 from analysis.debug_util import dprint
 
@@ -27,7 +27,7 @@ def build_sheet3(df, report_progress, progress_idx=3, dyn_thresh=None):
     dyn_thresh = DEFAULT_THRESHOLD if dyn_thresh is None else dyn_thresh
 
 # 确保数值列为数值类型（防止字符串导致比较错误）
-    ensure_numeric_cols(df, ["材料偏差", "偏差率(%)", "偏差金额", "偏差金额(含税)", "数量-实际", "数量-定额"])
+    ensure_numeric_cols(df, NUMERIC_COLS)
     has_dev = df[df['材料偏差'] != 0]
     no_note = has_dev[~(has_dev['备注原因'].notna()) &
                         (has_dev['备注原因'] != '')].copy()
@@ -47,7 +47,9 @@ def build_sheet3(df, report_progress, progress_idx=3, dyn_thresh=None):
         no_note_df['定额'] = no_note['数量-定额']
         no_note_df['实际'] = no_note['数量-实际']
         no_note_df['偏差数量'] = no_note['材料偏差']
-        no_note_df['偏差率'] = no_note[col_p].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else '')
+        # 性能（2026-10-01）：百分比格式化向量化（apply→round+astype），NaN→''
+        no_note_df['偏差率'] = no_note[col_p].round(1).map(
+            lambda x: f"{x:.1f}%" if pd.notna(x) else '')
         if '偏差金额(含税)' in no_note.columns:
             # 用 Python round 而非 .round(2)：np 舍入在 .xx5 边界会差 ±0.01
             no_note_df['偏差金额(含税)'] = no_note['偏差金额(含税)'].map(

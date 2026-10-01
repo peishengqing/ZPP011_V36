@@ -11,6 +11,45 @@ from openpyxl.utils import get_column_letter
 from analysis.debug_util import dprint
 
 
+def _judge_trend(r_early, r_mid, r_recent):
+    """性能（2026-10-01）：把趋势箭头判断从循环体抽成纯函数，
+    便于单测与复用，逻辑与原实现完全一致。返回箭头字符串。"""
+    vals = [v for v in (r_early, r_mid, r_recent) if v is not None]
+    if len(vals) < 2:
+        return '→'
+    changes = []
+    for a, b in [(r_early, r_mid), (r_mid, r_recent)]:
+        if a is not None and b is not None:
+            if a > 0 and b > 0 or a < 0 and b < 0:
+                if abs(b) > abs(a) + 1:
+                    changes.append('↑')
+                elif abs(b) < abs(a) - 1:
+                    changes.append('↓')
+                else:
+                    changes.append('→')
+            elif abs(a) <= 0.01 and b != 0:
+                changes.append('↑' if b > 0 else '↓')
+            elif abs(b) <= 0.01 and a != 0:
+                changes.append('↓' if a > 0 else '↑')
+            elif a > 0 and b <= 0:
+                changes.append('↓')
+            elif a <= 0 and b > 0:
+                changes.append('↑')
+            else:
+                changes.append('→')
+    if not changes:
+        return '→'
+    if all(c == '↑' for c in changes):
+        return '↑↑ 持续变差'
+    if all(c == '↓' for c in changes):
+        return '↓↓ 持续改善'
+    if changes[-1] == '↑':
+        return '↑ 近期变差'
+    if changes[-1] == '↓':
+        return '↓ 近期改善'
+    return '→'
+
+
 def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
     """
     构建 Sheet10 趋势分析并写入工作表
@@ -156,43 +195,7 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
             r_mid = row.get('mid', None)
             r_early = row.get('early', None)
 
-            # 判断趋势
-            vals = [v for v in (r_early, r_mid, r_recent) if v is not None]
-            if len(vals) < 2:
-                arrow = '→'
-            else:
-                changes = []
-                for a, b in [(r_early, r_mid), (r_mid, r_recent)]:
-                    if a is not None and b is not None:
-                        if a > 0 and b > 0 or a < 0 and b < 0:
-                            if abs(b) > abs(a) + 1:
-                                changes.append('↑')
-                            elif abs(b) < abs(a) - 1:
-                                changes.append('↓')
-                            else:
-                                changes.append('→')
-                        elif abs(a) <= 0.01 and b != 0:
-                            changes.append('↑' if b > 0 else '↓')
-                        elif abs(b) <= 0.01 and a != 0:
-                            changes.append('↓' if a > 0 else '↑')
-                        elif a > 0 and b <= 0:
-                            changes.append('↓')
-                        elif a <= 0 and b > 0:
-                            changes.append('↑')
-                        else:
-                            changes.append('→')
-                if not changes:
-                    arrow = '→'
-                elif all(c == '↑' for c in changes):
-                    arrow = '↑↑ 持续变差'
-                elif all(c == '↓' for c in changes):
-                    arrow = '↓↓ 持续改善'
-                elif changes[-1] == '↑':
-                    arrow = '↑ 近期变差'
-                elif changes[-1] == '↓':
-                    arrow = '↓ 近期改善'
-                else:
-                    arrow = '→'
+            arrow = _judge_trend(r_early, r_mid, r_recent)
 
             rows.append([
                 typ, code, name, unit,

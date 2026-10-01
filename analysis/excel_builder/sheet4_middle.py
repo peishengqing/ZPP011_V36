@@ -5,7 +5,7 @@ sheet4_middle.py — Sheet4 中间地带明细（v36 抽取，未修改逻辑）
 """
 import pandas as pd
 import re
-from analysis.excel_builder.write_sheet_util import ensure_numeric_cols
+from analysis.excel_builder.write_sheet_util import ensure_numeric_cols, NUMERIC_COLS
 from config.settings import DEFAULT_THRESHOLD
 
 
@@ -29,7 +29,7 @@ def build_sheet4(df, alt_df, alt_pairs, report_progress, progress_idx=4, dyn_thr
     thresh = dyn_thresh
 
 # 确保数值列为数值类型（防止字符串导致比较错误）
-    ensure_numeric_cols(df, ["材料偏差", "偏差率(%)", "偏差金额", "偏差金额(含税)", "数量-实际", "数量-定额"])
+    ensure_numeric_cols(df, NUMERIC_COLS)
     middle = df[(df[col_p].notna()) & (df[col_p] >= -thresh)
                 & (df[col_p] <= thresh)].copy()
 
@@ -53,7 +53,9 @@ def build_sheet4(df, alt_df, alt_pairs, report_progress, progress_idx=4, dyn_thr
         middle_df['定额'] = middle['数量-定额']
         middle_df['实际'] = middle['数量-实际']
         middle_df['偏差数量'] = middle['材料偏差']
-        middle_df['偏差率'] = middle[col_p].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else '')
+        # 性能（2026-10-01）：百分比格式化向量化（apply→round+map），NaN→''
+        middle_df['偏差率'] = middle[col_p].round(1).map(
+            lambda x: f"{x:.1f}%" if pd.notna(x) else '')
         middle_df['备注'] = middle['备注原因'].where(
             middle['备注原因'].notna() & (middle['备注原因'] != ''), '').astype(str)
         middle_df['标准原因'] = middle['标准原因'] if '标准原因' in middle.columns else ''

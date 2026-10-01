@@ -8,7 +8,6 @@ analyzer.py 调用 build_sheet7(wb, df, report_progress) 执行。
 """
 import pandas as pd
 from analysis.excel_builder.write_sheet_util import ensure_numeric_cols
-import os
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from analysis.debug_util import dprint
@@ -63,13 +62,8 @@ def build_sheet7(wb, df, report_progress, progress_idx=7):
 
     amt_df = df[df['偏差金额(含税)'] != 0].copy()
 
-    _debug_log = os.path.join(os.environ.get('TEMP', '.'), 'zpp011_sheet7_debug.log')
-    with open(_debug_log, 'a', encoding='utf-8') as _f:
-        _f.write(f"\n=== Sheet7 Debug ===\n")
-        _f.write(f"amt_df.empty: {amt_df.empty}\n")
-        _f.write(f"amt_df.columns: {list(amt_df.columns)}\n")
-        _f.write(f"amt_df.shape: {amt_df.shape}\n")
-
+    # 历史调试日志已移除（2026-10-01）：正常导出路径不再写 zpp011_sheet7_debug.log。
+    # 需要排查时可用 dprint 临时打点。
     if not amt_df.empty:
         amt_summary = amt_df.groupby(['组件物料号', '组件物料描述', '物料分类', '组件单位']).agg(
             正偏差金额=('偏差金额(含税)', lambda x: round(x[x > 0].sum(), 2)),

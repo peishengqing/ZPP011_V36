@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 ZPP011 偏差分析核心逻辑（v36 抽取）
@@ -512,6 +512,10 @@ def do_analysis_v2(
         print(f"[偏差金额计算] 使用单价计算，成功计算 {(df['_unit_price_tax'] > 0).sum()}/{len(df)} 行的单价")
 
     check_cancel()
+    # 统一数值列转换（2026-10-01）：在主流程进入 sheet 构建前做一次，
+    # 各 sheet builder 内的 ensure_numeric_cols 退化为幂等检查（已是数值 dtype 即跳过）。
+    from analysis.excel_builder.write_sheet_util import ensure_numeric_cols, NUMERIC_COLS
+    ensure_numeric_cols(df, NUMERIC_COLS)
     # Sheet1（第五步抽取 → analysis/sheets/sheet1_summary.py）
     summary_df = build_sheet1(df, _ranged_progress(report_progress, 25, 35))
     check_cancel()
@@ -780,10 +784,19 @@ def export_full_report_from_intermediates(intermediates, output_path=None, outpu
         if cancel_check and cancel_check():
             raise KeyboardInterrupt("用户取消")
 
+    _last_progress_state = [None]  # 闭包内可变容器：[ (step_idx, percent) | None ]
+
     def report_progress(step_idx, step_name, percent):
+        """性能（2026-10-01）：只在「跨步」或「同一步百分比前进」时 sleep，
+        同一步内重复上报相同/更小的 percent 不再 sleep。原实现每次调用都
+        time.sleep(0.01)，12 张 sheet × 多次回调累计白等数百 ms。"""
         if progress_callback:
             progress_callback(step_idx, step_name, percent)
-            time.sleep(0.01)
+            last = _last_progress_state[0]
+            # last = (step_idx, percent)
+            if last is None or last[0] != step_idx or percent > last[1]:
+                time.sleep(0.01)
+            _last_progress_state[0] = (step_idx, percent)
 
     from analysis.excel_builder.write_sheet_util import get_default_styles
     _styles = get_default_styles()
@@ -847,23 +860,13 @@ def export_full_report_from_intermediates(intermediates, output_path=None, outpu
     headers2 = ['订单日期', '车间', '订单号', '物料A编码', '物料A', '单位', '偏差A', '偏差率A',
                 '物料B编码', '物料B', '偏差B', '偏差率B', '净偏差数量', '净偏差金额', '净偏差率', '备注']
     rows2 = []
+    # 性能（2026-10-01）：直接用 build_sheet2 已算好的 物料A编码/物料B编码 列，
+    # 不再对 df['组件物料描述'] 做全表 astype + 逐行 isin 反查（12K 行 × 2 次全扫描）。
     for r in alt_df.to_dict('records'):
-        material_a_name = str(r['物料A']).strip() if pd.notna(r.get('物料A')) else ''
-        material_b_name = str(r['物料B']).strip() if pd.notna(r.get('物料B')) else ''
-        code_a = ''
-        if material_a_name:
-            mask = df['组件物料描述'].astype(str).str.strip() == material_a_name
-            if mask.any():
-                code_a = str(df.loc[mask, '组件物料号'].iloc[0])
-        code_b = ''
-        if material_b_name:
-            mask = df['组件物料描述'].astype(str).str.strip() == material_b_name
-            if mask.any():
-                code_b = str(df.loc[mask, '组件物料号'].iloc[0])
         rows2.append([
             r['订单日期'], r['车间'], r['订单号'],
-            code_a, r['物料A'], r['单位'], r['偏差A'], r.get('偏差率A', ''),
-            code_b, r['物料B'], r['偏差B'], r.get('偏差率B', ''),
+            r.get('物料A编码', ''), r['物料A'], r['单位'], r['偏差A'], r.get('偏差率A', ''),
+            r.get('物料B编码', ''), r['物料B'], r['偏差B'], r.get('偏差率B', ''),
             r.get('净偏差数量', ''), r.get('净偏差金额', ''), r.get('净偏差率', ''), r['备注']
         ])
     write_sheet(ws2, headers2, rows2,
