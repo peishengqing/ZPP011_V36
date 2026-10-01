@@ -834,6 +834,20 @@ class AuditProxyModel(QSortFilterProxyModel):
                         if not matched:
                             return False
 
+            # 4.x AI建议筛选（2026-10-01）：has=AI建议列非空 / none=该列为空
+            if '_ai_suggestion' in self._custom_filters:
+                _ai_mode = self._custom_filters['_ai_suggestion']
+                _ai_col = 'AI建议' if 'AI建议' in df.columns else None
+                if _ai_col is None:
+                    _ai_col = 'ai_suggestion' if 'ai_suggestion' in df.columns else None
+                if _ai_col is not None:
+                    _ai_val = row_data.get(_ai_col, '')
+                    _ai_nonempty = (not pd.isna(_ai_val)) and str(_ai_val).strip() != ''
+                    if _ai_mode == 'has' and not _ai_nonempty:
+                        return False
+                    if _ai_mode == 'none' and _ai_nonempty:
+                        return False
+
             # 4. 日期范围
             if '_date_start' in self._custom_filters or '_date_end' in self._custom_filters:
                 date_col = self._get_date_column(df)

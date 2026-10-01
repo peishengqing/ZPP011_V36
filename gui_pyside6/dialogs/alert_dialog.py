@@ -168,6 +168,14 @@ class AlertDialog(QDialog):
         self.btn_col_filter.clicked.connect(self._on_toggle_col_filter)
         col_filter_bar.addWidget(self.btn_col_filter)
         col_filter_bar.addStretch(1)
+        # AI建议筛选（2026-10-01）：「有AI建议/无AI建议」——
+        # 定位"审核结果为空但 AI 已给建议"的待人工确认行（见 filterPanel 同名筛选）。
+        self.ai_suggestion_combo = QComboBox()
+        self.ai_suggestion_combo.addItems(["全部", "有AI建议", "无AI建议"])
+        self.ai_suggestion_combo.setToolTip(
+            "按「AI建议」列是否有内容筛选：有AI建议=该列非空的行；无AI建议=该列为空的行")
+        self.ai_suggestion_combo.currentIndexChanged.connect(self._apply_filter)
+        col_filter_bar.addWidget(self.ai_suggestion_combo)
         layout.addLayout(col_filter_bar)
 
         # ---- 底部按钮 ----
@@ -245,6 +253,15 @@ class AlertDialog(QDialog):
         # 叠加 Excel 式列头取值过滤（就地过滤，视图行号不变，选中/双击/导出零回归）
         if hasattr(self, "col_filter_ctrl"):
             filtered = self.col_filter_ctrl.mask_dataframe(filtered)
+        # AI建议筛选（2026-10-01）：按「AI建议」列是否有内容筛（与列头筛选叠加）
+        if hasattr(self, "ai_suggestion_combo"):
+            _ai_sel = self.ai_suggestion_combo.currentText()
+            if _ai_sel != "全部" and "AI建议" in filtered.columns:
+                _ai_nonempty = filtered["AI建议"].fillna("").astype(str).str.strip() != ""
+                if _ai_sel == "有AI建议":
+                    filtered = filtered[_ai_nonempty]
+                else:
+                    filtered = filtered[~_ai_nonempty]
         self.source_model.setDataFrame(filtered)
         self._sort_ctrl.reapply()  # 恢复排序态
 
@@ -340,6 +357,12 @@ class AlertDialog(QDialog):
                         df["流程订单"].astype(str) + "|" +
                         df["物料编码"].astype(str)
                     )
+        # 兼容旧数据：看板数据未带「AI建议」/「审核结果」列时补空列，
+        # 否则「AI建议」筛选无列可用、且列头取值筛选/导出时该列缺失。
+        if "AI建议" not in df.columns:
+            df["AI建议"] = ""
+        if "审核结果" not in df.columns:
+            df["审核结果"] = ""
         self.original_df = df.copy()
 
         self.source_model = DataFrameModel()
