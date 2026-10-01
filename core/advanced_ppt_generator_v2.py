@@ -357,17 +357,18 @@ class AdvancedPPTGeneratorV2:
 # ========== 数据适配函数 ==========
 def _load_data_from_excel(excel_path):
     """从Excel读取必要的数据集"""
-    xl = pd.ExcelFile(excel_path)
+    from utils.excel_io import open_excel_book
+    xl = open_excel_book(excel_path)
     sheets = xl.sheet_names
     data = {}
     if '汇总统计' in sheets:
-        data['summary'] = pd.read_excel(excel_path, sheet_name='汇总统计')
+        data['summary'] = xl.parse('汇总统计')
     if '完整偏差明细' in sheets:
-        data['detail'] = pd.read_excel(excel_path, sheet_name='完整偏差明细')
+        data['detail'] = xl.parse('完整偏差明细')
     if '替代料明细' in sheets:
-        data['alt'] = pd.read_excel(excel_path, sheet_name='替代料明细')
+        data['alt'] = xl.parse('替代料明细')
     if '偏差原因分析' in sheets:
-        data['cause'] = pd.read_excel(excel_path, sheet_name='偏差原因分析')
+        data['cause'] = xl.parse('偏差原因分析')
     return data
 
 def generate_advanced_report_v2(excel_path, output_path, log_cb=None):

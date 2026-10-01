@@ -143,7 +143,11 @@ def _get_conn():
 
 
 def close_db():
-    """显式关闭数据库连接（通常不需要——进程退出时 OS 回收；测试/迁移场景调用）"""
+    """显式关闭数据库连接（主线程单例 + 子线程 threading.local）。
+
+    进程退出时 OS 会回收连接；但测试、迁移、备份前需要显式释放文件句柄——
+    Windows 上句柄不释放会导致临时库无法删除或替换。
+    """
     global _CONN, _DDL_DONE
     with _CONN_LOCK:
         if _CONN is not None:
@@ -154,6 +158,17 @@ def close_db():
         _CONN = None
         _DDL_DONE = False
 
+    # 子线程连接（threading.local）：当前线程若持有连接一并关闭
+    child = getattr(_THREAD_CONNS, "conn", None)
+    if child is not None:
+        try:
+            child.close()
+        except Exception:
+            pass
+        try:
+            del _THREAD_CONNS.conn
+        except Exception:
+            pass
 
 def _migrate_add_column(conn, table, col_name, col_def):
     """安全添加列：如果列不存在则 ALTER TABLE ADD COLUMN（兼容旧调用）"""

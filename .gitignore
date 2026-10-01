@@ -30,6 +30,8 @@ htmlcov/
 # Debug / temp files
 debug_cols.txt
 peige_code_indented.txt
+*.orig_bak
+*.bak
 
 # Windows reserved names
 nul

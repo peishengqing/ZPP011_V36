@@ -273,6 +273,29 @@ class DataFrameModel(QAbstractTableModel):
                 return Qt.AlignRight | Qt.AlignVCenter
             return Qt.AlignLeft | Qt.AlignVCenter
         
+        elif role == Qt.ForegroundRole:
+            # 偏差数值列着色（2026-09-30）：正值红、负值绿（与看板红绿语言一致，
+            # 中间调在暗/亮主题下都清晰）；0 值与空值保持默认色
+            col_name = self._display_columns[col]
+            if col_name in ("偏差数量", "偏差率(%)", "偏差金额", "净偏差金额"):
+                try:
+                    _fv = float(self._data_cache[row][col])
+                except (ValueError, TypeError):
+                    return None
+                if _fv > 0:
+                    return QColor(229, 83, 80)   # 正偏差 红
+                if _fv < 0:
+                    return QColor(102, 187, 106)  # 负偏差 绿
+            elif col_name == "偏差区间":
+                _iv = str(self._data_cache[row][col])
+                if _iv == "正偏差":
+                    return QColor(229, 83, 80)
+                if _iv == "负偏差":
+                    return QColor(102, 187, 106)
+                if _iv == "零偏差":
+                    return QColor(158, 158, 158)  # 零偏差 灰
+            return None
+
         elif role == ALT_GROUP_ROLE:
             # 告知代理模型：该行属于替代料组
             if row < len(self._alt_group_color_list):
@@ -480,6 +503,10 @@ class AuditProxyModel(QSortFilterProxyModel):
         self._value_filters.clear()
         self._value_keys.clear()
         self.invalidateFilter()
+
+    def getCustomFilters(self):
+        """当前自定义筛选条件（浅拷贝），供外部做「叠加/快照」操作。"""
+        return dict(self._custom_filters)
 
     def setValueFilter(self, col_name, allowed_set):
         """Excel式列头成员过滤：allowed_set 为该列允许显示的展示值集合（与表格 DisplayRole

@@ -20,6 +20,7 @@ fig.savefig 两种后端都能把图写进内存缓冲，互不干扰，因此�
 """
 import base64
 import io
+from urllib.parse import quote
 
 import numpy as np
 import pandas as pd
@@ -159,7 +160,36 @@ h1{
   border-radius:10px;font-size:13px;
   border:1.5px dashed var(--c-border);
 }
+/* ===== 「到主表」芯片（联动钻取入口） ===== */
+.chip{
+  display:inline-block;margin-top:6px;
+  font-size:11.5px;font-weight:600;color:var(--c-accent);
+  background:var(--c-accent-light);
+  border:1px solid rgba(9,105,218,.35);
+  border-radius:12px;padding:2px 10px;
+  text-decoration:none;transition:all .18s ease;
+}
+.chip:hover{background:var(--c-accent);color:#fff;box-shadow:0 2px 8px rgba(9,105,218,.3)}
+/* ===== 分组折叠（原生 details，降级模式也兼容） ===== */
+details.group{margin-bottom:18px}
+details.group > summary.grp{
+  cursor:pointer;list-style:none;
+  font-size:14px;font-weight:700;
+  border-left:4px solid var(--c-accent);
+  padding:6px 10px 6px 10px;margin:0 0 12px;
+  color:#0f172a;letter-spacing:.01em;
+  background:linear-gradient(90deg,rgba(9,105,218,.06),transparent 60%);
+  border-radius:0 8px 8px 0;
+}
+details.group > summary.grp::before{content:'▸ ';color:var(--c-accent);font-size:12px}
+details.group[open] > summary.grp::before{content:'▾ '}
+details.group > summary::-webkit-details-marker{display:none}
+details.group > .grid{margin-top:4px}
 /* ===== 小结卡 ===== */
+.focus-list{margin:12px 0 0;padding:0 0 0 18px;font-size:13.5px;color:#334155}
+.focus-list li{margin:5px 0;line-height:1.55}
+.focus-list li::marker{color:var(--c-pos)}
+.summary-card.top{margin:0 0 24px}
 .summary-card{
   background:linear-gradient(135deg,#f0f7ff 0%,#e8f4fd 50%,#fff 100%);
   border:1.5px solid #b6d4fe;
@@ -213,7 +243,8 @@ h1{
 def fig_to_b64(fig):
     """把 matplotlib figure 转成 base64 PNG 字符串，关闭 figure 释放内存。"""
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=110, bbox_inches="tight")
+    # dpi=150：卡片内 600px 宽显示更清晰（原 110 放大发虚）
+    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
     plt.close(fig)
     buf.seek(0)
     return base64.b64encode(buf.read()).decode("ascii")
@@ -229,6 +260,42 @@ def _safe(func, dev_df, title):
 
 
 # =====================================================================
+#  统一图表主题（2026-09-30 风格翻新）：白底卡片风格、左对齐标题、
+#  去顶/右边框、细网格、统一字号。所有 12 图共用，观感与页面 CSS 协调。
+# =====================================================================
+def _style_ax(ax, title, xlabel=""):
+    """统一图表外观：标题左对齐加粗、去顶右边框、细网格、统一刻度字号。"""
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#d0d7de")
+    ax.spines["bottom"].set_color("#d0d7de")
+    ax.set_title(title, fontsize=11, fontweight="bold", color="#0f172a", loc="left", pad=10)
+    if xlabel:
+        ax.set_xlabel(xlabel, fontsize=9, color="#475569")
+    ax.tick_params(labelsize=9, colors="#475569")
+    ax.grid(True, color=GRID, linewidth=0.6, alpha=0.75)
+    for lbl in ax.get_xticklabels() + ax.get_yticklabels():
+        lbl.set_fontsize(8.5)
+
+
+def _num(v):
+    """万/千分位标签（柱端数值用）。"""
+    return f"{v:,.0f}"
+
+
+def _bar_labels(ax, bars, values, vmax):
+    """水平柱图柱端标签：正值放柱外（右）、负值放柱内（白字），避免压到轴名。"""
+    for b, v in zip(bars, values):
+        if v >= 0:
+            ax.text(v + vmax * 0.015, b.get_y() + b.get_height() / 2, _num(v),
+                    va="center", ha="left", fontsize=8.5, color="#334155")
+        else:
+            ax.text(v + abs(v) * 0.96, b.get_y() + b.get_height() / 2, _num(v),
+                    va="center", ha="right", fontsize=8.5, color="white",
+                    fontweight="bold")
+
+
+# =====================================================================
 #  12 张图
 # =====================================================================
 def chart_daily_trend(df):
@@ -237,12 +304,18 @@ def chart_daily_trend(df):
     d["_dt"] = pd.to_datetime(d["订单日期"])
     g = d.groupby(d["_dt"].dt.date)["偏差金额"].sum()
     fig, ax = plt.subplots(figsize=(6.2, 3.6))
-    ax.plot(list(g.index), g.values, marker="o", color=C_ACCENT, linewidth=1.8)
+    # 原始日线：变轻（细线小点、半透明），避免锯齿噪声抢焦点
+    ax.plot(list(g.index), g.values, color=C_ACCENT, alpha=0.35, linewidth=1.0,
+            marker="o", markersize=3)
+    # 7 日均：加粗主线 + 面积填充，趋势一眼可见
+    roll = g.rolling(window=7, min_periods=1).mean()
+    ax.plot(list(roll.index), roll.values, color=C_ACCENT, linewidth=2.4,
+            label="7 日均值", zorder=3)
+    ax.fill_between(list(roll.index), 0, roll.values, color=C_ACCENT, alpha=0.08)
     ax.axhline(0, color=C_GRAY, linewidth=1, linestyle="--")
-    ax.set_title("每日偏差金额趋势", fontsize=12, fontweight="bold")
-    ax.set_ylabel("偏差金额（含税）")
+    _style_ax(ax, "每日偏差金额趋势", "偏差金额（含税）")
     ax.tick_params(axis="x", rotation=45)
-    ax.grid(True, color=GRID)
+    ax.legend(fontsize=8, loc="upper left")
     return fig_to_b64(fig)
 
 
@@ -252,9 +325,9 @@ def chart_pos_neg_stack(df):
     pos = g.get("正偏差", 0.0)
     neg = g.get("负偏差", 0.0)
     fig, ax = plt.subplots(figsize=(6.2, 3.6))
-    bars = ax.bar(["正偏差（多耗）", "负偏差（少耗）"], [pos, neg], color=[C_POS, C_NEG])
-    ax.set_title("正 / 负偏差金额构成", fontsize=12, fontweight="bold")
-    ax.set_ylabel("偏差金额（含税）")
+    bars = ax.bar(["正偏差（多耗）", "负偏差（少耗）"], [pos, neg], color=[C_POS, C_NEG], width=0.5)
+    ax.set_ylabel("偏差金额（含税）", fontsize=9, color="#475569")
+    _style_ax(ax, "正 / 负偏差金额构成")
     for b, v in zip(bars, [pos, neg]):
         ax.text(b.get_x() + b.get_width() / 2, v, f"{v:,.0f}", ha="center", va="bottom", fontsize=9)
     ax.grid(True, axis="y", color=GRID)
@@ -267,22 +340,21 @@ def chart_devrate_hist(df):
     fig, ax = plt.subplots(figsize=(6.2, 3.6))
     ax.hist(vals, bins=30, color=C_ACCENT, alpha=0.85)
     ax.axvline(0, color=C_GRAY, linestyle="--", linewidth=1)
-    ax.set_title("偏差率(%) 分布", fontsize=12, fontweight="bold")
-    ax.set_xlabel("偏差率(%)")
-    ax.set_ylabel("条数")
-    ax.grid(True, axis="y", color=GRID)
+    ax.set_ylabel("条数", fontsize=9, color="#475569")
+    _style_ax(ax, "偏差率(%) 分布", "偏差率(%)")
     return fig_to_b64(fig)
 
 
 def chart_workshop_bar(df):
-    """②-1 各车间偏差金额对比：哪个车间最该盯。"""
-    g = df.groupby("车间")["偏差金额"].sum().sort_values()
+    """②-1 各车间偏差金额对比：哪个车间最该盯（按 |金额| 排序，最严重在上）。"""
+    g = df.groupby("车间")["偏差金额"].sum()
+    # barh 把第 0 项画在最下行：要「最严重在上」须按 |值| 升序排列（最大者排最后）
+    g = g.reindex(g.abs().sort_values(ascending=True).index)
     fig, ax = plt.subplots(figsize=(6.2, 3.6))
     colors = [C_POS if v > 0 else C_NEG for v in g.values]
-    ax.barh(g.index, g.values, color=colors)
-    ax.set_title("各车间偏差金额对比", fontsize=12, fontweight="bold")
-    ax.set_xlabel("偏差金额（含税）")
-    ax.grid(True, axis="x", color=GRID)
+    bars = ax.barh(g.index, g.values, color=colors, height=0.62)
+    _bar_labels(ax, bars, g.values, max(abs(g.max()), abs(g.min()), 1.0))
+    _style_ax(ax, "各车间偏差金额对比（最严重在上）", "偏差金额（含税）")
     return fig_to_b64(fig)
 
 
@@ -294,8 +366,9 @@ def chart_material_type_pie(df):
         return None
     fig, ax = plt.subplots(figsize=(6.2, 3.6))
     ax.pie(g.values, labels=g.index, autopct="%1.1f%%", startangle=90,
-           colors=["#0969da", "#d4392f", "#2e8b57", "#bf8700", "#8250df"][: len(g)])
-    ax.set_title("物料类型偏差金额占比", fontsize=12, fontweight="bold")
+           colors=["#0969da", "#d4392f", "#2e8b57", "#bf8700", "#8250df"][: len(g)],
+           textprops={"fontsize": 9}, pctdistance=0.75)
+    _style_ax(ax, "物料类型偏差金额占比")
     return fig_to_b64(fig)
 
 
@@ -305,11 +378,12 @@ def chart_product_top10(df):
     if g.empty:
         return None
     fig, ax = plt.subplots(figsize=(6.2, 3.6))
-    ax.barh(g.index[::-1], g.values[::-1], color=C_ACCENT)
-    ax.set_title("成品线偏差 Top10", fontsize=12, fontweight="bold")
-    ax.set_xlabel("|偏差金额|（含税）")
+    bars = ax.barh(g.index[::-1], g.values[::-1], color=C_ACCENT, height=0.65)
+    for b, v in zip(bars, g.values[::-1]):
+        ax.text(v + g.values.max() * 0.015, b.get_y() + b.get_height() / 2, _num(v),
+                va="center", fontsize=8.5, color="#334155")
+    _style_ax(ax, "成品线偏差 Top10", "|偏差金额|（含税）")
     ax.tick_params(axis="y", labelsize=8)
-    ax.grid(True, axis="x", color=GRID)
     return fig_to_b64(fig)
 
 
@@ -319,11 +393,12 @@ def chart_component_top10(df):
     if g.empty:
         return None
     fig, ax = plt.subplots(figsize=(6.2, 3.6))
-    ax.barh(g.index[::-1], g.values[::-1], color=C_POS)
-    ax.set_title("组件物料偏差 Top10", fontsize=12, fontweight="bold")
-    ax.set_xlabel("|偏差金额|（含税）")
+    bars = ax.barh(g.index[::-1], g.values[::-1], color=C_POS, height=0.65)
+    for b, v in zip(bars, g.values[::-1]):
+        ax.text(v + g.values.max() * 0.015, b.get_y() + b.get_height() / 2, _num(v),
+                va="center", fontsize=8.5, color="#334155")
+    _style_ax(ax, "组件物料偏差 Top10", "|偏差金额|（含税）")
     ax.tick_params(axis="y", labelsize=8)
-    ax.grid(True, axis="x", color=GRID)
     return fig_to_b64(fig)
 
 
@@ -337,11 +412,12 @@ def chart_altnet_top10(df):
         return None
     fig, ax = plt.subplots(figsize=(6.2, 3.6))
     colors = [C_POS if v > 0 else C_NEG for v in g.values]
-    ax.barh(g.index[::-1], g.values[::-1], color=colors)
-    ax.set_title("替代料净偏差 Top10", fontsize=12, fontweight="bold")
-    ax.set_xlabel("净偏差金额（含税）")
+    bars = ax.barh(g.index[::-1], g.values[::-1], color=colors, height=0.65)
+    for b, v in zip(bars, g.values[::-1]):
+        ax.text(v + max(g.values.max(), 1) * 0.015, b.get_y() + b.get_height() / 2, _num(v),
+                va="center", fontsize=8.5, color="#334155")
+    _style_ax(ax, "替代料净偏差 Top10", "净偏差金额（含税）")
     ax.tick_params(axis="y", labelsize=8)
-    ax.grid(True, axis="x", color=GRID)
     return fig_to_b64(fig)
 
 
@@ -350,12 +426,14 @@ def chart_no_remark_by_workshop(df):
     nr = df[df["备注"].astype(str).str.strip() == ""]
     if nr.empty:
         return None
-    g = nr.groupby("车间")["偏差金额"].apply(lambda s: s.abs().sum()).sort_values()
+    g = nr.groupby("车间")["偏差金额"].apply(lambda s: s.abs().sum())
+    g = g.reindex(g.abs().sort_values(ascending=True).index)  # 升序 → 最大者画在最上
     fig, ax = plt.subplots(figsize=(6.2, 3.6))
-    ax.barh(g.index, g.values, color="#bf8700")
-    ax.set_title("无备注预警偏差金额（by 车间）", fontsize=12, fontweight="bold")
-    ax.set_xlabel("|偏差金额|（含税）")
-    ax.grid(True, axis="x", color=GRID)
+    bars = ax.barh(g.index, g.values, color="#bf8700", height=0.62)
+    for b, v in zip(bars, g.values):
+        ax.text(v + g.values.max() * 0.015, b.get_y() + b.get_height() / 2, _num(v),
+                va="center", fontsize=8.5, color="#334155")
+    _style_ax(ax, "无备注预警偏差金额（by 车间，最严重在上）", "|偏差金额|（含税）")
     return fig_to_b64(fig)
 
 
@@ -380,11 +458,13 @@ def chart_material_3phase(df):
     for i, mat in enumerate(top_mats):
         sub = d[d["物料名称"] == mat]
         means = [sub[sub["_phase"] == p]["_rate"].mean() for p in phases]
-        ax.plot(phases, means, marker="o", label=mat[:10], color=palette[i % len(palette)], linewidth=1.6)
-    ax.set_title("Top5 物料偏差率 早/中/近期", fontsize=12, fontweight="bold")
-    ax.set_ylabel("平均偏差率(%)")
+        ax.plot(phases, means, marker="o", label=mat[:10], color=palette[i % len(palette)],
+                linewidth=1.8, markersize=5)
+        ax.annotate(f"{means[-1]:.1f}%", (2, means[-1]), textcoords="offset points",
+                    xytext=(4, 0), fontsize=7.5, color=palette[i % len(palette)])
+    _style_ax(ax, "Top5 物料偏差率 早/中/近期（端点为近期值）", "平均偏差率(%)")
+    ax.set_ylabel("平均偏差率(%)", fontsize=9, color="#475569")
     ax.legend(fontsize=7, loc="best")
-    ax.grid(True, color=GRID)
     return fig_to_b64(fig)
 
 
@@ -397,56 +477,100 @@ def chart_workshop_posneg_stack(df):
     piv = piv[["正偏差", "负偏差"]].sort_values("正偏差", ascending=False)
     fig, ax = plt.subplots(figsize=(6.2, 3.6))
     x = range(len(piv))
-    ax.bar(x, piv["正偏差"], color=C_POS, label="正偏差")
-    ax.bar(x, piv["负偏差"], bottom=piv["正偏差"], color=C_NEG, label="负偏差")
+    ax.bar(x, piv["正偏差"], color=C_POS, label="正偏差", width=0.6)
+    ax.bar(x, piv["负偏差"], bottom=piv["正偏差"], color=C_NEG, label="负偏差", width=0.6)
+    for i, (p, n) in enumerate(zip(piv["正偏差"], piv["负偏差"])):
+        ax.text(i, p + n + abs(p + n) * 0.02 + 1, _num(p + n), ha="center",
+                fontsize=8, color="#334155")
     ax.set_xticks(list(x))
     ax.set_xticklabels(piv.index, rotation=45, ha="right", fontsize=8)
-    ax.set_title("各车间正/负偏差构成", fontsize=12, fontweight="bold")
-    ax.set_ylabel("偏差金额（含税）")
+    _style_ax(ax, "各车间正/负偏差构成", "偏差金额（含税）")
     ax.legend(fontsize=8)
-    ax.grid(True, axis="y", color=GRID)
     return fig_to_b64(fig)
 
 
 def chart_remark_coverage(df):
     """④-3 备注覆盖率（by 车间）：管理盲区在哪。"""
     cov = df.assign(has=lambda x: x["备注"].astype(str).str.strip() != "").groupby("车间")["has"].mean() * 100
-    cov = cov.sort_values()
+    cov = cov.sort_values(ascending=True)  # 升序 → 覆盖率最低的画在最上
     fig, ax = plt.subplots(figsize=(6.2, 3.6))
     colors = ["#bf8700" if v < 80 else C_NEG for v in cov.values]
-    ax.barh(cov.index, cov.values, color=colors)
-    ax.set_title("备注覆盖率（by 车间）", fontsize=12, fontweight="bold")
-    ax.set_xlabel("覆盖率(%)")
-    ax.set_xlim(0, 100)
-    ax.grid(True, axis="x", color=GRID)
+    bars = ax.barh(cov.index, cov.values, color=colors, height=0.62)
+    for b, v in zip(bars, cov.values):
+        ax.text(v + 2, b.get_y() + b.get_height() / 2, f"{v:.0f}%",
+                va="center", fontsize=8.5, color="#334155")
+    _style_ax(ax, "备注覆盖率（by 车间，低在上）", "覆盖率(%)")
+    ax.set_xlim(0, 104)
     return fig_to_b64(fig)
 
 
 # ---------- 12 图登记表（顺序即展示顺序） ----------
+# 第 4 项 link_key：卡片「到主表」芯片的钻取类型（None = 不挂芯片）
 CHARTS = [
     ("偏差规模与分布", [
-        ("chart_daily_trend", "每日偏差金额趋势", "哪一天偏差最集中、最乱"),
-        ("chart_pos_neg_stack", "正/负偏差金额构成", "多耗（正）与少耗（负）各自规模"),
-        ("chart_devrate_hist", "偏差率(%)分布", "整体数据质量，是否大量贴近 0"),
+        ("chart_daily_trend", "每日偏差金额趋势", "哪一天偏差最集中、最乱", None),
+        ("chart_pos_neg_stack", "正/负偏差金额构成", "多耗（正）与少耗（负）各自规模", None),
+        ("chart_devrate_hist", "偏差率(%)分布", "整体数据质量，是否大量贴近 0", None),
     ]),
     ("结构拆解", [
-        ("chart_workshop_bar", "各车间偏差金额对比", "哪个车间最该盯"),
-        ("chart_material_type_pie", "物料类型偏差占比", "钱压在原料还是包材"),
-        ("chart_product_top10", "成品线偏差 Top10", "哪些成品线带出的偏差最大"),
+        ("chart_workshop_bar", "各车间偏差金额对比", "哪个车间最该盯", "worst_workshop"),
+        ("chart_material_type_pie", "物料类型偏差占比", "钱压在原料还是包材", None),
+        ("chart_product_top10", "成品线偏差 Top10", "哪些成品线带出的偏差最大", "top_product"),
     ]),
     ("重点风险", [
-        ("chart_component_top10", "组件物料偏差 Top10", "哪些料最烧钱"),
-        ("chart_altnet_top10", "替代料净偏差 Top10", "A/B 料互换的净影响（无则跳过）"),
-        ("chart_no_remark_by_workshop", "无备注预警偏差", "高风险未解释偏差集中在哪（无则跳过）"),
+        ("chart_component_top10", "组件物料偏差 Top10", "哪些料最烧钱", "top_material"),
+        ("chart_altnet_top10", "替代料净偏差 Top10", "A/B 料互换的净影响（无则跳过）", "top_material"),
+        ("chart_no_remark_by_workshop", "无备注预警偏差", "高风险未解释偏差集中在哪（无则跳过）", "worst_workshop"),
     ]),
     ("趋势与归因", [
-        ("chart_material_3phase", "物料偏差率 早/中/近期", "Top5 物料是否在持续变差"),
-        ("chart_workshop_posneg_stack", "各车间正/负偏差构成", "各车间正负偏差双高吗"),
-        ("chart_remark_coverage", "备注覆盖率 by 车间", "管理盲区在哪"),
+        ("chart_material_3phase", "物料偏差率 早/中/近期", "Top5 物料是否在持续变差", None),
+        ("chart_workshop_posneg_stack", "各车间正/负偏差构成", "各车间正负偏差双高吗", None),
+        ("chart_remark_coverage", "备注覆盖率 by 车间", "管理盲区在哪", "lowest_coverage_workshop"),
     ]),
 ]
 
-CHART_FUNCS = {name: globals()[name] for grp in CHARTS for (name, _, _) in grp[1]}
+CHART_FUNCS = {item[0]: globals()[item[0]] for grp in CHARTS for item in grp[1]}
+
+# 芯片文案（link_key -> 按钮文字）
+LINK_LABELS = {
+    "worst_workshop": "盯最严重车间 →",
+    "top_material": "盯最大物料 →",
+    "top_product": "盯最大成品线 →",
+    "lowest_coverage_workshop": "盯盲区车间 →",
+}
+
+
+def _link_values(df):
+    """预计算各钻取类型的目标值（缺失列/空数据时安全跳过）。"""
+    out = {}
+    try:
+        g = df.groupby("车间")["偏差金额"].sum()
+        if len(g):
+            out["worst_workshop"] = str(g.reindex(g.abs().sort_values(ascending=False).index).index[0])
+    except Exception:
+        pass
+    try:
+        mcol = "物料名称" if "物料名称" in df.columns else ("组件物料描述" if "组件物料描述" in df.columns else None)
+        if mcol:
+            g2 = df.groupby(mcol)["偏差金额"].apply(lambda s: s.abs().sum()).sort_values(ascending=False)
+            if len(g2):
+                out["top_material"] = str(g2.index[0])
+    except Exception:
+        pass
+    try:
+        if "产品物料描述" in df.columns:
+            gp = df.groupby("产品物料描述")["偏差金额"].apply(lambda s: s.abs().sum())
+            if len(gp):
+                out["top_product"] = str(gp.abs().idxmax())
+    except Exception:
+        pass
+    try:
+        cov = df.assign(_has=df["备注"].astype(str).str.strip() != "").groupby("车间")["_has"].mean()
+        if len(cov):
+            out["lowest_coverage_workshop"] = str(cov.idxmin())
+    except Exception:
+        pass
+    return out
 
 
 # =====================================================================
@@ -475,10 +599,14 @@ def short_name(fac):
 
 
 def _cards_html(metrics):
+    # 净偏差颜色：净额为正（多耗）红、为负（少耗）绿、近零灰
+    net_color = C_POS if metrics["net"] > 1 else (C_NEG if metrics["net"] < -1 else "#64748b")
     cards = [
         ("偏差明细条数", f"{metrics['n']:,}", C_ACCENT),
         ("正偏差金额", f"{metrics['pos']:,.0f}", C_POS),
         ("负偏差金额", f"{metrics['neg']:,.0f}", C_NEG),
+        ("净偏差金额", f"{metrics['net']:+,.0f}", net_color),
+        ("平均偏差率", f"{metrics['avg_rate']:.2f}%", "#8250df"),
         ("备注覆盖率", f"{metrics['coverage']:.1f}%", "#bf8700"),
     ]
     return "".join(
@@ -493,25 +621,39 @@ def _cards_html(metrics):
 
 
 
-def _charts_html(dev_df):
+def _charts_html(dev_df, factory=""):
     """12 图按 CHARTS 登记顺序渲染，全部用 matplotlib PNG（无外部依赖）。
-    单图失败显示占位。"""
+    单图失败显示占位；带 link_key 的卡片挂「到主表」芯片（自定义 scheme，
+    GUI 侧 QWebEngineUrlRequestInterceptor 拦截 → 主表联动钻取）。"""
+    vals = _link_values(dev_df)
     sections = []
     for grp_name, items in CHARTS:
         figs = []
-        for fn_name, title, desc in items:
+        for item in items:
+            fn_name, title, desc, link_key = item
             b64 = _safe(CHART_FUNCS[fn_name], dev_df, title)
+            chip = ""
+            if link_key and vals.get(link_key):
+                v = quote(str(vals[link_key]))
+                fac = quote(str(factory))
+                chip = (f'<a class="chip" href="zpp011:link?type={link_key}&v={v}&fac={fac}" '
+                        f'title="点击后主表将钻取到该车间/物料（联动横幅可一键清除）">'
+                        f'{LINK_LABELS.get(link_key, "到主表 →")}</a>')
+            cap = f'<div class="cap"><div><b>{title}</b><span>{desc}</span>{chip}</div></div>'
             if not b64:
-                figs.append(f'<div class="cell"><div class="cap"><b>{title}</b><span>{desc}</span></div><div class="placeholder">「{title}」本期无数据</div></div>')
+                figs.append(f'<div class="cell">{cap}<div class="placeholder">「{title}」本期无数据</div></div>')
                 continue
             imgs = (
                 f'<img src="data:image/png;base64,{b64}" alt="{title}" '
                 f'onclick="zoomChart(this.src,\'{title}\')" '
                 f'style="cursor:zoom-in"/>'
             )
-            figs.append(f'<div class="cell"><div class="cap"><b>{title}</b><span>{desc}</span></div>{imgs}</div>')
+            figs.append(f'<div class="cell">{cap}{imgs}</div>')
+        # 分组折叠（C）：重点风险默认展开，其余折叠；原生 details，降级模式也能用
+        open_attr = " open" if grp_name == "重点风险" else ""
         sections.append(
-            f'<div class="group"><h3 class="grp">{grp_name}</h3><div class="grid">{"".join(figs)}</div></div>'
+            f'<details class="group"{open_attr}><summary class="grp">{grp_name}</summary>'
+            f'<div class="grid">{"".join(figs)}</div></details>'
         )
     return sections
 
@@ -519,21 +661,58 @@ def _charts_html(dev_df):
 
 
 
-def _summary_html(m, meta):
+def _focus_lines(df, m):
+    """「重点盯什么」自动文案：最坏车间 / 最大物料 / 最乱一天 / 覆盖盲区。"""
+    lines = []
+    try:
+        g = df.groupby("车间")["偏差金额"].sum()
+        w = g.reindex(g.abs().sort_values(ascending=False).index)
+        name, val = str(w.index[0]), float(w.iloc[0])
+        kind = "多耗" if val > 0 else "少耗"
+        lines.append(f"<b>最该盯的车间</b>：{name}（偏差 {abs(val):,.0f} 元，{kind}）")
+    except Exception:
+        pass
+    try:
+        mcol = "物料名称" if "物料名称" in df.columns else ("组件物料描述" if "组件物料描述" in df.columns else None)
+        if mcol:
+            g2 = df.groupby(mcol)["偏差金额"].apply(lambda s: s.abs().sum()).sort_values(ascending=False)
+            if len(g2):
+                lines.append(f"<b>最烧钱的物料</b>：{g2.index[0]}（|偏差| {g2.iloc[0]:,.0f} 元，可点卡片「盯最大物料」进主表）")
+    except Exception:
+        pass
+    try:
+        d2 = df.copy()
+        d2["_dt"] = pd.to_datetime(d2["订单日期"])
+        gd = d2.groupby(d2["_dt"].dt.date)["偏差金额"].sum()
+        gd = gd.reindex(gd.abs().sort_values(ascending=False).index)
+        if len(gd):
+            lines.append(f"<b>偏差最集中的一天</b>：{gd.index[0]}（当日偏差 {abs(gd.iloc[0]):,.0f} 元）")
+    except Exception:
+        pass
+    if m.get("coverage", 100) < 70:
+        lines.append(f"备注覆盖率 <b>{m['coverage']:.0f}%</b> 偏低，未解释偏差存在管理盲区，建议先补备注再谈归因")
+    if not lines:
+        lines.append("本期无明显集中风险，保持日常监控即可")
+    return lines
+
+
+def _summary_html(m, meta, df):
+    """小结 + 重点盯什么（结论先行，置顶展示）。"""
+    focus = "".join(f"<li>{s}</li>" for s in _focus_lines(df, m))
     return (
-        f'<div class="summary-card">'
+        f'<div class="summary-card top">'
         f'<div class="summary-header">'
         f'<span class="summary-icon">&#128202;</span>'
-        f'<b>分析小结</b>'
+        f'<b>分析小结 · 重点盯什么</b>'
         f'</div>'
         f'<div class="summary-body">'
-        f'<span>分析窗口 <b>{meta["start"]} ~ {meta["end"]}</b></span>'
-        f'<span>偏差明细 <b>{m["n"]:,}</b> 条</span>'
-        f'<span>正偏差 <b style="color:{C_POS}">{m["pos"]:,.0f}</b></span>'
-        f'<span>负偏差 <b style="color:{C_NEG}">{m["neg"]:,.0f}</b></span>'
+        f'<span>窗口 <b>{meta["start"]} ~ {meta["end"]}</b></span>'
+        f'<span>明细 <b>{m["n"]:,}</b> 条</span>'
+        f'<span>净偏差 <b style="color:{C_POS if m["net"] > 1 else (C_NEG if m["net"] < -1 else "#64748b")}">{m["net"]:+,.0f}</b></span>'
         f'<span>平均偏差率 <b>{m["avg_rate"]:.2f}%</b></span>'
         f'<span>备注覆盖率 <b>{m["coverage"]:.1f}%</b></span>'
         f'</div>'
+        f'<ul class="focus-list">{focus}</ul>'
         f'<div class="summary-src">数据来源：{meta["src"]}</div>'
         f'</div>'
     )
@@ -553,14 +732,14 @@ def build_html(blocks, meta):
     fac_html = ""
     for fac, (m, df) in blocks.items():
         card_html = _cards_html(m)
-        sections = _charts_html(df)
-        summary = _summary_html(m, meta)
+        sections = _charts_html(df, fac)
+        summary = _summary_html(m, meta, df)
         fac_html += (
             f'<div class="factory-block" data-factory="{fac}">'
             f'<h2 class="fac-title">{fac}</h2>'
             f'<div class="cards">{card_html}</div>'
-            f'{ "".join(sections) }'
             f'{summary}'
+            f'{ "".join(sections) }'
             f'</div>'
         )
 

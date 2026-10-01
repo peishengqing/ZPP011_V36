@@ -5,6 +5,23 @@ import pytest
 import pandas as pd
 import numpy as np
 
+
+# ---- Qt 无头测试基础设施（全 tests/ 共用，零新依赖）----
+# 不设这个变量时，无头机器上构造 QApplication 会真的开窗口；统一在此下沉，
+# 避免各测试文件自己写一遍（历史上只有个别文件设了）。
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    """会话级 QApplication：需要 Qt 控件的测试直接声明 qapp 即可。"""
+    try:
+        from PySide6.QtWidgets import QApplication
+    except ImportError:  # pragma: no cover - 未安装 PySide6 时跳过
+        pytest.skip("PySide6 不可用")
+    app = QApplication.instance() or QApplication([])
+    yield app
+
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

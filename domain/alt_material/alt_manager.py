@@ -105,33 +105,55 @@ def load_alt_pairs(log_cb=None, material_df=None):
     except Exception as e:
         if log_cb:
             log_cb(f"加载替代料配置失败：{e}", "error")
+        # 损坏文件先改名留存，避免下一次保存直接把它覆盖掉
+        try:
+            from datetime import datetime as _dt
+            bad = f"{config_path}.bad_{_dt.now().strftime('%Y%m%d_%H%M%S')}"
+            os.replace(config_path, bad)
+            if log_cb:
+                log_cb(f"损坏的替代料配置已备份为：{bad}", "warning")
+        except Exception as _be:
+            if log_cb:
+                log_cb(f"备份损坏配置失败：{_be}", "warning")
         return list(DEFAULT_ALT_PAIRS)
 
 def save_alt_pairs(pairs, log_cb=None):
     """
     保存替代料配对，确保为标准三元组格式
     保存格式：[[[工厂, 编码, 名称], [工厂, 编码, 名称]], ...]
+
+    返回 True/False：历史上保存失败只调 log_cb 就返回，调用方以为已保存，
+    重启后配置回退默认（静默丢失），故此处显式返回结果供 UI 提示。
     """
     config_path = _get_config_path()
-    os.makedirs(os.path.dirname(config_path), exist_ok=True)
-    
+
     # 标准化所有配对
     normalized = []
     for a, b in pairs:
         na = _normalize_item(a)
         nb = _normalize_item(b)
         normalized.append([list(na), list(nb)])
-    
+
+    tmp_path = config_path + ".tmp"
     try:
-        with open(config_path, 'w', encoding='utf-8') as f:
+        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        with open(tmp_path, 'w', encoding='utf-8') as f:
             json.dump(normalized, f, ensure_ascii=False, indent=2)
-        
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, config_path)
         if log_cb:
             log_cb(f"替代料配置已保存：{config_path}，共{len(normalized)}对")
-    
+        return True
     except Exception as e:
         if log_cb:
             log_cb(f"保存替代料配置失败：{e}", "error")
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass
+        return False
 
 def get_display_text(material_tuple):
     """

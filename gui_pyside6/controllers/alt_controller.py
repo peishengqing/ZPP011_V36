@@ -35,6 +35,15 @@ class AltController(QObject):
         return self.alt_pairs
 
     # ------------------- 增删改查 -------------------
+    def _persist(self):
+        """保存配对到磁盘；失败时明确告警，避免用户以为已保存（历史上失败只记日志）。"""
+        ok = save_alt_pairs(self.alt_pairs)
+        if not ok:
+            QMessageBox.warning(
+                None, "保存失败",
+                "替代料配置保存失败，本次修改在重启后会丢失。\n请检查配置目录是否可写。")
+        return ok
+
     def add_pair(self, a, b, parent_widget=None):
         """添加一对替代料，返回是否成功"""
         for existing in self.alt_pairs:
@@ -44,7 +53,7 @@ class AltController(QObject):
                     QMessageBox.warning(parent_widget, "提示", "该替代料配对已存在，请勿重复添加")
                 return False
         self.alt_pairs.append((a, b))
-        save_alt_pairs(self.alt_pairs)
+        self._persist()
         self.data_changed.emit()
         return True
 
@@ -52,7 +61,7 @@ class AltController(QObject):
         """根据索引删除配对"""
         if 0 <= index < len(self.alt_pairs):
             del self.alt_pairs[index]
-            save_alt_pairs(self.alt_pairs)
+            self._persist()
             self.data_changed.emit()
             return True
         return False
@@ -60,7 +69,7 @@ class AltController(QObject):
     def reset_pairs(self):
         """重置为默认配对"""
         self.alt_pairs = list(DEFAULT_ALT_PAIRS)
-        save_alt_pairs(self.alt_pairs)
+        self._persist()
         self.data_changed.emit()
 
     def sort_pairs(self):
@@ -74,13 +83,13 @@ class AltController(QObject):
             else:
                 return str(a)
         self.alt_pairs.sort(key=get_code)
-        save_alt_pairs(self.alt_pairs)
+        self._persist()
         self.data_changed.emit()
 
     def set_pairs_from_list(self, new_pairs):
         """直接设置配对列表（用于拖拽排序/导入）"""
         self.alt_pairs = list(new_pairs)
-        save_alt_pairs(self.alt_pairs)
+        self._persist()
         self.data_changed.emit()
 
     # ------------------- 导入导出 -------------------
@@ -522,7 +531,7 @@ class AltController(QObject):
         """从放大窗口删除配对"""
         if 0 <= pair_idx < len(self.alt_pairs):
             del self.alt_pairs[pair_idx]
-            save_alt_pairs(self.alt_pairs)
+            self._persist()
             refresh_callback()
             self.data_changed.emit()
             QMessageBox.information(parent_widget, "删除成功", "已删除该替代料配对")
@@ -536,7 +545,7 @@ class AltController(QObject):
                 return
             new_a, new_b = result
             self.alt_pairs[pair_idx] = (new_a, new_b)
-            save_alt_pairs(self.alt_pairs)
+            self._persist()
             refresh_callback()
             self.data_changed.emit()
             QMessageBox.information(parent_widget, "修改成功", "已更新该替代料配对")

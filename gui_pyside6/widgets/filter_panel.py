@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout,
     QComboBox, QPushButton, QLabel, QDateEdit, QLineEdit, QScrollArea,
     QDoubleSpinBox, QDialog, QCalendarWidget,
-    QSizePolicy, QMenu, QCheckBox, QListWidget, QListWidgetItem
+    QSizePolicy, QMenu, QCheckBox, QListWidget, QListWidgetItem, QInputDialog,
 )
 from PySide6.QtCore import Signal, Qt, QDate, QEvent
 from PySide6.QtGui import QColor, QPixmap, QIcon
@@ -29,6 +29,11 @@ def _color_icon(rgb):
 
 class FilterPanel(QWidget):
     filter_changed = Signal(dict)  # 筛选条件变化信号
+    # 筛选预设（由 main_window 处理存取；面板只发信号）
+    save_preset_requested = Signal()
+    apply_preset_requested = Signal(str)
+    apply_last_requested = Signal()
+    delete_preset_requested = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -36,7 +41,7 @@ class FilterPanel(QWidget):
         self._data_min_date = None
         self._data_max_date = None
         self.setMaximumWidth(440)
-        self.setMinimumWidth(440)
+        self.setMinimumWidth(220)
         self.setObjectName("filterPanel")
 
         main_layout = QVBoxLayout(self)
@@ -52,6 +57,17 @@ class FilterPanel(QWidget):
         title_label.setObjectName("filterTitleLabel")
         title_bar.addWidget(self.collapse_btn)
         title_bar.addWidget(title_label)
+        # 筛选预设（保存/应用/删除；逻辑在 main_window，面板仅发信号）
+        self._preset_names = []
+        self._preset_has_last = False
+        self.preset_btn = QPushButton("预设")
+        self.preset_btn.setObjectName("filterPresetBtn")
+        self.preset_btn.setFixedHeight(22)
+        self.preset_btn.setToolTip("保存/应用筛选条件预设")
+        self._preset_menu = QMenu(self.preset_btn)
+        self.preset_btn.setMenu(self._preset_menu)
+        self._rebuild_preset_menu()
+        title_bar.addWidget(self.preset_btn)
         title_bar.addStretch()
         main_layout.addLayout(title_bar)
 
@@ -486,16 +502,22 @@ class FilterPanel(QWidget):
         dlg.exec()
 
     def _toggle_collapse(self):
+        """收起/展开筛选面板。
+
+        注意：必须同时改 min 与 max——只改 max 会被 __init__ 里的 min 顶住，
+        面板永远收不起来（历史 bug）。
+        """
         self._expanded = not self._expanded
         if self._expanded:
+            self.setMinimumWidth(220)
             self.setMaximumWidth(440)
             self.content_widget.setVisible(True)
             self.collapse_btn.setText("◀")
         else:
+            self.setMinimumWidth(32)
             self.setMaximumWidth(32)
             self.content_widget.setVisible(False)
             self.collapse_btn.setText("▶")
-
     # ------------------------------------------------------------------ #
     # 公共属性（兼容旧代码）
     # ------------------------------------------------------------------ #
@@ -866,6 +888,8 @@ class FilterPanel(QWidget):
     # 内部槽
     # ------------------------------------------------------------------ #
     def _emit_filter(self):
+        if getattr(self, "_applying", False):
+            return  # apply_filters 恢复控件期间不逐次发射
         filters = self.get_filters()
         self.filter_changed.emit(filters)
 
@@ -952,6 +976,8 @@ class FilterPanel(QWidget):
         return date_filters
 
     def _emit_date_filter(self):
+        if getattr(self, "_applying", False):
+            return
         """日期筛选：用户点击"筛选"按钮时触发"""
         self._date_filters = self._compute_date_filters()
         self._emit_filter()
@@ -1043,3 +1069,149 @@ class FilterPanel(QWidget):
                 cb.blockSignals(False)
         self._semi_class_filter = set()
         self._emit_filter()
+
+    # ------------------------------------------------------------------ #
+    # 预设：应用（get_filters 的逆操作）与菜单
+    # ------------------------------------------------------------------ #
+    def _safe_combo_set(self, combo, val):
+        """仅当选项存在时设置 combo 文本（恢复预设时选项可能尚未刷新）。"""
+        try:
+            txt = str(val)
+            if combo.findText(txt) >= 0:
+                combo.setCurrentText(txt)
+        except Exception:
+            pass
+
+    def _rebuild_preset_menu(self):
+        m = self._preset_menu
+        m.clear()
+        act_save = m.addAction("保存当前筛选…")
+        act_save.triggered.connect(self.save_preset_requested.emit)
+        act_last = m.addAction("恢复上次使用")
+        act_last.setEnabled(self._preset_has_last)
+        act_last.triggered.connect(self.apply_last_requested.emit)
+        if self._preset_names:
+            m.addSeparator()
+        for name in self._preset_names:
+            act = m.addAction(name)
+            act.triggered.connect(lambda _=False, n=name: self.apply_preset_requested.emit(n))
+        if self._preset_names:
+            m.addSeparator()
+            act_del = m.addAction("删除预设…")
+            act_del.triggered.connect(self._prompt_delete_preset)
+
+    def _prompt_delete_preset(self):
+        if not self._preset_names:
+            return
+        name, ok = QInputDialog.getItem(
+            self, "删除筛选预设", "选择要删除的预设：", self._preset_names, 0, False)
+        if ok and name:
+            self.delete_preset_requested.emit(name)
+
+    def set_preset_names(self, names, has_last=False):
+        """由 main_window 在下发预设名单后刷新菜单。"""
+        self._preset_names = list(names or [])
+        self._preset_has_last = bool(has_last)
+        self._rebuild_preset_menu()
+
+    def apply_filters(self, state):
+        """从保存的状态（get_filters 的字典或其 JSON 变体）恢复全部筛选控件。"""
+        state = dict(state or {})
+        self._applying = True
+        try:
+            self.reset_filters()  # 归位后逐项恢复（_applying 抑制期间发射）
+            self._apply_state_filters(state)
+        finally:
+            self._applying = False
+        self._emit_filter()
+
+    def _apply_state_filters(self, state):
+        # 1) 普通列筛选：列名 → 控件
+        rev = {}
+        for disp, col in (self._col_map or {}).items():
+            if col:
+                rev[col] = disp
+        combo_by_label = {
+            "工厂": self.factory_combo, "车间": self.workshop_combo,
+            "物料类型": self.category_combo, "订单类型": self.order_type_combo,
+            "审核结果": self.audit_status_combo, "备注来源": self.remark_source_combo,
+        }
+        # 2) 特殊键逐个恢复
+        color_keys = set(self.color_checks.keys())
+        handled = set()
+        for key, val in state.items():
+            if not key.startswith("_"):
+                if key == "是否替代料":
+                    self._safe_combo_set(self.alt_combo, val)
+                else:
+                    label = rev.get(key)
+                    if label in combo_by_label:
+                        self._safe_combo_set(combo_by_label[label], val)
+                continue
+            if key in color_keys:
+                if val:
+                    self.color_checks[key].setChecked(True)
+                handled.add(key)
+                continue
+            if key == "_process_order":
+                self.process_order_edit.setText(str(val))
+            elif key == "_product_code":
+                self.product_code_edit.setText(str(val))
+            elif key == "_material_code":
+                self.material_code_edit.setText(str(val))
+            elif key == "_material_names":
+                self.material_name_edit.setCurrentText(str(val))
+            elif key == "_dev_rate_abs_ge_10":
+                if val:
+                    self._safe_combo_set(self.dev_rate_combo, "绝对值>=10%")
+            elif key == "_dev_rate_range":
+                self._safe_combo_set(self.dev_rate_combo, val)
+            elif key == "_dev_qty_sign":
+                self._safe_combo_set(self.dev_qty_combo, {
+                    "gt0": "大于0", "eq0": "等于0", "lt0": "小于0"}.get(str(val), "全部"))
+            elif key == "_substitute_only":
+                if val and self.substitute_combo.count() > 1:
+                    self.substitute_combo.setCurrentIndex(1)
+            elif key == "_quarantined_is":
+                self._safe_combo_set(self.quar_combo, val)
+            elif key == "_remark_empty":
+                self.remark_empty_combo.setCurrentText("是" if val else "全部")
+            elif key == "_read_status":
+                self._safe_combo_set(self.read_status_combo, val)
+            elif key == "_read_source":
+                self.read_source_combo.setCurrentText("自动" if val == "auto" else "手动")
+            elif key == "_zero_qty":
+                self._safe_combo_set(self.zero_qty_combo, val)
+            elif key == "_remark_search":
+                self.remark_search_edit.setText(str(val))
+            elif key == "_remark_not":
+                self.remark_not_edit.setText(str(val))
+            elif key == "_semi_class_set":
+                vals = set(val) if isinstance(val, (set, list, tuple)) else set()
+                for ck, cb in self._semi_class_checkboxes.items():
+                    cb.blockSignals(True)
+                    cb.setChecked(ck in vals)
+                    cb.blockSignals(False)
+                self._semi_class_filter = set(vals)
+            elif key == "_units":
+                # 兼容面板态 (col, set) 与 JSON 态 {"col":…, "values": […]}
+                if isinstance(val, dict):
+                    uvals = set(val.get("values", []))
+                elif isinstance(val, (tuple, list)) and len(val) == 2:
+                    uvals = set(val[1])
+                else:
+                    uvals = set()
+                for i in range(self.unit_list.count()):
+                    item = self.unit_list.item(i)
+                    item.setCheckState(Qt.Checked if item.text() in uvals else Qt.Unchecked)
+            elif key in ("_date_start", "_date_end"):
+                d = QDate.fromString(str(val), "yyyy-MM-dd")
+                if d.isValid():
+                    target = self.start_date_edit if key == "_date_start" else self.end_date_edit
+                    target.setDate(d)
+            else:
+                continue  # 未知键：前向兼容，忽略
+        # 日期筛选：恢复控件值后需同步 _date_filters（否则要等用户点「筛选」才生效）
+        self._date_filters = {
+            k: v for k, v in state.items() if k in ("_date_start", "_date_end")
+        }

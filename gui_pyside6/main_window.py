@@ -21,11 +21,11 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QFileDialog,
     QHeaderView, QDialog, QDialogButtonBox, QSplitter,
     QComboBox, QAbstractItemView, QMessageBox, QTableWidgetItem, QTableWidget,
-    QMenu, QGroupBox, QProgressDialog,
-    QScrollArea, QCheckBox,
+    QMenu, QGroupBox, QProgressDialog, QInputDialog,
+    QScrollArea, QCheckBox, QToolButton,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer, QItemSelection, QItemSelectionModel, QRect
-from PySide6.QtGui import QFont, QFontMetrics, QShortcut, QKeySequence, QAction, QPainter, QColor, QPen, QPolygon
+from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer, QItemSelection, QItemSelectionModel
+from PySide6.QtGui import QFont, QFontMetrics, QShortcut, QKeySequence, QAction
 
 # 导入组件
 from gui_pyside6.components.menu_bar import MenuBarComponent
@@ -40,6 +40,7 @@ from gui_pyside6.widgets.toast import toast
 from gui_pyside6.widgets.filter_panel import FilterPanel
 from gui_pyside6.widgets.stats_cards import StatsCardsWidget
 from gui_pyside6.widgets.unread_summary_popup import UnreadSummaryPopup
+from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.dialogs.unit_summary_dialog import UnitSummaryDialog
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
@@ -194,10 +195,11 @@ class _FileReadWorker(QThread):
 
     def run(self):
         try:
-            xl = pd.ExcelFile(self.file_path)
+            from utils.excel_io import open_excel_book  # calamine 优先（快 5x），openpyxl 兜底
+            xl = open_excel_book(self.file_path)
             sheets = xl.sheet_names
             target = "Data" if "Data" in sheets else sheets[0]
-            df = pd.read_excel(self.file_path, sheet_name=target)
+            df = xl.parse(target)  # 复用已打开的工作簿，不重复解析整个文件
             self.loaded.emit(df, self.file_path)
         except Exception as e:
             self.failed.emit(str(e))
@@ -443,6 +445,18 @@ class MainWindow(QMainWindow):
         action_layout.setContentsMargins(8, 4, 8, 4)
         action_layout.setSpacing(6)
 
+        # ═══ 主操作（高频，平铺 + 强调色）═══
+        self.action_btn_analyze = QPushButton("📊 分析")
+        self.action_btn_analyze.setCursor(Qt.PointingHandCursor)
+        self.action_btn_analyze.setObjectName("actionBtnAnalyze")
+        self.action_btn_analyze.clicked.connect(self._start_analysis)
+
+        self.action_btn_ai = QPushButton("🤖 AI审核")
+        self.action_btn_ai.setCursor(Qt.PointingHandCursor)
+        self.action_btn_ai.setObjectName("actionBtnAi")
+        self.action_btn_ai.clicked.connect(lambda: self.audit_controller.run_ai_audit(self.view_model.df))
+
+        # ═══ 视图开关（用户常用，按需求保留在工具栏）═══
         self.action_btn_left_panel = QPushButton("☰ 隐藏左侧栏")
         self.action_btn_left_panel.setCheckable(True)
         self.action_btn_left_panel.setChecked(True)
@@ -467,121 +481,71 @@ class MainWindow(QMainWindow):
         self.action_btn_col_filter.setToolTip("开启后点列头弹取值勾选浮层（Excel式筛选）；Ctrl+点列头仍可排序")
         self.action_btn_col_filter.clicked.connect(self._toggle_col_filter_mode)
 
-        self.action_btn_analyze = QPushButton("📊 分析")
-        self.action_btn_analyze.setCursor(Qt.PointingHandCursor)
-        self.action_btn_analyze.setObjectName("actionBtnAnalyze")
-        self.action_btn_analyze.clicked.connect(self._start_analysis)
+        # ═══ 收纳菜单：看板 / 导出 / 维护 ═══
+        # 原 9 个平级按钮收进 3 个下拉，工具栏宽度 1795px → 约 1100px（1366 屏可用）。
+        # 属性名沿用 action_btn_*：隔离区失效数文案（setText）与规则中心 tooltip（setToolTip）
+        # 的既有更新逻辑对 QAction 同样成立，无需改动。
+        self.action_btn_dashboard = QAction("📊 管理看板", self)
+        self.action_btn_dashboard.triggered.connect(self._show_dashboard)
+        self.action_btn_quarantine = QAction("⚠️ 隔离区", self)
+        self.action_btn_quarantine.setToolTip("隔离区：查看/管理疑难记录")
+        self.action_btn_quarantine.triggered.connect(self._open_quarantine_dialog)
+        self.action_btn_audit_changes = QAction("📝 变动提醒", self)
+        self.action_btn_audit_changes.triggered.connect(self._show_audit_changes_dialog)
+        self.action_btn_alt_board = QAction("🔔 替代料看板", self)
+        self.action_btn_alt_board.triggered.connect(self._show_alert_dashboard)
+        self.action_btn_deviation = QAction("📊 偏差率预警", self)
+        self.action_btn_deviation.triggered.connect(self._show_deviation_warning_dialog)
+        self.action_btn_neg_loss = QAction("🟠 负损看板", self)
+        self.action_btn_neg_loss.triggered.connect(self._show_neg_loss_dashboard)
 
-        self.action_btn_ai = QPushButton("🤖 AI审核")
-        self.action_btn_ai.setCursor(Qt.PointingHandCursor)
-        self.action_btn_ai.setObjectName("actionBtnAi")
-        self.action_btn_ai.clicked.connect(lambda: self.audit_controller.run_ai_audit(self.view_model.df))
-
-        spacer2 = QWidget()
-        spacer2.setFixedWidth(4)
-
-        self.action_btn_excel = QPushButton("📤 Excel")
-        self.action_btn_excel.setCursor(Qt.PointingHandCursor)
-        self.action_btn_excel.setObjectName("actionBtnExcel")
-        self.action_btn_excel.setProperty("class", "actionBtn")
-        self.action_btn_excel.clicked.connect(
+        self.action_btn_excel = QAction("📤 Excel 表格 (F6)", self)
+        self.action_btn_excel.triggered.connect(
             lambda: self.export_controller.export_current_table(self._get_displayed_dataframe(), self)
         )
+        self.action_btn_export_full = QAction("📋 完整报告", self)
+        self.action_btn_export_full.triggered.connect(self._on_export_full_excel)
+        self.action_btn_ppt = QAction("📈 PPT (F7)", self)
+        self.action_btn_ppt.triggered.connect(self._generate_ppt_report)
 
-        self.action_btn_export_full = QPushButton("📋 完整报告")
-        self.action_btn_export_full.setCursor(Qt.PointingHandCursor)
-        self.action_btn_export_full.setObjectName("actionBtnExportFull")
-        self.action_btn_export_full.setProperty("class", "actionBtn")
-        self.action_btn_export_full.clicked.connect(self._on_export_full_excel)
-
-        self.action_btn_ppt = QPushButton("📈 PPT")
-        self.action_btn_ppt.setCursor(Qt.PointingHandCursor)
-        self.action_btn_ppt.setObjectName("actionBtnPpt")
-        self.action_btn_ppt.setProperty("class", "actionBtn")
-        self.action_btn_ppt.clicked.connect(self._generate_ppt_report)
-
-        shortcut_hint = QLabel("F5:分析 | F6:导出 | F7:效益 | F11:全屏")
-        shortcut_hint.setObjectName("shortcutHint")
-
-        action_layout.addWidget(self.action_btn_left_panel)
-        action_layout.addWidget(self.action_btn_filter)
-        action_layout.addWidget(self.action_btn_col_filter)
-        action_layout.addWidget(self.action_btn_analyze)
-        action_layout.addWidget(self.action_btn_ai)
-        action_layout.addWidget(spacer2)
-        action_layout.addWidget(self.action_btn_excel)
-        action_layout.addWidget(self.action_btn_export_full)
-        action_layout.addWidget(self.action_btn_ppt)
-
-        self.action_btn_dashboard = QPushButton("📊 管理看板")
-        self.action_btn_dashboard.setCursor(Qt.PointingHandCursor)
-        self.action_btn_dashboard.setObjectName("actionBtnDashboard")
-        self.action_btn_dashboard.setProperty("class", "actionBtn")
-        self.action_btn_dashboard.clicked.connect(self._show_dashboard)
-        action_layout.addWidget(self.action_btn_dashboard)
-
-        self.action_btn_quarantine = QPushButton("⚠️ 隔离区")
-        self.action_btn_quarantine.setCursor(Qt.PointingHandCursor)
-        self.action_btn_quarantine.setObjectName("actionBtnQuarantine")
-        self.action_btn_quarantine.setProperty("class", "actionBtn")
-        self.action_btn_quarantine.clicked.connect(self._open_quarantine_dialog)
-        action_layout.addWidget(self.action_btn_quarantine)
-
-        self.action_btn_audit_changes = QPushButton("📝 变动提醒")
-        self.action_btn_audit_changes.setCursor(Qt.PointingHandCursor)
-        self.action_btn_audit_changes.setObjectName("actionBtnAuditChanges")
-        self.action_btn_audit_changes.setProperty("class", "actionBtn")
-        self.action_btn_audit_changes.clicked.connect(self._show_audit_changes_dialog)
-        action_layout.addWidget(self.action_btn_audit_changes)
-
-        self.action_btn_alt_board = QPushButton("🔔 替代料看板")
-        self.action_btn_alt_board.setCursor(Qt.PointingHandCursor)
-        self.action_btn_alt_board.setObjectName("actionBtnAltBoard")
-        self.action_btn_alt_board.setProperty("class", "actionBtn")
-        self.action_btn_alt_board.clicked.connect(self._show_alert_dashboard)
-        action_layout.addWidget(self.action_btn_alt_board)
-
-        self.action_btn_deviation = QPushButton("📊 偏差率预警")
-        self.action_btn_deviation.setCursor(Qt.PointingHandCursor)
-        self.action_btn_deviation.setObjectName("actionBtnDeviation")
-        self.action_btn_deviation.setProperty("class", "actionBtn")
-        self.action_btn_deviation.clicked.connect(self._show_deviation_warning_dialog)
-        action_layout.addWidget(self.action_btn_deviation)
-
-        self.action_btn_neg_loss = QPushButton("🟠 负损看板")
-        self.action_btn_neg_loss.setCursor(Qt.PointingHandCursor)
-        self.action_btn_neg_loss.setObjectName("actionBtnNegLoss")
-        self.action_btn_neg_loss.setProperty("class", "actionBtn")
-        self.action_btn_neg_loss.clicked.connect(self._show_neg_loss_dashboard)
-        action_layout.addWidget(self.action_btn_neg_loss)
-
-        self.action_btn_auto_q = QPushButton("🧹 自动整理隔离区")
-        self.action_btn_auto_q.setCursor(Qt.PointingHandCursor)
-        self.action_btn_auto_q.setObjectName("actionBtnAutoQ")
-        self.action_btn_auto_q.setProperty("class", "actionBtn")
-        self.action_btn_auto_q.setToolTip(
-            "按规则自动移入隔离区：" + build_all_summary(load_auto_quarantine_config()))
-        self.action_btn_auto_q.clicked.connect(lambda: self._auto_move_to_quarantine(manual=True))
-        action_layout.addWidget(self.action_btn_auto_q)
-
-        self.action_btn_auto_q_rule = QPushButton("⚙ 规则")
-        self.action_btn_auto_q_rule.setCursor(Qt.PointingHandCursor)
-        self.action_btn_auto_q_rule.setObjectName("actionBtnAutoQRule")
-        self.action_btn_auto_q_rule.setProperty("class", "actionBtn")
+        self.action_btn_auto_q = QAction("🧹 自动整理隔离区", self)
+        self.action_btn_auto_q.setToolTip("按规则自动移入隔离区：" + build_all_summary(load_auto_quarantine_config()))
+        self.action_btn_auto_q.triggered.connect(lambda: self._auto_move_to_quarantine(manual=True))
+        self.action_btn_auto_q_rule = QAction("⚙ 规则中心", self)
         self.action_btn_auto_q_rule.setToolTip("规则中心（自动隔离 / 自动已读）")
-        self.action_btn_auto_q_rule.clicked.connect(self._open_rule_center)
-        action_layout.addWidget(self.action_btn_auto_q_rule)
+        self.action_btn_auto_q_rule.triggered.connect(self._open_rule_center)
 
-        action_layout.addStretch()
+        def _make_menu_btn(text, tip, actions):
+            menu = QMenu(self)
+            for act in actions:
+                menu.addAction(act)
+            btn = QToolButton()
+            btn.setObjectName("actionMenuBtn")
+            btn.setText(text)
+            btn.setToolTip(tip)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setPopupMode(QToolButton.InstantPopup)
+            btn.setMenu(menu)
+            return btn
 
-        # 面板显隐切换按钮（当面板被“隐藏”后，可在此恢复显示）
+        self.action_btn_boards = _make_menu_btn(
+            "📊 看板 ▾", "分析看板：管理看板 / 偏差率预警 / 负损看板 / 替代料看板 / 隔离区 / 变动提醒",
+            [self.action_btn_dashboard, self.action_btn_quarantine, self.action_btn_audit_changes,
+             self.action_btn_alt_board, self.action_btn_deviation, self.action_btn_neg_loss])
+        self.action_btn_export = _make_menu_btn(
+            "📤 导出 ▾", "导出当前数据：Excel / 完整报告 / PPT",
+            [self.action_btn_excel, self.action_btn_export_full, self.action_btn_ppt])
+        self.action_btn_maint = _make_menu_btn(
+            "🔧 维护 ▾", "维护操作：自动整理隔离区 / 规则中心",
+            [self.action_btn_auto_q, self.action_btn_auto_q_rule])
+
+        # ═══ 面板开关 + 通知（低频，保留平铺，置于分组尾端）═══
         self.action_btn_toggle_stats = QPushButton("📊 概览")
         self.action_btn_toggle_stats.setCursor(Qt.PointingHandCursor)
         self.action_btn_toggle_stats.setObjectName("actionBtnToggleStats")
         self.action_btn_toggle_stats.setProperty("class", "actionBtn")
         self.action_btn_toggle_stats.setToolTip("显示/隐藏「本次分析概览」面板")
         self.action_btn_toggle_stats.clicked.connect(self._toggle_stats_from_toolbar)
-        action_layout.addWidget(self.action_btn_toggle_stats)
 
         self.action_btn_toggle_progress = QPushButton("⚡ 进度")
         self.action_btn_toggle_progress.setCursor(Qt.PointingHandCursor)
@@ -589,25 +553,46 @@ class MainWindow(QMainWindow):
         self.action_btn_toggle_progress.setProperty("class", "actionBtn")
         self.action_btn_toggle_progress.setToolTip("显示/隐藏「分析进度」面板")
         self.action_btn_toggle_progress.clicked.connect(self._toggle_progress_from_toolbar)
-        action_layout.addWidget(self.action_btn_toggle_progress)
 
         # v42.29: 工具栏「📋 未读概览」按钮——分析后已弹的弹窗可被数据/面板挡住，
-        # 用户随时可点击重开。复用 _show_unread_summary 的单例机制 + force 选项，
-        # 全已读时也会弹出并显示 0 条 + "全清零啦"。
+        # 用户随时可点击重开。复用 _show_unread_summary 的单例机制 + force 选项。
         self.action_btn_unread_summary = QPushButton("📋 未读概览")
         self.action_btn_unread_summary.setCursor(Qt.PointingHandCursor)
         self.action_btn_unread_summary.setObjectName("actionBtnUnreadSummary")
         self.action_btn_unread_summary.setProperty("class", "actionBtn")
         self.action_btn_unread_summary.setToolTip("打开「未读概览」弹窗（隔离区/变动提醒/替代料/偏差率预警）")
         self.action_btn_unread_summary.clicked.connect(lambda: self.show_unread_summary(force=True))
-        action_layout.addWidget(self.action_btn_unread_summary)
 
+        shortcut_hint = QLabel("F5:分析 | F6:导出 | F7:效益 | F11:全屏")
+        shortcut_hint.setObjectName("shortcutHint")
+
+        def _sep():
+            w = QWidget()
+            w.setObjectName("toolbarSep")
+            w.setFixedWidth(1)
+            w.setFixedHeight(20)
+            return w
+
+        # 分组顺序：主操作 │ 视图开关 │ 收纳菜单 │ 面板开关/通知 …… 快捷键提示
+        for _w in [self.action_btn_analyze, self.action_btn_ai]:
+            action_layout.addWidget(_w)
+        action_layout.addWidget(_sep())
+        for _w in [self.action_btn_left_panel, self.action_btn_filter, self.action_btn_col_filter]:
+            action_layout.addWidget(_w)
+        action_layout.addWidget(_sep())
+        for _w in [self.action_btn_boards, self.action_btn_export, self.action_btn_maint]:
+            action_layout.addWidget(_w)
+        action_layout.addWidget(_sep())
+        for _w in [self.action_btn_toggle_stats, self.action_btn_toggle_progress, self.action_btn_unread_summary]:
+            action_layout.addWidget(_w)
+        action_layout.addStretch()
         action_layout.addWidget(shortcut_hint)
 
         # 底部按钮行已删除，start_btn 别名指向顶部工具栏分析按钮（供分析起止启用/禁用）
         self.start_btn = self.action_btn_analyze
 
         main_layout.addWidget(action_bar)
+
 
         # 3. 主体区域（侧栏 + 数据表格+日志）
         self.body_splitter = QSplitter(Qt.Horizontal)
@@ -681,6 +666,14 @@ class MainWindow(QMainWindow):
 
         # 筛选面板信号
         self.filter_panel.filter_changed.connect(self._on_filter_panel_changed)
+        # 筛选预设（实现预留的 filter_history 配置）+ 看板联动横幅
+        self.filter_panel.save_preset_requested.connect(self._prompt_save_preset)
+        self.filter_panel.apply_preset_requested.connect(self._apply_filter_preset)
+        self.filter_panel.apply_last_requested.connect(lambda: self._apply_filter_preset("___last___"))
+        self.filter_panel.delete_preset_requested.connect(self._delete_filter_preset)
+        self.main_table.link_banner_cleared.connect(self._clear_link_drilldown)
+        self._link_snapshot = None  # 联动钻取前的筛选快照（清除时恢复）
+        self._refresh_filter_preset_menu()
 
     def _on_title_factory_selected(self, factory_name):
         self._on_factory_changed(factory_name)
@@ -1065,29 +1058,57 @@ class MainWindow(QMainWindow):
         dlg.exec()
         self._audit_changes_dialog_open = False
 
+
+    def _select_source_row(self, src_row):
+        """选中主表某一行（源行位置 → 代理行映射），供各定位方法复用。"""
+        src_idx = self.source_model.index(src_row, 0)
+        proxy = self.table_view.model()
+        proxy_idx = proxy.mapFromSource(src_idx) if hasattr(proxy, 'mapFromSource') else src_idx
+        self.table_view.selectRow(proxy_idx.row())
+        self.table_view.scrollTo(proxy_idx)
+        self.table_view.setFocus()
+        self.activateWindow()
+        self.raise_()
+        return True
+
     def _locate_row_by_index(self, row_index):
-        """按 DataFrame index 定位主表行（用于看板「原表行号」双击跳转）"""
+        """按 DataFrame index 标签定位主表行（兼容旧调用方）"""
         try:
             if self.source_model is None:
                 return False
             df = self.source_model.getDataFrame()
             if df is None or row_index not in df.index:
                 return False
-            src_row = df.index.get_loc(row_index)
-            src_idx = self.source_model.index(src_row, 0)
-            proxy = self.table_view.model()
-            proxy_idx = proxy.mapFromSource(src_idx) if hasattr(proxy, 'mapFromSource') else src_idx
-            self.table_view.selectRow(proxy_idx.row())
-            self.table_view.scrollTo(proxy_idx)
-            self.table_view.setFocus()
-            self.activateWindow()
-            self.raise_()
-            return True
+            return self._select_source_row(df.index.get_loc(row_index))
         except Exception as e:
             self.log(f"定位主表失败: {e}", "error")
             return False
 
-    def _locate_row_in_main_table(self, data_id):
+    def _locate_row_by_excel_no(self, excel_row):
+        """按「原表行号」列的取值定位主表行。
+
+        与 _locate_row_by_index 的区别：后者按 DataFrame 索引标签匹配，而主表索引是
+        RangeIndex，拿 Excel 行号去匹配会失配或错位（行号 5 → 第 6 行）；这里按列值
+        精确匹配，是看板双击定位最可靠的一条路径。
+        """
+        try:
+            if self.source_model is None:
+                return False
+            df = self.source_model.getDataFrame()
+            if df is None or df.empty or '原表行号' not in df.columns:
+                return False
+            key = str(excel_row).strip()
+            if not key:
+                return False
+            hits = df.index[df['原表行号'].astype(str).str.strip() == key].tolist()
+            if not hits:
+                return False
+            return self._select_source_row(df.index.get_loc(hits[0]))
+        except Exception as e:
+            self.log(f"定位主表失败: {e}", "error")
+            return False
+
+    def _locate_row_in_main_table(self, data_id, silent=False):
         """变动提醒弹窗双击某行时，定位并选中主表对应行（经 proxy_model 映射）"""
         try:
             if self.source_model is None:
@@ -1097,18 +1118,10 @@ class MainWindow(QMainWindow):
                 return False
             matches = df.index[df['data_id'].astype(str) == str(data_id)].tolist()
             if not matches:
-                toast("主表中未找到该记录", parent=self)
+                if not silent:
+                    toast("主表中未找到该记录", parent=self)
                 return False
-            src_row = matches[0]
-            src_idx = self.source_model.index(src_row, 0)
-            proxy = self.table_view.model()
-            proxy_idx = proxy.mapFromSource(src_idx) if hasattr(proxy, 'mapFromSource') else src_idx
-            self.table_view.selectRow(proxy_idx.row())
-            self.table_view.scrollTo(proxy_idx)
-            self.table_view.setFocus()
-            self.activateWindow()
-            self.raise_()
-            return True
+            return self._select_source_row(df.index.get_loc(matches[0]))
         except Exception as e:
             self.log(f"定位主表失败: {e}", "error")
             return False
@@ -1124,6 +1137,8 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "提示", "分析任务已在后台运行")
             return
         # 统一路径格式（正/反斜杠），避免与监控指纹对不上导致重复触发
+        # 发起分析前记录当前筛选为「上次使用」预设（面板在分析完成后会重置）
+        self._capture_last_used_filter()
         self.current_input_file = os.path.normpath(self.current_input_file)
 
         dev_threshold = getattr(self.filter_panel, 'dev_threshold_spin', None)
@@ -1186,6 +1201,14 @@ class MainWindow(QMainWindow):
         self._countdown_timer.start(1000)
 
     def _on_analysis_progress_ui(self, percent, step_name):
+        # 进度必须单调不减：低值通知（过滤/搜索类 percent=0）或任何乱序发射都
+        # 不允许把进度条与 12 格步骤图标打回去（源端已做区间映射，这里是兜底防线）。
+        current = self.progress_bar.value()
+        if percent < current:
+            # 通知类发射：只更新标签提示，进度条与图标停在当前位置
+            self._current_step = step_name
+            self.progress_label.setText(f"{step_name}  （进度 {current}%）")
+            return
         self.progress_bar.setValue(percent)
         self._current_step = step_name
         self.main_table.update_step_icons(percent, step_name)
@@ -1200,11 +1223,13 @@ class MainWindow(QMainWindow):
         _analysis_mode = "自动" if getattr(self, "_monitor_auto_loading", False) else "手动"
         self._monitor_auto_loading = False
         self._monitor_current_key = None
-        self._stop_countdown()
+        # 计时器不停：完整报告缓存（Sheet6~10 + Excel，可能数分钟）还在后台跑，
+        # 在这里停掉就是曾经的「后面的时间卡住」；改由 _finish_cache_phase 收口
         # 状态栏「分析时间」：标触发方式 + 完成时刻（Finish 时刻）
         self._update_analysis_time_label(_analysis_mode)
         self.progress_bar.setValue(100)
         self.main_table.complete_step_icons()
+        # 分析完成 6 秒后自动收起进度面板（表格空间还给数据）；工具栏「进度」按钮可随时展开
         self.progress_bar.setVisible(False)
         self.start_btn.setEnabled(True)
         elapsed = self._format_elapsed()
@@ -1267,10 +1292,12 @@ class MainWindow(QMainWindow):
             params = self.analysis_controller.get_analysis_params()
             if self._cache_worker is not None and self._cache_worker.isRunning():
                 # 已有缓存在生成，复用其路径即可，不叠加第二个 do_analysis_v2
-                pass
+                self._cache_worker.finished.connect(self._finish_cache_phase)
+                self.progress_label.setText("主分析完成 · 完整报告缓存生成中…")
             else:
                 from PySide6.QtCore import QThread
                 class _FullCacheWorker(QThread):
+                    progress = Signal(int, str)  # 缓存阶段进度 (percent, step_name)，跨线程排队到主线程
                     def __init__(self, input_file, alt_pairs, start_date, end_date, material_search, output_path, dyn_thresh=None):
                         super().__init__()
                         self.input_file = os.path.normpath(input_file)
@@ -1286,13 +1313,15 @@ class MainWindow(QMainWindow):
                         from analysis.analyzer import export_full_report_from_intermediates
                         from core.config_manager import ConfigManager
                         _cfg = ConfigManager()
+                        def _cb(step_idx, step_name, percent):
+                            self.progress.emit(int(percent), str(step_name))
                         try:
                             _li = _az.LATEST_INTERMEDIATES
                             if _li is not None:
                                 # 复用 worker 已算好的 Sheet1~5 中间结果，只生成 Sheet6~10 + 保存，避免重算
                                 export_full_report_from_intermediates(
                                     _li, output_path=self.output_path,
-                                    progress_callback=None, cancel_check=None)
+                                    progress_callback=_cb, cancel_check=None)
                             else:
                                 # 兜底：中间结果缺失时退回完整分析（理论上不会发生，worker 必先生效）
                                 _az.do_analysis_v2(
@@ -1303,6 +1332,7 @@ class MainWindow(QMainWindow):
                                     enable_net_offset=_cfg.get_net_offset_enabled(),
                                     return_dataframe=False,
                                     dyn_thresh=getattr(self, 'dyn_thresh', None),
+                                        progress_callback=_cb,
                                 )
                         except Exception:
                             import traceback as _tb
@@ -1321,8 +1351,11 @@ class MainWindow(QMainWindow):
                     self._heavy_busy = False
                     if self._cache_worker is _cw:
                         self._cache_worker = None
+                    self._finish_cache_phase()  # 计时器收口 + 6s 后自动收起进度面板
                 self._cache_worker.finished.connect(_on_cache_done)
+                self._cache_worker.progress.connect(self._on_cache_progress_ui)
                 self._cache_worker.start()
+                self.progress_label.setText("主分析完成 · 完整报告缓存生成中…")
 
             self._set_column_widths()
             QApplication.processEvents()
@@ -1341,6 +1374,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             import traceback as _tb
             _tb.print_exc()
+            self._stop_countdown()  # 兜底：加载失败也停表，避免计时器空转
             self._heavy_busy = False
             QMessageBox.critical(self, "错误", f"加载结果失败: {e}")
 
@@ -1366,6 +1400,35 @@ class MainWindow(QMainWindow):
     def _toggle_progress_from_toolbar(self):
         """工具栏「⚡ 进度」按钮：切换分析进度面板显隐"""
         self.main_table.set_progress_visible(self.main_table._progress_hidden)
+
+    def _auto_collapse_progress_after_analysis(self):
+        """分析完成 6s 后自动收起进度面板；若新一轮分析已开始（_heavy_busy）则放弃。"""
+        if getattr(self, '_heavy_busy', False):
+            return
+        self.main_table.set_progress_visible(False)
+
+    def _on_cache_progress_ui(self, percent, step_name):
+        """完整报告缓存阶段进度（worker 线程发射，跨线程排队到主线程）。
+
+        只更新标签：进度条已停在 100%（主分析完成值），图标已全部点亮，
+        计时器由 _countdown_timer 继续走（不再卡住）。
+        """
+        try:
+            self.progress_label.setText(f"📦 完整报告缓存：{step_name}（{percent}%）")
+        except RuntimeError:
+            pass  # 窗口已销毁（worker 可能比窗口活得久）
+
+    def _finish_cache_phase(self):
+        """完整报告缓存结束（新生成或复用已有缓存）：计时器收口，6s 后自动收起进度面板。"""
+        _w = getattr(self.analysis_controller, "worker", None)
+        if _w is not None and _w.isRunning():
+            return  # 新一轮分析进行中：它的计时器不能动
+        self._stop_countdown()
+        QTimer.singleShot(6000, self._auto_collapse_progress_after_analysis)
+        try:
+            self.statusBar().showMessage("完整报告缓存已生成（Sheet6~10 + Excel）", 4000)
+        except RuntimeError:
+            pass
 
     def _on_stats_visibility_changed(self, visible: bool):
         """概览面板显隐变化时同步工具栏按钮文字和顶部容器可见性"""
@@ -3114,11 +3177,26 @@ class MainWindow(QMainWindow):
                 if self.table_view.columnWidth(col) < 80:
                     self.table_view.setColumnWidth(col, 80)
 
+    def _get_user_config_dir(self):
+        """用户可写的配置目录（打包 onefile 后 __file__ 在临时目录，不能再用它落盘）。"""
+        base = os.environ.get("ZPP011_CONFIG_DIR")
+        if not base:
+            base = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "ZPP011")
+        return base
+
     def _get_config_path(self):
-        """获取列宽配置文件路径"""
-        config_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config')
-        os.makedirs(config_dir, exist_ok=True)
+        """列宽/列显隐配置的读写路径（用户目录，如 %APPDATA%\\ZPP011\\column_widths.json）。"""
+        config_dir = self._get_user_config_dir()
+        try:
+            os.makedirs(config_dir, exist_ok=True)
+        except Exception:
+            pass
         return os.path.join(config_dir, 'column_widths.json')
+
+    def _get_default_config_path(self):
+        """仓库内置的默认列宽（只读）：用户配置不存在时作为初始值，保持历史观感。"""
+        return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            'config', 'column_widths.json')
 
     def _save_column_widths(self):
         """保存当前列宽与隐藏状态到配置文件（隐藏按列名记录，可手动在对话框中恢复显示）"""
@@ -3139,13 +3217,18 @@ class MainWindow(QMainWindow):
             with open(self._get_config_path(), 'w', encoding='utf-8') as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            self.log(f"保存列宽失败: {e}", "warning")
+            # self.log 是空操作，必须显式提示，否则属静默失败
+            self.statusBar().showMessage(f"列宽保存失败：{e}", 5000)
+            toast(f"列宽保存失败：{e}", level="warning", parent=self)
 
     def _load_column_widths(self):
         """从配置文件加载列宽与隐藏状态。返回 (widths_dict, hidden_set)。"""
         try:
             import json
             path = self._get_config_path()
+            if not os.path.exists(path):
+                # 首次运行/旧版本升级：沿用仓库内既有列宽作为初始值
+                path = self._get_default_config_path()
             if os.path.exists(path):
                 with open(path, 'r', encoding='utf-8') as f:
                     raw = json.load(f)
@@ -3175,6 +3258,185 @@ class MainWindow(QMainWindow):
             self.log("[筛选] 条件已清空", "debug")
         self.proxy_model.setCustomFilters(filters)
         self._update_summary()
+
+    # ------------------------------------------------------------------ #
+    # 看板 → 主表 联动钻取（可撤销）
+    # ------------------------------------------------------------------ #
+    def _apply_link_drilldown(self, record, source_label):
+        """看板行定位后：主表叠加「流程订单精确 + 工厂上下文」筛选钻取到该订单，"""
+        """并显示联动横幅；清除按钮恢复联动前快照。联动失败不影响定位本身。"""
+        if self.proxy_model is None or record is None:
+            return
+        try:
+            order = record.get("流程订单")
+        except Exception:
+            return
+        if order is None:
+            return
+        order_text = str(order).strip()
+        if not order_text or order_text.lower() in ("nan", "none"):
+            return
+        try:
+            ep = self.filter_panel.process_order_edit
+            ep.blockSignals(True)
+            ep.setText(order_text)
+            ep.blockSignals(False)
+        except Exception:
+            pass
+        keys = {"_process_order": order_text}
+        try:
+            factory_val = record.get("工厂")
+            if factory_val is not None and str(factory_val).strip():
+                keys["工厂"] = str(factory_val).strip()
+        except Exception:
+            pass
+        self._apply_focus_filters(keys, "订单 %s · %s" % (order_text, source_label))
+
+    def _clear_link_drilldown(self):
+        """清除联动：恢复钻取前的筛选快照，隐藏横幅。"""
+        if self._link_snapshot is not None and self.proxy_model is not None:
+            self.proxy_model.setCustomFilters(self._link_snapshot)
+            self._update_summary()
+        self._link_snapshot = None
+        self.main_table.clear_link_banner()
+
+    def _apply_focus_filters(self, filter_keys, label):
+        """通用焦点钻取：在现有筛选上叠加 filter_keys 并显示联动横幅（可撤销）。
+
+        filter_keys 与 AuditProxyModel._custom_filters 同构：
+          普通列名（车间/工厂…）→ 精确匹配；"_material_names"/"_process_order" 等
+          特殊键 → proxy 内置语义。缺列键由 proxy 自动跳过，不会报错。
+        """
+        if self.proxy_model is None:
+            return
+        base = self.proxy_model.getCustomFilters()
+        if self._link_snapshot is None:
+            self._link_snapshot = base
+        merged = dict(base)
+        merged.update(filter_keys)
+        self.proxy_model.setCustomFilters(merged)
+        self._update_summary()
+        self.main_table.show_link_banner(label)
+
+    def _apply_board_focus(self, url):
+        """管理看板「到主表」芯片：zpp011://link?type=…&v=…&fac=… → 主表联动钻取。"""
+        if not url or not url.startswith("zpp011:"):
+            return
+        try:
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(url).query)
+            t = q.get("type", [""])[0]
+            v = q.get("v", [""])[0].strip()
+            fac = q.get("fac", [""])[0].strip()
+            if not t or not v:
+                return
+            keys = {}
+            parts = []
+            if t in ("worst_workshop", "lowest_coverage_workshop"):
+                keys["车间"] = v
+                parts.append("车间 " + v)
+            elif t == "top_material":
+                keys["_material_names"] = v
+                parts.append("物料 " + v)
+            elif t == "top_product":
+                keys["_material_names"] = v
+                parts.append("成品线 " + v)
+            else:
+                return
+            if fac:
+                keys["工厂"] = fac
+                parts.insert(0, fac.split("-")[-1])
+            self._apply_focus_filters(keys, " · ".join(parts) + "（来自管理看板）")
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------ #
+    # 筛选预设（filter_history：命名预设 + 「上次使用」自动捕获）
+    # ------------------------------------------------------------------ #
+    def _filter_preset_store(self):
+        return dict(self.config_manager.get("filter_history") or {})
+
+    @staticmethod
+    def _filters_to_jsonable(state):
+        """get_filters() 里的 set / (列, set) 结构转 JSON 可存形式。"""
+        out = {}
+        for k, v in (state or {}).items():
+            if isinstance(v, set):
+                out[k] = sorted(str(x) for x in v)
+            elif isinstance(v, tuple) and len(v) == 2 and isinstance(v[1], set):
+                out[k] = {"col": v[0], "values": sorted(str(x) for x in v[1])}
+            else:
+                out[k] = v
+        return out
+
+    @staticmethod
+    def _jsonable_to_filters(state):
+        """_filters_to_jsonable 的逆变换（供 apply_filters 使用）。"""
+        out = {}
+        for k, v in (state or {}).items():
+            if k == "_semi_class_set" and isinstance(v, list):
+                out[k] = set(v)
+            elif k == "_units" and isinstance(v, dict):
+                out[k] = (v.get("col"), set(v.get("values", [])))
+            else:
+                out[k] = v
+        return out
+
+    def _capture_last_used_filter(self):
+        """每次发起分析前，把当前筛选记为「上次使用」，预设菜单可一键恢复。"""
+        try:
+            state = self._filters_to_jsonable(self.filter_panel.get_filters())
+            if not state:
+                return
+            store = self._filter_preset_store()
+            store["___last___"] = state
+            self.config_manager.set("filter_history", store)
+            self._refresh_filter_preset_menu()
+        except Exception:
+            pass
+
+    def _save_filter_preset(self, name):
+        state = self._filters_to_jsonable(self.filter_panel.get_filters())
+        store = self._filter_preset_store()
+        store[name] = state
+        self.config_manager.set("filter_history", store)
+        self._refresh_filter_preset_menu()
+        toast("筛选预设已保存：%s" % name, level="info", parent=self)
+
+    def _prompt_save_preset(self):
+        n = len([k for k in self._filter_preset_store() if k != "___last___"])
+        name, ok = QInputDialog.getText(self, "保存筛选预设", "预设名称：", text="预设 %d" % (n + 1))
+        name = (name or "").strip()
+        if not ok or not name:
+            return
+        if name == "___last___":
+            QMessageBox.warning(self, "保存筛选预设", "名称「___last___」为系统保留，请换一个。")
+            return
+        self._save_filter_preset(name)
+
+    def _apply_filter_preset(self, name):
+        store = self._filter_preset_store()
+        state = store.get(name)
+        if state is None:
+            toast("暂无%s记录" % ("「上次使用」" if name == "___last___" else "预设「%s」" % name), level="info", parent=self)
+            return
+        self.filter_panel.apply_filters(self._jsonable_to_filters(state))
+        toast("已应用%s" % ("「上次使用」筛选" if name == "___last___" else "筛选预设：" + name), level="info", parent=self)
+
+    def _delete_filter_preset(self, name):
+        store = self._filter_preset_store()
+        if name in store:
+            del store[name]
+            self.config_manager.set("filter_history", store)
+            self._refresh_filter_preset_menu()
+            toast("已删除筛选预设：%s" % name, level="info", parent=self)
+
+    def _refresh_filter_preset_menu(self):
+        try:
+            names = [k for k in self._filter_preset_store() if k != "___last___"]
+            self.filter_panel.set_preset_names(names, "___last___" in self._filter_preset_store())
+        except Exception:
+            pass
 
     def _on_header_clicked(self, logical_index):
         """列头点击：单列为【未排 → 升序 → 降序 → 未排】三态循环；Ctrl+点击为多列多级排序。"""
@@ -3903,6 +4165,11 @@ class MainWindow(QMainWindow):
         index = self.table_view.indexAt(pos)
         if not index.isValid():
             return
+        # 右键先选中命中行：否则批量操作会作用在上一次的选择上（所见非所改）
+        clicked_row = index.row()
+        _cur_rows = {ix.row() for ix in self.table_view.selectionModel().selectedIndexes()}
+        if clicked_row not in _cur_rows:
+            self.table_view.selectRow(clicked_row)
         selected_rows = set()
         for idx in self.table_view.selectionModel().selectedIndexes():
             source_index = self.proxy_model.mapToSource(idx)
@@ -4244,37 +4511,16 @@ class MainWindow(QMainWindow):
         if obj is self.table_view and et == QEvent.KeyPress:
             key_event = event
             if key_event.matches(QKeySequence.Copy):
-                self._copy_selected_cells()
+                self.copy_selected_cells()
                 return True
         return super().eventFilter(obj, event)
 
     def copy_selected_cells(self):
-        indexes = self.table_view.selectedIndexes()
-        if not indexes:
-            return
-        rows = sorted(set(idx.row() for idx in indexes))
-        cols = sorted(set(idx.column() for idx in indexes))
-        proxy = self.table_view.model()
-        source = proxy.sourceModel() if hasattr(proxy, "mapToSource") else proxy
-        data = []
-        for row in rows:
-            row_data = []
-            for col in cols:
-                proxy_idx = proxy.index(row, col)
-                if hasattr(proxy, "mapToSource"):
-                    src_idx = proxy.mapToSource(proxy_idx)
-                    value = source.data(src_idx, Qt.DisplayRole)
-                else:
-                    value = proxy.data(proxy_idx, Qt.DisplayRole)
-                text = str(value) if value is not None else ""
-                text = text.replace("\n", " ").replace("\r", "")
-                row_data.append(text)
-            data.append(row_data)
-        lines = ["\t".join(row) for row in data]
-        QApplication.clipboard().setText("\n".join(lines))
-        self.statusBar().showMessage(f"已复制 {len(rows)} 行 × {len(cols)} 列", 2000)
+        """复制选中区域到剪贴板（Excel 式：按选中矩形输出，空洞填空）。
 
-    def _copy_selected_cells(self):
+        原先 main_window 有两份实现：菜单连这份、Ctrl+C 连 _copy_selected_cells，
+        两者行为不一致；现统一为本实现，两条入口共用。
+        """
         tv = self.table_view
         model = tv.model()
         selection = tv.selectionModel()
@@ -4598,6 +4844,8 @@ class MainWindow(QMainWindow):
             return
         # material_df 暂无独立来源，传 None（DashboardDialog 内部仅预留）
         dialog = DashboardDialog(audit_df, None, parent=self, main_window=self)
+        # 「到主表」芯片桥：看板内点芯片 → 主表联动钻取（降级模式信号不触发）
+        dialog.focus_requested.connect(self._apply_board_focus)
         dialog.exec()
 
     def _show_source_backup(self):
@@ -4734,101 +4982,6 @@ def _ask_quarantine_reason(parent, title: str) -> str | None:
     if dlg.exec() == QDialog.Accepted:
         return edit.text().strip() or "手动隔离"
     return None
-
-
-class SortBadgeHeader(QHeaderView):
-    """自定义表头：在已排序列的角上叠加「层级数字 + 升降箭头」角标，让多级排序一眼可见。
-
-    仅 override paintEvent —— 先 super().paintEvent(event) 画出原样表头，再在每个已排序列
-    右上角叠一个角标：例如「1▲」(蓝=升序) /「2▼」(橙=降序)。方向用 ▲▼ 明示、层级用数字，
-    纯自绘、不依赖 Qt 原生 sortIndicator（setSortingEnabled(False) 下原生箭头不可靠）。
-    不改动任何列标签或原生外观，零回归风险。多级排序的「第几级 / 升还是降」一眼可见。
-    """
-
-    def __init__(self, orientation, parent=None):
-        super().__init__(orientation, parent)
-        self._get_sort_columns = lambda: []  # 由 MainWindow 注入：返回 [(列号, 是否升序), ...]
-        self._get_filtered_columns = lambda: set()  # 由 MainWindow 注入：返回已设取值过滤的列号集合
-        self._ctrl_held = False  # 由 mousePressEvent 捕获 Ctrl 修饰符，供 _on_header_clicked 可靠读取
-
-    def set_sort_columns_getter(self, getter):
-        self._get_sort_columns = getter
-
-    def set_filtered_columns_getter(self, getter):
-        self._get_filtered_columns = getter
-
-    def mousePressEvent(self, event):
-        # 在鼠标按下时捕获修饰符：QApplication.keyboardModifiers() 在 sectionClicked handler
-        # 里经常读不到 Ctrl（Qt 经典坑），故改在 mousePressEvent 可靠捕获，解决"Ctrl+多级排序不生效"。
-        self._ctrl_held = bool(event.modifiers() & Qt.ControlModifier)
-        super().mousePressEvent(event)
-
-    def paintEvent(self, event):
-        # v43.107: 无渲染引擎（顶层未可见/离屏/窗口未就绪）时整段 paint 跳过——
-        # 原生 paintEvent 内部的 QStylePainter 同样会因 begin 失败刷 2 行警告，
-        # 故守卫须置于 super() 之前；可见后下次重绘自然补画，零视觉回归。
-        if not self.isVisible() or self.width() <= 0:
-            return
-        super().paintEvent(event)  # 先画原生表头（外观完全保持）
-        cols = self._get_sort_columns()
-        fcols = self._get_filtered_columns()
-        # v43.112 修复：漏斗标绘制与「是否有排序列」解耦——
-        # 原「if not cols: return」会导致「未排序却已设取值过滤」时不画漏斗。
-        if not cols and not fcols:
-            return
-        count = self.count()
-        painter = QPainter(self)
-        if not painter.isActive():
-            return
-        try:
-            painter.setRenderHint(QPainter.Antialiasing)
-            for level, (col, asc) in enumerate(cols, start=1):
-                if col <= 0 or col >= count:
-                    continue
-                rect = QRect(self.sectionPosition(col), 0, self.sectionSize(col), self.height())
-                if rect.width() <= 0:  # 隐藏列不画
-                    continue
-                # 角标：层级数字 + 升降箭头，方向明示（蓝=升/橙=降）
-                txt = f"{level}{'▲' if asc else '▼'}"
-                font = QFont(self.font())
-                font.setPointSize(9)
-                font.setBold(True)
-                painter.setFont(font)
-                metrics = QFontMetrics(font)
-                pad_x, pad_y = 4, 2
-                tw = metrics.horizontalAdvance(txt) + pad_x * 2
-                th = metrics.height() + pad_y
-                bx = rect.right() - tw - 2
-                by = rect.top() + 2
-                badge = QRect(bx, by, tw, th)
-                color = QColor(45, 125, 210) if asc else QColor(217, 119, 45)
-                painter.setBrush(color)
-                painter.setPen(QPen(Qt.NoPen))
-                painter.drawRoundedRect(badge, 3, 3)
-                painter.setPen(QPen(QColor(255, 255, 255)))
-                painter.drawText(badge, Qt.AlignCenter, txt)
-            # 列头筛选漏斗标：已设取值过滤的列在左上角画一个小橙三角
-            fcols = self._get_filtered_columns()
-            if fcols:
-                fbrush = QColor(217, 119, 45)
-                fpen = QPen(fbrush)
-                for col in fcols:
-                    if col <= 0 or col >= count:
-                        continue
-                    rect = QRect(self.sectionPosition(col), 0, self.sectionSize(col), self.height())
-                    if rect.width() <= 0:
-                        continue
-                    s = 7
-                    tri = QPolygon([
-                        QPoint(rect.left() + 3, rect.top() + 3),
-                        QPoint(rect.left() + 3 + s, rect.top() + 3),
-                        QPoint(rect.left() + 3 + s // 2, rect.top() + 3 + s),
-                    ])
-                    painter.setBrush(fbrush)
-                    painter.setPen(fpen)
-                    painter.drawPolygon(tri)
-        finally:
-            painter.end()
 
 
 if __name__ == "__main__":

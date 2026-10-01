@@ -88,7 +88,10 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
             lambda x: round(x, 2) if isinstance(x, (int, float)) else 0)
         dev_df['备注'] = has_real_dev['_备注']
         dev_df['备注来源'] = has_real_dev['_note_source'] if '_note_source' in has_real_dev.columns else '人工填写'
-        dev_df['偏差区间'] = np.where(pd.to_numeric(has_real_dev[col_p], errors='coerce') > 0, '正偏差', '负偏差')
+        # 偏差区间三态（2026-09-30）：旧实现 0% 行全部误判为「负偏差」，污染看板正/负构成与预警统计；
+        # 消费方（dashboard_html 的 str.contains('正')/('负')、正负堆叠 groupby）对「零偏差」天然不命中，安全。
+        _rates5 = pd.to_numeric(has_real_dev[col_p], errors='coerce')
+        dev_df['偏差区间'] = np.where(_rates5 > 0, '正偏差', np.where(_rates5 < 0, '负偏差', '零偏差'))
         dev_df['组件物料类型'] = has_real_dev['组件物料类型'].fillna('') if '组件物料类型' in has_real_dev.columns else ''
         dev_df['组件物料类型描述'] = has_real_dev['组件物料类型描述'].fillna('') if '组件物料类型描述' in has_real_dev.columns else ''
         # 半成品重分类：从原始 df 继承，若存在则保留

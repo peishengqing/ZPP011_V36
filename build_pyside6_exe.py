@@ -55,7 +55,7 @@ if __name__ == "__main__":
         sys.exit(1)
     print(f"✅ 版本号 {version} 验证通过，版本日志已更新，继续打包")
 
-    window_mode = "--console" if not debug_mode else "--console"
+    window_mode = "--windowed" if not debug_mode else "--console"
 
     # ── 自动备份源码 ──
     import zipfile
@@ -119,14 +119,36 @@ if __name__ == "__main__":
     if distpath:
         opts.append(f"--distpath={distpath}")
     opts.extend([
-        # PySide6 必要隐藏导入
-        "--hidden-import=PySide6.QtCore",
-        "--hidden-import=PySide6.QtGui",
-        "--hidden-import=PySide6.QtWidgets",
-        "--hidden-import=PySide6.QtCharts",
-        "--hidden-import=PySide6.QtPrintSupport",
-        # PySide6 插件
-        "--collect-all=pyside6",
+        # PySide6：DLL/插件由官方 hook 按 import 图自动收集，无需 --collect-all=PySide6
+        # （写成小写 pyside6 时该参数空转；改成大写会把整包 634MB 收进 exe，反而更大）。
+        # QtCharts / QtPrintSupport 全仓 0 引用，不再列为隐藏导入，避免打入无用 DLL。
+        #
+        # 显式排除未使用的 Qt 模块（WebEngine 因管理看板在用，必须保留）：
+        "--exclude-module=PySide6.QtQuick",
+        "--exclude-module=PySide6.QtQuickWidgets",
+        "--exclude-module=PySide6.QtQml",
+        "--exclude-module=PySide6.QtDesigner",
+        "--exclude-module=PySide6.QtPdf",
+        "--exclude-module=PySide6.QtPdfWidgets",
+        "--exclude-module=PySide6.Qt3DCore",
+        "--exclude-module=PySide6.Qt3DRender",
+        "--exclude-module=PySide6.Qt3DAnimation",
+        "--exclude-module=PySide6.Qt3DExtras",
+        "--exclude-module=PySide6.QtMultimedia",
+        "--exclude-module=PySide6.QtMultimediaWidgets",
+        "--exclude-module=PySide6.QtCharts",
+        "--exclude-module=PySide6.QtSql",
+        "--exclude-module=PySide6.QtTest",
+        "--exclude-module=PySide6.QtBluetooth",
+        "--exclude-module=PySide6.QtNfc",
+        "--exclude-module=PySide6.QtPositioning",
+        "--exclude-module=PySide6.QtSerialPort",
+        "--exclude-module=PySide6.QtSensors",
+        "--exclude-module=PySide6.QtRemoteObjects",
+        "--exclude-module=PySide6.QtScxml",
+        "--exclude-module=PySide6.QtTextToSpeech",
+        "--exclude-module=PySide6.QtHelp",
+        "--exclude-module=PySide6.QtUiTools",
         # 业务模块隐藏导入
         "--hidden-import=gui_pyside6.main_window",
         "--hidden-import=gui_pyside6.models.data_frame_model",
@@ -134,8 +156,8 @@ if __name__ == "__main__":
         "--hidden-import=gui_pyside6.widgets.filter_panel",
         "--hidden-import=gui_pyside6.widgets.toast",
         "--hidden-import=gui_pyside6.dialogs.import_wizard_dialog",
-        "--hidden-import=gui_pyside6.dialogs.drill_down_dialog",
-        "--hidden-import=gui_pyside6.dialogs.settings_dialog",
+
+
         "--hidden-import=gui_pyside6.dialogs.alert_dialog",
         "--hidden-import=gui_pyside6.dialogs.unit_summary_dialog",
         "--hidden-import=gui_pyside6.dialogs.dashboard_dialog",
@@ -152,18 +174,22 @@ if __name__ == "__main__":
         "--hidden-import=analysis.analyzer",
         "--hidden-import=analysis.dashboard_html",
         "--hidden-import=analysis.net_offset",
-        "--hidden-import=analysis.bom_diff",
+
         "--hidden-import=analysis.excel_builder.sheet5_full",
         "--hidden-import=modules.audit.filters.filter_engine",
         "--hidden-import=domain.alt_material.alt_manager",
-        "--hidden-import=utils.excel_helper",
+
         "--hidden-import=utils.version_history",
         # numpy/pandas 后端
-        "--hidden-import=numpy.core._methods",
+        # （已移除：指向不存在的模块，PyInstaller 会告警）
         "--hidden-import=numpy.lib.format",
         "--hidden-import=pandas._libs.tslibs.np_datetime",
         # SSL/crypto DLLs（PyInstaller onefile 不会自动收集 cryptography 的 OpenSSL DLL）
         "--collect-all=cryptography",
+        # 读表加速引擎 calamine（Rust，比 openpyxl 快 5~15 倍；utils/excel_io 运行时自动探测，
+        # 未带入/未安装时静默退回 openpyxl，功能不受影响。需构建环境 pip install python-calamine）
+        "--collect-all=python_calamine",
+        "--collect-all=calamine",
     ])
     # 固定输出目录 dist：打包前整体清空，避免不同时间戳版本 exe 在 dist 下累积
     import shutil as _shutil

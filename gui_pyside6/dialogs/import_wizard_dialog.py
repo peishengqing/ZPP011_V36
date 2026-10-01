@@ -41,10 +41,11 @@ class LoadExcelWorker(QThread):
 
     def run(self):
         try:
-            xl = pd.ExcelFile(self.file_path)
+            from utils.excel_io import open_excel_book
+            xl = open_excel_book(self.file_path)
             sheets = xl.sheet_names
             # 默认读取第一个工作表
-            df = pd.read_excel(self.file_path, sheet_name=sheets[0])
+            df = xl.parse(sheets[0])
             self.finished.emit(df, sheets)
         except Exception as e:
             self.error.emit(str(e))
@@ -228,7 +229,8 @@ class ImportWizard(QWizard):
     def _on_sheet_changed(self, sheet_name):
         if sheet_name and self.file_path:
             try:
-                self.df = pd.read_excel(self.file_path, sheet_name=sheet_name)
+                from utils.excel_io import open_excel_book
+                self.df = open_excel_book(self.file_path).parse(sheet_name)
                 self.page_file.df = self.df
                 preview = self.df.head().to_string()
                 self.page_file.file_preview.setText(f"预览前5行：\n{preview}")

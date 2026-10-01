@@ -22,19 +22,12 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QCheckBox, QScrollArea, QApplication,
 )
-import os
-import time
+from gui_pyside6.utils.click_debug import click_log
 
 
 def _click_log(msg):
-    """列头点击诊断日志（v43.116，零功能副作用）：写 %TEMP%\\zpp011_click.log，
-    定位「真实鼠标下点列头没反应」到底卡在 信号发射/路由分支/弹层创建 哪一环。"""
-    try:
-        p = os.path.join(os.environ.get("TEMP", ""), "zpp011_click.log")
-        with open(p, "a", encoding="utf-8") as f:
-            f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
-    except Exception:
-        pass
+    """点击链路诊断日志：默认关闭，设 ZPP011_CLICK_DEBUG=1 才写盘（见 click_debug）。"""
+    click_log(msg)
 
 
 class ColumnFilterController:
@@ -44,7 +37,7 @@ class ColumnFilterController:
                  apply_filter_cb, skip_cols=(0,)):
         """
         :param table_view: 目标 QTableView
-        :param header: 表头（SortBadgeHeader 或带 funnel 的 FilterHeader），用于漏斗绘制与浮层定位
+        :param header: 表头（SortBadgeHeader），用于漏斗绘制与浮层定位
         :param sort_ctrl: HeaderSortController（非筛选模式下委托其处理排序）
         :param source_model_getter: callable -> 当前显示的 DataFrameModel（用于实时读取 DisplayRole 取值）
         :param apply_filter_cb: callable -> 重新执行对话框过滤（会读取本控制器的 value_filters 叠加过滤）

@@ -32,8 +32,10 @@ class LeftPanelComponent:
         layout.addWidget(self.file_group.container)
 
         # 3. 替代料管理组
-        self.alt_group = self._create_card("🔧 替代料配对", True)
+        self.alt_group = self._create_card("🔧 替代料配对", False)  # 默认折叠：低频配置，省出给文件/预览的空间
         self._build_alternative_materials(self.alt_group.body_layout)
+        # 「共 N 对」摘要放进卡片头：卡片折叠时依然可见，不必展开就知道当前配对数
+        self.alt_group.container.header_layout.insertWidget(2, self.mw.alt_count_label)
         layout.addWidget(self.alt_group.container)
 
         # 3.5 材料半成品分类组
@@ -83,6 +85,7 @@ class LeftPanelComponent:
         arrow_btn.setFixedSize(20, 20)
         arrow_btn.setCursor(Qt.PointingHandCursor)
         header_layout.addWidget(arrow_btn)
+        container.header_layout = header_layout  # 供外部把摘要标签放进卡片头
 
         # 内容区域
         body = QWidget()
@@ -153,7 +156,6 @@ class LeftPanelComponent:
 
         input_label = QLabel("输入")
         input_label.setObjectName("filterLabel")
-        input_label.setStyleSheet("color: #ffffff; font-size: 11px; margin-bottom: 4px;")
         layout.addWidget(input_label)
         layout.addLayout(input_row)
 
@@ -176,7 +178,6 @@ class LeftPanelComponent:
 
         output_label = QLabel("输出")
         output_label.setObjectName("filterLabel")
-        output_label.setStyleSheet("color: #ffffff; font-size: 11px; margin-bottom: 4px;")
         layout.addWidget(output_label)
         layout.addLayout(output_row)
 
@@ -185,8 +186,6 @@ class LeftPanelComponent:
         # 计数标签
         self.mw.alt_count_label = QLabel("共 0 对")
         self.mw.alt_count_label.setObjectName("altCountLabel")
-        self.mw.alt_count_label.setStyleSheet("color: #ffffff; font-size: 11px;")
-        layout.addWidget(self.mw.alt_count_label)
 
         # 替代料表格
         self.mw.alt_table = QTableWidget()
@@ -252,7 +251,6 @@ class LeftPanelComponent:
         # 计数标签
         self.mw.semi_count_label = QLabel("共 0 项")
         self.mw.semi_count_label.setObjectName("semiCountLabel")
-        self.mw.semi_count_label.setStyleSheet("color: #ffffff; font-size: 11px;")
         layout.addWidget(self.mw.semi_count_label)
 
         # 表格（模仿替代料：2列，工厂编码+分类名称）
@@ -316,7 +314,7 @@ class LeftPanelComponent:
 
         # Label
         label = QLabel(label_text)
-        label.setStyleSheet("color: #ffffff; font-size: 11px;")
+        label.setObjectName("filterLabel")
         row_layout.addWidget(label)
 
         # Input + Browse

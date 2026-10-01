@@ -24,6 +24,7 @@ from core.quarantine_manager import add_quarantine_batch, remove_quarantine, get
 from core.read_status import save_read_status_batch
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
 from gui_pyside6.widgets.toast import toast
+from gui_pyside6.utils.locate import locate_row
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
@@ -1102,19 +1103,12 @@ class NegLossDashboardDialog(QDialog):
         self._apply_filter()
 
     def on_double_click(self, index):
+        """双击看板行 → 定位主表对应行（原表行号优先，data_id 兜底）。"""
         if not index.isValid():
             return
         df = self.source_model.getDataFrame()
         if index.row() < len(df):
-            try:
-                # 优先用「原表行号」直接定位（比 data_id 更可靠，不受筛选/排序影响）
-                row_idx = df.iloc[index.row()].get('原表行号')
-                if row_idx is not None and hasattr(self.main_window, '_locate_row_by_index'):
-                    self.main_window._locate_row_by_index(row_idx)
-                else:
-                    self.main_window.locate_record(df.iloc[index.row()])
-            except Exception:
-                pass
+            locate_row(self.main_window, df.iloc[index.row()], parent=self, link_source="负损看板")
             self.accept()
 
     # ------------------------------------------------------------------ 导出

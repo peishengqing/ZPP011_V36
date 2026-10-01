@@ -14,6 +14,7 @@ from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_col
 from core.read_status import save_read_status, save_read_status_batch
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
 from gui_pyside6.widgets.toast import toast
+from gui_pyside6.utils.locate import locate_row
 from gui_pyside6.widgets.filter_panel import _color_icon
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
@@ -761,11 +762,7 @@ class AlertDialog(QDialog):
         row = index.row()
         df = self.source_model.getDataFrame()
         if row < len(df):
-            record = df.iloc[row]
-            try:
-                self.main_window.locate_record(record)
-            except (AttributeError, Exception):
-                pass
+            locate_row(self.main_window, df.iloc[row], parent=self, link_source="替代料看板")
             self.accept()
 
     # -----------------------------------------------------------

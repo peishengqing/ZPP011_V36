@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZPP011 偏差分析器 · 代码检查与修复报告</title>
+<style>
+  :root{
+    --bg:#f5f7fa; --card:#ffffff; --ink:#1f2933; --muted:#6b7280; --line:#e3e8ef;
+    --p1:#c62828; --p1bg:#fdecea; --p2:#b26a00; --p2bg:#fff5e5; --p3:#1565c0; --p3bg:#e8f1fd;
+    --ok:#1b7f4b; --okbg:#e7f5ec;
+    --mono:"Cascadia Mono","Consolas","SFMono-Regular",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Microsoft YaHei UI","PingFang SC","Segoe UI",system-ui,sans-serif;
+    font-size:15px;line-height:1.7;}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px 72px}
+  header{background:linear-gradient(135deg,#1f3a5f,#2d5f8b 55%,#2d7dd2);color:#fff;padding:38px 0 30px;margin-bottom:26px}
+  header .wrap{padding-bottom:0}
+  h1{margin:0 0 8px;font-size:27px;letter-spacing:.5px}
+  .sub{opacity:.9;font-size:14px}
+  .chips{margin-top:16px;display:flex;flex-wrap:wrap;gap:8px}
+  .chip{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);
+    border-radius:999px;padding:4px 12px;font-size:12.5px}
+  h2{font-size:19px;margin:34px 0 12px;padding-left:11px;border-left:4px solid #2d7dd2}
+  h3{font-size:16px;margin:22px 0 8px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;
+    box-shadow:0 1px 2px rgba(16,24,40,.04)}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin:18px 0 6px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+  .kpi .n{font-size:24px;font-weight:700;letter-spacing:.4px}
+  .kpi .l{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .kpi.warn .n{color:var(--p1)} .kpi.mid .n{color:var(--p2)} .kpi.good .n{color:var(--ok)}
+  .verdict{border-left:5px solid var(--ok);background:var(--okbg);border-radius:8px;padding:14px 18px;margin:6px 0 0}
+  .verdict b{color:var(--ok)}
+  table{width:100%;border-collapse:collapse;background:var(--card);font-size:14px}
+  th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:#f0f4f9;font-weight:600}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  code,pre{font-family:var(--mono)}
+  code{background:#eef2f7;border:1px solid #e0e6ee;border-radius:4px;padding:1px 5px;font-size:12.8px}
+  pre{background:#1e2733;color:#e6edf3;border-radius:8px;padding:14px 16px;overflow-x:auto;font-size:12.8px;line-height:1.6}
+  pre .c{color:#8fa3b8}
+  .sev{display:inline-block;border-radius:5px;padding:2px 9px;font-size:12px;font-weight:700;white-space:nowrap}
+  .sev.p1{background:var(--p1bg);color:var(--p1);border:1px solid #f3c2bd}
+  .sev.p2{background:var(--p2bg);color:var(--p2);border:1px solid #f0dcb8}
+  .sev.p3{background:var(--p3bg);color:var(--p3);border:1px solid #c6ddf7}
+  .sev.ok{background:var(--okbg);color:var(--ok);border:1px solid #bfe3cd}
+  .finding{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:0;margin:14px 0;overflow:hidden}
+  .finding > .hd{padding:13px 18px;border-bottom:1px solid var(--line);background:#fafcfe;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .finding > .bd{padding:16px 18px}
+  .finding.done{border-color:#bfe3cd}
+  .finding.done > .hd{background:var(--okbg)}
+  .finding h3{margin:0;font-size:15.5px}
+  .meta{font-size:12.5px;color:var(--muted);font-family:var(--mono)}
+  .row{display:flex;gap:10px;margin:9px 0}
+  .row .k{flex:0 0 68px;color:var(--muted);font-size:13px;padding-top:2px}
+  .row .v{flex:1}
+  ul{margin:8px 0 8px 20px;padding:0} li{margin:4px 0}
+  .toc{columns:2;column-gap:26px;font-size:14px}
+  .toc a{color:#2d5f8b;text-decoration:none} .toc a:hover{text-decoration:underline}
+  .note{font-size:13px;color:var(--muted)}
+  .pill{display:inline-block;border-radius:4px;padding:1px 7px;font-size:12px;background:#eef2f7;border:1px solid #e0e6ee;font-family:var(--mono)}
+  footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
+  @media print{body{background:#fff}header{background:#1f3a5f}.finding,table,.card{box-shadow:none}}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>ZPP011 偏差分析器 · 代码检查与修复报告</h1>
+    <div class="sub">仓库 <span class="pill">H:\zpp011_v2</span> · 基线提交 <span class="pill">ec1f3a6 (v43.119)</span> · 分支 main</div>
+    <div class="chips">
+      <span class="chip">检查时间 2026-09-30 08:29</span>
+      <span class="chip">修复完成 2026-09-30 09:35</span>
+      <span class="chip">Python 3.11.9 / PySide6 6.11.1</span>
+      <span class="chip">P1 问题已全部修复</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="kpis">
+    <div class="kpi good"><div class="n">73 / 1</div><div class="l">单元测试 通过 / 跳过（修复前 69 / 1）</div></div>
+    <div class="kpi mid"><div class="n">≈ 12%</div><div class="l">语句覆盖率（修复前 ≈ 9%）</div></div>
+    <div class="kpi mid"><div class="n">272</div><div class="l">ruff 告警（修复前 273，未批量处理）</div></div>
+    <div class="kpi good"><div class="n">0</div><div class="l">P1 待处理问题（3 项已修复）</div></div>
+  </div>
+
+  <div class="verdict">
+    <b>本次结论：</b>检查发现的 3 项 P1 与 2 项 P2 已全部修复并通过回归验证；新增 4 条列头点击链路回归测试，把此前连续 10 个版本反复回归的缺陷固化保护。
+    剩余 2 项需业务确认或另行排期（<b>config 运行时配置差异</b>、<b>272 条 ruff 告警的批量清理</b>），见第 6 节。
+  </div>
+
+  <h2 id="toc">目录</h2>
+  <div class="card toc">
+    <a href="#s1">1. 检查方法</a><br>
+    <a href="#s2">2. 问题与处置总览</a><br>
+    <a href="#s3">3. 修复明细（P1 / P2）</a><br>
+    <a href="#s4">4. 探针实证与回归测试</a><br>
+    <a href="#s5">5. 变更清单与验证证据</a><br>
+    <a href="#s6">6. 遗留事项</a><br>
+    <a href="#s7">7. 附录：环境与命令</a>
+  </div>
+
+  <h2 id="s1">1. 检查方法</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:26%">检查项</th><th style="width:32%">命令 / 方式</th><th>结果</th></tr></thead>
+      <tbody>
+        <tr><td>单元测试</td><td><code>python -m pytest -q</code></td><td>修复前 69 passed / 1 skipped；修复后 73 passed / 1 skipped</td></tr>
+        <tr><td>静态检查</td><td><code>python -m ruff check .</code></td><td>273 → 272 errors（仅清理本次触碰文件的相关项）</td></tr>
+        <tr><td>结构扫描</td><td>导入 / 类重定义 / 死代码检索</td><td>发现 1 处跨模块重复类、1 处死代码类</td></tr>
+        <tr><td>变更审阅</td><td><code>git status</code> / <code>diff</code> / <code>log -15</code></td><td>3 个已修改配置 + 1 个未跟踪备份</td></tr>
+        <tr><td>行为验证</td><td>无头 Qt 探针 <code>temp\probe_header_click.py</code>（offscreen）</td><td>复现 v43.119 根因，确认修复生效，暴露主表隐患</td></tr>
+        <tr><td>人工审阅</td><td>v43.105~v43.119 涉及文件</td><td>表头 / 排序 / 列头筛选 / 隔离区</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="s2">2. 问题与处置总览</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:7%">编号</th><th style="width:9%">级别</th><th style="width:44%">问题</th><th style="width:12%">状态</th><th>验证方式</th></tr></thead>
+      <tbody>
+        <tr><td>P1-1</td><td><span class="sev p1">P1</span></td><td>主表仍用 <code>main_window.py</code> 内重复的 <code>SortBadgeHeader</code>，v43.119 修复未覆盖主表</td><td><span class="sev ok">已修复</span></td><td>探针 ②③④、新增用例 <code>test_main_window_reuses_shared_header</code></td></tr>
+        <tr><td>P1-2</td><td><span class="sev p1">P1</span></td><td>工作区丢失 v43.119 版本记录，应用自报版本退回 v43.118</td><td><span class="sev ok">已修复</span></td><td><code>get_current_version()</code> 返回 v43.119</td></tr>
+        <tr><td>P1-3</td><td><span class="sev p1">P1</span></td><td>点击诊断日志挂在生产主路径，每次点击 3~8 次写盘且无上限</td><td><span class="sev ok">已修复</span></td><td>默认不产生日志；<code>ZPP011_CLICK_DEBUG=1</code> 时正常写入</td></tr>
+        <tr><td>P2-1</td><td><span class="sev p2">P2</span></td><td>死代码：<code>quarantine_dialog</code> 内的 <code>FilterHeader</code> 类</td><td><span class="sev ok">已修复</span></td><td>全仓无引用；<code>hasattr(quarantine_dialog, "FilterHeader") is False</code></td></tr>
+        <tr><td>P2-2</td><td><span class="sev p2">P2</span></td><td>运行时偏好文件（列宽 / 自动隔离 / 自动已读）处于已修改状态</td><td><span class="sev p2">待确认</span></td><td>需业务判断后决定提交或忽略（本次未改动）</td></tr>
+        <tr><td>P2-3</td><td><span class="sev p2">P2</span></td><td>未跟踪的改前备份 <code>sort_badge_header.py.orig_bak</code></td><td><span class="sev ok">已修复</span></td><td>删除并补 <code>*.orig_bak</code> / <code>*.bak</code> 忽略规则</td></tr>
+        <tr><td>P3-1</td><td><span class="sev p3">P3</span></td><td>ruff 272 条告警（142 未用导入 / 38 未用变量等）</td><td><span class="sev p3">另议</span></td><td>批量自动修复回归面大，建议单独排期</td></tr>
+        <tr><td>P3-2</td><td><span class="sev p3">P3</span></td><td>GUI 层无自动化回归测试，同一链路反复回归</td><td><span class="sev ok">已修复</span></td><td>新增 <code>tests/unit/test_header_click.py</code>（4 用例）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="s3">3. 修复明细</h2>
+
+  <div class="finding done">
+    <div class="hd"><span class="sev p1">P1-1</span><span class="sev ok">已修复</span><h3>主表统一复用共享 SortBadgeHeader</h3></div>
+    <div class="bd">
+      <div class="row"><div class="k">改动</div><div class="v">
+        新增 <code>from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader</code>；
+        删除 <code>main_window.py</code> 第 4739-4831 行本地类（含类尾空行共 95 行）；
+        顺带清理仅被该类使用的导入 <code>QRect / QPainter / QColor / QPen / QPolygon</code>。
+      </div></div>
+      <div class="row"><div class="k">效果</div><div class="v">主表与全部看板共用同一实现，<code>setModel</code> 兜底对主表同样生效，不再依赖 <code>setSectionsClickable(True)</code> 与 <code>setModel</code> 的先后顺序；<code>main_window.py</code> 由 4838 行降至 4744 行。</div></div>
+      <div class="row"><div class="k">验证</div><div class="v"><code>main_window.SortBadgeHeader is SortBadgeHeader</code> → True；<code>"setModel" in mw.SortBadgeHeader.__dict__</code> → True；新增用例 <code>test_main_window_reuses_shared_header</code> 通过。</div></div>
+    </div>
+  </div>
+
+  <div class="finding done">
+    <div class="hd"><span class="sev p1">P1-2</span><span class="sev ok">已修复</span><h3>恢复 v43.119 版本记录</h3></div>
+    <div class="bd">
+      <div class="row"><div class="k">改动</div><div class="v"><code>git checkout -- utils/version_history.py</code>，从 index 恢复被误删的 v43.119 条目。</div></div>
+      <div class="row"><div class="k">验证</div><div class="v"><code>get_current_version()</code> → <code>v43.119</code>；<code>VERSION_HISTORY</code> 条目数 243 → 244；窗口显示名与打包命名将恢复为 v43.119。</div></div>
+      <div class="row"><div class="k">提示</div><div class="v">若此前是有意退回版本号（例如打算把该修复并入下一个版本），请改为在 v43.119 条目上追加说明，而不是删除条目。</div></div>
+    </div>
+  </div>
+
+  <div class="finding done">
+    <div class="hd"><span class="sev p1">P1-3</span><span class="sev ok">已修复</span><h3>点击诊断日志改为按需开启</h3></div>
+    <div class="bd">
+      <div class="row"><div class="k">改动</div><div class="v">
+        新增共享工具 <span class="pill">gui_pyside6/utils/click_debug.py</span>：<code>CLICK_DEBUG</code> 由环境变量 <code>ZPP011_CLICK_DEBUG</code> 决定，路径改用 <code>tempfile.gettempdir()</code>（不再依赖可能为空的 <code>TEMP</code>）。
+        三处调用点（<code>sort_badge_header.py</code> / <code>table_sort.py</code> / <code>column_filter.py</code>）改为委托该工具，并删除各自的写盘代码与 <code>import os, time</code>。
+      </div></div>
+      <div class="row"><div class="k">效果</div><div class="v">默认零 I/O，每次列头点击不再有 3~8 次文件写入，也不再有无限增长的日志文件；排查时设环境变量即可恢复完整日志。</div></div>
+      <div class="row"><div class="k">验证</div><div class="v">默认跑探针 → 日志文件不存在；<code>ZPP011_CLICK_DEBUG=1</code> → 日志文件生成并写入 <code>[press] / [release]</code> 两行。</div></div>
+    </div>
+  </div>
+
+  <div class="finding done">
+    <div class="hd"><span class="sev p2">P2-1</span><span class="sev ok">已修复</span><h3>删除死代码 FilterHeader</h3></div>
+    <div class="bd">
+      <div class="row"><div class="k">改动</div><div class="v">删除 <code>quarantine_dialog.py</code> 中 67 行的 <code>FilterHeader</code> 类；同步清理仅其使用的导入 <code>Signal / QPolygon / QColor / QBrush</code>（<code>QPoint / QHeaderView</code> 仍被使用故保留）。</div></div>
+      <div class="row"><div class="k">效果</div><div class="v">文件由 1077 行降至 1009 行；消除「手动补发 sectionClicked」这一与新机制冲突的参考实现，避免后续误用导致一次点击触发两次排序/筛选。</div></div>
+      <div class="row"><div class="k">验证</div><div class="v"><code>hasattr(quarantine_dialog, "FilterHeader")</code> → False；模块导入正常；<code>compileall</code> 通过。</div></div>
+    </div>
+  </div>
+
+  <div class="finding done">
+    <div class="hd"><span class="sev p2">P2-3</span><span class="sev ok">已修复</span><h3>清理改前备份并补忽略规则</h3></div>
+    <div class="bd">
+      <div class="row"><div class="k">改动</div><div class="v">删除 <code>gui_pyside6/widgets/sort_badge_header.py.orig_bak</code>；<code>.gitignore</code> 增加 <code>*.orig_bak</code>、<code>*.bak</code>。</div></div>
+      <div class="row"><div class="k">安全前提</div><div class="v">删除前已核对：该文件与 <code>933e5fe</code>（HEAD~1）中的同名文件内容完全一致（blob <code>0da4a01</code>），git 历史中随时可取回。</div></div>
+    </div>
+  </div>
+
+  <div class="finding done">
+    <div class="hd"><span class="sev p3">P3-2</span><span class="sev ok">已修复</span><h3>列头点击链路回归测试</h3></div>
+    <div class="bd">
+      <div class="row"><div class="k">新增</div><div class="v"><span class="pill">tests/unit/test_header_click.py</span>（4 个用例，offscreen 即可运行，1.06s）：</div></div>
+      <ul>
+        <li><code>test_shared_header_emits_section_clicked_after_setmodel</code> —— 对话框真实顺序（<code>setSortingEnabled(True)</code> → <code>setModel</code>）下点击列头必须发射 <code>sectionClicked</code>；</li>
+        <li><code>test_shared_header_emits_section_clicked_without_sorting_enabled</code> —— 主表顺序同样有效；</li>
+        <li><code>test_plain_header_documents_root_cause</code> —— 固化根因：裸表头 <code>setModel</code> 后不发射信号（若某次 Qt 升级后此用例失败，说明兜底可重新评估）；</li>
+        <li><code>test_main_window_reuses_shared_header</code> —— 主表必须复用共享表头，直接锁死 P1-1 回归点。</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2 id="s4">4. 探针实证与回归测试</h2>
+  <div class="card">
+    <p style="margin-top:0">脚本：<code>temp\probe_header_click.py</code>（<code>QT_QPA_PLATFORM=offscreen</code>，QTest 模拟左键单击列头第 2 列，统计 <code>sectionClicked</code> 发射次数）。修复后重跑结果与修复前一致，说明修复未改变既有链路行为。</p>
+    <table>
+      <thead><tr><th>#</th><th>场景</th><th>表头实现</th><th>调用顺序</th><th class="num">sectionClicked</th><th>判定</th></tr></thead>
+      <tbody>
+        <tr><td>①</td><td>共享表头（对话框顺序）</td><td>共享 SortBadgeHeader</td><td>setSortingEnabled(True) → setModel</td><td class="num">1</td><td><span class="sev ok">修复生效</span></td></tr>
+        <tr><td>②</td><td>裸表头，仅 setModel</td><td>裸 QHeaderView</td><td>setModel</td><td class="num">0</td><td><span class="sev p1">复现根因</span></td></tr>
+        <tr><td>③</td><td>裸表头 + 事后补 clickable</td><td>裸 QHeaderView</td><td>setModel → setSectionsClickable(True)</td><td class="num">1</td><td><span class="sev ok">旧主表路径</span></td></tr>
+        <tr><td>④</td><td>裸表头，对话框顺序</td><td>裸 QHeaderView</td><td>setSortingEnabled(True) → setModel</td><td class="num">0</td><td><span class="sev p1">确认失效</span></td></tr>
+      </tbody>
+    </table>
+    <p class="note" style="margin-bottom:0">② 与 ④ 证明 v43.119 的根因判断正确；③ 是修复前主表"侥幸可用"的路径，现已由 P1-1 改为与 ① 同一条共享实现。</p>
+  </div>
+
+  <h2 id="s5">5. 变更清单与验证证据</h2>
+  <div class="card">
+    <h3 style="margin-top:0">5.1 文件级变更</h3>
+    <table>
+      <thead><tr><th style="width:44%">文件</th><th style="width:14%">类型</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><code>gui_pyside6/main_window.py</code></td><td>修改</td><td>-95 行重复类，+共享类导入，清理 5 个导入名</td></tr>
+        <tr><td><code>gui_pyside6/dialogs/quarantine_dialog.py</code></td><td>修改</td><td>-67 行死代码类，-4 个导入名</td></tr>
+        <tr><td><code>gui_pyside6/widgets/sort_badge_header.py</code></td><td>修改</td><td>诊断日志改走闸门工具</td></tr>
+        <tr><td><code>gui_pyside6/utils/table_sort.py</code></td><td>修改</td><td>同上（删除行内写盘块）</td></tr>
+        <tr><td><code>gui_pyside6/utils/column_filter.py</code></td><td>修改</td><td>同上，并更新表头参数说明</td></tr>
+        <tr><td><code>gui_pyside6/utils/click_debug.py</code></td><td>新增</td><td>日志闸门工具（27 行）</td></tr>
+        <tr><td><code>tests/unit/test_header_click.py</code></td><td>新增</td><td>4 条链路回归用例</td></tr>
+        <tr><td><code>utils/version_history.py</code></td><td>恢复</td><td>取回被误删的 v43.119 条目</td></tr>
+        <tr><td><code>.gitignore</code></td><td>修改</td><td>+<code>*.orig_bak</code>、<code>*.bak</code></td></tr>
+        <tr><td><code>gui_pyside6/widgets/sort_badge_header.py.orig_bak</code></td><td>删除</td><td>改前备份（git 历史可恢复）</td></tr>
+      </tbody>
+    </table>
+    <p class="note">合计：9 个已跟踪文件变更（+35 / -212 行），3 个新增文件，1 个文件删除。</p>
+
+    <h3>5.2 验证证据</h3>
+    <pre><span class="c"># 全量测试：69 passed/1 skipped → 73 passed/1 skipped</span>
+python -m pytest -q
+  TOTAL  5750  5072  12%
+  ======================= 73 passed, 1 skipped in 10.74s =======================
+
+<span class="c"># 新增用例单独跑</span>
+python -m pytest tests/unit/test_header_click.py -q --no-cov
+  tests\unit\test_header_click.py ....                                     [100%]
+  ======================== 4 passed, 1 warning in 1.06s ========================
+
+<span class="c"># 静态检查：仅清理本次触碰文件的相关项，未做批量修复</span>
+python -m ruff check . --statistics
+  142 F401 / 38 F841 / 19 E401 / 18 E402 / 15 E701 / 12 E712
+   11 F541 /  9 E702 /  7 F811 /  1 E741  =  Found 272 errors.
+
+<span class="c"># 日志闸门（默认关闭 / 显式开启）</span>
+python temp\probe_header_click.py            → 日志文件存在: False
+set ZPP011_CLICK_DEBUG=1; python temp\probe_header_click.py
+                                             → 日志文件存在: True（2 行 press/release）
+
+<span class="c"># 导入与结构冒烟</span>
+main_window.SortBadgeHeader is shared: True
+FilterHeader removed: True
+python -m compileall -q gui_pyside6 tests\unit\test_header_click.py  → exit 0
+
+<span class="c"># 版本一致性</span>
+get_current_version() -> v43.119  |  VERSION_HISTORY 条目数 244</pre>
+  </div>
+
+  <h2 id="s6">6. 遗留事项</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:8%">编号</th><th style="width:34%">事项</th><th>说明与建议</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>P2-2</td><td>config 运行时配置差异待确认</td>
+          <td>检查期间以下文件发生变化（进程内写入，非本次修复所致）：<code>config/column_widths.json</code>（15 处列宽）、<code>config/auto_quarantine_config.json</code>（+「纸卡」、<code>mat_code_prefix</code> 400→410）、<code>config/auto_read_rules.json</code>（<code>excluded_units</code> "G，个" → "G,个,张"）。这些文件既作产品默认配置又会被运行时写回，建议确认哪部分是本次要发布的规则变更、哪部分是本机使用痕迹；长期方案是拆分为「默认模板 + 用户配置」两份。</td>
+        </tr>
+        <tr>
+          <td>P3-1</td><td>272 条 ruff 告警未批量处理</td>
+          <td>其中 179 条可自动修复（以 F401/F841/F541 为主），但波及上百文件、回归面大。建议独立提交：分批执行 <code>ruff check . --select F401,F541 --fix</code> → 跑全量测试 → 再处理 F841/E402 等需人工判断的项；<code>main_window.py</code> 内 20+ 处函数内 import（E402）建议单独一轮梳理。</td>
+        </tr>
+        <tr>
+          <td>—</td><td>发布动作</td>
+          <td>本次改动涉及主表表头与三个看板的共享组件，建议在真实界面回归一次「主表 + 偏差率预警 / 负损 / 实时告警 / 隔离区双表」的列头排序与列头筛选，并重新打包 exe（版本号现为 v43.119）。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="s7">7. 附录：环境与命令</h2>
+  <div class="card">
+    <table>
+      <tbody>
+        <tr><th style="width:26%">Python</th><td>3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024)</td></tr>
+        <tr><th>PySide6</th><td>6.11.1（无头平台插件 offscreen）</td></tr>
+        <tr><th>ruff</th><td>0.15.10</td></tr>
+        <tr><th>测试</th><td>修复前 69 passed / 1 skipped（覆盖 ≈9%）→ 修复后 73 passed / 1 skipped（覆盖 12%）</td></tr>
+        <tr><th>基线</th><td>main @ ec1f3a6（2026-09-29 09:29:21 +0800）</td></tr>
+        <tr><th>诊断脚本</th><td><code>temp\probe_header_click.py</code>（已被 <code>tests/unit/test_header_click.py</code> 固化）</td></tr>
+      </tbody>
+    </table>
+    <p class="note" style="margin-bottom:0">备注：所有修改均在写入前做了精确断言（如导入行唯一命中、待删块特征串校验），写入后执行 <code>py_compile</code> / <code>compileall</code> / 模块导入冒烟；被删备份已确认可从 git 历史取回；<code>config/</code> 下三个运行时配置未做任何改动。</p>
+  </div>
+
+  <footer>
+    本报告覆盖「检查 → 修复 → 回归验证」全过程。<br>
+    报告文件：<code>docs\代码检查报告_2026-09-30.html</code>（2026-09-30 09:35 更新为修复后状态）　·　未提交改动均由本次修复产生（config/ 例外，见第 6 节）。
+  </footer>
+</div>
+</body>
+</html>

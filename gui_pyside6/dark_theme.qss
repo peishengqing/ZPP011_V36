@@ -498,3 +498,56 @@ QScrollBar::handle:horizontal {
 }
 QScrollBar::handle:horizontal:hover { background-color: #888780; }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+
+/* 左侧面板与表单标签：与 #altCountLabel 一致，不再由代码内联白字控制。 */
+#filterLabel, #semiCountLabel {
+    color: #CECBF6;
+    font-size: 11px;
+}
+
+/* 工具栏收纳菜单按钮（看板/导出/维护）：与 .actionBtn 同视觉，箭头并入文字 */
+QToolButton#actionMenuBtn {
+    background-color: #2C2C2A;
+    color: #EAE8E4;
+    border: 0.5px solid #444441;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    text-align: left;
+}
+
+/* 联动横幅（看板钻取到主表，可一键清除） */
+QFrame#linkBanner {
+    background: #2A2140;
+    border: 0.5px solid #4C4389;
+    border-radius: 4px;
+    margin: 4px 4px 0px 4px;
+}
+QLabel#linkBannerLabel {
+    color: #CECBF6;
+    font-size: 12px;
+    background: transparent;
+}
+QPushButton#linkBannerClearBtn {
+    color: #EAE8E4;
+    background: #3C3489;
+    border: none;
+    border-radius: 3px;
+    padding: 2px 10px;
+    font-size: 12px;
+}
+QPushButton#linkBannerClearBtn:hover { background: #4C43A0; }
+/* 筛选面板「预设」按钮（与工具栏菜单按钮观感一致） */
+QPushButton#filterPresetBtn {
+    color: #EAE8E4;
+    background: #2C2C2A;
+    border: 0.5px solid #444441;
+    border-radius: 3px;
+    padding: 1px 8px;
+    font-size: 12px;
+}
+QPushButton#filterPresetBtn:hover { background: #3C3489; color: #CECBF6; }
+
+QToolButton#actionMenuBtn:hover { background-color: #3C3489; color: #CECBF6; }
+QToolButton#actionMenuBtn::menu-indicator { width: 0; height: 0; }
+#toolbarSep { background-color: #444441; }

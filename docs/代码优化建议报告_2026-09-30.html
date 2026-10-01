@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZPP011 全盘检查与优化建议报告</title>
+<style>
+  :root{
+    --bg:#f5f7fa; --card:#fff; --ink:#1f2933; --muted:#6b7280; --line:#e3e8ef;
+    --p0:#b3261e; --p0bg:#fdecea; --p1:#b26a00; --p1bg:#fff5e5; --p2:#1565c0; --p2bg:#e8f1fd;
+    --ok:#1b7f4b; --okbg:#e7f5ec; --accent:#2d5f8b;
+    --mono:"Cascadia Mono",Consolas,"SFMono-Regular",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:"Microsoft YaHei UI","PingFang SC","Segoe UI",system-ui,sans-serif;font-size:15px;line-height:1.7}
+  .wrap{max-width:1140px;margin:0 auto;padding:0 20px 72px}
+  header{background:linear-gradient(135deg,#16324f,#2d5f8b 55%,#2d7dd2);color:#fff;padding:38px 0 30px;margin-bottom:26px}
+  header .wrap{padding-bottom:0}
+  h1{margin:0 0 8px;font-size:27px;letter-spacing:.5px}
+  .sub{opacity:.92;font-size:14px}
+  .chips{margin-top:16px;display:flex;flex-wrap:wrap;gap:8px}
+  .chip{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:4px 12px;font-size:12.5px}
+  h2{font-size:20px;margin:36px 0 12px;padding-left:11px;border-left:4px solid #2d7dd2}
+  h3{font-size:16px;margin:22px 0 8px}
+  h4{font-size:14.5px;margin:16px 0 6px;color:#37474f}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:18px 0 6px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .kpi .n{font-size:22px;font-weight:700;letter-spacing:.3px}
+  .kpi .l{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .kpi.bad .n{color:var(--p0)} .kpi.mid .n{color:var(--p1)} .kpi.good .n{color:var(--ok)}
+  .lead{border-left:5px solid var(--accent);background:#eef4fb;border-radius:8px;padding:14px 18px;margin:6px 0 0}
+  table{width:100%;border-collapse:collapse;background:var(--card);font-size:13.5px}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:#f0f4f9;font-weight:600}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  code,pre{font-family:var(--mono)}
+  code{background:#eef2f7;border:1px solid #e0e6ee;border-radius:4px;padding:1px 5px;font-size:12.6px}
+  pre{background:#1e2733;color:#e6edf3;border-radius:8px;padding:14px 16px;overflow-x:auto;font-size:12.6px;line-height:1.6}
+  .tag{display:inline-block;border-radius:5px;padding:1px 8px;font-size:11.5px;font-weight:700;white-space:nowrap}
+  .tag.p0{background:var(--p0bg);color:var(--p0);border:1px solid #f3c2bd}
+  .tag.p1{background:var(--p1bg);color:var(--p1);border:1px solid #f0dcb8}
+  .tag.p2{background:var(--p2bg);color:var(--p2);border:1px solid #c6ddf7}
+  .tag.ok{background:var(--okbg);color:var(--ok);border:1px solid #bfe3cd}
+  .tag.gray{background:#eef2f7;color:#546e7a;border:1px solid #dfe6ee}
+  ul{margin:8px 0 8px 20px;padding:0} li{margin:4px 0}
+  .note{font-size:12.5px;color:var(--muted)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .toc{columns:2;column-gap:26px;font-size:14px}
+  .toc a{color:var(--accent);text-decoration:none} .toc a:hover{text-decoration:underline}
+  .wire{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center}
+  .wire figcaption{font-size:12.5px;color:var(--muted);margin-top:6px}
+  footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
+  @media (max-width:760px){.grid2{grid-template-columns:1fr}}
+  @media print{body{background:#fff}header{background:#16324f}.card,.kpi,table{box-shadow:none}}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>ZPP011 生产偏差分析器 · 全盘检查与优化建议报告</h1>
+    <div class="sub">仓库 <code style="background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.3);color:#fff">H:\zpp011_v2</code> · 基线 <code style="background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.3);color:#fff">ec1f3a6 (v43.119)</code> · 方法：4 路并行深审 + 主审逐条复核</div>
+    <div class="chips">
+      <span class="chip">167 个 Python 文件 / 42,646 行</span>
+      <span class="chip">复核时间 2026-09-30</span>
+      <span class="chip">P0 缺陷 6 项（含 2 个用户可见功能失效）</span>
+      <span class="chip">可精简代码 ≈ 12,000 行</span>
+      <span class="chip">exe 287MB → 可降至 ≈ 90MB</span>
+    </div>
+  </div>
+</header>
+<div class="wrap">
+
+  <div class="kpis">
+    <div class="kpi"><div class="n">42,646</div><div class="l">Python 总行数（167 文件）</div></div>
+    <div class="kpi mid"><div class="n">4,744</div><div class="l">单文件最大：main_window.py（156 方法）</div></div>
+    <div class="kpi bad"><div class="n">≈ 28%</div><div class="l">零引用代码占比（31 文件 / 12,052 行）</div></div>
+    <div class="kpi mid"><div class="n">63 / 73</div><div class="l">已写测试：63 个从不执行 / 实际跑 73 个</div></div>
+    <div class="kpi bad"><div class="n">6</div><div class="l">P0 缺陷（功能失效 or 数据不可恢复）</div></div>
+    <div class="kpi mid"><div class="n">272</div><div class="l">ruff 告警（142 未用导入 / 38 未用变量）</div></div>
+  </div>
+
+  <div class="lead">
+    <b>一句话结论：</b>功能实现完整、业务逻辑扎实，但工程层面存在三类系统性问题——
+    <b>① 两处用户可见功能被静默吞异常悄悄废掉</b>（4 个看板双击定位、打包版列宽记忆）；
+    <b>② 配置与数据缺少"损坏可恢复"设计</b>（配置解析失败即覆盖、审核库 8MB 无备份、恢复标记挂了 24 天）；
+    <b>③ 历史迭代留下约 1.2 万行零引用代码与多条并存的技术路线</b>（三代 PPT、三套排序、四套配置路径、五处列头筛选接线）。
+    界面侧则有 6 处"1 小时内可改完、用户当天能感知"的体验缺口。
+  </div>
+
+  <h2 id="top">摘要：Top 15 行动清单</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:4%">#</th><th style="width:34%">行动</th><th style="width:9%">级别</th><th style="width:8%">工作量</th><th style="width:11%">收益</th><th>关键证据</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>修复 4 个看板「双击定位主表」完全失效</td><td><span class="tag p0">P0</span></td><td>S</td><td>高（功能恢复）</td><td><code>main_window.locate_record</code> 全仓无定义，4 处调用被 <code>except (AttributeError, Exception): pass</code> 吞掉</td></tr>
+        <tr><td>2</td><td>配置解析失败不再覆盖原文件（先改名备份）</td><td><span class="tag p0">P0</span></td><td>S</td><td>高（防数据丢失）</td><td><code>core/config_manager.py:67-70</code>；<code>alt_manager.py:132</code> 保存失败仅记日志</td></tr>
+        <tr><td>3</td><td>审核库自动备份 + 一键恢复（含 integrity_check）</td><td><span class="tag p0">P0</span></td><td>M</td><td>高（生产可回滚）</td><td><code>~/.zpp011_audit/audit.db</code> 8.23MB+WAL 5.16MB，仅 1 个手工备份；<code>_recovery_needed.flag</code> 残留自 2026-09-06</td></tr>
+        <tr><td>4</td><td>修复打包版列宽/列显隐不保存（onefile 下写入临时目录）</td><td><span class="tag p0">P0</span></td><td>S</td><td>高（交付版体验）</td><td><code>main_window.py:3118-3122</code> 用 <code>__file__</code>；<code>build_pyside6_exe.py:115</code> 为 <code>--onefile</code></td></tr>
+        <tr><td>5</td><td>亮色主题下左侧面板 5 处白字不可见</td><td><span class="tag p0">P0</span></td><td>S</td><td>中（亮色可用）</td><td><code>left_panel.py:156,179,188,255,319</code> 内联白字压过 <code>light_theme.qss</code> 的 <code>filterLabel{color:#333330}</code></td></tr>
+        <tr><td>6</td><td>筛选面板「收不起来」（最小宽度顶死最大宽度）</td><td><span class="tag p0">P0</span></td><td>S</td><td>中（1366 屏省 400px）</td><td><code>filter_panel.py:39 setMinimumWidth(440)</code> vs <code>:495 setMaximumWidth(32)</code></td></tr>
+        <tr><td>7</td><td>激活 63 个从不执行的测试 + offscreen/qapp 下沉 conftest</td><td><span class="tag p1">P1</span></td><td>S</td><td>高（测试资产翻倍）</td><td><code>pytest.ini:2 testpaths=tests/unit</code>；根目录 9 个 test 文件共 63 用例</td></tr>
+        <tr><td>8</td><td>exe 从 287MB 瘦身至约 90MB</td><td><span class="tag p1">P1</span></td><td>S</td><td>高（分发/启动）</td><td><code>--collect-all=pyside6</code> 小写空转；未排除 <code>Qt6WebEngineCore.dll</code> 195.3MB</td></tr>
+        <tr><td>9</td><td>删除 31 个零引用文件（约 1.2 万行）与 6 个死方法</td><td><span class="tag p1">P1</span></td><td>S-M</td><td>中（可读性）</td><td>三代 PPT 并存、<code>modules/audit</code> 整层无实例化、<code>enhanced_sort_proxy_model</code> 0 importer</td></tr>
+        <tr><td>10</td><td>分析提速：去掉源文件二次整表解析（openpyxl）</td><td><span class="tag p1">P1</span></td><td>M</td><td>高（5-30s 主因）</td><td><code>analysis/analyzer.py:264</code> 在 pandas 已读一遍后再 <code>load_workbook</code> 整表扫一次</td></tr>
+        <tr><td>11</td><td>消除分析结果全局缓存被后台线程读取的错报告风险</td><td><span class="tag p1">P1</span></td><td>M</td><td>中（正确性）</td><td><code>analyzer.py:50/719 LATEST_INTERMEDIATES</code> 被 <code>main_window.py:1291</code> 后台线程直接读</td></tr>
+        <tr><td>12</td><td>移除线程硬杀 <code>terminate()</code>（可能中断审核库写入）</td><td><span class="tag p1">P1</span></td><td>S-M</td><td>中（数据完好）</td><td><code>analysis_controller.py:80-82</code>、<code>audit_controller.py:66-68</code>；worker 内写 SQLite</td></tr>
+        <tr><td>13</td><td>界面 6 处低成本高感知改动（行高、右键选中、导出反馈、空态、合并重复复制函数）</td><td><span class="tag p2">P2</span></td><td>S</td><td>高（日常手感）</td><td>见第 4 节清单</td></tr>
+        <tr><td>14</td><td>配置迁 <code>%APPDATA%</code> + defaults 模板 + schema 校验 + git 去污染</td><td><span class="tag p1">P1</span></td><td>M</td><td>中（交付稳定）</td><td><code>column_widths.json</code> 历史 24 次提交；四套路径策略并存</td></tr>
+        <tr><td>15</td><td>删除 <code>requirements.lock</code>（无 PySide6、pandas==3.0.3、0 引用）并建 constraints</td><td><span class="tag p1">P1</span></td><td>S</td><td>中（换机可复现）</td><td>全仓 0 处引用；<code>pandas==3.0.3</code> 与 <code>requirements.txt</code> 的 <code>&gt;=2.0</code> 冲突</td></tr>
+      </tbody>
+    </table>
+    <p class="note">级别：P0＝用户可见功能失效或数据不可恢复；P1＝显著影响效率/稳定性/交付；P2＝体验与整洁度。工作量：S ≤ 半天，M ≈ 1-3 天，L ≥ 1 周（单人）。</p>
+  </div>
+  <h2 id="done">批次一实施结果（2026-09-30 已完成）</h2>
+  <div class="card" style="border-color:#bfe3cd;background:var(--okbg)">
+    <p style="margin-top:0"><b>本批次 7 项全部完成</b>，并新增 22 个回归测试。所有改动均通过全量测试、编译检查与导入冒烟。</p>
+    <table>
+      <thead><tr><th style="width:4%">#</th><th style="width:26%">行动</th><th style="width:40%">实施内容</th><th>验证</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>修复 4 个看板双击定位失效</td>
+            <td>新增 <code>gui_pyside6/utils/locate.py</code>（原表行号列 → data_id → 索引标签三级回退 + 失败提示）；4 个看板统一接入；<code>main_window</code> 新增 <code>_locate_row_by_excel_no</code> 与共享 <code>_select_source_row</code>，并收窄了吞异常的 <code>except (AttributeError, Exception)</code></td>
+            <td>新增 17 个用例（含真实方法级：断言"原表行号=4 落在第 3 行"，防止再退回按索引错位）</td></tr>
+        <tr><td>2</td><td>配置损坏保护</td>
+            <td><code>config_manager</code> 解析失败先把原文件改名 <code>.bad_&lt;时间戳&gt;</code> 再写默认；<code>_save</code> 改原子写（tmp + fsync + os.replace）；<code>alt_manager</code> 同样原子写并<b>返回布尔</b>，<code>alt_controller</code> 7 处保存失败时弹窗告知</td>
+            <td>新增 5 个用例；测试当场抓出 <code>save_alt_pairs</code> 里 <code>os.makedirs</code> 在 try 之外会抛异常的真实缺陷并已修</td></tr>
+        <tr><td>3</td><td>列宽配置落到用户目录</td>
+            <td><code>_get_config_path</code> 改 <code>%APPDATA%\ZPP011\column_widths.json</code>（支持 <code>ZPP011_CONFIG_DIR</code> 覆盖）；首次运行回退读取仓库内既有列宽；保存失败改 toast + 状态栏提示（原先 <code>self.log</code> 是空操作，属静默失败）</td>
+            <td>冒烟验证路径逻辑；打包版不再写进 <code>_MEIPASS</code> 临时目录</td></tr>
+        <tr><td>4</td><td>界面 P0 七条</td>
+            <td>① 左面板 5 处内联白字删除，改由 light/dark QSS 的 <code>#filterLabel/#semiCountLabel</code> 控制；② 筛选面板折叠修复（min 与 max 同步，之前被 min 440 顶死）；③ 右键先选中命中行；④ 主表行高 24 → 28（与各看板一致）；⑤ 删除零引用的暗色 <code>TABLE_STYLESHEET</code>；⑥ 两份 <code>copy_selected_cells</code> 合并为一份，菜单与 Ctrl+C 共用；⑦ 见第 3 项</td>
+            <td>compileall + 导入冒烟；行高/颜色/QSS 规则逐条复核</td></tr>
+        <tr><td>5</td><td>激活 63 个从不执行的测试</td>
+            <td><code>pytest.ini</code> 的 <code>testpaths</code> 由 <code>tests/unit</code> 改为 <code>tests</code>；覆盖率范围扩到 core/analysis/modules/gui_pyside6/utils/storage 并设 18% 防回退闸门；<code>tests/conftest.py</code> 下沉 offscreen 与 <code>qapp</code> fixture；修 <code>read_status.close_db()</code> 未关子线程连接导致 Windows 上临时库删不掉的测试失败</td>
+            <td><b>测试 73 → 158 passed</b>（+85），覆盖率 12% → 18.8%，1 skipped</td></tr>
+        <tr><td>6</td><td>打包参数修正</td>
+            <td><code>--debug</code> 之前完全无效（两分支都是 <code>--console</code>），改为非 debug 时 <code>--windowed</code>；删除空转的 <code>--collect-all=pyside6</code>（注意：改成大写反而会把整包 634MB 收进 exe）；新增 25 条 <code>--exclude-module</code> 排除全仓 0 引用的 Qt 模块（保留 WebEngine，管理看板在用）；清理 5 条指向不存在模块的 hidden-import（38 → 28 条）；移除会白打 QtCharts 的 PySide6 隐藏导入</td>
+            <td>语法与参数清单核对。<b>需重新打包并冒烟确认体积与启动</b>（本机未执行打包）</td></tr>
+        <tr><td>7</td><td>清理第一批零引用死文件</td>
+            <td>删除 28 个文件 / 6,437 行（三代 PPT 生成器、modules/audit 的 presenters/views/models、enhanced_sort_proxy_model、alert_popup、loading_dialog、attribution、summary_generator、dry_run_analyzer、state_store 等）；全部已被 git 跟踪，可随时取回</td>
+            <td>逐文件核验"零引用 + 已跟踪"后才删；删除后全仓残留引用数 0，<b>ruff 272 → 197</b>，main_window 方法清单比对无意外丢失</td></tr>
+      </tbody>
+    </table>
+    <p class="note" style="margin-bottom:0"><b>过程中修正的一个自身失误</b>：脚本化批量替换时，有两处锚点在文件里重复出现，导致 <code>deviation_warning_dialog</code> / <code>neg_loss_dashboard_dialog</code> 被误删大段代码；已用 <code>git checkout</code> 恢复并按"函数级边界"重新精确应用，随后补了函数级与源级双重断言，并新增用例锁定。此事说明：批量文本改写必须校验锚点唯一性。</p>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h3 style="margin-top:0">批次一效果对比</h3>
+    <table>
+      <thead><tr><th style="width:34%">指标</th><th style="width:22%">改动前</th><th style="width:22%">改动后</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>测试用例（实际执行）</td><td>73 passed / 1 skipped</td><td><b>158 passed / 1 skipped</b></td><td>63 个沉睡用例被激活 + 22 个新增回归用例</td></tr>
+        <tr><td>语句覆盖率</td><td>≈ 12%（仅 core + filters）</td><td><b>18.8%</b>（六个包，含 17k 行 GUI）</td><td>分母变大后仍上升，且已设 18% 闸门防回退</td></tr>
+        <tr><td>ruff 告警</td><td>272</td><td><b>197</b></td><td>主要来自删除死代码</td></tr>
+        <tr><td>代码规模</td><td>42,646 行</td><td><b>≈ 36,300 行</b></td><td>净减 6,437 行（占 15%），无功能损失</td></tr>
+        <tr><td>用户可见缺陷</td><td>2 处功能静默失效</td><td><b>已修复并有测试保护</b></td><td>4 个看板双击定位、打包版列宽记忆</td></tr>
+      </tbody>
+    </table>
+    <p class="note" style="margin-bottom:0"><b>建议人工复验</b>：① 重新打包后确认 exe 体积、无控制台窗口、能正常启动；② 亮色主题下左侧面板标签可见；③ 在偏差率预警/负损/隔离区/替代料看板双击一行，主表应滚动并选中对应行；④ 筛选面板可正常收起。</p>
+  </div>
+
+  <h2 id="uireorg">UI 重新整理结果（范围 A+B，2026-09-30 完成）</h2>
+  <div class="card" style="border-color:#bfe3cd;background:var(--okbg)">
+    <p style="margin-top:0"><b>背景</b>：用户反馈界面「有点乱」。离屏渲染实测发现窗口最小宽度被 18 个同级工具栏按钮顶到 1795px（1366 屏放不下），且入口/状态信息分散。按用户确认的范围（工具栏重组 + 面板瘦身；「隐藏左侧栏/隐藏筛选」两个常用开关保留平铺）实施。</p>
+    <table>
+      <thead><tr><th style="width:4%">#</th><th style="width:26%">改动</th><th style="width:40%">实施内容</th><th>验证</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>工具栏 18 同级按钮 → 分组 + 收纳</td>
+            <td>主操作（分析/AI审核）+ 常用视图开关（隐藏左侧栏/隐藏筛选/列头筛选）保留平铺；6 个看板 + 自动整理隔离区收进「📊 看板 ▾ / 🔧 维护 ▾」下拉；3 个导出收进「📤 导出 ▾」；组间 1px 分隔线。原按钮属性名沿用为 QAction，隔离区失效数文案与规则中心 tooltip 的既有更新逻辑零改动</td>
+            <td>新增 5 个回归用例（菜单内容/平铺清单/窗口宽度/卡片折叠/进度收起守卫）</td></tr>
+        <tr><td>2</td><td>两主题 QSS 补菜单按钮样式</td>
+            <td><code>QToolButton#actionMenuBtn</code> 与 <code>#toolbarSep</code> 加入暗/亮主题，与既有 <code>.actionBtn</code> 视觉一致</td>
+            <td>离屏渲染截图复核</td></tr>
+        <tr><td>3</td><td>分析进度面板自动收起</td>
+            <td>分析完成 6 秒后自动收起进度面板（表格空间还给数据）；新一轮分析进行中（<code>_heavy_busy</code>）不收起；工具栏「进度」按钮可随时展开</td>
+            <td>用例断言 _heavy_busy 守卫</td></tr>
+        <tr><td>4</td><td>左面板瘦身</td>
+            <td>「替代料配对」卡片默认折叠（低频配置，原占约 400px 垂直空间）；「共 N 对」摘要标签移入卡片头，折叠时仍可见</td>
+            <td>用例断言默认折叠 + 标签在卡片头</td></tr>
+        <tr><td>5</td><td>窗口宽度回归</td>
+            <td>窗口最小宽度 <b>1795×804 → 1110×550</b>（实测），1366×768 主力屏完整可用；此前 resize(1366,768) 会被最小宽度拒绝</td>
+            <td>用例 <code>test_window_fits_1366_screen</code>（≤1300 断言，字体感知，缺 CJK 字体自动跳过）</td></tr>
+      </tbody>
+    </table>
+    <p class="note" style="margin-bottom:0"><b>效果对比</b>：测试 158 → <b>163 passed</b>；覆盖率 18.8% → <b>26.4%</b>（新用例覆盖了工具栏构建路径）。工具栏控件数 18 → 8 平铺 + 3 菜单。未动的部分（批次 C：入口统一、状态栏措辞、视觉 token）可在需要时继续。</p>
+  </div>
+
+  <h2 id="progressfix">分析进度一致性修复（2026-09-30 完成）</h2>
+  <div class="card" style="border-color:#bfe3cd;background:var(--okbg)">
+    <p style="margin-top:0"><b>问题</b>：用户反馈「分析进度和实际进度不一致」。根因有二：① 10 个 Sheet 构建器沿用「自身 0-100%」的历史约定，总进度在步骤之间<b>来回回跳</b>（旧主表路径序列 <code>10,30,50,0,100,0,100,70,0,100,…</code>）；② 步骤图标按「百分比切 12 段」点亮，与实际步骤错位。</p>
+    <table>
+      <thead><tr><th style="width:4%">#</th><th style="width:26%">改动</th><th style="width:40%">内容</th><th>验证</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>analyzer 区间映射（源端）</td>
+            <td>新增 <code>_ranged_progress(report, lo, hi)</code>：Sheet1~5 → 25~80 互不重叠区间，导出路径 Sheet6~10 → 85~96，主表完成 85/96 → 100。新序列完全单调（每 Sheet ≈ 一格图标）</td>
+            <td>3 个用例：主表/完整报告路径 percent 序列单调不减 + 末值 100 + 报告生成</td></tr>
+        <tr><td>2</td><td>UI 单调保护（兜底）</td>
+            <td><code>_on_analysis_progress_ui</code>：低值发射（过滤/搜索通知 percent=0、乱序值）只更新标签，不回退进度条与图标</td>
+            <td>1 个用例：60% 后发 0% 通知 → 条停 60、标签显示通知、80% 继续前进</td></tr>
+        <tr><td>3</td><td>步骤图标按真实步骤驱动</td>
+            <td><code>main_table._map_step_name</code>：发射的 <code>SheetN-xxx</code> 直接点亮对应格（1~10），<code>1/5~4/5</code> 归「主表计算」格（原「预处理」改名），「正在生成审核表格」点亮「生成Excel」；通知/里程碑不动；指针<b>只进不退</b></td>
+            <td>2 个用例：完整序列点亮断言、乱序不回退、新一轮归零</td></tr>
+        <tr><td>4</td><td>计时器贯穿缓存阶段（「后面的时间卡住」）</td>
+            <td>主分析完成后计时器即被停掉，而后台完整报告缓存（Sheet6~10 + Excel，实测数据下可达数分钟）无进度无计时，界面完全冻结观感。现：① 计时器不再于主分析完成时停止；② 缓存 worker 加 <code>progress</code> 信号（跨线程排队到主线程），标签显示「📦 完整报告缓存：SheetN-xxx（N%）」；③ 新增 <code>_finish_cache_phase</code> 收口：缓存结束才停表 + 6 秒后自动收起进度面板 + 状态栏提示；新一轮分析进行中时收口逻辑自动让位（不动新分析的计时器）</td>
+            <td>2 个用例：缓存阶段计时器不停/进度条不打回/标签正确；缓存结束停表 + 分析进行中让位</td></tr>
+        <tr><td>5</td><td>步骤图标字形：emoji → 数字/√</td>
+            <td>12 个 emoji 图标（⚙📋🔄🚨🖖📊⚠💰📝🔍📈💾）语义杂乱（🖖=中间地带？）、跨字体易渲染成方框。改为纯文字状态图标：<b>√=完成、灰色数字=待办、紫色高亮数字=进行中</b>，不依赖 emoji 字体；√ 用 U+221A（YaHei/SimHei 均有字形，已用 PIL 验证）；按钮 26px → 22px 更紧凑；名称保留在 tooltip（"6. 完整偏差"）</td>
+            <td>状态文字断言并入图标用例（√×N + 数字序列 / reset 回数字 / complete 全 √）</td></tr>
+      </tbody>
+    </table>
+    <p class="note" style="margin-bottom:0"><b>效果</b>：测试 163 → <b>171 passed</b>，覆盖率 27.3%。离屏截图验证：Sheet5 进行中时前 5 格完成、第 6 格高亮、标签「Sheet5-完整偏差明细 70%」。遗留可选项：各 Sheet 内部只在首/尾发射 2 个点，进度条在 Sheet 工作期间停在区间起点；如需更丝滑可在 Sheet 行循环中补中点发射（未做）。</p>
+  </div>
+
+  <h2 id="perf">分析性能优化（2026-09-30 完成）</h2>
+  <div class="card" style="border-color:#bfe3cd;background:var(--okbg)">
+    <p style="margin-top:0"><b>背景</b>：用户反馈一次分析要 90 多秒。用 5 万行合成数据画像定位到三个耗时源（占分析总时长）：① <code>build_sheet2</code> 无论有无替代料配对都要对全表跑 <code>groupby('流程订单')</code> 5 万组切片建索引（<b>35s</b>）；② 原表行号用 openpyxl 再扫一遍全文件（~3s）；③ 读表用 openpyxl 引擎（5 万行 6.2s，文件越大越慢）。</p>
+    <table>
+      <thead><tr><th style="width:4%">#</th><th style="width:26%">改动</th><th style="width:40%">内容</th><th>实测（5 万行）</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>sheet2 索引重构</td>
+            <td>无配对直接返回（省掉 35s 空转）；有配对时改用「单次向量化扫列建 描述/编码→订单 索引 + isin 预筛后只对目标订单切片」，替代原 5 万组全量 groupby 切片。匹配语义（精确→包含→编码三级）逐条对齐</td>
+            <td>主表快路径 <b>22s → 5.8s</b>；二次分析（行号缓存命中）<b>0.7s</b></td></tr>
+        <tr><td>2</td><td>行号缓存</td>
+            <td>原表行号序列按 (路径, mtime, size) 缓存（最多 2 个文件）：同一文件重复分析不再重开 openpyxl 扫全表；行数不匹配自动回退</td>
+            <td>二次分析省 ~3s</td></tr>
+        <tr><td>3</td><td>读表引擎加速（utils/excel_io）</td>
+            <td>新增 <code>open_excel_book/read_sheet</code>：优先 calamine（python-calamine，Rust），未安装或读失败静默退回 openpyxl（行为与旧版一致）；全部读表调用点（文件选择预读 / 主分析 / 导入向导 / PPT 读报告）改走该层，并顺带消除「读一次工作簿 + 再整文件解析一次」的重复</td>
+            <td>读表 <b>6.2s → 1.3s（4.8x）</b>；两引擎读出的值逐列比对一致</td></tr>
+        <tr><td>4</td><td>打包脚本</td>
+            <td>build_pyside6_exe.py 增加 <code>--collect-all=python_calamine/calamine</code>（构建环境 <code>pip install python-calamine</code> 后重新打包，exe 才带上引擎；未带入时自动退回 openpyxl，不影响功能）</td>
+            <td>—</td></tr>
+      </tbody>
+    </table>
+    <p class="note" style="margin-bottom:0"><b>效果</b>：测试 171 → <b>177 passed</b>（新增 6 个：引擎一致性/兜底、sheet2 早退与语义、行号缓存），覆盖率 27.6%。注意：① 完整报告缓存（Sheet6~10 + 写 Excel，5 万行约 54s）仍在后台线程，不阻塞主表显示，但会体现在计时器上；② <b>calamine 提速需重新打包 exe 才生效</b>，开发机已安装。</p>
+  </div>
+
+  <h2 id="feat-ab">新功能 A+B：看板联动 + 筛选预设（2026-09-30 完成）</h2>
+  <div class="card" style="border-color:#bfe3cd;background:var(--okbg)">
+    <p style="margin-top:0"><b>A. 看板 ↔ 主表联动钻取</b>：4 个看板（替代料/隔离区/偏差率预警/负损）双击行定位主表时，主表自动叠加「流程订单精确 + 工厂上下文」筛选钻取到该订单，表格上方显示可撤销的 <b>联动横幅</b>（“联动视图：订单 17001234 · 偏差率预警 [清除]”）。解决“定位行被当前筛选遮住、找不到”的问题；「清除」一键恢复钻取前筛选快照。</p>
+    <p><b>B. 筛选预设（保存/复用）</b>：筛选面板标题栏新增「预设 ▾」按钮：保存当前筛选为命名预设 / 应用预设 / 删除预设 / 恢复「上次使用」。数据落在预留已久的 <code>filter_history</code> 配置字段（此前仅声明未实现）；每次点「分析」前自动捕获当前筛选为“上次使用”，下次一键恢复。新增 <code>FilterPanel.apply_filters(state)</code>（get_filters 的逆操作，恢复期间抑制逐控件发射）与 <code>AuditProxyModel.getCustomFilters()</code> 快照访问器。</p>
+    <table>
+      <thead><tr><th style="width:4%">#</th><th style="width:34%">改动</th><th>涉及文件</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>locate_row 增加 link_source 参数，定位成功后触发联动钻取（失败不影响定位）；4 看板传入各自来源标签</td>
+            <td>gui_pyside6/utils/locate.py、alert_dialog.py、quarantine_dialog.py、deviation_warning_dialog.py、neg_loss_dashboard_dialog.py</td></tr>
+        <tr><td>2</td><td>联动横幅（QFrame#linkBanner + 清除按钮 + 信号）、<code>_apply_link_drilldown/_clear_link_drilldown</code>（快照恢复）、双主题 QSS</td>
+            <td>components/main_table.py、main_window.py、dark_theme.qss、light_theme.qss</td></tr>
+        <tr><td>3</td><td>预设按钮/菜单 + 4 个信号 + apply_filters 逆操作 + 未知键前向兼容</td>
+            <td>widgets/filter_panel.py</td></tr>
+        <tr><td>4</td><td>预设存取（JSON 安全化 set/tuple 值）、上次使用捕获（分析发起前）、菜单名单同步</td>
+            <td>main_window.py（filter_history 经 ConfigManager 持久化）</td></tr>
+        <tr><td>5</td><td>5 项回归测试：apply_filters 往返、预设保存/应用/删除、上次使用捕获、联动钻取与清除、locate 触发联动</td>
+            <td>tests/unit/test_filter_presets.py</td></tr>
+      </tbody>
+    </table>
+    <p class="note" style="margin-bottom:0"><b>效果</b>：测试 177 → <b>182 passed</b>（+5），覆盖率 27.6% → 29.1%。无头渲染验证：预设按钮/菜单、联动横幅显示与清除均正常。</p>
+  </div>
+
+  <h2 id="dash-abcd">管理看板优化 A+B+C+D（2026-09-30 完成）</h2>
+  <div class="card" style="border-color:#bfe3cd;background:var(--okbg)">
+    <p style="margin-top:0"><b>背景</b>：用户反馈管理看板"感觉不好"。诊断（生成速度 5 万行仅 1~2s，排除性能）：① 12 张 matplotlib 图观感糙（车间图乱序、无标签、白底方块嵌在 CSS 渐变页面里、110dpi 发虚）；② 小结卡在最底部，违反结论先行；③ 指标卡浪费（净偏差/平均偏差率算了不展示）；④ 12 图长滚无折叠；⑤ 零互动（其他 4 看板都有定位）。四项全部落地：</p>
+    <table>
+      <thead><tr><th style="width:4%">#</th><th style="width:26%">项</th><th style="width:44%">内容</th><th>验证</th></tr></thead>
+      <tbody>
+        <tr><td>A</td><td>图表风格翻新</td>
+            <td>统一主题 <code>_style_ax</code>（左对齐标题/去顶右边框/细网格/统一字号）；车间与 Top10 类图按量级排序「最严重在上」；柱端数值标签（正值柱外、负值白字入柱内）；每日趋势加 7 日均主线+面积填充、原始日线变轻；dpi 110→150</td>
+            <td>temp/charts_v2 对比图（车间图排序/标签/趋势 7 日均可见）</td></tr>
+        <tr><td>B</td><td>结论先行 + 指标卡补齐</td>
+            <td>小结卡移入每厂区块顶部（图表组之前），新增「重点盯什么」自动文案（最该盯车间/最烧钱物料/最集中一天/覆盖率提示）；指标卡 4→6（补净偏差金额、平均偏差率）</td>
+            <td>单元测试断言 小结位置 &lt; 首图组、6 卡齐全</td></tr>
+        <tr><td>C</td><td>分组折叠</td>
+            <td>原生 <code>&lt;details&gt;</code> 折叠 4 组（重点风险默认展开，其余收起），降级 QTextBrowser 模式也兼容（无 JS 依赖）</td>
+            <td>单元测试断言 4 个 details 且仅重点风险 open</td></tr>
+        <tr><td>D</td><td>「到主表」联动钻取</td>
+            <td>车间/物料/成品线/盲区车间 4 类卡片挂「盯最严重车间 →」芯片（href 自定义 scheme <code>zpp011:link?type=…&amp;v=…&amp;fac=…</code>）；<code>DashboardDialog</code> 用 <code>QWebEngineUrlRequestInterceptor</code> 拦截 → 信号 → 主表 <code>_apply_focus_filters</code>（新通用焦点 API，联动横幅可一键撤销）；主表钻取方法由此泛化（<code>_apply_link_drilldown</code> 改为走同一 API）</td>
+            <td>单元测试：4 种 URL 解析/缺列安全/横幅显示与清除；芯片值 = 数据算出的最严重车间</td></tr>
+      </tbody>
+    </table>
+    <p class="note" style="margin-bottom:0"><b>效果</b>：测试 182 → <b>187 passed</b>（+5），覆盖率 30.4%。涉及：analysis/dashboard_html.py、gui_pyside6/dialogs/dashboard_dialog.py、gui_pyside6/main_window.py。备注：WebEngine 不可用的降级模式下芯片为 inert（不生效不报错）。</p>
+  </div>
+
+  <h2 id="s1">1. 全盘现状盘点</h2>
+
+  <div class="card">
+    <h3 style="margin-top:0">1.1 规模与分布</h3>
+    <table>
+      <thead><tr><th style="width:22%">顶层目录</th><th class="num" style="width:12%">文件数</th><th class="num" style="width:12%">行数</th><th style="width:12%">占比</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><code>gui_pyside6/</code></td><td class="num">51</td><td class="num">19,032</td><td>44.6%</td><td>界面层；main_window 单文件 4,744 行</td></tr>
+        <tr><td><code>core/</code></td><td class="num">37</td><td class="num">9,741</td><td>22.8%</td><td>业务核心：规则引擎、AI、已读状态、历史库、PPT</td></tr>
+        <tr><td><code>analysis/</code></td><td class="num">17</td><td class="num">3,499</td><td>8.2%</td><td>偏差分析引擎 + 多 Sheet Excel 构建器</td></tr>
+        <tr><td><code>tests/</code></td><td class="num">28</td><td class="num">2,773</td><td>6.5%</td><td>其中 9 个文件（63 用例）默认不执行</td></tr>
+        <tr><td><code>utils/</code></td><td class="num">3</td><td class="num">2,700</td><td>6.3%</td><td>几乎全是 version_history.py（2,656 行 / 244 条版本记录）</td></tr>
+        <tr><td><code>modules/</code></td><td class="num">10</td><td class="num">1,860</td><td>4.4%</td><td>旧 Tkinter 时代 MVC 包，应用侧零引用</td></tr>
+        <tr><td>根目录脚本</td><td class="num">3</td><td class="num">1,135</td><td>2.7%</td><td>run_pyside6 / build_pyside6_exe / build_ppt_net</td></tr>
+        <tr><td><code>tools/ storage/ config/ domain/ docs/</code></td><td class="num">19</td><td class="num">1,906</td><td>4.5%</td><td>辅助工具与配置</td></tr>
+      </tbody>
+    </table>
+    <p class="note">统计口径：排除 <code>dist/ dist_run/ build/ htmlcov/ backups/ __pycache__</code>。最大 10 个文件：main_window 4744、version_history 2656、deviation_warning_dialog 1560、audit_presenter 1457、ppt_report_generator_v3 1388、analyzer 1235、neg_loss_dashboard_dialog 1161、filter_panel 1045、data_frame_model 1011、quarantine_dialog 1009。</p>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h3 style="margin-top:0">1.2 质量基线（本次实测）</h3>
+    <table>
+      <thead><tr><th style="width:26%">指标</th><th style="width:20%">数值</th><th>说明 / 证据</th></tr></thead>
+      <tbody>
+        <tr><td>单元测试</td><td>73 passed / 1 skipped</td><td>但 <code>pytest.ini:2</code> 把 <code>testpaths</code> 限定为 <code>tests/unit</code>，根目录 9 个文件的 <b>63 个用例从未执行</b></td></tr>
+        <tr><td>覆盖率</td><td>≈ 12%</td><td>仅统计 <code>core</code> 与 <code>modules/audit/filters</code>；<code>gui_pyside6</code> 17,004 行 0 覆盖，且无 <code>--cov-fail-under</code></td></tr>
+        <tr><td>ruff</td><td>272 条</td><td>F401 142 / F841 38 / E401 19 / E402 18 / E701 15 / E712 12 / F541 11 / E702 9 / F811 7 / E741 1</td></tr>
+        <tr><td>静默吞异常</td><td>97 处</td><td><code>except ...: pass</code> 计数（本次实测）；其中 4 处直接掩盖了功能失效</td></tr>
+        <tr><td>内联样式</td><td>34 处 setStyleSheet / 149 处硬编码色值</td><td>4 套 QSS（dark/light/style/theme）无变量层，颜色与字号靠手抄</td></tr>
+        <tr><td>调试输出残留</td><td>78 处 <code>print(</code></td><td>另有 3 处写 %TEMP% 的诊断日志（本轮已加闸门）</td></tr>
+        <tr><td>时区</td><td>55 处 <code>datetime.now()</code></td><td>与 <code>history_db.py:386</code> 的 UTC <code>datetime('now')</code> 混用</td></tr>
+        <tr><td>冷启动导入</td><td>1.4 - 1.8 s</td><td>其中 <code>gui_pyside6.main_window</code> 累计 2.1 s 依赖树（pandas / requests / PySide6）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h3 style="margin-top:0">1.3 零引用代码：31 个文件 / 12,052 行（占全仓 28%）</h3>
+    <p style="margin-top:0">判定方法：对每个模块做「全仓 import 语句」精确匹配（排除测试与被审模块自身）。下表为人工复核后的清单，<b>可直接归档删除</b>。</p>
+    <table>
+      <thead><tr><th style="width:40%">文件</th><th class="num" style="width:8%">行数</th><th>为什么判定为死代码</th></tr></thead>
+      <tbody>
+        <tr><td><code>core/ppt_report_generator_v3.py</code></td><td class="num">1,388</td><td>0 importer；生产 PPT 走 <code>advanced_ppt_generator_v2</code></td></tr>
+        <tr><td><code>modules/audit/</code>（整层 6 文件）</td><td class="num">1,860</td><td>应用侧 0 引用，仅测试引用 <code>filter_engine</code>、打包脚本 hidden-import</td></tr>
+        <tr><td><code>core/advanced_ppt_generator_v3.py</code></td><td class="num">676</td><td>0 importer（v2 是在用版本）</td></tr>
+        <tr><td><code>core/advanced_ppt_generator.py</code></td><td class="num">489</td><td>0 importer（第一代）</td></tr>
+        <tr><td><code>storage/storage.py</code></td><td class="num">348</td><td>仅 <code>storage/__init__.py</code> 与 <code>tests/unit/run_all.py</code> 引用；其维护的 <code>audit_log.db</code> 在本机不存在</td></tr>
+        <tr><td><code>gui_pyside6/models/enhanced_sort_proxy_model.py</code></td><td class="num">251</td><td>0 importer（历史上的「第三套排序」尝试）</td></tr>
+        <tr><td><code>core/batch_operations.py</code></td><td class="num">215</td><td>0 importer</td></tr>
+        <tr><td><code>core/ppt_zpp011_adapter.py</code>（+ 其独占引用的 <code>ppt_enterprise_generator.py</code> 312 行）</td><td class="num">513</td><td>0 importer；被引用方也仅此一处引用</td></tr>
+        <tr><td><code>gui_pyside6/widgets/alert_popup.py</code></td><td class="num">124</td><td>模块名 0 命中（<code>AlertPopup</code> 仅自身定义）</td></tr>
+        <tr><td><code>core/attribution.py</code> / <code>summary_generator.py</code> / <code>dry_run_analyzer.py</code></td><td class="num">458</td><td>三者 0 importer，且职责互相重叠（历史对比 + Top N + 文本）</td></tr>
+        <tr><td><code>core/exporter.py</code> / <code>task_manager.py</code> / <code>operation_logger.py</code> / <code>decorators.py</code> / <code>rule_atomic_save.py</code></td><td class="num">358</td><td>均 0 importer</td></tr>
+        <tr><td><code>gui_pyside6/components/_ui_refactor_notes.py</code></td><td class="num">72</td><td>重构笔记被误放进包目录，会被 PyInstaller 打进 exe</td></tr>
+        <tr><td><code>gui_pyside6/widgets/loading_dialog.py</code> / <code>dialogs/alert_rule_config_dialog.py</code></td><td class="num">86</td><td>0 实例化</td></tr>
+        <tr><td><code>config/audit_cols_config.py</code> / <code>core/state_store.py</code> / <code>core/view_manager.py</code> / <code>core/bias_calculator.py</code> / <code>core/audit_logger.py</code> / <code>core/backup_manager.py</code></td><td class="num">901</td><td>生产 0 引用（部分有测试）——<b>需先确认</b>再删，见下</td></tr>
+      </tbody>
+    </table>
+    <p class="note"><b>反例提醒（勿误删）</b>：<code>widgets/stats_cards.py</code>（331 行）仍被主窗口与 4 个看板共 20 余处调用，只是 <code>main_window.py:2795/2801/3498</code> 的注释写着「stats_cards 已删除」——<b>是错误注释</b>，实际只删了 <code>_refresh_stats_cards</code>。另外 <code>core/backup_manager.py</code> 涉及数据恢复流程，删除前请先确认现场恢复路径。</p>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h3 style="margin-top:0">1.4 交付物与运行环境</h3>
+    <table>
+      <thead><tr><th style="width:24%">项目</th><th style="width:22%">现状</th><th>问题</th></tr></thead>
+      <tbody>
+        <tr><td>exe 体积</td><td>287 MB（v43.16）</td><td>打包脚本收集了整包 PySide6（本机 634 MB，其中 <code>Qt6WebEngineCore.dll</code> 195.3 MB、<code>opengl32sw.dll</code> 19.7 MB、<code>avcodec-61.dll</code> 13.3 MB），而 WebEngine 仅 <code>dashboard_dialog</code> 用</td></tr>
+        <tr><td>打包参数</td><td><code>--onefile</code>，<code>--collect-all=pyside6</code></td><td><code>pyside6</code> 小写且实测 <code>ImportError</code> → 该参数空转；<code>build_pyside6_exe.py:58</code> <code>"--console" if not debug_mode else "--console"</code> → <code>--debug</code> 无效、永远带控制台；无图标（仓库 0 个 <code>.ico</code>）、无 <code>--version-file</code></td></tr>
+        <tr><td>hidden-import</td><td>38 条</td><td>其中 12 条指向不存在的模块，含项目自身的 <code>analysis.bom_diff</code>、<code>gui_pyside6.dialogs.drill_down_dialog</code>、<code>settings_dialog</code>、<code>utils.excel_helper</code>（Tkinter 时代遗留）</td></tr>
+        <tr><td>依赖锁定</td><td><code>requirements.lock</code></td><td>全仓 0 处引用；<code>PySide6</code> 命中 0 次；含 <code>pandas==3.0.3</code>、<code>numpy==2.4.4</code> 与本机 agent 工具包 → 装了跑不起来</td></tr>
+        <tr><td>配置路径</td><td>4 套策略并存</td><td>① <code>auto_quarantine.py:60</code> 硬编码 <code>E:\zpp011_v2\config</code>；② <code>main_window.py:3120</code> 用 <code>__file__</code>（onefile 下即临时目录）；③ <code>~/.zpp011_audit</code>；④ <code>%APPDATA%</code>；日志则用相对 CWD 的 <code>logs/</code></td></tr>
+        <tr><td>数据存储</td><td>4 个 SQLite</td><td>最热的 <code>audit.db</code>（8.23 MB + WAL 5.16 MB）无备份无校验；<code>storage.py</code> 的备份机制保护的是一个未使用的库；<code>_recovery_needed.flag</code> 自 2026-09-06 残留</td></tr>
+        <tr><td>日志</td><td><code>logs/</code> 80+ 日文件</td><td><code>core/logger.py:8</code> 相对 CWD 且 import 期 <code>makedirs</code> 无 try；文件名已含日期又配 <code>when="midnight"</code> 旋转 → 产生 <code>2026-09-30.log.2026-09-30</code> 类孤儿；GUI/分析/DB 主流程完全不打日志；<code>logs/2026-09-30.log</code> 中约 90% 是 <code>RuleEngine - 规则加载成功</code> 噪声</td></tr>
+        <tr><td>仓库卫生</td><td>3 个过期 spec + 2 个垃圾文件</td><td><code>.gitignore</code> 已忽略 <code>*.spec</code>，但工作区 3 个旧 spec 仍被打进源码备份 zip；根目录有 2 个 <b>被 git 跟踪的 0 字节文件</b> <code>git</code> 与 <code>python</code>；无 <code>.gitattributes</code>（CRLF/LF 混用，改一行易产生整文件 diff）</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h2 id="s2">2. 优化建议</h2>
+
+  <h3>2.1 正确性与数据安全（最高优先级）</h3>
+
+  <div class="card">
+    <h4 style="margin-top:0">① 4 个看板的「双击定位主表」已被静默废掉 <span class="tag p0">P0 · 已复核</span></h4>
+    <p>调用方存在、被调用方不存在，异常还被吞掉，于是功能静默失效——用户双击一行，窗口关闭，主表纹丝不动。</p>
+    <pre># 调用点（4 处，写法一致）
+gui_pyside6/dialogs/alert_dialog.py:766            self.main_window.locate_record(record)
+gui_pyside6/dialogs/quarantine_dialog.py:964       self.main_window.locate_record(record)
+gui_pyside6/dialogs/neg_loss_dashboard_dialog.py:1115  self.main_window.locate_record(df.iloc[index.row()])
+gui_pyside6/dialogs/deviation_warning_dialog.py:1491   self.main_window.locate_record(record)   # 兜底分支
+        try:
+            self.main_window.locate_record(record)
+        except (AttributeError, Exception):   # ← 把「方法不存在」也吞了
+            pass
+
+# main_window 里实际只有这两个方法，没有 locate_record，也没有 setattr 注入
+gui_pyside6/main_window.py:1069  def _locate_row_by_index(self, row_index):
+gui_pyside6/main_window.py:1091  def _locate_row_in_main_table(self, data_id):</pre>
+    <p><b>改法（S）</b>：4 处统一改为「优先 <code>_locate_row_by_index(原表行号)</code>，缺失时回退 <code>_locate_row_in_main_table(data_id)</code>」；同时把 <code>except (AttributeError, Exception)</code> 收窄为具体异常并给用户 toast 提示。<code>deviation_warning_dialog.py:1486-1491</code> 已有的写法可直接作为模板。</p>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h4 style="margin-top:0">② 配置损坏即被覆盖，用户配置不可恢复 <span class="tag p0">P0 · 已复核</span></h4>
+    <pre>core/config_manager.py:67-70
+        except Exception as e:
+            logger.error(f"加载配置失败: {e}，使用默认配置")
+            self.config = copy.deepcopy(self.DEFAULT_CONFIG)
+            self._save()          # ← 立刻把损坏文件覆盖掉，原内容永久丢失
+
+domain/alt_material/alt_manager.py:132-134
+        except Exception as e:
+            if log_cb:
+                log_cb(f"保存替代料配置失败：{e}", "error")   # 无返回码、无抛出，调用方以为成功</pre>
+    <p><b>改法（S）</b>：解析失败先把原文件改名 <code>*.bad_&lt;时间戳&gt;</code>，再写默认值并告警；写盘统一用 <code>tmp + os.replace</code>（<code>core/auto_quarantine.py:209-213</code> 已是项目内的正确范例，直接抄）；<code>save_alt_pairs</code> 返回布尔或抛异常，让 UI 能提示失败。</p>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h4 style="margin-top:0">③ 审核数据库无备份、恢复标记挂了 24 天 <span class="tag p0">P0 · 已复核</span></h4>
+    <table>
+      <thead><tr><th style="width:34%">事实</th><th>证据</th></tr></thead>
+      <tbody>
+        <tr><td>最热的库完全没有备份机制</td><td><code>core/read_status.py:23</code> 指向 <code>~/.zpp011_audit/audit.db</code>；全文件 grep <code>backup|integrity|restore</code> 零命中</td></tr>
+        <tr><td>现网数据量已不小</td><td><code>audit.db</code> 8.23 MB + <code>-wal</code> 5.16 MB（2026-09-30 09:05 仍在写）</td></tr>
+        <tr><td>唯一备份是人工的</td><td><code>audit.db.bak_20260919_112219</code>（7.44 MB，9 月 19 日），此后再无备份</td></tr>
+        <tr><td>曾触发恢复且至今未处理</td><td><code>_recovery_needed.flag</code>（2026-09-06 14:19 创建）仍在目录里</td></tr>
+        <tr><td>已有的备份机制保护错对象</td><td><code>storage/storage.py:53-76</code> 每次写入前 <code>copy2</code> 并保留 10 份，但它服务的 <code>audit_log.db</code> 在本机不存在；<code>storage.py:341-348</code> 恢复时直接覆盖、不备份现库（不可逆）</td></tr>
+        <tr><td>并发写缺口</td><td><code>core/operation_logger.py:24</code> 无 PRAGMA / 无 WAL / 无 <code>busy_timeout</code>，与 <code>read_status</code> 的连接并发时可能 <code>database is locked</code></td></tr>
+      </tbody>
+    </table>
+    <p><b>改法（M）</b>：新增 <code>tools/backup_daily.py</code>——用 <code>sqlite3.Connection.backup()</code> 在线备份（WAL 安全、不锁表）4 个库到 <code>%APPDATA%\ZPP011\backups\YYYYMMDD\</code>，同时跑 <code>PRAGMA integrity_check</code> 并告警，保留 14 天 + 每月 1 份；配套 <code>tools/restore.py --date</code>，覆盖前自动生成 <code>.pre_restore_&lt;ts&gt;</code> 并清除恢复标记；「帮助 → 一键恢复」调用同一脚本。Windows 任务计划每日 20:30 + 登录触发。</p>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h4 style="margin-top:0">④ 分析结果全局缓存：可能生成错报告 <span class="tag p1">P1 · 已复核</span></h4>
+    <pre>analysis/analyzer.py:50    LATEST_INTERMEDIATES = None       # 模块级、无锁、无 key
+analysis/analyzer.py:718-719  global LATEST_INTERMEDIATES
+                              LATEST_INTERMEDIATES = _inter   # 每次分析覆盖
+
+gui_pyside6/main_window.py:1285-1296（后台 QThread.run 内）
+        _li = _az.LATEST_INTERMEDIATES
+        if _li is not None:
+            export_full_report_from_intermediates(_li, ...)   # 直接复用"最近一次"</pre>
+    <p><b>风险</b>：连续两次分析（或切换工厂后再导出）时，后台线程可能读到上一轮的中间结果，导出的 Excel 与当前屏幕数据不一致；同时该对象常驻内存。</p>
+    <p><b>改法（M）</b>：改为「按分析批次传参」——worker 把 <code>_inter</code> 随信号带回主线程，再传给导出线程；或在缓存上加 <code>threading.Lock</code> + 数据指纹 key，并在新分析开始时清空并 <code>gc</code>。</p>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h4 style="margin-top:0">⑤ 其它正确性风险（子代理报告，建议先写复现用例）</h4>
+    <table>
+      <thead><tr><th style="width:26%">位置</th><th style="width:44%">问题</th><th>建议</th></tr></thead>
+      <tbody>
+        <tr><td><code>analysis/analyzer.py:570,610</code><br><code>sheet5_full.py:26</code></td><td>净偏差在「已按偏差率过滤」的 DataFrame 上求和，阈值 &gt; 0 时组内成员被提前剔除，替代料抵消失真</td><td>抵消改用未过滤的原始集，过滤只作用于展示</td></tr>
+        <tr><td><code>analysis/net_offset.py:141</code><br><code>sheet2_alt.py:52</code></td><td>一处按物料编码建组、一处按描述做子串匹配（含 <code>iloc[0]</code> 兜底），同一批次两个口径，子串可能命中相邻物料</td><td>统一为「编码优先 + 描述精确匹配」，禁止子串</td></tr>
+        <tr><td><code>sheet5_full.py:31</code> vs <code>analyzer.py:458</code> vs <code>sheet7_amount.py:64</code></td><td>三处金额口径不同（材料偏差×反算单价 / SAP 金额差 / 偏差金额列），Sheet5、6、7 无法互相对账</td><td>新增「口径自检」：分析完比对三处合计，差 &gt; 0.01 元即打标提示</td></tr>
+        <tr><td><code>core/change_detector.py:53-60</code></td><td>逐行 <code>try/except: continue</code>，快照丢行 → 审核后的数量变动漏报</td><td>收集失败行并汇总告警，不静默跳过</td></tr>
+        <tr><td><code>core/rule_engine.py:54</code></td><td>规则文件损坏时静默回落默认规则，自定义阈值/自动结案静默失效</td><td>回落同时弹窗/日志显式告警，并在 UI 显示规则来源</td></tr>
+        <tr><td><code>analysis/excel_builder/sheet7_amount.py:66-71</code></td><td>每次构建 Sheet7 都无条件写 <code>%TEMP%\zpp011_sheet7_debug.log</code>，写失败（无 TEMP/无权限）会直接中断整次导出</td><td>用本轮引入的 <code>click_debug</code> 同款闸门，或直接删除</td></tr>
+        <tr><td><code>core/history_db.py:122 / :357</code></td><td>幂等键只含 (文件名, mtime)，忽略筛选阈值；清理连接的 <code>foreign_keys</code> 未开，CASCADE 失效产生孤儿行</td><td>幂等键加入阈值指纹；连接统一开 <code>PRAGMA foreign_keys=ON</code></td></tr>
+        <tr><td><code>analysis/analyzer.py:107</code></td><td><code>%TEMP%\zpp011_trace.log</code> 每次分析追加明细，无上限、无轮转，可能被磁盘清理误删且含业务数据</td><td>改为可开关 + 大小上限，或落到用户日志目录</td></tr>
+      </tbody>
+    </table>
+    <p class="note">标注：本表为子代理静态审计结论，主审未逐条复现（②③④ 已复核）。建议按「先写失败用例 → 再改」的方式处理，避免改错口径。</p>
+  </div>
+
+  <h3>2.2 性能</h3>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:26%">热点</th><th style="width:38%">问题</th><th style="width:8%">工作量</th><th>预期收益</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>analysis/analyzer.py:264</code><br><span class="tag p1">已复核</span></td>
+          <td>pandas 已整表读过一次源 Excel，这里又用 <code>openpyxl.load_workbook(read_only=True)</code> 完整扫第二遍，只为拿「原表行号」。这是 5-30 秒分析耗时的主要来源之一。</td>
+          <td>M</td>
+          <td>大文件可省 20-40% 分析时间。改法：用首次读取时的 <code>index + 2</code> 推算行号，或在 pandas 读取时保留 <code>usecols</code> 最小列集做映射</td>
+        </tr>
+        <tr><td><code>analysis/analyzer.py:818</code></td><td>每条替代料记录都对整列描述做 <code>astype(str).str.strip()</code> 比较，O(N×M)</td><td>S</td><td>先构建 <code>desc → code</code> 字典再查，替代料环节近线性</td></tr>
+        <tr><td><code>analyzer.py:880-948</code></td><td>Sheet5/6 逐格 <code>ws.cell()</code> 套样式（约 30 万格），导出慢的主因</td><td>L</td><td>值批量写（<code>ws.append</code>/切片）+ 样式按行区间整体套用</td></tr>
+        <tr><td><code>Sheet10 / history_db:151 / storage.py:227</code></td><td>多处 <code>iterrows()</code> 与逐行 <code>apply</code></td><td>S</td><td>改 <code>itertuples()</code> 或向量化，单点 2-10 倍提速</td></tr>
+        <tr><td><code>excel_builder/*</code></td><td>替换料看板/明细逐格写 + 模板样式</td><td>M</td><td>与上一条同批处理</td></tr>
+        <tr><td><code>gui_pyside6/models/data_frame_model.py:521-845</code></td><td><code>filterAcceptsRow</code> 单方法 325 行、每行每列做多次列名嗅探与字符串匹配；<code>main_window.py:2780</code> 已不得不关掉 <code>setDynamicSortFilter</code> 来止血</td><td>M</td><td>列名解析结果缓存到 <code>setDataFrame</code> 时一次性算出；谓词拆成函数列表，便于测试与提前短路</td></tr>
+        <tr><td><code>analysis/advanced_ppt_generator_v2.py:364</code></td><td>每个 Sheet 各调一次 <code>read_excel</code></td><td>S</td><td>复用同一个 <code>pd.ExcelFile</code> 句柄</td></tr>
+        <tr><td>界面弹性</td><td>列头筛选弹层对「物料描述」这类上千取值的列会一次性创建上千个复选框</td><td>M</td><td>改 <code>QListWidget</code> 虚拟化 + 搜索 300ms 防抖，弹层打开瞬时</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h3>2.3 架构与可维护性</h3>
+
+  <div class="card">
+    <h4 style="margin-top:0">① main_window.py：4,744 行 / 156 个方法的"上帝对象" <span class="tag p2">子代理 AST 实测</span></h4>
+    <p>按职责可切出 9 块、约 2,400 行，去向明确：</p>
+    <table>
+      <thead><tr><th style="width:30%">职责块</th><th style="width:16%">行范围</th><th class="num" style="width:8%">行数</th><th>建议去向</th></tr></thead>
+      <tbody>
+        <tr><td>分析 / AI 回调</td><td>1117-1810</td><td class="num">488</td><td>并入已有 <code>controllers/analysis_controller.py</code></td></tr>
+        <tr><td>半成品分类管理</td><td>1910-2258</td><td class="num">349</td><td><code>controllers/semi_category_controller.py</code></td></tr>
+        <tr><td>列宽 / 列显隐 / 全屏</td><td>2567-3166</td><td class="num">287</td><td><code>controllers/column_layout_controller.py</code></td></tr>
+        <tr><td>表格交互（复制 / 右键 / 双击 / 行详情）</td><td>4219-4378</td><td class="num">274</td><td><code>components/main_table.py</code></td></tr>
+        <tr><td>导出 / PPT</td><td>3640-3860, 4403-4491</td><td class="num">275</td><td>已有 <code>export_controller.py</code></td></tr>
+        <tr><td>排序 + 列头筛选</td><td>3168-3440</td><td class="num">267</td><td><code>controllers/sort_filter_controller.py</code>（复用已有 <code>ColumnFilterController</code>）</td></tr>
+        <tr><td>隔离区</td><td>3983-4214</td><td class="num">220</td><td><code>controllers/quarantine_controller.py</code></td></tr>
+        <tr><td>替代料配对</td><td>2433-2630, 3838-3898</td><td class="num">187</td><td>已有 <code>alt_controller.py</code></td></tr>
+        <tr><td>文件夹监控</td><td>2282-2427</td><td class="num">140</td><td><code>services/folder_monitor_service.py</code></td></tr>
+        <tr><td>模块级 4 个 QThread 子类</td><td>79-220</td><td class="num">142</td><td><code>models/workers.py</code></td></tr>
+      </tbody>
+    </table>
+    <p><b>迁移顺序</b>（低风险先行）：列布局 → 表格交互 → 半成品 → 监控 → 隔离区 → 排序筛选 → 分析回调。<br>
+    <b>关键前置</b>：<code>__init__</code>（226-404，179 行）创建约 30 个属性，且全仓大量 <code>hasattr(self.main_window, ...)</code>（<code>stats_cards</code>、<code>_apply_column_visibility_by_name</code> 等）构成<b>鸭子类型隐式契约</b>；拆分前必须把这些隐式依赖显式化，否则抽出的 controller 会立刻 <code>AttributeError</code>。</p>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h4 style="margin-top:0">② 四个看板重复代码 ≈ 19.9%（904 / 4,538 行） <span class="tag p2">子代理 AST 实测</span></h4>
+    <table>
+      <thead><tr><th style="width:34%">重复项</th><th style="width:16%">规模</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><code>batch_mark_read</code> / <code>batch_mark_unread</code></td><td>61 行 × 2 / 59 行 × 2</td><td>dev:1340 与 alt:623 等</td></tr>
+        <tr><td><code>_sync_main_df</code></td><td>48 行 × 3</td><td>dev:1207 / neg:894 / alt:487</td></tr>
+        <tr><td><code>_mark_selected_rows_read/unread</code>、<code>mark_row_read/unread</code></td><td>各 35-38 行 × 2</td><td>已读状态写回逻辑</td></tr>
+        <tr><td><code>_copy_selected_cells</code>、<code>eventFilter</code></td><td>26 行 × 2、8 行 × 4</td><td>表格交互</td></tr>
+        <tr><td><code>_ask_quarantine_reason</code></td><td>约 25-27 行 × 3</td><td>main_window:4713 / dev:1536 / neg:1137，结构相同可提为公共函数 <span class="tag gray">主审已复核「高度相似」</span></td></tr>
+        <tr><td>过滤管线 <code>_*_mask</code></td><td>17 个方法 / 265 行</td><td><code>_semi_class_mask</code> 独占 3 份</td></tr>
+      </tbody>
+    </table>
+    <p><b>抽取方案</b>：<code>ReadStateMixin</code>（约 440 行冗余 → 约 120 行：<code>_sync_main_df</code> + 落盘 + <code>original_df</code> 回写）、<code>TableExportMixin</code>（导出/右键/复制/eventFilter）、<code>RowLocateMixin</code>（顺带修掉 2.1-① 的定位 bug）、<code>SortFilterBar</code> 组合式组件（把 5 处、每处约 19 行的表头接线收进一个 Widget）。原则：<b>Mixin 管状态、组合管 UI</b>。</p>
+    <p class="note">正面评价：本轮刚统一的 <code>SortBadgeHeader + HeaderSortController + ColumnFilterController</code> 是成功的架构收敛，方向正确，只是主表尚未接入（主表另有一套约 140 行的列头筛选实现仍留在 <code>main_window.py:3234-3373</code>）。</p>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h4 style="margin-top:0">③ 模型层：三套排序、两套过滤并存 <span class="tag p2">子代理实测</span></h4>
+    <ul>
+      <li><b>排序 A</b>：<code>DataFrameModel.sort()</code>（<code>data_frame_model.py:405-441</code>）—— pandas 就地重排 + <code>beginResetModel/_build_cache/endResetModel</code>，每次点击全表重建、丢失选中与滚动位置。</li>
+      <li><b>排序 B</b>：<code>AuditProxyModel.sort/lessThan</code>（<code>:461-465 / :929-941</code>）—— 代理层排序。</li>
+      <li><b>排序 C</b>：<code>main_window._apply_multi_sort</code>（<code>main_window.py:3374-3417</code>）—— 从 <code>_natural_df</code> 重排后 <code>setDataFrame</code>，绕开 A 与 B，另配 <code>sort_columns/_in_sort/_natural_df</code> 状态。</li>
+      <li><b>过滤</b>：代理层 <code>filterAcceptsRow</code> vs 各看板 pandas mask 管线 <code>_apply_filter</code>（dev/neg/alt 各一套）。</li>
+      <li>已死的 <code>EnhancedSortProxyModel</code> 本是第三套尝试——说明历史上多次统一未果。</li>
+    </ul>
+    <p><b>建议</b>：先只做「收敛到一条路径」的决策与回归用例，再动手；推荐保留代理层（B）作为唯一排序入口，把 A/C 降级为数据准备函数。</p>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h4 style="margin-top:0">④ 线程与并发风险 <span class="tag p1">P1</span></h4>
+    <table>
+      <thead><tr><th style="width:30%">位置</th><th style="width:46%">风险</th><th>建议</th></tr></thead>
+      <tbody>
+        <tr><td><code>analysis_controller.py:80-82</code><br><code>audit_controller.py:66-68</code></td><td>5 秒超时后 <code>terminate()</code> 硬杀线程；而 worker 正在写 SQLite（<code>workers.py:106-140</code> <code>_save_audit_results</code> + <code>history_freq.batch_update</code>）→ 可能写坏审核库</td><td>改为协作式取消（<code>cancel_check</code> 已在分析链路存在），超时只放弃等待、不杀线程；写库移到主线程或加事务重试</td></tr>
+        <tr><td><code>workers.py:18/92/307</code> 等 5 处</td><td>QThread 子类定义 <code>finished</code> 属性遮蔽了 Qt 的同名信号，导致「用 <code>.finished</code> 做线程结束清理」存在竞态（信号在 <code>run()</code> 末尾发出，早于线程真正终止）</td><td>改用自定义信号名（如 <code>done</code>），或直接连接 <code>QThread.finished</code></td></tr>
+        <tr><td><code>core/alert_monitor.py:58,90</code></td><td>守护线程读主线程正在原地改写的 DataFrame，无锁</td><td>传 DataFrame 快照（<code>.copy()</code>）给监控线程</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>2.4 工程化与交付</h3>
+
+  <div class="card">
+    <h4 style="margin-top:0">① 测试：把已有资产激活，比新写测试更划算 <span class="tag p1">P1 · 已复核</span></h4>
+    <table>
+      <thead><tr><th style="width:30%">动作</th><th style="width:40%">现状</th><th>改法</th></tr></thead>
+      <tbody>
+        <tr><td>激活 63 个从不执行的用例</td><td><code>pytest.ini:2 testpaths = tests/unit</code>；<code>tests/</code> 根下 9 个 test 文件共收集 63 个用例（analyzer 10、integration 6、data_service 7、fingerprint 7、history_db 4、net_offset 9、pyside6_migration 11、read_status 6、e2e 3）</td><td>去掉 <code>testpaths</code> 限制或改为 <code>tests</code> 根，修掉个别依赖后纳入 CI</td></tr>
+        <tr><td>GUI 层可测（零新依赖）</td><td><code>tests/conftest.py</code> 无 <code>qapp</code>、不设 <code>QT_QPA_PLATFORM</code>；<code>tests/test_pyside6_migration.py:18</code> 自建 QApplication（无头机真开窗）</td><td>把 offscreen 环境变量 + <code>qapp</code> fixture 下沉到 <code>tests/conftest.py</code>；模板可直接抄本轮新增的 <code>tests/unit/test_header_click.py:9-30</code>（PySide6 自带 QtTest，无需 pytest-qt）</td></tr>
+        <tr><td>覆盖率与门槛</td><td>只统计 <code>core</code> + <code>modules/audit/filters</code>，无 <code>--cov-fail-under</code></td><td>扩到 <code>core/analysis/modules/gui_pyside6/utils/storage</code>，门槛先 40% 后 60%，报告用 <code>term-missing:skip-covered</code></td></tr>
+        <tr><td>测试优先级</td><td><code>read_status.py</code>(434 行)、<code>auto_read_rules.py</code>(572)、<code>auto_quarantine.py</code>(474) 是业务判定核心、也是 v43.113-119 崩溃高发区，目前零覆盖或无头不可跑</td><td>P1 先补这三个模块 → P2 看板交互 → P3 excel_builder 各 Sheet → P4 dashboard_html</td></tr>
+        <tr><td>CI 冗余</td><td><code>.github/workflows/ci.yml</code> 与 <code>test.yml</code> 重复，都只跑 <code>tests/unit</code>；<code>test.yml</code> 不装依赖（PySide6/pandas 用例会 ImportError）</td><td>合并为一个 workflow，装 requirements + 跑全量 + 打包烟测</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h4 style="margin-top:0">② 配置：从"四套路径 + 直写仓库"到"模板 + 用户目录 + 校验" <span class="tag p1">P1</span></h4>
+    <p><b>目标结构</b>：仓库只保留只读模板 <code>config/defaults/*.json</code>（打包时已整目录进 exe）；运行时可写目录 <code>%APPDATA%\ZPP011\config\</code>（可用 <code>ZPP011_CONFIG_DIR</code> 覆盖）；首次运行复制模板；每个文件带 <code>schema_version</code>，读取时校验；失败则改名 <code>.bad_&lt;ts&gt;</code> + 用模板重建 + ERROR 日志；所有写入用 <code>tmp + os.replace</code>。</p>
+    <p><b>顺带解决 git 污染</b>：<code>.gitignore</code> 增加 <code>/config/*.json</code> 与 <code>!/config/defaults/*.json</code>，对 <code>column_widths.json</code>、<code>auto_quarantine_config.json</code>、<code>auto_read_rules.json</code>、<code>semi_user_categories.json</code> 执行 <code>git rm --cached</code>（保留本地文件）。当前这几个文件的历史提交次数分别为 24 / 20 / 12 次，绝大多数是运行时写回产生的噪声。另外 <code>config/</code> 里混入的 <code>quarantine.db</code>(0B) 与 <code>半成品重分类.xlsx</code> 也应清出。</p>
+    <p><b>开发机与交付机分离</b>：开发机设 <code>ZPP011_CONFIG_DIR=%APPDATA%\ZPP011\dev</code>，彻底避免"开发时改的列宽被当成产品配置提交"。</p>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h4 style="margin-top:0">③ 打包与发布：一条命令、可复现、可核对 <span class="tag p1">P1</span></h4>
+    <ul>
+      <li><b>立即修</b>：<code>--collect-all=pyside6</code> → <code>PySide6</code>（现在这行完全空转）；<code>build_pyside6_exe.py:58</code> 的 <code>--debug</code> 三元表达式两分支相同，改成 <code>"--windowed" if not debug_mode else "--console"</code>。</li>
+      <li><b>瘦身</b>：加 <code>--exclude-module PySide6.QtWebEngineCore/QtWebEngineWidgets/QtQml/QtQuick/QtDesigner/QtPdf/Qt3D*</code>，并把 <code>dashboard_dialog</code> 的 WebEngine 依赖改成富文本或系统浏览器打开 HTML（若可接受，能直接砍掉 195 MB 的 <code>Qt6WebEngineCore.dll</code>）。287 MB → 约 90 MB，同时改善启动速度与杀软误报。</li>
+      <li><b>可核对</b>：补 <code>--icon</code>（仓库当前 0 个 <code>.ico</code>）与 <code>--version-file</code>（让 exe 属性页显示版本号，现场排障时能看到）；产物同时输出 SHA256。</li>
+      <li><b>清理</b>：删掉 12 条指向不存在模块的 hidden-import；删除 <code>requirements.lock</code>（0 引用、无 PySide6、<code>pandas==3.0.3</code>），另建 constraints 文件（锁定 PySide6 / pandas 2.x / numpy 1.26.x / pyinstaller），build 与 setup_dev 用 <code>-c</code> 引用。</li>
+      <li><b>死脚本</b>：<code>一键打包.bat:16</code> 调用不存在的 <code>build_exe.py</code>；<code>run_pyside6.bat:21</code> 直接跑 <code>gui_pyside6\main_window.py</code>（绕过正式入口，缺 faulthandler 与全局异常钩子）；<code>setup_dev.bat:26,30</code> 引用不存在的 <code>.gitmessage.txt</code> 与 <code>main.py</code>。</li>
+      <li><b>建议落地 <code>build.ps1</code></b>（本地即可，无需 CI 服务器）：<code>build.ps1 -Ver v43.120</code> → ① git 干净 + 版本条目校验 → ② 建 venv 装 constraints → ③ <code>pytest tests/ --cov-fail-under=40</code> → ④ 打包 → ⑤ 产物校验（体积 &lt; 120 MB、资源版本 == Ver、SHA256 落盘、<code>--selftest</code> 冒烟）→ ⑥ 全绿才 <code>git tag</code>。</li>
+      <li><b>版本号治理</b>：<code>utils/version_history.py</code>（2,656 行）既是唯一版本来源又靠人工编辑，这就是上一轮"工作区记录被误删 → 应用自报回到 v43.118"事故的结构性原因。建议提取独立 <code>VERSION</code> 文件作为单一来源，version_history 只做变更记录，并在打包前断言 <code>git diff</code> 只改动了头部条目。</li>
+    </ul>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h4 style="margin-top:0">④ 日志与现场取证 <span class="tag p1">P1</span></h4>
+    <table>
+      <thead><tr><th style="width:30%">问题</th><th style="width:40%">证据</th><th>改法</th></tr></thead>
+      <tbody>
+        <tr><td>日志落在不可写位置</td><td><code>core/logger.py:8 _LOG_DIR = "logs"</code> 相对 CWD（exe 下＝快捷方式工作目录），且 <code>:9</code> 在 import 期 <code>makedirs</code> 无 try → 只读介质启动即崩</td><td>落到 <code>%APPDATA%\ZPP011\logs\</code>，makedirs 加保护</td></tr>
+        <tr><td>轮转配置矛盾</td><td><code>:14</code> 文件名已含日期，<code>:26</code> 又用 <code>TimedRotatingFileHandler(when="midnight", backupCount=30)</code> → 翻滚产生 <code>2026-09-30.log.2026-09-30</code> 类孤儿</td><td>改用 <code>RotatingFileHandler</code>（按大小）+ 日期目录，或去掉文件名日期</td></tr>
+        <tr><td>级别与噪声</td><td><code>:23 setLevel(DEBUG)</code> 硬编码无开关；<code>logs/2026-09-30.log</code> 约 90% 是 <code>RuleEngine - 规则加载成功</code></td><td>级别可用环境变量/配置控制；对重复加载日志做降级或去重</td></tr>
+        <tr><td>关键流程无日志</td><td>使用 <code>get_logger</code> 的只有 rule_engine / config_manager / state_store / decorators / auto_closer；GUI、分析、DB 读写全不打日志</td><td>在分析开始/结束、导出、DB 写入、异常处补结构化日志</td></tr>
+        <tr><td>无现场取证包</td><td>用户报障时只能靠口头描述；<code>run_pyside6.py:91</code> 仅弹 QMessageBox</td><td>新增 <code>--diagnose</code> / 「帮助 → 导出诊断包」：版本信息、用户名下的 config、4 个库的 <code>user_version</code>/表行数/<code>integrity_check</code>、日志尾部 500 行、exe SHA256 → 打包成 zip 回传</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h2 id="s3">3. 新功能建议</h2>
+  <div class="card">
+    <p style="margin-top:0">原则：优先做<b>能复用现有能力</b>的功能（<code>core/history_db.py</code> 多期数据、<code>core/ai_client.py</code> AI、<code>core/alert_monitor.py</code> 预警、<code>core/history_freq.py</code> 频次统计都已实现但用得浅），而不是新起炉灶。</p>
+    <table>
+      <thead><tr><th style="width:4%">#</th><th style="width:22%">功能</th><th style="width:34%">用户场景与价值</th><th style="width:22%">实现要点（复用点）</th><th style="width:8%">工作量</th><th>优先级</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>1</td><td><b>审核工作台（待办队列）</b></td>
+          <td>审核员每天要处理几百行偏差，现在只能在 4700 行大表里滚动+逐行右键。做成"一次一行"的卡片式队列：上一/下一、标记已读、加隔离、写备注全部键盘完成，处理完自动进入下一行。</td>
+          <td>复用 <code>AuditProxyModel</code> 过滤 + 已读状态 + <code>toast</code>；新增一个对话框，数据源直接用现有 <code>view_model.df</code></td>
+          <td>M</td><td><span class="tag p1">高</span></td>
+        </tr>
+        <tr>
+          <td>2</td><td><b>偏差原因自动归类</b></td>
+          <td>备注是自由文本，无法统计"到底哪种原因最多"。自动归类为「配方误差 / 领料差异 / 盘点调整 / 报废 / 替代料 / 待查」，人工确认后沉淀为规则，形成可统计的原因分布。</td>
+          <td>规则表 + <code>rule_engine</code> 命中优先，未命中交 <code>ai_client</code> 兜底；替换 <code>analyzer.py:445</code> 的逐行 apply</td>
+          <td>M</td><td><span class="tag p1">高</span></td>
+        </tr>
+        <tr>
+          <td>3</td><td><b>物料级趋势预警</b></td>
+          <td>单看某一天看不出问题，看"某物料连续 3 期净偏差率上升"才有价值。自动把连续恶化的 (物料, 车间) 放进关注清单，并在日报/PPT 中单列一页。</td>
+          <td><code>history_db</code> 多期数据 + 斜率计算；结果可进 <code>alert_monitor</code> 现有提醒通道</td>
+          <td>M</td><td><span class="tag p1">高</span></td>
+        </tr>
+        <tr>
+          <td>4</td><td><b>多期对比明细 diff</b></td>
+          <td>现在 <code>history_db.py:284</code> 只比元数据；业务需要"本期 vs 上期"的明细级新增 / 消失 / 恶化清单，直接指导复盘。</td>
+          <td>扩展现有 history_compare 对话框 + 新增 Sheet11 导出</td>
+          <td>M</td><td><span class="tag p1">高</span></td>
+        </tr>
+        <tr>
+          <td>5</td><td><b>Excel 审批留痕闭环</b></td>
+          <td>现在导出 Excel 发给车间/财务签核后，结果不会回流系统。增加"审批人/时间/前后值/数据指纹"列，并支持把批注回读到备注与已读状态。</td>
+          <td>导出侧加列（<code>excel_builder</code>）+ 导入侧复用 <code>import_wizard_dialog</code> 的回读能力</td>
+          <td>M</td><td><span class="tag p1">中高</span></td>
+        </tr>
+        <tr>
+          <td>6</td><td><b>口径自检器</b></td>
+          <td>Sheet1/5/7 的金额与数量合计若不一致，报表就会互相打架。分析结束后自动比对，差额 &gt; 0.01 元即在界面标红并写入日志。</td>
+          <td>纯校验逻辑，加在 <code>analyzer</code> 收尾；同时兜住 2.1-⑤ 的口径风险</td>
+          <td>S</td><td><span class="tag p1">高（低成本）</span></td>
+        </tr>
+        <tr>
+          <td>7</td><td><b>定时报表订阅</b></td>
+          <td>每天/每周固定时间自动跑一份 Excel/PPT 到共享盘或企业微信/飞书群，免去人工点。</td>
+          <td>复用现有分析与导出链路 + Windows 任务计划；可先做"每日 8:00 生成到指定目录"</td>
+          <td>M</td><td><span class="tag p2">中</span></td>
+        </tr>
+        <tr>
+          <td>8</td><td><b>阈值与提醒可配置化</b></td>
+          <td>不同车间/物料的偏差率容忍度不同。让用户在界面上配置"按物料/车间"的预警阈值与提醒方式，而不是改配置文件。</td>
+          <td><code>alert_monitor</code> + <code>set_alert_threshold</code> 已存在，补一个配置对话框与持久化</td>
+          <td>M</td><td><span class="tag p2">中</span></td>
+        </tr>
+        <tr>
+          <td>9</td><td><b>导入前数据体检</b></td>
+          <td>SAP 导出的表偶有缺列/空行/单位异常，现在往往到分析中段才暴露。导入向导里先做一轮校验并给"哪些行会被跳过、为什么"。</td>
+          <td>扩 <code>import_wizard_dialog</code> + <code>data_service._clean_columns</code></td>
+          <td>S</td><td><span class="tag p2">中</span></td>
+        </tr>
+        <tr>
+          <td>10</td><td><b>AI 归因摘要与相似案例</b></td>
+          <td>把 AI 生成的备注建议与历史相似偏差（同物料/同车间/同原因）关联展示，帮助审核员快速判断，而不是只看一句 AI 文本。</td>
+          <td><code>core/history_freq.py</code> 已有频次统计，接进 AI 结果面板即可</td>
+          <td>M</td><td><span class="tag p2">中</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="s4">4. 界面优化建议</h2>
+
+  <div class="card">
+    <h3 style="margin-top:0">4.1 布局：把"看得见的数据"还给表格</h3>
+    <div class="grid2">
+      <figure class="wire" style="margin:0">
+        <svg viewBox="0 0 520 300" width="100%" role="img" aria-label="当前布局问题示意">
+          <rect x="0" y="0" width="520" height="300" fill="#fbfbfd" stroke="#dfe6ee"/>
+          <rect x="6" y="6" width="508" height="22" fill="#e8eef6" stroke="#c9d6e5"/><text x="14" y="21" font-size="10" fill="#37474f">自定义标题栏（含主题切换）</text>
+          <rect x="6" y="32" width="508" height="26" fill="#fdecea" stroke="#f3c2bd"/>
+          <text x="14" y="49" font-size="9.5" fill="#b3261e">工具栏 18 个按钮 · 固定 38px · 无溢出收纳（1366 屏被挤出）</text>
+          <rect x="6" y="62" width="96" height="196" fill="#eef2f7" stroke="#cfd8e3"/><text x="12" y="76" font-size="9" fill="#546e7a">左面板</text>
+          <text x="12" y="90" font-size="8.5" fill="#b3261e">5 处白字</text>
+          <text x="12" y="102" font-size="8.5" fill="#b3261e">（亮色不可见）</text>
+          <rect x="106" y="62" width="120" height="196" fill="#fff5e5" stroke="#f0dcb8" stroke-dasharray="4 3"/>
+          <text x="112" y="76" font-size="9" fill="#b26a00">筛选面板 440px</text>
+          <text x="112" y="90" font-size="8.5" fill="#b26a00">折叠失效（min 顶死 max）</text>
+          <text x="112" y="104" font-size="8.5" fill="#b26a00">默认隐藏，展开即挤表格</text>
+          <rect x="230" y="62" width="284" height="56" fill="#eef7f0" stroke="#c6e2d0"/><text x="238" y="80" font-size="9" fill="#1b7f4b">概览卡片 + 分析进度（≤240px）</text>
+          <rect x="230" y="122" width="284" height="136" fill="#fff" stroke="#cfd8e3"/>
+          <text x="238" y="140" font-size="9" fill="#37474f">数据表格（行高 24px）</text>
+          <text x="238" y="156" font-size="8.5" fill="#b3261e">1366×768 下仅剩 ≈ 560px 宽</text>
+          <rect x="106" y="262" width="408" height="22" fill="#eef2f7" stroke="#cfd8e3"/>
+          <text x="114" y="277" font-size="8.5" fill="#b26a00">汇总条：5 个标签挤 28px；口径用全量而非可见行；同一标签在不同路径被写成「偏差率」或「偏差金额」</text>
+          <rect x="6" y="264" width="96" height="20" fill="#e8eef6" stroke="#c9d6e5"/><text x="12" y="278" font-size="9" fill="#546e7a">状态栏</text>
+          <text x="6" y="296" font-size="8.5" fill="#6b7280">看板入口分散：工具栏 18 按钮 + 菜单栏 6 菜单 + 概览卡片点击</text>
+        </svg>
+        <figcaption>当前：布局与信息层级的问题点</figcaption>
+      </figure>
+      <figure class="wire" style="margin:0">
+        <svg viewBox="0 0 520 300" width="100%" role="img" aria-label="建议布局示意">
+          <rect x="0" y="0" width="520" height="300" fill="#fbfbfd" stroke="#dfe6ee"/>
+          <rect x="6" y="6" width="508" height="22" fill="#e8eef6" stroke="#c9d6e5"/><text x="14" y="21" font-size="10" fill="#37474f">自定义标题栏</text>
+          <rect x="6" y="32" width="508" height="26" fill="#e7f5ec" stroke="#bfe3cd"/>
+          <text x="14" y="49" font-size="9.5" fill="#1b7f4b">工具栏分组：主操作（分析/导入/导出） │ 分析看板 ▾ │ 更多 ▾（溢出收纳）</text>
+          <rect x="6" y="62" width="508" height="20" fill="#eef4fb" stroke="#c6ddf7"/>
+          <text x="14" y="76" font-size="9" fill="#1565c0">已应用筛选：[工厂=全部] [偏差率 ≥ 5%] 共 3 项 ×  一键清空      ← 口径一眼可见</text>
+          <rect x="6" y="86" width="24" height="172" fill="#eef2f7" stroke="#cfd8e3"/>
+          <text x="10" y="176" font-size="9" fill="#546e7a">筛选栏</text>
+          <text x="8" y="190" font-size="8.5" fill="#546e7a">可收起</text>
+          <rect x="34" y="86" width="480" height="172" fill="#fff" stroke="#cfd8e3"/>
+          <text x="42" y="104" font-size="9" fill="#37474f">数据表格（行高 28px · 冻结首列 · Ctrl+F 搜索高亮 · Enter 看明细）</text>
+          <text x="42" y="122" font-size="8.5" fill="#1b7f4b">无数据/筛选无结果时显示空态占位与「清空筛选」按钮</text>
+          <text x="42" y="140" font-size="8.5" fill="#1b7f4b">列头：左侧排序角标（窄列只画圆点）· 右侧漏斗按钮单独开启取值筛选</text>
+          <text x="42" y="158" font-size="8.5" fill="#546e7a">右键：先选中命中行再弹菜单 · 复制单元格与 Ctrl+C 行为一致</text>
+          <rect x="6" y="262" width="508" height="22" fill="#eef2f7" stroke="#cfd8e3"/>
+          <text x="14" y="277" font-size="8.5" fill="#1b7f4b">汇总条：可见行合计 / 全量合计 可切换 · 标签语义固定 · 与状态栏选中合计同源</text>
+          <text x="6" y="296" font-size="8.5" fill="#6b7280">长任务统一进度反馈（导出/PPT/AI/备份）；色弱模式下偏差列加 +/- 前缀</text>
+        </svg>
+        <figcaption>建议：分组工具栏 + 筛选 chip + 可收起筛选栏 + 口径明示</figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h3 style="margin-top:0">4.2 缺陷级界面问题（建议本批修完） <span class="tag p0">P0</span></h3>
+    <table>
+      <thead><tr><th style="width:4%">#</th><th style="width:30%">问题</th><th style="width:34%">证据</th><th style="width:24%">改法</th><th style="width:6%">量</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>亮色主题下左面板标签几乎不可见</td><td><code>left_panel.py:156,179,188,255,319</code> 内联 <code>color:#ffffff</code>；<code>light_theme.qss</code> 里 <code>filterLabel{color:#333330}</code> 与全局底色 <code>#F5F5F0</code> 被内联样式压过（默认暗色主题下正常）</td><td>删内联颜色，改由 QSS 的 <code>filterLabel</code> 统一控制</td><td>S</td></tr>
+        <tr><td>2</td><td>筛选面板收不起来</td><td><code>filter_panel.py:39 setMinimumWidth(440)</code>，而 <code>_toggle_collapse():495</code> 只把 <code>maximumWidth</code> 设为 32 → 最小宽度把面板顶住</td><td>删掉最小宽度设定，折叠时同时设 min/max 并记忆展开宽度</td><td>S</td></tr>
+        <tr><td>3</td><td>右键菜单作用在"上一次选中"的行</td><td><code>main_window.py:3903-3916</code> 只用 <code>indexAt(pos)</code> 取数据，未先 <code>selectRow</code>；仅当完全没有选择时才回退到点击行</td><td>右键先选中命中行（若不在当前选择集内）</td><td>S</td></tr>
+        <tr><td>4</td><td>主表行高 24px 与看板 28px 不一致</td><td><code>components/main_table.py:212</code> 24px；<code>alert:156/349</code>、<code>quarantine:145/218/388</code>、<code>neg:298/617</code>、<code>dev:378/902</code> 全部 28px</td><td>统一 28px（QSS 常量），中文不再压行</td><td>S</td></tr>
+        <tr><td>5</td><td>列宽/列显隐在打包版永不保存</td><td><code>main_window.py:3118-3122</code> 用 <code>__file__</code> 推导 <code>config/</code>；<code>build_pyside6_exe.py:115</code> 为 <code>--onefile</code> → 写进 <code>_MEIPASS</code> 临时目录，退出即删</td><td>迁到 <code>%APPDATA%\ZPP011\</code>；保存失败给 toast（目前 <code>self.log</code> 已是空实现，属静默失败）</td><td>S</td></tr>
+        <tr><td>6</td><td>死样式表误导后续修改</td><td><code>components/main_table.py:26 TABLE_STYLESHEET</code> 全仓 0 引用（暗色硬编码），改它没有任何效果</td><td>删除，样式统一进 QSS</td><td>S</td></tr>
+        <tr><td>7</td><td>两个 <code>copy_selected_cells</code> 行为不一致</td><td><code>main_window.py:4252</code>（Ctrl+C，跳过空值）与 <code>:4278</code>（菜单项，填空洞）并存</td><td>合并为一个带参数实现，两条入口复用</td><td>S</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h3 style="margin-top:0">4.3 交互与体验优化（按性价比排序）</h3>
+    <table>
+      <thead><tr><th style="width:4%">#</th><th style="width:30%">建议</th><th style="width:38%">为什么值得做</th><th style="width:22%">要点</th><th style="width:6%">量</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><b>列头「排序」与「筛选」解耦</b></td><td>现在筛选模式下点列头只弹筛选浮层，必须按 Ctrl 才是排序，语义只写在按钮 tooltip 里，用户基本发现不了</td><td>列头点击=排序；列头右侧固定一个小漏斗按钮=取值筛选。Refer to 现有 <code>SortBadgeHeader.paintEvent</code> 已有绘制能力</td><td>M</td></tr>
+        <tr><td>2</td><td><b>筛选面板加"已应用 N 项"chip 行</b></td><td>12+ 个筛选条件分 5 组默认全展开，用户看不到"当前到底筛了什么"，也找不到"重置"（在最底部）</td><td>顶部摘要 chip + 一键清空；条件 ≥3 时默认折叠「分析参数/日期范围」</td><td>M</td></tr>
+        <tr><td>3</td><td><b>汇总条口径明示</b></td><td><code>_update_summary</code> 用全量 <code>view_model.df</code>，而屏幕显示的是过滤后的行 → 合计与所见不符；同时 <code>summary_amount</code> 在不同代码路径被写成「偏差率」(<code>:3549</code>) 或「偏差金额」(<code>:3618</code>)</td><td>标签改为「可见行合计」，可切换全量；标签语义固定，选中合计与状态栏同源</td><td>M</td></tr>
+        <tr><td>4</td><td><b>长任务统一进度反馈</b></td><td>完整报告有可取消进度框，PPT 有自建进度条，但 <b>简单导出 Excel / 智能 PPT / 备份完全没有反馈</b>，万行导出时界面像卡死</td><td>统一 <code>BusyCursor</code> + 状态栏文案，≥2 秒的任务都接进度</td><td>S</td></tr>
+        <tr><td>5</td><td><b>空态与错误可操作性</b></td><td>无数据/筛选无结果时表格全空无提示；错误提示多为裸异常 <code>f"{e}"</code></td><td>空态占位 + 「清空筛选」按钮；错误文案给"下一步做什么"</td><td>S</td></tr>
+        <tr><td>6</td><td><b>键盘可达性</b></td><td>现有快捷键仅 F5/F6/F7/F11/Ctrl+B/Ctrl+C</td><td>补 Ctrl+F（行内搜索高亮）、Ctrl+Shift+R（重置列宽）、Enter（打开明细）、Esc（关筛选浮层）</td><td>M</td></tr>
+        <tr><td>7</td><td><b>色弱与灰度友好</b></td><td>偏差正负、预警等级目前纯靠颜色（<code>255,200,200</code> 等），黑白打印或色弱用户无法区分</td><td>数值列加 <code>+/-</code> 前缀或 ▲▼ 图标；预警列加纹理/符号</td><td>S</td></tr>
+        <tr><td>8</td><td><b>窄屏适配（1366×768 是车间主力机）</b></td><td>工具栏 18 按钮固定 38px 无溢出策略；<code>body_splitter.setSizes([260,440,860])</code> 硬编码；对话框多为 1280×640 / 1100×760 且无最小尺寸；主窗口无 <code>setMinimumSize</code></td><td>工具栏溢出「更多 ▾」；对话框按屏可用高度自适应（<code>availableGeometry</code>）</td><td>M</td></tr>
+        <tr><td>9</td><td><b>主题与样式统一到 token</b></td><td>34 处内联 <code>setStyleSheet</code>、149 处硬编码色值、4 套 QSS 无变量层；行高/表头高/选中色各两套</td><td>新增 <code>theme/tokens.py</code>（COLORS/FONTS/RADIUS/SPACE），<code>str.format</code> 生成 light/dark QSS；内联只保留字体族等非主题项</td><td>L</td></tr>
+        <tr><td>10</td><td><b>看板入口收敛</b></td><td>工具栏 18 个按钮 + 菜单栏 6 个菜单 + 概览卡片点击 = 三处入口，用户不知道从哪进</td><td>工具栏分组「分析看板 ▾」下拉；菜单栏保留但精简；卡片点击保留为快捷方式</td><td>M</td></tr>
+        <tr><td>11</td><td><b>排序角标适配窄列</b></td><td>角标约 22px，列宽 80 时被右缘裁切；漏斗画左上与角标挤在同一表头</td><td>角标宽度按列宽自适应（超窄只画圆点+序号）；tooltip 显示「第 1 级 · 降序」</td><td>S</td></tr>
+        <tr><td>12</td><td><b>列头筛选弹层性能与可用性</b></td><td>「物料描述」这类上千取值的列会一次创建上千个复选框，打开有可感知卡顿</td><td><code>QListWidget</code> 虚拟化 + 搜索 300ms 防抖；取值 &gt; 200 时默认全不勾并提示</td><td>M</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h2 id="s5">5. 实施路线图</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:14%">批次</th><th style="width:10%">周期</th><th style="width:48%">内容</th><th>完成标志</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b>批次一</b><br>止血与减负</td><td>1-2 天</td>
+          <td>
+            ① 修 4 个看板双击定位（2.1-①）<br>
+            ② 配置损坏保护（2.1-②）<br>
+            ③ 列宽配置迁 <code>%APPDATA%</code> + 保存失败提示（4.2-5）<br>
+            ④ 界面 P0 七条：白字 / 折叠 / 右键选中 / 行高 / 死样式表 / 重复复制函数<br>
+            ⑤ 激活 63 个从不执行的测试 + conftest 下沉 offscreen（2.4-①）<br>
+            ⑥ 打包参数修正：<code>PySide6</code> 大小写、<code>--exclude-module</code>、<code>--windowed</code>、删 12 条失效 hidden-import<br>
+            ⑦ 删除第一批零风险死文件（无测试引用者，约 8.6 千行）
+          </td>
+          <td>用户可见的两个功能恢复；exe 从 287 MB 降到 100 MB 以内；测试数从 73 增至约 136</td>
+        </tr>
+        <tr>
+          <td><b>批次二</b><br>稳定与效率</td><td>1-2 周</td>
+          <td>
+            ① 审核库每日备份 + 一键恢复 + 清理由 9/6 挂到现在的恢复标记（2.1-③）<br>
+            ② 分析提速：去掉二次整表解析、替代料 O(N×M)、iterrows（2.2）<br>
+            ③ 全局中间结果改为按批次传参（2.1-④）<br>
+            ④ 线程 <code>terminate()</code> 改协作取消（2.3-④）<br>
+            ⑤ 配置管理重构：defaults 模板 + schema 校验 + git 去污染（2.4-②）<br>
+            ⑥ 日志落 <code>%APPDATA%</code> + 修轮转 + <code>--diagnose</code> 诊断包（2.4-④）<br>
+            ⑦ 界面：筛选 chip 行、汇总口径、列头排序/筛选解耦、长任务进度、空态（4.3-1~5）
+          </td>
+          <td>分析耗时下降 20%+；现场故障可通过诊断包定位；配置文件不再出现在 git 变更里</td>
+        </tr>
+        <tr>
+          <td><b>批次三</b><br>架构与功能</td><td>≈ 1 个月</td>
+          <td>
+            ① main_window 按表拆 9 个 controller（2.3-①）<br>
+            ② 看板 Mixin 抽取，消除 904 行重复（2.3-②）<br>
+            ③ 模型层三套排序收敛为一条路径（2.3-③）<br>
+            ④ 新功能：审核工作台、偏差原因自动归类、物料趋势预警、多期 diff、口径自检（第 3 节）<br>
+            ⑤ 主题 token 化与 QSS 变量层（4.3-9）<br>
+            ⑥ 版本号单一来源 + <code>build.ps1</code> 一条命令流水线（2.4-③）
+          </td>
+          <td>main_window 降到 2,000 行以内；新功能上线；打包与版本可复现</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="note"><b>建议的取舍</b>：如果只有一天，做批次一的 ①②③⑤⑥；如果只有一周，加上 ④⑦ 与批次二的 ①②⑦。这三项（测试激活、exe 瘦身、死代码清理）单位投入的回报最高，且几乎不触碰业务逻辑，风险最低。</p>
+  </div>
+
+  <h2 id="s6">6. 附录：核查方式与置信度</h2>
+  <div class="card">
+    <h3 style="margin-top:0">6.1 本次核查方式</h3>
+    <ul>
+      <li>4 路并行深度审计：后端业务与数据层、GUI 架构、界面与交互、工程化与交付（各自独立只读分析，产出带 <code>文件:行</code> 证据的结论）。</li>
+      <li>主审逐条复核：对全部 P0/P1 结论与"可删除"清单，用 grep / 精确 import 匹配 / 文件哈希 / 行数统计 / 无头 Qt 探针 <b>重新验证一遍</b>，剔除误报（例如 <code>stats_cards.py</code> 被误判为死文件、<code>_ask_quarantine_reason</code> "字节级相同"的说法经复核为"结构相同、非字节级相同"）。</li>
+      <li>本次全盘检查<b>未修改任何文件</b>，全部为只读操作。</li>
+    </ul>
+
+    <h3>6.2 置信度分级</h3>
+    <table>
+      <thead><tr><th style="width:16%">标记</th><th style="width:26%">含义</th><th>本报告中的条目</th></tr></thead>
+      <tbody>
+        <tr><td><span class="tag ok">已复核</span></td><td>主审亲自跑过命令或读过代码确认</td><td>4 个看板定位失效、配置覆盖、审核库无备份与恢复标记、onefile 列宽失效、左面板白字、筛选栏折叠、行高不一致、右键不选中、两份复制函数、全局缓存被后台线程读取、openpyxl 二次解析、隐藏导入失效、<code>collect-all</code> 大小写、Qt6WebEngineCore 体积、63 个测试不执行、<code>requirements.lock</code> 内容、零引用文件清单、死方法计数、死样式表</td></tr>
+        <tr><td><span class="tag gray">子代理实测</span></td><td>有明确 <code>文件:行</code> 证据，主审未逐条复现</td><td>main_window 拆分行号表、看板重复度 904 行、三套排序、线程 <code>finished</code> 遮蔽、覆盖率扩展方案、CI 冗余、日志轮转细节、各性能热点行号</td></tr>
+        <tr><td><span class="tag p1">需验证</span></td><td>静态推断，需写复现用例后确认</td><td>净偏差在过滤后数据集上求和的影响面、<code>net_offset</code> 与 <code>sheet2_alt</code> 口径差异、三处金额口径不一致、规则引擎分档单位混用、指纹 <code>round(1)</code> 灵敏度</td></tr>
+      </tbody>
+    </table>
+
+    <h3>6.3 主要核查命令（可复现）</h3>
+    <pre># 规模与分布
+python -X importtime -c "import gui_pyside6.main_window"      <span class="c"># 冷启动导入 ≈1.4-1.8s</span>
+python -m pytest -q -p no:cacheprovider                        <span class="c"># 73 passed / 1 skipped，覆盖 12%</span>
+python -m ruff check . --statistics                            <span class="c"># 272 条</span>
+
+# 死代码判定（全仓 import 精确匹配 + 文件哈希 + 行数）
+grep -rn "^\s*\(from\|import\)\s\+core\.attribution" --include=*.py .
+git hash-object gui_pyside6/widgets/sort_badge_header.py.orig_bak   <span class="c"># 与历史 blob 比对后再删</span>
+
+# 真 bug 复核
+grep -rn "locate_record" --include=*.py .                       <span class="c"># 4 处调用 / 0 处定义</span>
+grep -rn "def _locate_row" gui_pyside6/main_window.py           <span class="c"># 实际存在的是这两个方法</span>
+
+# 打包与体积
+python -c "import PySide6,os;print(os.path.dirname(PySide6.__file__))"   <span class="c"># 本机 634MB</span>
+python -c "import pyside6"                                       <span class="c"># ModuleNotFoundError → collect-all 空转</span></pre>
+
+    <h3>6.4 上一轮（v43.119）已完成、本报告不再重复的修复</h3>
+    <ul>
+      <li>主表统一复用共享 <code>SortBadgeHeader</code>（删除 <code>main_window.py</code> 内 95 行重复类），列头点击/排序/筛选链路修复并有回归测试保护。</li>
+      <li>点击诊断日志改为 <code>ZPP011_CLICK_DEBUG</code> 闸门（默认零 I/O）。</li>
+      <li>恢复被误删的 v43.119 版本记录；删除死代码 <code>FilterHeader</code>；清理 <code>.orig_bak</code> 与 <code>.gitignore</code>。</li>
+      <li>新增 <code>tests/unit/test_header_click.py</code>（4 用例），测试总数 69 → 73。</li>
+    </ul>
+  </div>
+
+  <footer>
+    ZPP011 生产偏差分析器 · 全盘检查与优化建议报告　|　基线 ec1f3a6 (v43.119)　|　生成时间 2026-09-30<br>
+    方法：4 路并行只读审计 + 主审逐条复核；本次检查未修改任何仓库文件。建议与批次划分供决策参考，实施前请按第 6.2 节置信度分级确认「需验证」项。
+  </footer>
+</div>
+</body>
+</html>

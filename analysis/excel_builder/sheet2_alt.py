@@ -68,6 +68,12 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
                 return rows
         return grp.iloc[0:0]
 
+    # 性能（2026-09-30）：无有效配对时直接返回。旧代码无论有无配对都要跑一遍
+    # df.groupby('流程订单') 全量切片 + 逐行建索引（5 万订单 ≈ 35s 空转）。
+    if not converted_pairs:
+        report_progress(progress_idx, "Sheet2-替代料明细", 100)
+        return pd.DataFrame(), set()
+
     group_seq = 0  # 替代料组序号
 
     # ---- 性能优化：预建索引，避免「逐订单 × 逐配对」全扫描 ----
@@ -79,23 +85,16 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
     for mat_a_desc, mat_b_desc in converted_pairs:
         a_to_bs.setdefault(mat_a_desc, []).append(mat_b_desc)
 
-    order_groups = {}
+    # 轻量索引：描述/编码 → 出现过的订单集合（单次向量化扫列，不切 5 万个小 DataFrame）
     desc_to_orders = {}
-    for _order, _grp in df.groupby('流程订单'):
-        order_groups[_order] = _grp
-        _dset = set()
-        for _d in _grp['组件物料描述'].dropna().astype(str):
-            _dset.add(_d)
-        for _d in _dset:
-            desc_to_orders.setdefault(_d, set()).add(_order)
+    _valid = df[['流程订单', '组件物料描述']].dropna()
+    for _order, _d in zip(_valid['流程订单'], _valid['组件物料描述'].astype(str)):
+        desc_to_orders.setdefault(_d, set()).add(_order)
+    code_to_orders = {}
     if code_col:
-        code_to_orders = {}
-        for _order, _grp in order_groups.items():
-            _cset = set()
-            for _c in _grp[code_col].dropna().astype(str):
-                _cset.add(_c)
-            for _c in _cset:
-                code_to_orders.setdefault(_c, set()).add(_order)
+        _vc = df[['流程订单', code_col]].dropna()
+        for _order, _c in zip(_vc['流程订单'], _vc[code_col].astype(str)):
+            code_to_orders.setdefault(_c, set()).add(_order)
 
     def _related_orders(sub):
         """收集所有「描述或编码包含 sub（子串）」的订单，保留与原 _match_rows 一致的三级匹配语义"""
@@ -117,6 +116,13 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
         _target_orders |= _related_orders(_a_desc)
         for _b in _b_descs:
             _target_orders |= _related_orders(_b)
+
+    # 订单切片只为「目标订单」服务：先 isin 预筛再 groupby，避免 5 万订单全量切片
+    order_groups = {}
+    if _target_orders:
+        _sel = df[df['流程订单'].isin(_target_orders)]
+        for _order, _grp in _sel.groupby('流程订单'):
+            order_groups[_order] = _grp
 
     for order in _target_orders:
         grp = order_groups[order]

@@ -10,8 +10,7 @@ from PySide6.QtWidgets import (
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QWidget,
     QLineEdit, QComboBox, QInputDialog,
 )
-from PySide6.QtCore import Qt, QPoint, Signal, QTimer
-from PySide6.QtGui import QPolygon, QColor, QBrush
+from PySide6.QtCore import Qt, QPoint, QTimer
 from gui_pyside6.models.data_frame_model import DataFrameModel
 from core.quarantine_manager import (
     remove_quarantine_batch, get_quarantine_records, scan_expired_quarantine,
@@ -21,78 +20,12 @@ from core.auto_quarantine import load_auto_quarantine_config
 from core.read_status import save_read_status_batch
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
 from gui_pyside6.widgets.toast import toast
+from gui_pyside6.utils.locate import locate_row
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
 
 _HIDDEN_INTERNAL = ['_read', 'data_id', '_quarantined', '_post_audit_changed', 'fingerprint']
-
-
-class FilterHeader(QHeaderView):
-    """带列头筛选三角的表头：点击指定列右侧的 ▼ 三角弹出该列筛选菜单，
-    点击列头其余区域仍可排序。
-
-    Qt6/PySide6 下自定义表头默认 `sectionClicked` 发射路径失效（点击列头不触发
-    排序），故在本类内自行判定「同列按下并抬起」后手动补发 `sectionClicked`，
-    交由 table_sort.HeaderSortController 处理排序；三角筛选与列宽拖动不受影响。
-    """
-
-    sectionFilterClicked = Signal(int)
-
-    def __init__(self, orientation=Qt.Horizontal, parent=None):
-        super().__init__(orientation, parent)
-        self._filter_sections = set()
-        self._tri_w = 16
-        self._press_sec = -1
-
-    def add_filter_section(self, logical):
-        self._filter_sections.add(logical)
-
-    def clear_filter_sections(self):
-        self._filter_sections.clear()
-
-    def paintSection(self, painter, rect, logicalIndex):
-        super().paintSection(painter, rect, logicalIndex)
-        if logicalIndex in self._filter_sections:
-            painter.save()
-            mid_x = rect.right() - self._tri_w / 2
-            mid_y = rect.center().y()
-            painter.setBrush(QBrush(QColor(90, 90, 90)))
-            painter.setPen(Qt.NoPen)
-            painter.drawPolygon(QPolygon([
-                QPoint(int(mid_x - 3), int(mid_y - 2)),
-                QPoint(int(mid_x + 3), int(mid_y - 2)),
-                QPoint(int(mid_x), int(mid_y + 3)),
-            ]))
-            painter.restore()
-
-    def _is_triangle(self, x, sec):
-        """点击位置是否落在 sec 列右侧 _tri_w 宽的筛选三角区域内。"""
-        sp = self.sectionViewportPosition(sec)
-        sz = self.sectionSize(sec)
-        return x >= sp + sz - self._tri_w
-
-    def mousePressEvent(self, event):
-        x = event.position().x()
-        xi = int(x)
-        sec = self.logicalIndexAt(xi)
-        if sec in self._filter_sections and self._is_triangle(x, sec):
-            self.sectionFilterClicked.emit(sec)
-            self._press_sec = -1
-            return
-        self._press_sec = sec
-        super().mousePressEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        x = event.position().x()
-        xi = int(x)
-        sec = self.logicalIndexAt(xi)
-        was_click = self._press_sec >= 0 and sec == self._press_sec
-        self._press_sec = -1
-        super().mouseReleaseEvent(event)
-        if was_click:
-            # 默认 sectionClicked 路径对自定义表头失效，手动补发（super 不会重复发射）
-            self.sectionClicked.emit(sec)
 
 
 class QuarantineDialog(QDialog):
@@ -1027,11 +960,7 @@ class QuarantineDialog(QDialog):
         df = self.source_model.getDataFrame()
         if index.row() >= len(df):
             return
-        record = df.iloc[index.row()]
-        try:
-            self.main_window.locate_record(record)
-        except (AttributeError, Exception):
-            pass
+        locate_row(self.main_window, df.iloc[index.row()], parent=self, link_source="隔离区")
         self.accept()
 
     def export_excel(self):

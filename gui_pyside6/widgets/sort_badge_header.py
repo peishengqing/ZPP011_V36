@@ -9,12 +9,11 @@ paintEvent 仅 override：先 super().paintEvent 画出原生表头（外观完�
 再叠加角标 / 漏斗。漏斗标的绘制与「是否有排序列」无关——
 （修复原实现：未排序却已设取值过滤时不画漏斗的 bug）。
 """
-import os
-import time
 
 from PySide6.QtCore import Qt, QRect, QPoint
 from PySide6.QtGui import QPainter, QColor, QPen, QPolygon, QFont, QFontMetrics
 from PySide6.QtWidgets import QHeaderView
+from gui_pyside6.utils.click_debug import click_log
 
 
 class SortBadgeHeader(QHeaderView):
@@ -39,14 +38,8 @@ class SortBadgeHeader(QHeaderView):
 
     @staticmethod
     def _click_log(msg):
-        """v43.116 诊断：把表头点击链路日志追加到 %TEMP%\\zpp011_click.log。
-        写盘失败（无 TEMP / 权限）静默吞掉——日志是诊断辅助，绝不能反过来让程序崩。"""
-        try:
-            log_path = os.path.join(os.environ.get("TEMP", ""), "zpp011_click.log")
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
-        except Exception:
-            pass
+        """点击链路诊断日志：默认关闭，设 ZPP011_CLICK_DEBUG=1 才写盘（见 utils/click_debug）。"""
+        click_log(msg)
 
     def _section_at(self, pos):
         """v43.118 修：把鼠标 position 映射到列号。

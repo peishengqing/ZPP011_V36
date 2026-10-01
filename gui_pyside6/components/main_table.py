@@ -2,67 +2,23 @@
 """主表格区组件 — 暗色主题"""
 from PySide6.QtWidgets import (
     QGroupBox, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QProgressBar, QTableView, QHeaderView,
+    QPushButton, QProgressBar, QTableView, QHeaderView, QFrame,
     QWidget, QSizePolicy, QToolButton,
 )
+import re
+
 from PySide6.QtCore import Qt, Signal, QObject
 
 # 分析进度步骤图标（沿用 v31 经典布局：一排图标 + 进度条 + 状态文字）
+# 分析进度步骤图标（沿用 v31 经典布局：一排图标 + 进度条 + 状态文字）
+# 顺序固定：0=主表计算（读取/解析/计算/匹配），1~10=Sheet1~10，11=生成Excel。
+# 图标本体用「数字 + √」状态文字（不用 emoji：跨字体易渲染成方框/乱码，
+# 且旧表里 🖖 代表中间地带、💰 代表偏差金额，语义与观感都不统一）。
 ANALYSIS_STEPS = [
-    ("预处理", "⚙"),
-    ("汇总统计", "📋"),
-    ("替代料明细", "🔄"),
-    ("无备注预警", "🚨"),
-    ("中间地带", "🖖"),
-    ("完整偏差", "📊"),
-    ("异常预警", "⚠"),
-    ("偏差金额", "💰"),
-    ("原因汇总", "📝"),
-    ("原因分析", "🔍"),
-    ("趋势分析", "📈"),
-    ("生成Excel", "💾"),
+    "主表计算", "汇总统计", "替代料明细", "无备注预警", "中间地带", "完整偏差",
+    "异常预警", "偏差金额", "原因汇总", "原因分析", "趋势分析", "生成Excel",
 ]
 
-TABLE_STYLESHEET = """
-QTableView {
-    background-color: #2C2C2A;
-    color: #EAE8E4;
-    border: none;
-    gridline-color: #444441;
-    font-family: 'Microsoft YaHei';
-    font-size: 11px;
-}
-QTableView::item { padding: 4px 6px; }
-QTableView::item:selected { background-color: #3C3489; color: #EAE8E4; }
-QTableView::item:selected:active { background-color: #534AB7; }
-QHeaderView::section {
-    background-color: #1A1830;
-    color: #888780;
-    border: none;
-    border-bottom: 0.5px solid #444441;
-    border-right: 0.5px solid #444441;
-    padding: 6px 8px;
-    font-family: 'Microsoft YaHei';
-    font-size: 11px;
-    font-weight: 500;
-}
-QScrollBar:vertical {
-    background-color: #2C2C2A;
-    width: 8px;
-    border: none;
-}
-QScrollBar::handle:vertical {
-    background-color: #5F5E5A;
-    border-radius: 4px;
-    min-height: 20px;
-}
-QScrollBar::handle:vertical:hover {
-    background-color: #888780;
-}
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-    height: 0px;
-}
-"""
 
 PROGRESS_STYLE = """
 QProgressBar {
@@ -87,6 +43,7 @@ class MainTableComponent(QObject):
 
     # 分析进度面板整体显隐变化（True=显示, False=隐藏）
     progress_visibility_changed = Signal(bool)
+    link_banner_cleared = Signal()  # 联动横幅「清除」按钮点击
 
     def __init__(self, main_window):
         super().__init__(main_window)
@@ -129,12 +86,13 @@ class MainTableComponent(QObject):
 
         # 步骤图标行（v31 经典：一排图标，当前步骤高亮）
         self.step_icons = []
+        self._step_icon_pos = 0  # 步骤图标指针（只进不退）
         step_row = QHBoxLayout()
         step_row.setSpacing(6)
         step_row.setContentsMargins(0, 4, 0, 4)
-        for idx, (name, icon) in enumerate(ANALYSIS_STEPS):
+        for idx, name in enumerate(ANALYSIS_STEPS):
             btn = QToolButton()
-            btn.setText(icon)
+            btn.setText(str(idx + 1))  # 待办=数字；完成后变 √（见 update_step_icons）
             btn.setToolTip(f"{idx + 1}. {name}")
             btn.setProperty("step_idx", idx)
             btn.setAutoRaise(True)
@@ -144,12 +102,13 @@ class MainTableComponent(QObject):
                     background-color: #25242E;
                     border: 1px solid #3A3847;
                     border-radius: 4px;
-                    font-size: 14px;
-                    padding: 2px 4px;
-                    min-width: 26px;
-                    max-width: 26px;
-                    min-height: 26px;
-                    max-height: 26px;
+                    font-size: 10px;
+                    font-weight: 600;
+                    padding: 0px;
+                    min-width: 22px;
+                    max-width: 22px;
+                    min-height: 22px;
+                    max-height: 22px;
                 }
                 QToolButton:hover { background-color: #35334A; }
                 QToolButton[active="true"] {
@@ -209,7 +168,7 @@ class MainTableComponent(QObject):
         self.table_view.customContextMenuRequested.connect(self.mw._show_context_menu)
         self.table_view.setSelectionMode(QTableView.ExtendedSelection)
         self.table_view.setSelectionBehavior(QTableView.SelectItems)
-        self.table_view.verticalHeader().setDefaultSectionSize(24)
+        self.table_view.verticalHeader().setDefaultSectionSize(28)
 
         # 合计行（单行）
         summary_layout = QHBoxLayout()
@@ -285,9 +244,26 @@ class MainTableComponent(QObject):
         self.mark_stats_label.setFixedHeight(22)
         audit_layout.addWidget(self.mark_stats_label)
 
+        # 联动横幅（看板钻取）：表格上方提示当前联动筛选上下文，可一键清除
+        self.link_banner = QFrame()
+        self.link_banner.setObjectName("linkBanner")
+        self.link_banner.setVisible(False)
+        _link_row = QHBoxLayout(self.link_banner)
+        _link_row.setContentsMargins(8, 3, 8, 3)
+        self.link_banner_label = QLabel("")
+        self.link_banner_label.setObjectName("linkBannerLabel")
+        self.link_banner_clear_btn = QPushButton("清除")
+        self.link_banner_clear_btn.setObjectName("linkBannerClearBtn")
+        self.link_banner_clear_btn.setCursor(Qt.OpenHandCursor)
+        self.link_banner_clear_btn.clicked.connect(self.link_banner_cleared.emit)
+        _link_row.addWidget(self.link_banner_label, 1)
+        _link_row.addWidget(self.link_banner_clear_btn)
+
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
+        main_layout.insertWidget(0, self.link_banner)
+
         main_layout.addWidget(self.table_view, 1)
 
         audit_layout.addLayout(main_layout, 1)
@@ -307,6 +283,17 @@ class MainTableComponent(QObject):
         self.progress_group.setVisible(visible)
         self.progress_visibility_changed.emit(visible)
 
+    # ------------------------------------------------------------------ #
+    # 联动横幅（看板 → 主表钻取）
+    # ------------------------------------------------------------------ #
+    def show_link_banner(self, text):
+        """显示联动提示条（text 例：'订单 17001234 · 偏差率预警'）。"""
+        self.link_banner_label.setText("联动视图：" + text + "（点击「清除」恢复原筛选）")
+        self.link_banner.setVisible(True)
+
+    def clear_link_banner(self):
+        self.link_banner.setVisible(False)
+
     def set_progress_visible(self, visible: bool):
         """外部（如开始分析时）强制展开/折叠进度面板，并同步按钮状态"""
         self._progress_hidden = not visible
@@ -325,36 +312,64 @@ class MainTableComponent(QObject):
     # 分析进度步骤图标
     # ------------------------------------------------------------------ #
     def reset_step_icons(self):
-        """分析开始前重置所有步骤图标。"""
-        for btn in self.step_icons:
+        """分析开始前重置所有步骤图标（全部回到数字态，指针归零）。"""
+        for idx, btn in enumerate(self.step_icons):
             btn.setProperty("active", False)
             btn.setProperty("done", False)
+            btn.setText(str(idx + 1))
             self._refresh_step_btn_style(btn)
+        self._step_icon_pos = 0
+
+    # 步骤名 → 图标索引映射（ANALYSIS_STEPS 顺序：0=主表计算，1~10=Sheet1~10，11=生成Excel）
+    _STEP_NAME_RE = re.compile(r"^Sheet(\d+)-")
+
+    @classmethod
+    def _map_step_name(cls, name):
+        """把 analyzer 发射的真实步骤名映射到图标索引；通知/里程碑返回 None（图标停住）。"""
+        name = (name or "").strip()
+        m = cls._STEP_NAME_RE.match(name)
+        if m:
+            n = int(m.group(1))
+            if 1 <= n <= 11:
+                return n
+        if name.startswith(("1/5", "2/5", "3/5", "4/5")):
+            return 0  # 读取/解析/计算/匹配 都属主表计算阶段
+        if "正在生成审核表格" in name:
+            return 11
+        return None  # 过滤/搜索通知、里程碑（主表计算完成/分析完成）、错误：图标不动
 
     def update_step_icons(self, percent, current_step_name=""):
-        """根据进度百分比依次点亮步骤图标。"""
+        """按真实步骤点亮图标：由 analyzer 发射的步骤名驱动（不再是百分比切段），只进不退。"""
         if not self.step_icons:
             return
-        total = len(self.step_icons)
-        active_idx = min(int(percent / (100.0 / total)), total - 1)
-        for idx, btn in enumerate(self.step_icons):
-            if idx < active_idx:
+        idx = self._map_step_name(current_step_name)
+        if idx is None:
+            return  # 通知/里程碑：图标停留在最近一个真实步骤
+        # 只进不退：乱序发射（如缓存重放、回退值）不允许把图标指针打回去
+        idx = max(idx, self._step_icon_pos)
+        self._step_icon_pos = idx
+        for i, btn in enumerate(self.step_icons):
+            if i < idx:
                 btn.setProperty("active", False)
                 btn.setProperty("done", True)
-            elif idx == active_idx:
+                btn.setText("\u221a")  # √
+            elif i == idx:
                 btn.setProperty("active", True)
                 btn.setProperty("done", False)
+                btn.setText(str(i + 1))
             else:
                 btn.setProperty("active", False)
                 btn.setProperty("done", False)
+                btn.setText(str(i + 1))
             self._refresh_step_btn_style(btn)
-
     def complete_step_icons(self):
-        """分析完成后所有步骤图标标记为完成。"""
-        for btn in self.step_icons:
+        """分析完成后所有步骤图标标记为完成（全部 √，指针到底）。"""
+        for idx, btn in enumerate(self.step_icons):
             btn.setProperty("active", False)
             btn.setProperty("done", True)
+            btn.setText("\u221a")  # √
             self._refresh_step_btn_style(btn)
+        self._step_icon_pos = len(self.step_icons)
 
     @staticmethod
     def _refresh_step_btn_style(btn):

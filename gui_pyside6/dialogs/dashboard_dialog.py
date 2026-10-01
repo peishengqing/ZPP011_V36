@@ -73,6 +73,29 @@ def _window_from_df(audit_df):
     return dates.min().strftime("%Y-%m-%d"), dates.max().strftime("%Y-%m-%d")
 
 
+def _make_url_interceptor_class():
+    """工厂：WebEngine 可用时才建拦截器类（基类延迟导入，避免模块级初始化 Chromium）。
+
+    拦截看板 HTML 里 zpp011://link?... 「到主表」芯片点击 → 发信号给主表联动。
+    自定义 scheme 无需真正加载（QWebEngine 不认识 zpp011，请求自然终止），
+    拦截器在 GUI 线程收到请求后解析转发；其余请求（file:// 本地看板）直接放行。
+    """
+    from PySide6.QtWebEngineCore import QWebEngineUrlRequestInterceptor
+
+    class _Zpp011UrlInterceptor(QWebEngineUrlRequestInterceptor):
+        focus_url = Signal(str)
+
+        def __init__(self, parent=None):
+            super().__init__(parent)
+
+        def interceptRequest(self, request):
+            url = request.url().toString()
+            if url.startswith("zpp011:"):
+                self.focus_url.emit(url)
+
+    return _Zpp011UrlInterceptor
+
+
 class _DashboardBuildWorker(QThread):
     """后台线程：拆分数据 + 生成看板 HTML（Agg 后端，避免占用 GUI 线程）。"""
 
@@ -111,6 +134,9 @@ class _DashboardBuildWorker(QThread):
 
 class DashboardDialog(QDialog):
     """管理看板：偏差视角 12 图（分厂切换）。"""
+
+    # 看板内「到主表」芯片点击（zpp011://link?... URL 原文）→ 主窗口做联动钻取
+    focus_requested = Signal(str)
 
     def __init__(self, audit_df, material_df=None, parent=None, main_window=None):
         # WebEngine：首次 import 会初始化 Chromium 内核（较重），失败时降级 QTextBrowser
@@ -159,11 +185,19 @@ class DashboardDialog(QDialog):
         layout.addLayout(top)
 
         # WebEngine 视图（若可用），否则降级到 QTextBrowser
+        self._interceptor = None
         if self._web_engine_ok:
             self.web = self._WebEngineView(self)
             self.web.settings().setAttribute(
                 self._WebEngineSettings.LocalContentCanAccessFileUrls, True
             )
+            # 「到主表」芯片桥：拦截 zpp011:// scheme（降级 QTextBrowser 模式不挂，芯片 inert）
+            try:
+                self._interceptor = _make_url_interceptor_class()(parent=self)
+                self._interceptor.focus_url.connect(self.focus_requested)
+                self.web.page().profile().installUrlRequestInterceptor(self._interceptor)
+            except Exception:
+                self._interceptor = None
         else:
             self.web = QTextBrowser(self)
             self.web.setAcceptRichText(True)

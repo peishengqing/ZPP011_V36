@@ -23,6 +23,7 @@ class TestReadStatusBasic:
             # (is_read, fingerprint, snapshot_qty, snapshot_note, snapshot_yield, read_source)；手动默认 'manual'
             assert result['test_id_1'] == (1, 'fp_v1', None, '', None, 'manual')
         finally:
+            rs.close_db()  # 释放句柄，否则 Windows 上临时库删不掉
             rs.DB_PATH = orig_path
             if os.path.exists(tmp_db):
                 os.remove(tmp_db)
@@ -38,6 +39,7 @@ class TestReadStatusBasic:
             result = rs.load_read_status([])
             assert result == {}
         finally:
+            rs.close_db()  # 释放句柄，否则 Windows 上临时库删不掉
             rs.DB_PATH = orig_path
             if os.path.exists(tmp_db):
                 os.remove(tmp_db)
@@ -55,6 +57,7 @@ class TestReadStatusBasic:
             assert 'id_exists' in result
             assert 'id_ghost' not in result
         finally:
+            rs.close_db()  # 释放句柄，否则 Windows 上临时库删不掉
             rs.DB_PATH = orig_path
             if os.path.exists(tmp_db):
                 os.remove(tmp_db)
@@ -72,6 +75,7 @@ class TestReadStatusBasic:
             result = rs.load_read_status(['test_id'])
             assert result['test_id'] == (0, 'fp_v2', None, '', None, 'manual')
         finally:
+            rs.close_db()  # 释放句柄，否则 Windows 上临时库删不掉
             rs.DB_PATH = orig_path
             if os.path.exists(tmp_db):
                 os.remove(tmp_db)
@@ -93,6 +97,7 @@ class TestReadStatusBasic:
             for i, id_ in enumerate(ids):
                 assert result[id_] == (i % 2, f'fp_{i}', None, '', None, 'manual')
         finally:
+            rs.close_db()  # 释放句柄，否则 Windows 上临时库删不掉
             rs.DB_PATH = orig_path
             if os.path.exists(tmp_db):
                 os.remove(tmp_db)
@@ -108,6 +113,7 @@ class TestReadStatusBasic:
             # 不应抛出异常
             rs.init_db()
         finally:
+            rs.close_db()  # 释放句柄，否则 Windows 上临时库删不掉
             rs.DB_PATH = orig_path
             if os.path.exists(tmp_db):
                 os.remove(tmp_db)

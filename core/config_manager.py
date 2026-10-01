@@ -1,6 +1,8 @@
 # core/config_manager.py
+import os
 import copy
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -65,7 +67,15 @@ class ConfigManager:
                 loaded = self._migrate(loaded, version)
             self.config = loaded
         except Exception as e:
-            logger.error(f"加载配置失败: {e}，使用默认配置")
+            logger.error(f"加载配置失败: {e}")
+            # 保护原文件：损坏的配置先改名留存，绝不直接覆盖（否则用户配置永久丢失）
+            try:
+                bad_path = self.config_path.with_name(
+                    f"{self.config_path.name}.bad_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+                os.replace(str(self.config_path), str(bad_path))
+                logger.error(f"损坏的配置已备份为: {bad_path}")
+            except Exception as backup_err:
+                logger.error(f"备份损坏配置失败: {backup_err}")
             self.config = copy.deepcopy(self.DEFAULT_CONFIG)
             self._save()
 
@@ -79,15 +89,18 @@ class ConfigManager:
         return old_config
 
     def _save(self):
-        """保存当前配置到文件"""
+        """保存当前配置到文件（原子写：临时文件 + os.replace，避免写一半损坏）。"""
         try:
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.config_path, "w", encoding="utf-8") as f:
+            tmp_path = self.config_path.with_name(self.config_path.name + ".tmp")
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(self.config, f, indent=2, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(str(tmp_path), str(self.config_path))
             logger.debug(f"配置已保存: {self.config_path}")
         except Exception as e:
             logger.error(f"保存配置失败: {e}")
-
     def get(self, key: str, default=None):
         """获取配置值，支持点号路径，如 'window.width'"""
         keys = key.split('.')

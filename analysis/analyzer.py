@@ -48,6 +48,9 @@ from analysis.net_offset import apply_net_offset
 
 # 缓存最近一次分析的中间结果（worker 快速路径写入），供后台缓存线程复用，避免 Sheet1~5 重算
 LATEST_INTERMEDIATES = None
+# 原表行号缓存：(路径, mtime, size) -> [行号…]（同文件重复分析不再重跑 openpyxl 全表扫描）
+_EXCEL_ROWNUM_CACHE = {}
+
 
 
 
@@ -81,6 +84,16 @@ def infer_material_type(code):
         return '广宣'
     return '其他'
 
+
+def _ranged_progress(report_progress, lo, hi):
+    """把 Sheet 构建器内部的 0-100% 进度映射到全局 [lo, hi] 区间。"""
+    # 各 Sheet 构建器沿用「自身 0-100」的历史约定，直接发给 UI 会让总进度条在步骤间
+    # 来回回跳（50→0→100→0…）。这里做线性重映射，保证总进度单调不减，
+    # 且每个 Sheet 占自己的区间（与 12 格步骤图标对应）。
+    def cb(step_idx, step_name, percent):
+        p = int(lo + (hi - lo) * max(0.0, min(100.0, float(percent))) / 100.0)
+        report_progress(step_idx, step_name, p)
+    return cb
 
 def do_analysis_v2(
         input_file,
@@ -175,11 +188,12 @@ def do_analysis_v2(
             _dprint(f"[DEBUG do_analysis_v2] 复用已读 DataFrame，{len(df)} 行")
         else:
             # 容错：优先读 'Data' 工作表，不存在则取第一个
-            xl = pd.ExcelFile(src_file)
+            from utils.excel_io import open_excel_book  # calamine 优先（快 5x），openpyxl 兜底
+            xl = open_excel_book(src_file)
             _sheet = 'Data' if 'Data' in xl.sheet_names else xl.sheet_names[0]
             if _sheet != 'Data':
                 _dprint(f"[WARN] 工作表 'Data' 不存在，改用 '{_sheet}'")
-            df = pd.read_excel(src_file, sheet_name=_sheet)
+            df = xl.parse(_sheet)  # 复用工作簿，避免第二次整文件解析
             _dprint(f"[DEBUG do_analysis_v2] 读取Data表成功，{len(df)} 行")
 
         # 校验：必须为原始 SAP 导出文件，而非分析报告
@@ -195,7 +209,7 @@ def do_analysis_v2(
             report_progress(1, f"错误：缺少列 {_missing[0]}", 0)
             raise ValueError(error_msg)
 
-        report_progress(1, "1/5 正在读取 Excel 文件", 10)
+        report_progress(1, "1/5 正在读取 Excel 文件", 5)
         # 强制刷新输出（安全模式，忽略线程 stdout 不可用的情况）
         import sys
         try:
@@ -258,31 +272,49 @@ def do_analysis_v2(
             _f.write(f"df.shape: {df.shape}\n")
             _f.write(f"数值列检查: 完成\n\n")
             _f.write(f"'组件单位' in df.columns: {'组件单位' in df.columns}\n")
-    report_progress(2, "2/5 正在解析生产数据", 30)
+    report_progress(2, "2/5 正在解析生产数据", 15)
 
     # 保留原始 Excel 行号：用 openpyxl 读取真实行号（避免 pandas read_excel 跳过空行导致偏移）
+    # 性能（2026-09-30）：行号序列按 (路径, mtime, size) 缓存——同一文件重复分析时
+    # 不再重开 openpyxl 扫全表（5 万行约省 3s；只缓存最近 2 个文件）
+    _real_rows = None
+    _rownum_key = None
     try:
-        from openpyxl import load_workbook
-        _wb = load_workbook(src_file, read_only=True, data_only=True)
-        # 容错：优先取 'Data' 工作表，不存在则取第一个
-        _sheet_names = _wb.sheetnames
-        _ws = _wb['Data'] if 'Data' in _sheet_names else _wb[_sheet_names[0]]
-        if 'Data' not in _sheet_names:
-            _dprint(f"[WARN] 工作表 'Data' 不存在，改用 '{_sheet_names[0]}'")
-        _real_rows = []
-        _rn = 0
-        for _row in _ws:
-            _rn += 1
-            if _rn == 1:
-                continue  # 跳过表头
-            _real_rows.append(_rn)
-        _wb.close()
-        if len(_real_rows) == len(df):
-            df.insert(0, '_excel_row', _real_rows)
-        else:
-            # 行数不匹配时回退到计算方式
-            df.insert(0, '_excel_row', range(2, len(df) + 2))
-    except Exception:
+        _st = os.stat(src_file)
+        _rownum_key = (os.path.normcase(os.path.abspath(src_file)), _st.st_mtime, _st.st_size)
+        _hit = _EXCEL_ROWNUM_CACHE.get(_rownum_key)
+        if _hit is not None and len(_hit) == len(df):
+            _real_rows = _hit
+            _dprint("[PERF] 行号缓存命中（%d 行），跳过 openpyxl 全表扫描" % len(df))
+    except OSError:
+        pass
+    if _real_rows is None:
+        try:
+            from openpyxl import load_workbook
+            _wb = load_workbook(src_file, read_only=True, data_only=True)
+            # 容错：优先取 'Data' 工作表，不存在则取第一个
+            _sheet_names = _wb.sheetnames
+            _ws = _wb['Data'] if 'Data' in _sheet_names else _wb[_sheet_names[0]]
+            if 'Data' not in _sheet_names:
+                _dprint(f"[WARN] 工作表 'Data' 不存在，改用 '{_sheet_names[0]}'")
+            _real_rows = []
+            _rn = 0
+            for _row in _ws:
+                _rn += 1
+                if _rn == 1:
+                    continue  # 跳过表头
+                _real_rows.append(_rn)
+            _wb.close()
+        except Exception:
+            _real_rows = None
+    if _real_rows is not None and len(_real_rows) == len(df):
+        df.insert(0, '_excel_row', _real_rows)
+        if _rownum_key is not None:
+            if len(_EXCEL_ROWNUM_CACHE) >= 2:
+                _EXCEL_ROWNUM_CACHE.pop(next(iter(_EXCEL_ROWNUM_CACHE)))
+            _EXCEL_ROWNUM_CACHE[_rownum_key] = _real_rows
+    else:
+        # 行数不匹配或扫描失败时回退到计算方式
         df.insert(0, '_excel_row', range(2, len(df) + 2))
 
     # ========== 强制转换数值列，防止字符串混入 ==========
@@ -456,7 +488,7 @@ def do_analysis_v2(
     if '金额-实际(含税)' in df.columns and '金额-定额(含税)' in df.columns:
         # 方法1：直接相减（推荐，最准确）
         df['偏差金额(含税)'] = (df['金额-实际(含税)'] - df['金额-定额(含税)']).round(2)
-        report_progress(3, "3/5 正在计算偏差金额和偏差率", 50)
+        report_progress(3, "3/5 正在计算偏差金额和偏差率", 25)
         print(f"[偏差金额计算] 使用含税金额直接相减，非零偏差行数: {(df['偏差金额(含税)'] != 0).sum()}")
     else:
         # 方法2：降级使用材料偏差 × 单价（兼容旧格式）
@@ -481,7 +513,7 @@ def do_analysis_v2(
 
     check_cancel()
     # Sheet1（第五步抽取 → analysis/sheets/sheet1_summary.py）
-    summary_df = build_sheet1(df, report_progress)
+    summary_df = build_sheet1(df, _ranged_progress(report_progress, 25, 35))
     check_cancel()
 
     # Sheet2（第五步抽取 → analysis/sheets/sheet2_alt.py）
@@ -521,7 +553,7 @@ def do_analysis_v2(
     }
     _dprint(f"[TRACE-2] 预处理后: 数量-实际 sum={df['数量-实际'].sum() if '数量-实际' in df.columns else 'N/A'}")
 
-    alt_df, alt_order_mat = build_sheet2(df, cleaned_pairs, report_progress)
+    alt_df, alt_order_mat = build_sheet2(df, cleaned_pairs, _ranged_progress(report_progress, 35, 45))
     check_cancel()
 
     # 基于 Sheet2 结果构建订单级替代料标记集合（仅同订单内出现配对物料才标记）
@@ -548,7 +580,7 @@ def do_analysis_v2(
     df.loc[df['_note_source'] == '替代料', '标准原因'] = '替代料'
 
     # 重新计算 _is_alt 标志（仅基于订单级匹配，同一订单内同时存在配对物料才标记）
-    report_progress(4, "4/5 正在匹配替代料信息", 70)
+    report_progress(4, "4/5 正在匹配替代料信息", 50)
     # 向量化：tuple Series + isin 替代逐行 apply（in alt_order_mat）；同样带 df.index
     _order_alt_keys = pd.Series(
         zip(df['流程订单'].astype(str), df['组件物料描述'].astype(str)),
@@ -559,15 +591,15 @@ def do_analysis_v2(
     check_cancel()
 
     # Sheet3（第五步抽取 → analysis/sheets/sheet3_no_note.py）
-    no_note_df = build_sheet3(df, report_progress, dyn_thresh=dyn_thresh)
+    no_note_df = build_sheet3(df, _ranged_progress(report_progress, 50, 60), dyn_thresh=dyn_thresh)
     check_cancel()
 
     # Sheet4（第五步抽取 → analysis/sheets/sheet4_middle.py）
-    middle_df = build_sheet4(df, alt_df, alt_pairs, report_progress, dyn_thresh=dyn_thresh)
+    middle_df = build_sheet4(df, alt_df, alt_pairs, _ranged_progress(report_progress, 60, 70), dyn_thresh=dyn_thresh)
     check_cancel()
 
     # Sheet5（第五步抽取 → analysis/sheets/sheet5_full.py）
-    dev_df = build_sheet5(df, report_progress, threshold=dev_rate_threshold)
+    dev_df = build_sheet5(df, _ranged_progress(report_progress, 70, 80), threshold=dev_rate_threshold)
 
     # 补齐"是否替代料"列
     # 优先使用 _is_alt 标志（已做订单级匹配：同一订单内同时存在配对物料才标记）
@@ -703,7 +735,7 @@ def do_analysis_v2(
             '数量-实际': df['数量-实际'].describe().to_dict() if '数量-实际' in df.columns else 'NOT_FOUND',
             '行数': len(df)
         }
-        report_progress(5, "5/5 主表计算完成", 90)
+        report_progress(5, "5/5 主表计算完成", 85)
         report_progress(5, "5/5 分析完成", 100)
         _dprint("[DEBUG do_analysis_v2] 主表快速路径：跳过导出专用 sheet，直接返回 dev_df")
         try:
@@ -778,24 +810,24 @@ def export_full_report_from_intermediates(intermediates, output_path=None, outpu
         ))
 
     # Sheet6（第五步抽取 → analysis/sheets/sheet6_anomaly.py）
-    anomaly_df = build_sheet6(df, alt_order_mat, report_progress, net_offset_map=net_offset_map)
+    anomaly_df = build_sheet6(df, alt_order_mat, _ranged_progress(report_progress, 85, 88), net_offset_map=net_offset_map)
     check_cancel()
 
     # Sheet7（第五步抽取 → analysis/sheets/sheet7_amount.py）
     wb = Workbook()   # 原 Sheet7 代码块中创建（必需，供后续 Sheet 使用）
-    build_sheet7(wb, df, report_progress)
+    build_sheet7(wb, df, _ranged_progress(report_progress, 88, 90))
     check_cancel()
 
     # Sheet8（第五步抽取 → analysis/sheets/sheet8_reason_summary.py）
-    reason_summary_df = build_sheet8(df, report_progress)
+    reason_summary_df = build_sheet8(df, _ranged_progress(report_progress, 90, 92))
     check_cancel()
 
     # Sheet9（第五步抽取 → analysis/sheets/sheet9_reason_detail.py）
-    reason_analysis_df = build_sheet9(df, report_progress)
+    reason_analysis_df = build_sheet9(df, _ranged_progress(report_progress, 92, 94))
     check_cancel()
 
     # Sheet10（第五步抽取 → analysis/sheets/sheet10_trend.py）
-    build_sheet10(wb, dev_df, date_min, report_progress)
+    build_sheet10(wb, dev_df, date_min, _ranged_progress(report_progress, 94, 96))
 
     ws1 = wb.active
     ws1.title = '汇总统计'
@@ -1031,7 +1063,7 @@ def export_full_report_from_intermediates(intermediates, output_path=None, outpu
             output_dir,
             f'ZPP011偏差分析最终版_{date_range}_v{next_ver:02d}.xlsx')
 
-    report_progress(5, "5/5 正在生成审核表格", 90)
+    report_progress(5, "5/5 正在生成审核表格", 96)
 
     # ── 分析说明 sheet ────────────────────────────
     ws_info = wb.create_sheet('📋 分析说明', index=0)

@@ -12,7 +12,8 @@
         "手包袋",
         "彩罐",
         "不干胶",
-        "托盘"
+        "托盘",
+        "纸卡"
       ],
       "negative_loss_required": true,
       "dev_rate_required": false,
