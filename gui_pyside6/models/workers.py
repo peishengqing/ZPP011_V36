@@ -9,7 +9,7 @@ from PySide6.QtCore import QThread, Signal
 
 from analysis.analyzer import do_analysis_v2
 from core.rule_engine import RuleEngine
-from core.ai_client import AIClient
+from core.ai_client import AIClient, build_local_verdict
 from core.config_manager import ConfigManager
 
 
@@ -185,18 +185,23 @@ class AIAuditWorker(QThread):
                         self.audit_data.at[idx, '备注来源'] = '人工填写'
                         self.audit_data.at[idx, 'AI建议'] = ''
                 else:
-                    abs_rate = abs(dev_rate)
-                    if abs_rate < 5:
-                        self.audit_data.at[idx, 'audit_result'] = '合格'
-                    elif abs_rate < 10:
-                        self.audit_data.at[idx, 'audit_result'] = '需关注'
-                    else:
-                        self.audit_data.at[idx, 'audit_result'] = '需补备注'
+                    # 无备注 → 一律走统一本地口径（阈值/文案单一来源）。
+                    # 未投料行 dev_rate 为 None，本地直出「未投料」结论，不进 AI 队列。
+                    try:
+                        amount = float(row.get("偏差金额", 0) or 0)
+                    except Exception:
+                        amount = 0.0
+                    verdict = build_local_verdict(dev_rate, remark=remark, amount=amount)
+                    self.audit_data.at[idx, 'audit_result'] = verdict['result']
                     self.audit_data.at[idx, '备注来源'] = 'AI审核'
+                    self.audit_data.at[idx, 'AI建议'] = '' if dev_rate is not None else verdict['suggestion']
 
                 # 收集需要 AI 建议的行
                 current_result = self.audit_data.at[idx, 'audit_result']
-                if not remark or current_result == '需改进':
+                if dev_rate is None:
+                    # 未投料（机械 ±100%）已本地直出，不浪费 AI 调用也不让 AI 胡编
+                    pass
+                elif not remark or current_result == '需改进':
                     context = {
                         "remark": remark,
                         "物料编码": str(row.get("物料编码", "")),
@@ -245,18 +250,14 @@ class AIAuditWorker(QThread):
                     except Exception as e:
                         # 批量失败 → 直接用 Mock 降级，不再逐条调 API（浪费时间）
                         self.log.emit(f"批量调用失败({str(e)[:60]})，降级 Mock")
+                        # 批量兜底口径统一收敛到 build_local_verdict（不再单写一套 5/10/30 阈值）
                         results = []
                         for item in batch_items:
-                            dr = item["dev_rate"]
-                            abs_r = abs(dr)
-                            if abs_r >= 30:
-                                results.append({"result": "需补备注", "suggestion": "严重超耗，请检查工艺或定额"})
-                            elif abs_r >= 10:
-                                results.append({"result": "需补备注", "suggestion": "偏差较大，建议核查替代料或录入错误"})
-                            elif abs_r >= 5:
-                                results.append({"result": "需关注", "suggestion": "偏差需关注，请确认合理性"})
-                            else:
-                                results.append({"result": "合格", "suggestion": "偏差在正常范围内"})
+                            results.append(build_local_verdict(
+                                item["dev_rate"],
+                                remark=item["context"].get("remark", ""),
+                                amount=item["context"].get("偏差金额"),
+                            ))
 
                     for j, (idx, result) in enumerate(zip(batch_idxs, results)):
                         if isinstance(result, dict):
@@ -281,7 +282,27 @@ class AIAuditWorker(QThread):
             self.error.emit(f"AI审核失败: {str(e)}\n{traceback.format_exc()}")
 
     def _parse_dev_rate(self, row):
-        """从行数据解析偏差率"""
+        """从行数据解析偏差率。
+
+        未投料（实际用量=0 且 定额>0）返回 None：此时偏差率恒为机械 ±100%
+        （(0-定额)/定额），不是真实少耗/超耗，交给 AI 只会产出「少耗100%」这类胡说。
+        调用方必须按 None 走「未投料」分支。
+        """
+        # ① 未投料识别（优先于偏差率列）
+        try:
+            for a_col, p_col in (('实际', '定额'), ('实际用量', '定额用量')):
+                if a_col in row.index and p_col in row.index:
+                    try:
+                        a = float(row[a_col])
+                        p = float(row[p_col])
+                    except Exception:
+                        a = p = None
+                    if a is not None and p is not None and a == 0.0 and p > 0:
+                        return None
+        except Exception:
+            pass
+
+        # ② 正常偏差率
         for c in ['偏差率', '偏差率(%)']:
             if c in row:
                 raw = row[c]
