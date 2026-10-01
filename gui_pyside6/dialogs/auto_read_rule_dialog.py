@@ -13,11 +13,13 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QGroupBox,
     QHBoxLayout,
+    QSizePolicy,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QScrollArea,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -87,11 +89,15 @@ class _ConditionRow(QWidget):
         self.combo_type = QComboBox()
         for t in _TYPE_ORDER:
             self.combo_type.addItem(CONDITION_TYPES[t]["label"], t)
+        self.combo_type.setMinimumWidth(160)
+        self.combo_type.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.combo_type.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         layout.addWidget(self.combo_type, 0)
 
         self.param_container = QWidget()
         self.param_layout = QHBoxLayout(self.param_container)
         self.param_layout.setContentsMargins(0, 0, 0, 0)
+        self.param_layout.setSpacing(6)
         layout.addWidget(self.param_container, 1)
 
         self.btn_del = QPushButton("✕")
@@ -121,15 +127,19 @@ class _ConditionRow(QWidget):
             mn.setDecimals(2)
             mn.setValue(float(params.get("min", 0)))
             mn.setPrefix("(")
+            mn.setMinimumWidth(92)
             mx = QDoubleSpinBox()
             mx.setRange(-999999, 999999)
             mx.setDecimals(2)
             mx.setValue(float(params.get("max", 1)))
             mx.setPrefix(", ")
             mx.setSuffix(")")
+            mx.setMinimumWidth(92)
             mn.valueChanged.connect(self._on_param_changed)
             mx.valueChanged.connect(self._on_param_changed)
-            self.param_layout.addWidget(QLabel(spec.get("param_label", "偏差数量在")))
+            label = QLabel(spec.get("param_label", "偏差数量在"))
+            label.setMinimumWidth(72)
+            self.param_layout.addWidget(label)
             self.param_layout.addWidget(mn)
             self.param_layout.addWidget(mx)
             self._param_widget = (mn, mx)
@@ -138,6 +148,7 @@ class _ConditionRow(QWidget):
             w.setRange(-999999, 999999)
             w.setDecimals(2)
             w.setValue(float(params.get("value", 0)))
+            w.setMinimumWidth(104)
             w.valueChanged.connect(self._on_param_changed)
             self.param_layout.addWidget(w)
             self._param_widget = w
@@ -264,7 +275,8 @@ class AutoReadRuleWidget(QWidget):
 
         # 编辑区
         box = QGroupBox("规则编辑")
-        ev = QVBoxLayout(box)
+        box_inner = QWidget()
+        ev = QVBoxLayout(box_inner)
         ev.setSpacing(8)
 
         hn = QHBoxLayout()
@@ -311,7 +323,13 @@ class AutoReadRuleWidget(QWidget):
             "color:#555; padding:6px; background:#f5f5f5; border-radius:4px;")
         ev.addWidget(self.lbl_summary)
 
-        root.addWidget(box)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(box_inner)
+        box_v = QVBoxLayout(box)
+        box_v.setContentsMargins(4, 8, 4, 4)
+        box_v.addWidget(scroll)
+        root.addWidget(box, 2)
 
         # 信号
         self.edit_name.textChanged.connect(self._refresh_summary)
