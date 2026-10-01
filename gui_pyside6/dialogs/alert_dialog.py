@@ -749,11 +749,15 @@ class AlertDialog(QDialog):
         toast(f"⭕ 已批量标记 {count} 条为未读", parent=self)
 
     def toggle_fullscreen(self):
-        if self.isFullScreen():
+        # 修复（2026-10-01）：改用 showMaximized() 而非 showFullScreen()。
+        # showFullScreen 是「真全屏」，会把整个屏幕（含任务栏）盖住，
+        # 放大后任务栏不可见、想切窗口只能靠 Alt+Tab，用户体验差。
+        # showMaximized 是「窗口最大化」，保留任务栏可见，与主窗口行为一致。
+        if self.isMaximized():
             self.showNormal()
             self.btn_fullscreen.setText("⛶ 放大")
         else:
-            self.showFullScreen()
+            self.showMaximized()
             self.btn_fullscreen.setText("⛶ 还原")
 
     def on_double_click(self, index):
