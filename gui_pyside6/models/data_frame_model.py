@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 import hashlib
-from PySide6.QtCore import QAbstractTableModel, QSortFilterProxyModel, Qt, Signal, QModelIndex
+from PySide6.QtCore import QAbstractTableModel, QSortFilterProxyModel, Qt, Signal, QModelIndex, QTimer
 from PySide6.QtGui import QColor
 
 # 自定义角色：标记某行是否属于替代料组（代理模型据此跳过预警色覆盖，保证同组视觉一致）
@@ -480,6 +480,12 @@ class AuditProxyModel(QSortFilterProxyModel):
         # P2-7 修复：保留排序状态
         self._sort_column = -1
         self._sort_order = Qt.AscendingOrder
+        # 筛选计划预计算（2026-10-02 性能）：filterAcceptsRow 原先每行做 pandas
+        # df.iloc（17k 行一遍 ≈ 1.3s）+ 逐行列名扫描 + 逐行 pd.to_datetime（≈ 7s），
+        # 主线程同步执行即 UI 卡顿。现把每个检查项在「筛选状态/数据版本变化」时
+        # 一次性预计算成纯 Python 列表（_plan），逐行判定退化为 O(1) 列表访问。
+        self._plan = None
+        self._plan_stale = True
 
     def sort(self, column, order=Qt.AscendingOrder):
         """代理模型排序：保留排序偏好，交给父类用 lessThan() 处理"""
@@ -502,7 +508,22 @@ class AuditProxyModel(QSortFilterProxyModel):
         self._custom_filters.clear()
         self._value_filters.clear()
         self._value_keys.clear()
+        self._plan = self._build_plan()
+        self._plan_stale = False
         self.invalidateFilter()
+
+    def clearHeaderFilters(self):
+        """只清顶部筛选行与列头取值过滤（保留侧边栏 _custom_filters）。
+
+        供「重置筛选」路径用：面板的 _custom_filters 已由 filter_changed 应用过，
+        原先 clearFilters() + setCustomFilters() 双清双设会引发多遍全表重筛（17k 行
+        一遍 1.3s+），这里无值过滤残留时完全零重筛。"""
+        changed = bool(self._filters or self._value_filters or self._value_keys)
+        self._filters.clear()
+        self._value_filters.clear()
+        self._value_keys.clear()
+        if changed:
+            self.invalidateFilter()
 
     def getCustomFilters(self):
         """当前自定义筛选条件（浅拷贝），供外部做「叠加/快照」操作。"""
@@ -521,10 +542,13 @@ class AuditProxyModel(QSortFilterProxyModel):
                 return
             ci = sm._display_columns.index(col_name)
             n = sm.rowCount()
-            keys = []
-            for r in range(n):
-                disp = sm.data(sm.index(r, ci), Qt.DisplayRole)
-                keys.append("(空)" if disp in (None, "") else str(disp))
+            keys = build_display_key_list(sm, ci)  # 向量化（与 DisplayRole 一致）
+            if keys is None:
+                # 兜底：非 DataFrameModel 源 / 第0列 → 原逐行路径
+                keys = []
+                for r in range(n):
+                    disp = sm.data(sm.index(r, ci), Qt.DisplayRole)
+                    keys.append("(空)" if disp in (None, "") else str(disp))
             self._value_filters[col_name] = set(allowed_set)
             self._value_keys[col_name] = keys
         self.invalidateFilter()
@@ -538,7 +562,13 @@ class AuditProxyModel(QSortFilterProxyModel):
           - 普通列筛选：{列名: 值}（精确匹配）
           - 特殊筛选：{'_dev_rate_range': '>10%', '_remark_empty': True/False}
         """
-        self._custom_filters = filters
+        same_dict = (self._custom_filters == filters)
+        self._custom_filters = dict(filters)
+        if same_dict and not self._plan_stale:
+            # 同一筛选状态重复下发（如面板信号抖动）：筛选结果不变，跳过重筛与 layoutChanged
+            return
+        self._plan = self._build_plan()
+        self._plan_stale = False
         self.invalidateFilter()
         self.layoutChanged.emit()
 
@@ -555,304 +585,175 @@ class AuditProxyModel(QSortFilterProxyModel):
                 if filter_text not in str(value).lower():
                     return False
 
-        # 再处理侧边栏自定义筛选
+        # 再处理侧边栏自定义筛选（筛选计划预计算：逐行只做纯列表访问，不再逐行 pandas iloc）
         if self._custom_filters:
-            source_model = self.sourceModel()
-            df = source_model.getDataFrame()
-            if df is None or df.empty:
-                return True
-            row_data = df.iloc[source_row]
-
-            def _to_float_safe(v):
-                """安全转浮点数，失败返回0"""
-                try:
-                    f = float(v)
-                    return f if not pd.isna(f) else 0.0
-                except (ValueError, TypeError):
-                    return 0.0
-
-            # 1. 精确列筛选（工厂、车间、替代料等）
-            for col_name, value in self._custom_filters.items():
-                if col_name.startswith('_'):   # 特殊筛选条件，稍后处理
-                    continue
-                if col_name not in df.columns:
-                    continue
-                row_val = str(row_data.get(col_name, '')).strip()
-                if row_val != str(value).strip():
+            self._ensure_plan()
+            plan = self._plan
+            n = plan.get('n', 0)
+            if n:
+                if source_row >= n or plan.get('reject_all'):
                     return False
+                r = source_row
 
-            # 1.4 产品物料号码模糊搜索（成品/母件编码；逗号分隔多值 OR 匹配）
-            if '_product_code' in self._custom_filters:
-                prod_cols = self._get_product_code_columns(df)
-                if prod_cols:
-                    raw_query = str(self._custom_filters['_product_code']).lower()
-                    queries = [q.strip() for q in raw_query.split(',') if q.strip()]
-                    matched = False
-                    for q in queries:
-                        for col in prod_cols:
-                            row_val = str(row_data.get(col, '')).lower()
-                            if q in row_val:
-                                matched = True
+                # 1. 精确列筛选（工厂、车间、替代料等）
+                for vals, target in plan.get('exact', ()):
+                    if vals[r] != target:
+                        return False
+
+                # 2. OR 子串正组（产品码/物料编码/流程订单/物料名称/备注关键词）
+                for groups, queries in plan.get('pos_groups', ()):
+                    hit = False
+                    for ls in groups:
+                        v = ls[r]
+                        for q in queries:
+                            if q in v:
+                                hit = True
                                 break
-                        if matched:
+                        if hit:
                             break
-                    if not matched:
+                    if not hit:
                         return False
 
-            # 1.5 物料编码模糊搜索（支持逗号分隔多值，跨多个编码列 OR 匹配）
-            if '_material_code' in self._custom_filters:
-                code_cols = self._get_material_code_columns(df)
-                if code_cols:
-                    raw_query = str(self._custom_filters['_material_code']).lower()
-                    queries = [q.strip() for q in raw_query.split(',') if q.strip()]
-                    matched = False
-                    for q in queries:
-                        for col in code_cols:
-                            row_val = str(row_data.get(col, '')).lower()
-                            if q in row_val:
-                                matched = True
-                                break
-                        if matched:
-                            break
-                    if not matched:
-                        return False
+                # 3. OR 子串负组（_remark_not：命中任一即拒）
+                for groups, queries in plan.get('neg_groups', ()):
+                    for ls in groups:
+                        v = ls[r]
+                        if any(q in v for q in queries):
+                            return False
 
-            # 1.6 流程订单模糊搜索
-            if '_process_order' in self._custom_filters:
-                raw = str(self._custom_filters['_process_order'])
-                queries = [q.strip().lower() for q in raw.split(',') if q.strip()]
-                if queries:
-                    matched = False
-                    for col_name in ['流程订单', 'process_order']:
-                        if col_name in df.columns:
-                            row_val = str(row_data.get(col_name, '')).lower()
-                            if any(q in row_val for q in queries):
-                                matched = True
-                                break
-                    if not matched:
+                # 4. 偏差率（NaN 保留：abs(nan) 比较恒 False → 放行，与原逐行行为一致）
+                chk = plan.get('rate_abs')
+                if chk is not None:
+                    rate_list, thr = chk
+                    if abs(rate_list[r]) < thr:
                         return False
-
-            # 1.7 物料名称模糊搜索（逗号分隔多选，子串匹配 OR）
-            if '_material_names' in self._custom_filters:
-                raw = self._custom_filters['_material_names']
-                if raw:
-                    if isinstance(raw, str):
-                        queries = [q.strip().lower() for q in raw.split(',') if q.strip()]
+                chk = plan.get('rate_range')
+                if chk is not None:
+                    rate_list, range_str = chk
+                    rate_v = rate_list[r]
+                    abs_rate = abs(rate_v)
+                    if range_str == '绝对值>=10%':
+                        ok = abs_rate >= 10
+                    elif range_str == '>10%':
+                        ok = abs_rate > 10
+                    elif range_str == '>20%':
+                        ok = abs_rate > 20
+                    elif range_str == '>30%':
+                        ok = abs_rate > 30
+                    elif range_str == '<-10%':
+                        ok = rate_v < -10
+                    elif range_str == '<-20%':
+                        ok = rate_v < -20
+                    elif range_str == '<-30%':
+                        ok = rate_v < -30
                     else:
-                        queries = [str(q).lower() for q in raw]
-                    if queries:
-                        name_col = self._find_material_name_column(df)
-                        if name_col:
-                            row_name = str(row_data.get(name_col, '')).lower()
-                            matched = any(q in row_name for q in queries)
-                            if not matched:
-                                return False
+                        ok = True
+                    if not ok:
+                        return False
 
-            # 2. 偏差率范围（绝对值>=阈值）
-            if '_dev_rate_abs_ge_10' in self._custom_filters:
-                rate_col = self._get_rate_column(df)
-                if rate_col:
-                    rate_raw = row_data.get(rate_col, 0)
-                    try:
-                        if isinstance(rate_raw, str):
-                            rate = float(rate_raw.replace('%', ''))
+                # 5. 已读状态 / 已读来源 / 隔离区
+                chk = plan.get('read_status')
+                if chk is not None:
+                    mode, read_list = chk
+                    if mode == '已读' and read_list[r] != 1:
+                        return False
+                    if mode == '未读' and read_list[r] != 0:
+                        return False
+                chk = plan.get('read_source')
+                if chk is not None:
+                    want, src_list = chk
+                    if want == 'auto' and src_list[r] != 'auto':
+                        return False
+                    if want == 'manual' and src_list[r] != 'manual':
+                        return False
+                chk = plan.get('quarantined_is')
+                if chk is not None:
+                    want, q_list = chk
+                    is_quar = (q_list[r] == 1)
+                    if want == '是' and not is_quar:
+                        return False
+                    if want == '否' and is_quar:
+                        return False
+
+                # 6. 颜色标记（向量化预计算的逐行 key 集合，与 classify_row_color_keys 一致）
+                chk = plan.get('color')
+                if chk is not None:
+                    active_keys, row_sets = chk
+                    if not (row_sets[r] & active_keys):
+                        return False
+
+                # 7. 单位多选 / 备注为空
+                chk = plan.get('units')
+                if chk is not None:
+                    u_list, u_set = chk
+                    if u_list[r] not in u_set:
+                        return False
+                chk = plan.get('remark_empty')
+                if chk is not None:
+                    expected, flags = chk
+                    if flags[r] != expected:
+                        return False
+
+                # 8. 零值 / 偏差数量符号
+                chk = plan.get('zero_qty')
+                if chk is not None:
+                    mode, q_list, a_list = chk
+                    if mode == '定额为0':
+                        if abs(q_list[r]) > 0.001:
+                            return False
+                    elif mode == '实际为0':
+                        if abs(a_list[r]) > 0.001:
+                            return False
+                    elif mode == '定额/实际为0':
+                        if abs(q_list[r]) > 0.001 or abs(a_list[r]) > 0.001:
+                            return False
+                    else:  # 定额/实际非0
+                        if abs(q_list[r]) <= 0.001 or abs(a_list[r]) <= 0.001:
+                            return False
+                chk = plan.get('dev_qty_sign')
+                if chk is not None:
+                    sign, dq_list = chk
+                    dv = dq_list[r]
+                    if sign == 'gt0' and dv <= 0.001:
+                        return False
+                    if sign == 'eq0' and abs(dv) > 0.001:
+                        return False
+                    if sign == 'lt0' and dv >= -0.001:
+                        return False
+
+                # 9. 半成品重分类集合
+                chk = plan.get('semi_class')
+                if chk is not None:
+                    sset, semi_list, fac_list = chk
+                    row_val = semi_list[r]
+                    factory = fac_list[r]
+                    matched = False
+                    for m in sset:
+                        if m == '食品成品半成品':
+                            if ((row_val == m) or row_val == '') and '食品' in factory:
+                                matched = True
+                                break
+                        elif m == '饮料成品半成品':
+                            if ((row_val == m) or row_val == '') and '饮料' in factory:
+                                matched = True
+                                break
                         else:
-                            rate = float(rate_raw)
-                    except (ValueError, TypeError):
-                        rate = 0
-                    threshold = getattr(self, '_alert_threshold', 10.0)
-                    if abs(rate) < threshold:
+                            if row_val == m:
+                                matched = True
+                                break
+                    if not matched:
                         return False
 
-            if '_dev_rate_range' in self._custom_filters:
-                rate_col = self._get_rate_column(df)
-                if rate_col:
-                    rate_raw = row_data.get(rate_col, 0)
-                    range_str = self._custom_filters['_dev_rate_range']
-                    if not self._check_rate_range(rate_raw, range_str):
-                        return False
-
-            # 3. 已读/未读
-            if '_read_status' in self._custom_filters:
-                status = self._custom_filters['_read_status']
-                read_val = row_data.get('_read', 0)
-                if status == '已读' and read_val != 1:
-                    return False
-                if status == '未读' and read_val != 0:
-                    return False
-
-            # 3.1 已读来源（自动/手动，未读行来源为空不参与）
-            if '_read_source' in self._custom_filters:
-                want = self._custom_filters['_read_source']
-                src = row_data.get('_read_source', '')
-                if want == 'auto' and src != 'auto':
-                    return False
-                if want == 'manual' and src != 'manual':
-                    return False
-
-            # 3.2 隔离区状态筛选（是/否：是否已在隔离区）
-            if '_quarantined_is' in self._custom_filters:
-                want = self._custom_filters['_quarantined_is']
-                is_quar = row_data.get('_quarantined', 0) == 1
-                if want == '是' and not is_quar:
-                    return False
-                if want == '否' and is_quar:
-                    return False
-
-            # 3.5 颜色标记筛选（多选 OR：勾选任意颜色即保留匹配行，逻辑与主表一致）
-            color_keys = [k for k in self._custom_filters if k in (
-                '_changed_only', '_quarantined_only', '_substitute_only', '_unused_only', '_alert_only', '_plain_only')]
-            if color_keys:
-                matched = classify_row_color_keys(row_data, df, getattr(self, '_alert_threshold', 10.0))
-                matched_any = any(k in matched for k in color_keys)
-                if not matched_any:
-                    return False
-
-            # 3.6 单位多选筛选（OR）：仅保留单位列值在被勾选集合内的行
-            if '_units' in self._custom_filters:
-                _unit_col, _units_set = self._custom_filters['_units']
-                if _unit_col and _unit_col in df.columns:
-                    rv = str(row_data.get(_unit_col, '')).strip()
-                    if rv not in _units_set:
-                        return False
-
-            # 4. 备注为空
-            if '_remark_empty' in self._custom_filters:
-                remark_col = self._get_remark_column(df)
-                if remark_col:
-                    remark = row_data.get(remark_col, '')
-                    is_empty = (pd.isna(remark) or str(remark).strip() == '')
-                    if self._custom_filters['_remark_empty'] != is_empty:
-                        return False
-
-            # 4.1 备注关键词搜索（逗号分隔多选，OR匹配）
-            if '_remark_search' in self._custom_filters:
-                raw = self._custom_filters['_remark_search']
-                if raw:
-                    if isinstance(raw, str):
-                        queries = [q.strip().lower() for q in raw.split(',') if q.strip()]
-                    else:
-                        queries = [str(q).lower() for q in raw]
-                    if queries:
-                        remark_col = self._find_remark_column(df)
-                        if remark_col:
-                            row_remark = str(row_data.get(remark_col, '')).lower()
-                            matched = any(q in row_remark for q in queries)
-                            if not matched:
-                                return False
-
-            # 4.2 备注不为（排除包含这些关键词的备注，逗号分隔多选，OR匹配）
-            if '_remark_not' in self._custom_filters:
-                raw = self._custom_filters['_remark_not']
-                if raw:
-                    if isinstance(raw, str):
-                        queries = [q.strip().lower() for q in raw.split(',') if q.strip()]
-                    else:
-                        queries = [str(q).lower() for q in raw]
-                    if queries:
-                        remark_col = self._find_remark_column(df)
-                        if remark_col:
-                            row_remark = str(row_data.get(remark_col, '')).lower()
-                            matched = any(q in row_remark for q in queries)
-                            if matched:
-                                return False
-
-            # 4.5 零值筛选（定额为0 / 实际为0 / 定额/实际为0 / 定额/实际非0）
-            if '_zero_qty' in self._custom_filters:
-                zero_mode = self._custom_filters['_zero_qty']
-                qty_col = None
-                for c in ['数量-定额', '定额']:
-                    if c in df.columns:
-                        qty_col = c
-                        break
-                actual_col = None
-                for c in ['数量-实际', '实际']:
-                    if c in df.columns:
-                        actual_col = c
-                        break
-
-                if zero_mode == '定额为0':
-                    if qty_col:
-                        val = _to_float_safe(row_data.get(qty_col, 0))
-                        if abs(val) > 0.001:
+                # 10. 日期范围（无效日期行：原 except 放行）
+                chk = plan.get('date')
+                if chk is not None:
+                    d_list, start_d, end_d = chk
+                    d = d_list[r]
+                    if d is not None:
+                        if start_d and d < start_d:
                             return False
-                    else:
-                        return False  # 没有定额列，无法筛选
-                elif zero_mode == '实际为0':
-                    if actual_col:
-                        val = _to_float_safe(row_data.get(actual_col, 0))
-                        if abs(val) > 0.001:
+                        if end_d and d > end_d:
                             return False
-                    else:
-                        return False
-                elif zero_mode == '定额/实际为0':
-                    # 定额=0 且 实际=0 才保留
-                    qty_val = _to_float_safe(row_data.get(qty_col, 0)) if qty_col else 0.0
-                    actual_val = _to_float_safe(row_data.get(actual_col, 0)) if actual_col else 0.0
-                    if abs(qty_val) > 0.001 or abs(actual_val) > 0.001:
-                        return False
-                elif zero_mode == '定额/实际非0':
-                    # 定额≠0 且 实际≠0 才保留
-                    qty_val = _to_float_safe(row_data.get(qty_col, 0)) if qty_col else 0.0
-                    actual_val = _to_float_safe(row_data.get(actual_col, 0)) if actual_col else 0.0
-                    if abs(qty_val) <= 0.001 or abs(actual_val) <= 0.001:
-                        return False
-
-            # 4.5 偏差数量符号筛选（大于0 / 等于0 / 小于0）
-            if '_dev_qty_sign' in self._custom_filters and '偏差数量' in df.columns:
-                sign = self._custom_filters['_dev_qty_sign']
-                dq = _to_float_safe(row_data.get('偏差数量', 0))
-                if sign == 'gt0':
-                    if dq <= 0.001:
-                        return False
-                elif sign == 'eq0':
-                    if abs(dq) > 0.001:
-                        return False
-                elif sign == 'lt0':
-                    if dq >= -0.001:
-                        return False
-
-            # 4.x 半成品重分类集合筛选（复选框组：含虚拟项「食品/饮料成品半成品」精确匹配+空白）
-            if '_semi_class_set' in self._custom_filters:
-                sset = self._custom_filters['_semi_class_set']
-                if sset:  # 非空=有选中（"全部"对应空集合，不过滤）
-                    semi_col = '半成品重分类'
-                    if semi_col in df.columns:
-                        row_val = str(row_data.get(semi_col, '')).strip()
-                        factory = str(row_data.get('工厂', '')).strip()
-                        matched = False
-                        for m in sset:
-                            if m == '食品成品半成品':
-                                if ((row_val == m) or row_val == '') and '食品' in factory:
-                                    matched = True
-                            elif m == '饮料成品半成品':
-                                if ((row_val == m) or row_val == '') and '饮料' in factory:
-                                    matched = True
-                            else:
-                                if row_val == m:
-                                    matched = True
-                        if not matched:
-                            return False
-
-            # 4. 日期范围
-            if '_date_start' in self._custom_filters or '_date_end' in self._custom_filters:
-                date_col = self._get_date_column(df)
-                if date_col:
-                    row_date = row_data.get(date_col)
-                    try:
-                        row_date = pd.to_datetime(row_date).date()
-                        start = self._custom_filters.get('_date_start')
-                        if start:
-                            start_date = datetime.strptime(start, "%Y-%m-%d").date()
-                            if row_date < start_date:
-                                return False
-                        end = self._custom_filters.get('_date_end')
-                        if end:
-                            end_date = datetime.strptime(end, "%Y-%m-%d").date()
-                            if row_date > end_date:
-                                return False
-                    except Exception:
-                        pass
 
         # Excel式列头取值成员过滤（与 _filters/_custom_filters AND 叠加）
         if self._value_filters:
@@ -918,6 +819,288 @@ class AuditProxyModel(QSortFilterProxyModel):
     def set_alert_threshold(self, threshold):
         """动态设置预警阈值"""
         self._alert_threshold = threshold
+        self._mark_plan_stale()  # 阈值参与偏差率/颜色检查的预计算，需重建计划
+
+    # ------------------------------------------------------------------ #
+    # 筛选计划（预计算）：把逐行 pandas 访问换成纯 Python 列表 O(1) 判定
+    # ------------------------------------------------------------------ #
+    def _mark_plan_stale(self):
+        self._plan_stale = True
+
+    def _ensure_plan(self):
+        if self._plan_stale:
+            self._plan = self._build_plan()
+            self._plan_stale = False
+
+    def setSourceModel(self, model):
+        """挂源模型时把「数据版本变化」接成计划失效信号。
+
+        PySide6 不暴露 QSortFilterProxyModel 的 sourceModelAboutToBeReset 等
+        C++ 内部虚函数（无法 override），源模型换数据的可靠路径只有 Qt 信号：
+          - modelAboutToBeReset / modelReset：begin/endResetModel（setDataFrame 整表换版）
+          - dataChanged：单格就地更新（mark_quarantine 等）
+          - rowsInserted / rowsRemoved：行增删
+          - dataRefreshed（DataFrameModel 自定义）：全表刷新广播
+        全部 → _mark_plan_stale，保证下次筛选 pass 前计划按新数据重建。
+        """
+        super().setSourceModel(model)
+        self._mark_plan_stale()
+        if model is None:
+            return
+        signals = []
+        for name in ("modelAboutToBeReset", "modelReset", "dataChanged",
+                     "rowsInserted", "rowsRemoved"):
+            sig = getattr(model, name, None)
+            if sig is not None:
+                signals.append(sig)
+        if hasattr(model, "dataRefreshed"):
+            signals.append(model.dataRefreshed)
+        for sig in signals:
+            try:
+                sig.connect(self._mark_plan_stale)
+            except Exception:
+                pass
+
+    def _build_plan(self):
+        """把当前筛选条件预计算成逐行纯 Python 列表（一次），供 filterAcceptsRow O(1) 访问。
+
+        语义与原逐行实现严格一致（含「列缺失即整列拒绝」等边界行为）：
+          - _process_order：查询非空但候选列都不存在 → 所有行拒绝（空列组的 OR 子串恒 False）
+          - _zero_qty：「定额为0」缺数量列 / 「实际为0」缺实际列 → 所有行拒绝
+          - 偏差率 NaN 行：abs 判定 `abs(nan) < thr` 恒 False → 放行；区间判定 NaN 比较
+            恒 False → 拒绝（与 _check_rate_range 对 nan 的行为一致），故 NaN 保留不 fill
+        """
+        sm = self.sourceModel()
+        df = sm.getDataFrame() if sm is not None else None
+        cf = self._custom_filters
+        if df is None or df.empty:
+            return {'n': 0}
+        n = len(df)
+        cols = df.columns
+        plan = {'n': n}
+
+        # 按需取列值缓存（同一计划内复用，避免重复 tolist）
+        _cache = {}
+
+        def _raw(col):
+            if col not in _cache:
+                _cache[col] = df[col].tolist()
+            return _cache[col]
+
+        def _str_lower(col):
+            key = ('L', col)
+            if key not in _cache:
+                _cache[key] = [str(v).lower() for v in _raw(col)]
+            return _cache[key]
+
+        def _str_strip(col):
+            key = ('S', col)
+            if key not in _cache:
+                _cache[key] = [str(v).strip() for v in _raw(col)]
+            return _cache[key]
+
+        def _safe_floats(col):
+            """逐行 _to_float_safe 语义：float(v)，NaN/异常 → 0.0"""
+            key = ('F', col)
+            if key not in _cache:
+                _cache[key] = pd.to_numeric(df[col], errors='coerce').fillna(0.0).tolist()
+            return _cache[key]
+
+        # 1. 精确列筛选（普通列名，非 _ 前缀）
+        exact = []
+        for col_name, value in cf.items():
+            if col_name.startswith('_') or col_name not in cols:
+                continue
+            exact.append((_str_strip(col_name), str(value).strip()))
+        plan['exact'] = exact
+
+        # 2. OR 子串正组：([各列小写列表], queries)；列组为空时该行恒拒绝（与原一致）
+        pos_groups = []
+
+        def _q_lower(rawq):
+            return [q.strip().lower() for q in str(rawq).lower().split(',') if q.strip()]
+
+        # 注意：内层必须立即求值成 list（逐行会反复遍历该组），不能用生成器表达式
+        pc_cols = [c for c in cols if c in ('产品物料号码', '产品物料号', '产品编码', '成品编码')]
+        if '_product_code' in cf and pc_cols:
+            pos_groups.append([[_str_lower(c) for c in pc_cols], _q_lower(cf['_product_code'])])
+        mc_cols = [c for c in cols if c in ('物料号', '物料编码', 'code', '组件物料号')]
+        if '_material_code' in cf and mc_cols:
+            pos_groups.append([[_str_lower(c) for c in mc_cols], _q_lower(cf['_material_code'])])
+        if '_process_order' in cf:
+            po_q = [q.strip().lower() for q in str(cf['_process_order']).split(',') if q.strip()]
+            if po_q:
+                po_cols = [c for c in ('流程订单', 'process_order') if c in cols]
+                pos_groups.append([[_str_lower(c) for c in po_cols], po_q])
+        raw_names = cf.get('_material_names')
+        if raw_names:
+            if isinstance(raw_names, str):
+                nq = [q.strip().lower() for q in raw_names.split(',') if q.strip()]
+            else:
+                nq = [str(q).lower() for q in raw_names]
+            if nq:
+                name_col = next((c for c in ('物料描述', '物料名称', '物料') if c in cols), None)
+                if name_col:
+                    pos_groups.append([(_str_lower(name_col),), nq])
+        raw_rs = cf.get('_remark_search')
+        if raw_rs:
+            if isinstance(raw_rs, str):
+                rsq = [q.strip().lower() for q in raw_rs.split(',') if q.strip()]
+            else:
+                rsq = [str(q).lower() for q in raw_rs]
+            if rsq:
+                rem_col = next((c for c in ('备注原因', '备注') if c in cols), None)
+                if rem_col:
+                    pos_groups.append([(_str_lower(rem_col),), rsq])
+        plan['pos_groups'] = pos_groups
+
+        # 3. OR 子串负组（_remark_not：命中任一即拒；缺备注列则无约束，与原一致）
+        neg_groups = []
+        raw_not = cf.get('_remark_not')
+        if raw_not:
+            if isinstance(raw_not, str):
+                nq = [q.strip().lower() for q in raw_not.split(',') if q.strip()]
+            else:
+                nq = [str(q).lower() for q in raw_not]
+            if nq:
+                rem_col = next((c for c in ('备注原因', '备注') if c in cols), None)
+                if rem_col:
+                    neg_groups.append([(_str_lower(rem_col),), nq])
+        plan['neg_groups'] = neg_groups
+
+        # 4. 偏差率（NaN 保留：abs(nan)<thr 恒 False → 放行；区间判定 NaN → 拒，与原一致）
+        rate_col = next((c for c in ('偏差率(%)', '偏差率') if c in cols), None)
+        rate_list = None
+        if rate_col is not None and ('_dev_rate_abs_ge_10' in cf or '_dev_rate_range' in cf):
+            rate_list = pd.to_numeric(
+                df[rate_col].astype(str).str.replace('%', ''),
+                errors='coerce').tolist()
+        if '_dev_rate_abs_ge_10' in cf and rate_list is not None:
+            plan['rate_abs'] = (rate_list, self._alert_threshold)
+        if '_dev_rate_range' in cf and rate_list is not None:
+            plan['rate_range'] = (rate_list, cf['_dev_rate_range'])
+
+        # 5. 已读状态 / 已读来源 / 隔离区（缺列 → 原实现默认 0 / ''，此处同）
+        if '_read_status' in cf:
+            read_vals = _raw('_read') if '_read' in cols else [0] * n
+            plan['read_status'] = (cf['_read_status'], read_vals)
+        if '_read_source' in cf:
+            src_vals = _raw('_read_source') if '_read_source' in cols else [''] * n
+            plan['read_source'] = (cf['_read_source'], src_vals)
+        if '_quarantined_is' in cf:
+            q_vals = _raw('_quarantined') if '_quarantined' in cols else [0] * n
+            plan['quarantined_is'] = (cf['_quarantined_is'], q_vals)
+
+        # 6. 颜色标记（复现 classify_row_color_keys 的向量化判定；仅在有颜色键时构建）
+        color_keys = {k for k in cf if k in (
+            '_changed_only', '_quarantined_only', '_substitute_only',
+            '_unused_only', '_alert_only', '_plain_only')}
+        if color_keys:
+            idx = df.index
+            thr = self._alert_threshold
+
+            def _flag(col):
+                if col in cols:
+                    return pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int).eq(1)
+                return pd.Series(False, index=idx)
+
+            changed = _flag('_post_audit_changed')
+            quar = _flag('_quarantined')
+            if '是否替代料' in cols:
+                sub = df['是否替代料'].astype(str).str.strip().eq('是')
+            else:
+                sub = pd.Series(False, index=idx)
+            act_col = next((c for c in ('数量-实际', '实际') if c in cols), None)
+            std_col = next((c for c in ('数量-定额', '定额') if c in cols), None)
+            a = pd.to_numeric(df[act_col], errors='coerce').fillna(0.0) if act_col else pd.Series(0.0, index=idx)
+            q = pd.to_numeric(df[std_col], errors='coerce').fillna(0.0) if std_col else pd.Series(0.0, index=idx)
+            no_input = (a.abs() <= 0.001) & (q > 0.001)
+            unused = no_input & (~sub)
+            c_rate_col = next((c for c in ('偏差率(%)', '偏差率') if c in cols), None)
+            if c_rate_col:
+                rv = pd.to_numeric(
+                    df[c_rate_col].astype(str).str.replace('%', '').str.strip(),
+                    errors='coerce')  # NaN 保留：abs(nan)>=thr 恒 False → 不告警（与原一致）
+                alert = (rv.abs() >= thr) & (~no_input) & (~changed) & (~quar)
+            else:
+                alert = pd.Series(False, index=idx)
+            plain = ~(changed | quar | sub | unused | alert)
+            ch_v, qu_v, su_v, us_v, al_v, pl_v = (
+                m.values for m in (changed, quar, sub, unused, alert, plain))
+            row_sets = []
+            for i in range(n):
+                s = set()
+                if ch_v[i]:
+                    s.add('_changed_only')
+                if qu_v[i]:
+                    s.add('_quarantined_only')
+                if su_v[i]:
+                    s.add('_substitute_only')
+                if us_v[i]:
+                    s.add('_unused_only')
+                if al_v[i]:
+                    s.add('_alert_only')
+                if pl_v[i]:
+                    s.add('_plain_only')
+                row_sets.append(s)
+            plan['color'] = (color_keys, row_sets)
+
+        # 7. 单位多选（缺列 → 原实现无约束）
+        if '_units' in cf:
+            unit_col, units_set = cf['_units']
+            if unit_col and unit_col in cols:
+                plan['units'] = (_str_strip(unit_col), set(units_set))
+
+        # 8. 备注为空
+        if '_remark_empty' in cf:
+            rem_col = next((c for c in ('备注原因', '备注') if c in cols), None)
+            if rem_col:
+                flags = (df[rem_col].isna() | df[rem_col].astype(str).str.strip().eq('')).tolist()
+                plan['remark_empty'] = (bool(cf['_remark_empty']), flags)
+
+        # 9. 零值筛选（「定额为0」缺数量列 / 「实际为0」缺实际列 → 整列拒绝，与原一致）
+        zq_mode = cf.get('_zero_qty')
+        if zq_mode:
+            qty_col = next((c for c in ('数量-定额', '定额') if c in cols), None)
+            actual_col = next((c for c in ('数量-实际', '实际') if c in cols), None)
+            q_list = _safe_floats(qty_col) if qty_col else [0.0] * n
+            a_list = _safe_floats(actual_col) if actual_col else [0.0] * n
+            reject_all = (zq_mode == '定额为0' and qty_col is None) or \
+                        (zq_mode == '实际为0' and actual_col is None)
+            if reject_all:
+                plan['reject_all'] = True
+            plan['zero_qty'] = (zq_mode, q_list, a_list)
+
+        # 10. 偏差数量符号（缺「偏差数量」列 → 原实现无约束）
+        if '_dev_qty_sign' in cf and '偏差数量' in cols:
+            plan['dev_qty_sign'] = (cf['_dev_qty_sign'], _safe_floats('偏差数量'))
+
+        # 11. 半成品重分类集合（缺列 → 原实现无约束；工厂缺列 → 原实现默认 ''）
+        sset = cf.get('_semi_class_set')
+        if sset:
+            if '半成品重分类' in cols:
+                fac_list = _str_strip('工厂') if '工厂' in cols else [''] * n
+                plan['semi_class'] = (set(sset), _str_strip('半成品重分类'), fac_list)
+
+        # 12. 日期范围（向量化 to_datetime；无效值 → 原 except 放行）
+        if '_date_start' in cf or '_date_end' in cf:
+            date_col = next((c for c in ('订单日期', '订单开始日期', '日期') if c in cols), None)
+            if date_col:
+                ts = pd.to_datetime(_raw(date_col), errors='coerce')
+                date_list = [d.date() if pd.notna(d) else None for d in ts]
+                start_d = end_d = None
+                if cf.get('_date_start'):
+                    try:
+                        start_d = datetime.strptime(cf['_date_start'], "%Y-%m-%d").date()
+                    except Exception:
+                        start_d = None
+                if cf.get('_date_end'):
+                    try:
+                        end_d = datetime.strptime(cf['_date_end'], "%Y-%m-%d").date()
+                    except Exception:
+                        end_d = None
+                plan['date'] = (date_list, start_d, end_d)
+        return plan
 
     def _check_rate_range(self, rate_raw, range_str):
         try:
@@ -1036,3 +1219,49 @@ def classify_row_color_keys(row_data, df, threshold=10.0):
     if is_plain:
         keys.add('_plain_only')
     return keys
+
+
+def build_display_key_list(sm, col_index):
+    """批量生成某列的展示值键列表（与表格 DisplayRole + 「(空)」占位 完全一致）。
+
+    性能（2026-10-02）：原实现逐行 sm.data()（C++↔Python 桥 + QModelIndex，
+    1.7万行 ≈ 0.15s，漏斗确定/弹层打开时的卡顿点）。现直接读 DataFrameModel 的
+    _data_cache 列缓存 + 与 data() 完全相同的格式化规则纯 Python 向量化处理
+    （≈ 0.02s）。源模型非 DataFrameModel / 第0列（已读图标）时返回 None，
+    调用方回退原逐行路径。
+    """
+    cache = getattr(sm, "_data_cache", None)
+    display_cols = getattr(sm, "_display_columns", None)
+    if cache is None or display_cols is None or col_index >= len(display_cols):
+        return None
+    if col_index == 0:
+        return None  # 第0列是已读图标（✅/🔘），极少作为筛选列，走逐行兜底
+    n = len(cache)
+    col = display_cols[col_index]
+    col_vals = [row[col_index] for row in cache]
+    if col == '_read_source':
+        # 与 data() 一致：auto→自动 / manual→手动 / 其他→—
+        keys = [
+            "自动" if v == "auto" else ("手动" if v == "manual" else "—")
+            for v in col_vals
+        ]
+    elif '偏差率' in col:
+        # 与 data() 一致：非空值加 % 后缀（.3f），格式失败原样字符串
+        def _fmt_rate(v):
+            if v == "":
+                return ""
+            try:
+                return f"{float(v):.3f}%"
+            except (ValueError, TypeError):
+                return str(v)
+        keys = [_fmt_rate(v) for v in col_vals]
+    else:
+        # 与 data() 一致：float 千分位/.3f；其他原样；空值 → ""
+        def _fmt_plain(v):
+            if isinstance(v, float):
+                if abs(v) >= 1000:
+                    return f"{v:,.3f}"
+                return f"{v:.3f}"
+            return str(v) if v != "" else ""
+        keys = [_fmt_plain(v) for v in col_vals]
+    return ["(空)" if k in (None, "") else str(k) for k in keys]

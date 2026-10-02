@@ -35,7 +35,7 @@ from gui_pyside6.components.main_table import MainTableComponent
 from gui_pyside6.components.bottom_bar import BottomBarComponent
 
 # 导入自定义模块
-from gui_pyside6.models.data_frame_model import DataFrameModel, AuditProxyModel
+from gui_pyside6.models.data_frame_model import DataFrameModel, AuditProxyModel, build_display_key_list
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.widgets.filter_panel import FilterPanel
 from gui_pyside6.widgets.stats_cards import StatsCardsWidget
@@ -3278,23 +3278,27 @@ class MainWindow(QMainWindow):
         self._update_summary()
 
     def _on_filter_reset_requested(self):
-        """重置筛选：面板已归位，这里同步清理 proxy 残留筛选/取值过滤。
+        """重置筛选：面板已归位，这里同步清理 proxy 残留的列头取值过滤。
 
-        修复（2026-10-01）：侧栏「重置筛选」原先只复位面板控件并发一次 filter_changed，
-        没有清理 proxy_model 里的残留（_custom_filters / _value_filters / _filters），
-        导致「点重置后表格仍空白、必须重新分析才恢复」。现与「分析完成」的清筛选路径一致：
-        clearFilters() 清空 proxy 侧全部残留，并同步清掉列头漏斗标。
+        修复（2026-10-01）：侧栏「重置筛选」原先只复位面板控件，没有清理 proxy_model
+        里的列头取值过滤残留（_value_filters / _filters），导致「点重置后表格仍空白、
+        必须重新分析才恢复」。
+        性能（2026-10-02）：面板 reset_filters() 在发本信号前已经 _emit_filter() 应用过
+        重置后的 _custom_filters（一遍完整重筛），故这里只清「列头取值/顶部行」残留
+        （clearHeaderFilters，无残留时零重筛），不再 clearFilters() + 重复 setCustomFilters
+        多打两遍 17k 行全表。
         """
         try:
             if self.proxy_model is not None:
-                self.proxy_model.clearFilters()
+                self.proxy_model.clearHeaderFilters()
             if getattr(self, "_filtered_col_set", None):
                 self._filtered_col_set.clear()
+                if getattr(self, "_sort_header", None) is not None:
+                    self._sort_header.viewport().update()
             self._link_snapshot = None  # 清除联动钻取快照（重置后不应再保留钻取）
             self._update_col_filter_hint()
         except Exception as e:
             self.log(f"[重置筛选] 清理 proxy 残留失败: {e}", "warning")
-        self._on_filter_panel_changed(self.filter_panel.get_filters())
 
     # ------------------------------------------------------------------ #
     # 看板 → 主表 联动钻取（可撤销）
@@ -3577,12 +3581,17 @@ class MainWindow(QMainWindow):
         col_name = sm._display_columns[logical_index]
 
         # 收集本列全部展示值及计数（保持首次出现顺序）
+        # 性能（2026-10-02）：向量化取展示键（与 DisplayRole 一致），替代逐行 sm.data()
         n = sm.rowCount()
+        key_list = build_display_key_list(sm, logical_index)
+        if key_list is None:
+            key_list = []
+            for r in range(n):
+                disp = sm.data(sm.index(r, logical_index), Qt.DisplayRole)
+                key_list.append("(空)" if disp in (None, "") else str(disp))
         cnt = {}
         order = []
-        for r in range(n):
-            disp = sm.data(sm.index(r, logical_index), Qt.DisplayRole)
-            key = "(空)" if disp in (None, "") else str(disp)
+        for key in key_list:
             if key not in cnt:
                 cnt[key] = 0
                 order.append(key)

@@ -152,12 +152,18 @@ class ColumnFilterController(QObject):
         col_name = sm._display_columns[logical_index]
 
         # 收集本列全部展示值及计数（保持首次出现顺序）
+        # 性能（2026-10-02）：向量化取展示键（与 DisplayRole 一致），替代逐行 sm.data()
         n = sm.rowCount()
+        from gui_pyside6.models.data_frame_model import build_display_key_list
+        key_list = build_display_key_list(sm, logical_index)
+        if key_list is None:
+            key_list = []
+            for r in range(n):
+                disp = sm.data(sm.index(r, logical_index), Qt.DisplayRole)
+                key_list.append("(空)" if disp in (None, "") else str(disp))
         cnt = {}
         order = []
-        for r in range(n):
-            disp = sm.data(sm.index(r, logical_index), Qt.DisplayRole)
-            key = "(空)" if disp in (None, "") else str(disp)
+        for key in key_list:
             if key not in cnt:
                 cnt[key] = 0
                 order.append(key)
