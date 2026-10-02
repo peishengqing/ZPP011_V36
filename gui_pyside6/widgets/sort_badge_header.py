@@ -51,8 +51,11 @@ class SortBadgeHeader(QHeaderView):
         """按需计算某已筛选列的漏斗角标矩形（与 paintEvent 的绘制布局完全一致）。
 
         不依赖 paint 是否已执行：表头隐藏过/未重绘时 _funnel_rects 可能为空，
-        命中判定若只看缓存会在「漏斗画了但点不到」时失手，故统一按需计算。"""
-        if col <= 0 or col >= self.count():
+        命中判定若只看缓存会在「漏斗画了但点不到」时失手，故统一按需计算。
+
+        修复（2026-10-02）：col 0（已读图标列）也允许画漏斗/可点——读/未读
+        正是常用漏斗筛选；旧守卫 col <= 0 会把它静默跳过（排序角标仍跳过 col 0）。"""
+        if col < 0 or col >= self.count():
             return None
         rect = QRect(self.sectionPosition(col), 0, self.sectionSize(col), self.height())
         if rect.width() <= 0:

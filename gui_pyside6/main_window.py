@@ -1262,7 +1262,9 @@ class MainWindow(QMainWindow):
             if self._filtered_col_set:
                 self._filtered_col_set.clear()
                 if hasattr(self, "_sort_header"):
-                    self._sort_header.viewport().update()
+                    # Qt6 QHeaderView 自绘画在表头本体上，必须 header.update() 才能重画
+                    # （viewport().update() 只刷内部 viewport，漏斗/角标不会重画）
+                    self._sort_header.update()
             self._update_col_filter_hint()
             if hasattr(self, 'filter_panel') and self.filter_panel is not None:
                 self.filter_panel.blockSignals(True)
@@ -3294,7 +3296,8 @@ class MainWindow(QMainWindow):
             if getattr(self, "_filtered_col_set", None):
                 self._filtered_col_set.clear()
                 if getattr(self, "_sort_header", None) is not None:
-                    self._sort_header.viewport().update()
+                    # 同分析完成路径：自绘画在表头本体，必须 header.update()
+                    self._sort_header.update()
             self._link_snapshot = None  # 清除联动钻取快照（重置后不应再保留钻取）
             self._update_col_filter_hint()
         except Exception as e:
@@ -3548,7 +3551,9 @@ class MainWindow(QMainWindow):
         label.setText(text)
         label.show()
         if getattr(self, "_sort_header", None) is not None:
-            self._sort_header.viewport().update()
+            # 自绘画在表头本体（Qt6 QHeaderView 的 frame 层），必须 header.update()
+            # 触发 paintEvent；viewport().update() 不会重画漏斗/角标
+            self._sort_header.update()
 
     def _toggle_col_filter_mode(self):
         """工具栏「🔽 列头筛选」开关：开启后点列头弹取值勾选浮层（Excel 式筛选）；
@@ -3688,8 +3693,11 @@ class MainWindow(QMainWindow):
             else:
                 proxy.setValueFilter(col_name, selected)
                 self._filtered_col_set.add(logical_index)
-            self._update_col_filter_hint()
-            self._sort_header.viewport().update()
+            self._update_col_filter_hint()  # 其内部已会重画表头
+            # 修复（2026-10-02）：Qt6 QHeaderView 自绘画在表头本体（frame 层），
+            # viewport().update() 只刷内部 viewport，确定后漏斗/角标不会重画。
+            # 与排序角标同款触发方式：header.update()。
+            self._sort_header.update()
             popup.close()
 
         btn_ok.clicked.connect(do_apply)

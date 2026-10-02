@@ -42,6 +42,20 @@ def test_filtered_column_funnel_click_triggers_callback(qapp):
     assert 1 in seen
 
 
+def test_filtered_col0_funnel_click_triggers_callback(qapp):
+    """col 0（已读图标列）：设了取值过滤时，漏斗回调/绘制也不应被跳过。
+
+    回归：旧守卫 col <= 0 把第 0 列静默排除 → 筛选「已读/未读」时漏斗不显示、点不到。"""
+    view = QTableView()
+    header, _ = _build(view, SortBadgeHeader, sorting_first=True)
+    seen = []
+    header.set_filtered_columns_getter(lambda: {0})
+    header.set_funnel_clicked(lambda c: seen.append(c))
+    assert header._funnel_badge_rect(0) is not None  # 绘制/命中共用同一矩形来源
+    _click_funnel_zone(header, 0)
+    assert 0 in seen
+
+
 def test_unfiltered_column_center_click_keeps_section_clicked(qapp):
     """未筛选列：点列头中部 → 不触发漏斗回调，sectionClicked 路由不变。"""
     view = QTableView()

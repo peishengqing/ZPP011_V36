@@ -260,8 +260,11 @@ class ColumnFilterController(QObject):
             self.filtered_cols_changed.emit()
             self._popup = None
             self.apply_filter_cb()
+            # 修复（2026-10-02）：Qt6 QHeaderView 是 QAbstractScrollArea，viewport().update()
+            # 只刷内部 viewport，自绘画在表头本体（frame）上不会重画 → 漏斗看不见。
+            # 与排序角标同款触发方式：header.update()。
             try:
-                self.header.viewport().update()
+                self.header.update()
             except Exception:
                 pass
             popup.close()
