@@ -70,6 +70,7 @@ _RATIO_KEYS = ('率', '占比')
 _FMT_DATE = 'yyyy-mm-dd'
 _FMT_AMOUNT = '#,##0.00'
 _FMT_COUNT = '#,##0.###'
+_FMT_COUNT_INT = '#,##0'
 _FMT_RATIO = '0.00%'
 
 
@@ -229,26 +230,58 @@ def _apply_layout(ws, hdr_row, last_row):
         ws.column_dimensions[letter].width = max(8.0, min(42.0, round(w, 1)))
 
 
+def _count_fmt(v):
+    """数量列按**单元格实际值**选格式，绝不能整列共用一个格式串。
+
+    坑（裴哥 2026-10-02 截图实测）：Excel 格式串里的小数点是写死的 '.'，
+    没有小数它也会显示出来 —— '#,##0.###' 下 294 显示成 '294.'、0 显示成 '0.'，
+    整列都拖个尾巴。原始导出是 General（干净），是后处理把它改坏的。
+    故：整数值给 '#,##0'，带小数才给 '#,##0.###'（千分位保留）。
+    """
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return _FMT_COUNT
+    return _FMT_COUNT_INT if float(v).is_integer() else _FMT_COUNT
+
+
 def _apply_number_formats(ws, hdr_row, headers, last_row):
-    """按列名套数字格式。只改 number_format，保留字体/填充/边框等其它样式。"""
-    specs = []
+    """按列名套数字格式。只改 number_format，保留字体/填充/边框等其它样式。
+
+    金额/日期整列一个格式没问题（#,##0.00 固定两位小数是记账惯例、yyyy-mm-dd
+    没有可选小数位的问题）；**数量列必须逐格选**（见 _count_fmt），否则整数会
+    拖出一个小数点尾巴。
+    """
+    date_cols, amount_cols, count_cols = [], [], []
     for col, name in headers.items():
         if not name:
             continue
         if any(k in name for k in _DATE_KEYS):
-            specs.append((col, _FMT_DATE))
+            date_cols.append(col)
         elif any(k in name for k in _AMOUNT_KEYS):
-            specs.append((col, _FMT_AMOUNT))
+            amount_cols.append(col)
         elif any(k in name for k in _COUNT_KEYS):
-            specs.append((col, _FMT_COUNT))
-    if not specs:
+            count_cols.append(col)
+    if not (date_cols or amount_cols or count_cols):
         return
     map_ = _cells_of(ws)
-    for col, fmt in specs:
+
+    def _set(col, fmt):
         for r in range(hdr_row + 1, last_row + 1):
             c = map_.get((r, col))
             if c is None or c.value in (None, ''):
                 continue
+            if str(c.number_format) != fmt:
+                c.number_format = fmt
+
+    for col in date_cols:
+        _set(col, _FMT_DATE)
+    for col in amount_cols:
+        _set(col, _FMT_AMOUNT)
+    for col in count_cols:
+        for r in range(hdr_row + 1, last_row + 1):
+            c = map_.get((r, col))
+            if c is None or c.value in (None, ''):
+                continue
+            fmt = _count_fmt(c.value)
             if str(c.number_format) != fmt:
                 c.number_format = fmt
 
