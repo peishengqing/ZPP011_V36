@@ -34,6 +34,7 @@ class FilterPanel(QWidget):
     apply_preset_requested = Signal(str)
     apply_last_requested = Signal()
     delete_preset_requested = Signal(str)
+    reset_filters_requested = Signal()  # 重置筛选（main_window 清理 proxy 残留 + 面板归位）
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1071,6 +1072,7 @@ class FilterPanel(QWidget):
                 cb.blockSignals(False)
         self._semi_class_filter = set()
         self._emit_filter()
+        self.reset_filters_requested.emit()
 
     # ------------------------------------------------------------------ #
     # 预设：应用（get_filters 的逆操作）与菜单

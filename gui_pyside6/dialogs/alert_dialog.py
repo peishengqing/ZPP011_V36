@@ -84,6 +84,7 @@ class AlertDialog(QDialog):
         filter_layout.addWidget(self.btn_fullscreen)
 
         layout.addLayout(filter_layout)
+        # 表格默认占满剩余宽度；放大/还原后由 _fit_table_columns 重新按可见宽度分配列宽
 
         # ---- 颜色标记筛选栏（与主表颜色标记逻辑一致）----
         color_row = QHBoxLayout()
@@ -152,7 +153,7 @@ class AlertDialog(QDialog):
         except Exception:
             pass
         self.header.sectionClicked.connect(self.col_filter_ctrl.on_header_clicked)
-        self.header.setStretchLastSection(True)
+        self.header.setStretchLastSection(False)
         self.table_view.verticalHeader().setVisible(False)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
         # 安装 Ctrl+C 复制事件过滤器
@@ -167,8 +168,16 @@ class AlertDialog(QDialog):
         self.btn_col_filter.setToolTip("开启后点列头弹取值勾选浮层（Excel式筛选）；Ctrl+点列头仍可排序")
         self.btn_col_filter.clicked.connect(self._on_toggle_col_filter)
         col_filter_bar.addWidget(self.btn_col_filter)
+        # 状态栏常驻「列头筛选提示」：显示当前已设取值过滤的列（N 列 / 列名）
+        self._col_filter_hint_label = QLabel("🔽 列头筛选：0 列")
+        self._col_filter_hint_label.setStyleSheet(
+            "QLabel{padding:2px 8px;font-weight:bold;color:#8a5a00;}"
+        )
+        col_filter_bar.addWidget(self._col_filter_hint_label)
         col_filter_bar.addStretch(1)
         layout.addLayout(col_filter_bar)
+        self.col_filter_ctrl.filtered_cols_changed.connect(self._update_col_filter_hint)
+        self._update_col_filter_hint()
 
         # ---- 底部按钮 ----
         btn_layout = QHBoxLayout()
@@ -205,6 +214,28 @@ class AlertDialog(QDialog):
         on = self.col_filter_ctrl.toggle_mode()
         self.btn_col_filter.setChecked(on)
         self.btn_col_filter.setText("🔽 列头筛选✓" if on else "🔽 列头筛选")
+
+    def _update_col_filter_hint(self):
+        """刷新「列头筛选提示」：显示已设取值过滤的列（N 列 / 列名）。"""
+        col_set = self.col_filter_ctrl.filtered_col_set
+        sm = getattr(self, "source_model", None)
+        display_cols = getattr(sm, "_display_columns", []) if sm is not None else []
+        if not col_set:
+            self._col_filter_hint_label.setText("🔽 列头筛选：0 列")
+            return
+        names = []
+        for c in sorted(col_set):
+            if 0 <= c < len(display_cols):
+                names.append(str(display_cols[c]))
+            else:
+                names.append(f"列{c}")
+        shown = names[:4]
+        more = len(names) - len(shown)
+        text = "🔽 列头筛选：%d 列（%s" % (len(names), "、".join(shown))
+        if more > 0:
+            text += " …+%d" % more
+        text += "）"
+        self._col_filter_hint_label.setText(text)
 
     def _apply_filter(self):
         """从 original_df 重新过滤并刷新模型"""
@@ -758,17 +789,55 @@ class AlertDialog(QDialog):
         self._apply_filter()
         toast(f"⭕ 已批量标记 {count} 条为未读", parent=self)
 
+    def _fit_table_columns(self):
+        """按当前表格可见宽度重新分配列宽。
+
+        修复（2026-10-01）：原来 setSectionResizeMode(ResizeToContents) + StretchLastSection，
+        窗口放大后多出来的宽度全部堆到最后一列，业务列（物料名称、备注、审核结果等）不变宽，
+        表现为「放大后右边大片空白、左侧列显示不完整」。改为：
+          1. 先按内容宽度算每列最小宽度（ResizeToContents 基准）；
+          2. 将「表格可用宽度 - 各列最小宽度之和」的剩余量按列数均摊；
+          3. 设置固定宽度，避免最后一列独吞剩余空间。
+        """
+        header = self.table_view.horizontalHeader()
+        model = self.source_model
+        if model is None:
+            return
+        col_count = model.columnCount()
+        if col_count <= 0:
+            return
+
+        # 当前表格宽度（viewport 宽），作为列宽分配预算
+        total_w = max(self.table_view.viewport().width(), 400)
+        # 隐藏列不占宽度
+        visible_cols = [c for c in range(col_count) if not self.table_view.isColumnHidden(c)]
+        if not visible_cols:
+            return
+        n = len(visible_cols)
+        # 按内容最小宽度（ResizeToContents 的 sizeHint 等价实现）
+        content_widths = [header.sectionSizeHint(c) for c in visible_cols]
+        min_sum = sum(content_widths)
+        remaining = max(0, total_w - min_sum)
+        # 剩余宽度均摊给可见列；至少给每个可见列 120px（避免过窄）
+        per = remaining // n if n else 0
+        for col, cw in zip(visible_cols, content_widths):
+            self.table_view.setColumnWidth(col, max(120, cw + per))
+
     def toggle_fullscreen(self):
         # 修复（2026-10-01）：改用 showMaximized() 而非 showFullScreen()。
         # showFullScreen 是「真全屏」，会把整个屏幕（含任务栏）盖住，
         # 放大后任务栏不可见、想切窗口只能靠 Alt+Tab，用户体验差。
         # showMaximized 是「窗口最大化」，保留任务栏可见，与主窗口行为一致。
+        from PySide6.QtCore import QTimer
         if self.isMaximized():
             self.showNormal()
             self.btn_fullscreen.setText("⛶ 放大")
         else:
             self.showMaximized()
             self.btn_fullscreen.setText("⛶ 还原")
+        # 修复：放大/还原后表格列宽未随新窗口宽度重排，导致右侧留白、列显示不全。
+        # 延迟到布局更新后再按可见宽度分配列宽（先 content 再等分剩余宽度）。
+        QTimer.singleShot(0, self._fit_table_columns)
 
     def on_double_click(self, index):
         if not index.isValid():

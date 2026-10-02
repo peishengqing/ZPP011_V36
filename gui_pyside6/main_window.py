@@ -298,6 +298,20 @@ class MainWindow(QMainWindow):
             "border-left:1px solid #b8c4d0;}"
         )
         self.statusBar().addPermanentWidget(self._read_counter_label)
+
+        # 状态栏常驻「列头筛选提示」：显示当前已设取值过滤的列名（N 列）
+        # 修复（2026-10-01）：列头筛选后原本只有表头小漏斗标，无法判断哪些列被筛过；
+        # 现常驻显示已筛选列名，_update_col_filter_hint() 在筛选增减/重置/重新分析时同步刷新。
+        self._col_filter_hint_label = QLabel("🔽 列头筛选：0 列")
+        self._col_filter_hint_label.setObjectName("colFilterHintLabel")
+        self._col_filter_hint_label.setToolTip("当前已设列头取值过滤的列（橙色三角标记）；点 🔽 列头筛选 按钮后点任意列头弹取值勾选浮层")
+        self._col_filter_hint_label.setStyleSheet(
+            "QLabel#colFilterHintLabel{padding:2px 10px;font-weight:bold;color:#8a5a00;"
+            "border-left:1px solid #b8c4d0;}"
+        )
+        self._col_filter_hint_label.show()  # 无筛选时显示「0 列」，让用户知道哪些列被筛过
+        self.statusBar().addPermanentWidget(self._col_filter_hint_label)
+
         self.export_controller = ExportController(self)
         self.alt_controller = AltController(self)
         self.data_service = DataService(self.alt_controller)
@@ -665,6 +679,7 @@ class MainWindow(QMainWindow):
 
         # 筛选面板信号
         self.filter_panel.filter_changed.connect(self._on_filter_panel_changed)
+        self.filter_panel.reset_filters_requested.connect(self._on_filter_reset_requested)
         # 筛选预设（实现预留的 filter_history 配置）+ 看板联动横幅
         self.filter_panel.save_preset_requested.connect(self._prompt_save_preset)
         self.filter_panel.apply_preset_requested.connect(self._apply_filter_preset)
@@ -1248,6 +1263,7 @@ class MainWindow(QMainWindow):
                 self._filtered_col_set.clear()
                 if hasattr(self, "_sort_header"):
                     self._sort_header.viewport().update()
+            self._update_col_filter_hint()
             if hasattr(self, 'filter_panel') and self.filter_panel is not None:
                 self.filter_panel.blockSignals(True)
                 try:
@@ -2845,6 +2861,9 @@ class MainWindow(QMainWindow):
         self._sort_header = SortBadgeHeader(Qt.Horizontal, self.table_view)
         self._sort_header.set_sort_columns_getter(lambda: self.sort_columns)
         self._sort_header.set_filtered_columns_getter(lambda: self._filtered_col_set)
+        # 点击已筛选列左侧漏斗图标 → 直接打开该列筛选浮层（无需先开启「列头筛选」模式）
+        self._sort_header.set_funnel_clicked(
+            lambda col: QTimer.singleShot(0, lambda c=col: self._open_column_filter(c)))
         self.table_view.setHorizontalHeader(self._sort_header)
         self.table_view.setModel(self.proxy_model)
         try:
@@ -3258,6 +3277,25 @@ class MainWindow(QMainWindow):
         self.proxy_model.setCustomFilters(filters)
         self._update_summary()
 
+    def _on_filter_reset_requested(self):
+        """重置筛选：面板已归位，这里同步清理 proxy 残留筛选/取值过滤。
+
+        修复（2026-10-01）：侧栏「重置筛选」原先只复位面板控件并发一次 filter_changed，
+        没有清理 proxy_model 里的残留（_custom_filters / _value_filters / _filters），
+        导致「点重置后表格仍空白、必须重新分析才恢复」。现与「分析完成」的清筛选路径一致：
+        clearFilters() 清空 proxy 侧全部残留，并同步清掉列头漏斗标。
+        """
+        try:
+            if self.proxy_model is not None:
+                self.proxy_model.clearFilters()
+            if getattr(self, "_filtered_col_set", None):
+                self._filtered_col_set.clear()
+            self._link_snapshot = None  # 清除联动钻取快照（重置后不应再保留钻取）
+            self._update_col_filter_hint()
+        except Exception as e:
+            self.log(f"[重置筛选] 清理 proxy 残留失败: {e}", "warning")
+        self._on_filter_panel_changed(self.filter_panel.get_filters())
+
     # ------------------------------------------------------------------ #
     # 看板 → 主表 联动钻取（可撤销）
     # ------------------------------------------------------------------ #
@@ -3473,6 +3511,41 @@ class MainWindow(QMainWindow):
         self._apply_multi_sort()
         self._update_sort_indicators()
 
+    def _update_col_filter_hint(self):
+        """刷新状态栏「列头筛选」常驻提示：已筛列数 + 列名（截断显示）。
+
+        修复（2026-10-01）：列头筛选后原本只有表头左上角小橙三角，无法判断哪些列被筛过；
+        现在状态栏常驻显示「🔽 列头筛选：N 列（列名1、列名2…」，无筛选时显示 0 列。
+        列号→列名映射取自 source_model._display_columns（与表头逻辑列对齐）。
+        """
+        label = getattr(self, "_col_filter_hint_label", None)
+        if label is None:
+            return
+        col_set = getattr(self, "_filtered_col_set", set()) or set()
+        if not col_set:
+            label.setText("🔽 列头筛选：0 列")
+            label.show()
+            return
+        # 列号 → 列名（display_columns 与表头逻辑列一致；取不到的显示列号）
+        sm = getattr(self, "source_model", None)
+        display_cols = getattr(sm, "_display_columns", []) if sm is not None else []
+        names = []
+        for c in sorted(col_set):
+            if 0 <= c < len(display_cols):
+                names.append(str(display_cols[c]))
+            else:
+                names.append(f"列{c}")
+        shown = names[:5]
+        more = len(names) - len(shown)
+        text = "🔽 列头筛选：%d 列（%s" % (len(names), "、".join(shown))
+        if more > 0:
+            text += " …+%d" % more
+        text += "）"
+        label.setText(text)
+        label.show()
+        if getattr(self, "_sort_header", None) is not None:
+            self._sort_header.viewport().update()
+
     def _toggle_col_filter_mode(self):
         """工具栏「🔽 列头筛选」开关：开启后点列头弹取值勾选浮层（Excel 式筛选）；
         Ctrl+点列头仍走排序。关闭后点列头恢复排序行为。"""
@@ -3606,6 +3679,7 @@ class MainWindow(QMainWindow):
             else:
                 proxy.setValueFilter(col_name, selected)
                 self._filtered_col_set.add(logical_index)
+            self._update_col_filter_hint()
             self._sort_header.viewport().update()
             popup.close()
 

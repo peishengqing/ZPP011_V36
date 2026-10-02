@@ -18,6 +18,7 @@ Excel 式列头取值筛选控制器（方案 B：就地过滤，不依赖 Audit
 本方案在 DataFrame 层就地过滤，对话框既有行号解析逻辑一行都不用动。
 """
 from PySide6.QtCore import Qt, QPoint, QTimer
+from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QCheckBox, QScrollArea, QApplication,
@@ -30,11 +31,13 @@ def _click_log(msg):
     click_log(msg)
 
 
-class ColumnFilterController:
+class ColumnFilterController(QObject):
     """Excel 式列头取值筛选控制器。"""
 
+    filtered_cols_changed = Signal()  # 筛选列集合变化（供 UI 显示「已筛 N 列 / 哪些列」提示）
+
     def __init__(self, table_view, header, sort_ctrl, source_model_getter,
-                 apply_filter_cb, skip_cols=(0,)):
+                 apply_filter_cb, skip_cols=(0,), parent=None):
         """
         :param table_view: 目标 QTableView
         :param header: 表头（SortBadgeHeader），用于漏斗绘制与浮层定位
@@ -43,6 +46,7 @@ class ColumnFilterController:
         :param apply_filter_cb: callable -> 重新执行对话框过滤（会读取本控制器的 value_filters 叠加过滤）
         :param skip_cols: 不参与筛选/排序的列号集合（如内部 _read 列）
         """
+        super().__init__(parent)
         self.table_view = table_view
         self.header = header
         self.sort_ctrl = sort_ctrl
@@ -53,6 +57,19 @@ class ColumnFilterController:
         self._filtered_col_set = set()   # 已设取值过滤的列号集合（供表头画漏斗标）
         self._value_filters = {}         # col_name -> set(允许显示的展示值字符串)
         self._popup = None
+        # 已筛选列表头左侧漏斗图标：点击直接打开该列取值筛选浮层（无需先开启「列头筛选」模式）
+        try:
+            self.header.set_funnel_clicked(self._on_funnel_clicked)
+        except Exception:
+            pass
+
+    def _on_funnel_clicked(self, logical_index):
+        """点击表头左侧漏斗图标：直接打开该列取值筛选浮层（无需先开启「列头筛选」模式）。"""
+        if logical_index in self.skip_cols:
+            return
+        _click_log(f"[funnel] 点击漏斗 col={logical_index} → 直接打开筛选浮层")
+        # 延到下一事件循环再弹层，规避 mouseReleaseEvent 同步 show Qt.Popup 被立即 dismiss 的坑
+        QTimer.singleShot(0, lambda: self.open_filter(logical_index))
 
     # ---- 状态查询 ----
     @property
@@ -234,6 +251,7 @@ class ColumnFilterController:
             else:
                 self._value_filters[col_name] = selected
                 self._filtered_col_set.add(logical_index)
+            self.filtered_cols_changed.emit()
             self._popup = None
             self.apply_filter_cb()
             try:

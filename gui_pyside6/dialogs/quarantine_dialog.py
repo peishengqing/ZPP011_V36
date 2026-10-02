@@ -103,6 +103,9 @@ class QuarantineDialog(QDialog):
         self.btn_col_filter.setToolTip("开启后点列头弹取值勾选浮层（Excel式筛选）；Ctrl+点列头仍可排序")
         self.btn_col_filter.clicked.connect(self._on_toggle_col_filter)
         sl.addWidget(self.btn_col_filter)
+        self._col_filter_hint_label = QLabel("🔽 列头筛选：0 列")
+        self._col_filter_hint_label.setStyleSheet("QLabel{padding:2px 8px;font-weight:bold;color:#8a5a00;}")
+        sl.addWidget(self._col_filter_hint_label)
         sl.addSpacing(12)
         sl.addWidget(QLabel("是否备注:"))
         self.combo_remark = QComboBox()
@@ -144,8 +147,8 @@ class QuarantineDialog(QDialog):
         self.table_view.horizontalHeader().setStretchLastSection(True)
         self.table_view.verticalHeader().setVisible(False)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
-        self.table_view.installEventFilter(self)
-        v.addWidget(self.table_view)
+        self.col_filter_ctrl.filtered_cols_changed.connect(lambda: self._update_col_filter_hint(self.col_filter_ctrl, self._col_filter_hint_label, getattr(self, "source_model", None)))
+        self._update_col_filter_hint(self.col_filter_ctrl, self._col_filter_hint_label, getattr(self, "source_model", None))
 
         bl = QHBoxLayout()
         self.btn_restore = QPushButton("↩ 取消隔离（选中行）")
@@ -189,6 +192,9 @@ class QuarantineDialog(QDialog):
         self.btn_col_filter_expired.setToolTip("开启后点列头弹取值勾选浮层（Excel式筛选）；Ctrl+点列头仍可排序")
         self.btn_col_filter_expired.clicked.connect(self._on_toggle_expired_col_filter)
         sl.addWidget(self.btn_col_filter_expired)
+        self._col_filter_hint_label_expired = QLabel("🔽 列头筛选：0 列")
+        self._col_filter_hint_label_expired.setStyleSheet("QLabel{padding:2px 8px;font-weight:bold;color:#8a5a00;}")
+        sl.addWidget(self._col_filter_hint_label_expired)
         v.addLayout(sl)
 
         self.expired_view = QTableView()
@@ -215,6 +221,9 @@ class QuarantineDialog(QDialog):
         except Exception:
             pass
         self.header_expired.sectionClicked.connect(self.col_filter_ctrl_expired.on_header_clicked)
+        self.col_filter_ctrl_expired.filtered_cols_changed.connect(
+            lambda: self._update_col_filter_hint(self.col_filter_ctrl_expired, self._col_filter_hint_label_expired, getattr(self, "expired_model", None)))
+        self._update_col_filter_hint(self.col_filter_ctrl_expired, self._col_filter_hint_label_expired, getattr(self, "expired_model", None))
         self.expired_view.verticalHeader().setVisible(False)
         self.expired_view.verticalHeader().setDefaultSectionSize(28)
         v.addWidget(self.expired_view)
@@ -687,11 +696,33 @@ class QuarantineDialog(QDialog):
                 df = df[vals != "" if remark == '有' else vals == ""]
         self._render_table(df.copy())
 
+    def _update_col_filter_hint(self, ctrl, label, source_model):
+        """刷新「列头筛选提示」：显示已设取值过滤的列（N 列 / 列名）。"""
+        col_set = ctrl.filtered_col_set
+        display_cols = getattr(source_model, "_display_columns", []) if source_model is not None else []
+        if not col_set:
+            label.setText("🔽 列头筛选：0 列")
+            return
+        names = []
+        for c in sorted(col_set):
+            if 0 <= c < len(display_cols):
+                names.append(str(display_cols[c]))
+            else:
+                names.append(f"列{c}")
+        shown = names[:4]
+        more = len(names) - len(shown)
+        text = "🔽 列头筛选：%d 列（%s" % (len(names), "、".join(shown))
+        if more > 0:
+            text += " …+%d" % more
+        text += "）"
+        label.setText(text)
+
     def _on_toggle_col_filter(self):
         """切换隔离区列表（Tab1）的 🔽 列头筛选模式；关闭模式仅停止弹层，取值过滤仍保留。"""
         on = self.col_filter_ctrl.toggle_mode()
         self.btn_col_filter.setChecked(on)
         self.btn_col_filter.setText("🔽 列头筛选✓" if on else "🔽 列头筛选")
+        self._update_col_filter_hint(self.col_filter_ctrl, self._col_filter_hint_label, getattr(self, "source_model", None))
 
     def _on_toggle_expired_col_filter(self):
         """切换失效复核（Tab2）的 🔽 列头筛选模式；关闭模式仅停止弹层，取值过滤仍保留。"""

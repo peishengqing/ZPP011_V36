@@ -266,6 +266,9 @@ class NegLossDashboardDialog(QDialog):
         self.btn_col_filter.setToolTip("开启后点列头弹取值勾选浮层（Excel式筛选）；Ctrl+点列头仍可排序")
         self.btn_col_filter.clicked.connect(self._on_toggle_col_filter)
         top.addWidget(self.btn_col_filter)
+        self._col_filter_hint_label = QLabel("🔽 列头筛选：0 列")
+        self._col_filter_hint_label.setStyleSheet("QLabel{padding:2px 8px;font-weight:bold;color:#8a5a00;}")
+        top.addWidget(self._col_filter_hint_label)
         scroll.setWidget(top_widget)
         layout.addWidget(scroll)
 
@@ -295,6 +298,8 @@ class NegLossDashboardDialog(QDialog):
         except Exception:
             pass
         self.header.sectionClicked.connect(self.col_filter_ctrl.on_header_clicked)
+        self.col_filter_ctrl.filtered_cols_changed.connect(self._update_col_filter_hint)
+        self._update_col_filter_hint()
         self.table_view.verticalHeader().setVisible(False)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
         self.header.setSectionResizeMode(QHeaderView.Interactive)
@@ -685,6 +690,28 @@ class NegLossDashboardDialog(QDialog):
         self.btn_note_all.setChecked(True)
         self._initializing = False
         self._apply_filter()
+
+    def _update_col_filter_hint(self):
+        """刷新「列头筛选提示」：显示已设取值过滤的列（N 列 / 列名）。"""
+        col_set = self.col_filter_ctrl.filtered_col_set
+        sm = getattr(self, "source_model", None)
+        display_cols = getattr(sm, "_display_columns", []) if sm is not None else []
+        if not col_set:
+            self._col_filter_hint_label.setText("🔽 列头筛选：0 列")
+            return
+        names = []
+        for c in sorted(col_set):
+            if 0 <= c < len(display_cols):
+                names.append(str(display_cols[c]))
+            else:
+                names.append(f"列{c}")
+        shown = names[:4]
+        more = len(names) - len(shown)
+        text = "🔽 列头筛选：%d 列（%s" % (len(names), "、".join(shown))
+        if more > 0:
+            text += " …+%d" % more
+        text += "）"
+        self._col_filter_hint_label.setText(text)
 
     def _on_toggle_col_filter(self):
         """🔽 列头筛选按钮：切换 Excel 式取值筛选模式。"""
