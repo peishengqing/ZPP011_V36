@@ -205,14 +205,33 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
                 arrow
             ])
 
-        def sort_key(r):
-            v = r[6]
-            if v == "-":
-                return -999
+        def _abs_pct(s):
+            """'-51.45%' -> 51.45；'-' / 脏值 -> None"""
             try:
-                return -abs(float(v.rstrip('%')))
-            except (ValueError, AttributeError):
-                return -999
+                return abs(float(str(s).rstrip('%')))
+            except (ValueError, AttributeError, TypeError):
+                return None
+
+        def sort_key(r):
+            """返回 (块, 块内绝对值) 二元组，升序排序：
+              块 0 = 近期有值，按 |近期| 降序（最严重的排最上）；
+              块 1 = 近期无数据('-')，**整体垫底**，块内按 |中期|、再 |早期| 降序。
+
+            旧实现 '-' 返回 -999，而有值行返回 -abs(...)（<=0），-999 最小、
+            升序排序反而排最前 —— 565 行 '-' 全堆在表头下，726 条有近期数据的
+            行被压到 566 行以后，看起来就像「近期列全空」（2026-10-02 裴哥截图）。
+            实际数据一个都没丢，纯属排序把有值行藏起来了。
+            """
+            v = _abs_pct(r[6])
+            if v is not None:
+                return (0, -v)
+            v_mid = _abs_pct(r[5])
+            if v_mid is not None:
+                return (1, -v_mid)
+            v_early = _abs_pct(r[4])
+            if v_early is not None:
+                return (1, -v_early)
+            return (1, 0.0)
 
         rows.sort(key=sort_key)
 
