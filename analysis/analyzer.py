@@ -1116,6 +1116,14 @@ def export_full_report_from_intermediates(intermediates, output_path=None, outpu
     # 为汇总统计预警列上色
     _apply_warning_colors(wb)
 
+    # v43.120 导出后处理：表现层美化 + 安全类型规范化（不改任何业务数值、不删行）
+    # 逃生开关：环境变量 ZPP011_SKIP_POST_PROCESS=1；失败仅记日志，不影响导出
+    try:
+        from analysis.excel_builder.post_process import decorate_workbook
+        _dprint(f"[post_process] {decorate_workbook(wb)}")
+    except Exception as _pp_err:
+        _dprint(f"[post_process] 跳过：{_pp_err}")
+
     # 设置标签栏占更大比例，确保所有Sheet标签可见
     for ws in wb.worksheets:
         ws.sheet_view.tabSelected = False
