@@ -399,32 +399,6 @@ class DataFrameModel(QAbstractTableModel):
     def setData(self, index, value, role=Qt.EditRole):
         # 模型为只读：备注列不再允许手动编辑，避免污染已读变更检测基线
         return False
-    def _get_deviation_rate(self, row):
-        """从缓存中获取当前行的偏差率（百分比数值）"""
-        # 查找偏差率列索引
-        rate_col = None
-        for i, col in enumerate(self._display_columns):
-            if col in ('偏差率(%)', '偏差率'):
-                rate_col = i
-                break
-        if rate_col is None:
-            return 0.0
-        val = self._data_cache[row][rate_col]
-        if isinstance(val, (int, float)):
-            return float(val)
-        # 如果缓存中是带%的字符串（兜底）
-        if isinstance(val, str) and '%' in val:
-            try:
-                return float(val.replace('%', '').strip())
-            except Exception:
-                return 0.0
-        return 0.0
-
-    def _is_warning_column(self, col_name):
-        """检查列是否为预警列"""
-        return col_name in ('偏差率(%)', '偏差率')
-
-
     def sort(self, column, order=Qt.AscendingOrder):
         """排序：支持百分比列数值排序"""
         self.beginResetModel()
@@ -1101,31 +1075,6 @@ class AuditProxyModel(QSortFilterProxyModel):
                         end_d = None
                 plan['date'] = (date_list, start_d, end_d)
         return plan
-
-    def _check_rate_range(self, rate_raw, range_str):
-        try:
-            if isinstance(rate_raw, str):
-                rate = float(rate_raw.replace('%', ''))
-            else:
-                rate = float(rate_raw)
-        except (ValueError, TypeError):
-            rate = 0
-        abs_rate = abs(rate)
-        if range_str == '绝对值>=10%':
-            return abs_rate >= 10
-        elif range_str == '>10%':
-            return abs_rate > 10
-        elif range_str == '>20%':
-            return abs_rate > 20
-        elif range_str == '>30%':
-            return abs_rate > 30
-        elif range_str == '<-10%':
-            return rate < -10
-        elif range_str == '<-20%':
-            return rate < -20
-        elif range_str == '<-30%':
-            return rate < -30
-        return True
 
     # ------------------------------------------------------------------ #
     # 排序

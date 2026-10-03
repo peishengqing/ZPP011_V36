@@ -5,10 +5,10 @@
 import os
 import traceback
 from datetime import datetime
-from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtWidgets import QMessageBox, QFileDialog, QProgressDialog
+from PySide6.QtCore import QObject, Signal
+from PySide6.QtWidgets import QMessageBox, QFileDialog
 
-from gui_pyside6.save_guard import safe_save, precheck_save_path, friendly_error
+from gui_pyside6.save_guard import safe_save, friendly_error
 
 
 
@@ -58,161 +58,6 @@ class ExportController(QObject):
                 QMessageBox.critical(parent_widget, "错误", friendly_error(file_path, e))
                 self.log_message.emit(f"导出失败: {e}", "error")
         return False
-
-    def export_full_excel(self, audit_data, current_input_file, analysis_params,
-                          parent_widget, cache_path=None):
-        """导出完整Excel（可选择多Sheet完整报告，支持缓存秒传）"""
-        try:
-            if audit_data is None or audit_data.empty:
-                QMessageBox.warning(parent_widget, "提示", "无数据，请先进行分析")
-                return False
-
-            default_name = f"ZPP011偏差分析最终版_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-            save_path, _ = QFileDialog.getSaveFileName(
-                parent_widget, "保存完整Excel文件", default_name, "Excel files (*.xlsx)"
-            )
-            if not save_path:
-                return False
-
-            # 如果有分析参数，询问是否生成完整多Sheet
-            if analysis_params and current_input_file:
-                reply = QMessageBox.question(
-                    parent_widget, "导出选项",
-                    "是否生成完整多Sheet分析报告（含汇总统计、预警颜色等）？\n\n"
-                    "点击「是」→ 生成完整多Sheet Excel（缓存命中则秒传，否则重新分析）\n"
-                    "点击「否」→ 仅导出当前表格数据（快速）",
-                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-                )
-                if reply == QMessageBox.Yes:
-                    return self._export_full_analysis_excel(
-                        save_path, analysis_params, parent_widget, cache_path
-                    )
-
-            # 仅导出当前表格数据
-            try:
-                saved = safe_save(
-                    parent_widget, save_path,
-                    lambda p: audit_data.to_excel(p, sheet_name='完整偏差明细', index=False),
-                    what="表格",
-                )
-                if not saved:
-                    self.log_message.emit("导出已取消（目标文件被占用）", "warning")
-                    return False
-                if QMessageBox.question(
-                    parent_widget, "导出成功", f"文件已导出到：\n{saved}\n是否打开？"
-                ) == QMessageBox.Yes:
-                    open_file(saved)
-                self.log_message.emit(f"已导出完整Excel到 {saved}", "info")
-                return True
-            except Exception as e:
-                traceback.print_exc()
-                QMessageBox.critical(parent_widget, "错误", friendly_error(save_path, e))
-                self.log_message.emit(f"导出失败: {e}", "error")
-                return False
-        except Exception as e:
-            traceback.print_exc()
-            QMessageBox.critical(parent_widget, "错误", f"导出完整Excel失败: {e}")
-            self.log_message.emit(f"导出完整Excel失败: {e}", "error")
-            return False
-
-    def _export_full_analysis_excel(self, save_path, analysis_params, parent_widget,
-                                      cache_path=None):
-        """使用缓存的分析参数重新生成完整多Sheet Excel（优先使用缓存）"""
-        import shutil
-        import os
-
-        # ---- 缓存命中：直接复制，秒传 ----
-        if cache_path and os.path.exists(cache_path):
-            try:
-                saved = safe_save(
-                    parent_widget, save_path,
-                    lambda p: shutil.copy2(cache_path, p),
-                    what="报告",
-                )
-                if not saved:
-                    self.log_message.emit("导出已取消（目标文件被占用）", "warning")
-                    return False
-                save_path = saved
-                if QMessageBox.question(
-                    parent_widget, "导出成功",
-                    f"完整分析报告已导出到\n{save_path}\n\n"
-                    "（使用缓存，秒传完成）\n\n"
-                    "包含Sheet:\n"
-                    "📋 分析说明 · 汇总统计(带预警颜色)\n"
-                    "完整偏差明细 · 替代料明细 · 无备注预警\n"
-                    "中间地带明细 · 异常预警 · 偏差金额分析\n"
-                    "偏差原因汇总 · 偏差原因分析 · 趋势分析\n\n"
-                    "是否立即打开？"
-                ) == QMessageBox.Yes:
-                    open_file(save_path)
-                self.log_message.emit(f"已导出完整分析报告到 {save_path} (缓存)", "info")
-                return True
-            except Exception as e:
-                self.log_message.emit(f"缓存复制失败，回退重新分析: {e}", "warning")
-
-        # 重新分析要跑几十秒，先确认目标文件写得进去，免得白算一场
-        save_path = precheck_save_path(parent_widget, save_path, what="报告")
-        if not save_path:
-            self.log_message.emit("导出已取消（目标文件被占用）", "warning")
-            return False
-
-        try:
-            from PySide6.QtWidgets import QApplication
-
-            progress_dlg = QProgressDialog("正在重新分析生成完整报告...", "取消", 0, 100, parent_widget)
-            progress_dlg.setWindowTitle("导出中")
-            progress_dlg.setWindowModality(Qt.WindowModal)
-            progress_dlg.setMinimumDuration(0)  # 立即显示
-            progress_dlg.show()
-            QApplication.processEvents()  # 强制刷新UI，防止进度条不出来
-
-            from analysis.analyzer import do_analysis_v2
-            do_analysis_v2(
-                input_file=analysis_params['input_file'],
-                output_dir=None,
-                alt_pairs=analysis_params['alt_pairs'],
-                progress_callback=lambda step_idx, step_name, percent: (
-                    progress_dlg.setValue(percent),
-                    progress_dlg.setLabelText(f"{step_name} ({percent}%)"),
-                    QApplication.processEvents(),  # 保持UI响应，防止"无响应"→被系统杀死
-                )[0],
-                cancel_check=lambda *args: (QApplication.processEvents(), progress_dlg.wasCanceled())[1],
-                start_date=analysis_params.get('start_date'),
-                end_date=analysis_params.get('end_date'),
-                material_search=analysis_params.get('material_search'),
-                output_path=save_path,
-                enable_net_offset=True,
-                return_dataframe=False,
-                dyn_thresh=analysis_params.get('dyn_thresh'),
-            )
-            progress_dlg.setValue(100)
-            progress_dlg.close()
-
-            # 回存缓存：如果后台缓存还没生成完，这次的结果也可以缓存
-            if cache_path and not os.path.exists(cache_path):
-                try:
-                    shutil.copy2(save_path, cache_path)
-                except Exception:
-                    pass  # 静默失败，不影响导出
-
-            if QMessageBox.question(
-                parent_widget, "导出成功",
-                f"完整分析报告已导出到\n{save_path}\n\n"
-                "包含Sheet:\n"
-                "📋 分析说明 · 汇总统计(带预警颜色)\n"
-                "完整偏差明细 · 替代料明细 · 无备注预警\n"
-                "中间地带明细 · 异常预警 · 偏差金额分析\n"
-                "偏差原因汇总 · 偏差原因分析 · 趋势分析\n\n"
-                "是否立即打开？"
-            ) == QMessageBox.Yes:
-                open_file(save_path)
-            self.log_message.emit(f"已导出完整分析报告到 {save_path}", "info")
-            return True
-        except Exception as e:
-            traceback.print_exc()
-            QMessageBox.critical(parent_widget, "错误", friendly_error(save_path, e))
-            self.log_message.emit(f"导出完整报告失败: {e}", "error")
-            return False
 
     def generate_simple_ppt(self, audit_data, analysis_output_path, output_dir, parent_widget, log_cb=None):
         """生成简明版PPT"""
