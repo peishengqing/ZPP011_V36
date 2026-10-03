@@ -144,16 +144,24 @@ class SortBadgeHeader(QHeaderView):
         if not cols and not fcols:
             return
         count = self.count()
-        painter = QPainter(self)
+        # 修复（2026-10-02，真机探针实测）：Qt6 的 QHeaderView 是 QAbstractScrollArea，
+        # 节区实际渲染在**内部 viewport 层**；在 frame（self）上建 QPainter 激活恒失败
+        # （isActive()=False 直接 return）→ 排序角标与漏斗此前**从未真正画出来过**。
+        # 叠加层必须画在 viewport 上；节区坐标用 sectionViewportPosition（与节区同坐标系），
+        # 漏斗角标矩形沿用 _funnel_badge_rect（widget 坐标，供点击命中判定），画时换算偏移。
+        vp = self.viewport()
+        painter = QPainter(vp)
         if not painter.isActive():
             return
+        ox, oy = vp.pos().x(), vp.pos().y()
         try:
             painter.setRenderHint(QPainter.Antialiasing)
             # 多级排序角标：层级数字 + 升降箭头，方向明示（蓝=升/橙=降）
             for level, (col, asc) in enumerate(cols, start=1):
                 if col <= 0 or col >= count:
                     continue
-                rect = QRect(self.sectionPosition(col), 0, self.sectionSize(col), self.height())
+                rect = QRect(self.sectionViewportPosition(col) - ox, 0,
+                             self.sectionSize(col), self.height())
                 if rect.width() <= 0:  # 隐藏列不画
                     continue
                 txt = f"{level}{'▲' if asc else '▼'}"
@@ -181,6 +189,8 @@ class SortBadgeHeader(QHeaderView):
                 badge = self._funnel_badge_rect(col)
                 if badge is None:
                     continue
+                # widget 坐标 → viewport 坐标（默认 margin=0，偏移为 0）
+                badge = badge.translated(-ox, -oy)
                 fcolor = QColor(217, 119, 45)
                 fbg = QColor(255, 237, 213)
                 fborder = QColor(217, 119, 45)
@@ -206,7 +216,7 @@ class SortBadgeHeader(QHeaderView):
                 painter.setBrush(fcolor)
                 painter.setPen(QPen(fcolor, 1))
                 painter.drawPolygon(funnel)
-                # 记录命中区域（logical_index 对齐 fcols）
-                self._funnel_rects[col] = badge
+                # 记录命中区域（widget 坐标，logical_index 对齐 fcols）
+                self._funnel_rects[col] = badge.translated(ox, oy)
         finally:
             painter.end()

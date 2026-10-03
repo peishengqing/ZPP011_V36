@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.133",
+        "date": "2026-10-04",
+        "features": "",
+        "fixes": "收掉两件挂在工作区的事：①提交列头漏斗的真根因修复（此前一直未提交，随时会丢）②负损看板窗口标题与实际行为对齐（零行为变化）。【① sort_badge_header.py 漏斗真根因（v43.127 查出的半成品，本次正式落库）】根因：Qt6 的 QHeaderView 是 QAbstractScrollArea，节区实际渲染在**内部 viewport 层**，而 paintEvent 里写的是 painter = QPainter(self)（建在 frame 上）→ isActive() 恒为 False 直接 return，**排序角标与漏斗此前从未真正画出来过**。1de0d8d 那个提交只把重绘触发点从 viewport().update() 换成 header.update()，没碰 painter 目标，所以那份「修复」实际未生效；配套回归测试也只断言 _funnel_badge_rect(0) is not None（测命中矩形、不测是否真的画出），所以没拦住。修：painter 改建在 self.viewport()；节区坐标改用 sectionViewportPosition（与节区同坐标系）并减去 viewport 偏移；漏斗命中矩形沿用 _funnel_badge_rect（widget 坐标，供点击判定），绘制时 translated 换算、存回 _funnel_rects 时再 translated 回去。⚠️ 本次提交内容与工作区那份未提交改动**逐字节一致**（blob 9b02438e1b），未做任何改写。实测：真窗口 show+processEvents 后 _funnel_rects 正确记录 {2: QRect(202,2,18,36)}，证明漏斗命中区域已能算出；sectionsClickable=True；pyflakes 零告警。【② neg_loss_dashboard_dialog.py 标题对齐（零行为变化）】旧窗口标题写「负损(含未投料)看板 - 彩罐/托盘/手包袋」，但 _keywords 默认空 = 不按名称筛 = **显示全部负损行**，标题在暗示已按那三类筛过，属标题与行为不符。按裴哥 2026-10-04 决定「默认全部显示、不加快捷按钮」，仅把标题改为「负损(含未投料)看板」，**筛选逻辑与默认值一律不动**（_keywords 仍为 \"\"、_include_zero 仍为 False，行为零变化）。顺带更正两处与实现不符的文档：①「关键词可编辑，默认 彩罐,托盘,手包袋」——实现是 _keywords=\"\"；②「包含未投料勾选框默认开」——实现是 setChecked(False)。【验证】py_compile 通过；pyflakes 零告警；测试网 217 passed / 1 skipped / 2 xfailed，零回归。",
+    },
+    {
         "version": "v43.132",
         "date": "2026-10-04",
         "features": "完整明细/异常预警补排序；三看板加序号列",
