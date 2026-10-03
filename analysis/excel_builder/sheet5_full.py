@@ -113,5 +113,16 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
             dev_df['半成品重分类'] = ''
         dev_df = dev_df.reset_index(drop=True)
 
+    # 排序（2026-10-04，v43.132）：此前本表零 sort_values，行序 = 源 Excel 原始顺序，
+    # 867 行里最大的偏差躺在不知哪一行，翻到最底部才看得见。
+    # 口径按裴哥指定：|净偏差数量| 降序（审核看「用错多少料」比「亏多少钱」更贴近排查动作）。
+    # ⚠️ 已知取舍：净偏差数量跨单位不可比（G 克 / 个 / KG 混排），
+    # 50 万克的胶带会排在亏 4200 元的彩罐之前。这是刻意保留的——审核底稿按量级扫，
+    # 不按金额扫；与 sheet9_reason_detail 的末级排序口径也一致。
+    # 用法与 sheet3_no_note 相同：临时绝对值列 → 降序 → 删临时列。
+    if not dev_df.empty and '净偏差数量' in dev_df.columns:
+        dev_df['_abs_qty'] = pd.to_numeric(dev_df['净偏差数量'], errors='coerce').fillna(0.0).abs()
+        dev_df = dev_df.sort_values('_abs_qty', ascending=False).drop(columns=['_abs_qty'])
+
     report_progress(progress_idx, "Sheet5-完整偏差明细", 100)
     return dev_df

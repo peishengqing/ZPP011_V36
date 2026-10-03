@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.132",
+        "date": "2026-10-04",
+        "features": "完整明细/异常预警补排序；三看板加序号列",
+        "fixes": "导出报告：完整明细/异常预警补排序；三个看板新增「序号」列。【排序 1】sheet5_full.py（完整偏差明细 867 行）：此前 grep sort_values 零命中，行序 = 源 Excel 原始顺序，最大的偏差躺在不知哪一行。现按 |净偏差数量| 降序。口径由裴哥指定（审核看「用错多少料」比「亏多少钱」更贴近排查动作）；用法与 sheet3_no_note:68 已有模式一致：临时绝对值列→降序→删临时列。已知取舍并已在代码注释中写明：净偏差数量跨单位不可比（G 克/个/KG 混排），50 万克的胶带会排在亏 4200 元的彩罐之前——这是审核底稿按量级扫的刻意选择，与 sheet9_reason_detail:70 的末级排序口径也一致。【排序 2】sheet6_anomaly.py（异常预警 582 行）：此前同样零排序。⚠️ 刻意用「类型优先 + 组内降序」而非全表降序：本表由 5 个异常类型切片 pd.concat(ignore_index) 纵向堆叠，若直接按 |净偏差数量| 全表排，异常1 与异常5 的行会互相穿插、审核时看不出分组——那比不排更糟。现 ascending=[True(类型), False(组内量级)]。【序号】新增 gui_pyside6/utils/row_index.py 提供 with_row_index(df)，在最左插入 1..N 序号列；接进 alert_dialog(2处)/deviation_warning_dialog(3处)/neg_loss_dashboard_dialog(3处) 共 8 处看板自有模型调用。⚠️ 关键区分：各看板里 self.main_window.source_model.setDataFrame(main_df) 是「双击钻取回主表」，共 4 处，**绝不能加序号**（会污染主表 _display_columns、影响列头筛选浮层的列名映射与 Excel 导出），已逐处确认未被包裹。⚠️ 也没改 DataFrameModel 统一加——那会让主表也多一列，同样污染。【已确认的取舍】①列头筛选浮层会多出一个「序号」可筛选项；②各看板右键导出走 to_excel(index=False)，导出的 Excel 会多带一列序号——裴哥要「真加一列」故接受。③序号是当前视图行号，重新筛选后重排（刻意：行号应对应「你现在看到的第几行」，否则筛选后会指向不存在的行更易看错）。④with_row_index 对已含序号的 df 是覆盖重排而非叠加，重复调用安全；空表补空列不崩。【验证】序号：列在最左、1..N 连续、筛选后重排正确、空表不崩、重复调用不叠加，全过。排序：sheet5 复现 50 万克胶带排第一的跨单位行为且临时列已删；sheet6 验证分组不散 + 组内降序 + 临时列已删，全过。py_compile 通过；pyflakes 仅 sheet6_anomaly 一条存量 numpy 未使用（HEAD 版即存在，非本次引入）；row_index.py 零告警。测试网 217 passed / 1 skipped / 2 xfailed，零回归。",
+    },
+    {
         "version": "v43.131",
         "date": "2026-10-04",
         "features": "未读概览补齐负损看板与未投料两类",

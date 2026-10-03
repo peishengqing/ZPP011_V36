@@ -19,6 +19,7 @@ from gui_pyside6.widgets.filter_panel import _color_icon
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
+from gui_pyside6.utils.row_index import with_row_index
 
 
 class AlertDialog(QDialog):
@@ -279,7 +280,7 @@ class AlertDialog(QDialog):
         # AI建议功能已停用：不再按 AI建议 列筛选；有旧列则强制清空，避免继续显示 mock 文案
         if "AI建议" in filtered.columns:
             filtered["AI建议"] = ""
-        self.source_model.setDataFrame(filtered)
+        self.source_model.setDataFrame(with_row_index(filtered))
         self._sort_ctrl.reapply()  # 恢复排序态
 
     def _on_semi_class_changed(self):
@@ -384,7 +385,7 @@ class AlertDialog(QDialog):
         self.original_df = df.copy()
 
         self.source_model = DataFrameModel()
-        self.source_model.setDataFrame(df)
+        self.source_model.setDataFrame(with_row_index(df))
         self.table_view.setModel(self.source_model)
 
         # 修复（2026-10-03）：原来这里用 ResizeToContents，是打开即冻结主线程

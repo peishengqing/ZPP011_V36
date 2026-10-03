@@ -28,6 +28,7 @@ from gui_pyside6.utils.locate import locate_row
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
+from gui_pyside6.utils.row_index import with_row_index
 from gui_pyside6.widgets.filter_panel import _color_icon
 
 
@@ -617,7 +618,7 @@ class NegLossDashboardDialog(QDialog):
             self.original_df["已读来源"] = ''
 
         self.source_model = DataFrameModel()
-        self.source_model.setDataFrame(df)
+        self.source_model.setDataFrame(with_row_index(df))
         self.table_view.setModel(self.source_model)
         QTimer.singleShot(0, lambda: self.table_view.resizeColumnsToContents())
         self.table_view.verticalHeader().setDefaultSectionSize(28)
@@ -726,7 +727,7 @@ class NegLossDashboardDialog(QDialog):
             return
         df = self.original_df
         if df.empty:
-            self.source_model.setDataFrame(df)
+            self.source_model.setDataFrame(with_row_index(df))
             self._sort_ctrl.reapply()
             self.lbl_count.setText("共 0 条")
             return
@@ -743,7 +744,7 @@ class NegLossDashboardDialog(QDialog):
         # 叠加 Excel 式列头取值过滤（就地过滤，视图行号不变，选中/双击/导出零回归）
         if hasattr(self, "col_filter_ctrl"):
             filtered = self.col_filter_ctrl.mask_dataframe(filtered)
-        self.source_model.setDataFrame(filtered)
+        self.source_model.setDataFrame(with_row_index(filtered))
         self._sort_ctrl.reapply()
         tag = "含未投料" if self._include_zero else "不含未投料"
         note_tag = {"all": "全部", "yes": "有备注", "no": "无备注"}[self._has_note_filter]
