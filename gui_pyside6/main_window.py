@@ -2999,13 +2999,6 @@ class MainWindow(QMainWindow):
                 self.filter_panel.set_color_filter('quarantine')
                 msg = "已过滤：仅显示隔离区记录"
             self.statusBar().showMessage(msg, 3000)
-        elif card_type == 'anomaly':
-            df = self.view_model.df
-            rate_col = next((c for c in ['偏差率(%)', '偏差率', 'dev_rate'] if c in df.columns), None)
-            if rate_col:
-                rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
-                count = int((rates.abs() > 30).sum())
-                self.statusBar().showMessage(f"🔴 真异常 {count} 条（已排除替代料）", 5000)
         elif card_type == 'unread':
             if self.filter_panel.read_status_combo.currentText() == '未读':
                 self.filter_panel.set_read_status_filter('全部')

@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.134",
+        "date": "2026-10-04",
+        "features": "偏差率预警口径收敛到单一事实来源，删除重复的真异常卡",
+        "fixes": "UI 重构阶段 2 的一部分：把「偏差率预警」的口径收敛到单一事实来源，消掉同一概念在同一份数据上能算出两个数字的问题。【实测确认的 bug】同一概念「偏差率预警」此前在四处各写一份判定，口径不一致：①未读概览浮窗 _count_unread_items —— >=10%、排除未投料、带 _read==0；②统计卡片「真异常」_update_anomaly —— **>30%**、排除替代料、**不排除未投料**；③点击卡片后的状态栏提示（main_window 的 anomaly 分支）—— **>30%、两个都不排除**，且文案写「已排除替代料」而代码根本没做；④_update_deviation（偏差率预警卡）—— >=10%、排除未投料、**不排除替代料**。构造 6 行样本实测复现：  · 一行 |偏差率|=12% 非替代料 —— 四处里只有①会算它，其余三处都漏；  · 一行 |偏差率|=50% 且是否替代料=是 —— ②的 _update_anomaly 排除了它，    但③的状态栏提示没排除、④也没排除；  · 一行未投料（实际=0、定额>0、偏差率 -100%）—— ①②④都排除，③算它。⇒ 界面上同一个预警数字能出现两个值，用户会认为是 bug。【改动】新增 gui_pyside6/utils/alert_rules.py 作为该口径的**单一事实来源**：ALERT_RATE_THRESHOLD=10.0 + deviation_alert_mask(df) = |偏差率|>=阈值 且 非替代料 且 非未投料；未投料判定复用 data_frame_model._unused_only 的同一条件（实际≈0 且 定额>0，容差 0.001）。stats_cards 的 _update_deviation 改为调它；main_window 浮窗的偏差率预警一项改为调它。【按裴哥决定】统一成 10%、**取消「真异常」独立档**——因此整张 card_anomaly 卡片删除（定义/eventFilter/布局/_update_anomaly/主窗口点击分支 共 6+7 行），原先的「偏差率预警」card_deviation 成为唯一预警卡，卡片数 7→6。stats_cards 净减 63 行、alert_rules 新增 94 行——用一份共享实现替换两份重复实现。【验证】6 行样本逐条核对：35%非替代料→命中、20%替代料→排除、12%非替代料→命中（旧 >30 口径会漏）、-100%未投料→排除、5%→排除、50%替代料→排除，全部符合预期。py_compile 通过；pyflakes 仅 stats_cards 两条存量告警（QSizePolicy/QFont 未使用，HEAD 版即存在）、alert_rules.py 零告警。AST 守卫通过（MainWindow class 248-4888，模块级函数仍在 class 之后）。测试网 217 passed / 1 skipped / 2 xfailed，零回归。",
+    },
+    {
         "version": "v43.133",
         "date": "2026-10-04",
         "features": "",
