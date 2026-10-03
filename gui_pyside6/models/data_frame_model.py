@@ -247,7 +247,10 @@ class DataFrameModel(QAbstractTableModel):
                     except Exception:
                         remark = ''
                     break
-            return f"疑似替代料/非耗用：实际=0，定额>0（偏差率 -100%）\n备注原因：{remark if remark.strip() else '（无）'}"
+            # v43.130 文案对齐：原文写「疑似替代料/非耗用」是错的——
+            # 本分支是「未投料」（实际=0 定额>0 且 已排除替代料，见 _unused_only 判定），
+            # 与「替代料」是两种不同的东西，不能混称，否则会让人误以为要按替代料去处理。
+            return f"未投料：实际用量=0、定额>0，偏差率恒为 -100%（BOM 推算的机械结果，非真实少耗）\n请核实是漏投料、系统未过账，还是已用替代料投料（若属替代料请在「🔧 替代料配对」中登记）\n备注原因：{remark if remark.strip() else '（无）'}"
         
         # 其余列：从缓存读取
         if role == Qt.DisplayRole or role == Qt.EditRole:
