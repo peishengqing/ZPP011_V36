@@ -754,36 +754,38 @@ class TestC_BugProbes:
     为了不让"已确认的 bug"把 CI 拉红，xfail(strict=False) 记录预期。
     """
 
-    def test_bug1_fullcacheworker_missing_request_cancel(self):
-        """探针1【结论：真实存在】：`_FullCacheWorker` 无取消点，取消按钮停不下它。
+    def test_bug1_workers_all_support_cooperative_cancel(self):
+        """探针1【v43.127 结论：已修复】4 个 worker 全部具备协作式取消能力。
 
-        实测结论（v43.125，AST 逐个核实）：
+        原结论（v43.125，AST 逐个核实）：
 
-        - ``_FullCacheWorker`` 是**内联定义**在方法体内的 QThread
-          （main_window.py:1316），方法集仅 ``{__init__, run}``，
-          **没有 request_cancel，也没有 _cancel_check**。
+        - ``_FullCacheWorker`` 是内联定义在方法体内的 QThread，方法集仅
+          ``{__init__, run}``，**没有 request_cancel，也没有 _cancel_check**。
         - 它的 ``run()`` 给 ``export_full_report_from_intermediates`` 传的
-          ``cancel_check=None``（main_window.py:1332），兜底分支
-          ``do_analysis_v2(...)`` 也没传任何取消回调
-          ——即**全程没有任何协作式取消点**。
-        - 原始假设「另外 3 个 worker 都有 request_cancel」**不成立**，实测：
-          ``_FullReportWorker`` 有（79-130，含 request_cancel + _cancel_check），
-          但 ``_PptReportWorker``（158-184）和 ``_FileReadWorker``（187-205）
-          **同样没有** request_cancel。所以真实情况是 4 个 worker 里
-          **只有 1 个**支持协作式取消，不是「3 个都有、就它缺」。
-        - 叠加 ``_cancel_analysis``（1875-1888）只取消
-          ``analysis_controller.worker`` 与 ``audit_controller.ai_worker``，
-          **完全没碰 ``_cache_worker``** → 点「取消」后完整报告缓存仍算到底。
-          而 ``closeEvent`` 兜底只调 ``quit()``，对正在执行 ``run()`` 的
-          QThread 是空操作，只能靠 ``wait(3000)`` 超时放行。
+          ``cancel_check=None``，兜底分支 ``do_analysis_v2(...)`` 也没传取消回调
+          ——全程没有任何协作式取消点。
+        - 实测「4 个 worker 里只有 1 个支持取消」：``_FullReportWorker`` 有，
+          ``_PptReportWorker`` / ``_FileReadWorker`` 同样没有。
+        - 叠加 ``_cancel_analysis`` 没碰 ``_cache_worker`` → 点「取消」后
+          完整报告缓存仍算到底；``closeEvent`` 兜底只调 ``quit()``，
+          对正在执行 ``run()`` 的 QThread 是空操作。
 
-        本测试把上述事实钉住：任一条变化（补上取消点、或重构后搬动定义位置）
-        都会让它失败，提示更新探针结论。
+        v43.127 修复实测：``_FullCacheWorker`` 补 ``_cancel`` 标志 +
+        ``request_cancel`` + ``_cancel_check``，并把 ``cancel_check=None``
+        改为 ``cancel_check=self._cancel_check``（兜底分支同改）；
+        ``_PptReportWorker`` / ``_FileReadWorker`` 补 ``request_cancel``
+        （底层 ``build_net_report`` / ``xl.parse`` 是单次阻塞调用、
+        无法加检查点，故只在 emit 前做边界拦截，防关窗后回调已析构窗口）；
+        ``closeEvent`` 对 ``_cache_worker`` 补调 ``request_cancel()``。
+        实测取消停止耗时 10.09s → 0.021s。
+
+        本测试改为**守卫修复不退化**：任一 worker 丢掉 request_cancel、
+        或 ``_FullCacheWorker`` 的 cancel_check 被改回 None，都会失败。
         """
         tree, src = _parse_main_window()
         cls = _main_window_class(tree)
 
-        # 1) 内联定义的 _FullCacheWorker 必须仍缺 request_cancel
+        # 1) 内联的 _FullCacheWorker 必须有 request_cancel 与 _cancel_check
         inline = [
             n for n in ast.walk(cls)
             if isinstance(n, ast.ClassDef) and n.name == "_FullCacheWorker"
@@ -791,40 +793,49 @@ class TestC_BugProbes:
         assert inline, "未找到内联 _FullCacheWorker 定义（若已被重构成模块级请更新本探针）"
         node = inline[0]
         methods = {m.name for m in node.body if isinstance(m, ast.FunctionDef)}
-        assert "request_cancel" not in methods, (
-            "_FullCacheWorker 已有 request_cancel——该 bug 已修复，请更新探针结论"
+        assert "request_cancel" in methods, (
+            "_FullCacheWorker 丢失 request_cancel——取消修复退化了，请重新补上"
+        )
+        assert "_cancel_check" in methods, (
+            "_FullCacheWorker 丢失 _cancel_check——取消修复退化了"
         )
 
-        # 2) run() 里传给分析器的 cancel_check 必须仍是 None（=无取消点）
+        # 2) run() 必须把 self._cancel_check 传给分析器（而非 None）
         run_node = next(
             m for m in node.body
             if isinstance(m, ast.FunctionDef) and m.name == "run"
         )
         run_src = ast.get_source_segment(src, run_node)
-        assert "cancel_check=None" in run_src, (
-            "_FullCacheWorker.run 已不再传 cancel_check=None——"
-            "取消点可能已实现，请核实后更新探针结论"
+        assert "cancel_check=None" not in run_src, (
+            "_FullCacheWorker.run 又变回 cancel_check=None——"
+            "协作式取消点被移除，缓存 worker 会重新变成闷头算到底"
+        )
+        assert "cancel_check=self._cancel_check" in run_src, (
+            "_FullCacheWorker.run 未把 self._cancel_check 传给分析器——取消形同虚设"
         )
 
-        # 3) 钉住「只有 _FullReportWorker 有 request_cancel」这个实测基线
+        # 3) 4 个模块级 worker 必须全部有 request_cancel
         actual = {}
         for n in tree.body:
             if isinstance(n, ast.ClassDef) and n.name.endswith("Worker"):
                 actual[n.name] = "request_cancel" in {
                     m.name for m in n.body if isinstance(m, ast.FunctionDef)
                 }
-        assert actual["_FullReportWorker"] is True, (
-            f"_FullReportWorker 的 request_cancel 消失了：{actual}"
+        for name in ("_FullReportWorker", "_PptReportWorker", "_FileReadWorker"):
+            assert actual.get(name) is True, (
+                f"{name} 丢失 request_cancel（当前基线 {actual}）"
+            )
+
+        # 4) closeEvent 必须对 _cache_worker 调 request_cancel
+        #    （QThread.quit() 对已开始的 run() 是空操作，只靠 quit 会闷头算完）
+        ce = next(
+            m for m in cls.body
+            if isinstance(m, ast.FunctionDef) and m.name == "closeEvent"
         )
-        assert actual.get("_PptReportWorker") is False, (
-            f"_PptReportWorker 现在竟有 request_cancel：{actual}"
-        )
-        assert actual.get("_FileReadWorker") is False, (
-            f"_FileReadWorker 现在竟有 request_cancel：{actual}"
-        )
-        # 内联的 _FullCacheWorker 不在 tree.body 里，单独记一条
-        assert actual.get("_FullCacheWorker") is None, (
-            "_FullCacheWorker 已被提到模块级——请同步更新本探针"
+        ce_src = ast.get_source_segment(src, ce)
+        assert "self._cache_worker.request_cancel()" in ce_src, (
+            "closeEvent 未对 _cache_worker 调 request_cancel()——"
+            "关窗后缓存 worker 仍会算到底"
         )
 
     def test_bug2_factory_switch_does_not_duplicate_connections(self, main_window):
