@@ -499,7 +499,10 @@ class DataService(QObject):
         避免下次重新加载时再次弹窗提醒。
         """
         if not changes:
-            return 0
+            # P0 修复（2026-10-03）：另两个分支返回 (n, dids) 元组，调用方
+            # main_window.py:1031 按 n, dids = ... 解包，此处 return 0 会抛
+            # TypeError: cannot unpack non-iterable int object。统一为 (0, set())。
+            return 0, set()
         try:
             from core.read_status import mark_read_batch
             qty_col = self._find_real_qty_col(df)

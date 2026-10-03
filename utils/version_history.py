@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.123",
+        "date": "2026-10-03",
+        "features": "",
+        "fixes": "修复 4 个经实测坐实的 P0（均先复现再修，修后复验）：①core/read_status.py 的 save_read_status / save_read_status_batch 用 INSERT OR REPLACE，而 read_status 表同时存审核结果（audit_result/ai_suggestion/note_source）——SQLite 的 OR REPLACE 是 DELETE+INSERT，未出现在列清单里的列一律回落 DEFAULT，实测「审核完顺手点已读」会把 audit_result 从「合格」抹成空串、用户审核结论无声消失。改用 ON CONFLICT(data_id) DO UPDATE 只更新已读相关列，与同文件 save_audit_results_batch 的写法对齐；②analysis/excel_builder/sheet4_middle.py 未配置替代料时整表清空——'|'.join([])=='' 而 str.contains('', regex=True) 恒为 True，取反后「中间地带明细」输出 0 行且无任何报错；alt_manager.DEFAULT_ALT_PAIRS 的占位元组 (('','',''),('','','')) 更狠（正则退化成 '|' 空交替，同样匹配一切）。修法：先剔掉空描述再判空守卫，空配对时跳过该过滤条件，实测三条路径 0 行→正确行数；③core/quarantine_manager.py 的失效复核里 drop_duplicates().set_index(df['data_id']) 长度不匹配（传的是未去重的 Series），实测 ValueError 被 except 吞掉 → df_index=None → 循环体全部 continue，O(1) 索引从未生效、失效复核永远返回空列表。修法：set_index 的 key 用去重后的 df 同行数；④gui_pyside6/services/data_service.py 的 mark_changes_as_read 早退分支 return 0（裸 int），另两分支返回 (n, dids) 元组，调用方 main_window.py:1031 按 n, dids = ... 解包会抛 TypeError: cannot unpack non-iterable int object。统一为 (0, set())。",
+    },
+    {
         "version": "v43.122",
         "date": "2026-10-02",
         "features": "",

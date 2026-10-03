@@ -207,7 +207,12 @@ def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
     # O(1) 索引：主表 data_id → row，消除原 O(n*m) 全表扫描
     # 先 drop_duplicates 防止重复 data_id 导致 df_index.loc[uid] 返回 DataFrame 而非 Series
     try:
-        df_index = df.drop_duplicates(subset='data_id', keep='first').set_index(df["data_id"].astype(str))
+        # P0 修复（2026-10-03）：原写法把「去重后的 df」和「未去重的 data_id Series」
+        # 一起传给 set_index，长度不匹配抛 ValueError 被下面的 except 吞掉 →
+        # df_index=None → 循环体全部 continue，失效复核永远返回空列表（O(1) 索引从未生效）。
+        # 修：set_index 的 key 必须与被去重的 df 同行数。
+        _dd = df.drop_duplicates(subset='data_id', keep='first')
+        df_index = _dd.set_index(_dd['data_id'].astype(str))
     except Exception:
         df_index = None  # 降级回逐行查找
     result = []
