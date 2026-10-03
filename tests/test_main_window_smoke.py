@@ -912,16 +912,20 @@ class TestC_BugProbes:
             f"modelReset 接收者数应为基线 4，实际 {counts[-1]}：{counts}"
         )
 
-        # 附带确认：标题栏工厂信号确实无人接（孤儿槽）
+        # 附带确认：标题栏工厂信号已接线（v43.128 补完 UI 后从孤儿槽变为有 1 个接收者）
+        # 原断言是「必须 0 个接收者」，即「确认它是没人用的孤儿槽」。
+        # v43.128 给 title_bar 补上 factory_combo UI 后，该槽正式接线，
+        # 故结论翻转为「必须恰好 1 个接收者」——并且要同时守住两个方向：
+        #   0 个 = UI 漏做（v43.127 的原始状态）；>1 个 = 重复连接（会重复重建数据源）
         tsig = mw.title_bar.factory_selected
         n_title = _receiver_count(mw.title_bar, tsig)
-        assert n_title == 0, (
-            f"title_bar.factory_selected 已有 {n_title} 个接收者——"
-            f"孤儿槽已接线，请更新探针结论并复查是否存在重复连接"
+        assert n_title == 1, (
+            f"title_bar.factory_selected 接收者数应为 1（v43.128 接线后），实际 {n_title}："
+            f"0 个说明 UI 漏做、>1 个说明重复连接会重复重建数据源"
         )
-        assert not _re.search(r"\.connect\([^)]*_on_title_factory_selected", src), (
-            "_on_title_factory_selected 已无任何 connect 指向它，"
-            "标题栏工厂选择器无响应"
+        assert len(_re.findall(r"\.connect\([^)]*_on_title_factory_selected", src)) == 1, (
+            "_on_title_factory_selected 的 connect 出现次数必须为 1——"
+            "0 个则标题栏工厂选择器点了没反应，>1 个则每次切换都重复重建数据源"
         )
 
 

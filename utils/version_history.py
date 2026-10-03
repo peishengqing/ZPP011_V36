@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.129",
+        "date": "2026-10-03",
+        "features": "",
+        "fixes": "翻转 test_bug2 探针的标题栏工厂信号结论，守卫「恰好 1 个接收者」。原断言 n_title == 0，即「确认 title_bar.factory_selected 是没人用的孤儿槽」——那是 v43.127 查出「UI 漏做、信号零 emit」时的正确结论。v43.128 给 title_bar 补上 factory_combo UI 后该槽正式接线，探针随即失败，其失败信息本身写着「孤儿槽已接线，请更新探针结论并复查是否存在重复连接」。现翻转为 n_title == 1，且同时用正则守住 connect 出现次数恰为 1，把两个方向都钉死：0 个 = UI 漏做（点了没反应）、>1 个 = 重复连接（每次切换都重复重建数据源）。已实测：factory_selected.connect 在 main_window.py 中出现 1 次（line 450），_on_title_factory_selected 定义 1 处 + 引用 1 处，无重复连接。测试网 217 passed / 1 skipped / 2 xfailed。附带产出：由于 H 盘写锁未解、工作树处于半新半旧状态且两个新增文件在磁盘上被标记为删除（git status 显示 D audit_changes_dialog.py / D audit_columns.py，此时直接跑程序会因 import 失败崩），已用 git archive 从 HEAD 导出完整可用副本到 C://Temp//zpp011_working（147 个 py，含今天全部 6 个版本修复），实测可写、测试网全绿，可作为替代工作区——即绕开写锁继续开发/运行，不必关闭编辑器。",
+    },
+    {
         "version": "v43.128",
         "date": "2026-10-03",
         "features": "标题栏新增工厂选择器，一键切换主表数据源",
