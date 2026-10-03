@@ -446,6 +446,8 @@ class MainWindow(QMainWindow):
         self.showMaximized()
 
         self.title_bar.theme_toggled.connect(self._toggle_theme)
+        # v43.128：标题栏工厂选择器 → 切换主表数据源
+        self.title_bar.factory_selected.connect(self._on_title_factory_selected)
 
     def _setup_shortcuts(self):
         QShortcut(QKeySequence("F5"), self).activated.connect(self._start_analysis)
@@ -1038,6 +1040,16 @@ class MainWindow(QMainWindow):
             self._auto_read_by_rules(processed_df)
             self.source_model.setDataFrame(processed_df)
             QApplication.processEvents()
+            # v43.128：分析完成后填充标题栏工厂选项（factory_data 此刻已就绪）
+            try:
+                self.title_bar.set_factories(
+                    self.analysis_controller.get_factories(),
+                    current=self.analysis_controller.current_factory,
+                )
+            except Exception:
+                # 填充工厂选项失败不应影响分析结果交付，故只记日志不中断
+                import logging as _lg
+                _lg.getLogger(__name__).warning('标题栏工厂选项填充失败', exc_info=True)
             self._schedule_unread_summary()
             self.view_model.df = processed_df
             self._analysis_params = self.analysis_controller.get_analysis_params()
@@ -3632,6 +3644,9 @@ class MainWindow(QMainWindow):
             self.view_model.df = processed_df
             self._update_summary()
             self.filter_panel.update_options(processed_df)
+            # v43.128：把生效的工厂同步回标题栏下拉（blockSignals 已在
+            # set_current_factory 内部做，不会回环成二次重建）
+            self.title_bar.set_current_factory(factory_name)
             self.statusBar().showMessage(f"已切换到工厂：{factory_name}", 2000)
         else:
             self.statusBar().showMessage(f"工厂 {factory_name} 数据为空", 2000)

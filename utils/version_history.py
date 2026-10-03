@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.128",
+        "date": "2026-10-03",
+        "features": "标题栏新增工厂选择器，一键切换主表数据源",
+        "fixes": "给标题栏补上工厂选择器（v43.127 查出的半成品接线，本版补 UI 与三个调用点）。【原状】title_bar.py 声明了 factory_selected=Signal(str)，main_window._on_title_factory_selected（委托 _on_factory_changed）实现完整、344/419 行创建与 theme_toggled 接线都在，但 title_bar 全文 72 行没有任何工厂选择器 UI、信号全项目零 emit —— 属「接线做完、控件漏做」。【语义澄清】标题栏与筛选面板的「工厂」不重复、互补：标题栏走 _on_factory_changed **重建主表数据源**（整张表换成该工厂），筛选面板走 proxy.setCustomFilters 只筛表内行。【改动】①title_bar.py 加 factory_combo（QComboBox 130px，setObjectName titleFactoryCombo，默认选项「全部」避免空控件，tooltip 说明两者差异），信号改走 currentIndexChanged；新增 3 个公开方法 set_factories(names, current) / set_current_factory(name) / get_current_factory()；「全部」恒排最前（_on_factory_changed 对它有专门的 DataFrame 合并逻辑）。②main_window.py 三处接线：接上 factory_selected→_on_title_factory_selected；_on_factory_changed 末尾 set_current_factory 同步回下拉；_on_analysis_finished_ui 里在 setDataFrame 之后用 analysis_controller.get_factories() 填充选项（异常只记 logging.warning 不中断，因填充失败不该影响分析结果交付）。【两个防回环设计，踩过才知道必要】①set_current_factory 内部 blockSignals——否则「程序设值→发信号→主窗口又重建一次数据源」成死循环；②_on_combo_changed 里比对 _current_factory，切回原厂不发信号——数据源本来就是它，重建一次纯属浪费（_on_factory_changed 会重跑 setDataFrame 并刷统计卡）。【验证】无头 Qt 实测 7 组全过：控件存在/初始[全部]；set_factories 填充且选中当前厂；真实 setCurrentIndex 触发信号被捕获；切回原厂二次点击不发信号；程序设值不发信号且显示正确；边界（空列表保持初始、current 不存在回退首个、空串与不存在名字不抛异常）；重复填充（第二次分析）不乱序。py_compile 通过；pyflakes 22 条与基线逐条一致零新增，title_bar.py 零告警。⚠️ 过程中 pyflakes 抓到我自己引入的 undefined name traceback（用了 traceback.print_exc 但该名不在作用域），已改为 logging.getLogger(__name__).warning(..., exc_info=True)——这类错误编译期查不出，是项目铁律要求每次改完必跑 pyflakes 的直接价值。",
+    },
+    {
         "version": "v43.127",
         "date": "2026-10-03",
         "features": "",
