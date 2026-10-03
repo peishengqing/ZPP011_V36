@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.131",
+        "date": "2026-10-04",
+        "features": "未读概览补齐负损看板与未投料两类",
+        "fixes": "未读汇总浮窗补齐两类：新增「负损看板」与「未投料」，4 类→6 类（保持未读口径不变）。【原状】main_window._count_unread_items 产出 4 类：隔离区/变动提醒/替代料/偏差率预警，全部带 _read==0 条件（即「未读数」）。但工具栏「看板」菜单下实际有 6 个看板——**负损看板（用户明确关注的「包材负偏差重点关注」）与「未投料订单」完全不在其中**，用户点开浮窗看不到这两类有多少行，需逐个点开看板自己数。另注：偏差率预警那一类的掩码是 (|偏差率|>=10) & ~no_input，即未投料行被排除在预警之外——但浮窗并未告知「它们在这里有多少」，只是静默排除。【改动】①_count_unread_items 末尾补两项统计并入 items 列表（items 本身是 list of dict，追加零风险）：负损看板未读用 (0<=实际<定额) & _read==0，与 neg_loss_dashboard._neg_loss_mask 在「包含未投料」默认勾选态下的口径一致；未投料未读复用函数内已算好的 no_input 掩码（实际≈0 且 定额>0），并显式排除「是否替代料==是」的行，与 data_frame_model.py:1138 is_unused = no_input and not is_substitute 对齐（这是 v43.130 刚对齐的口径）。②未投料没有独立看板，故新增 _focus_unused_rows()：点「查看」走 filter_panel.set_color_filter(\"unused\") 就地筛主表（该 mode 是 filter_panel 已支持的），不开新窗口；负损看板那行回调接现成的 _show_neg_loss_dashboard。③保留原有 4 类与「未读」口径，未做任何改变——用户明确要求保持未读视角。【安全性核实】unread_summary_popup._open_board 内有 if callable(callback) 判空，故即便将来某项 callback 为 None 也不会崩；本次两项均已接上真实回调。【验证】构造 8 行样本逐条核对五类掩码命中明细，全部符合预期；关键是「同时是替代料且实际=0」的那行在「未投料」中被正确排除（命中仅未替代料的两行），证明与模型层 _unused_only 同源。py_compile 通过；pyflakes 22 条与基线一致零新增；AST 守卫通过（MainWindow class 248-4895，模块级函数仍在 class 之后）；测试网 217 passed / 1 skipped / 2 xfailed，零回归。⚠️ 过程中第三次踩到同一个坑：新写的 except 分支里用 traceback.print_exc 但该名不在作用域，pyflakes 报 undefined name——这是同一天内第三次，main_window 里多处置换导入，故 finally 统一改用 logging。",
+    },
+    {
         "version": "v43.130",
         "date": "2026-10-04",
         "features": "替代料/未投料口径文案对齐",

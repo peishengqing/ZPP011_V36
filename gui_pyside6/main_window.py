@@ -1572,6 +1572,22 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开偏差率预警看板失败: {e}")
 
+    def _focus_unused_rows(self):
+        """浮窗「未投料」行点「查看」→ 就地筛主表到未投料行（不开新窗口）。
+
+        未投料没有独立的看板，所以走主表过滤。与统计卡片点击同款路径
+        （filter_panel.set_color_filter，'unused' 是 filter_panel 已支持的 mode）。
+        """
+        try:
+            if self.filter_panel is not None:
+                self.filter_panel.set_color_filter('unused')
+            self.statusBar().showMessage(
+                "已过滤：仅显示未投料行（实际用量=0、定额>0）", 3000)
+        except Exception:
+            # 筛选失败不应让整个浮窗的点击静默无反应，故记日志
+            import logging as _lg
+            _lg.getLogger(__name__).warning('未投料聚焦失败', exc_info=True)
+
     def _show_neg_loss_dashboard(self):
         """手动打开负损(含未投料)看板：名称含关键词 且 负损(含未投料)，独立于隔离区。"""
         try:
@@ -2839,6 +2855,22 @@ class MainWindow(QMainWindow):
             n_d = int((alert_mask & read_mask).sum())
         else:
             n_d = 0
+        # 5. 负损看板未读（v43.131 补齐）
+        #    口径与 neg_loss_dashboard._neg_loss_mask 一致（该对话框默认「包含未投料」=开，
+        #    即 0<=实际<定额），叠未读条件。关键词沿用该看板的默认口径 彩罐/托盘/手包袋
+        #    ——它目前 self._keywords 为空（文档却写默认有值，属另一处待修），这里保持一致。
+        n_n = 0
+        if act_col and qty_col:
+            neg_mask = (a >= 0) & (q > 0) & (a < q)   # 含未投料，与看板默认勾选态一致
+            if '_kw_mask_negloss' in df.columns:
+                neg_mask = neg_mask & (pd.to_numeric(df['_kw_mask_negloss'], errors='coerce').fillna(0).astype(int) == 1)
+            n_n = int((neg_mask & read_mask).sum())
+        # 6. 未投料未读（v43.131 补齐）
+        #    no_input 掩码上面已算好：实际≈0 且 定额>0 —— 正是模型层 _unused_only 的判定。
+        #    排除替代料，与 data_frame_model.py:1138 is_unused = no_input and not is_substitute 对齐。
+        n_u = int((no_input & read_mask).sum()) if alt_col is None else int((
+            no_input & (pd.to_numeric(df[alt_col], errors='coerce').fillna('').astype(str).str.strip() != '是')
+            & read_mask).sum())
 
         return [
             {"icon": "📦", "label": "隔离区", "count": n_q,
@@ -2849,6 +2881,12 @@ class MainWindow(QMainWindow):
              "callback": self._show_alert_dashboard},
             {"icon": "⚠️", "label": "偏差率预警", "count": n_d,
              "callback": self._show_deviation_warning_dialog},
+            # v43.131 新增：这两个看板原先不在未读汇总里，用户实际关注的
+            # 「包材负偏差」与「未投料订单」因此看不到任何数字。
+            {"icon": "🟠", "label": "负损看板", "count": n_n,
+             "callback": self._show_neg_loss_dashboard},
+            {"icon": "⬜", "label": "未投料", "count": n_u,
+             "callback": self._focus_unused_rows},
         ]
 
     def _show_unread_summary(self, force=False):
