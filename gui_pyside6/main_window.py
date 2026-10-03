@@ -3595,7 +3595,14 @@ class MainWindow(QMainWindow):
 
     def _toggle_col_filter_mode(self):
         """工具栏「🔽 列头筛选」开关：开启后点列头弹取值勾选浮层（Excel 式筛选）；
-        Ctrl+点列头仍走排序。关闭后点列头恢复排序行为。"""
+        Ctrl+点列头仍走排序。关闭后点列头恢复排序行为。
+
+        修复（2026-10-03）：关闭时原先只关浮层、摘按钮勾，**没清筛选状态也没清漏斗标**
+        —— 用户反馈「关闭列头筛选了漏斗还在」。根因是列头取值过滤存在
+        proxy_model._value_filters、漏斗标记读 self._filtered_col_set，两者都不随
+        开关状态自动清理。现补上完整收尾，并**只清列头相关、不动侧边栏筛选**
+        （用 clearHeaderFilters 而非 clearFilters，与「重置筛选」路径同一口径）。
+        """
         self._col_filter_mode = not self._col_filter_mode
         btn = self.action_btn_col_filter
         btn.setChecked(self._col_filter_mode)
@@ -3610,6 +3617,35 @@ class MainWindow(QMainWindow):
                 except Exception:
                     pass
                 self._col_filter_popup = None
+            # 关闭即清空列头筛选状态：漏斗标 + 取值过滤 + 状态栏提示
+            self._clear_column_filter_state()
+
+    def _clear_column_filter_state(self):
+        """清空「列头筛选」的全部状态：取值过滤 + 漏斗标 + 状态栏计数。
+
+        只清列头这一层，**保留侧边栏筛选**（filter_panel 的 _custom_filters）与顶部筛选行，
+        与「重置筛选」路径使用的 clearHeaderFilters 保持同一口径。
+
+        重绘要点（2026-10-02/10-03）：Qt6 QHeaderView 的自绘画在表头本体（frame）上，
+        必须 header.update() 才能重画漏斗/排序角标，viewport().update() 只会刷内部 viewport。
+        """
+        proxy = getattr(self, "proxy_model", None)
+        if proxy is not None and hasattr(proxy, "clearHeaderFilters"):
+            try:
+                proxy.clearHeaderFilters()
+            except Exception:
+                pass
+        col_set = getattr(self, "_filtered_col_set", None)
+        if col_set:
+            col_set.clear()
+        # 漏斗/角标所在层重绘（viewport().update() 不够，见 docstring）
+        header = getattr(self, "_sort_header", None)
+        if header is not None:
+            try:
+                header.update()
+            except Exception:
+                pass
+        self._update_col_filter_hint()
 
     def _open_column_filter(self, logical_index):
         """在点击列头处弹出 Excel 式取值勾选浮层。

@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.125",
+        "date": "2026-10-03",
+        "features": "",
+        "fixes": "修复「关闭列头筛选后漏斗标仍在、筛选状态不清」的用户可见缺陷。根因：main_window.py 的 _toggle_col_filter_mode 关闭分支只做了「关浮层 + 摘按钮勾」，既没清 proxy_model._value_filters（列头取值过滤的真实状态），也没清 self._filtered_col_set（SortBadgeHeader 读它来画橙色漏斗），而这两者都不随开关状态自动清理——于是用户点了关闭，表格仍被列头过滤着、列头仍挂着漏斗。修：新增 _clear_column_filter_state() 统一收尾（关浮层 → clearHeaderFilters → 清 _filtered_col_set → header.update() 重绘漏斗 → 刷新状态栏计数），关闭分支调用它。刻意用 clearHeaderFilters() 而非 clearFilters()：前者只清列头取值过滤与顶部筛选行、保留侧边栏 _custom_filters（与「重置筛选」路径 3290-3295 同一口径），用户若是刻意留着侧边栏筛选不该被这次操作抹掉。无头 Qt 实测：设列头过滤后 200 行→100 行，关闭后行数恢复 200、_filtered_col_set 清空、状态栏由「1 列」归零、表头重绘调用 1 次；且 _custom_filters 保持不变（侧边栏未误伤）。重绘要点复述：Qt6 QHeaderView 自绘画在表头本体(frame)上，必须 header.update() 才重画漏斗/角标。",
+    },
+    {
         "version": "v43.124",
         "date": "2026-10-03",
         "features": "",
