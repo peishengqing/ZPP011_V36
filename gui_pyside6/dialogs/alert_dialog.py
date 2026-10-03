@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QCheckBox,
     QComboBox, QGroupBox,
 )
-from PySide6.QtCore import Qt, QPoint
+from PySide6.QtCore import Qt, QPoint, QTimer
 import pandas as pd
 from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_color_keys
 from core.read_status import save_read_status, save_read_status_batch
@@ -387,8 +387,14 @@ class AlertDialog(QDialog):
         self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
 
-        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        # 修复（2026-10-03）：原来这里用 ResizeToContents，是打开即冻结主线程
+        # 数秒的性能悬崖（耗时与行数无关、与列数线性相关）。本文件第 792 行起
+        # 已有 _fit_table_columns（按内容算最小宽 + 剩余量均摊），改为
+        # Interactive + 延迟调用它。下方 setColumnHidden 隐藏 _read/data_id
+        # 等内部列的代码保持原位不动（_fit_table_columns 自会跳过隐藏列）。
+        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
+        QTimer.singleShot(0, self._fit_table_columns)
 
         if '_read' in df.columns:
             col_idx = df.columns.get_loc('_read')
@@ -806,6 +812,17 @@ class AlertDialog(QDialog):
         col_count = model.columnCount()
         if col_count <= 0:
             return
+
+        # 按列名兜底确保内部列隐藏（隐藏若按列索引做，而列序在渲染后可能被
+        # 重排，索引会错位打到错误列上）。按列名幂等重设一次更稳。
+        try:
+            cols = model.getDataFrame().columns
+            for _hc in ('_read', 'data_id', '_post_audit_changed',
+                        '_quarantined', '是否替代料'):
+                if _hc in cols:
+                    self.table_view.setColumnHidden(cols.get_loc(_hc), True)
+        except Exception:
+            pass
 
         # 当前表格宽度（viewport 宽），作为列宽分配预算
         total_w = max(self.table_view.viewport().width(), 400)

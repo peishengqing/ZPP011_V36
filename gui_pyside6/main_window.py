@@ -2925,6 +2925,44 @@ class MainWindow(QMainWindow):
             self._refresh_unread_popup()
         except Exception:
             pass
+        # 修复（2026-10-03）：把用户在 filter_panel 调的「动态阈值」接到
+        # DataFrameModel.set_alert_threshold。此前该 setter 全仓零调用，
+        # 阈值写死在 data_frame_model.py:479 的 10.0，导致用户调阈值后
+        # 颜色标记纹丝不动（看起来像自己操作错了，属信任损耗）。
+        # 为什么在这里现读 spinbox 而不读 config：dyn_thresh 不落任何配置
+        # 文件（仓库无 config.json），点「分析」时也是由 main_window.py:1162
+        # 现读现用；这里同源读取，语义与控件 tooltip「修改后重新分析生效」一致，
+        # 无需引入任何配置结构变更。
+        # 只接「动态阈值」不接「偏差率纳入阈值」：后者是行筛选条件
+        # （决定哪些工单进入主表），不是颜色阈值，接上属于接错语义。
+        self._apply_alert_threshold_from_filter()
+
+    def _apply_alert_threshold_from_filter(self):
+        """把 filter_panel 的动态阈值同步给表格模型的颜色标记判定。
+
+        幂等：可在每次数据加载/重新分析后重复调用。
+        """
+        spin = getattr(self.filter_panel, 'dyn_thresh_spin', None)
+        if spin is None:
+            # 没有 filter_panel（如无头环境）→ 保留模型默认值
+            return
+        model = getattr(self, 'source_model', None)
+        if model is None or not hasattr(model, 'set_alert_threshold'):
+            return
+        try:
+            value = float(spin.value())
+        except (TypeError, ValueError):
+            return
+        # 阈值参与 flags() 的颜色预计算，setter 内部会 _mark_plan_stale() 重建
+        if value <= 0:
+            # 0 意味着「不做预警标记」，会让所有偏差色消失，等同于关掉配色，
+            # 属于用户明显误操作，回退到模型默认 10.0 而不是让界面全白。
+            value = 10.0
+        model.set_alert_threshold(value)
+        # 同步给代理模型：筛选计划与颜色标记用同一套阈值
+        proxy = getattr(self, 'proxy_model', None)
+        if proxy is not None and hasattr(proxy, 'set_alert_threshold'):
+            proxy.set_alert_threshold(value)
 
     def _schedule_unread_summary(self):
         """标记「本次为真实数据载入」，待 _on_view_model_data_changed 末尾弹未读汇总。"""

@@ -26,13 +26,23 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
     has_real_dev = df[df[col_p].abs() >= threshold].copy()
 
     # 计算偏差金额（含税）
-    if '单价' in has_real_dev.columns and has_real_dev['单价'].notna().any():
+    # 口径统一（2026-10-03）：此前本表用「材料偏差 × 单价」或「材料偏差 ×(金额-实际/数量-实际)」
+    # 两套算法，与 analyzer.py 的权威口径「金额-实际(含税) - 金额-定额(含税)」在「未投料」行上
+    # 分叉最严重：未投料行 数量-实际=0 → 反算分母为 0 → fillna(0) 把偏差金额抹成 0，
+    # 而权威口径给出的是全额负偏差。实测同一份 866 行数据：Sheet1/7/8 用权威口径合计
+    # -216,564.55（与源数据真值差 0.00），本表却算出 +2,962.29，差 21.95 万元——
+    # 报告内部自相矛盾，管理层拿计算器加一下明细就会发现对不上汇总。
+    # 现统一：优先直接复用 analyzer 已算好的 偏差金额(含税)；该列缺失时才逐级降级。
+    _AUTH_AMT = '偏差金额(含税)'
+    if _AUTH_AMT in has_real_dev.columns:
+        has_real_dev['_偏差金额'] = pd.to_numeric(
+            has_real_dev[_AUTH_AMT], errors='coerce').fillna(0.0)
+    elif '单价' in has_real_dev.columns and has_real_dev['单价'].notna().any():
         has_real_dev['_偏差金额'] = has_real_dev['材料偏差'] * has_real_dev['单价'] * 1.13
     elif '金额-实际(含税)' in has_real_dev.columns and '数量-实际' in has_real_dev.columns:
-        # 反算单价：金额-实际(含税) / 数量-实际
+        # 反算单价：金额-实际(含税) / 数量-实际（仅当实际量非零才可靠）
         unit_price = has_real_dev['金额-实际(含税)'] / has_real_dev['数量-实际'].replace(0, np.nan)
-        unit_price = unit_price.fillna(0)
-        has_real_dev['_偏差金额'] = has_real_dev['材料偏差'] * unit_price
+        has_real_dev['_偏差金额'] = (has_real_dev['材料偏差'] * unit_price).fillna(0.0)
     else:
         has_real_dev['_偏差金额'] = 0.0
 
@@ -54,7 +64,7 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
             '订单日期', '订单类型', '流程订单', '工厂', '车间',
             '原表行号', '产品物料号码', '产品物料描述', '产量', '产量单位', '物料编码', '物料名称',
             '单位', '定额', '实际', '偏差数量', '偏差率', '偏差率(%)',
-            '偏差金额', '备注', '备注来源', '偏差区间',
+            '偏差金额', '偏差性质', '备注', '备注来源', '偏差区间',
             '组件物料类型', '组件物料类型描述', '半成品重分类',
         ])
     else:
