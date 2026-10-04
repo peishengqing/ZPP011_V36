@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.142",
+        "date": "2026-10-04",
+        "features": "",
+        "fixes": "UI 重构阶段 2（FilterState 单一 store）**核查后判定：无需实施**（2026-10-04）。2026-10-03 调研提出的阶段 2 前提是「panel 28 控件 + proxy._custom_filters/_value_filters/_value_keys 三套容器只单向同步，需建 gui_pyside6/utils/filter_state.py 收成单一 store」，并卡在 test_link_drilldown_and_clear / test_locate_row_triggers_drilldown 两条红测试上。**实测该前提已不成立**：① 两条红测试已随 2026-10-04 死代码清理（v43.135）一并删除，测试网现 954 行 / 24 个测试，22 passed + 2 xfailed 全绿，卡点不存在；② grep main_window.py 对三套容器的引用，**真读真写仅 1 处**（_open_column_filter 读 prev 已选值），其余全是注释在解释「为何不能直接改」——早已全部改走公开方法：setCustomFilters×3 / getCustomFilters×1 / clearHeaderFilters×1 / setValueFilter×2；③ main_window.py:3036 注释已写明「唯一数据源 = 筛选面板：只操作面板控件，由面板 _emit_filter 用完整状态整体替换 proxy 条件」——「单一 store」思路事实上已落地；④ filter_panel._date_filters 的 6 处重置逐个核对语义，5 处完全正常；唯一看着可疑的 _reset_date_range（填回数据范围后清空）经无头实测**确认是刻意设计**——_compute_date_filters 注释写明「仅当用户调整了日期（与数据范围不同）才加入筛选，避免无意义全量过滤」；实测 set_data 后控件显示数据范围而 _date_filters 为空、get_filters() 无日期键，符合预期（按完整范围筛选与不筛选结果相同）。⑤ 四个看板各存一套 _semi_class_filter/_unit_filter **不是缺陷**——模态浮窗独立筛选是正确行为，强行统一会让看板互相污染。**结论：阶段 2 消解完毕，不建 filter_state.py、不改筛选状态流。**阶段 3（AppDialog 基类 / 看板改非模态 / theme.py 收颜色）仍为高风险，且 2026-10-03 已明确「不做：动 4 个看板的 view_model 改写」，需另择时段。另记：2026-10-04 全天 8 个版本（v43.135~v43.142）均**未打包 exe**，用户明确暂不打包。"
+    },
+    {
 
         "version": "v43.141",
         "date": "2026-10-04",
