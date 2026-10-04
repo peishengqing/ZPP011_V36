@@ -39,6 +39,7 @@ FEED_STATUS_ITEMS = ("未投料", "负损", "疑似投错", "正常/超投")
 from gui_pyside6.utils.semi_class import (  # noqa: F401
     SEMI_CLASS_FOOD, SEMI_CLASS_DRINK, SEMI_CLASS_DEFAULT,
     PREFIX_TO_SEMI_CLASS, merge_semi_class_values,
+    ensure_semi_class_column,
 )
 
 
@@ -734,6 +735,18 @@ class SemiDashboardDialog(QDialog):
     # ------------------------------------------------------------------ 数据装载
     def set_data(self, df):
         df = df.copy()
+        # v43.155（用户反馈「半成品看板没有半成品重分类这一列」）：
+        # 看板取的是主表 source_model 的 df，而该 df 可能已丢失「半成品重分类」列
+        # （如主表经左侧筛选栏/列过滤收窄后），于是表格里看不到这一列，
+        # 可顶部「半成品分类」复选框照常筛得出数据（它走固定清单+400/410 兜底，
+        # 不依赖该列存在）——用户完全不知道自己在筛哪一类。
+        # 这里缺列时就地补齐，规则与 analyzer ②+③ 一致（口径唯一）。
+        if "半成品重分类" not in df.columns:
+            try:
+                df, _added = ensure_semi_class_column(df)
+            except Exception:
+                # 补列失败不阻断看板：_semi_class_values 另有 400/410 前缀兜底
+                df["半成品重分类"] = ""
         # 初始化守卫：set_data 内多处 setCurrentText/setChecked 会触发信号→_apply_filter，
         # 但此时 _unit_col/_workshop_col 等尚未初始化，直接跑会 AttributeError 崩溃。
         # 置 _initializing 期间让 _apply_filter 直接 return，初始化完成后再统一跑一次。
@@ -779,6 +792,19 @@ class SemiDashboardDialog(QDialog):
             cols.remove("隔离区")
             idx = cols.index("订单日期")
             cols.insert(idx, "隔离区")
+            df = df[cols]
+
+        # v43.155：半成品重分类列移到「组件物料类型描述」之后。
+        # 该列是本看板的核心视角（顶部整个筛选器都在筛它），原先常落在第 30+ 位，
+        # 36 列的表格不横向拖到底根本看不到，等于「筛了却不知道在筛什么」。
+        # 放在组件物料类型描述旁边，语义相邻且位置靠前。
+        if "半成品重分类" in df.columns:
+            cols = list(df.columns)
+            cols.remove("半成品重分类")
+            _anchor = next((c for c in ("组件物料类型描述", "组件物料类型", "物料类型")
+                            if c in cols), None)
+            _idx = cols.index(_anchor) + 1 if _anchor else len(cols)
+            cols.insert(_idx, "半成品重分类")
             df = df[cols]
 
         self.original_df = df.copy()

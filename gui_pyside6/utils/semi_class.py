@@ -62,3 +62,77 @@ def merge_semi_class_values(unique_vals):
         seen.add(s)
         out.append(s)
     return out
+
+
+# ---------------------------------------------------------------------------
+# v43.155：分类表加载 + 补列（本模块单一来源，供各看板在缺列时就地补齐）
+# ---------------------------------------------------------------------------
+
+def load_semi_classify_map():
+    """读取「半成品重分类权威分类表」→ {物料编码(str): 分类名(str)}。
+
+    查找顺序：打包资源 sys._MEIPASS/config/ → 工程内 config/。
+    找不到或解析失败返回空 dict（调用方走 400/410 前缀兜底，不影响主流程）。
+    与 analysis/analyzer.py 的 _load_semi_classify_map 同源同逻辑，
+    抽到这里是为了让 GUI 侧不必 import analysis 包、也不必改 analyzer（红线区）。
+    """
+    import io
+    import json
+    import os
+    import sys
+
+    candidates = []
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        candidates.append(os.path.join(sys._MEIPASS, "config", "semi_user_categories.json"))
+    _here = os.path.dirname(os.path.abspath(__file__))
+    candidates.append(os.path.join(_here, "..", "..", "config", "semi_user_categories.json"))
+    for p in candidates:
+        if not os.path.exists(p):
+            continue
+        try:
+            with io.open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            continue
+        if isinstance(data, dict):
+            return {str(k).strip(): str(v).strip() for k, v in data.items() if k and v}
+        # list 格式只存分类名、无「物料号→分类」映射，无法构建，返回空
+        return {}
+    return {}
+
+
+def ensure_semi_class_column(df, code_col=None, out_col="半成品重分类"):
+    """若 df 缺「半成品重分类」列，就地按 analyzer 同款规则补一列并返回 (df, 是否补了)。
+
+    规则与 analysis/analyzer.py ② + ③ 完全一致（保持口径唯一）：
+      1. 命中分类表 config/semi_user_categories.json 的物料编码 → 用表里原值
+         （尤其 category_value='包材' 这类必须原样保留，绝不被 400/410 覆盖）；
+      2. 表外且物料编码 400 开头 → 「食品成品半成品」；
+      3. 表外且物料编码 410 开头 → 「饮料成品半成品」；
+      4. 其余留空。
+
+    只填补**空白值**的归属，绝不动已填值。
+    df 已有该列时原样返回（不做任何改写）。
+    code_col 为 None 时自动挑「物料编码/组件物料号/物料号」第一个存在的列。
+    """
+    import pandas as pd
+
+    if out_col in df.columns:
+        return df, False
+    if code_col is None:
+        code_col = next((c for c in ("物料编码", "组件物料号", "物料号", "产品物料号码")
+                         if c in df.columns), None)
+    if code_col is None:
+        df[out_col] = pd.Series("", index=df.index, dtype=object)
+        return df, True
+
+    codes = df[code_col].fillna("").astype(str).str.strip()
+    vals = pd.Series(codes.map(load_semi_classify_map()), index=df.index, dtype=object)
+    vals = vals.fillna("")
+    blank = vals == ""
+    for prefix, cls in PREFIX_TO_SEMI_CLASS:
+        hit = blank & codes.str.startswith(prefix, na=False)
+        if hit.any():
+            vals = vals.mask(hit, cls)
+    df[out_col] = vals
+    return df, True
