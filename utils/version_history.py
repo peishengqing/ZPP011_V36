@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.137",
+        "date": "2026-10-04",
+        "features": "",
+        "fixes": "修半成品看板「半成品分类」复选框文字被截断（2026-10-04，裴哥截图反馈）。症状：分类复选框显示为「全i」「食i」「饮」，中文被裁掉只剩一两个字符。根因：grp_semi_class 只设了 setMinimumWidth(300) 没有设上限，外层 QHBoxLayout 在顶部空间不足时把 7 个复选框等分压缩——实测每项只剩 ~37px，而「食品配料中心半成品」需要 132px，文字被裁。关键坑：单纯改 QSizePolicy 无效。实测 Minimum 与 MinimumExpanding 两种策略均被压到 322px（内容需 798px），因为决定压缩的是父布局的分配逻辑，不是自身 policy。真正管用的是给承载复选框的 QHBoxLayout 设 setSizeConstraint(QLayout.SetFixedSize)——该约束使容器取 sizeHint 而非被父布局压缩。实测组宽 390px = 内容所需 390px，各复选框均获完整宽度、文字完整。顶部外层本就是 QScrollArea(setWidgetResizable(False))，窗口不够宽时出横向滚动条。无头冒烟验证：复选框 4 项全部完整、投料状态 5 档齐全、默认只勾「食品/饮料成品半成品」（食品辅原料正确不勾）。py_compile 通过、pyflakes 零告警。"
+    },
+    {
         "version": "v43.136",
         "date": "2026-10-04",
         "features": "",

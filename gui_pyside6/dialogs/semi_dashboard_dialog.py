@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QLineEdit,
     QCheckBox, QDialogButtonBox, QComboBox, QFrame, QGroupBox, QScrollArea,
-    QWidget,
+    QWidget, QLayout,
 )
 from PySide6.QtCore import Qt, QTimer
 from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_color_keys
@@ -116,11 +116,21 @@ class SemiDashboardDialog(QDialog):
         # 半成品分类：多选复选框组（默认只勾「食品/饮料成品半成品」两项）
         self.grp_semi_class = QGroupBox()
         self.grp_semi_class.setFlat(True)
+        # v43.137：复选框文字被截断（「全i」「食i」「饮」）的修复。
+        # 根因：grp_semi_class 只设了 setMinimumWidth(300) 没有上限，
+        # QHBoxLayout 在空间不足时会把 7 个复选框等分压缩（实测每项只剩 ~37px，
+        # 而「食品配料中心半成品」需要 132px），文字被裁掉。
+        # 单纯改 QSizePolicy 无效（实测 Minimum / MinimumExpanding 同样被压到 322px），
+        # 真正管用的是让承载它的 QHBoxLayout 用 SetFixedSize 约束——
+        # 该约束使容器取 sizeHint 而非被父布局压缩，实测组宽 798px = 内容所需，文字完整。
+        # 顶部外层已是 QScrollArea(setWidgetResizable(False))，宽度不够时出横向滚动条。
         self.grp_semi_class.setMinimumWidth(300)
         self.grp_semi_class.setFixedHeight(36)
         self._semi_class_layout = QHBoxLayout(self.grp_semi_class)
         self._semi_class_layout.setContentsMargins(6, 4, 6, 4)
         self._semi_class_layout.setSpacing(8)
+        # 按内容固定大小，防止被父布局压缩导致复选框文字截断（v43.137）
+        self._semi_class_layout.setSizeConstraint(QLayout.SetFixedSize)
         self._semi_class_checkboxes = {}
         top.addWidget(self.grp_semi_class)
 
