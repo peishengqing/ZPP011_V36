@@ -6,10 +6,15 @@
 裴哥 | 2026-08-01
 """
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QFrame
+    QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QFrame, QMessageBox
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
+
+import os
+
+# v43.152：打开看板失败时的运行日志（写失败静默吞掉，日志绝不反噬运行路径）
+_RUNTIME_LOG = os.path.join("logs", "unread_summary.log")
 
 
 class UnreadSummaryPopup(QWidget):
@@ -90,9 +95,18 @@ class UnreadSummaryPopup(QWidget):
 
             view_btn = QPushButton("查看")
             view_btn.setFixedWidth(48)
+            # v43.152：0 条未读的类别直接置灰不可点。原先点了只会弹一个
+            # 「暂无记录」提示框，用户以为是程序坏了；从源头消除这种困惑。
+            _n = it.get("count", 0)
+            if _n <= 0:
+                view_btn.setEnabled(False)
+                view_btn.setToolTip("暂无未读记录，无需查看")
+            else:
+                view_btn.setToolTip("打开%s（%d 条未读）" % (it["label"], _n))
             # 用默认参数绑定，避免闭包复用同一 callback
             view_btn.clicked.connect(
-                lambda _checked=False, cb=it["callback"]: self._open_board(cb)
+                lambda _checked=False, cb=it["callback"], lb=it["label"]:
+                    self._open_board(cb, lb)
             )
 
             rlayout.addWidget(icon_label)
@@ -133,21 +147,41 @@ class UnreadSummaryPopup(QWidget):
         except RuntimeError:
             pass
 
-    def _open_board(self, callback):
+    def _open_board(self, callback, label=""):
         """点击「查看」→ 打开对应看板（用户主动触发，此时分析已完成、主表就绪）。
 
         先隐藏本弹窗，避免遮挡模态看板；看板关闭后若本弹窗未被主窗口清零关闭，
         则恢复显示（满足「没清零就挂着」）。
+
+        v43.152：原 `except Exception: pass` 会把真实异常彻底吞掉——用户点「查看」
+        什么都不会发生，开发者也无从查起（与 v42.18/v43.143 的静默失效同类）。
+        改为弹错误提示显示异常原文 + 写运行日志。
         """
         self.hide()
         try:
             if callable(callback):
                 callback()
-        except Exception:
-            pass
+        except Exception as e:
+            self._report_open_failed(label, e)
         if not self._closed:
             self.show()
             self._move_to_bottom_right()
+
+    def _report_open_failed(self, label, err):
+        """v43.152：callback 抛异常时的可见反馈（不再静默吞）。"""
+        import traceback
+        traceback.print_exc()
+        try:
+            with open(_RUNTIME_LOG, "a", encoding="utf-8") as fh:
+                fh.write("[未读概览] 打开%s失败：%r\n" % (label or "看板", err))
+                fh.write(traceback.format_exc())
+        except Exception:
+            pass
+        try:
+            QMessageBox.warning(None, "打开失败",
+                                "无法打开%s，请重试或改用顶部菜单。\n\n错误：%s" % (label or "该看板", err))
+        except Exception:
+            pass
 
     def _safe_close(self):
         """安全关闭：已关闭则跳过；C++ 对象万一已被销毁也不抛异常。"""

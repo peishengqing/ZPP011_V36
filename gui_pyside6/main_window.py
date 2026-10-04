@@ -662,326 +662,332 @@ class MainWindow(QMainWindow):
         MAX_DISPLAY = 3000
         display_len = min(count, MAX_DISPLAY)
         # 自定义对话框：表格展示变更明细 + 筛选/搜索/排序/复制/双击定位 + 手动导出
+        # v43.152：原代码 self._audit_changes_dialog_open = False 只在 dlg.exec()
+        # 正常返回后执行，没有 try/finally 保护。建 UI 或 exec 中途抛一次异常，
+        # 该标志就永久卡在 True，此后所有点击都在开头的防重入判断处静默 return，
+        # 表现为「变动提醒点不动」且零线索。此处用 try/finally 保证必重置。
         self._audit_changes_dialog_open = True
-        dlg = QDialog(self)
-        dlg.setWindowTitle(f"变动提醒（{count} 条）")
-        dlg.resize(1100, 600)
-        # 允许最大化/最小化（Windows 上最大化按钮需与最小化成对才稳定显示）
-        dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowMinMaxButtonsHint)
-        layout = QVBoxLayout(dlg)
+        try:
+            dlg = QDialog(self)
+            dlg.setWindowTitle(f"变动提醒（{count} 条）")
+            dlg.resize(1100, 600)
+            # 允许最大化/最小化（Windows 上最大化按钮需与最小化成对才稳定显示）
+            dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowMinMaxButtonsHint)
+            layout = QVBoxLayout(dlg)
 
-        # 工具栏：字段筛选 + 关键字搜索
-        tool_bar = QHBoxLayout()
-        tool_bar.addWidget(QLabel("字段:"))
-        field_combo = QComboBox()
-        field_combo.addItems(["全部字段", "实际数量", "备注原因"])
-        tool_bar.addWidget(field_combo)
-        tool_bar.addSpacing(12)
-        tool_bar.addWidget(QLabel("搜索:"))
-        search_edit = QLineEdit()
-        search_edit.setPlaceholderText("日期 / 车间 / 流程订单 / 物料编码 / 物料名称")
-        tool_bar.addWidget(search_edit, 1)
-        layout.addLayout(tool_bar)
+            # 工具栏：字段筛选 + 关键字搜索
+            tool_bar = QHBoxLayout()
+            tool_bar.addWidget(QLabel("字段:"))
+            field_combo = QComboBox()
+            field_combo.addItems(["全部字段", "实际数量", "备注原因"])
+            tool_bar.addWidget(field_combo)
+            tool_bar.addSpacing(12)
+            tool_bar.addWidget(QLabel("搜索:"))
+            search_edit = QLineEdit()
+            search_edit.setPlaceholderText("日期 / 车间 / 流程订单 / 物料编码 / 物料名称")
+            tool_bar.addWidget(search_edit, 1)
+            layout.addLayout(tool_bar)
 
-        extra = f"（仅显示前 {display_len} 条，共 {count} 条；导出按钮可导出全部）" if count > display_len else ""
-        tip = QLabel(f"发现 {count} 条已审核记录的实际数量/备注原因发生变动，已强制设为'未读'。\n（表格可排序/筛选/搜索，右键复制单元格或整行，双击定位到主表对应行）{extra}")
-        tip.setWordWrap(True)
-        layout.addWidget(tip)
+            extra = f"（仅显示前 {display_len} 条，共 {count} 条；导出按钮可导出全部）" if count > display_len else ""
+            tip = QLabel(f"发现 {count} 条已审核记录的实际数量/备注原因发生变动，已强制设为'未读'。\n（表格可排序/筛选/搜索，右键复制单元格或整行，双击定位到主表对应行）{extra}")
+            tip.setWordWrap(True)
+            layout.addWidget(tip)
 
-        table = QTableWidget(dlg)
-        cols = ["日期", "车间", "流程订单", "物料编码", "物料名称", "变更字段", "旧值", "新值"]
-        table.setColumnCount(len(cols))
-        table.setHorizontalHeaderLabels(cols)
-        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        table.setSelectionMode(QAbstractItemView.ExtendedSelection)  # 支持 Ctrl/Shift 多选，点击行即高亮选中
-        table.verticalHeader().setVisible(False)
-        layout.addWidget(table)
+            table = QTableWidget(dlg)
+            cols = ["日期", "车间", "流程订单", "物料编码", "物料名称", "变更字段", "旧值", "新值"]
+            table.setColumnCount(len(cols))
+            table.setHorizontalHeaderLabels(cols)
+            table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+            table.setSelectionBehavior(QAbstractItemView.SelectRows)
+            table.setSelectionMode(QAbstractItemView.ExtendedSelection)  # 支持 Ctrl/Shift 多选，点击行即高亮选中
+            table.verticalHeader().setVisible(False)
+            layout.addWidget(table)
 
-        # 待处理变动列表（标记已读后从此移除并刷新表格）；行内 UserRole 存 remaining 索引，排序/部分标记后仍可正确映射
-        remaining = list(changes)
+            # 待处理变动列表（标记已读后从此移除并刷新表格）；行内 UserRole 存 remaining 索引，排序/部分标记后仍可正确映射
+            remaining = list(changes)
 
-        def _populate(show_list, with_progress=False):
-            table.setSortingEnabled(False)
-            table.setRowCount(len(show_list))
-            prog = None
-            if with_progress and len(show_list) > 0:
-                prog = QProgressDialog("正在加载变更明细...", None, 0, len(show_list), self)
-                prog.setWindowTitle("加载变动提醒")
-                prog.setWindowModality(Qt.WindowModal)
-                prog.setMinimumDuration(300)
-                prog.setValue(0)
-            for i, c in enumerate(show_list):
-                did = str(c.get('data_id', ''))
-                parts = did.split('|')
-                # 兼容 4 段（工厂|日期|流程订单|物料编码）和 3 段（日期|流程订单|物料编码）格式
-                if len(parts) == 4:
-                    date, order, mat = parts[1], parts[2], parts[3]
-                elif len(parts) >= 3:
-                    date, order, mat = parts[0], parts[1], parts[2]
-                else:
-                    date, order, mat = '', '', ''
-                wk = c.get('workshop', '') or ''
-                old_v = c.get('old_value', '')
-                new_v = c.get('new_value', '')
-                it0 = QTableWidgetItem(date)
-                it0.setData(Qt.UserRole, i)  # 存 remaining 索引
-                table.setItem(i, 0, it0)
-                table.setItem(i, 1, QTableWidgetItem(str(wk)))
-                table.setItem(i, 2, QTableWidgetItem(order))
-                table.setItem(i, 3, QTableWidgetItem(mat))
-                table.setItem(i, 4, QTableWidgetItem(str(c.get('material_name', '') or '')))
-                table.setItem(i, 5, QTableWidgetItem(str(c.get('field', ''))))
-                table.setItem(i, 6, QTableWidgetItem('' if old_v is None else str(old_v)))
-                table.setItem(i, 7, QTableWidgetItem('' if new_v is None else str(new_v)))
-                if prog and (i + 1) % 200 == 0:
-                    prog.setValue(i + 1)
-                    QApplication.processEvents()
-            if prog:
-                prog.setValue(len(show_list))
-            # 列宽：手动设定固定/拉伸，避免 ResizeToContents 在大量行时逐行测量导致卡顿
-            header = table.horizontalHeader()
-            fixed_widths = {0: 100, 1: 90, 2: 100, 3: 110, 4: 200, 5: 90}
-            for col, w in fixed_widths.items():
-                header.setSectionResizeMode(col, QHeaderView.Fixed)
-                table.setColumnWidth(col, w)
-            name_col = 4
-            name_max_w = 200
-            header.setSectionResizeMode(6, QHeaderView.Stretch)  # 旧值
-            header.setSectionResizeMode(7, QHeaderView.Stretch)  # 新值
-            # 仅在小数据量时做逐行字号缩放（大数据量跳过，避免逐行 QFontMetrics 卡顿）
-            n = len(show_list)
-            if n <= 2000:
-                base_font = table.font()
-                fm = QFontMetrics(base_font)
-                pad = 12
-                avail = name_max_w - pad
-                max_text_w = 0
-                for r in range(n):
-                    it = table.item(r, name_col)
-                    if it:
-                        max_text_w = max(max_text_w, fm.horizontalAdvance(it.text()))
-                if max_text_w > avail:
-                    ps = base_font.pointSizeF() or 9.0
-                    new_size = max(7.0, ps * avail / max_text_w)
-                    shrink_font = QFont(base_font)
-                    shrink_font.setPointSizeF(new_size)
+            def _populate(show_list, with_progress=False):
+                table.setSortingEnabled(False)
+                table.setRowCount(len(show_list))
+                prog = None
+                if with_progress and len(show_list) > 0:
+                    prog = QProgressDialog("正在加载变更明细...", None, 0, len(show_list), self)
+                    prog.setWindowTitle("加载变动提醒")
+                    prog.setWindowModality(Qt.WindowModal)
+                    prog.setMinimumDuration(300)
+                    prog.setValue(0)
+                for i, c in enumerate(show_list):
+                    did = str(c.get('data_id', ''))
+                    parts = did.split('|')
+                    # 兼容 4 段（工厂|日期|流程订单|物料编码）和 3 段（日期|流程订单|物料编码）格式
+                    if len(parts) == 4:
+                        date, order, mat = parts[1], parts[2], parts[3]
+                    elif len(parts) >= 3:
+                        date, order, mat = parts[0], parts[1], parts[2]
+                    else:
+                        date, order, mat = '', '', ''
+                    wk = c.get('workshop', '') or ''
+                    old_v = c.get('old_value', '')
+                    new_v = c.get('new_value', '')
+                    it0 = QTableWidgetItem(date)
+                    it0.setData(Qt.UserRole, i)  # 存 remaining 索引
+                    table.setItem(i, 0, it0)
+                    table.setItem(i, 1, QTableWidgetItem(str(wk)))
+                    table.setItem(i, 2, QTableWidgetItem(order))
+                    table.setItem(i, 3, QTableWidgetItem(mat))
+                    table.setItem(i, 4, QTableWidgetItem(str(c.get('material_name', '') or '')))
+                    table.setItem(i, 5, QTableWidgetItem(str(c.get('field', ''))))
+                    table.setItem(i, 6, QTableWidgetItem('' if old_v is None else str(old_v)))
+                    table.setItem(i, 7, QTableWidgetItem('' if new_v is None else str(new_v)))
+                    if prog and (i + 1) % 200 == 0:
+                        prog.setValue(i + 1)
+                        QApplication.processEvents()
+                if prog:
+                    prog.setValue(len(show_list))
+                # 列宽：手动设定固定/拉伸，避免 ResizeToContents 在大量行时逐行测量导致卡顿
+                header = table.horizontalHeader()
+                fixed_widths = {0: 100, 1: 90, 2: 100, 3: 110, 4: 200, 5: 90}
+                for col, w in fixed_widths.items():
+                    header.setSectionResizeMode(col, QHeaderView.Fixed)
+                    table.setColumnWidth(col, w)
+                name_col = 4
+                name_max_w = 200
+                header.setSectionResizeMode(6, QHeaderView.Stretch)  # 旧值
+                header.setSectionResizeMode(7, QHeaderView.Stretch)  # 新值
+                # 仅在小数据量时做逐行字号缩放（大数据量跳过，避免逐行 QFontMetrics 卡顿）
+                n = len(show_list)
+                if n <= 2000:
+                    base_font = table.font()
+                    fm = QFontMetrics(base_font)
+                    pad = 12
+                    avail = name_max_w - pad
+                    max_text_w = 0
                     for r in range(n):
                         it = table.item(r, name_col)
                         if it:
-                            it.setFont(shrink_font)
-            table.setSortingEnabled(True)
+                            max_text_w = max(max_text_w, fm.horizontalAdvance(it.text()))
+                    if max_text_w > avail:
+                        ps = base_font.pointSizeF() or 9.0
+                        new_size = max(7.0, ps * avail / max_text_w)
+                        shrink_font = QFont(base_font)
+                        shrink_font.setPointSizeF(new_size)
+                        for r in range(n):
+                            it = table.item(r, name_col)
+                            if it:
+                                it.setFont(shrink_font)
+                table.setSortingEnabled(True)
 
-        _populate(remaining[:MAX_DISPLAY], with_progress=True)
+            _populate(remaining[:MAX_DISPLAY], with_progress=True)
 
-        # 右键：复制单元格 / 复制整行
-        _ctx_index = [None]  # 记录右键所在的单元格，避免整行选中导致取错列
+            # 右键：复制单元格 / 复制整行
+            _ctx_index = [None]  # 记录右键所在的单元格，避免整行选中导致取错列
 
-        def _copy_cell():
-            idx = _ctx_index[0]
-            if idx is None or not idx.isValid():
-                idxs = table.selectedIndexes()
-                idx = idxs[0] if idxs else None
-            if idx is not None and idx.isValid():
-                QApplication.clipboard().setText(str(idx.data() or ''))
-                toast("已复制单元格", parent=dlg)
+            def _copy_cell():
+                idx = _ctx_index[0]
+                if idx is None or not idx.isValid():
+                    idxs = table.selectedIndexes()
+                    idx = idxs[0] if idxs else None
+                if idx is not None and idx.isValid():
+                    QApplication.clipboard().setText(str(idx.data() or ''))
+                    toast("已复制单元格", parent=dlg)
 
-        def _copy_row():
-            r = table.currentRow()
-            if r < 0:
-                return
-            vals = []
-            for cc in range(table.columnCount()):
-                it = table.item(r, cc)
-                vals.append(it.text() if it else '')
-            QApplication.clipboard().setText('\t'.join(vals))
-            toast("已复制整行", parent=dlg)
+            def _copy_row():
+                r = table.currentRow()
+                if r < 0:
+                    return
+                vals = []
+                for cc in range(table.columnCount()):
+                    it = table.item(r, cc)
+                    vals.append(it.text() if it else '')
+                QApplication.clipboard().setText('\t'.join(vals))
+                toast("已复制整行", parent=dlg)
 
-        def _on_context(pos):
-            _ctx_index[0] = table.indexAt(pos)
-            menu = QMenu()
-            a_cell = menu.addAction("复制单元格")
-            a_row = menu.addAction("复制整行")
-            menu.addSeparator()
-            a_mark_read = menu.addAction("标记为已读（选中行）")
-            act = menu.exec_(table.viewport().mapToGlobal(pos))
-            if act == a_cell:
-                _copy_cell()
-            elif act == a_row:
-                _copy_row()
-            elif act == a_mark_read:
-                _mark_selected_read()
+            def _on_context(pos):
+                _ctx_index[0] = table.indexAt(pos)
+                menu = QMenu()
+                a_cell = menu.addAction("复制单元格")
+                a_row = menu.addAction("复制整行")
+                menu.addSeparator()
+                a_mark_read = menu.addAction("标记为已读（选中行）")
+                act = menu.exec_(table.viewport().mapToGlobal(pos))
+                if act == a_cell:
+                    _copy_cell()
+                elif act == a_row:
+                    _copy_row()
+                elif act == a_mark_read:
+                    _mark_selected_read()
 
-        table.setContextMenuPolicy(Qt.CustomContextMenu)
-        table.customContextMenuRequested.connect(_on_context)
+            table.setContextMenuPolicy(Qt.CustomContextMenu)
+            table.customContextMenuRequested.connect(_on_context)
 
-        # 过滤（字段筛选 + 关键字搜索）
-        def _apply_filter():
-            kw = search_edit.text().strip().lower()
-            fsel = field_combo.currentText()
-            for r in range(table.rowCount()):
-                show = True
-                if fsel != "全部字段" and table.item(r, 5).text() != fsel:
-                    show = False
-                if show and kw:
-                    hay = ' '.join(table.item(r, cc).text().lower() for cc in (0, 1, 2, 3, 4))
-                    if kw not in hay:
+            # 过滤（字段筛选 + 关键字搜索）
+            def _apply_filter():
+                kw = search_edit.text().strip().lower()
+                fsel = field_combo.currentText()
+                for r in range(table.rowCount()):
+                    show = True
+                    if fsel != "全部字段" and table.item(r, 5).text() != fsel:
                         show = False
-                table.setRowHidden(r, not show)
+                    if show and kw:
+                        hay = ' '.join(table.item(r, cc).text().lower() for cc in (0, 1, 2, 3, 4))
+                        if kw not in hay:
+                            show = False
+                    table.setRowHidden(r, not show)
 
-        search_edit.textChanged.connect(_apply_filter)
-        field_combo.currentTextChanged.connect(_apply_filter)
+            search_edit.textChanged.connect(_apply_filter)
+            field_combo.currentTextChanged.connect(_apply_filter)
 
-        # 双击定位到主表对应行（按当前行单元格重建 data_id，排序后仍正确）
-        def _on_double(idx):
-            r = idx.row()
-            if r < 0:
-                return
-            d = table.item(r, 0).text()
-            o = table.item(r, 2).text()
-            m = table.item(r, 3).text()
-            did = '|'.join([d, o, m])
-            if self._locate_row_in_main_table(did):
-                dlg.accept()
-
-        table.doubleClicked.connect(_on_double)
-
-        btn_box = QDialogButtonBox(dlg)
-        export_btn = QPushButton("导出Excel并打开")
-        mark_sel_btn = QPushButton("选中标记为已读")
-        mark_read_btn = QPushButton("全部标记为已读（不再提醒）")
-        ok_btn = QPushButton("确定")
-        btn_box.addButton(export_btn, QDialogButtonBox.ActionRole)
-        btn_box.addButton(mark_sel_btn, QDialogButtonBox.ActionRole)
-        btn_box.addButton(mark_read_btn, QDialogButtonBox.ActionRole)
-        btn_box.addButton(ok_btn, QDialogButtonBox.AcceptRole)
-        layout.addWidget(btn_box)
-
-        def _export():
-            try:
-                tmp_dir = os.path.join(os.path.expanduser("~"), "AppData", "Local", "Temp", "zpp011_audit_changes")
-                os.makedirs(tmp_dir, exist_ok=True)
-                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                path = os.path.join(tmp_dir, f"audit_changes_{ts}.xlsx")
-                rows = []
-                for c in changes:
-                    did = str(c.get('data_id', ''))
-                    parts = did.split('|')
-                    rows.append({
-                        '日期': parts[0] if len(parts) > 0 else '',
-                        '车间': c.get('workshop', '') or '',
-                        '流程订单': parts[1] if len(parts) > 1 else '',
-                        '物料编码': parts[2] if len(parts) > 2 else '',
-                        '物料名称': c.get('material_name', '') or '',
-                        '变更字段': c.get('field', ''),
-                        '旧值': '' if c.get('old_value') is None else c.get('old_value'),
-                        '新值': '' if c.get('new_value') is None else c.get('new_value'),
-                    })
-                pd.DataFrame(rows).to_excel(path, index=False)
-                if os.name == "nt" and os.path.exists(path):
-                    _open_file(path)
-                else:
-                    opener = 'open' if sys.platform == 'darwin' else 'xdg-open'
-                    subprocess.Popen([opener, path])
-                toast(f"已导出并打开：{path}", parent=dlg)
-            except Exception as e:
-                QMessageBox.warning(dlg, "导出失败", f"导出失败：{e}")
-
-        def _get_df_for_mark():
-            """构造用于标记已读的主表快照 df（优先 source_model，其次 view_model.df，最后最小 data_id df）。"""
-            df = None
-            if self.source_model:
-                df = self.source_model.getDataFrame()
-            if df is None or (hasattr(df, 'empty') and df.empty):
-                df = getattr(self.view_model, 'df', None)
-                if df is not None and not (hasattr(df, 'empty') and df.empty):
-                    self.log("source_model 为空，使用 view_model.df 作为已读快照", "warning")
-            if df is None or (hasattr(df, 'empty') and df.empty):
-                data_ids = list(dict.fromkeys([str(c.get('data_id', '')) for c in remaining if c.get('data_id')]))
-                if not data_ids:
-                    return None
-                df = pd.DataFrame({'data_id': data_ids})
-                self.log("主表数据为空，以最小 data_id 列标记变动已读（不保存当前值快照）", "warning")
-            return df
-
-        def _sync_main_read_status(dids):
-            """把一组 data_id 对应的主表行 _read 设为 1 并触发界面刷新。"""
-            if not dids or not self.source_model:
-                return
-            df = self.source_model.getDataFrame()
-            if df is None or (hasattr(df, 'empty') and df.empty):
-                return
-            if 'data_id' not in df.columns or '_read' not in df.columns:
-                return
-            mask = df['data_id'].astype(str).isin(dids)
-            if mask.any():
-                df.loc[mask, '_read'] = 1
-                df.loc[mask, '_read_source'] = 'manual'
-                self.source_model.setDataFrame(df)
-
-        def _mark_selected_read():
-            """把当前选中的行（点击高亮即选中，Ctrl/Shift 可多选）标记为已读，并从列表移除。"""
-            sel = table.selectedIndexes()
-            if not sel:
-                QMessageBox.information(dlg, "提示", "请先选中要标记的行（点击行即高亮选中，Ctrl/Shift 可多选）。")
-                return
-            rows = sorted({idx.row() for idx in sel})
-            idxs = []
-            for r in rows:
-                ud = table.item(r, 0).data(Qt.UserRole)
-                if isinstance(ud, int) and 0 <= ud < len(remaining):
-                    idxs.append(ud)
-            if not idxs:
-                return
-            idxs = sorted(set(idxs))
-            sub_changes = [remaining[i] for i in idxs]
-            df = _get_df_for_mark()
-            if df is None:
-                QMessageBox.warning(dlg, "提示", "主表数据为空且无有效 data_id，无法标记已读。")
-                return
-            n, marked_dids = self.data_service.mark_changes_as_read(sub_changes, df)
-            if n > 0:
-                _sync_main_read_status(marked_dids)
-                self._on_manual_marked(n)  # 变动提醒弹窗手动标已读 → 累加到状态栏计数
-                # 从 remaining 移除已标记行（按 data_id+变更字段 去重，避免误删未选中的同名行）
-                marked_keys = {(str(c.get('data_id', '')), str(c.get('field', ''))) for c in sub_changes}
-                new_remaining = [c for c in remaining if (str(c.get('data_id', '')), str(c.get('field', ''))) not in marked_keys]
-                remaining[:] = new_remaining
-                dlg.setWindowTitle(f"变动提醒（{len(remaining)} 条）")
-                _populate(remaining[:MAX_DISPLAY])
-                _apply_filter()
-                toast(f"已把 {n} 条标记为已读（剩余 {len(remaining)} 条）", parent=dlg)
-                if not remaining:
-                    toast("已全部标记为已读", parent=dlg)
+            # 双击定位到主表对应行（按当前行单元格重建 data_id，排序后仍正确）
+            def _on_double(idx):
+                r = idx.row()
+                if r < 0:
+                    return
+                d = table.item(r, 0).text()
+                o = table.item(r, 2).text()
+                m = table.item(r, 3).text()
+                did = '|'.join([d, o, m])
+                if self._locate_row_in_main_table(did):
                     dlg.accept()
-            else:
-                QMessageBox.warning(dlg, "标记失败", "未能标记所选行为已读，请检查数据。")
 
-        def _mark_all_read():
-            try:
+            table.doubleClicked.connect(_on_double)
+
+            btn_box = QDialogButtonBox(dlg)
+            export_btn = QPushButton("导出Excel并打开")
+            mark_sel_btn = QPushButton("选中标记为已读")
+            mark_read_btn = QPushButton("全部标记为已读（不再提醒）")
+            ok_btn = QPushButton("确定")
+            btn_box.addButton(export_btn, QDialogButtonBox.ActionRole)
+            btn_box.addButton(mark_sel_btn, QDialogButtonBox.ActionRole)
+            btn_box.addButton(mark_read_btn, QDialogButtonBox.ActionRole)
+            btn_box.addButton(ok_btn, QDialogButtonBox.AcceptRole)
+            layout.addWidget(btn_box)
+
+            def _export():
+                try:
+                    tmp_dir = os.path.join(os.path.expanduser("~"), "AppData", "Local", "Temp", "zpp011_audit_changes")
+                    os.makedirs(tmp_dir, exist_ok=True)
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    path = os.path.join(tmp_dir, f"audit_changes_{ts}.xlsx")
+                    rows = []
+                    for c in changes:
+                        did = str(c.get('data_id', ''))
+                        parts = did.split('|')
+                        rows.append({
+                            '日期': parts[0] if len(parts) > 0 else '',
+                            '车间': c.get('workshop', '') or '',
+                            '流程订单': parts[1] if len(parts) > 1 else '',
+                            '物料编码': parts[2] if len(parts) > 2 else '',
+                            '物料名称': c.get('material_name', '') or '',
+                            '变更字段': c.get('field', ''),
+                            '旧值': '' if c.get('old_value') is None else c.get('old_value'),
+                            '新值': '' if c.get('new_value') is None else c.get('new_value'),
+                        })
+                    pd.DataFrame(rows).to_excel(path, index=False)
+                    if os.name == "nt" and os.path.exists(path):
+                        _open_file(path)
+                    else:
+                        opener = 'open' if sys.platform == 'darwin' else 'xdg-open'
+                        subprocess.Popen([opener, path])
+                    toast(f"已导出并打开：{path}", parent=dlg)
+                except Exception as e:
+                    QMessageBox.warning(dlg, "导出失败", f"导出失败：{e}")
+
+            def _get_df_for_mark():
+                """构造用于标记已读的主表快照 df（优先 source_model，其次 view_model.df，最后最小 data_id df）。"""
+                df = None
+                if self.source_model:
+                    df = self.source_model.getDataFrame()
+                if df is None or (hasattr(df, 'empty') and df.empty):
+                    df = getattr(self.view_model, 'df', None)
+                    if df is not None and not (hasattr(df, 'empty') and df.empty):
+                        self.log("source_model 为空，使用 view_model.df 作为已读快照", "warning")
+                if df is None or (hasattr(df, 'empty') and df.empty):
+                    data_ids = list(dict.fromkeys([str(c.get('data_id', '')) for c in remaining if c.get('data_id')]))
+                    if not data_ids:
+                        return None
+                    df = pd.DataFrame({'data_id': data_ids})
+                    self.log("主表数据为空，以最小 data_id 列标记变动已读（不保存当前值快照）", "warning")
+                return df
+
+            def _sync_main_read_status(dids):
+                """把一组 data_id 对应的主表行 _read 设为 1 并触发界面刷新。"""
+                if not dids or not self.source_model:
+                    return
+                df = self.source_model.getDataFrame()
+                if df is None or (hasattr(df, 'empty') and df.empty):
+                    return
+                if 'data_id' not in df.columns or '_read' not in df.columns:
+                    return
+                mask = df['data_id'].astype(str).isin(dids)
+                if mask.any():
+                    df.loc[mask, '_read'] = 1
+                    df.loc[mask, '_read_source'] = 'manual'
+                    self.source_model.setDataFrame(df)
+
+            def _mark_selected_read():
+                """把当前选中的行（点击高亮即选中，Ctrl/Shift 可多选）标记为已读，并从列表移除。"""
+                sel = table.selectedIndexes()
+                if not sel:
+                    QMessageBox.information(dlg, "提示", "请先选中要标记的行（点击行即高亮选中，Ctrl/Shift 可多选）。")
+                    return
+                rows = sorted({idx.row() for idx in sel})
+                idxs = []
+                for r in rows:
+                    ud = table.item(r, 0).data(Qt.UserRole)
+                    if isinstance(ud, int) and 0 <= ud < len(remaining):
+                        idxs.append(ud)
+                if not idxs:
+                    return
+                idxs = sorted(set(idxs))
+                sub_changes = [remaining[i] for i in idxs]
                 df = _get_df_for_mark()
                 if df is None:
                     QMessageBox.warning(dlg, "提示", "主表数据为空且无有效 data_id，无法标记已读。")
                     return
-                marked_dids = {str(c.get('data_id', '')) for c in remaining if c.get('data_id')}
-                n, _ = self.data_service.mark_changes_as_read(remaining, df)
+                n, marked_dids = self.data_service.mark_changes_as_read(sub_changes, df)
                 if n > 0:
                     _sync_main_read_status(marked_dids)
-                    self._on_manual_marked(n)  # 「全部标记为已读」→ 累加到状态栏计数
-                    toast(f"已把 {n} 条记录标记为已读，下次不再提醒", parent=dlg)
-                remaining[:] = []
-                dlg.setWindowTitle("变动提醒（0 条）")
-                _populate([])
-                dlg.accept()
-            except Exception as e:
-                QMessageBox.warning(dlg, "标记失败", f"标记已读失败：{e}")
+                    self._on_manual_marked(n)  # 变动提醒弹窗手动标已读 → 累加到状态栏计数
+                    # 从 remaining 移除已标记行（按 data_id+变更字段 去重，避免误删未选中的同名行）
+                    marked_keys = {(str(c.get('data_id', '')), str(c.get('field', ''))) for c in sub_changes}
+                    new_remaining = [c for c in remaining if (str(c.get('data_id', '')), str(c.get('field', ''))) not in marked_keys]
+                    remaining[:] = new_remaining
+                    dlg.setWindowTitle(f"变动提醒（{len(remaining)} 条）")
+                    _populate(remaining[:MAX_DISPLAY])
+                    _apply_filter()
+                    toast(f"已把 {n} 条标记为已读（剩余 {len(remaining)} 条）", parent=dlg)
+                    if not remaining:
+                        toast("已全部标记为已读", parent=dlg)
+                        dlg.accept()
+                else:
+                    QMessageBox.warning(dlg, "标记失败", "未能标记所选行为已读，请检查数据。")
 
-        export_btn.clicked.connect(_export)
-        mark_sel_btn.clicked.connect(_mark_selected_read)
-        mark_read_btn.clicked.connect(_mark_all_read)
-        ok_btn.clicked.connect(dlg.accept)
-        dlg.exec()
-        self._audit_changes_dialog_open = False
+            def _mark_all_read():
+                try:
+                    df = _get_df_for_mark()
+                    if df is None:
+                        QMessageBox.warning(dlg, "提示", "主表数据为空且无有效 data_id，无法标记已读。")
+                        return
+                    marked_dids = {str(c.get('data_id', '')) for c in remaining if c.get('data_id')}
+                    n, _ = self.data_service.mark_changes_as_read(remaining, df)
+                    if n > 0:
+                        _sync_main_read_status(marked_dids)
+                        self._on_manual_marked(n)  # 「全部标记为已读」→ 累加到状态栏计数
+                        toast(f"已把 {n} 条记录标记为已读，下次不再提醒", parent=dlg)
+                    remaining[:] = []
+                    dlg.setWindowTitle("变动提醒（0 条）")
+                    _populate([])
+                    dlg.accept()
+                except Exception as e:
+                    QMessageBox.warning(dlg, "标记失败", f"标记已读失败：{e}")
+
+            export_btn.clicked.connect(_export)
+            mark_sel_btn.clicked.connect(_mark_selected_read)
+            mark_read_btn.clicked.connect(_mark_all_read)
+            ok_btn.clicked.connect(dlg.accept)
+            dlg.exec()
+        finally:
+            self._audit_changes_dialog_open = False
 
 
     def _select_source_row(self, src_row):

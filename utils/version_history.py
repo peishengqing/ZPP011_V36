@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.152",
+        "date": "2026-10-04",
+        "features": "未读概览弹窗「查看」按钮按条数智能置灰：有 0 条未读的类别按钮显示为灰色不可点，鼠标悬停提示「暂无未读记录」；有未读的保持原样。另新增统一的「打开失败」错误提示，异常不再静默。",
+        "fixes": "修复未读概览弹窗四行「查看」全部点了没反应（用户截图：隔离区 2 条、变动提醒 0 条、替代料 0 条、偏差率预警 9 条）。**根因是两层静默叠加**——① main_window._show_audit_changes_dialog 的防重入标志 `_audit_changes_dialog_open` 只在 `dlg.exec()` 正常返回后重置（第 984 行），**没有 try/finally**；建 UI 或 exec 中途抛一次异常（列名不符等）后该标志永久卡在 True，此后所有点击都在第 651 行 `if getattr(...): return` 静默返回，永久失灵。② unread_summary_popup._open_board 的 `except Exception: pass` 把真实异常彻底吞掉，用户与开发者零线索。已实测排除 Qt 时序因素（复刻「Qt.Tool+StaysOnTop 弹窗 hide() 后调模态 exec()」，看板 showEvent 正常触发、exec 正常返回 1），确认不是「hide 后模态弹不出来」。修复：(a) _open_board 的静默 except 改为弹 QMessageBox 错误提示（显示异常原文）并写运行日志，不再吞；(b) _show_audit_changes_dialog 标志位改 try/finally 保证必重置；(c) 弹窗按 count 为 0 处置灰「查看」按钮（setEnabled(False) + tooltip「暂无未读记录」），从源头消除「点了才知道是 0 条」。验证：_dbg_v152.py 系列 4 个排查脚本（按钮链路 QTest 实测四个 callback 均正常调到、真实数据复刻四类计数 n_q=2/n_c=0/n_d=5754、Qt 模态时序复刻）+ _dbg_v153.py 修复验证；py_compile 双绿；pyflakes 既存告警零新增；回归 22 passed + 2 xfailed 与基线一致。"
+    },
+    {
         "version": "v43.151",
         "date": "2026-10-04",
         "features": "概览面板「隔离区」卡片点击行为改为打开隔离区窗口（与顶部「⚠️ 隔离区」菜单一致），卡片 tooltip 同步更新。",
