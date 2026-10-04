@@ -3284,6 +3284,13 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         keys = {"_process_order": order_text}
+        # v43.153：记下「本次联动前」的条件，作为 0 行回退的基底。
+        # 不能用 _link_snapshot（那是首次联动前的快照，可能已含上一轮联动条件），
+        # 也不能用当前条件（已含刚失败的 _material_code）——都会让回退失效。
+        try:
+            pre_base = dict(self.proxy_model.getCustomFilters())
+        except Exception:
+            pre_base = {}
         try:
             factory_val = record.get("工厂")
             if factory_val is not None and str(factory_val).strip():
@@ -3293,9 +3300,13 @@ class MainWindow(QMainWindow):
 
         # v43.150：v43.149 及之前只按订单过滤 → 一个订单几十行时联动视图无法定位到具体物料
         # （原辅料订单本机实测最多 39 行）。这里叠加物料条件，把钻取收敛到「该订单的该物料」。
+        # _link_material_condition 返回的是「待合并的 dict」而不是 (key, value) 序列。
+        # v43.153 修复：原写法 mat_key[0] / mat_key[1] 是在按整数下标取 dict 的键，
+        # 必然抛 KeyError: 1，异常又被 locate.py 静默吞掉 → 表现为
+        # 「会跳转到主表、但不筛选、也没有联动横幅」。正确写法是 update 整个 dict。
         mat_key, mat_label = self._link_material_condition(record)
         if mat_key:
-            keys[mat_key[0]] = mat_key[1]
+            keys.update(mat_key)
         label = "订单 %s · %s" % (order_text, source_label)
         if mat_label:
             label += " · " + mat_label
@@ -3311,7 +3322,9 @@ class MainWindow(QMainWindow):
             label_fb = "订单 %s · %s" % (order_text, source_label)
             if mat_label:
                 label_fb += " · " + mat_label
-            self._apply_focus_filters(fallback, label_fb)
+            # base=pre_base：以本次联动前的条件为基底重建，
+            # 否则刚失败的 _material_code 仍留在条件里，回退后依旧 0 行。
+            self._apply_focus_filters(fallback, label_fb, replace=True, base=pre_base)
 
     @staticmethod
     def _link_material_condition(record):
@@ -3366,19 +3379,27 @@ class MainWindow(QMainWindow):
         self._link_snapshot = None
         self.main_table.clear_link_banner()
 
-    def _apply_focus_filters(self, filter_keys, label):
+    def _apply_focus_filters(self, filter_keys, label, replace=False, base=None):
         """通用焦点钻取：在现有筛选上叠加 filter_keys 并显示联动横幅（可撤销）。
 
         filter_keys 与 AuditProxyModel._custom_filters 同构：
           普通列名（车间/工厂…）→ 精确匹配；"_material_names"/"_process_order" 等
           特殊键 → proxy 内置语义。缺列键由 proxy 自动跳过，不会报错。
+
+        replace=True 时不再叠加当前条件，而是以 base（缺省取联动前快照）为基底重建。
+        v43.153 必需：0 行兜底回退时若仍走叠加语义，刚失败的 _material_code 会
+        留在条件里 → 回退后依旧 0 行（死循环空表）。
         """
         if self.proxy_model is None:
             return
-        base = self.proxy_model.getCustomFilters()
-        if self._link_snapshot is None:
-            self._link_snapshot = base
-        merged = dict(base)
+        if replace:
+            if base is None:
+                base = self._link_snapshot if self._link_snapshot is not None else {}
+        else:
+            base = self.proxy_model.getCustomFilters()
+            if self._link_snapshot is None:
+                self._link_snapshot = base
+        merged = dict(base or {})
         merged.update(filter_keys)
         self.proxy_model.setCustomFilters(merged)
         self._update_summary()

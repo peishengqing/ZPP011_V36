@@ -60,11 +60,22 @@ def locate_row(main_window, record, parent=None, link_source=""):
         ok = True
 
     if ok and link_source:
-        # 联动钻取失败不影响定位本身
+        # v43.153：联动钻取失败不影响「选中行」本身，但绝不能再静默——
+        # 旧版 except Exception: pass 把 _apply_link_drilldown 里的 KeyError 完全吞掉，
+        # 用户看到的现象是「会跳转到主表、但主表不筛选、也没有联动横幅」，
+        # 现场零线索，排查只能靠猜。现在打日志 + 弹可见提示。
         try:
             main_window._apply_link_drilldown(record, link_source)
         except Exception:
-            pass
+            import traceback
+            traceback.print_exc()
+            try:
+                main_window.log(
+                    "[联动钻取] 失败: %s" % traceback.format_exc(limit=3), "warning")
+            except Exception:
+                pass
+            toast("已定位到该行，但联动筛选未生效（详情见日志）",
+                  level="warning", parent=parent)
     elif not ok:
         toast("未在主表中找到该记录（可能已被筛选或隔离）", level="warning", parent=parent)
 

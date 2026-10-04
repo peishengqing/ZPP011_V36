@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.153",
+        "date": "2026-10-04",
+        "features": "联动筛选失败时不再静默：定位成功但联动钻取内部报错时，控制台打印完整 traceback、写入应用 warning 日志，并弹出「已定位到该行，但联动筛选未生效（详情见日志）」提示，用户不再面对「点了跟没点一样」却零线索的局面。",
+        "fixes": "彻底修复 v43.150 引入的联动回归（用户实测症状：会跳转到主表、但主表不筛选只显示全部、连联动横幅都不再出现——即「联动功能整体失灵」）。**真根因是 v43.150 的一处类型错误**：_link_material_condition() 返回的是「待合并的 dict」（如 {\"_material_code\": \"10000583\"}），而 _apply_link_drilldown 却写成 `keys[mat_key[0]] = mat_key[1]`，把 dict 当 (key, value) 序列用 → 必然抛 `KeyError: 1`；该异常又被 locate.py 的 `except Exception: pass` 完整吞掉，于是「行定位」那步照常成功（所以看得到跳转），「叠加物料筛选」那步中途崩掉（所以主表保持全量），横幅也没机会显示（所以提示也没了）——三层现象一个根因。**v43.152 修的是另一个真实但无关的问题（未读概览弹窗），不是本次症状的根因**；教训是用户说「不定位/没反应」时必须逐层区分「弹窗能否打开 / 行能否选中 / 筛选是否生效 / 横幅是否显示」四件事，不能靠「定位」二字猜。修复三处：(a) `keys[mat_key[0]] = mat_key[1]` 改为 `keys.update(mat_key)`；(b) locate.py 的静默 except 改为 traceback + main_window.log(warning) + 用户可见 toast，杜绝今后再出现「联动代码崩了却零线索」；(c) 顺带修掉被端到端测试挖出的第二个真 bug——0 行兜底回退**用的是叠加语义**，刚失败的 _material_code 仍留在条件里，导致回退后依旧 0 行（空表死循环）：为 _apply_focus_filters 增加 replace/base 参数，回退时以「本次联动前的条件」为基底重建。验证：新建 _dbg_v154.py 端到端脚本（不再像 v43.150 那样只测 helper，而是把 MainWindow 真实方法绑到 stub 上、用真实 AuditProxyModel + 真实 dev.pkl 17647 行数据从 _apply_link_drilldown 入口实跑），23 PASS / 0 FAIL：单行订单 300460190 收敛 1 行、39 行订单 300463299 叠加物料编码 10000583 收敛 1 行（回归场景）、错误编码 99999999 自动回退 39 行且条件里 _material_code 已移除、工厂前置条件 1车间 下快照恢复正常、横幅文案「订单 300463299 · 偏差率预警 · 10000583 SPP010」正确；反证用例确认旧写法在真实 record 上必抛 `KeyError: 1`；locate 层验证行定位仍返回 True 且异常有 toast + warning 日志。py_compile 双绿；pyflakes 既存 24 条告警零新增、locate.py 零告警；main_window 行数 5263→5280、def 数 226 未变；回归 22 passed + 2 xfailed 与基线一致。"
+    },
+    {
         "version": "v43.152",
         "date": "2026-10-04",
         "features": "未读概览弹窗「查看」按钮按条数智能置灰：有 0 条未读的类别按钮显示为灰色不可点，鼠标悬停提示「暂无未读记录」；有未读的保持原样。另新增统一的「打开失败」错误提示，异常不再静默。",
