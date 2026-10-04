@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QMenu, QGroupBox, QProgressDialog, QInputDialog,
     QScrollArea, QCheckBox, QToolButton,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer, QItemSelection, QItemSelectionModel
+from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer, QItemSelection, QItemSelectionModel, QModelIndex
 from PySide6.QtGui import QFont, QFontMetrics, QShortcut, QKeySequence, QAction
 
 # 导入组件
@@ -3261,7 +3261,7 @@ class MainWindow(QMainWindow):
     # 看板 → 主表 联动钻取（可撤销）
     # ------------------------------------------------------------------ #
     def _apply_link_drilldown(self, record, source_label):
-        """看板行定位后：主表叠加「流程订单精确 + 工厂上下文」筛选钻取到该订单，"""
+        """看板行定位后：主表叠加「流程订单 + 物料 + 工厂上下文」筛选钻取到该条，"""
         """并显示联动横幅；清除按钮恢复联动前快照。联动失败不影响定位本身。"""
         if self.proxy_model is None or record is None:
             return
@@ -3288,7 +3288,73 @@ class MainWindow(QMainWindow):
                 keys["工厂"] = str(factory_val).strip()
         except Exception:
             pass
-        self._apply_focus_filters(keys, "订单 %s · %s" % (order_text, source_label))
+
+        # v43.150：v43.149 及之前只按订单过滤 → 一个订单几十行时联动视图无法定位到具体物料
+        # （原辅料订单本机实测最多 39 行）。这里叠加物料条件，把钻取收敛到「该订单的该物料」。
+        mat_key, mat_label = self._link_material_condition(record)
+        if mat_key:
+            keys[mat_key[0]] = mat_key[1]
+        label = "订单 %s · %s" % (order_text, source_label)
+        if mat_label:
+            label += " · " + mat_label
+        self._apply_focus_filters(keys, label)
+
+        # v43.150：叠加物料条件后若一行都没命中（编码异常 / 列缺失 / 名称有前后差异），
+        # 自动回退到纯订单过滤，绝不给用户一张空表。
+        if mat_key and not self._link_hit_any_row():
+            self.log("[联动钻取] 叠加物料条件命中 0 行，回退为纯订单过滤", "warning")
+            fallback = {"_process_order": order_text}
+            if "工厂" in keys:
+                fallback["工厂"] = keys["工厂"]
+            label_fb = "订单 %s · %s" % (order_text, source_label)
+            if mat_label:
+                label_fb += " · " + mat_label
+            self._apply_focus_filters(fallback, label_fb)
+
+    @staticmethod
+    def _link_material_condition(record):
+        """从看板行记录里取出用于精确定位的物料条件。
+
+        返回 (keys_dict_for_merge, 显示用标签)；无可用物料条件时返回 (None, "")。
+        物料编码是 8 位等长，proxy 的子串匹配等价于精确匹配，故优先用编码；
+        编码缺失时才退到物料名称（子串，宽松些但仍远窄于整个订单）。
+        """
+        def _txt(key):
+            try:
+                v = record.get(key)
+            except Exception:
+                return ""
+            if v is None:
+                return ""
+            s = str(v).strip()
+            if not s or s.lower() in ("nan", "none", "nat"):
+                return ""
+            return s
+
+        code = _txt("物料编码")
+        if code:
+            name = _txt("物料名称")
+            label = code + ((" " + name) if name else "")
+            return {"_material_code": code}, label
+        name = _txt("物料名称")
+        if name:
+            return {"_material_names": name}, name
+        return None, ""
+
+    def _link_hit_any_row(self):
+        """当前联动筛选下主表是否还有可见行（用于物料条件兜底回退）。"""
+        if self.proxy_model is None:
+            return True
+        try:
+            sm = self.proxy_model.sourceModel()
+            if sm is None:
+                return True
+            for row in range(sm.rowCount()):
+                if self.proxy_model.filterAcceptsRow(row, QModelIndex()):
+                    return True
+            return False
+        except Exception:
+            return True
 
     def _clear_link_drilldown(self):
         """清除联动：恢复钻取前的筛选快照，隐藏横幅。"""
