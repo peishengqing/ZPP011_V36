@@ -529,27 +529,31 @@ class SemiDashboardDialog(QDialog):
     def _semi_class_mask(self, df):
         """半成品分类掩码：空集合=全True；否则按分类取值多选 OR。
 
-        虚拟项「食品/饮料成品半成品」=（列值==该项 或 列值为空）且工厂含「食品」/「饮料」；
-        无半成品重分类列时退化为 400/410 前缀判定（_semi_class_values 负责）。"""
+        v43.145 修复（用户实测「只有点全部才出数据」）：
+        原写法对虚拟项 `((vals == m) | blank) & fac.str.contains("食品")`——
+        把「列值精确匹配」也 AND 上「工厂」列含食品/饮料。但本看板取数列白名单
+        （main_window._show_semi_dashboard 的 candidates）里没有「工厂」列，
+        fac 恒为空串 → str.contains 恒 False → 虚拟项掩码恒 0 → 默认勾选 0 条。
+
+        现改为：列值精确匹配**恒生效**；空值行的「工厂名兜底」只在 df 确实含
+        「工厂」列时才叠加，缺列则退化为纯精确匹配。
+        无半成品重分类列时 _semi_class_values 走 400/410 前缀映射，结果同样是分类名。
+        """
         if not self._semi_class_filter:
             return pd.Series(True, index=df.index)
         vals = self._semi_class_values(df)
-        if self._semi_class_col is None:
-            # 兜底路径：取值已由前缀映射为分类名/空串，直接精确匹配
-            mask = pd.Series(False, index=df.index)
-            for m in self._semi_class_filter:
-                mask = mask | (vals == m)
-            return mask
-        fac = df["工厂"].astype(str) if "工厂" in df.columns else pd.Series("", index=df.index)
-        blank = vals == ""
         mask = pd.Series(False, index=df.index)
+        has_fac = "工厂" in df.columns
+        if has_fac:
+            fac = df["工厂"].astype(str)
+            blank = vals == ""
         for m in self._semi_class_filter:
-            if m == "食品成品半成品":
-                mask = mask | (((vals == m) | blank) & fac.str.contains("食品", na=False))
-            elif m == "饮料成品半成品":
-                mask = mask | (((vals == m) | blank) & fac.str.contains("饮料", na=False))
-            else:
-                mask = mask | (vals == m)
+            hit = vals == m                      # 精确匹配：任何情况下都生效
+            if m == "食品成品半成品" and has_fac:
+                hit = hit | (blank & fac.str.contains("食品", na=False))
+            elif m == "饮料成品半成品" and has_fac:
+                hit = hit | (blank & fac.str.contains("饮料", na=False))
+            mask = mask | hit
         return mask
 
     def _mtd_mask(self, df):
