@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.147",
+        "date": "2026-10-04",
+        "features": "替代料看板 / 偏差率预警看板 / 主表左侧筛选面板的半成品分类复选框组同步改用固定分类清单（SEMI_CLASS_FOOD / SEMI_CLASS_DRINK），与 v43.146 半成品看板口径一致。替代料看板由 QVBoxLayout 竖排改 QGridLayout 两行（食品一行 / 饮料一行）；主表筛选面板由 7 行竖排（占 138px）改 3 列 3 行网格（占 66px，省出 72px 竖向空间）。",
+        "fixes": "修复替代料看板半成品分类复选框出现重复项（旧控件残影叠加，用户截图可见两条「食品成品半成品」竖排）。根因：4 个看板的 _build_semi_checkboxes / _rebuild_semi_class 都用 `layout.takeAt(0)` + `widget.deleteLater()` 清旧控件——takeAt 只把项从布局摘掉，deleteLater 要等事件循环才真正执行，在此之前旧控件**仍是父容器的子控件、仍占几何位置且 visible=True**，与新建控件叠在同一处。set_data / set_panel_data 每调一次就多一层可见残影（实测 AlertDialog 首次 3 个控件，第二次 set_data 后 findChildren 得 6 个、布局里只有 3 个 → 3 个残影）。修复：takeAt 后先 `w.setParent(None)` 断开父子关系再 deleteLater()，让旧控件立刻脱离父容器、不再参与几何与可见性；同时把「食品成品半成品/饮料成品半成品」从各看板的硬编码虚拟项改为引用模块级 SEMI_CLASS_FOOD/SEMI_CLASS_DRINK 固定清单，消除重复来源（原先 alert_dialog 先生成虚拟两项、再遍历 unique_vals 又生成一次，仅靠 `if v in (...)` 去重，脆弱）。主表筛选面板因侧栏净宽仅 220px（5 列完整标签需 524px 放不下），改 3 列网格 + 3 字短标签（食成品/食综组/配料中/食辅原/饮成品/饮综仓）+ tooltip 显示全名，字典键仍是完整分类名故筛选逻辑不变。验证：4 个看板 set_data 连调 3 次后 findChildren 数 == 布局项数（零残影）、复选框清单无重复、筛选栏短标签零截断（每格 60px ≥ 需求 58px）、默认勾选 1755 条与 6 分类逐项数字与 v43.146 完全一致；py_compile + pyflakes 双绿；回归 22 passed + 2 xfailed 与基线一致。附带说明：看板默认 3284 条而非 3291 条，差额 7 行是默认筛选 `_quar_filter='no'`（非隔离区）所致，本机隔离区正好 7 行，属预期行为非缺陷。"
+    },
+    {
         "version": "v43.146",
         "date": "2026-10-04",
         "features": "半成品看板「半成品分类」复选框组由单行 QHBoxLayout 改为两行 QGridLayout，食品一行 / 饮料一行：row0 = [全部, 食品成品半成品, 食品综合组半成品, 食品配料中心半成品, 食品辅原料]，row1 = [饮料成品半成品, 饮料综合组半成品仓]。分类名改为模块级固定清单 SEMI_CLASS_FOOD / SEMI_CLASS_DRINK / SEMI_CLASS_DEFAULT，每项加 tooltip。",

@@ -25,6 +25,10 @@ from gui_pyside6.utils.locate import locate_row
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
+from gui_pyside6.utils.semi_class import (
+    SEMI_CLASS_FOOD, SEMI_CLASS_DRINK, merge_semi_class_values,
+)
+
 
 
 class DeviationWarningDialog(QDialog):
@@ -546,36 +550,46 @@ class DeviationWarningDialog(QDialog):
         return mask
 
     def _build_semi_checkboxes(self, unique_vals):
-        """构建半成品分类复选框组：全部 + 虚拟两项 + 实际各值（QGridLayout 多列排列）。"""
+        """构建半成品分类复选框组：全部 + 固定分类清单 + 数据里的额外分类（QGridLayout）。
+
+        v43.147：① 残影修复——原 takeAt(0)+deleteLater() 只摘出布局，旧控件在事件循环
+        执行前仍是父容器子控件且 visible，会与新控件叠成重复项；现先 setParent(None)。
+        ② 分类清单改用共用固定清单 merge_semi_class_values()，不再硬编码虚拟两项。
+        """
         # 清空旧控件
         while self._semi_class_grid.count():
             it = self._semi_class_grid.takeAt(0)
             w = it.widget()
             if w:
+                # v43.147：先脱离父容器，避免 deleteLater 延迟期间旧控件仍可见
+                w.setParent(None)
                 w.deleteLater()
         self._semi_class_checkboxes = {}
 
         all_cb = QCheckBox("全部")
         all_cb.setChecked(True)
+        all_cb.setToolTip("不按半成品分类筛选（显示全部）")
         all_cb.stateChanged.connect(self._on_semi_class_changed)
         self._semi_class_grid.addWidget(all_cb, 0, 0)
         self._semi_class_checkboxes["__all__"] = all_cb
 
-        # 虚拟归并项
-        virtual_items = [("食品成品半成品", 0, 1), ("饮料成品半成品", 0, 2)]
-        for v, r, c in virtual_items:
-            cb = QCheckBox(v)
-            cb.stateChanged.connect(self._on_semi_class_changed)
-            self._semi_class_grid.addWidget(cb, r, c)
-            self._semi_class_checkboxes[v] = cb
-
-        # 数据中实际出现的分类值，从第1行开始多列排列
-        row = 1
-        col = 0
-        for v in unique_vals:
-            if v in ("食品成品半成品", "饮料成品半成品"):
+        # v43.147：食品一行 / 饮料一行，额外分类从 row2 起每行 3 列
+        row, col = 0, 1
+        for names in (SEMI_CLASS_FOOD, SEMI_CLASS_DRINK):
+            for v in names:
+                cb = QCheckBox(v)
+                cb.setToolTip("按「%s」筛选" % v)
+                cb.stateChanged.connect(self._on_semi_class_changed)
+                self._semi_class_grid.addWidget(cb, row, col)
+                self._semi_class_checkboxes[v] = cb
+                col += 1
+            row += 1
+            col = 0
+        for v in merge_semi_class_values(unique_vals):
+            if v in self._semi_class_checkboxes:
                 continue
             cb = QCheckBox(v)
+            cb.setToolTip("按「%s」筛选" % v)
             cb.stateChanged.connect(self._on_semi_class_changed)
             self._semi_class_grid.addWidget(cb, row, col)
             self._semi_class_checkboxes[v] = cb

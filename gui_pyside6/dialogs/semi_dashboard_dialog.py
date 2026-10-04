@@ -33,19 +33,13 @@ from gui_pyside6.widgets.filter_panel import _color_icon
 # 投料状态下拉：全部 + 四档
 FEED_STATUS_ALL = "全部"
 FEED_STATUS_ITEMS = ("未投料", "负损", "疑似投错", "正常/超投")
-# 400/410 前缀 → 半成品重分类名（无「半成品重分类」列时的兜底）
-PREFIX_TO_SEMI_CLASS = (("400", "食品成品半成品"), ("410", "饮料成品半成品"))
-
-# v43.146：半成品分类固定清单（裴哥 2026-10-04 指定「食品一行、饮料一行」两行排布）。
-# 固定而非纯动态的原因：这些分类名是业务口径的稳定枚举，写死在代码里才能保证
-# ① 每次打开看板的复选框位置/顺序一致（动态 unique_vals 会随数据源抖动）；
-# ② 主表已被筛选面板收窄时 unique_vals 会缺项（曾只列出 2 项，4 个分类消失）。
-# 数据里出现的其他分类名仍会追加到末尾，不会丢。
-SEMI_CLASS_FOOD = ("食品成品半成品", "食品综合组半成品",
-                   "食品配料中心半成品", "食品辅原料")
-SEMI_CLASS_DRINK = ("饮料成品半成品", "饮料综合组半成品仓")
-# 默认勾选：只勾成品半成品（食品+饮料），仓类/辅原料/配料中心需手动勾
-SEMI_CLASS_DEFAULT = ("食品成品半成品", "饮料成品半成品")
+# v43.147：半成品分类固定清单移到 gui_pyside6/utils/semi_class.py（四个看板共用），
+# 此处仅为向后兼容保留别名。
+#   400/410 前缀兜底、无重分类列时用
+from gui_pyside6.utils.semi_class import (  # noqa: F401
+    SEMI_CLASS_FOOD, SEMI_CLASS_DRINK, SEMI_CLASS_DEFAULT,
+    PREFIX_TO_SEMI_CLASS, merge_semi_class_values,
+)
 
 
 class SemiDashboardDialog(QDialog):
@@ -609,6 +603,9 @@ class SemiDashboardDialog(QDialog):
             it = self._semi_class_layout.takeAt(0)
             w = it.widget()
             if w is not None:
+                # v43.147：必须先 setParent(None) 脱离父容器，否则 deleteLater
+                # 延迟执行期间旧控件仍 visible 且占几何位置 → 出现重复项残影
+                w.setParent(None)
                 w.deleteLater()
         self._semi_class_checkboxes = {}
         all_cb = QCheckBox("全部")
@@ -633,9 +630,8 @@ class SemiDashboardDialog(QDialog):
             row += 1
             col = 0
         # 数据里出现的固定清单之外的分类：补到 row1 末尾，避免漏项
-        fixed = set(SEMI_CLASS_FOOD) | set(SEMI_CLASS_DRINK)
-        for v in unique_vals:
-            if not v or v in fixed or v in self._semi_class_checkboxes:
+        for v in merge_semi_class_values(unique_vals):
+            if v in self._semi_class_checkboxes:
                 continue
             cb = QCheckBox(v)
             cb.setChecked(False)

@@ -5,7 +5,7 @@
 支持展开/收起，节省界面空间
 """
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QFormLayout,
     QComboBox, QPushButton, QLabel, QDateEdit, QLineEdit, QScrollArea,
     QDoubleSpinBox, QDialog, QCalendarWidget,
     QSizePolicy, QMenu, QCheckBox, QListWidget, QListWidgetItem, QInputDialog,
@@ -18,6 +18,9 @@ import os
 import shutil
 
 from gui_pyside6.dialogs.material_presets_dialog import MaterialPresetsDialog, MATERIAL_ALL_SENTINEL
+from gui_pyside6.utils.semi_class import (  # noqa: F401
+    SEMI_CLASS_FOOD, SEMI_CLASS_DRINK, merge_semi_class_values,
+)
 
 
 def _color_icon(rgb):
@@ -142,13 +145,20 @@ class FilterPanel(QWidget):
         self.category_combo = QComboBox()
         self.category_combo.addItem("全部")
         self.category_combo.setMinimumWidth(220)
-        # 半成品重分类筛选：复选框组（全部 + 各原始值 + 虚拟两项「食品/饮料成品半成品」）
+        # 半成品重分类筛选：复选框组（全部 + 固定 6 分类 + 数据额外值）
+        # v43.147：QVBoxLayout 竖排 → QGridLayout 两行（食品一行 / 饮料一行）。
+        # 侧栏净宽仅 220px，5 列中文标签需 524px 放不下，故用 setColumnStretch 让
+        # 标签按可用宽度压缩换行；行数由 7 降到 2，省出约 100px 竖向空间。
         self.grp_semi_class = QGroupBox()
         self.grp_semi_class.setFlat(True)
         self.grp_semi_class.setFixedWidth(220)
-        self._semi_class_vlayout = QVBoxLayout(self.grp_semi_class)
+        self._semi_class_vlayout = QGridLayout(self.grp_semi_class)
         self._semi_class_vlayout.setContentsMargins(4, 2, 4, 2)
         self._semi_class_vlayout.setSpacing(1)
+        self._semi_class_vlayout.setHorizontalSpacing(6)
+        # 侧栏只有 220px，禁用「按内容撑开」否则会撑破侧栏，改为填满可用宽度
+        for _c in range(5):
+            self._semi_class_vlayout.setColumnStretch(_c, 1)
         self._semi_class_checkboxes = {}  # 名称 -> QCheckBox（含特殊键 "__all__"）
         self._semi_class_filter = set()  # 选中的分类集合（空=全部）
         self.alt_combo = QComboBox()
@@ -925,8 +935,27 @@ class FilterPanel(QWidget):
                 self._semi_class_filter = set(checked)
         self._emit_filter()
 
+    def _semi_class_layout_add(self, cb, row, col, full_name):
+        """把分类复选框放进 3 列网格（v43.147）。
+
+        侧栏净宽仅 220px，完整标签放不下（5 列需 524px），故统一 setMinimumWidth(0)
+        让标签按格宽压缩，并按 full_name 设置 tooltip 显示完整分类名。
+        """
+        cb.setMinimumWidth(0)
+        cb.setToolTip("按「%s」筛选" % full_name)
+        self._semi_class_vlayout.addWidget(cb, row, col)
+
     def _rebuild_semi_class_checkboxes(self, silent=False):
-        """重建半成品重分类复选框组（全部 + 各原始值 + 虚拟两项「食品/饮料成品半成品」）。
+        """重建半成品重分类复选框组（全部 + 固定分类清单 + 数据里的额外分类）。
+
+        v43.147 三处改动：
+        ① 残影修复——原 takeAt(0)+deleteLater() 只把项摘出布局，旧控件在事件循环执行前
+           仍是父容器子控件、visible 且占几何位置，与新控件叠成重复项（用户截图可见）。
+           改为先 setParent(None) 断开父子关系再 deleteLater()。
+        ② 分类名改用共用固定清单 SEMI_CLASS_FOOD / SEMI_CLASS_DRINK：面板取的是主表
+           当前数据，被筛选收窄时 unique_vals 会缺项，固定清单保证 6 项恒在。
+        ③ 去掉「先 unique_vals 再虚拟两项」的顺序（原会把同名项建两遍，靠 dict 覆盖
+           侥幸不出错），统一走 merge_semi_class_values() 去重有序输出。
 
         silent=True 时创建期间屏蔽信号（set_data 批量刷新用，避免误触发筛选）；
         调用方负责在外部 unblock 各复选框信号。
@@ -939,20 +968,49 @@ class FilterPanel(QWidget):
             it = self._semi_class_vlayout.takeAt(0)
             w = it.widget()
             if w:
+                # v43.147：先脱离父容器，避免 deleteLater 延迟期间旧控件仍可见
+                w.setParent(None)
                 w.deleteLater()
         self._semi_class_checkboxes = {}
+
         cb_all = QCheckBox("全部")
         cb_all.setChecked(True)
-        self._semi_class_vlayout.addWidget(cb_all)
+        cb_all.setToolTip("不按半成品分类筛选（显示全部）")
+        # v43.147：侧栏净宽 220px 装不下完整标签（「食品配料中心半成品」需 132px，
+        # 5 列共需 524px）。故用 3 列 + 短标签 + tooltip 全名，3 列每格 72px 刚好
+        # 容纳 4 字标签，零截断；键仍存全名，筛选逻辑不受影响。
+        # 3 列每格净宽 65px，3 字标签 sizeHint=60px 刚好零截断（4 字需 72px 会截断），
+        # 完整分类名放 tooltip，字典键仍是全名，筛选逻辑不受影响。
+        _LBL = {"食品成品半成品": "食成品",
+                "食品综合组半成品": "食综组",
+                "食品配料中心半成品": "配料中",
+                "食品辅原料": "食辅原",
+                "饮料成品半成品": "饮成品",
+                "饮料综合组半成品仓": "饮综仓"}
+        _NCOL = 3
+
+        self._semi_class_layout_add(cb_all, 0, 0, "全部")
         self._semi_class_checkboxes["__all__"] = cb_all
-        for v in sorted(set(unique_vals)):
-            cb = QCheckBox(v)
-            self._semi_class_vlayout.addWidget(cb)
+        # 固定 6 分类按 3 列顺排：row0 全部/食品成品/配料中心
+        #                              row1 食品综综/食品辅原料/饮料成品
+        #                              row2 饮料综仓
+        cells = [(0, 1), (0, 2), (1, 0), (1, 1), (1, 2), (2, 0)]
+        for (r, c), v in zip(cells, tuple(SEMI_CLASS_FOOD) + tuple(SEMI_CLASS_DRINK)):
+            cb = QCheckBox(_LBL.get(v, v))
+            self._semi_class_layout_add(cb, r, c, v)
             self._semi_class_checkboxes[v] = cb
-        for v in ("食品成品半成品", "饮料成品半成品"):
-            cb = QCheckBox(v)
-            self._semi_class_vlayout.addWidget(cb)
+        # 数据里出现的额外分类（脏数据兜底）接在 row2 余下格，用满后换行
+        r, c = 2, 1
+        for v in merge_semi_class_values(unique_vals):
+            if v in self._semi_class_checkboxes:
+                continue
+            cb = QCheckBox(_LBL.get(v, v))
+            self._semi_class_layout_add(cb, r, c, v)
             self._semi_class_checkboxes[v] = cb
+            c += 1
+            if c >= _NCOL:
+                r += 1
+                c = 0
         self._semi_class_filter = set()
         for cb in self._semi_class_checkboxes.values():
             if silent:

@@ -4,13 +4,16 @@
 """
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
+    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QCheckBox,
     QComboBox, QGroupBox,
 )
 from PySide6.QtCore import Qt, QPoint
 import pandas as pd
 from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_color_keys
+from gui_pyside6.utils.semi_class import (
+    SEMI_CLASS_FOOD, SEMI_CLASS_DRINK, merge_semi_class_values,
+)
 from core.read_status import save_read_status, save_read_status_batch
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
 from gui_pyside6.widgets.toast import toast
@@ -111,15 +114,18 @@ class AlertDialog(QDialog):
         color_row.addStretch()
         layout.addLayout(color_row)
 
-        # ---- 半成品重分类筛选（复选框组：全部 + 各值 + 虚拟两项）----
+        # ---- 半成品重分类筛选（v43.147：QGridLayout 两行，食品一行 / 饮料一行）----
+        # 原为 QVBoxLayout + setFixedWidth(180) 竖排，7 项会撑到 ~130px 高；
+        # 改两行后只需 ~55px，与半成品看板排版一致。
         semi_class_row = QHBoxLayout()
         semi_class_row.addWidget(QLabel("半成品分类:"))
         self.grp_semi_class = QGroupBox()
         self.grp_semi_class.setFlat(True)
-        self.grp_semi_class.setFixedWidth(180)
-        self._semi_class_vlayout = QVBoxLayout(self.grp_semi_class)
+        self.grp_semi_class.setMinimumWidth(300)
+        self._semi_class_vlayout = QGridLayout(self.grp_semi_class)
         self._semi_class_vlayout.setContentsMargins(4, 2, 4, 2)
         self._semi_class_vlayout.setSpacing(1)
+        self._semi_class_vlayout.setHorizontalSpacing(8)
         self._semi_class_checkboxes = {}  # 名称 -> QCheckBox（含特殊键 "__all__"）
         semi_class_row.addWidget(self.grp_semi_class)
         semi_class_row.addStretch()
@@ -331,30 +337,51 @@ class AlertDialog(QDialog):
         return mask
 
     def _build_semi_checkboxes(self, unique_vals):
-        """构建半成品分类复选框组：全部 + 虚拟两项 + 实际各值。"""
+        """构建半成品分类复选框组：全部 + 固定分类清单 + 数据里的额外分类。
+
+        v43.147 两条修复：
+        ① 残影：原代码 takeAt(0) + deleteLater() 只把项摘出布局，旧控件在事件循环
+           执行前仍是父容器子控件、visible 且占几何位置，与新控件叠一起 → 用户看到
+           重复的「食品成品半成品」。改为先 setParent(None) 断开父子再 deleteLater。
+        ② 重复来源：原先硬编码虚拟两项后再遍历 unique_vals（仅靠 `v in (...)` 去重），
+           现统一走共用固定清单 merge_semi_class_values()，额外分类只追加不重复。
+        ③ 排版：QVBoxLayout 竖排 → QGridLayout 两行（row0 食品 / row1 饮料），
+           「全部」放 row0 col0，与半成品看板一致。
+        """
         while self._semi_class_vlayout.count():
             it = self._semi_class_vlayout.takeAt(0)
             w = it.widget()
             if w:
+                # v43.147：必须先脱离父容器，否则 deleteLater 延迟期间旧控件仍可见
+                w.setParent(None)
                 w.deleteLater()
         self._semi_class_checkboxes = {}
         cb_all = QCheckBox("全部")
         cb_all.setChecked(True)
+        cb_all.setToolTip("不按半成品分类筛选（显示全部）")
         cb_all.stateChanged.connect(self._on_semi_class_changed)
-        self._semi_class_vlayout.addWidget(cb_all)
+        self._semi_class_vlayout.addWidget(cb_all, 0, 0)
         self._semi_class_checkboxes["__all__"] = cb_all
-        for v in ("食品成品半成品", "饮料成品半成品"):
-            cb = QCheckBox(v)
-            cb.stateChanged.connect(self._on_semi_class_changed)
-            self._semi_class_vlayout.addWidget(cb)
-            self._semi_class_checkboxes[v] = cb
-        for v in unique_vals:
-            if v in ("食品成品半成品", "饮料成品半成品"):
+        row, col = 0, 1
+        for names in (SEMI_CLASS_FOOD, SEMI_CLASS_DRINK):
+            for v in names:
+                cb = QCheckBox(v)
+                cb.setToolTip("按「%s」筛选" % v)
+                cb.stateChanged.connect(self._on_semi_class_changed)
+                self._semi_class_vlayout.addWidget(cb, row, col)
+                self._semi_class_checkboxes[v] = cb
+                col += 1
+            row += 1
+            col = 0
+        for v in merge_semi_class_values(unique_vals):
+            if v in self._semi_class_checkboxes:
                 continue
             cb = QCheckBox(v)
+            cb.setToolTip("按「%s」筛选" % v)
             cb.stateChanged.connect(self._on_semi_class_changed)
-            self._semi_class_vlayout.addWidget(cb)
+            self._semi_class_vlayout.addWidget(cb, row, col)
             self._semi_class_checkboxes[v] = cb
+            col += 1
 
     def set_data(self, df):
         """设置表格数据 - 确保 _read 和 data_id 列存在"""
