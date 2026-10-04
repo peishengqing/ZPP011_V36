@@ -44,7 +44,8 @@ from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.dialogs.unit_summary_dialog import UnitSummaryDialog
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
-from gui_pyside6.dialogs.neg_loss_dashboard_dialog import NegLossDashboardDialog
+from gui_pyside6.dialogs.neg_loss_dashboard_dialog import NegLossDashboardDialogfrom gui_pyside6.dialogs.semi_dashboard_dialog import SemiDashboardDialog
+
 from gui_pyside6.dialogs.quarantine_dialog import QuarantineDialog
 from core.quarantine_manager import add_quarantine, add_quarantine_batch, remove_quarantine, scan_expired_quarantine, get_quarantined_ids
 from core.auto_quarantine import (
@@ -509,7 +510,9 @@ class MainWindow(QMainWindow):
         self.action_btn_deviation = QAction("📊 偏差率预警", self)
         self.action_btn_deviation.triggered.connect(self._show_deviation_warning_dialog)
         self.action_btn_neg_loss = QAction("🟠 负损看板", self)
-        self.action_btn_neg_loss.triggered.connect(self._show_neg_loss_dashboard)
+        self.action_btn_neg_loss.triggered.connect(self._show_neg_loss_dashboard)        self.action_btn_semi = QAction("🟡 半成品看板", self)
+        self.action_btn_semi.triggered.connect(self._show_semi_dashboard)
+
 
         self.action_btn_excel = QAction("📤 Excel 表格 (F6)", self)
         self.action_btn_excel.triggered.connect(
@@ -543,7 +546,8 @@ class MainWindow(QMainWindow):
         self.action_btn_boards = _make_menu_btn(
             "📊 看板 ▾", "分析看板：管理看板 / 偏差率预警 / 负损看板 / 替代料看板 / 隔离区 / 变动提醒",
             [self.action_btn_dashboard, self.action_btn_quarantine, self.action_btn_audit_changes,
-             self.action_btn_alt_board, self.action_btn_deviation, self.action_btn_neg_loss])
+             self.action_btn_alt_board, self.action_btn_deviation, self.action_btn_neg_loss,
+             self.action_btn_semi])
         self.action_btn_export = _make_menu_btn(
             "📤 导出 ▾", "导出当前数据：Excel / 完整报告 / PPT",
             [self.action_btn_excel, self.action_btn_export_full, self.action_btn_ppt])
@@ -1823,6 +1827,44 @@ class MainWindow(QMainWindow):
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开负损看板失败: {e}")
+
+
+    def _show_semi_dashboard(self):
+        """手动打开半成品看板：400/410 开头物料，按半成品重分类 + 投料状态筛选。
+
+        与隔离区/负损看板完全解耦：半成品量大（400/410 约占全表 19%），
+        走自动隔离会淹没隔离区，故只做只读查询 + 手动逐条加入隔离区。
+        """
+        try:
+            df = self._get_master_df()
+            if df is None or df.empty:
+                QMessageBox.information(self, "提示", "暂无数据，请先分析")
+                return
+            # 先筛 400/410 开头：与半成品重分类的排除法口径一致（analyzer ③ 号规则），
+            # 只认物料编码前缀，不依赖描述文字/工厂名
+            code_col = next((c for c in ("物料编码", "组件物料号") if c in df.columns), None)
+            if code_col:
+                sub = df[df[code_col].astype(str).str.strip().str.startswith(("400", "410"), na=False)]
+            else:
+                sub = df
+            if sub.empty:
+                QMessageBox.information(self, "提示", "当前数据无 400/410 开头的物料")
+                return
+            # 列白名单与负损看板一致（含数量-实际/数量-定额 供投料状态计算）
+            # 注意：不要同时列「组件物料号」和「物料编码」——两来源列并存会打乱列顺序
+            candidates = [
+                "订单日期", "流程订单", "物料编码", "物料名称", "物料描述",
+                "车间", "组件物料类型", "组件物料类型描述", "单位",
+                "数量-定额", "定额", "数量-实际", "实际", "偏差数量", "偏差率(%)",
+                "偏差金额", "净偏差数量", "净偏差金额", "是否替代料",
+                "备注", "备注原因", "备注来源", "半成品重分类", "data_id", "_read",
+            ]
+            keep = [c for c in candidates if c in sub.columns]
+            sub = sub[keep].copy() if keep else sub.copy()
+            dialog = SemiDashboardDialog(sub, self)
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"打开半成品看板失败: {e}")
 
     def _update_all_summary(self):
         """恢复整体合计"""
