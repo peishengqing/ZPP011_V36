@@ -14,6 +14,13 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+
+        "version": "v43.141",
+        "date": "2026-10-04",
+        "features": "",
+        "fixes": "UI 重构阶段 1 第 2 项**核查后决定不改**（2026-10-04）。背景：2026-10-03 调研称 main_window.py:3576-3723 的 148 行是 utils/column_filter.py:143-292 的「逐行副本（连注释都一样）」，建议接线删除。**实测纠正**：① 两段行数确实相同（149 vs 149）且内部函数名一字不差，但归一化 diff 后有 **58 行差异**，并非纯副本；② 差异全是「写法不同」而非「行为不同」——属性名（_sort_header vs header、_col_filter_popup vs _popup、proxy._value_filters vs self._value_filters）、utils 版多几行 _click_log 诊断日志、header.update() 被 try/except 包了一层。③ **实测两版筛选结果完全一致**：同一 DataFrame 选「偏差率(%) ∈ {0.000%, -100.000%}」，utils 版 mask_dataframe 与 main_window 版 proxy.setValueFilter 均命中同样 5 行（4000000/4000001/4000003/4000005/4000008）。④ 此前判断「utils 有 Qt6 表头重绘修复而 main_window 没有」**是错的**——main_window 里有 `self._sort_header.update()`，注释写明「viewport().update() 只刷内部 viewport…与排序角标同款触发方式」，是同一修复的等价写法。**决定不接线的原因**：删这 149 行需重接 5 处属性并动 __init__ 里 _col_filter_popup / _sort_header 的初始化，而 SortBadgeHeader 是自定义表头类、传 self._sort_header 与传 self.header 未必等价 → 省 149 行的收益，不抵「主表列头筛选/漏斗可能变哑」的风险。**现状记录**：两套并存但行为已验证一致，后续若要合并，须先无头实测主表「列头筛选 + 排序 + 漏斗绘制」三项均正常才可提交。"
+    },
+    {
         "version": "v43.140",
         "date": "2026-10-04",
         "features": "",
