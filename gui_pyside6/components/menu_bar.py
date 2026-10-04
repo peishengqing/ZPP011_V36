@@ -89,6 +89,9 @@ class MenuBarComponent:
         # 智能PPT(试用) 子菜单 —— 两个入口走两套完全不同的生成器，需完整分析 Excel
         #   · 分厂版(9页) → core/ppt_trae.py（TRAE 版式，食品/饮料分厂专题，数据实时算）
         #   · 专业版(20+页) → core/advanced_ppt_generator_v2.py（20+ 页深度分析）
+        #   · 归藏-Magazine / 归藏-Swiss → 网页版横滑报告（QWebEngineView 渲染，
+        #     动态注入版：叙事骨架在 resources/guizang/，数字每次从分析结果
+        #     Excel 实时计算，动效库本地内置、断网可用）
         smart_ppt_menu = QMenu("智能PPT(试用)", self.mw)
         smart_simple_action = QAction("分厂版(9页)", self.mw)
         smart_simple_action.triggered.connect(self.mw._generate_smart_ppt_simple)
@@ -96,6 +99,15 @@ class MenuBarComponent:
         smart_pro_action = QAction("专业版(20+页)", self.mw)
         smart_pro_action.triggered.connect(self.mw._generate_smart_ppt_pro)
         smart_ppt_menu.addAction(smart_pro_action)
+
+        smart_ppt_menu.addSeparator()
+        guizang_magazine_action = QAction("归藏-Magazine（网页版）", self.mw)
+        guizang_magazine_action.triggered.connect(self.mw._open_guizang_magazine)
+        smart_ppt_menu.addAction(guizang_magazine_action)
+        guizang_swiss_action = QAction("归藏-Swiss（网页版）", self.mw)
+        guizang_swiss_action.triggered.connect(self.mw._open_guizang_swiss)
+        smart_ppt_menu.addAction(guizang_swiss_action)
+
         tools_menu.addMenu(smart_ppt_menu)
 
         alt_action = QAction("备选料管理", self.mw)

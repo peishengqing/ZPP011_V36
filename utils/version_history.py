@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.158",
+        "date": "2026-10-04",
+        "features": "「工具 → 智能PPT(试用)」下新增两个网页版报告入口：**归藏-Magazine**（电子杂志风：衬线标题 + 墨水经典配色 + 流体 WebGL 背景）与 **归藏-Swiss**（瑞士国际主义风：无衬线极轻字重 + 安全橙单一强调色 + 网格背景）。两份报告均为 15 页横向翻页 HTML deck，内容为 ZPP011 生产偏差分析（食品厂 / 饮料厂分厂叙事：总览 → 两厂对照 → 数据质量说明 → 食品厂 3 页 → 饮料厂 3 页 → 原因结构 → 趋势 → 各自行动页 → 收尾）。**动态注入版**：新建 `core/guizang_report.py` 数据层 + `core/guizang_magazine.py` / `core/guizang_swiss.py` 渲染层，叙事骨架固化在 `resources/guizang/{magazine,swiss}/template.html`（由人工校验版挖空 slides 区得到），数字全部由 pandas 从分析结果 Excel 的 5 个标准 sheet 实时计算后以占位符注入 —— 换任何一期数据即出新报告，每个数字可回溯到明细行。取数逻辑与智能PPT一致：优先最近分析缓存，无则弹框手选 Excel。构建走后台 QThread（参照 DashboardDialog），状态栏实时提示读取进度，失败降级提示并保留「刷新」重试；预览 HTML 落 `_preview.html`（与 assets/ 同目录保证相对路径可用）。交互支持方向键 / 滚轮 / 空格翻页、B 键切换静态模式（适合投影）、ESC 键查看全页总览。WebEngine 延迟导入 + 不可用时降级 QTextBrowser + LocalContentCanAccessFileUrls，动效库 motion.min.js 本地内置，**断网可用**，不依赖任何 CDN。",
+        "fixes": "新建功能，无历史缺陷修复。关键约定：QtWebEngine 一律在对话框 __init__ 内延迟 import（模块顶层 import 会让软件启动即初始化 Chromium 内核并 hang）；主窗口侧只在方法体内 import GuizangDialog，保持启动路径零 WebEngine 开销；报告数字口径与 2026-10-04 人工校验版逐页 diff 对齐（唯一差异为已声明的口径修正：总览页正/负偏差改为净列口径 +77.3/−107.3，其余 7 车间合计按显示值 +19.8 修正原手工版笔误 +20.0，补列原文漏掉的 4车间，趋势物料数 1,291 剔除说明行）。未打包 exe。",
+    },
+    {
         "version": "v43.157",
         "date": "2026-10-04",
         "features": "「智能PPT · 分厂版(9页)」全新上线：食品厂 / 饮料厂分厂专题，16:9 深蓝+青配色，含封面、目录、总体概览（两厂KPI对比+红黄绿预警）、食品厂车间排名 / 物料分类 / 原因 TOP6、饮料厂同款两页、预警对比与自动生成的改进建议、结尾页共 9 页。版式 1:1 移植 TRAE 生成的汇报模板，但原脚本把全部数据硬编码在 D 字典里，本版改为从分析结果 Excel 的「汇总统计」表实时计算 —— 换任何一期数据出的报告数字都会跟着变，不再是一份固定不变的旧报告。金额统一保留 2 位小数（万元）。",

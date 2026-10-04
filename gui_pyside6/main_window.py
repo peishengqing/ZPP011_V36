@@ -4952,6 +4952,38 @@ class MainWindow(QMainWindow):
         self.export_controller.generate_advanced_report(
             self.view_model.df, excel_path, None, self, log_cb=self.log)
 
+    def _open_guizang_magazine(self):
+        """归藏-Magazine（网页版）— 电子杂志风横滑报告。
+
+        与智能PPT入口同一取数逻辑：优先用最近分析生成的完整报告缓存，
+        没有则弹框手选分析结果 Excel；数字每次实时计算注入模板（动态版）。
+        """
+        self._open_guizang("magazine")
+
+    def _open_guizang_swiss(self):
+        """归藏-Swiss（网页版）— 瑞士国际主义风横滑报告。同样为动态注入版。"""
+        self._open_guizang("swiss")
+
+    def _open_guizang(self, style):
+        """打开归藏网页版报告窗（动态注入：从分析结果 Excel 实时算数渲染）。
+
+        QtWebEngine 由 GuizangDialog 内部延迟加载；报告构建走后台 QThread。
+        """
+        try:
+            from gui_pyside6.dialogs.guizang_dialog import GuizangDialog
+            excel_path = self._resolve_smart_ppt_excel()
+            if not excel_path:
+                excel_path, _ = QFileDialog.getOpenFileName(
+                    self, "请选择分析结果 Excel 文件", "", "Excel files (*.xlsx)"
+                )
+                if not excel_path:
+                    return
+            dlg = GuizangDialog(style, excel_path, parent=self, main_window=self)
+            dlg.exec()
+        except Exception as e:  # noqa: BLE001
+            self.log(f"打开归藏报告失败：{e}", "error")
+            QMessageBox.critical(self, "打开失败", f"无法打开归藏报告：\n{e}")
+
     def _show_health_check(self):
         dialog = HealthCheckDialog(self)
         dialog.exec()
