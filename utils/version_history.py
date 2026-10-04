@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.143",
+        "date": "2026-10-04",
+        "features": "列头筛选新增三个显式取消入口（浮层「清除此列」按钮 / 提示标签右键菜单逐列清除 / 一键清除全部），已覆盖主表 + 全部 6 个看板（半成品/负损/预警/偏差率预警/隔离区×2）。",
+        "fixes": "修复用户反馈的两个问题。① **颜色说明看不清**：根因不是配色，是宽度被硬编码压死——color_group.setMinimumWidth(300) 而 6 个色块复选框 sizeHint 合计 586px，父布局只给 300px，每项被压到 40px（需要 80~104px），「审核后变更/隔离区/替代料/未投料/偏差率预警/无标记」6 个标签全部截断成笔画。修复：颜色组独占一行（半成品/负损看板顶部由 3/4 行变 4/5 行，滚动区 148~156 → 186~194），并给每项设 minimumWidth=sizeHint 双保险。实测颜色组 w=586，每项宽度正好等于 sizeHint，零截断。注意坑：minimumWidth 不能用 color_group.sizeHint() 算——此时它已被父布局拉伸，返回的是分配后宽度（曾误设成 1206），须用各 cb.sizeHint + spacing + margins 手工累加。② **列头筛选无法取消**：三重死锁。a) 浮层「取消」按钮只 popup.close()，已生效筛选原样保留；b) 关掉「🔽 列头筛选✓」模式开关也不清筛选（实测 value_filters 仍保留）；c) **最隐蔽的死循环**：浮层点「清空」再「确定」，全不勾 → 写入空集 → mask_dataframe 里 key not in allowed 恒真 → 全表 0 行；此时再点列头因 order 为空直接 return 不弹层，用户彻底无路可走。修复：空集与全选统一按「清除该列过滤」处理；本列无可选取值时改弹兜底浮层（清除此列/清除全部/关闭）给出逃生口；提示标签从纯 QLabel 改为带右键菜单。另修 v43.138 遗留错行（top2 段里混入 top.addSpacing(14)，作用于 row1）。回归 22 passed + 2 xfailed 与基线一致。**踩坑记录**：本轮先在 main_window.py 的 __init__ 方法序列中间插入 3 个新方法，0 缩进 def 让 Python 判定 class 提前结束，__init__ 只执行到 222 行就 return，proxy_model 全为 None，7 个测试瞬间变红（基线 22 passed）——已移至 class 末尾并在注释里写明铁律。另：编辑工具会把整文件行尾翻转（main_window.py CRLF→LF、其余 6 文件 LF→CRLF），导致 git 认成 10166 行全变更 + import 行粘连语法错，提交前必须核对 git diff --stat。"
+    },
+    {
         "version": "v43.142",
         "date": "2026-10-04",
         "features": "",

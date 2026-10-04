@@ -177,6 +177,9 @@ class AlertDialog(QDialog):
         col_filter_bar.addStretch(1)
         layout.addLayout(col_filter_bar)
         self.col_filter_ctrl.filtered_cols_changed.connect(self._update_col_filter_hint)
+        # v43.143：提示标签右键 → 清除菜单（逐列 / 全部）。
+        # 此前是纯 QLabel，用户只能开浮层重勾一遍才能取消，观感=「无法取消」。
+        self.col_filter_ctrl.attach_clear_menu(self._col_filter_hint_label)
         self._update_col_filter_hint()
 
         # ---- 底部按钮 ----

@@ -209,6 +209,15 @@ class MainWindow(QMainWindow):
             "border-left:1px solid #b8c4d0;}"
         )
         self._col_filter_hint_label.show()  # 无筛选时显示「0 列」，让用户知道哪些列被筛过
+        # v43.143：提示标签改为「可点即清除」入口。此前它只是纯 QLabel，用户想取消筛选
+        # 只能开浮层重新勾选一遍，且关掉筛选模式也不清筛选（实测），观感=「无法取消」。
+        # 现在左键/右键点它都弹菜单：逐列清除 + 清除全部。
+        self._col_filter_hint_label.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._col_filter_hint_label.customContextMenuRequested.connect(
+            lambda pos: self._show_col_filter_clear_menu(self._col_filter_hint_label, pos))
+        self._col_filter_hint_label.setToolTip(
+            "当前已设列头取值过滤的列（表头橙色三角标记）。\n"
+            "点此标签 → 菜单里可「清除此列」或「清除全部列头筛选」。")
         self.statusBar().addPermanentWidget(self._col_filter_hint_label)
 
         self.export_controller = ExportController(self)
@@ -3542,6 +3551,9 @@ class MainWindow(QMainWindow):
                 order.append(key)
             cnt[key] += 1
         if not order:
+            # 修复（v43.143）：本列无任何取值（被其它条件筛空）时原先直接 return，
+            # 用户看着空表 + 点列头无反应，无法取消任何筛选。改弹兜底浮层给出出口。
+            self._open_empty_column_filter_popup(col_name, logical_index)
             return
 
         # 已选集合（来自 proxy 已存的取值过滤）
@@ -3571,12 +3583,16 @@ class MainWindow(QMainWindow):
         search.setPlaceholderText("搜索取值…")
         outer.addWidget(search)
 
-        # 全选 / 清空
+        # 全选 / 清空 / 清除此列
         btn_row = QHBoxLayout()
         btn_all = QPushButton("全选")
         btn_none = QPushButton("清空")
+        btn_clear = QPushButton("清除此列")
+        btn_clear.setToolTip("取消本列的全部取值过滤（等同恢复未筛选）")
+        btn_clear.setEnabled(bool(proxy._value_filters.get(col_name)))
         btn_row.addWidget(btn_all)
         btn_row.addWidget(btn_none)
+        btn_row.addWidget(btn_clear)
         btn_row.addStretch(1)
         outer.addLayout(btn_row)
 
@@ -3612,8 +3628,21 @@ class MainWindow(QMainWindow):
             for _, cb in items:
                 cb.setChecked(False)
 
+        def do_clear_column():
+            """「清除此列」：丢弃本列取值过滤 + 漏斗标并关浮层。
+
+            与「清空」区别：「清空」只把勾选全取消，点确定后会因空集被 setValueFilter
+            当作「清除」处理（见 do_apply），但用户不知道；这里给一个显式入口。
+            """
+            proxy.setValueFilter(col_name, set())
+            self._filtered_col_set.discard(logical_index)
+            self._update_col_filter_hint()
+            self._sort_header.update()
+            popup.close()
+
         btn_all.clicked.connect(select_all)
         btn_none.clicked.connect(select_none)
+        btn_clear.clicked.connect(do_clear_column)
 
         # 确定 / 取消
         ok_row = QHBoxLayout()
@@ -3626,8 +3655,11 @@ class MainWindow(QMainWindow):
 
         def do_apply():
             selected = {key for key, cb in items if cb.isChecked()}
-            if selected == set(order):
-                # 全选等价于不过滤：清掉该列取值过滤与漏斗标
+            if not selected or selected == set(order):
+                # 全选 或 一个都没选：都等价于「不过滤」。
+                # 修复（v43.143）：原先「一个都没选」会走到 else 分支 _filtered_col_set.add()，
+                # 提示栏显示「1 列」但实际无过滤（setValueFilter 空集=清除），状态自相矛盾；
+                # 且用户看到漏斗标却找不到地方取消。现统一走清除分支。
                 proxy.setValueFilter(col_name, set())
                 self._filtered_col_set.discard(logical_index)
             else:
@@ -3660,6 +3692,63 @@ class MainWindow(QMainWindow):
                 gpos.setX(max(sg.left(), sg.right() - pw))
             if gpos.y() + ph > sg.bottom():
                 gpos.setY(max(sg.top(), gpos.y() - ph - self._sort_header.height()))
+        popup.move(gpos)
+
+    def _open_empty_column_filter_popup(self, col_name, logical_index):
+        """本列无取值时的兜底浮层：只给「清除此列 / 清除全部 / 关闭」三个出口。"""
+        if self._col_filter_popup is not None:
+            try:
+                self._col_filter_popup.close()
+            except Exception:
+                pass
+            self._col_filter_popup = None
+        popup = QWidget(self, Qt.Popup)
+        popup.setObjectName("colFilterPopup")
+        popup.setMinimumWidth(300)
+        outer = QVBoxLayout(popup)
+        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setSpacing(8)
+        tip = QLabel(f"「{col_name}」当前没有任何可选取值\n（表格已被其它筛选条件筛空）")
+        tip.setStyleSheet("font-weight:bold;color:#15598c;")
+        tip.setWordWrap(True)
+        outer.addWidget(tip)
+
+        def _after_clear():
+            self._update_col_filter_hint()
+            self._sort_header.update()
+
+        def do_clear_col():
+            self.proxy_model.setValueFilter(col_name, set())
+            self._filtered_col_set.discard(logical_index)
+            _after_clear()
+            popup.close()
+
+        def do_clear_all():
+            self.proxy_model.clearHeaderFilters()
+            self._filtered_col_set.clear()
+            _after_clear()
+            popup.close()
+
+        btn_col = QPushButton("清除此列筛选")
+        btn_col.clicked.connect(do_clear_col)
+        btn_all = QPushButton("清除全部列头筛选")
+        btn_all.clicked.connect(do_clear_all)
+        btn_close = QPushButton("关闭")
+        btn_close.clicked.connect(popup.close)
+        outer.addWidget(btn_col)
+        outer.addWidget(btn_all)
+        outer.addWidget(btn_close)
+        self._col_filter_popup = popup
+        x = self._sort_header.sectionViewportPosition(logical_index)
+        y = self._sort_header.height()
+        gpos = self._sort_header.viewport().mapToGlobal(QPoint(int(x), int(y)))
+        popup.show()
+        popup.adjustSize()
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            sg = screen.availableGeometry()
+            gpos.setX(min(gpos.x(), max(sg.left(), sg.right() - popup.width())))
+            gpos.setY(min(gpos.y(), max(sg.top(), sg.bottom() - popup.height())))
         popup.move(gpos)
 
     def _apply_multi_sort(self):
@@ -4982,6 +5071,57 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         event.accept()
+
+    # ------------------------------------------------------------------ #
+    # 列头筛选取消入口（v43.143）
+    # 说明：这三个方法必须放在 class 末尾。0 缩进 def 会让 Python 判定上层 class
+    # 在此提前结束，若插在 __init__ 等方法序列中间，其后所有语句会被吸进新方法体，
+    # __init__ 提前 return → 组件装配全部缺失（proxy_model 为 None）。
+    # ------------------------------------------------------------------ #
+    def _show_col_filter_clear_menu(self, label, pos):
+        """列头筛选提示标签的清除菜单：逐列清除 + 一键清除全部。
+
+        v43.143 新增：此前提示标签是纯 QLabel，用户想取消筛选只能开浮层重新勾一遍
+        （且关掉「🔽 列头筛选」模式开关并不清筛选），观感=「无法取消」。
+        """
+        menu = QMenu(label)
+        col_set = getattr(self, "_filtered_col_set", set()) or set()
+        sm = getattr(self, "source_model", None)
+        display_cols = getattr(sm, "_display_columns", []) if sm is not None else []
+        if not col_set:
+            act_none = menu.addAction("当前没有列头筛选")
+            act_none.setEnabled(False)
+        else:
+            menu.addSection("逐列清除")
+            for c in sorted(col_set):
+                name = str(display_cols[c]) if 0 <= c < len(display_cols) else f"列{c}"
+                menu.addAction("清除此列：%s" % name,
+                               lambda _=False, n=name: self._clear_col_filter_by_name(n))
+            menu.addSeparator()
+            menu.addAction("清除全部列头筛选", self._clear_all_col_filters)
+        menu.exec(label.mapToGlobal(pos))
+
+    def _clear_col_filter_by_name(self, col_name):
+        """按列名清除主表的列头取值过滤（含漏斗标与提示刷新）。"""
+        if self.proxy_model is None:
+            return
+        self.proxy_model.setValueFilter(col_name, set())
+        sm = getattr(self, "source_model", None)
+        display_cols = getattr(sm, "_display_columns", []) if sm is not None else []
+        if col_name in display_cols:
+            self._filtered_col_set.discard(display_cols.index(col_name))
+        else:
+            for c in list(self._filtered_col_set):
+                if 0 <= c < len(display_cols) and str(display_cols[c]) == col_name:
+                    self._filtered_col_set.discard(c)
+        self._update_col_filter_hint()
+
+    def _clear_all_col_filters(self):
+        """清除主表全部列头取值过滤。"""
+        if self.proxy_model is not None:
+            self.proxy_model.clearHeaderFilters()
+        self._filtered_col_set.clear()
+        self._update_col_filter_hint()
 
 
 def _ask_quarantine_reason(parent, title: str) -> str | None:

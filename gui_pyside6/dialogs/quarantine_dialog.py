@@ -148,6 +148,9 @@ class QuarantineDialog(QDialog):
         self.table_view.verticalHeader().setVisible(False)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
         self.col_filter_ctrl.filtered_cols_changed.connect(lambda: self._update_col_filter_hint(self.col_filter_ctrl, self._col_filter_hint_label, getattr(self, "source_model", None)))
+
+        # v43.143：提示标签右键 → 清除菜单（逐列 / 全部），此前纯 QLabel 无任何取消入口
+        self.col_filter_ctrl.attach_clear_menu(self._col_filter_hint_label)
         self._update_col_filter_hint(self.col_filter_ctrl, self._col_filter_hint_label, getattr(self, "source_model", None))
 
         bl = QHBoxLayout()
@@ -223,6 +226,8 @@ class QuarantineDialog(QDialog):
         self.header_expired.sectionClicked.connect(self.col_filter_ctrl_expired.on_header_clicked)
         self.col_filter_ctrl_expired.filtered_cols_changed.connect(
             lambda: self._update_col_filter_hint(self.col_filter_ctrl_expired, self._col_filter_hint_label_expired, getattr(self, "expired_model", None)))
+        # v43.143：同款清除菜单（过期区表格），此前纯 QLabel 无任何取消入口
+        self.col_filter_ctrl_expired.attach_clear_menu(self._col_filter_hint_label_expired)
         self._update_col_filter_hint(self.col_filter_ctrl_expired, self._col_filter_hint_label_expired, getattr(self, "expired_model", None))
         self.expired_view.verticalHeader().setVisible(False)
         self.expired_view.verticalHeader().setDefaultSectionSize(28)

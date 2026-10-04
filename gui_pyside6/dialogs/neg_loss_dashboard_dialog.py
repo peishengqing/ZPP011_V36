@@ -71,9 +71,9 @@ class NegLossDashboardDialog(QDialog):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         # v43.139：顶部重排四行（实测单行需 3153px，1400px 窗口下 13 个控件有 8 个不可见）
-        # 行1 常用筛选 / 行2 半成品分类 / 行3 颜色+已读 / 行4 计数与操作
-        scroll.setMinimumHeight(148)
-        scroll.setMaximumHeight(156)
+        # v43.143：颜色标记独占一行，顶部变五行（实测五行需 186px）
+        scroll.setMinimumHeight(186)
+        scroll.setMaximumHeight(194)
         top_widget = QWidget(scroll)
         _top_col = QVBoxLayout(top_widget)
         _top_col.setContentsMargins(4, 2, 4, 2)
@@ -224,18 +224,27 @@ class NegLossDashboardDialog(QDialog):
         top3.setContentsMargins(0, 0, 0, 0)
         top3.setSpacing(0)
         _top_col.addLayout(top3)
+        top3.addStretch()
+        _top_col.addLayout(top3)
+        # ---- v43.143 row4：颜色标记独占一行（约 620px）----
+        # 修复「颜色说明看不清」：原先 color_group 与已读/计数/按钮同处一行，且
+        # setMinimumWidth(300) 硬编码，而 6 个色块复选框 sizeHint 合计 586px
+        # → 父布局只给 300px，每项压到 40px（需要 80~104px），6 个标签全部截断。
+        top_color = QHBoxLayout()
+        top_color.setContentsMargins(0, 0, 0, 0)
+        top_color.setSpacing(0)
+        _top_col.addLayout(top_color)
         # ---- 颜色筛选 ----
-        top3.addSpacing(14)
+        top_color.addSpacing(14)
         self.color_sep = QFrame()
         self.color_sep.setFrameShape(QFrame.VLine)
         self.color_sep.setFrameShadow(QFrame.Sunken)
-        top3.addWidget(self.color_sep)
-        top3.addSpacing(14)
+        top_color.addWidget(self.color_sep)
+        top_color.addSpacing(14)
         self.lbl_color = QLabel("颜色:")
-        top3.addWidget(self.lbl_color)
+        top_color.addWidget(self.lbl_color)
         self.color_group = QGroupBox()
         self.color_group.setFlat(True)
-        self.color_group.setMinimumWidth(300)
         self.color_group.setFixedHeight(36)
         self._color_layout = QHBoxLayout(self.color_group)
         self._color_layout.setContentsMargins(6, 4, 6, 4)
@@ -255,7 +264,17 @@ class NegLossDashboardDialog(QDialog):
             cb.stateChanged.connect(self._on_color_toggled)
             self.color_checks[key] = cb
             self._color_layout.addWidget(cb)
-        top3.addWidget(self.color_group)
+        top_color.addWidget(self.color_group)
+        top_color.addStretch()
+        # 颜色组所需宽度 = 各复选框 sizeHint 合计 + 间距 + 内边距。
+        # 注意：不能用 color_group.sizeHint()——此时它已被父布局拉伸，返回的是分配后宽度。
+        _need = sum(cb.sizeHint().width() for cb in self.color_checks.values())
+        _need += self._color_layout.spacing() * (len(self.color_checks) - 1)
+        _need += self._color_layout.contentsMargins().left()
+        _need += self._color_layout.contentsMargins().right()
+        self.color_group.setMinimumWidth(max(300, _need))
+        for cb in self.color_checks.values():
+            cb.setMinimumWidth(cb.sizeHint().width())
 
         top3.addSpacing(14)
         self.read_sep = QFrame()
@@ -318,6 +337,9 @@ class NegLossDashboardDialog(QDialog):
             pass
         self.header.sectionClicked.connect(self.col_filter_ctrl.on_header_clicked)
         self.col_filter_ctrl.filtered_cols_changed.connect(self._update_col_filter_hint)
+        # v43.143：提示标签右键 → 清除菜单（逐列 / 全部）。
+        # 此前是纯 QLabel，用户只能开浮层重勾一遍才能取消，观感=「无法取消」。
+        self.col_filter_ctrl.attach_clear_menu(self._col_filter_hint_label)
         self._update_col_filter_hint()
         self.table_view.verticalHeader().setVisible(False)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
