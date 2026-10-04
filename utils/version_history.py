@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.140",
+        "date": "2026-10-04",
+        "features": "",
+        "fixes": "UI 重构阶段 1 第 1 项：3 个后台 QThread 迁出 main_window.py（2026-10-04）。新建 gui_pyside6/workers/report_workers.py，迁入 _FullReportWorker(52行)/_PptReportWorker(27行)/_FileReadWorker(19行) 共 102 行；main_window.py 由 5120 行降至 5017 行，并加 import 复用。**关键修复**：_PptReportWorker.run() 原用 `__file__` 上溯两层取项目根，搬到 gui_pyside6/workers/ 后只上溯一层会指向 gui_pyside6/，导致 `from build_ppt_net import build_net_report` 失败；改用 config.paths.BASE_DIR（config/paths.py:9 已定义，实测 == 项目根，且打包 onefile 成 exe 后不受临时解压目录影响，比 __file__ 上溯更稳）。`_PptViewShim` 不搬：它不是 worker、且未被列入本次范围；`_FullCacheWorker` 也不搬：它是**方法内定义的局部类**（_on_analysis_finished_ui 内），不是顶层类，搬移需连同闭包一起处理，风险高。测试：22 passed / 2 xfailed，与搬移前基线一致。其中 test_bug1_fullcacheworker_missing_request_cancel 一度 KeyError——该探针第 3 条断言只扫 main_window.py 找 `*Worker` 类，类迁走后扫不到。已按探针自身提示更新扫描源（并入 report_workers 模块 AST），**断言内容一字未改**（request_cancel 基线保持原样），仅扩展扫描范围。py_compile 通过、pyflakes 零告警（含新模块）。"
+    },
+    {
         "version": "v43.139",
         "date": "2026-10-04",
         "features": "",

@@ -807,12 +807,19 @@ class TestC_BugProbes:
         )
 
         # 3) 钉住「只有 _FullReportWorker 有 request_cancel」这个实测基线
+        # v43.140：_FullReportWorker/_PptReportWorker/_FileReadWorker 已从 main_window.py
+        # 迁到 gui_pyside6/workers/report_workers.py，故扫描源需并入新模块。
+        # 类内容与 request_cancel 基线均未变，仅文件位置改变。
+        import gui_pyside6.workers.report_workers as _rw
+        import inspect as _inspect
+        _rw_tree = ast.parse(_inspect.getsource(_rw))
         actual = {}
-        for n in tree.body:
-            if isinstance(n, ast.ClassDef) and n.name.endswith("Worker"):
-                actual[n.name] = "request_cancel" in {
-                    m.name for m in n.body if isinstance(m, ast.FunctionDef)
-                }
+        for _t in (tree, _rw_tree):
+            for n in _t.body:
+                if isinstance(n, ast.ClassDef) and n.name.endswith("Worker"):
+                    actual[n.name] = "request_cancel" in {
+                        m.name for m in n.body if isinstance(m, ast.FunctionDef)
+                    }
         assert actual["_FullReportWorker"] is True, (
             f"_FullReportWorker 的 request_cancel 消失了：{actual}"
         )
