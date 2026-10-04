@@ -1,14 +1,10 @@
 # -*- coding: utf-8 -*-
 """负损(含未投料)看板对话框。
 
-独立看板：显示「负损」记录，与主表/隔离区解耦。
+独立看板：显示「名称含指定关键词 且 负损(含未投料)」的记录，与主表/隔离区解耦。
 - 不做任何自动整理；仅支持手动「加入隔离区 / 取消隔离」(与隔离区对话框一致的能力)。
-- 判定：默认 0<实际<定额（**不含**未投料）；勾选「包含未投料(实际=0 也视为负损)」
-  后退化为 0<=实际<定额。
-- 关键词：默认留空 = 不按名称过滤 = 全部负损行都显示（裴哥 2026-10-04 确认）。
-  要只看某几类（如 彩罐,托盘,手包袋）时在框里输入，逗号或顿号分隔多值 OR。
-  ⚠️ 修正旧文档：「关键词默认 彩罐,托盘,手包袋」「包含未投料勾选框默认开」两处
-  与实现不符（代码是 _keywords="" 与 setChecked(False)），已按实现更正。
+- 关键词可编辑，默认 彩罐,托盘,手包袋；「包含未投料」勾选框默认开（实际=0 也视为负损，
+  即 0<=实际<定额；取消勾选则退化为 0<实际<定额）。
 - 数据由主窗口传入全量主表（已裁剪关键列），筛选在本对话框内完成，便于关键词/复选框即时重算。
 """
 
@@ -32,7 +28,6 @@ from gui_pyside6.utils.locate import locate_row
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
-from gui_pyside6.utils.row_index import with_row_index
 from gui_pyside6.widgets.filter_panel import _color_icon
 
 
@@ -41,15 +36,12 @@ class NegLossDashboardDialog(QDialog):
 
     def __init__(self, df, main_window, parent=None):
         super().__init__(parent)
-        # 标题不再写「彩罐/托盘/手包袋」：keywords 默认空 = 不按名称筛 = 显示全部负损行，
-        # 旧标题却写着这三个词，与实际行为不符（等于标题在暗示已按此筛选）。
-        # 关键词框默认留空（显示全部），要只看某几类时在框里输入即可。
-        self.setWindowTitle("负损(含未投料)看板")
+        self.setWindowTitle("负损(含未投料)看板 - 彩罐/托盘/手包袋")
         self.resize(1280, 640)
         self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.main_window = main_window
         self._keywords = ""
-        self._include_zero = False  # 默认不含未投料（判定 0<实际<定额）；勾选后放宽为 0<=实际<定额
+        self._include_zero = False  # 默认不包含未投料（用户可手动勾选）
         self._semi_class_filter = set()  # 半成品重分类筛选：空集合=全部 / 集合内为选中分类（虚拟项模糊匹配）
         self._semi_class_col = None   # 半成品重分类列名（set_data 时探测）
         self._read_filter = "未读"    # 已读/未读筛选（全部/已读/未读），默认只显示未读
@@ -625,7 +617,7 @@ class NegLossDashboardDialog(QDialog):
             self.original_df["已读来源"] = ''
 
         self.source_model = DataFrameModel()
-        self.source_model.setDataFrame(with_row_index(df))
+        self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
         QTimer.singleShot(0, lambda: self.table_view.resizeColumnsToContents())
         self.table_view.verticalHeader().setDefaultSectionSize(28)
@@ -734,7 +726,7 @@ class NegLossDashboardDialog(QDialog):
             return
         df = self.original_df
         if df.empty:
-            self.source_model.setDataFrame(with_row_index(df))
+            self.source_model.setDataFrame(df)
             self._sort_ctrl.reapply()
             self.lbl_count.setText("共 0 条")
             return
@@ -751,7 +743,7 @@ class NegLossDashboardDialog(QDialog):
         # 叠加 Excel 式列头取值过滤（就地过滤，视图行号不变，选中/双击/导出零回归）
         if hasattr(self, "col_filter_ctrl"):
             filtered = self.col_filter_ctrl.mask_dataframe(filtered)
-        self.source_model.setDataFrame(with_row_index(filtered))
+        self.source_model.setDataFrame(filtered)
         self._sort_ctrl.reapply()
         tag = "含未投料" if self._include_zero else "不含未投料"
         note_tag = {"all": "全部", "yes": "有备注", "no": "无备注"}[self._has_note_filter]

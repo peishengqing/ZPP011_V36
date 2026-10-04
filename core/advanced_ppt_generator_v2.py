@@ -6,7 +6,6 @@ ZPP011 高级报告生成器 v2 (基于企业级模板)
 """
 import os
 import datetime
-import logging
 from io import BytesIO
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Union
@@ -30,7 +29,6 @@ AUTHOR = "ZPP011 系统"
 TEMPLATE_PATH = None  # 使用内置模板
 OUTPUT_DIR = "ZPP011分析报告"  # 相对路径
 CHINESE_FONT = "Microsoft YaHei"
-logger = logging.getLogger(__name__)
 PRIMARY_COLOR = RGBColor(30, 60, 114)  # 深蓝色（主色）
 SECONDARY_COLOR = RGBColor(0, 112, 192)  # 亮蓝色（辅色）
 ACCENT_COLOR = RGBColor(255, 152, 0)  # 橙色（强调）
@@ -158,15 +156,8 @@ def _create_bar_chart_image(df, x_col, y_col, title, xlabel, ylabel, color=PRIMA
 
 # ========== 核心生成器 ==========
 class AdvancedPPTGeneratorV2:
-    # 16:9 版式（13.333 x 7.5 英寸），与 build_ppt_net.py 保持一致，避免宽屏投影左右黑边。
-    # 注意：本文件内所有定位均为绝对 Inches()，改此值需复验各页元素不越界。
-    SLIDE_W_INCHES = 13.333
-    SLIDE_H_INCHES = 7.5
-
     def __init__(self):
         self.prs = Presentation(TEMPLATE_PATH) if TEMPLATE_PATH else self._create_base_template()
-        self.prs.slide_width = Inches(self.SLIDE_W_INCHES)
-        self.prs.slide_height = Inches(self.SLIDE_H_INCHES)
         self.slide_width = self.prs.slide_width
         self.slide_height = self.prs.slide_height
         self.toc_entries = []  # [(title, slide_index), ...]
@@ -419,58 +410,25 @@ def generate_advanced_report_v2(excel_path, output_path, log_cb=None):
         # 负偏差金额(含税)
         neg_amt_col = next((c for c in ['负偏差金额(含税)', '负偏差金额'] if c in summary_cols), None)
         neg_amount = abs(summary[neg_amt_col].sum()) if neg_amt_col else 0
-        gross_amount = pos_amount - neg_amount  # 账面毛偏差：正负直接相减，未做替代料对冲
-
-        # 净偏差必须取「替代料明细」的「净偏差金额」列（真正的净偏差口径）。
-        # 正偏差+负偏差 算出来的是毛偏差，方向可能与真实净偏差相反，不能当净偏差承诺给管理层。
-        net_amount = None
-        net_is_gross = False
-        if alt is not None and not getattr(alt, 'empty', True):
-            net_amt_col = next((c for c in ['净偏差金额'] if c in alt.columns), None)
-            if net_amt_col:
-                net_amount = pd.to_numeric(alt[net_amt_col], errors='coerce').sum()
-                net_amount = 0.0 if pd.isna(net_amount) else float(net_amount)
-        if net_amount is None:
-            net_is_gross = True
-            if pos_amt_col or neg_amt_col:
-                net_amount = gross_amount
-                logger.warning(
-                    "[PPT] 替代料明细缺少「净偏差金额」列，净偏差 KPI 降级为账面毛偏差口径")
-            else:
-                logger.warning("[PPT] 无正/负偏差金额列，跳过净偏差 KPI 卡片")
-
-        # 备注覆盖率（加权）。Excel 里存在两种形态：post_process 规范化后的数值 0.73，
-        # 或文本 "73%"。两者都要解析成小数，否则会差 100 倍（0.73 被再除 100 -> 0.7%）。
+        net_amount = pos_amount - neg_amount
+        # 备注覆盖率（加权）
         rate_col_name = next((c for c in ['备注覆盖率', '备注覆盖', '覆盖率'] if c in summary.columns), None)
         if rate_col_name:
-            raw = summary[rate_col_name]
-            str_vals = raw.astype(str)
-            has_pct = str_vals.str.contains('%', regex=False)
-            numeric = pd.to_numeric(str_vals.str.replace('%', '', regex=False), errors='coerce')
-            # 带 % 的或数值 >1 的都是百分数形态，需除 100；0~1 之间视为已是小数
-            rates = numeric.where(~has_pct & numeric.between(0, 1), numeric / 100)
-            bad_mask = rates.isna()
-            if bad_mask.any():
-                logger.warning(
-                    "[PPT] 备注覆盖率有 %d 行无法解析，按 0 计入：%s",
-                    int(bad_mask.sum()), str_vals[bad_mask].unique().tolist())
-            rates = rates.fillna(0.0)
+            rate_col = summary[rate_col_name]
+            rates = rate_col.astype(str).str.replace('%', '').astype(float) / 100
             weight_col = next((c for c in ['总条数', '记录数', '条数'] if c in summary.columns), None)
-            weights = summary[weight_col] if weight_col else pd.Series(1, index=summary.index)
+            weights = summary[weight_col] if weight_col else pd.Series([1] * len(summary))
         else:
-            logger.warning("[PPT] 汇总统计缺少备注覆盖率列，按 0% 展示")
-            rates = pd.Series([0.0])
-            weights = pd.Series([1])
+            rates = pd.Series([0])
+            weights = pd.Series([1] * len(summary))
         note_rate = (rates * weights).sum() / weights.sum() if weights.sum() > 0 else 0
         kpis = [
             ("总记录数", f"{total_rows:,}", PRIMARY_COLOR),
             ("正偏差（多耗）", f"{pos_cnt:,}", POSITIVE_COLOR),
             ("负偏差（少耗）", f"{neg_cnt:,}", NEGATIVE_COLOR),
+            ("净偏差(元)", f"{net_amount:,.0f}", ACCENT_COLOR),
+            ("备注覆盖率", f"{note_rate:.1%}", SECONDARY_COLOR),
         ]
-        if net_amount is not None:
-            kpis.append(("毛偏差(元)" if net_is_gross else "净偏差(元)",
-                         f"{net_amount:,.0f}", ACCENT_COLOR))
-        kpis.append(("备注覆盖率", f"{note_rate:.1%}", SECONDARY_COLOR))
         pt.add_kpi_slide(kpis)
 
         # 4. 工厂对比（如果有工厂列）
@@ -532,39 +490,12 @@ def generate_advanced_report_v2(excel_path, output_path, log_cb=None):
                     f"{r.get('净偏差', 0):,.0f}"
                 ])
             pt.add_table_slide("替代料核对机制（示例）", headers, rows, col_widths=[2.5, 1.5, 2.5, 1.5, 1.5])
-
-            # 结论全部由本次数据动态生成，不写死任何工厂名或具体金额
-            def _dir_tag(v):
-                if v > 0:
-                    return '多耗（+）'
-                if v < 0:
-                    return '少耗（-）'
-                return '持平'
-
-            value_lines = [
+            pt.add_text_slide("替代料机制价值", [
                 "• 镜像偏差：原物料-100%，替代料+100%",
                 "• 净偏差 = 物料A + 物料B，反映真实成本",
-            ]
-            alt_rows_cnt = len(alt)
-            if net_amount is not None and not net_is_gross:
-                value_lines.append(
-                    f"• 本次共识别替代料配对 {alt_rows_cnt} 组，账面毛偏差 "
-                    f"{gross_amount:,.0f} 元（{_dir_tag(gross_amount)}），"
-                    f"对冲后净偏差 {net_amount:,.0f} 元（{_dir_tag(net_amount)}）")
-                if gross_amount != 0 and net_amount != 0 and (
-                        (gross_amount > 0) != (net_amount > 0)):
-                    value_lines.append(
-                        "• 毛偏差与净偏差方向相反——不消除对冲噪音会得出完全相反的管理结论")
-                elif abs(gross_amount) - abs(net_amount) > abs(net_amount) * 0.2:
-                    value_lines.append(
-                        f"• 对冲消除了 {abs(gross_amount) - abs(net_amount):,.0f} 元噪音，"
-                        "不反映为实际成本损失")
-            else:
-                value_lines.append(
-                    f"• 本次共识别替代料配对 {alt_rows_cnt} 组，账面毛偏差 "
-                    f"{gross_amount:,.0f} 元")
-            value_lines.append("• 避免将规格切换误判为管理异常")
-            pt.add_text_slide("替代料机制价值", value_lines)
+                "• 金黄胚系列净偏差-6万 vs 账面143万",
+                "• 避免将规格切换误判为管理异常"
+            ])
 
         # 8. 根因诊断（如果有原因分析）
         if not cause.empty and '备注原因' in cause.columns:
@@ -575,7 +506,6 @@ def generate_advanced_report_v2(excel_path, output_path, log_cb=None):
                               col_widths=[6, 2])
 
         # 9. 行动建议（固定内容）
-        # 注：替代料对冲已在分析器中默认生效，故此处陈述为已实现事实，而非待办事项
         pt.add_text_slide("分阶段改进行动", [
             "【立即行动（1周内）】",
             "• 强制补录无备注记录",
@@ -588,22 +518,14 @@ def generate_advanced_report_v2(excel_path, output_path, log_cb=None):
             "• 规范工艺执行",
             "",
             "【中期建设（3月内）】",
-            "• 替代料净偏差自动抵消（分析器已默认启用，本项为常态化维护）",
+            "• 替代料净偏差自动抵消",
             "• 上线实时预警看板",
             "• 实现系统领用与实际双重校验"
         ])
 
         # 10. 目标量化
-        if net_amount is not None and not net_is_gross:
-            amount_goal = f"• 偏差金额降低30%（当前净偏差 {net_amount:,.0f} 元）"
-        else:
-            # 净偏差口径不可用时不能承诺净偏差目标，只能说明毛偏差现状
-            label = "毛偏差" if net_amount is not None else "偏差金额"
-            amount_goal = (f"• {label}压降30%（当前{label} "
-                           f"{net_amount:,.0f} 元）" if net_amount is not None
-                           else "• 偏差金额压降30%（当前金额口径不可用，仅列示明细）")
         pt.add_text_slide("预期效果与目标量化", [
-            amount_goal,
+            f"• 偏差金额降低30%（当前净偏差 {net_amount:,.0f} 元）",
             f"• 备注覆盖率从 {note_rate:.1%} 提升至 80% 以上",
             "• 异常响应时效从月度缩短至日度",
             "• 消除无备注高偏差记录，建立真实数据基础"

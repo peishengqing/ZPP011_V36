@@ -20,12 +20,12 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QFileDialog,
     QHeaderView, QDialog, QDialogButtonBox, QSplitter,
-    QMessageBox, QTableWidgetItem, QTableWidget,
+    QComboBox, QAbstractItemView, QMessageBox, QTableWidgetItem, QTableWidget,
     QMenu, QGroupBox, QProgressDialog, QInputDialog,
     QScrollArea, QCheckBox, QToolButton,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer, QItemSelection, QItemSelectionModel
-from PySide6.QtGui import QShortcut, QKeySequence, QAction
+from PySide6.QtGui import QFont, QFontMetrics, QShortcut, QKeySequence, QAction
 
 # 导入组件
 from gui_pyside6.components.menu_bar import MenuBarComponent
@@ -35,13 +35,12 @@ from gui_pyside6.components.main_table import MainTableComponent
 from gui_pyside6.components.bottom_bar import BottomBarComponent
 
 # 导入自定义模块
-from gui_pyside6.models.data_frame_model import DataFrameModel, AuditProxyModel
+from gui_pyside6.models.data_frame_model import DataFrameModel, AuditProxyModel, build_display_key_list
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.widgets.filter_panel import FilterPanel
 from gui_pyside6.widgets.stats_cards import StatsCardsWidget
 from gui_pyside6.widgets.unread_summary_popup import UnreadSummaryPopup
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
-from gui_pyside6.utils.column_filter import ColumnFilterController
 from gui_pyside6.dialogs.unit_summary_dialog import UnitSummaryDialog
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
@@ -55,7 +54,6 @@ from core.auto_quarantine import (
 )
 from gui_pyside6.dialogs.dashboard_dialog import DashboardDialog
 from gui_pyside6.dialogs.history_compare_dialog import HistoryCompareDialog
-from gui_pyside6.dialogs.audit_changes_dialog import AuditChangesDialog
 from gui_pyside6.dialogs.import_wizard_dialog import ImportWizard
 from gui_pyside6.dialogs.health_check_dialog import HealthCheckDialog
 from gui_pyside6.viewmodels.analysis_vm import AnalysisViewModel
@@ -169,12 +167,6 @@ class _PptReportWorker(QThread):
         self.df = df
         self.output_path = output_path
         self.src_name = src_name
-        # 取消标志（2026-10-03）：此前 4 个 worker 里只有 _FullReportWorker 有，
-        # 关窗时本 worker 仍在跑并回调已析构的窗口。
-        self._cancel = False
-
-    def request_cancel(self):
-        self._cancel = True
 
     def run(self):
         try:
@@ -185,12 +177,6 @@ class _PptReportWorker(QThread):
                 _sys.path.insert(0, _root)
             from build_ppt_net import build_net_report
             build_net_report(self.df, self.output_path, src_name=self.src_name)
-            # 边界检查：build_net_report 是单次阻塞调用，内部无法加检查点（要真中断
-            # 须改 build_ppt_net.py，不在本次范围）。但至少在 emit 前拦一道，
-            # 避免关窗/取消后仍回调已析构的窗口。
-            if self._cancel:
-                self.failed.emit("已取消")
-                return
             self.finished_ok.emit(self.output_path)
         except Exception as e:
             import traceback as _tb
@@ -206,12 +192,6 @@ class _FileReadWorker(QThread):
     def __init__(self, file_path):
         super().__init__()
         self.file_path = file_path
-        # 取消标志（2026-10-03）：与 _PptReportWorker 同理——原先无取消能力，
-        # 关窗后仍在跑并 emit 到已析构的窗口。
-        self._cancel = False
-
-    def request_cancel(self):
-        self._cancel = True
 
     def run(self):
         try:
@@ -220,10 +200,6 @@ class _FileReadWorker(QThread):
             sheets = xl.sheet_names
             target = "Data" if "Data" in sheets else sheets[0]
             df = xl.parse(target)  # 复用已打开的工作簿，不重复解析整个文件
-            # 边界检查：xl.parse 是单次阻塞调用（要真中断须改 utils/excel_io.py，
-            # 不在本次范围），此处只在 emit 前拦一道。
-            if self._cancel:
-                return
             self.loaded.emit(df, self.file_path)
         except Exception as e:
             self.failed.emit(str(e))
@@ -277,11 +253,6 @@ class MainWindow(QMainWindow):
         self._col_filter_mode = False
         self._filtered_col_set = set()  # 当前已设取值过滤的列号集合（供表头画漏斗标，与 SortBadgeHeader 对齐）
         self._col_filter_popup = None   # 当前打开的列头筛选浮层（避免被 GC）
-        # 已同步到 proxy_model 的列取值过滤快照：col_name -> 允许的展示值集合。
-        # 列头筛选浮层改用 ColumnFilterController 后，它只维护自己的 _value_filters，
-        # 真正让表格过滤的是 proxy_model.setValueFilter()，两者靠这个快照做差量同步
-        # （见 _apply_col_filter_to_proxy）。
-        self._applied_value_filters = {}
         # Ctrl 状态由键盘事件流实时跟踪（最可靠），用于多级排序判定。
         # 原因：Qt 在 mousePressEvent/sectionClicked 时机读 Ctrl 修饰符极不可靠
         # （实测真实环境 event.modifiers() 常读不到 Ctrl，导致 Ctrl+多级排序永不生效）。
@@ -446,8 +417,6 @@ class MainWindow(QMainWindow):
         self.showMaximized()
 
         self.title_bar.theme_toggled.connect(self._toggle_theme)
-        # v43.128：标题栏工厂选择器 → 切换主表数据源
-        self.title_bar.factory_selected.connect(self._on_title_factory_selected)
 
     def _setup_shortcuts(self):
         QShortcut(QKeySequence("F5"), self).activated.connect(self._start_analysis)
@@ -767,57 +736,341 @@ class MainWindow(QMainWindow):
             self.log(msg, level)
 
     def _show_audit_changes_dialog(self):
-        """工具栏「变动提醒」：打开已审核记录变更明细对话框（v43.127 薄壳）。
-
-        原先本方法是一段 337 行的实现（建表格 + 字段筛选/搜索 + 排序 + 复制 +
-        导出 + 标记已读），现已搬进 ``gui_pyside6/dialogs/audit_changes_dialog.py``。
-        本方法只负责：防重入守卫 → 取数据 → 构造对话框 → 接回调 Signal → exec()。
-
-        行为契约（不变）：
-        - 无变动时弹「暂无已审核记录变动。」信息框，不开窗；
-        - 弹窗标题含条数「变动提醒（N 条）」，resize(1100,600)，可最大化；
-        - **关掉弹窗不修改主表**（只有用户在弹窗内主动点「标记为已读」才写
-          _read / _read_source 两列，见 AuditChangesDialog._sync_main_read_status）；
-        - 双击行 → 定位主表，定位成功才关窗。
-        """
         # 防重入：延迟触发期间若弹窗已开，跳过（避免堆叠多个模态框导致崩溃）
         if getattr(self, '_audit_changes_dialog_open', False):
             return
+        # 顶部工具栏：显示已审核记录变更明细（alert 与手动点击均复用）。
         # 单一数据源：从主表 df 的 _post_audit_changed==1（且未读）行重算，
-        # 与未读概览弹窗/标记统计共用同一真相，不依赖易失的 last_audit_changes 列表。
+        # 与未读概览弹窗/标记统计共用同一真相，不再依赖易失的 last_audit_changes 列表。
         _adf = self.source_model.getDataFrame() if self.source_model else getattr(self.view_model, 'df', None)
         changes = self.data_service.get_audit_changes(_adf) if (_adf is not None and not getattr(_adf, 'empty', True)) else []
         if not changes:
             QMessageBox.information(self, "变动提醒", "暂无已审核记录变动。")
             return
-
-        dlg = AuditChangesDialog(
-            changes,
-            source_model=self.source_model,
-            view_model=self.view_model,
-            data_service=self.data_service,
-            parent=self)
-        dlg.log_requested.connect(self.log)
-        dlg.manual_marked.connect(self._on_manual_marked)
-        # locate_requested 需要「定位是否成功」来决定双击后关不关窗，而 Qt 的
-        # Signal.emit() 恒返回 None，拿不到返回值。故用一个可变 list 把结果带回，
-        # 再通过 dlg.locate_succeeded 门面交给对话框（替掉原先直调
-        # self._locate_row_in_main_table 的写法）。
-        _located = []
-
-        def _on_locate_requested(data_id):
-            _located.append(bool(self._locate_row_in_main_table(data_id)))
-
-        dlg.locate_requested.connect(_on_locate_requested)
-        dlg.locate_succeeded = lambda: bool(_located and _located[-1])
-
+        count = len(changes)
+        MAX_DISPLAY = 3000
+        display_len = min(count, MAX_DISPLAY)
+        # 自定义对话框：表格展示变更明细 + 筛选/搜索/排序/复制/双击定位 + 手动导出
         self._audit_changes_dialog_open = True
-        try:
-            dlg.exec()
-        finally:
-            # 用 finally：exec 抛异常时也必须复位，否则防重入标志永久卡死，
-            # 之后点「变动提醒」再也不会开窗。
-            self._audit_changes_dialog_open = False
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"变动提醒（{count} 条）")
+        dlg.resize(1100, 600)
+        # 允许最大化/最小化（Windows 上最大化按钮需与最小化成对才稳定显示）
+        dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowMinMaxButtonsHint)
+        layout = QVBoxLayout(dlg)
+
+        # 工具栏：字段筛选 + 关键字搜索
+        tool_bar = QHBoxLayout()
+        tool_bar.addWidget(QLabel("字段:"))
+        field_combo = QComboBox()
+        field_combo.addItems(["全部字段", "实际数量", "备注原因"])
+        tool_bar.addWidget(field_combo)
+        tool_bar.addSpacing(12)
+        tool_bar.addWidget(QLabel("搜索:"))
+        search_edit = QLineEdit()
+        search_edit.setPlaceholderText("日期 / 车间 / 流程订单 / 物料编码 / 物料名称")
+        tool_bar.addWidget(search_edit, 1)
+        layout.addLayout(tool_bar)
+
+        extra = f"（仅显示前 {display_len} 条，共 {count} 条；导出按钮可导出全部）" if count > display_len else ""
+        tip = QLabel(f"发现 {count} 条已审核记录的实际数量/备注原因发生变动，已强制设为'未读'。\n（表格可排序/筛选/搜索，右键复制单元格或整行，双击定位到主表对应行）{extra}")
+        tip.setWordWrap(True)
+        layout.addWidget(tip)
+
+        table = QTableWidget(dlg)
+        cols = ["日期", "车间", "流程订单", "物料编码", "物料名称", "变更字段", "旧值", "新值"]
+        table.setColumnCount(len(cols))
+        table.setHorizontalHeaderLabels(cols)
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        table.setSelectionMode(QAbstractItemView.ExtendedSelection)  # 支持 Ctrl/Shift 多选，点击行即高亮选中
+        table.verticalHeader().setVisible(False)
+        layout.addWidget(table)
+
+        # 待处理变动列表（标记已读后从此移除并刷新表格）；行内 UserRole 存 remaining 索引，排序/部分标记后仍可正确映射
+        remaining = list(changes)
+
+        def _populate(show_list, with_progress=False):
+            table.setSortingEnabled(False)
+            table.setRowCount(len(show_list))
+            prog = None
+            if with_progress and len(show_list) > 0:
+                prog = QProgressDialog("正在加载变更明细...", None, 0, len(show_list), self)
+                prog.setWindowTitle("加载变动提醒")
+                prog.setWindowModality(Qt.WindowModal)
+                prog.setMinimumDuration(300)
+                prog.setValue(0)
+            for i, c in enumerate(show_list):
+                did = str(c.get('data_id', ''))
+                parts = did.split('|')
+                # 兼容 4 段（工厂|日期|流程订单|物料编码）和 3 段（日期|流程订单|物料编码）格式
+                if len(parts) == 4:
+                    date, order, mat = parts[1], parts[2], parts[3]
+                elif len(parts) >= 3:
+                    date, order, mat = parts[0], parts[1], parts[2]
+                else:
+                    date, order, mat = '', '', ''
+                wk = c.get('workshop', '') or ''
+                old_v = c.get('old_value', '')
+                new_v = c.get('new_value', '')
+                it0 = QTableWidgetItem(date)
+                it0.setData(Qt.UserRole, i)  # 存 remaining 索引
+                table.setItem(i, 0, it0)
+                table.setItem(i, 1, QTableWidgetItem(str(wk)))
+                table.setItem(i, 2, QTableWidgetItem(order))
+                table.setItem(i, 3, QTableWidgetItem(mat))
+                table.setItem(i, 4, QTableWidgetItem(str(c.get('material_name', '') or '')))
+                table.setItem(i, 5, QTableWidgetItem(str(c.get('field', ''))))
+                table.setItem(i, 6, QTableWidgetItem('' if old_v is None else str(old_v)))
+                table.setItem(i, 7, QTableWidgetItem('' if new_v is None else str(new_v)))
+                if prog and (i + 1) % 200 == 0:
+                    prog.setValue(i + 1)
+                    QApplication.processEvents()
+            if prog:
+                prog.setValue(len(show_list))
+            # 列宽：手动设定固定/拉伸，避免 ResizeToContents 在大量行时逐行测量导致卡顿
+            header = table.horizontalHeader()
+            fixed_widths = {0: 100, 1: 90, 2: 100, 3: 110, 4: 200, 5: 90}
+            for col, w in fixed_widths.items():
+                header.setSectionResizeMode(col, QHeaderView.Fixed)
+                table.setColumnWidth(col, w)
+            name_col = 4
+            name_max_w = 200
+            header.setSectionResizeMode(6, QHeaderView.Stretch)  # 旧值
+            header.setSectionResizeMode(7, QHeaderView.Stretch)  # 新值
+            # 仅在小数据量时做逐行字号缩放（大数据量跳过，避免逐行 QFontMetrics 卡顿）
+            n = len(show_list)
+            if n <= 2000:
+                base_font = table.font()
+                fm = QFontMetrics(base_font)
+                pad = 12
+                avail = name_max_w - pad
+                max_text_w = 0
+                for r in range(n):
+                    it = table.item(r, name_col)
+                    if it:
+                        max_text_w = max(max_text_w, fm.horizontalAdvance(it.text()))
+                if max_text_w > avail:
+                    ps = base_font.pointSizeF() or 9.0
+                    new_size = max(7.0, ps * avail / max_text_w)
+                    shrink_font = QFont(base_font)
+                    shrink_font.setPointSizeF(new_size)
+                    for r in range(n):
+                        it = table.item(r, name_col)
+                        if it:
+                            it.setFont(shrink_font)
+            table.setSortingEnabled(True)
+
+        _populate(remaining[:MAX_DISPLAY], with_progress=True)
+
+        # 右键：复制单元格 / 复制整行
+        _ctx_index = [None]  # 记录右键所在的单元格，避免整行选中导致取错列
+
+        def _copy_cell():
+            idx = _ctx_index[0]
+            if idx is None or not idx.isValid():
+                idxs = table.selectedIndexes()
+                idx = idxs[0] if idxs else None
+            if idx is not None and idx.isValid():
+                QApplication.clipboard().setText(str(idx.data() or ''))
+                toast("已复制单元格", parent=dlg)
+
+        def _copy_row():
+            r = table.currentRow()
+            if r < 0:
+                return
+            vals = []
+            for cc in range(table.columnCount()):
+                it = table.item(r, cc)
+                vals.append(it.text() if it else '')
+            QApplication.clipboard().setText('\t'.join(vals))
+            toast("已复制整行", parent=dlg)
+
+        def _on_context(pos):
+            _ctx_index[0] = table.indexAt(pos)
+            menu = QMenu()
+            a_cell = menu.addAction("复制单元格")
+            a_row = menu.addAction("复制整行")
+            menu.addSeparator()
+            a_mark_read = menu.addAction("标记为已读（选中行）")
+            act = menu.exec_(table.viewport().mapToGlobal(pos))
+            if act == a_cell:
+                _copy_cell()
+            elif act == a_row:
+                _copy_row()
+            elif act == a_mark_read:
+                _mark_selected_read()
+
+        table.setContextMenuPolicy(Qt.CustomContextMenu)
+        table.customContextMenuRequested.connect(_on_context)
+
+        # 过滤（字段筛选 + 关键字搜索）
+        def _apply_filter():
+            kw = search_edit.text().strip().lower()
+            fsel = field_combo.currentText()
+            for r in range(table.rowCount()):
+                show = True
+                if fsel != "全部字段" and table.item(r, 5).text() != fsel:
+                    show = False
+                if show and kw:
+                    hay = ' '.join(table.item(r, cc).text().lower() for cc in (0, 1, 2, 3, 4))
+                    if kw not in hay:
+                        show = False
+                table.setRowHidden(r, not show)
+
+        search_edit.textChanged.connect(_apply_filter)
+        field_combo.currentTextChanged.connect(_apply_filter)
+
+        # 双击定位到主表对应行（按当前行单元格重建 data_id，排序后仍正确）
+        def _on_double(idx):
+            r = idx.row()
+            if r < 0:
+                return
+            d = table.item(r, 0).text()
+            o = table.item(r, 2).text()
+            m = table.item(r, 3).text()
+            did = '|'.join([d, o, m])
+            if self._locate_row_in_main_table(did):
+                dlg.accept()
+
+        table.doubleClicked.connect(_on_double)
+
+        btn_box = QDialogButtonBox(dlg)
+        export_btn = QPushButton("导出Excel并打开")
+        mark_sel_btn = QPushButton("选中标记为已读")
+        mark_read_btn = QPushButton("全部标记为已读（不再提醒）")
+        ok_btn = QPushButton("确定")
+        btn_box.addButton(export_btn, QDialogButtonBox.ActionRole)
+        btn_box.addButton(mark_sel_btn, QDialogButtonBox.ActionRole)
+        btn_box.addButton(mark_read_btn, QDialogButtonBox.ActionRole)
+        btn_box.addButton(ok_btn, QDialogButtonBox.AcceptRole)
+        layout.addWidget(btn_box)
+
+        def _export():
+            try:
+                tmp_dir = os.path.join(os.path.expanduser("~"), "AppData", "Local", "Temp", "zpp011_audit_changes")
+                os.makedirs(tmp_dir, exist_ok=True)
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                path = os.path.join(tmp_dir, f"audit_changes_{ts}.xlsx")
+                rows = []
+                for c in changes:
+                    did = str(c.get('data_id', ''))
+                    parts = did.split('|')
+                    rows.append({
+                        '日期': parts[0] if len(parts) > 0 else '',
+                        '车间': c.get('workshop', '') or '',
+                        '流程订单': parts[1] if len(parts) > 1 else '',
+                        '物料编码': parts[2] if len(parts) > 2 else '',
+                        '物料名称': c.get('material_name', '') or '',
+                        '变更字段': c.get('field', ''),
+                        '旧值': '' if c.get('old_value') is None else c.get('old_value'),
+                        '新值': '' if c.get('new_value') is None else c.get('new_value'),
+                    })
+                pd.DataFrame(rows).to_excel(path, index=False)
+                if os.name == "nt" and os.path.exists(path):
+                    _open_file(path)
+                else:
+                    opener = 'open' if sys.platform == 'darwin' else 'xdg-open'
+                    subprocess.Popen([opener, path])
+                toast(f"已导出并打开：{path}", parent=dlg)
+            except Exception as e:
+                QMessageBox.warning(dlg, "导出失败", f"导出失败：{e}")
+
+        def _get_df_for_mark():
+            """构造用于标记已读的主表快照 df（优先 source_model，其次 view_model.df，最后最小 data_id df）。"""
+            df = None
+            if self.source_model:
+                df = self.source_model.getDataFrame()
+            if df is None or (hasattr(df, 'empty') and df.empty):
+                df = getattr(self.view_model, 'df', None)
+                if df is not None and not (hasattr(df, 'empty') and df.empty):
+                    self.log("source_model 为空，使用 view_model.df 作为已读快照", "warning")
+            if df is None or (hasattr(df, 'empty') and df.empty):
+                data_ids = list(dict.fromkeys([str(c.get('data_id', '')) for c in remaining if c.get('data_id')]))
+                if not data_ids:
+                    return None
+                df = pd.DataFrame({'data_id': data_ids})
+                self.log("主表数据为空，以最小 data_id 列标记变动已读（不保存当前值快照）", "warning")
+            return df
+
+        def _sync_main_read_status(dids):
+            """把一组 data_id 对应的主表行 _read 设为 1 并触发界面刷新。"""
+            if not dids or not self.source_model:
+                return
+            df = self.source_model.getDataFrame()
+            if df is None or (hasattr(df, 'empty') and df.empty):
+                return
+            if 'data_id' not in df.columns or '_read' not in df.columns:
+                return
+            mask = df['data_id'].astype(str).isin(dids)
+            if mask.any():
+                df.loc[mask, '_read'] = 1
+                df.loc[mask, '_read_source'] = 'manual'
+                self.source_model.setDataFrame(df)
+
+        def _mark_selected_read():
+            """把当前选中的行（点击高亮即选中，Ctrl/Shift 可多选）标记为已读，并从列表移除。"""
+            sel = table.selectedIndexes()
+            if not sel:
+                QMessageBox.information(dlg, "提示", "请先选中要标记的行（点击行即高亮选中，Ctrl/Shift 可多选）。")
+                return
+            rows = sorted({idx.row() for idx in sel})
+            idxs = []
+            for r in rows:
+                ud = table.item(r, 0).data(Qt.UserRole)
+                if isinstance(ud, int) and 0 <= ud < len(remaining):
+                    idxs.append(ud)
+            if not idxs:
+                return
+            idxs = sorted(set(idxs))
+            sub_changes = [remaining[i] for i in idxs]
+            df = _get_df_for_mark()
+            if df is None:
+                QMessageBox.warning(dlg, "提示", "主表数据为空且无有效 data_id，无法标记已读。")
+                return
+            n, marked_dids = self.data_service.mark_changes_as_read(sub_changes, df)
+            if n > 0:
+                _sync_main_read_status(marked_dids)
+                self._on_manual_marked(n)  # 变动提醒弹窗手动标已读 → 累加到状态栏计数
+                # 从 remaining 移除已标记行（按 data_id+变更字段 去重，避免误删未选中的同名行）
+                marked_keys = {(str(c.get('data_id', '')), str(c.get('field', ''))) for c in sub_changes}
+                new_remaining = [c for c in remaining if (str(c.get('data_id', '')), str(c.get('field', ''))) not in marked_keys]
+                remaining[:] = new_remaining
+                dlg.setWindowTitle(f"变动提醒（{len(remaining)} 条）")
+                _populate(remaining[:MAX_DISPLAY])
+                _apply_filter()
+                toast(f"已把 {n} 条标记为已读（剩余 {len(remaining)} 条）", parent=dlg)
+                if not remaining:
+                    toast("已全部标记为已读", parent=dlg)
+                    dlg.accept()
+            else:
+                QMessageBox.warning(dlg, "标记失败", "未能标记所选行为已读，请检查数据。")
+
+        def _mark_all_read():
+            try:
+                df = _get_df_for_mark()
+                if df is None:
+                    QMessageBox.warning(dlg, "提示", "主表数据为空且无有效 data_id，无法标记已读。")
+                    return
+                marked_dids = {str(c.get('data_id', '')) for c in remaining if c.get('data_id')}
+                n, _ = self.data_service.mark_changes_as_read(remaining, df)
+                if n > 0:
+                    _sync_main_read_status(marked_dids)
+                    self._on_manual_marked(n)  # 「全部标记为已读」→ 累加到状态栏计数
+                    toast(f"已把 {n} 条记录标记为已读，下次不再提醒", parent=dlg)
+                remaining[:] = []
+                dlg.setWindowTitle("变动提醒（0 条）")
+                _populate([])
+                dlg.accept()
+            except Exception as e:
+                QMessageBox.warning(dlg, "标记失败", f"标记已读失败：{e}")
+
+        export_btn.clicked.connect(_export)
+        mark_sel_btn.clicked.connect(_mark_selected_read)
+        mark_read_btn.clicked.connect(_mark_all_read)
+        ok_btn.clicked.connect(dlg.accept)
+        dlg.exec()
+        self._audit_changes_dialog_open = False
 
 
     def _select_source_row(self, src_row):
@@ -1005,7 +1258,6 @@ class MainWindow(QMainWindow):
         try:
             if self.proxy_model is not None:
                 self.proxy_model.clearFilters()
-            self._clear_col_filter_value_filters()  # 同步清 ColumnFilterController 侧（proxy 不知道它）
             # 同步清掉列头筛选漏斗标（取值过滤已在 clearFilters 内清空，这里清列号集合并重绘）
             if self._filtered_col_set:
                 self._filtered_col_set.clear()
@@ -1040,16 +1292,6 @@ class MainWindow(QMainWindow):
             self._auto_read_by_rules(processed_df)
             self.source_model.setDataFrame(processed_df)
             QApplication.processEvents()
-            # v43.128：分析完成后填充标题栏工厂选项（factory_data 此刻已就绪）
-            try:
-                self.title_bar.set_factories(
-                    self.analysis_controller.get_factories(),
-                    current=self.analysis_controller.current_factory,
-                )
-            except Exception:
-                # 填充工厂选项失败不应影响分析结果交付，故只记日志不中断
-                import logging as _lg
-                _lg.getLogger(__name__).warning('标题栏工厂选项填充失败', exc_info=True)
             self._schedule_unread_summary()
             self.view_model.df = processed_df
             self._analysis_params = self.analysis_controller.get_analysis_params()
@@ -1082,17 +1324,6 @@ class MainWindow(QMainWindow):
                         self.material_search = material_search
                         self.output_path = output_path
                         self.dyn_thresh = dyn_thresh
-                        # 取消标志（2026-10-03 修复）：此前本 worker 无任何协作式取消点
-                        # （cancel_check=None），关窗/取消时闷头算到底。参照
-                        # _FullReportWorker 的同款实现。实测：补上后取消停止耗时
-                        # 10.09s → 0.021s。照抄其 _cancel_check 模式。
-                        self._cancel = False
-
-                    def request_cancel(self):
-                        self._cancel = True
-
-                    def _cancel_check(self, *args):
-                        return self._cancel
 
                     def run(self):
                         import analysis.analyzer as _az
@@ -1107,8 +1338,7 @@ class MainWindow(QMainWindow):
                                 # 复用 worker 已算好的 Sheet1~5 中间结果，只生成 Sheet6~10 + 保存，避免重算
                                 export_full_report_from_intermediates(
                                     _li, output_path=self.output_path,
-                                    progress_callback=_cb,
-                                    cancel_check=self._cancel_check)
+                                    progress_callback=_cb, cancel_check=None)
                             else:
                                 # 兜底：中间结果缺失时退回完整分析（理论上不会发生，worker 必先生效）
                                 _az.do_analysis_v2(
@@ -1119,8 +1349,7 @@ class MainWindow(QMainWindow):
                                     enable_net_offset=_cfg.get_net_offset_enabled(),
                                     return_dataframe=False,
                                     dyn_thresh=getattr(self, 'dyn_thresh', None),
-                                    progress_callback=_cb,
-                                    cancel_check=self._cancel_check,
+                                        progress_callback=_cb,
                                 )
                         except Exception:
                             import traceback as _tb
@@ -1571,22 +1800,6 @@ class MainWindow(QMainWindow):
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开偏差率预警看板失败: {e}")
-
-    def _focus_unused_rows(self):
-        """浮窗「未投料」行点「查看」→ 就地筛主表到未投料行（不开新窗口）。
-
-        未投料没有独立的看板，所以走主表过滤。与统计卡片点击同款路径
-        （filter_panel.set_color_filter，'unused' 是 filter_panel 已支持的 mode）。
-        """
-        try:
-            if self.filter_panel is not None:
-                self.filter_panel.set_color_filter('unused')
-            self.statusBar().showMessage(
-                "已过滤：仅显示未投料行（实际用量=0、定额>0）", 3000)
-        except Exception:
-            # 筛选失败不应让整个浮窗的点击静默无反应，故记日志
-            import logging as _lg
-            _lg.getLogger(__name__).warning('未投料聚焦失败', exc_info=True)
 
     def _show_neg_loss_dashboard(self):
         """手动打开负损(含未投料)看板：名称含关键词 且 负损(含未投料)，独立于隔离区。"""
@@ -2650,37 +2863,7 @@ class MainWindow(QMainWindow):
         self._sort_header = SortBadgeHeader(Qt.Horizontal, self.table_view)
         self._sort_header.set_sort_columns_getter(lambda: self.sort_columns)
         self._sort_header.set_filtered_columns_getter(lambda: self._filtered_col_set)
-        # ---- 列头取值筛选：复用 gui_pyside6/utils/column_filter.py 的 ColumnFilterController ----
-        # 2026-10-03 重构（v43.127）：原先此处内联复制了约 148 行浮层实现，现改为调公共控制器
-        # （alert_dialog / deviation_warning / quarantine / neg_loss_dashboard 四个看板已在用）。
-        # 两点适配差异，务必留意：
-        #   1) **过滤落地机制不同**——看板走 DataFrame 层（controller.mask_dataframe），
-        #      主表走 AuditProxyModel（proxy.setValueFilter → filterAcceptsRow）。
-        #      故 apply_filter_cb 不能给 controller 的 mask_dataframe，要走
-        #      _apply_col_filter_to_proxy 做差量同步，保持主表「筛选状态留在 proxy」
-        #      的原语义不变（否则与侧边栏筛选 / 顶部筛选行 / 「重置筛选」口径全部失配）。
-        #   2) **排序路由不复用**——主表排序是 _on_header_clicked 自管三态循环 + Ctrl 多级排序
-        #      + 三路冗余 Ctrl 状态读取（_ctrl_down / _sort_header._ctrl_held / keyboardModifiers），
-        #      比 controller 依赖的 HeaderSortController._on_click 复杂得多，也不兼容。
-        #      因此**不接** controller.on_header_clicked，sort_ctrl 传 None（该字段仅在
-        #      on_header_clicked 里被用到，本处不会调用）。若将来要接，必须先补一个转发到
-        #      _on_header_clicked 的桥，否则会静默丢掉 Ctrl 多级排序。
-        self._col_filter_ctrl = ColumnFilterController(
-            self.table_view, self._sort_header,
-            None,                                       # sort_ctrl：见上方说明，不走 controller 排序
-            lambda: self.source_model,                  # 取值来源：主表 DataFrameModel
-            self._apply_col_filter_to_proxy,            # 确定后落回 proxy.setValueFilter
-            skip_cols=(0,),                             # 第0列（_read 图标列）不参与
-            parent=self)
-        # controller 内部也维护 _filtered_col_set（表头漏斗标）。让主表这份属性与它
-        # **指向同一个 set 对象**，于是「分析完成」「重置筛选」「关闭列头筛选」三处
-        # 现有的 self._filtered_col_set.clear() 无需改动即可同时清掉两边状态
-        # （controller 侧是 add/discard 原地修改，不重新绑定）。
-        self._filtered_col_set = self._col_filter_ctrl.filtered_col_set
-        self._col_filter_ctrl.filtered_cols_changed.connect(self._on_col_filter_changed)
-        # 点击已筛选列左侧漏斗图标 → 直接打开该列筛选浮层（无需先开启「列头筛选」模式）。
-        # **必须放在 controller 构造之后**：controller.__init__ 内部也会 set_funnel_clicked，
-        # 若主表接线在前会被静默覆盖掉。
+        # 点击已筛选列左侧漏斗图标 → 直接打开该列筛选浮层（无需先开启「列头筛选」模式）
         self._sort_header.set_funnel_clicked(
             lambda col: QTimer.singleShot(0, lambda c=col: self._open_column_filter(c)))
         self.table_view.setHorizontalHeader(self._sort_header)
@@ -2742,44 +2925,6 @@ class MainWindow(QMainWindow):
             self._refresh_unread_popup()
         except Exception:
             pass
-        # 修复（2026-10-03）：把用户在 filter_panel 调的「动态阈值」接到
-        # DataFrameModel.set_alert_threshold。此前该 setter 全仓零调用，
-        # 阈值写死在 data_frame_model.py:479 的 10.0，导致用户调阈值后
-        # 颜色标记纹丝不动（看起来像自己操作错了，属信任损耗）。
-        # 为什么在这里现读 spinbox 而不读 config：dyn_thresh 不落任何配置
-        # 文件（仓库无 config.json），点「分析」时也是由 main_window.py:1162
-        # 现读现用；这里同源读取，语义与控件 tooltip「修改后重新分析生效」一致，
-        # 无需引入任何配置结构变更。
-        # 只接「动态阈值」不接「偏差率纳入阈值」：后者是行筛选条件
-        # （决定哪些工单进入主表），不是颜色阈值，接上属于接错语义。
-        self._apply_alert_threshold_from_filter()
-
-    def _apply_alert_threshold_from_filter(self):
-        """把 filter_panel 的动态阈值同步给表格模型的颜色标记判定。
-
-        幂等：可在每次数据加载/重新分析后重复调用。
-        """
-        spin = getattr(self.filter_panel, 'dyn_thresh_spin', None)
-        if spin is None:
-            # 没有 filter_panel（如无头环境）→ 保留模型默认值
-            return
-        model = getattr(self, 'source_model', None)
-        if model is None or not hasattr(model, 'set_alert_threshold'):
-            return
-        try:
-            value = float(spin.value())
-        except (TypeError, ValueError):
-            return
-        # 阈值参与 flags() 的颜色预计算，setter 内部会 _mark_plan_stale() 重建
-        if value <= 0:
-            # 0 意味着「不做预警标记」，会让所有偏差色消失，等同于关掉配色，
-            # 属于用户明显误操作，回退到模型默认 10.0 而不是让界面全白。
-            value = 10.0
-        model.set_alert_threshold(value)
-        # 同步给代理模型：筛选计划与颜色标记用同一套阈值
-        proxy = getattr(self, 'proxy_model', None)
-        if proxy is not None and hasattr(proxy, 'set_alert_threshold'):
-            proxy.set_alert_threshold(value)
 
     def _schedule_unread_summary(self):
         """标记「本次为真实数据载入」，待 _on_view_model_data_changed 末尾弹未读汇总。"""
@@ -2855,22 +3000,6 @@ class MainWindow(QMainWindow):
             n_d = int((alert_mask & read_mask).sum())
         else:
             n_d = 0
-        # 5. 负损看板未读（v43.131 补齐）
-        #    口径与 neg_loss_dashboard._neg_loss_mask 一致（该对话框默认「包含未投料」=开，
-        #    即 0<=实际<定额），叠未读条件。关键词沿用该看板的默认口径 彩罐/托盘/手包袋
-        #    ——它目前 self._keywords 为空（文档却写默认有值，属另一处待修），这里保持一致。
-        n_n = 0
-        if act_col and qty_col:
-            neg_mask = (a >= 0) & (q > 0) & (a < q)   # 含未投料，与看板默认勾选态一致
-            if '_kw_mask_negloss' in df.columns:
-                neg_mask = neg_mask & (pd.to_numeric(df['_kw_mask_negloss'], errors='coerce').fillna(0).astype(int) == 1)
-            n_n = int((neg_mask & read_mask).sum())
-        # 6. 未投料未读（v43.131 补齐）
-        #    no_input 掩码上面已算好：实际≈0 且 定额>0 —— 正是模型层 _unused_only 的判定。
-        #    排除替代料，与 data_frame_model.py:1138 is_unused = no_input and not is_substitute 对齐。
-        n_u = int((no_input & read_mask).sum()) if alt_col is None else int((
-            no_input & (pd.to_numeric(df[alt_col], errors='coerce').fillna('').astype(str).str.strip() != '是')
-            & read_mask).sum())
 
         return [
             {"icon": "📦", "label": "隔离区", "count": n_q,
@@ -2881,12 +3010,6 @@ class MainWindow(QMainWindow):
              "callback": self._show_alert_dashboard},
             {"icon": "⚠️", "label": "偏差率预警", "count": n_d,
              "callback": self._show_deviation_warning_dialog},
-            # v43.131 新增：这两个看板原先不在未读汇总里，用户实际关注的
-            # 「包材负偏差」与「未投料订单」因此看不到任何数字。
-            {"icon": "🟠", "label": "负损看板", "count": n_n,
-             "callback": self._show_neg_loss_dashboard},
-            {"icon": "⬜", "label": "未投料", "count": n_u,
-             "callback": self._focus_unused_rows},
         ]
 
     def _show_unread_summary(self, force=False):
@@ -2999,6 +3122,13 @@ class MainWindow(QMainWindow):
                 self.filter_panel.set_color_filter('quarantine')
                 msg = "已过滤：仅显示隔离区记录"
             self.statusBar().showMessage(msg, 3000)
+        elif card_type == 'anomaly':
+            df = self.view_model.df
+            rate_col = next((c for c in ['偏差率(%)', '偏差率', 'dev_rate'] if c in df.columns), None)
+            if rate_col:
+                rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
+                count = int((rates.abs() > 30).sum())
+                self.statusBar().showMessage(f"🔴 真异常 {count} 条（已排除替代料）", 5000)
         elif card_type == 'unread':
             if self.filter_panel.read_status_combo.currentText() == '未读':
                 self.filter_panel.set_read_status_filter('全部')
@@ -3163,7 +3293,6 @@ class MainWindow(QMainWindow):
         try:
             if self.proxy_model is not None:
                 self.proxy_model.clearHeaderFilters()
-            self._clear_col_filter_value_filters()  # 同步清 ColumnFilterController 侧
             if getattr(self, "_filtered_col_set", None):
                 self._filtered_col_set.clear()
                 if getattr(self, "_sort_header", None) is not None:
@@ -3428,14 +3557,7 @@ class MainWindow(QMainWindow):
 
     def _toggle_col_filter_mode(self):
         """工具栏「🔽 列头筛选」开关：开启后点列头弹取值勾选浮层（Excel 式筛选）；
-        Ctrl+点列头仍走排序。关闭后点列头恢复排序行为。
-
-        修复（2026-10-03）：关闭时原先只关浮层、摘按钮勾，**没清筛选状态也没清漏斗标**
-        —— 用户反馈「关闭列头筛选了漏斗还在」。根因是列头取值过滤存在
-        proxy_model._value_filters、漏斗标记读 self._filtered_col_set，两者都不随
-        开关状态自动清理。现补上完整收尾，并**只清列头相关、不动侧边栏筛选**
-        （用 clearHeaderFilters 而非 clearFilters，与「重置筛选」路径同一口径）。
-        """
+        Ctrl+点列头仍走排序。关闭后点列头恢复排序行为。"""
         self._col_filter_mode = not self._col_filter_mode
         btn = self.action_btn_col_filter
         btn.setChecked(self._col_filter_mode)
@@ -3443,120 +3565,162 @@ class MainWindow(QMainWindow):
             btn.setText("🔽 列头筛选✓")
         else:
             btn.setText("🔽 列头筛选")
-            # 关闭模式时顺手关掉可能还开着的浮层（浮层实体由 ColumnFilterController 持有）
+            # 关闭模式时顺手关掉可能还开着的浮层
             if self._col_filter_popup is not None:
                 try:
                     self._col_filter_popup.close()
                 except Exception:
                     pass
                 self._col_filter_popup = None
-            ctrl = getattr(self, "_col_filter_ctrl", None)
-            if ctrl is not None:
-                ctrl._popup = None
-            # 关闭即清空列头筛选状态：漏斗标 + 取值过滤 + 状态栏提示
-            self._clear_column_filter_state()
-
-    def _clear_column_filter_state(self):
-        """清空「列头筛选」的全部状态：取值过滤 + 漏斗标 + 状态栏计数。
-
-        只清列头这一层，**保留侧边栏筛选**（filter_panel 的 _custom_filters）与顶部筛选行，
-        与「重置筛选」路径使用的 clearHeaderFilters 保持同一口径。
-
-        重绘要点（2026-10-02/10-03）：Qt6 QHeaderView 的自绘画在表头本体（frame）上，
-        必须 header.update() 才能重画漏斗/排序角标，viewport().update() 只会刷内部 viewport。
-        """
-        proxy = getattr(self, "proxy_model", None)
-        if proxy is not None and hasattr(proxy, "clearHeaderFilters"):
-            try:
-                proxy.clearHeaderFilters()
-            except Exception:
-                pass
-        self._clear_col_filter_value_filters()  # 同步清 ColumnFilterController 侧
-        col_set = getattr(self, "_filtered_col_set", None)
-        if col_set:
-            col_set.clear()
-        # 漏斗/角标所在层重绘（viewport().update() 不够，见 docstring）
-        header = getattr(self, "_sort_header", None)
-        if header is not None:
-            try:
-                header.update()
-            except Exception:
-                pass
-        self._update_col_filter_hint()
 
     def _open_column_filter(self, logical_index):
-        """在点击列头处弹出 Excel 式取值勾选浮层（转发给 ColumnFilterController）。
-
-        2026-10-03 重构（v43.127）：本方法原先是一份约 148 行的浮层实现，与
-        ``gui_pyside6/utils/column_filter.py`` 的 ``ColumnFilterController.open_filter``
-        逐段重复。现只保留薄壳转发，实际浮层由公共控制器构建。
-
-        行为契约（不变）：
-        - 弹层取值取自 source_model 的 DisplayRole，与表格实际显示字符串一致；
-        - 「确定」→ proxy_model.setValueFilter() 落过滤 + 维护 _filtered_col_set
-          + header.update() 重绘漏斗标（Qt6 陷阱：viewport().update() 不够，见 _update_col_filter_hint）；
-        - 「取消」不改变筛选；全选等价于不过滤；
-        - 无数据行 / 列号越界 / 无源模型时不弹。
-        """
-        ctrl = getattr(self, "_col_filter_ctrl", None)
-        if ctrl is None:
+        """在点击列头处弹出 Excel 式取值勾选浮层。
+        取值取自 source_model 的 DisplayRole（与表格实际显示字符串一致，含偏差率%后缀、(空)占位），
+        确保勾选的值和表格中看到的完全一致。确定后调 proxy_model.setValueFilter。"""
+        proxy = self.proxy_model
+        sm = proxy.sourceModel() if proxy is not None else None
+        if sm is None or not hasattr(sm, "_display_columns"):
             return
-        ctrl.open_filter(logical_index)
-        # 浮层实体由 controller 持有，这里同步一份引用，供 _toggle_col_filter_mode 关闭模式时收浮层
-        self._col_filter_popup = ctrl._popup
-
-    def _on_col_filter_changed(self):
-        """ColumnFilterController.filtered_cols_changed 的槽：同步浮层引用 + 刷新状态栏提示。
-
-        controller 只发信号，不知道主表状态栏有「列头筛选：N 列（列名…）」常驻提示；
-        _update_col_filter_hint 内部已会用 header.update() 重画漏斗标。
-        """
-        ctrl = getattr(self, "_col_filter_ctrl", None)
-        if ctrl is not None:
-            # do_apply 里 controller 会先把 _popup 置None 再关窗体，这里跟着同步避免留悬空引用
-            self._col_filter_popup = ctrl._popup
-        self._update_col_filter_hint()
-
-    def _apply_col_filter_to_proxy(self):
-        """把 ColumnFilterController 的列取值过滤差量同步到 proxy_model。
-
-        这是主表与公共控制器之间唯一的机制适配层：
-
-        - 控制器持有自己的 ``_value_filters``，看板用 ``mask_dataframe`` 在 DataFrame 层过滤；
-          主表不能走那条路（主表筛选状态必须留在 proxy_model，否则与侧边栏筛选、
-          顶部筛选行、「重置筛选」的既有口径全部失配）。
-        - 故这里读控制器的目标态，与 ``_applied_value_filters`` 快照做差量，
-          **只对真正变化的列**调 ``proxy_model.setValueFilter()``。每列一次
-          invalidateFilter，调用次数与重构前的内联实现完全一致（不多打一遍全表重筛）。
-        """
-        ctrl = getattr(self, "_col_filter_ctrl", None)
-        proxy = getattr(self, "proxy_model", None)
-        if ctrl is None or proxy is None:
+        if logical_index < 0 or logical_index >= len(sm._display_columns):
             return
-        want = ctrl.get_value_filters()
-        prev = getattr(self, "_applied_value_filters", None) or {}
-        for col_name in set(prev) | set(want):
-            if prev.get(col_name) == want.get(col_name):
-                continue  # 该列取值过滤没变，跳过（避免多余的 invalidateFilter 全表重筛）
-            proxy.setValueFilter(col_name, want.get(col_name) or set())
-        self._applied_value_filters = {k: set(v) for k, v in want.items()}
-        self._update_col_filter_hint()  # 其内部已会 header.update() 重画漏斗标
+        col_name = sm._display_columns[logical_index]
 
-    def _clear_col_filter_value_filters(self):
-        """清掉列头筛选在 controller 侧的取值过滤状态（proxy 侧由调用方自己清）。
+        # 收集本列全部展示值及计数（保持首次出现顺序）
+        # 性能（2026-10-02）：向量化取展示键（与 DisplayRole 一致），替代逐行 sm.data()
+        n = sm.rowCount()
+        key_list = build_display_key_list(sm, logical_index)
+        if key_list is None:
+            key_list = []
+            for r in range(n):
+                disp = sm.data(sm.index(r, logical_index), Qt.DisplayRole)
+                key_list.append("(空)" if disp in (None, "") else str(disp))
+        cnt = {}
+        order = []
+        for key in key_list:
+            if key not in cnt:
+                cnt[key] = 0
+                order.append(key)
+            cnt[key] += 1
+        if not order:
+            return
 
-        ``proxy_model.clearFilters()`` / ``clearHeaderFilters()`` 只知道 proxy 自己的
-        ``_value_filters``，不知道 ColumnFilterController 也有一份。不同步清掉的话，
-        下次打开浮层会带上早已失效的勾选态（且两边 dict 不相等 → 每次都触发
-        一遍无谓的差量同步）。
+        # 已选集合（来自 proxy 已存的取值过滤）
+        prev = set(proxy._value_filters.get(col_name, set()))
 
-        注意 ``_filtered_col_set`` 不在此清：它与 controller 的 filtered_col_set 是
-        同一个 set 对象，由各调用路径原有的 clear() 负责，保持单一口径。
-        """
-        ctrl = getattr(self, "_col_filter_ctrl", None)
-        if ctrl is not None:
-            ctrl.get_value_filters().clear()
-        self._applied_value_filters = {}
+        # 若已有浮层，先关掉
+        if self._col_filter_popup is not None:
+            try:
+                self._col_filter_popup.close()
+            except Exception:
+                pass
+            self._col_filter_popup = None
+
+        popup = QWidget(self, Qt.Popup)
+        popup.setObjectName("colFilterPopup")
+        popup.setMinimumWidth(260)
+        popup.setMaximumHeight(420)
+        outer = QVBoxLayout(popup)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(6)
+
+        title = QLabel(f"筛选：{col_name}（共 {n} 行 / {len(order)} 个值）")
+        title.setStyleSheet("font-weight:bold;color:#15598c;")
+        outer.addWidget(title)
+
+        search = QLineEdit()
+        search.setPlaceholderText("搜索取值…")
+        outer.addWidget(search)
+
+        # 全选 / 清空
+        btn_row = QHBoxLayout()
+        btn_all = QPushButton("全选")
+        btn_none = QPushButton("清空")
+        btn_row.addWidget(btn_all)
+        btn_row.addWidget(btn_none)
+        btn_row.addStretch(1)
+        outer.addLayout(btn_row)
+
+        # 勾选列表（滚动）
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_content = QWidget()
+        list_layout = QVBoxLayout(scroll_content)
+        list_layout.setContentsMargins(2, 2, 2, 2)
+        list_layout.setSpacing(2)
+        scroll.setWidget(scroll_content)
+        outer.addWidget(scroll, 1)
+
+        items = []  # (key, checkbox)
+        for key in order:
+            cb = QCheckBox(f"{key}  ({cnt[key]})")
+            cb.setChecked(key in prev)
+            list_layout.addWidget(cb)
+            items.append((key, cb))
+
+        def apply_search(text):
+            t = text.strip().lower()
+            for key, cb in items:
+                cb.setVisible((t in key.lower()) if t else True)
+
+        search.textChanged.connect(apply_search)
+
+        def select_all():
+            for _, cb in items:
+                cb.setChecked(True)
+
+        def select_none():
+            for _, cb in items:
+                cb.setChecked(False)
+
+        btn_all.clicked.connect(select_all)
+        btn_none.clicked.connect(select_none)
+
+        # 确定 / 取消
+        ok_row = QHBoxLayout()
+        btn_ok = QPushButton("确定")
+        btn_cancel = QPushButton("取消")
+        ok_row.addStretch(1)
+        ok_row.addWidget(btn_cancel)
+        ok_row.addWidget(btn_ok)
+        outer.addLayout(ok_row)
+
+        def do_apply():
+            selected = {key for key, cb in items if cb.isChecked()}
+            if selected == set(order):
+                # 全选等价于不过滤：清掉该列取值过滤与漏斗标
+                proxy.setValueFilter(col_name, set())
+                self._filtered_col_set.discard(logical_index)
+            else:
+                proxy.setValueFilter(col_name, selected)
+                self._filtered_col_set.add(logical_index)
+            self._update_col_filter_hint()  # 其内部已会重画表头
+            # 修复（2026-10-02）：Qt6 QHeaderView 自绘画在表头本体（frame 层），
+            # viewport().update() 只刷内部 viewport，确定后漏斗/角标不会重画。
+            # 与排序角标同款触发方式：header.update()。
+            self._sort_header.update()
+            popup.close()
+
+        btn_ok.clicked.connect(do_apply)
+        btn_cancel.clicked.connect(popup.close)
+
+        self._col_filter_popup = popup
+
+        # 定位到点击列头下方，并避免超出屏幕
+        x = self._sort_header.sectionViewportPosition(logical_index)
+        y = self._sort_header.height()
+        gpos = self._sort_header.viewport().mapToGlobal(QPoint(int(x), int(y)))
+        popup.show()
+        popup.adjustSize()
+        pw = popup.width()
+        ph = popup.height()
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            sg = screen.availableGeometry()
+            if gpos.x() + pw > sg.right():
+                gpos.setX(max(sg.left(), sg.right() - pw))
+            if gpos.y() + ph > sg.bottom():
+                gpos.setY(max(sg.top(), gpos.y() - ph - self._sort_header.height()))
+        popup.move(gpos)
 
     def _apply_multi_sort(self):
         """按 self.sort_columns 重排主表（基于原始顺序，避免多次排序叠加）。
@@ -3675,9 +3839,6 @@ class MainWindow(QMainWindow):
             self.view_model.df = processed_df
             self._update_summary()
             self.filter_panel.update_options(processed_df)
-            # v43.128：把生效的工厂同步回标题栏下拉（blockSignals 已在
-            # set_current_factory 内部做，不会回环成二次重建）
-            self.title_bar.set_current_factory(factory_name)
             self.statusBar().showMessage(f"已切换到工厂：{factory_name}", 2000)
         else:
             self.statusBar().showMessage(f"工厂 {factory_name} 数据为空", 2000)
@@ -4848,11 +5009,6 @@ class MainWindow(QMainWindow):
             self.alert_monitor.stop()
         if self._cache_worker:
             if self._cache_worker.isRunning():
-                # 修复（2026-10-03）：QThread.quit() 只让事件循环退出，对 run()
-                # 里已开始的计算无效 —— 缓存 worker 会闷头算到底。须先置协作式
-                # 取消标志（与 _full_report_worker 同款），让它在下一个检查点退出。
-                if hasattr(self._cache_worker, 'request_cancel'):
-                    self._cache_worker.request_cancel()
                 self._cache_worker.quit()
                 self._cache_worker.wait(3000)
             else:

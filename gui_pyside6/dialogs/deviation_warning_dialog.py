@@ -25,7 +25,6 @@ from gui_pyside6.utils.locate import locate_row
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
-from gui_pyside6.utils.row_index import with_row_index
 
 
 class DeviationWarningDialog(QDialog):
@@ -703,7 +702,7 @@ class DeviationWarningDialog(QDialog):
         df = self.original_df.copy()
         if df.empty:
             if hasattr(self, "source_model"):
-                self.source_model.setDataFrame(with_row_index(df))
+                self.source_model.setDataFrame(df)
                 self._sort_ctrl.reapply()  # 恢复排序态
             self._update_button_counts()
             return
@@ -728,7 +727,7 @@ class DeviationWarningDialog(QDialog):
         if hasattr(self, "col_filter_ctrl"):
             filtered = self.col_filter_ctrl.mask_dataframe(filtered)
         if hasattr(self, "source_model"):
-            self.source_model.setDataFrame(with_row_index(filtered))
+            self.source_model.setDataFrame(filtered)
             self._sort_ctrl.reapply()  # 恢复排序态
         self._update_button_counts()
         # 车间 / 工厂下拉跟随筛选结果动态收缩（避免表格无数据时仍列出不存在的车间）
@@ -922,7 +921,7 @@ class DeviationWarningDialog(QDialog):
             df = df[cols]
 
         self.source_model = DataFrameModel()
-        self.source_model.setDataFrame(with_row_index(df))
+        self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
 
         # 初始按内容自适应，之后用户可拖拽调整（Interactive 模式）。

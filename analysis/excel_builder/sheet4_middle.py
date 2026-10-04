@@ -35,18 +35,9 @@ def build_sheet4(df, alt_df, alt_pairs, report_progress, progress_idx=4, dyn_thr
 
     alt_orders = list(set(alt_df['订单号'])) if len(alt_df) > 0 else []
     alt_all_descs = [(a[-1] if isinstance(a, (list,tuple)) else a) for a, b in alt_pairs] + [(b[-1] if isinstance(b, (list,tuple)) else b) for a, b in alt_pairs]
-    # P0 修复（2026-10-03）：两处失效都要堵。
-    # ① alt_all_descs 为空 → '|'.join([])=='' 而 str.contains('', regex=True) 恒为 True，
-    #    取反后整表被清空（实测「用户删光所有配对」这条路径输出 0 行，无任何报错）。
-    # ② alt_all_descs 元素为空串（alt_manager.DEFAULT_ALT_PAIRS 的占位元组
-    #    (('','',''),('','','')) → alt_all_descs=['','']）→ 正则变成 '|'（空交替）同样匹配一切。
-    # 所以先剔掉空描述，再判空守卫。
-    esc_descs = [re.escape(d) for d in alt_all_descs if d and str(d).strip()]
-    if esc_descs:
-        middle = middle[~middle['组件物料描述'].str.contains(
-            '|'.join(esc_descs), na=False, regex=True)]
-    if alt_orders:
-        middle = middle[~middle['流程订单'].isin(alt_orders)]
+    esc_descs = [re.escape(d) for d in alt_all_descs]
+    middle = middle[~(middle['组件物料描述'].str.contains('|'.join(
+        esc_descs), na=False, regex=True)) & ~(middle['流程订单'].isin(alt_orders))]
 
     # 向量化构建（原 iterrows 列表推导，2026-07-27 性能优化）
     if middle.empty:

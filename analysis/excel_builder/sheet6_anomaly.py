@@ -155,27 +155,5 @@ def build_sheet6(df, alt_order_mat, report_progress, progress_idx=6, net_offset_
                              '替代料存在偏差残差，请确认是否为合理部分替代或配对有误',
                              '替代料存在残差，请确认是否为合理部分替代或配对有误'),
     ], ignore_index=True)
-    # 排序（2026-10-04，v43.132）：此前本表零 sort_values，582 行按 5 个异常切片
-    # 各自内部的原始顺序排列，组内也是乱的。
-    # ⚠️ 刻意用「类型优先 + 组内排序」而非全表降序：本表是 5 个异常类型纵向堆叠
-    # （pd.concat ignore_index），若直接按 |净偏差数量| 全表排，异常1 与异常5 的行
-    # 会互相穿插，审核时看不出分组——那比不排更糟。
-    # 口径与 Sheet5 一致：|净偏差数量| 降序（裴哥指定，审核看用量异常优先于金额）。
-    if not anomaly_df.empty:
-        _sort_cols, _asc = [], []
-        if '异常类型' in anomaly_df.columns:
-            _sort_cols.append('异常类型')
-            _asc.append(True)          # 类型列：升序（保持 异常1→异常5 的既有分组序）
-        if '净偏差数量' in anomaly_df.columns:
-            anomaly_df['_abs_qty'] = pd.to_numeric(
-                anomaly_df['净偏差数量'], errors='coerce').fillna(0.0).abs()
-            _sort_cols.append('_abs_qty')
-            _asc.append(False)         # 组内：|净偏差数量| 降序
-        if _sort_cols:
-            anomaly_df = anomaly_df.sort_values(
-                _sort_cols, ascending=_asc).reset_index(drop=True)
-            if '_abs_qty' in anomaly_df.columns:
-                anomaly_df = anomaly_df.drop(columns=['_abs_qty'])
-
     report_progress(progress_idx, "Sheet6-异常预警", 100)
     return anomaly_df

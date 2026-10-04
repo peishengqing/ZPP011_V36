@@ -26,23 +26,13 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
     has_real_dev = df[df[col_p].abs() >= threshold].copy()
 
     # 计算偏差金额（含税）
-    # 口径统一（2026-10-03）：此前本表用「材料偏差 × 单价」或「材料偏差 ×(金额-实际/数量-实际)」
-    # 两套算法，与 analyzer.py 的权威口径「金额-实际(含税) - 金额-定额(含税)」在「未投料」行上
-    # 分叉最严重：未投料行 数量-实际=0 → 反算分母为 0 → fillna(0) 把偏差金额抹成 0，
-    # 而权威口径给出的是全额负偏差。实测同一份 866 行数据：Sheet1/7/8 用权威口径合计
-    # -216,564.55（与源数据真值差 0.00），本表却算出 +2,962.29，差 21.95 万元——
-    # 报告内部自相矛盾，管理层拿计算器加一下明细就会发现对不上汇总。
-    # 现统一：优先直接复用 analyzer 已算好的 偏差金额(含税)；该列缺失时才逐级降级。
-    _AUTH_AMT = '偏差金额(含税)'
-    if _AUTH_AMT in has_real_dev.columns:
-        has_real_dev['_偏差金额'] = pd.to_numeric(
-            has_real_dev[_AUTH_AMT], errors='coerce').fillna(0.0)
-    elif '单价' in has_real_dev.columns and has_real_dev['单价'].notna().any():
+    if '单价' in has_real_dev.columns and has_real_dev['单价'].notna().any():
         has_real_dev['_偏差金额'] = has_real_dev['材料偏差'] * has_real_dev['单价'] * 1.13
     elif '金额-实际(含税)' in has_real_dev.columns and '数量-实际' in has_real_dev.columns:
-        # 反算单价：金额-实际(含税) / 数量-实际（仅当实际量非零才可靠）
+        # 反算单价：金额-实际(含税) / 数量-实际
         unit_price = has_real_dev['金额-实际(含税)'] / has_real_dev['数量-实际'].replace(0, np.nan)
-        has_real_dev['_偏差金额'] = (has_real_dev['材料偏差'] * unit_price).fillna(0.0)
+        unit_price = unit_price.fillna(0)
+        has_real_dev['_偏差金额'] = has_real_dev['材料偏差'] * unit_price
     else:
         has_real_dev['_偏差金额'] = 0.0
 
@@ -64,7 +54,7 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
             '订单日期', '订单类型', '流程订单', '工厂', '车间',
             '原表行号', '产品物料号码', '产品物料描述', '产量', '产量单位', '物料编码', '物料名称',
             '单位', '定额', '实际', '偏差数量', '偏差率', '偏差率(%)',
-            '偏差金额', '偏差性质', '备注', '备注来源', '偏差区间',
+            '偏差金额', '备注', '备注来源', '偏差区间',
             '组件物料类型', '组件物料类型描述', '半成品重分类',
         ])
     else:
@@ -112,17 +102,6 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
         else:
             dev_df['半成品重分类'] = ''
         dev_df = dev_df.reset_index(drop=True)
-
-    # 排序（2026-10-04，v43.132）：此前本表零 sort_values，行序 = 源 Excel 原始顺序，
-    # 867 行里最大的偏差躺在不知哪一行，翻到最底部才看得见。
-    # 口径按裴哥指定：|净偏差数量| 降序（审核看「用错多少料」比「亏多少钱」更贴近排查动作）。
-    # ⚠️ 已知取舍：净偏差数量跨单位不可比（G 克 / 个 / KG 混排），
-    # 50 万克的胶带会排在亏 4200 元的彩罐之前。这是刻意保留的——审核底稿按量级扫，
-    # 不按金额扫；与 sheet9_reason_detail 的末级排序口径也一致。
-    # 用法与 sheet3_no_note 相同：临时绝对值列 → 降序 → 删临时列。
-    if not dev_df.empty and '净偏差数量' in dev_df.columns:
-        dev_df['_abs_qty'] = pd.to_numeric(dev_df['净偏差数量'], errors='coerce').fillna(0.0).abs()
-        dev_df = dev_df.sort_values('_abs_qty', ascending=False).drop(columns=['_abs_qty'])
 
     report_progress(progress_idx, "Sheet5-完整偏差明细", 100)
     return dev_df

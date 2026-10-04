@@ -234,27 +234,12 @@ def load_read_status(data_ids: List[str]) -> Dict[str, Tuple]:
 
 
 def save_read_status(data_id: str, is_read: int, fingerprint: str, snapshot_qty=None, snapshot_note=None, snapshot_yield=None, read_source='manual'):
-    """保存已读状态。read_source: 'manual' 手动（默认） / 'auto' 自动规则
-
-    P0 修复（2026-10-03）：原用 INSERT OR REPLACE，而 read_status 表同时存审核结果
-    （audit_result / ai_suggestion / note_source）。SQLite 的 OR REPLACE 是「DELETE+INSERT」，
-    未出现在列清单里的列一律回落 DEFAULT —— 实测「审核完顺手点已读」会把
-    audit_result 从 '合格' 抹成 ''，用户审核结论无声消失。
-    改用 ON CONFLICT(data_id) DO UPDATE，只更新已读相关列，审核结论原样保留。
-    """
+    """保存已读状态。read_source: 'manual' 手动（默认） / 'auto' 自动规则"""
     try:
         conn = _get_conn()
         conn.execute("""
-            INSERT INTO read_status (data_id, is_read, fingerprint, snapshot_qty, snapshot_note, snapshot_yield, read_time, user, read_source)
+            INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, snapshot_qty, snapshot_note, snapshot_yield, read_time, user, read_source)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(data_id) DO UPDATE SET
-                is_read=excluded.is_read,
-                fingerprint=COALESCE(excluded.fingerprint, read_status.fingerprint),
-                snapshot_qty=excluded.snapshot_qty,
-                snapshot_note=excluded.snapshot_note,
-                snapshot_yield=excluded.snapshot_yield,
-                read_time=excluded.read_time,
-                read_source=excluded.read_source
         """, (str(data_id), int(is_read), str(fingerprint),
               None if snapshot_qty is None else float(snapshot_qty),
               '' if snapshot_note is None else str(snapshot_note),
@@ -291,18 +276,9 @@ def save_read_status_batch(records):
                          '' if note is None else str(note),
                          None if yld is None else float(yld),
                          now, 'default', str(src)))
-        # P0 修复（2026-10-03）：同 save_read_status，改 ON CONFLICT 保住审核结论
         conn.executemany("""
-            INSERT INTO read_status (data_id, is_read, fingerprint, snapshot_qty, snapshot_note, snapshot_yield, read_time, user, read_source)
+            INSERT OR REPLACE INTO read_status (data_id, is_read, fingerprint, snapshot_qty, snapshot_note, snapshot_yield, read_time, user, read_source)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(data_id) DO UPDATE SET
-                is_read=excluded.is_read,
-                fingerprint=COALESCE(excluded.fingerprint, read_status.fingerprint),
-                snapshot_qty=excluded.snapshot_qty,
-                snapshot_note=excluded.snapshot_note,
-                snapshot_yield=excluded.snapshot_yield,
-                read_time=excluded.read_time,
-                read_source=excluded.read_source
         """, norm)
         conn.commit()
     except Exception as e:

@@ -339,13 +339,7 @@ class QuarantineDialog(QDialog):
             idx = cols.index('订单日期')
             cols.insert(idx, '隔离原因')
         else:
-            # 修复（2026-10-03）：原候选 ('审核状态','状态') 在主表上通常都不存在
-            # （data_service.py:68-77 归一化后是「审核结果」；「审核状态」只有
-            # core/auto_closer.py:44-45 跑过才建），导致降级分支找不到锚点、
-            # 「隔离原因」被追加到最末。这里补齐审核结论列候选。
-            status_col = next(
-                (c for c in ('审核结果', 'audit_result', '审核状态',
-                            'audit_status', '状态') if c in cols), None)
+            status_col = next((c for c in ('审核状态', '状态') if c in cols), None)
             if status_col is None:
                 cols.append('隔离原因')
             else:
@@ -400,18 +394,11 @@ class QuarantineDialog(QDialog):
         self.source_model = DataFrameModel()
         self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
-        # 修复（2026-10-03）：先隐藏内部列、再按内容算列宽。
-        # 原顺序是「先 ResizeToContents 全表测量、后 setColumnHidden」，
-        # 隐藏发生在测量之后完全无效 → _HIDDEN_INTERNAL 这 5 个内部列
-        # 照样参与全表测量，是打开即冻结主线程数秒的直接原因。
+        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.table_view.verticalHeader().setDefaultSectionSize(28)
         for col in _HIDDEN_INTERNAL:
             if col in df.columns:
                 self.table_view.setColumnHidden(df.columns.get_loc(col), True)
-        # 不再调用 setSectionResizeMode(ResizeToContents)（性能悬崖：
-        # 耗时与行数无关、与列数线性相关），改用 _fit_table_columns。
-        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        self.table_view.verticalHeader().setDefaultSectionSize(28)
-        QTimer.singleShot(0, self._fit_table_columns)
 
         # 重渲染后恢复排序态：用户点过列头则保持；否则默认按 data_id 升序
         if hasattr(self, "_sort_ctrl"):
@@ -421,75 +408,6 @@ class QuarantineDialog(QDialog):
                 df0 = self.source_model.getDataFrame()
                 col = df0.columns.get_loc('data_id') if 'data_id' in df0.columns else 1
                 self._sort_ctrl.apply_default(col, Qt.AscendingOrder)
-
-    def _fit_table_columns(self):
-        """按当前表格可见宽度重新分配列宽。
-
-        修复（2026-10-03）：原来用 setSectionResizeMode(ResizeToContents)，实测
-        42 列宽表耗时与行数无关、与列数线性相关（2000 行 4.24s / 20000 行 4.06s），
-        打开对话框即冻结主线程数秒。改为 alert_dialog.py:792-824 的同款算法：
-          1. 先按内容宽度算每列最小宽度（ResizeToContents 基准）；
-          2. 将「表格可用宽度 - 各列最小宽度之和」的剩余量按可见列数均摊；
-          3. 设置固定宽度，避免最后一列独吞剩余空间。
-        注意：调用前必须先setColumnHidden 隐藏内部列——隐藏发生在测量之后是无效的
-        （Qt 此时已完成全表测量），5 个内部列会照样参与。
-        """
-        header = self.table_view.horizontalHeader()
-        model = self.source_model
-        if model is None:
-            return
-        col_count = model.columnCount()
-        if col_count <= 0:
-            return
-
-        # 按列名兜底确保内部列隐藏（修复：隐藏若按列索引做，而set_data
-        # 在 _render_table 之后还会重排列序（如把 _read 提到首位、插入
-        # _read_source / 状态 列），索引会整体错位，导致隐藏打在错误列上、
-        # _read 与 fingerprint 暴露在界面里）。这里按列名幂等重设一次。
-        try:
-            cols = model.getDataFrame().columns
-            for col in _HIDDEN_INTERNAL:
-                if col in cols:
-                    self.table_view.setColumnHidden(cols.get_loc(col), True)
-        except Exception:
-            pass
-
-        # 表格可用宽度（viewport 宽），作为列宽分配预算
-        total_w = max(self.table_view.viewport().width(), 400)
-        # 隐藏列不占宽度
-        visible_cols = [c for c in range(col_count)
-                        if not self.table_view.isColumnHidden(c)]
-        if not visible_cols:
-            return
-        n = len(visible_cols)
-        # 按内容最小宽度（ResizeToContents 的 sizeHint 等价实现）
-        content_widths = [header.sectionSizeHint(c) for c in visible_cols]
-        remaining = max(0, total_w - sum(content_widths))
-        # 剩余宽度均摊给可见列；至少给每个可见列 120px（避免过窄）
-        per = remaining // n if n else 0
-        for col, cw in zip(visible_cols, content_widths):
-            self.table_view.setColumnWidth(col, max(120, cw + per))
-
-    def _fit_expired_columns(self):
-        """失效复核表（Tab2）的同款列宽分配。"""
-        header = self.expired_view.horizontalHeader()
-        model = self.expired_model
-        if model is None:
-            return
-        col_count = model.columnCount()
-        if col_count <= 0:
-            return
-        total_w = max(self.expired_view.viewport().width(), 400)
-        visible_cols = [c for c in range(col_count)
-                        if not self.expired_view.isColumnHidden(c)]
-        if not visible_cols:
-            return
-        n = len(visible_cols)
-        content_widths = [header.sectionSizeHint(c) for c in visible_cols]
-        remaining = max(0, total_w - sum(content_widths))
-        per = remaining // n if n else 0
-        for col, cw in zip(visible_cols, content_widths):
-            self.expired_view.setColumnWidth(col, max(120, cw + per))
 
     # ------------------------------------------------------------------ Tab2 逻辑
     def _load_expired_from_main(self):
@@ -563,9 +481,7 @@ class QuarantineDialog(QDialog):
         self.expired_model = DataFrameModel()
         self.expired_model.setDataFrame(edf)
         self.expired_view.setModel(self.expired_model)
-        # 修复（2026-10-03）：同 Tab1，去掉 ResizeToContents 性能悬崖
-        self.expired_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        QTimer.singleShot(0, self._fit_expired_columns)
+        self.expired_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.expired_count_label.setText("失效记录：%d 条" % len(edf))
         # 同步 Tab 标题角标
         idx = self.tabs.indexOf(self.tab_expired)
@@ -604,9 +520,7 @@ class QuarantineDialog(QDialog):
         self.expired_model = DataFrameModel()
         self.expired_model.setDataFrame(filtered)
         self.expired_view.setModel(self.expired_model)
-        # 修复（2026-10-03）：同 Tab1，去掉 ResizeToContents 性能悬崖
-        self.expired_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        QTimer.singleShot(0, self._fit_expired_columns)
+        self.expired_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         # P2-9 修复：搜索后恢复用户排序状态
         if hasattr(self, "_sort_ctrl_expired"):
             if self._sort_ctrl_expired.active:

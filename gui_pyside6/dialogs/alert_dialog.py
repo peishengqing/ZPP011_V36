@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QCheckBox,
     QComboBox, QGroupBox,
 )
-from PySide6.QtCore import Qt, QPoint, QTimer
+from PySide6.QtCore import Qt, QPoint
 import pandas as pd
 from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_color_keys
 from core.read_status import save_read_status, save_read_status_batch
@@ -19,7 +19,6 @@ from gui_pyside6.widgets.filter_panel import _color_icon
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
-from gui_pyside6.utils.row_index import with_row_index
 
 
 class AlertDialog(QDialog):
@@ -280,7 +279,7 @@ class AlertDialog(QDialog):
         # AI建议功能已停用：不再按 AI建议 列筛选；有旧列则强制清空，避免继续显示 mock 文案
         if "AI建议" in filtered.columns:
             filtered["AI建议"] = ""
-        self.source_model.setDataFrame(with_row_index(filtered))
+        self.source_model.setDataFrame(filtered)
         self._sort_ctrl.reapply()  # 恢复排序态
 
     def _on_semi_class_changed(self):
@@ -385,17 +384,11 @@ class AlertDialog(QDialog):
         self.original_df = df.copy()
 
         self.source_model = DataFrameModel()
-        self.source_model.setDataFrame(with_row_index(df))
+        self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
 
-        # 修复（2026-10-03）：原来这里用 ResizeToContents，是打开即冻结主线程
-        # 数秒的性能悬崖（耗时与行数无关、与列数线性相关）。本文件第 792 行起
-        # 已有 _fit_table_columns（按内容算最小宽 + 剩余量均摊），改为
-        # Interactive + 延迟调用它。下方 setColumnHidden 隐藏 _read/data_id
-        # 等内部列的代码保持原位不动（_fit_table_columns 自会跳过隐藏列）。
-        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
-        QTimer.singleShot(0, self._fit_table_columns)
 
         if '_read' in df.columns:
             col_idx = df.columns.get_loc('_read')
@@ -813,17 +806,6 @@ class AlertDialog(QDialog):
         col_count = model.columnCount()
         if col_count <= 0:
             return
-
-        # 按列名兜底确保内部列隐藏（隐藏若按列索引做，而列序在渲染后可能被
-        # 重排，索引会错位打到错误列上）。按列名幂等重设一次更稳。
-        try:
-            cols = model.getDataFrame().columns
-            for _hc in ('_read', 'data_id', '_post_audit_changed',
-                        '_quarantined', '是否替代料'):
-                if _hc in cols:
-                    self.table_view.setColumnHidden(cols.get_loc(_hc), True)
-        except Exception:
-            pass
 
         # 当前表格宽度（viewport 宽），作为列宽分配预算
         total_w = max(self.table_view.viewport().width(), 400)

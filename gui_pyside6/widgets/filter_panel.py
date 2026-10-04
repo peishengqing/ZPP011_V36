@@ -244,19 +244,11 @@ class FilterPanel(QWidget):
         self.dev_qty_combo = QComboBox()
         self.dev_qty_combo.addItems(["全部", "大于0", "等于0", "小于0"])
         dev_layout.addRow("偏差数量:", self.dev_qty_combo)
-        # 替代料筛查（v43.130 文案对齐真实口径）：
-        # 实现走 `_substitute_only`，即模型层「是否替代料 == 是」那一条
-        # （由 analyzer 按「🔧 替代料配对」里配的组合 + 同一流程订单匹配得出），
-        # **不是**「实际=0 且 定额>0」——那是下面「颜色标记 → 未投料」的口径。
-        # 原注释写「纯数值检测…与已有是否替代料列无关」与实现不符，已一并更正。
+        # 替代料/非耗用筛查：纯数值检测（实际=0 且 定额>0），与已有"是否替代料"列无关
         self.substitute_combo = QComboBox()
-        self.substitute_combo.addItems(["全部", "是替代料（按替代料配对表）"])
-        self.substitute_combo.setToolTip(
-            "筛出命中「🔧 替代料配对」配对组合的记录（同一流程订单内互相抵消的物料）。\n"
-            "注意：未投料（实际用量=0 且定额>0）不属于替代料，"
-            "它虽然偏差率同为 -100%，但要查的是另一回事——请用下方「颜色标记 → 未投料」。"
-        )
-        dev_layout.addRow("替代料（按配对表）:", self.substitute_combo)
+        self.substitute_combo.addItems(["全部", "疑似替代料（实际0·定额>0）"])
+        self.substitute_combo.setToolTip("实际耗用为 0、但定额大于 0 的行——多为替代料/未耗用，偏差率恒为 -100%。这是 ZPP011 重点排查对象。")
+        dev_layout.addRow("替代料筛查:", self.substitute_combo)
         dev_layout.addRow("审核结果:", self.audit_status_combo)
         dev_layout.addRow("备注来源:", self.remark_source_combo)
         # AI建议已停用：不再提供「有/无AI建议」筛选入口。
@@ -858,7 +850,7 @@ class FilterPanel(QWidget):
             filters['_dev_qty_sign'] = 'eq0'
         elif dev_qty_sel == "小于0":
             filters['_dev_qty_sign'] = 'lt0'
-        # 替代料筛查（v43.130）：走「是否替代料」列，筛配对表命中的行
+        # 替代料筛查（纯数值：实际=0 且 定额>0）
         if self.substitute_combo.currentText() != "全部":
             filters['_substitute_only'] = True
         # 颜色标记筛选：与表格行背景色对应（多选 OR，勾选的 key 全部加入 filter）

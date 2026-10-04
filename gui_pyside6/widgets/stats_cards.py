@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QEvent
 from PySide6.QtGui import QFont
 import pandas as pd
-from gui_pyside6.utils.alert_rules import deviation_alert_mask
 
 
 def _make_card(parent, value_text, label_text, color: str, tooltip: str) -> QFrame:
@@ -40,11 +39,7 @@ def _make_card(parent, value_text, label_text, color: str, tooltip: str) -> QFra
 
 
 class StatsCardsWidget(QWidget):
-    """统计卡片组：AI通过率 / 未读 / 替代料 / 审核后变更 / 隔离区 / 偏差率预警
-
-    v43.134：原「真异常」卡（独立 >30% 档）已删除，预警口径统一到
-    「偏差率预警」卡与 utils/alert_rules.deviation_alert_mask 同源。
-    """
+    """4 张统计卡片：AI通过率 / 未读 / 真异常 / 替代料"""
 
     # 点击某张卡片时发出的信号，携带卡片标识
     card_clicked = Signal(str)  # "anomaly" | "unread" | "alt" | "changed" | "quarantine"
@@ -94,6 +89,8 @@ class StatsCardsWidget(QWidget):
                                      "AI审核结果为「合格」的占比")
         self.card_unread = _make_card(self, "--", "未读", "#ff9800",
                                        "你还没看过的记录数")
+        self.card_anomaly = _make_card(self, "--", "真异常", "#f44336",
+                                        "非替代料中偏差率 > 30% 的条数")
         self.card_alt = _make_card(self, "--", "替代料", "#9c27b0",
                                     "替代料配对组数 + 净偏差抵消总金额")
         self.card_changed = _make_card(self, "--", "审核后变更", "#e53935",
@@ -104,6 +101,8 @@ class StatsCardsWidget(QWidget):
                                          "偏差率绝对值 ≥ 10% 的记录数（点击打开偏差率预警看板）")
 
         # 给可点击的卡片安装事件过滤器
+        self.card_anomaly.installEventFilter(self)
+        self.card_anomaly.setProperty("cardType", "anomaly")
         self.card_unread.installEventFilter(self)
         self.card_unread.setProperty("cardType", "unread")
         self.card_changed.installEventFilter(self)
@@ -115,6 +114,7 @@ class StatsCardsWidget(QWidget):
 
         cards_layout.addWidget(self.card_pass)
         cards_layout.addWidget(self.card_unread)
+        cards_layout.addWidget(self.card_anomaly)
         cards_layout.addWidget(self.card_alt)
         cards_layout.addWidget(self.card_changed)
         cards_layout.addWidget(self.card_quarantine)
@@ -167,6 +167,7 @@ class StatsCardsWidget(QWidget):
         # 始终更新数值，再按用户隐藏状态决定是否展示
         self._update_pass_rate(df)
         self._update_unread(df)
+        self._update_anomaly(df)
         self._update_alt(df)
         self._update_changed(df)
         self._update_quarantine(df)
@@ -203,6 +204,42 @@ class StatsCardsWidget(QWidget):
             return
         unread = (df['_read'] == 0).sum()
         self._set_card_value(self.card_unread, str(unread))
+
+    def _update_anomaly(self, df: pd.DataFrame):
+        """真异常：非替代料 且 |偏差率| > 30% 的条数"""
+        # 替代料列探测
+        alt_col = None
+        for col in ['是否替代料', 'is_alt', '_替代料组', '替代料组']:
+            if col in df.columns:
+                alt_col = col
+                break
+
+        # 偏差率列探测
+        rate_col = None
+        for col in ['偏差率(%)', '偏差率', 'dev_rate']:
+            if col in df.columns:
+                rate_col = col
+                break
+
+        if rate_col is None:
+            self._set_card_value(self.card_anomaly, "--")
+            return
+
+        rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
+
+        if alt_col and alt_col in df.columns and alt_col in ['是否替代料', 'is_alt']:
+            # 布尔/字符串型替代料标记
+            is_alt = df[alt_col].astype(str).str.strip().isin(['是', 'True', 'true', '1'])
+            anomaly = (~is_alt) & (rates.abs() > 30)
+        elif alt_col and alt_col in ['_替代料组', '替代料组']:
+            # 替代料组非空 = 是替代料
+            has_alt = df[alt_col].notna() & (df[alt_col].astype(str).str.strip() != '')
+            anomaly = (~has_alt) & (rates.abs() > 30)
+        else:
+            # 没有替代料列，全部算进去
+            anomaly = rates.abs() > 30
+
+        self._set_card_value(self.card_anomaly, str(int(anomaly.sum())))
 
     def _update_alt(self, df: pd.DataFrame):
         """替代料：组数 + 净偏差抵消金额"""
@@ -261,12 +298,7 @@ class StatsCardsWidget(QWidget):
         self._set_card_value(self.card_quarantine, str(cnt) if cnt else "0")
 
     def _update_deviation(self, df: pd.DataFrame):
-        """偏差率预警：|偏差率| >= 10% 且 非替代料 且 非未投料 的条数。
-
-        v43.134：改调 ``gui_pyside6.utils.alert_rules.deviation_alert_mask``，
-        与未读概览浮窗、偏差率预警看板同源。此前这里是第四份独立实现
-        （>=10% + 排除未投料、但**不排除替代料**），与浮窗/看板仍有细微差异。
-        """
+        """偏差率预警：偏差率绝对值 >= 10% 的条数"""
         rate_col = None
         for col in ['偏差率(%)', '偏差率', 'dev_rate']:
             if col in df.columns:
@@ -275,7 +307,18 @@ class StatsCardsWidget(QWidget):
         if rate_col is None:
             self._set_card_value(self.card_deviation, "--")
             return
-        cnt = int(deviation_alert_mask(df, rate_col=rate_col).sum())
+        rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
+        # 排除「实际=0 且 定额>0」的行（偏差率恒为 -100%，是未真实投料的机械结果，
+        # 不是真偏差；与主表橙色高亮、偏差率预警看板、颜色筛选保持一致）
+        act_col = '数量-实际' if '数量-实际' in df.columns else ('实际' if '实际' in df.columns else None)
+        qty_col = '数量-定额' if '数量-定额' in df.columns else ('定额' if '定额' in df.columns else None)
+        if act_col and qty_col:
+            a = pd.to_numeric(df[act_col], errors='coerce').fillna(0)
+            q = pd.to_numeric(df[qty_col], errors='coerce').fillna(0)
+            no_input = (a.abs() <= 0.001) & (q > 0.001)
+            cnt = int(((rates.abs() >= 10) & (~no_input)).sum())
+        else:
+            cnt = int((rates.abs() >= 10).sum())
         self._set_card_value(self.card_deviation, str(cnt) if cnt else "0")
 
     @staticmethod

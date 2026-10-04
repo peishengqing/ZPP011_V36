@@ -16,11 +16,6 @@ from gui_pyside6.dialogs.batch_operations_dialog import (
 )
 from core.read_status import save_read_status
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
-from gui_pyside6.utils.audit_columns import (
-    find_result_column,
-    find_status_column,
-    is_audited_value,
-)
 
 
 class AuditController(QObject):
@@ -162,24 +157,9 @@ class AuditController(QObject):
 
     # ------------------- 其他 -------------------
     def is_record_audited(self, row):
-        """判断单条记录是否已审核。
-
-        修复（2026-10-03）：原先只看 `审核状态` 列，但该列仅由
-        core/auto_closer.py:44-45 创建，主表正常加载时并不存在 →
-        判定恒为False。改为按优先级兼容查找：
-          1) 审核结论列（审核结果/ audit_result）：值非空即已审核
-             （workers.py:174-190 写入 合格/需关注/需改进/需补备注，
-               auto_closer.py:88-89 写入 自动结案，都算已审核）；
-          2) 工作流状态列（审核状态 / audit_status）：== '已审核'；
-          3) 保留原有备注来源兜底。
-        """
+        """判断单条记录是否已审核"""
         try:
-            result_col = find_result_column(row.index)
-            if result_col is not None:
-                # 结论列存在时以它为准：空值即未审核，不再往下走
-                return is_audited_value(row[result_col])
-            status_col = find_status_column(row.index)
-            if status_col is not None and row[status_col] == '已审核':
+            if '审核状态' in row and row['审核状态'] == '已审核':
                 return True
             if '备注来源' in row and row['备注来源'] not in ('', 'AI审核', None):
                 return True

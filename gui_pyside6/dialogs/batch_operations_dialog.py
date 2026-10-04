@@ -8,12 +8,6 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import QThread, Signal
 
-from gui_pyside6.utils.audit_columns import (
-    AUDIT_RESULT_VALUES,
-    AUTO_CLOSED_VALUES,
-    find_audit_column,
-)
-
 
 class BatchChangeStatusDialog(QDialog):
     def __init__(self, parent, row_indices, audit_data, on_finished):
@@ -24,28 +18,12 @@ class BatchChangeStatusDialog(QDialog):
         self.audit_data = audit_data
         self.on_finished = on_finished
 
-        # 修复（2026-10-03）：原先在 _apply 里只找['审核状态','audit_status']，
-        # 但 data_service.py:68-77 预处理已把英文列归一化为「审核结果」，
-        # 查找恒为 None → 一点「确定」就弹「未找到状态列」。这里提前解析真实列名，
-        # 让 UI 文案与实际列一致（不再含混地说「审核状态」）。
-        self._status_col = find_audit_column(self.audit_data.columns)
-        col_desc = self._status_col or "审核结果"
-
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(f"将修改 {len(row_indices)} 行的「{col_desc}」"))
+        layout.addWidget(QLabel(f"将修改 {len(row_indices)} 行的审核状态"))
 
-        layout.addWidget(QLabel("选择新值:"))
+        layout.addWidget(QLabel("选择新状态:"))
         self.status_combo = QComboBox()
-        # 修复（2026-10-03）：原词表 ["未审核","已审核","需补备注","已备注"] 与主表
-        # 筛选器（filter_panel.py:224）不一致——「已审核」属工作流状态词表、
-        # 「已备注」主表压根不存在，批量改完用户在主表筛不出来。现统一到
-        # AUDIT_RESULT_VALUES，并补上 auto_closer 会写入的「自动结案」，
-        # 避免覆盖掉自动结案的痕迹。
-        self.status_combo.addItems(AUDIT_RESULT_VALUES + AUTO_CLOSED_VALUES)
-        self.status_combo.setToolTip(
-            "审核结论（写入「审核结果」列）。可选值与主表筛选器一致，"
-            "改完可在主表按该值筛出来。"
-        )
+        self.status_combo.addItems(["未审核", "已审核", "需补备注", "已备注"])
         layout.addWidget(self.status_combo)
 
         self.progress = QProgressBar()
@@ -68,9 +46,12 @@ class BatchChangeStatusDialog(QDialog):
         self.ok_btn.setEnabled(False)
         self.cancel_btn.setEnabled(False)
 
-        # 查找审核列（修复：多候选，取第一个真实存在的列）
-        status_col = self._status_col or find_audit_column(
-            self.audit_data.columns)
+        # 查找状态列
+        status_col = None
+        for col in ['审核状态', 'audit_status']:
+            if col in self.audit_data.columns:
+                status_col = col
+                break
         if status_col is None:
             QMessageBox.critical(self, "错误", "未找到状态列")
             self.reject()

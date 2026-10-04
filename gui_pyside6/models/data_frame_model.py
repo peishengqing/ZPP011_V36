@@ -247,10 +247,7 @@ class DataFrameModel(QAbstractTableModel):
                     except Exception:
                         remark = ''
                     break
-            # v43.130 文案对齐：原文写「疑似替代料/非耗用」是错的——
-            # 本分支是「未投料」（实际=0 定额>0 且 已排除替代料，见 _unused_only 判定），
-            # 与「替代料」是两种不同的东西，不能混称，否则会让人误以为要按替代料去处理。
-            return f"未投料：实际用量=0、定额>0，偏差率恒为 -100%（BOM 推算的机械结果，非真实少耗）\n请核实是漏投料、系统未过账，还是已用替代料投料（若属替代料请在「🔧 替代料配对」中登记）\n备注原因：{remark if remark.strip() else '（无）'}"
+            return f"疑似替代料/非耗用：实际=0，定额>0（偏差率 -100%）\n备注原因：{remark if remark.strip() else '（无）'}"
         
         # 其余列：从缓存读取
         if role == Qt.DisplayRole or role == Qt.EditRole:
@@ -402,6 +399,32 @@ class DataFrameModel(QAbstractTableModel):
     def setData(self, index, value, role=Qt.EditRole):
         # 模型为只读：备注列不再允许手动编辑，避免污染已读变更检测基线
         return False
+    def _get_deviation_rate(self, row):
+        """从缓存中获取当前行的偏差率（百分比数值）"""
+        # 查找偏差率列索引
+        rate_col = None
+        for i, col in enumerate(self._display_columns):
+            if col in ('偏差率(%)', '偏差率'):
+                rate_col = i
+                break
+        if rate_col is None:
+            return 0.0
+        val = self._data_cache[row][rate_col]
+        if isinstance(val, (int, float)):
+            return float(val)
+        # 如果缓存中是带%的字符串（兜底）
+        if isinstance(val, str) and '%' in val:
+            try:
+                return float(val.replace('%', '').strip())
+            except Exception:
+                return 0.0
+        return 0.0
+
+    def _is_warning_column(self, col_name):
+        """检查列是否为预警列"""
+        return col_name in ('偏差率(%)', '偏差率')
+
+
     def sort(self, column, order=Qt.AscendingOrder):
         """排序：支持百分比列数值排序"""
         self.beginResetModel()
@@ -1078,6 +1101,31 @@ class AuditProxyModel(QSortFilterProxyModel):
                         end_d = None
                 plan['date'] = (date_list, start_d, end_d)
         return plan
+
+    def _check_rate_range(self, rate_raw, range_str):
+        try:
+            if isinstance(rate_raw, str):
+                rate = float(rate_raw.replace('%', ''))
+            else:
+                rate = float(rate_raw)
+        except (ValueError, TypeError):
+            rate = 0
+        abs_rate = abs(rate)
+        if range_str == '绝对值>=10%':
+            return abs_rate >= 10
+        elif range_str == '>10%':
+            return abs_rate > 10
+        elif range_str == '>20%':
+            return abs_rate > 20
+        elif range_str == '>30%':
+            return abs_rate > 30
+        elif range_str == '<-10%':
+            return rate < -10
+        elif range_str == '<-20%':
+            return rate < -20
+        elif range_str == '<-30%':
+            return rate < -30
+        return True
 
     # ------------------------------------------------------------------ #
     # 排序
