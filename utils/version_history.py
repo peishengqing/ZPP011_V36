@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.149",
+        "date": "2026-10-04",
+        "features": "恢复隔离区对话框 Tab1（隔离区列表）的表格显示——修复后表格正确排在搜索行与按钮行之间，并撑满中间剩余高度。",
+        "fixes": "修复隔离区窗口「搜索栏跑到窗口中间、下面一片空白」（用户截图）。根因：_build_list_tab 里 self.table_view = QTableView() 创建后**从未 v.addWidget(self.table_view)**，该控件成了游离 widget——实测父控件为 None、isVisible()=False，表格根本没有渲染。Qt 只能把剩余竖向空间在搜索行与按钮行之间均分，于是搜索栏被顶到窗口中部。**这是既存缺陷**（git show HEAD 确认本轮 v43.145~148 均未碰该文件，最后一次改动是 v43.143）。Tab2 失效复核的 expired_view 一直有 addWidget，故只有 Tab1 受影响。修复：在 _build_list_tab 的 _update_col_filter_hint 之后、按钮行之前补 v.addWidget(self.table_view)。实测修后：table_view 父控件=QWidget、isVisible()=True、几何 (0,28,1064,390)，搜索框 y=0~21、表格 y=28~418、按钮行 y=424，顺序正确零重叠；tab_list 布局项由 2 个变为 3 个（含 QTableView）。py_compile + pyflakes 双绿零告警；回归 22 passed + 2 xfailed 与基线一致。"
+    },
+    {
         "version": "v43.148",
         "date": "2026-10-04",
         "features": "负损(含未投料)看板的「半成品分类」下拉框（QComboBox）也改用 v43.147 的共用固定清单 SEMI_CLASS_ALL，与其余四个看板口径完全统一。控件恒可见：无论主表是否带「半成品重分类」列、该列值是否为空，下拉都列出 全部 + 6 个固定分类。",

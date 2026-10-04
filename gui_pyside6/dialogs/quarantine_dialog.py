@@ -153,6 +153,12 @@ class QuarantineDialog(QDialog):
         self.col_filter_ctrl.attach_clear_menu(self._col_filter_hint_label)
         self._update_col_filter_hint(self.col_filter_ctrl, self._col_filter_hint_label, getattr(self, "source_model", None))
 
+        # v43.149：本行原本缺失。table_view 被创建后从未 addWidget 进 v 布局，
+        # 父控件为 None、isVisible()=False → 隔离区列表表格完全不显示，Qt 只能把
+        # 剩余竖向空间在搜索行与按钮行之间均分，视觉上「搜索栏跑到窗口中间」。
+        # Tab2 的 expired_view 一直有 addWidget（_build_expired_tab 内），故只影响 Tab1。
+        v.addWidget(self.table_view)
+
         bl = QHBoxLayout()
         self.btn_restore = QPushButton("↩ 取消隔离（选中行）")
         self.btn_restore.clicked.connect(self.batch_restore)
