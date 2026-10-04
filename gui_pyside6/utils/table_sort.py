@@ -88,6 +88,40 @@ class HeaderSortController:
     def active(self):
         return self._col >= 0
 
+    def clear_column_sort(self, logical_index, model=None):
+        """取消指定列的排序（v43.143）。
+
+        供「取消列头取值筛选」时连带清掉该列排序用：用户在某列设了取值筛选又
+        点了排序，取消筛选后若排序箭头仍留着，视觉上像「还在筛」。
+
+        :param logical_index: 列号；-1 表示无排序，直接返回
+        :param model: 可选，传入以免再取一次（get_model 可能已被替换）
+        :return: 是否确有取消
+        """
+        if logical_index < 0 or self._col != logical_index:
+            return False
+        self._col = -1
+        self._order = Qt.AscendingOrder
+        m = model if model is not None else self.get_model()
+        if m is not None:
+            # 恢复原始行序：先让模型丢弃当前排序键
+            try:
+                m.sort(-1, Qt.AscendingOrder)
+            except Exception:
+                pass
+        try:
+            self.table_view.horizontalHeader().setSortIndicator(-1, Qt.AscendingOrder)
+        except Exception:
+            pass
+        return True
+
+    def clear_all_sort(self, model=None):
+        """取消全部排序（v43.143）。返回是否确有取消。"""
+        if self._col < 0:
+            return False
+        self.clear_column_sort(self._col, model=model)
+        return True
+
 
 def enable_click_sort(table_view, get_model, skip_cols=()):
     """便捷入口：为 table_view 启用列头点击排序，返回 HeaderSortController。"""

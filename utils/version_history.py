@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.144",
+        "date": "2026-10-04",
+        "features": "",
+        "fixes": "取消列头取值筛选时，自动取消该列的排序条件（用户反馈：取消后该列排序箭头仍留着，视觉上像还在筛这一列）。新增 `HeaderSortController.clear_column_sort(logical_index)` / `clear_all_sort()` 两个公共方法（utils/table_sort.py），`ColumnFilterController.clear_column()` / `clear_all()` 加 `clear_sort=True` 参数并新增 `_clear_sort_for_cols()` 内部辅助；主表因用 `self.sort_columns` 多级排序而非 sort_ctrl，另加 `_drop_sort_columns(col_indexes)`（只移除被取消的列，其余列排序保留，移除后为空则整体回原始顺序）。覆盖全部取消路径：浮层「清除此列」按钮 / 「清空+确定」/ 兜底浮层 / 提示标签右键菜单逐列清除 / 清除全部。设筛选时排序仍保留（不清），只在取消时才清。验证：半成品+负损两看板 5 场景、主表 3 场景无头实测全通过（排序 _col 归 -1、行数恢复原值、清他列筛选不误伤本列排序）；回归 22 passed + 2 xfailed 与基线一致。"
+    },
+    {
         "version": "v43.143",
         "date": "2026-10-04",
         "features": "列头筛选新增三个显式取消入口（浮层「清除此列」按钮 / 提示标签右键菜单逐列清除 / 一键清除全部），已覆盖主表 + 全部 6 个看板（半成品/负损/预警/偏差率预警/隔离区×2）。",

@@ -3629,13 +3629,15 @@ class MainWindow(QMainWindow):
                 cb.setChecked(False)
 
         def do_clear_column():
-            """「清除此列」：丢弃本列取值过滤 + 漏斗标并关浮层。
+            """「清除此列」：丢弃本列取值过滤 + 漏斗标 + 本列排序，并关浮层。
 
             与「清空」区别：「清空」只把勾选全取消，点确定后会因空集被 setValueFilter
             当作「清除」处理（见 do_apply），但用户不知道；这里给一个显式入口。
+            v43.144：连带取消本列排序。
             """
             proxy.setValueFilter(col_name, set())
             self._filtered_col_set.discard(logical_index)
+            self._drop_sort_columns([logical_index])
             self._update_col_filter_hint()
             self._sort_header.update()
             popup.close()
@@ -3662,6 +3664,8 @@ class MainWindow(QMainWindow):
                 # 且用户看到漏斗标却找不到地方取消。现统一走清除分支。
                 proxy.setValueFilter(col_name, set())
                 self._filtered_col_set.discard(logical_index)
+                # v43.144：取消筛选时连带取消本列排序
+                self._drop_sort_columns([logical_index])
             else:
                 proxy.setValueFilter(col_name, selected)
                 self._filtered_col_set.add(logical_index)
@@ -3720,12 +3724,15 @@ class MainWindow(QMainWindow):
         def do_clear_col():
             self.proxy_model.setValueFilter(col_name, set())
             self._filtered_col_set.discard(logical_index)
+            self._drop_sort_columns([logical_index])
             _after_clear()
             popup.close()
 
         def do_clear_all():
+            hit = sorted(self._filtered_col_set)
             self.proxy_model.clearHeaderFilters()
             self._filtered_col_set.clear()
+            self._drop_sort_columns(hit)
             _after_clear()
             popup.close()
 
@@ -5101,27 +5108,48 @@ class MainWindow(QMainWindow):
             menu.addAction("清除全部列头筛选", self._clear_all_col_filters)
         menu.exec(label.mapToGlobal(pos))
 
-    def _clear_col_filter_by_name(self, col_name):
-        """按列名清除主表的列头取值过滤（含漏斗标与提示刷新）。"""
+    def _clear_col_filter_by_name(self, col_name, clear_sort=True):
+        """按列名清除主表的列头取值过滤（含漏斗标与提示刷新）。
+
+        v43.144：`clear_sort=True` 时连带把该列从 sort_columns 移除并重排。
+        原先只清筛选不清排序，取消后该列排序角标/箭头仍留着，视觉上像还在筛。
+        """
         if self.proxy_model is None:
             return
         self.proxy_model.setValueFilter(col_name, set())
         sm = getattr(self, "source_model", None)
         display_cols = getattr(sm, "_display_columns", []) if sm is not None else []
+        hit = []
         if col_name in display_cols:
-            self._filtered_col_set.discard(display_cols.index(col_name))
+            hit = [display_cols.index(col_name)]
         else:
-            for c in list(self._filtered_col_set):
-                if 0 <= c < len(display_cols) and str(display_cols[c]) == col_name:
-                    self._filtered_col_set.discard(c)
+            hit = [c for c in list(self._filtered_col_set)
+                   if 0 <= c < len(display_cols) and str(display_cols[c]) == col_name]
+        for c in hit:
+            self._filtered_col_set.discard(c)
+        if clear_sort and hit:
+            self._drop_sort_columns(hit)
         self._update_col_filter_hint()
 
-    def _clear_all_col_filters(self):
-        """清除主表全部列头取值过滤。"""
+    def _clear_all_col_filters(self, clear_sort=True):
+        """清除主表全部列头取值过滤（v43.144：连带取消这些列的排序）。"""
         if self.proxy_model is not None:
             self.proxy_model.clearHeaderFilters()
+        hit = sorted(self._filtered_col_set)
         self._filtered_col_set.clear()
+        if clear_sort and hit:
+            self._drop_sort_columns(hit)
         self._update_col_filter_hint()
+
+    def _drop_sort_columns(self, col_indexes):
+        """把给定列号从多级排序中移除并重排（移除后为空则整体恢复原始顺序）。"""
+        before = len(self.sort_columns)
+        self.sort_columns = [(c, asc) for c, asc in self.sort_columns
+                             if c not in set(col_indexes)]
+        if len(self.sort_columns) == before:
+            return          # 本来就没排这些列，不必重排
+        self._apply_multi_sort()
+        self._update_sort_indicators()
 
 
 def _ask_quarantine_reason(parent, title: str) -> str | None:

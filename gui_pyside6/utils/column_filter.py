@@ -93,28 +93,52 @@ class ColumnFilterController(QObject):
                 names.append("列%d" % c)
         return names
 
-    def clear_column(self, col_name):
-        """清除单列取值过滤（= Excel 式「取消此列筛选」）。返回是否确有清除。"""
+    def clear_column(self, col_name, clear_sort=True):
+        """清除单列取值过滤（= Excel 式「取消此列筛选」）。返回是否确有清除。
+
+        v43.144：`clear_sort=True` 时连带取消该列的排序。原先只清筛选不清排序，
+        用户取消后该列的排序箭头仍留着，视觉上像「还在筛」这一列。
+        """
         if col_name not in self._value_filters:
             return False
         self._value_filters.pop(col_name, None)
-        for c, n in self._col_name_to_index(col_name):
+        idxs = [c for c, n in self._col_name_to_index(col_name)]
+        for c in idxs:
             self._filtered_col_set.discard(c)
+        if clear_sort and idxs:
+            self._clear_sort_for_cols(idxs)
         self.filtered_cols_changed.emit()
         self._safe_repaint()
         self.apply_filter_cb()
         return True
 
-    def clear_all(self):
-        """清除全部列头取值过滤。返回是否确有清除。"""
+    def clear_all(self, clear_sort=True):
+        """清除全部列头取值过滤。返回是否确有清除。
+
+        v43.144：`clear_sort=True` 时连带取消被筛列的排序。
+        """
         if not self._value_filters and not self._filtered_col_set:
             return False
+        idxs = sorted(self._filtered_col_set)
         self._value_filters.clear()
         self._filtered_col_set.clear()
+        if clear_sort and idxs:
+            self._clear_sort_for_cols(idxs)
         self.filtered_cols_changed.emit()
         self._safe_repaint()
         self.apply_filter_cb()
         return True
+
+    def _clear_sort_for_cols(self, col_indexes):
+        """取消指定列号上的排序（走 sort_ctrl，失败静默，不影响筛选主流程）。"""
+        sc = self.sort_ctrl
+        if sc is None:
+            return
+        for c in col_indexes:
+            try:
+                sc.clear_column_sort(c)
+            except Exception:
+                pass
 
     def _col_name_to_index(self, col_name):
         """列名 -> [(列号, 列名)]，用于反查 _filtered_col_set 里的列号。"""
@@ -253,6 +277,7 @@ class ColumnFilterController(QObject):
         def do_clear_col():
             self._value_filters.pop(col_name, None)
             self._filtered_col_set.discard(logical_index)
+            self._clear_sort_for_cols([logical_index])
             self.filtered_cols_changed.emit()
             self._popup = None
             self._safe_repaint()
@@ -260,8 +285,10 @@ class ColumnFilterController(QObject):
             popup.close()
 
         def do_clear_all():
+            idxs = sorted(self._filtered_col_set)
             self._value_filters.clear()
             self._filtered_col_set.clear()
+            self._clear_sort_for_cols(idxs)
             self.filtered_cols_changed.emit()
             self._popup = None
             self._safe_repaint()
@@ -398,10 +425,15 @@ class ColumnFilterController(QObject):
                 cb.setChecked(False)
 
         def do_clear_column():
-            """「清除此列」：直接丢弃本列取值过滤并关浮层（不等同于「清空」——
-            「清空」只是把勾选全取消，点确定后会得到 0 行；「清除此列」是取消筛选本身）。"""
+            """「清除此列」：直接丢弃本列取值过滤 + 本列排序并关浮层。
+
+            与「清空」区别：「清空」只是把勾选全取消，点确定后会因空集被当作
+            「清除」处理，但用户不知道；这里给一个显式入口。
+            v43.144：连带取消本列排序（原先箭头留着，像还在筛这一列）。
+            """
             self._value_filters.pop(col_name, None)
             self._filtered_col_set.discard(logical_index)
+            self._clear_sort_for_cols([logical_index])
             self.filtered_cols_changed.emit()
             self._popup = None
             self._safe_repaint()
@@ -428,8 +460,10 @@ class ColumnFilterController(QObject):
                 # `key not in allowed` 恒真 → 全表 0 行；此时再开浮层因 order 为空直接
                 # 「不弹」，用户彻底无法取消（死锁）。现与主表 setValueFilter 语义对齐：
                 # 空集 = 清除该列过滤。
+                # v43.144：取消筛选时连带取消本列排序。
                 self._value_filters.pop(col_name, None)
                 self._filtered_col_set.discard(logical_index)
+                self._clear_sort_for_cols([logical_index])
             else:
                 self._value_filters[col_name] = selected
                 self._filtered_col_set.add(logical_index)
