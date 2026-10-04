@@ -90,7 +90,12 @@ class NegLossDashboardDialog(QDialog):
         top.addWidget(self.edit_keywords)
         self.edit_keywords.textChanged.connect(self._on_keywords_changed)
 
-        self.chk_include_zero = QCheckBox("包含未投料(实际=0 也视为负损)")
+        # v43.154：原文案「包含未投料(实际=0 也视为负损)」把 row1 撑到 minimum=1147px，
+        # 超出 1150 窗口的 scroll 可视宽 11px → 该行被压缩、控件轻微重叠。
+        # 括号说明移入 tooltip，勾选框只留短文案，minimum 降到 ~1050px。
+        self.chk_include_zero = QCheckBox("含未投料")
+        self.chk_include_zero.setToolTip(
+            "包含未投料：实际=0 的行也视为负损（不影响未投料判定，仅影响负损口径）")
         self.chk_include_zero.setChecked(False)
         self.chk_include_zero.stateChanged.connect(self._on_include_zero_changed)
         top.addWidget(self.chk_include_zero)
