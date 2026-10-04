@@ -32,7 +32,7 @@ def _p01(d):
       <h1 data-anim="title" style="font-family:var(--sans),var(--sans-zh);font-weight:200;font-size:min(11.6vw,19vh);line-height:.94;letter-spacing:-.025em;color:#fff">食品与饮料<br/><span style="font-style:italic;font-weight:300">分开算这笔账</span></h1>
 
       <div data-anim="bottom" style="display:grid;grid-template-rows:auto auto;gap:1.6vh;border-top:1px solid rgba(255,255,255,.22);padding-top:2vh">
-        <div data-anim="lead" class="lead" style="max-width:52ch;color:rgba(255,255,255,.86);font-weight:300">{t["rows_fmt"]} 条偏差、两个厂、两套完全不同的病。这份报告不合并口径,谁的问题归谁。</div>
+        <div data-anim="lead" class="lead" style="max-width:52ch;color:rgba(255,255,255,.86);font-weight:300">{t["rows_fmt"]} 条偏差、两个厂、两套完全不同的省法。这份报告不合并口径,谁的问题归谁——省得是否真实,也要查。</div>
         <div style="display:flex;justify-content:space-between;align-items:end">
           <div class="t-meta" style="color:rgba(255,255,255,.6)">云南达利 · 材料审核 · {d["period"].split("-")[0]} 年 {int(d["period"].split("-")[1])} 月</div>
           <div class="t-meta" style="color:rgba(255,255,255,.6)">→ 方向键翻页 / B 静态</div>
@@ -52,14 +52,14 @@ def _p02(d):
 
     <div style="flex:1;display:grid;grid-template-rows:auto auto 1fr;gap:0">
       <div data-anim="kicker" class="kicker" style="margin-bottom:1.4vh">{d["period_range"]} · 全厂</div>
-      <h2 data-anim="title" class="h-xl-zh" style="max-width:26ch">净偏差收口在<span style="color:var(--accent)">可解释区间</span></h2>
+      <h2 data-anim="title" class="h-xl-zh" style="max-width:26ch">净节约收口在<span style="color:var(--accent)">可解释区间</span></h2>
 
       <div style="display:grid;grid-template-rows:auto auto 1fr;gap:3.4vh;padding-top:3.4vh">
         <div data-anim="kpi" style="display:flex;align-items:flex-end;gap:2.4vw;border-bottom:1px solid var(--border-subtle);padding-bottom:2.6vh">
           <div class="kpi-hero" style="font-size:min(11.6vw,19vh);color:var(--text-primary)">{t["net"]}<span class="unit">万</span></div>
           <div style="padding-bottom:1.6vh;max-width:30ch">
-            <div class="t-meta" style="margin-bottom:.8vh">净偏差金额 · NET DEVIATION</div>
-            <div class="body">正 {t["pos"]} 万与负 {t["neg"]} 万大幅对冲后净亏。这不是"偏差消失了",而是<b>多耗与少耗在同一盘账里互相抵消</b>。</div>
+            <div class="t-meta" style="margin-bottom:.8vh">净偏差金额 · NET DEVIATION（负=节约）</div>
+            <div class="body">多耗 {t["pos"]} 万与节约 {t["neg"]} 万对冲后净省。这不是"偏差消失了",而是<b>多耗与节约在同一盘账里互相抵消</b>——省得是否真实,本报告逐页核查。</div>
           </div>
         </div>
 
@@ -87,8 +87,8 @@ def _p03(d):
 {_chrome("两厂对照 / FOOD VS BEVERAGE", 3)}
 
     <div style="flex:1;display:grid;grid-template-rows:auto auto 1fr;gap:0">
-      <div data-anim="kicker" class="kicker" style="margin-bottom:1.4vh">同样亏,亏法完全不同</div>
-      <h2 data-anim="title" class="h-xl-zh" style="max-width:30ch">饮料厂用 <span style="color:var(--accent)">{b["rows_ratio"]}%</span> 的条数,亏掉了食品厂 {round(float(b["net_ratio"]))}% 的钱</h2>
+      <div data-anim="kicker" class="kicker" style="margin-bottom:1.4vh">同样在省,省法完全不同</div>
+      <h2 data-anim="title" class="h-xl-zh" style="max-width:30ch">饮料厂用 <span style="color:var(--accent)">{b["rows_ratio"]}%</span> 的条数,省下了食品厂 {round(float(b["net_ratio"]))}% 的钱</h2>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;margin-top:3.4vh;border-top:2px solid var(--ink)">
         <div data-anim="left" style="padding:3.2vh 2.6vw 0 0;border-right:1px solid var(--border-subtle)">
@@ -97,10 +97,10 @@ def _p03(d):
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.6vw 1.4vw;padding-bottom:2.4vh">
             <div class="stat-card thin"><div class="stat-label">条数</div><div class="stat-nb" style="font-size:2.6vw">{f["rows_fmt"]}</div></div>
             <div class="stat-card thin"><div class="stat-label">备注覆盖</div><div class="stat-nb" style="font-size:2.6vw">{f["remark_pct"]}%</div></div>
-            <div class="stat-card thin"><div class="stat-label">正偏差</div><div class="stat-nb" style="font-size:2.6vw">{f["pos"]}万</div></div>
-            <div class="stat-card thin"><div class="stat-label">负偏差</div><div class="stat-nb" style="font-size:2.6vw">{f["neg"]}万</div></div>
+            <div class="stat-card thin"><div class="stat-label">多耗</div><div class="stat-nb" style="font-size:2.6vw">{f["pos"]}万</div></div>
+            <div class="stat-card thin"><div class="stat-label">节约</div><div class="stat-nb" style="font-size:2.6vw">{f["neg"]}万</div></div>
           </div>
-          <div class="body-sm" style="color:var(--text-secondary)">车间多、条数密,靠 <b>2 个车间</b>拖住全局:{f["ws_top_name"]} {f["ws_top_amt"]} 万、{f["ws_second_name"]} {f["ws_second_amt"]} 万。问题呈"面状"分布,治理要靠流程标准化。</div>
+          <div class="body-sm" style="color:var(--text-secondary)">车间多、条数密,靠 <b>2 个车间</b>撑起大头:{f["ws_top_name"]} {f["ws_top_amt"]} 万、{f["ws_second_name"]} {f["ws_second_amt"]} 万。省得呈"面状"分布,真假要靠逐单核查。</div>
         </div>
 
         <div data-anim="right" style="padding:3.2vh 0 0 2.6vw">
@@ -109,10 +109,10 @@ def _p03(d):
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.6vw 1.4vw;padding-bottom:2.4vh">
             <div class="stat-card thin"><div class="stat-label">条数</div><div class="stat-nb" style="font-size:2.6vw">{b["rows_fmt"]}</div></div>
             <div class="stat-card thin"><div class="stat-label">备注覆盖</div><div class="stat-nb" style="font-size:2.6vw">{b["remark_pct"]}%</div></div>
-            <div class="stat-card thin"><div class="stat-label">正偏差</div><div class="stat-nb" style="font-size:2.6vw">{b["pos"]}万</div></div>
-            <div class="stat-card thin"><div class="stat-label">负偏差</div><div class="stat-nb" style="font-size:2.6vw">{b["neg"]}万</div></div>
+            <div class="stat-card thin"><div class="stat-label">多耗</div><div class="stat-nb" style="font-size:2.6vw">{b["pos"]}万</div></div>
+            <div class="stat-card thin"><div class="stat-label">节约</div><div class="stat-nb" style="font-size:2.6vw">{b["neg"]}万</div></div>
           </div>
-          <div class="body-sm" style="color:var(--text-secondary)">条数只有食品厂的 <b>{b["rows_ratio"]}%</b>,净额却达到其 <b>{b["net_ratio"]}%</b>。单条偏差强度是食品厂的 <b>{b["strength"]} 倍</b>——问题呈"点状"且单点极重:{b["pgh_name"]} {b["pgh_rows"]} 条就 {b["pgh_amt"]} 万。</div>
+          <div class="body-sm" style="color:var(--text-secondary)">条数只有食品厂的 <b>{b["rows_ratio"]}%</b>,省的却是其 <b>{b["net_ratio"]}%</b>。单条强度是食品厂的 <b>{b["strength"]} 倍</b>——省得"点状"且单点极重:{b["pgh_name"]} {b["pgh_rows"]} 条就省 {b["pgh_amt"]} 万。</div>
         </div>
       </div>
     </div>
@@ -189,23 +189,23 @@ def _p05(d):
 
     <div style="flex:1;display:grid;grid-template-rows:auto auto 1fr;gap:0">
       <div data-anim="kicker" class="kicker accent" style="margin-bottom:1.4vh">第一部分 · 食品厂</div>
-      <h2 data-anim="title" class="h-xl-zh" style="max-width:32ch">{f["rows_fmt"]} 条偏差里,藏着 <span style="color:var(--accent)">两个失控车间</span></h2>
+      <h2 data-anim="title" class="h-xl-zh" style="max-width:32ch">{f["rows_fmt"]} 条偏差里,<span style="color:var(--accent)">两个车间</span>省掉大头</h2>
 
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:2.4vw;align-items:end;padding-top:4vh">
 {_stat("净偏差", f'{f["net"]}<span class="stat-unit">万</span>', f"占全厂净偏差 {share:.1f}%", accent=True, nb_style=' style="color:var(--accent)"')}
 {_stat("偏差条数", f["rows_fmt"], f'全厂 {t["food_pct"]}%,涉及 {f["ws_count"]} 个车间')}
-{_stat("正 / 负偏差", f'{f["pos"]} / {f["neg"]}', "单位:万元 · 净额为负", nb_style=' style="font-size:3.4vw"')}
+{_stat("多耗 / 节约", f'{f["pos"]} / {f["neg"]}', "单位:万元 · 净额为负(节约)", nb_style=' style="font-size:3.4vw"')}
 {_stat("备注覆盖率", f'{f["remark_pct"]}<span class="stat-unit">%</span>', f'{f["remark_n"]} / {f["rows_fmt"]} 条有说明')}
       </div>
 
       <div data-anim="bottom" style="align-self:end;display:grid;grid-template-columns:1fr 1fr;gap:2.4vw;border-top:1px solid var(--border-subtle);padding-top:2.4vh">
         <div>
           <div class="t-meta" style="margin-bottom:1vh">分类构成</div>
-          <div class="body-sm" style="color:var(--text-secondary)">原材料 {f["raw_rows"]} 条 → 净 <b>{f["raw_net"]} 万</b>（主要拖累）<br/>包材 {f["pkg_rows"]} 条 → 净 <b>{f["pkg_net"]} 万</b>（基本平衡）</div>
+          <div class="body-sm" style="color:var(--text-secondary)">原材料 {f["raw_rows"]} 条 → 净 <b>{f["raw_net"]} 万</b>（节约大头）<br/>包材 {f["pkg_rows"]} 条 → 净 <b>{f["pkg_net"]} 万</b>（基本平衡）</div>
         </div>
         <div>
           <div class="t-meta" style="margin-bottom:1vh">一句话诊断</div>
-          <div class="body-sm" style="color:var(--text-secondary)">食品厂的问题是<b>面广而单点轻</b>——原材料多耗与少耗大面积对冲,真正需要盯的是两个车间的系统性偏差。</div>
+          <div class="body-sm" style="color:var(--text-secondary)">食品厂省得<b>面广而单点轻</b>——节约与多耗大面积对冲,真正要看的是两个车间的节约是否真实:投料不足与定额虚高都会伪装成节约。</div>
         </div>
       </div>
     </div>
@@ -238,7 +238,7 @@ def _p06(d):
 
     <div style="flex:1;display:grid;grid-template-rows:auto auto 1fr;gap:0">
       <div data-anim="kicker" class="kicker" style="margin-bottom:1.4vh">{f["ws_count"]} 个车间 · 按净偏差升序</div>
-      <h2 data-anim="title" class="h-xl-zh" style="max-width:30ch">{f["ws_top_name"]}一个车间,吃掉 <span style="color:var(--accent)">全厂 {f["eat_ratio"]} 倍</span> 的净偏差</h2>
+      <h2 data-anim="title" class="h-xl-zh" style="max-width:30ch">{f["ws_top_name"]}一个车间,扛下 <span style="color:var(--accent)">全厂 {f["eat_ratio"]} 倍</span> 的节约</h2>
 
       <div style="display:grid;grid-template-rows:auto 1fr;gap:2.6vh;padding-top:3.4vh;align-content:start">
         <div data-anim="bars" style="display:flex;flex-direction:column;gap:1.5vh">
@@ -246,8 +246,8 @@ def _p06(d):
         </div>
 
         <div data-anim="note" style="display:grid;grid-template-columns:1fr 1fr;gap:2.4vw;border-top:1px solid var(--border-subtle);padding-top:2.2vh">
-          <div class="body-sm" style="color:var(--text-secondary)"><b>读数：</b>橙色为净偏差为负(拖累)、灰色为正(贡献)。{f["ws_top_name"]}({f["ws_top_rows"]} 条)+ {f["ws_second_name"]}({f["ws_second_rows"]} 条)合计 {f["top2_sum"]} 万,其余 {f["rest_ws_n"]} 个车间合计 {f["rest_sum"]} 万。</div>
-          <div class="body-sm" style="color:var(--text-secondary)"><b>下一步：</b>{f["pos_ws_names"]}为正偏差,说明定额偏保守;{f["ws_top_name"]}与{f["ws_second_name"]}需逐单排查是定额问题还是实际超耗。</div>
+          <div class="body-sm" style="color:var(--text-secondary)"><b>读数：</b>橙色为净额为负(节约)、灰色为净额为正(多耗)。{f["ws_top_name"]}({f["ws_top_rows"]} 条)+ {f["ws_second_name"]}({f["ws_second_rows"]} 条)合计 {f["top2_sum"]} 万,其余 {f["rest_ws_n"]} 个车间合计 {f["rest_sum"]} 万。</div>
+          <div class="body-sm" style="color:var(--text-secondary)"><b>下一步：</b>{f["pos_ws_names"]}为多耗,要么定额偏紧要么确实超用,需复核标定;{f["ws_top_name"]}与{f["ws_second_name"]}需逐单排查——节约是真实节省,还是投料不足/定额虚高伪装的假节约。</div>
         </div>
       </div>
     </div>
@@ -275,17 +275,17 @@ def _p07(d):
 {_chrome("食品厂 · 重点物料 &amp; 无备注风险", 7)}
 
     <div style="flex:1;display:grid;grid-template-rows:auto auto 1fr;gap:0">
-      <div data-anim="kicker" class="kicker" style="margin-bottom:1.4vh">谁在亏 &amp; 谁没写原因</div>
+      <div data-anim="kicker" class="kicker" style="margin-bottom:1.4vh">谁在省 &amp; 谁没写原因</div>
       <h2 data-anim="title" class="h-xl-zh" style="max-width:30ch">{f["nr_top_name"]} <span style="color:var(--accent)">{f["nr_top_rows"]} 条</span> 无备注,金额 {f["nr_top_amt"]} 万</h2>
 
       <div style="display:grid;grid-template-columns:1.1fr .9fr;gap:3.4vw;margin-top:3.4vh;align-items:start">
         <div data-anim="left">
-          <div class="t-meta" style="margin-bottom:1.6vh">负偏差物料 TOP {len(f["neg_top"])}</div>
+          <div class="t-meta" style="margin-bottom:1.6vh">节约物料 TOP {len(f["neg_top"])}（净额为负）</div>
           <div style="display:grid;grid-template-columns:1.8fr .7fr .9fr;gap:1.2vw;font-family:var(--mono);font-size:max(10px,.74vw);letter-spacing:.14em;text-transform:uppercase;opacity:.55;padding-bottom:1.2vh;border-bottom:1px solid var(--border-subtle)">
             <div>物料</div><div style="text-align:right">条数</div><div style="text-align:right">净偏差</div>
           </div>
 {chr(10).join(rows)}
-          <div class="body-sm" style="margin-top:2.4vh;padding-top:2vh;border-top:1px solid var(--border-subtle);color:var(--text-secondary)"><b>正偏差 TOP：</b>{f["pos_note"]}。油脂类大额正向偏差,指向定额设定偏高。</div>
+          <div class="body-sm" style="margin-top:2.4vh;padding-top:2vh;border-top:1px solid var(--border-subtle);color:var(--text-secondary)"><b>多耗 TOP：</b>{f["pos_note"]}。油脂类大额多耗,指向定额偏紧或超用,建议核对标定。</div>
         </div>
 
         <div data-anim="right" style="border-left:3px solid var(--accent);padding-left:2vw">
@@ -293,7 +293,7 @@ def _p07(d):
           <div style="display:flex;flex-direction:column;gap:1.5vh">
 {chr(10).join(nrr)}
           </div>
-          <div class="body-sm" style="margin-top:2.4vh;color:var(--text-secondary)">另有 <b>{f["dup_rows"]} 行整行重复</b>记录混在无备注预警中,建议先去重再统计。{f["nr_top_name"]}既亏得多、又最不愿写原因,是本次审计的第一顺位。</div>
+          <div class="body-sm" style="margin-top:2.4vh;color:var(--text-secondary)">另有 <b>{f["dup_rows"]} 行整行重复</b>记录混在无备注预警中,建议先去重再统计。{f["nr_top_name"]}省得最多、又最不愿写原因,是本次核查的第一顺位。</div>
         </div>
       </div>
     </div>
@@ -311,7 +311,7 @@ def _p08(d):
 
     <div style="flex:1;display:grid;grid-template-rows:auto auto 1fr;gap:0">
       <div data-anim="kicker" class="kicker accent" style="margin-bottom:1.4vh">第二部分 · 饮料厂</div>
-      <h2 data-anim="title" class="h-xl-zh" style="max-width:32ch">{b["rows_fmt"]} 条偏差,却亏出 <span style="color:var(--accent)">{b["net"].lstrip(MINUS)} 万</span></h2>
+      <h2 data-anim="title" class="h-xl-zh" style="max-width:32ch">{b["rows_fmt"]} 条偏差,却省出 <span style="color:var(--accent)">{b["net"].lstrip(MINUS)} 万</span></h2>
 
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:2.4vw;align-items:end;padding-top:4vh">
 {_stat("净偏差", f'{b["net"]}<span class="stat-unit">万</span>', f"占全厂净偏差 {share:.1f}%", accent=True, nb_style=' style="color:var(--accent)"')}
@@ -327,7 +327,7 @@ def _p08(d):
         </div>
         <div>
           <div class="t-meta" style="margin-bottom:1vh">一句话诊断</div>
-          <div class="body-sm" style="color:var(--text-secondary)">饮料厂的问题是<b>点少而单点极重</b>——几乎没有大面积小额偏差,但少数物料一次就亏几万。适合按物料逐个溯源,而非流程整改。</div>
+          <div class="body-sm" style="color:var(--text-secondary)">饮料厂省得<b>点少而单点极重</b>——几乎没有大面积小额偏差,但少数物料一次就省几万。适合按物料逐个溯源,而非流程整改。</div>
         </div>
       </div>
     </div>
@@ -358,8 +358,8 @@ def _p09(d):
 {_chrome("饮料厂 · 车间与半成品 / BY WORKSHOP", 9)}
 
     <div style="flex:1;display:grid;grid-template-rows:auto auto 1fr;gap:0">
-      <div data-anim="kicker" class="kicker" style="margin-bottom:1.4vh">{b["ws_count"]} 个车间 · {b["ws_top"]["name"]}与{b["ws_second"]["name"]}是重灾区</div>
-      <h2 data-anim="title" class="h-xl-zh" style="max-width:30ch">{b["ws_top"]["name"]} <span style="color:var(--accent)">{b["ws_top"]["rows"]} 条</span> 就亏 {b["ws_top"]["amt"].lstrip(MINUS)} 万</h2>
+      <div data-anim="kicker" class="kicker" style="margin-bottom:1.4vh">{b["ws_count"]} 个车间 · {b["ws_top"]["name"]}与{b["ws_second"]["name"]}是节约主力</div>
+      <h2 data-anim="title" class="h-xl-zh" style="max-width:30ch">{b["ws_top"]["name"]} <span style="color:var(--accent)">{b["ws_top"]["rows"]} 条</span> 就省 {b["ws_top"]["amt"].lstrip(MINUS)} 万</h2>
 
       <div style="display:grid;grid-template-columns:1.05fr .95fr;gap:3.4vw;margin-top:3.4vh;align-items:start">
         <div data-anim="left">
@@ -368,7 +368,7 @@ def _p09(d):
             <div>车间</div><div style="text-align:right">条数</div><div style="text-align:right">净偏差</div>
           </div>
 {chr(10).join(ws)}
-          <div class="body-sm" style="margin-top:2.4vh;padding-top:2vh;border-top:1px solid var(--border-subtle);color:var(--text-secondary)"><b>读数：</b>{b["ws_top"]["name"]}只有 {b["ws_top"]["rows"]} 条却排第一,单条偏差超 {b["ws_top_per_item"]} 元;{b["ws_second"]["name"]}条数最多({b["ws_second"]["rows"]})且净额为负,属"高频+净亏"双差,优先级最高。</div>
+          <div class="body-sm" style="margin-top:2.4vh;padding-top:2vh;border-top:1px solid var(--border-subtle);color:var(--text-secondary)"><b>读数：</b>{b["ws_top"]["name"]}只有 {b["ws_top"]["rows"]} 条却排第一,单条省超 {b["ws_top_per_item"]} 元;{b["ws_second"]["name"]}条数最多({b["ws_second"]["rows"]})且净额为负,属"高频+高额节约"组合,最值得深挖真假。</div>
         </div>
 
         <div data-anim="right" style="border-left:3px solid var(--accent);padding-left:2vw">
@@ -400,7 +400,7 @@ def _p10(d):
 
     <div style="flex:1;display:grid;grid-template-rows:auto auto 1fr;gap:0">
       <div data-anim="kicker" class="kicker" style="margin-bottom:1.4vh">单点极重 · {b["pgh_rows"]} 条偏差 = {round(abs(b["neg_top"][0]["amt_raw"]) / 1e4)} 万</div>
-      <h2 data-anim="title" class="h-xl-zh" style="max-width:32ch">{b["pgh_name"]} <span style="color:var(--accent)">{b["pgh_rows"]} 条记录</span>,亏掉 {b["pgh_amt"].lstrip(MINUS)} 万</h2>
+      <h2 data-anim="title" class="h-xl-zh" style="max-width:32ch">{b["pgh_name"]} <span style="color:var(--accent)">{b["pgh_rows"]} 条记录</span>,省下 {b["pgh_amt"].lstrip(MINUS)} 万</h2>
 
       <div style="display:grid;grid-template-columns:1.08fr .92fr;gap:3.4vw;margin-top:3.4vh;align-items:start">
         <div data-anim="bars" style="display:flex;flex-direction:column;gap:1.6vh">
@@ -413,15 +413,15 @@ def _p10(d):
           <div style="display:flex;flex-direction:column;gap:1.8vh">
             <div>
               <div class="body-sm" style="font-weight:500;color:var(--text-primary);margin-bottom:.5vh">① {b["pgh_name"]}为何只有 {b["pgh_rows"]} 条?</div>
-              <div class="body-sm" style="color:var(--text-secondary)">{b["pgh_rows"]} 条记录产生 {b["pgh_amt"].lstrip(MINUS)} 万偏差,单条超 1 万元。是单笔大额错发,还是定额单位口径不一致（KG 与吨）?</div>
+              <div class="body-sm" style="color:var(--text-secondary)">{b["pgh_rows"]} 条记录省下 {b["pgh_amt"].lstrip(MINUS)} 万,单条省超 1 万元。是定额单位口径不一致（KG 与吨）,还是投料不足?单笔大额要先排除错单。</div>
             </div>
             <div>
               <div class="body-sm" style="font-weight:500;color:var(--text-primary);margin-bottom:.5vh">② {b["sugar_pair"][0][0]}与{b["sugar_pair"][1][0]}两项同时为负</div>
-              <div class="body-sm" style="color:var(--text-secondary)">{b["sugar_pair"][0][0]} {b["sugar_pair"][0][1]} 万、{b["sugar_pair"][1][0]} {b["sugar_pair"][1][1]} 万,合计 {b["sugar_sum"]} 万。糖是饮料主要成本项,建议核对配方定额。</div>
+              <div class="body-sm" style="color:var(--text-secondary)">{b["sugar_pair"][0][0]} {b["sugar_pair"][0][1]} 万、{b["sugar_pair"][1][0]} {b["sugar_pair"][1][1]} 万,合计 {b["sugar_sum"]} 万。糖是饮料主要成本项,大幅节约要么是配方优化,要么是投料不足,建议核对。</div>
             </div>
             <div>
               <div class="body-sm" style="font-weight:500;color:var(--text-primary);margin-bottom:.5vh">③ {b["neg_top"][1]["name"]}单点大额</div>
-              <div class="body-sm" style="color:var(--text-secondary)">{b["neg_top"][1]["name"]} {b["neg_top"][1]["rows"]} 条 {b["neg_top"][1]["amt"]} 万,属单点大额偏差,通常与调机废料相关;建议核对当月调机记录与废料登记。</div>
+              <div class="body-sm" style="color:var(--text-secondary)">{b["neg_top"][1]["name"]} {b["neg_top"][1]["rows"]} 条 {b["neg_top"][1]["amt"]} 万,属单点大额节约,优先核对单位口径与定额基准——确认是真实节省还是口径错位。</div>
             </div>
           </div>
         </div>
@@ -501,7 +501,7 @@ def _p12(d):
 
         <div data-anim="note" style="display:grid;grid-template-columns:1fr 1fr;gap:2.4vw;border-top:1px solid rgba(255,255,255,.22);padding-top:2.2vh">
           <div class="body-sm" style="color:rgba(255,255,255,.8)"><b>好消息：</b>改善类合计 {tr["good_sum"]} 个物料（{tr["good_pct"]}%），是恶化类（{tr["bad_sum"]} 个，{tr["bad_pct"]}%）的 {tr["ratio"]} 倍。说明多数问题在被处理。</div>
-          <div class="body-sm" style="color:rgba(255,255,255,.8)"><b>要盯的：</b>{tr["wor2"]} 个「持续变差」物料是唯一真正失控的一组,建议逐项列入下月重点核查清单,而非泛泛整改。</div>
+          <div class="body-sm" style="color:rgba(255,255,255,.8)"><b>要盯的：</b>{tr["wor2"]} 个「持续变差」物料是唯一持续恶化的一组,建议逐项列入下月重点核查清单,而非泛泛整改。</div>
         </div>
 
         <div data-anim="foot" class="body-sm" style="align-self:end;color:rgba(255,255,255,.6);border-top:1px solid rgba(255,255,255,.14);padding-top:1.8vh">说明：趋势按自然日切分为早/中/近三段偏差率比较得出,仅覆盖有连续订单记录的物料。</div>
@@ -520,14 +520,14 @@ def _p13(d):
 
     <div style="flex:1;display:grid;grid-template-rows:auto auto 1fr;gap:0">
       <div data-anim="kicker" class="kicker accent" style="margin-bottom:1.4vh">四条 · 按优先级排序</div>
-      <h2 data-anim="title" class="h-xl-zh" style="max-width:30ch">先把 {f["ws_top_name"]} 与 {f["ws_second_name"]} <span style="color:var(--accent)">关进笼子</span></h2>
+      <h2 data-anim="title" class="h-xl-zh" style="max-width:30ch">先查 {f["ws_top_name"]} 与 {f["ws_second_name"]} <span style="color:var(--accent)">省得是否真实</span></h2>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:2.6vh 2.6vw;padding-top:3.4vh">
         <div data-anim="c1" style="display:grid;grid-template-columns:auto 1fr;gap:1.6vw;border-top:3px solid var(--accent);padding-top:2vh">
           <div style="font-family:var(--sans);font-weight:200;font-size:min(4.4vw,7.8vh);line-height:.9;color:var(--accent)">01</div>
           <div>
             <div class="body" style="font-weight:500;margin-bottom:.8vh">{f["ws_top_name"]} + {f["ws_second_name"]}逐单复盘</div>
-            <div class="body-sm" style="color:var(--text-secondary)">两车间合计 {f["top2_sum"]} 万,占食品厂净偏差 {f["top2_share"]}%。建议调取近三个月全部订单,区分"定额偏差"与"实际超耗",30 天内出具单车间归因报告。</div>
+            <div class="body-sm" style="color:var(--text-secondary)">两车间合计省 {f["top2_sum"]} 万,占食品厂净节约 {f["top2_share"]}%。建议调取近三个月全部订单,区分"真实节省"与"投料不足/定额虚高",30 天内出具单车间归因报告。</div>
           </div>
         </div>
 
@@ -535,15 +535,15 @@ def _p13(d):
           <div style="font-family:var(--sans);font-weight:200;font-size:min(4.4vw,7.8vh);line-height:.9;color:var(--text-primary)">02</div>
           <div>
             <div class="body" style="font-weight:500;margin-bottom:.8vh">强制补录 {f["nr_top_name"]} {f["nr_top_rows"]} 条备注</div>
-            <div class="body-sm" style="color:var(--text-secondary)">{f["nr_top_name"]} {f["nr_top_rows"]} 条无备注、涉及 {f["nr_top_amt"]} 万,是全场金额最大的未解释偏差。要求 15 个工作日内补齐原因,逾期纳入车间考核。</div>
+            <div class="body-sm" style="color:var(--text-secondary)">{f["nr_top_name"]} {f["nr_top_rows"]} 条无备注、涉及 {f["nr_top_amt"]} 万,是全场金额最大的未解释节约。要求 15 个工作日内补齐原因,逾期纳入车间考核。</div>
           </div>
         </div>
 
         <div data-anim="c3" style="display:grid;grid-template-columns:auto 1fr;gap:1.6vw;border-top:1px solid var(--border-subtle);padding-top:2vh">
           <div style="font-family:var(--sans);font-weight:200;font-size:min(4.4vw,7.8vh);line-height:.9;color:var(--text-primary)">03</div>
           <div>
-            <div class="body" style="font-weight:500;margin-bottom:.8vh">复核大额正偏差物料定额</div>
-            <div class="body-sm" style="color:var(--text-secondary)">{f["pos_note"]}。均为大额正偏差——正偏差意味着实际用量低于定额,指向定额偏高,建议重新标定。</div>
+            <div class="body" style="font-weight:500;margin-bottom:.8vh">复核大额多耗物料定额</div>
+            <div class="body-sm" style="color:var(--text-secondary)">{f["pos_note"]}。均为大额多耗——多耗意味着实际用量高于定额,要么定额偏紧,要么确实超用,建议重新标定。</div>
           </div>
         </div>
 
@@ -569,14 +569,14 @@ def _p14(d):
 
     <div style="flex:1;display:grid;grid-template-rows:auto auto 1fr;gap:0">
       <div data-anim="kicker" class="kicker accent" style="margin-bottom:1.4vh">四条 · 按优先级排序</div>
-      <h2 data-anim="title" class="h-xl-zh" style="max-width:30ch">{b["pgh_rows"]} 条偏差亏 {round(abs(b["neg_top"][0]["amt_raw"]) / 1e4)} 万,<span style="color:var(--accent)">先查这一笔</span></h2>
+      <h2 data-anim="title" class="h-xl-zh" style="max-width:30ch">{b["pgh_rows"]} 条偏差省 {round(abs(b["neg_top"][0]["amt_raw"]) / 1e4)} 万,<span style="color:var(--accent)">先查这一笔</span></h2>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:2.6vh 2.6vw;padding-top:3.4vh">
         <div data-anim="c1" style="display:grid;grid-template-columns:auto 1fr;gap:1.6vw;border-top:3px solid var(--accent);padding-top:2vh">
           <div style="font-family:var(--sans);font-weight:200;font-size:min(4.4vw,7.8vh);line-height:.9;color:var(--accent)">01</div>
           <div>
             <div class="body" style="font-weight:500;margin-bottom:.8vh">{b["pgh_name"]} {b["pgh_rows"]} 条 → 专项核查</div>
-            <div class="body-sm" style="color:var(--text-secondary)">{b["pgh_rows"]} 条记录产生 {b["pgh_amt"].lstrip(MINUS)} 万偏差,单条超 1 万元,属异常量级。优先确认是否存在单位口径错误（KG/吨）、单笔错发或定额录入失误。单笔即可解释饮料厂 {b["pgh_share"]}% 的净偏差。</div>
+            <div class="body-sm" style="color:var(--text-secondary)">{b["pgh_rows"]} 条记录省下 {b["pgh_amt"].lstrip(MINUS)} 万,单条省超 1 万元,属异常量级。优先确认是否存在单位口径错误（KG/吨）、单笔漏投或定额录入失误。单笔即可解释饮料厂 {b["pgh_share"]}% 的净节约。</div>
           </div>
         </div>
 
@@ -584,7 +584,7 @@ def _p14(d):
           <div style="font-family:var(--sans);font-weight:200;font-size:min(4.4vw,7.8vh);line-height:.9;color:var(--text-primary)">02</div>
           <div>
             <div class="body" style="font-weight:500;margin-bottom:.8vh">{b["ws_second"]["name"]}列入重点</div>
-            <div class="body-sm" style="color:var(--text-secondary)">{b["ws_second"]["rows"]} 条 + 净 {b["ws_rows"][1]["amt"]} 万,是饮料厂{"唯一" if b["hf_unique"] else "代表性"}"高频且净亏"车间。建议按周跟踪,并检查该线半成品的产量偏差口径。</div>
+            <div class="body-sm" style="color:var(--text-secondary)">{b["ws_second"]["rows"]} 条 + 净省 {b["ws_rows"][1]["amt"]} 万,是饮料厂{"唯一" if b["hf_unique"] else "代表性"}"高频且高额节约"车间。建议按周跟踪,并检查该线半成品的产量偏差口径。</div>
           </div>
         </div>
 
@@ -652,7 +652,7 @@ def _p15(d):
             <div style="font-family:var(--sans);font-weight:200;font-size:min(4.4vw,7.8vh);line-height:.9;color:var(--text-primary)">02</div>
             <div>
               <h3 style="font-family:var(--sans),var(--sans-zh);font-weight:400;font-size:max(18px,1.8vw);line-height:1.2;letter-spacing:-.015em;color:var(--text-primary);margin-bottom:1vh">真正的病根在定额</h3>
-              <p style="font-family:var(--sans),var(--sans-zh);font-size:max(12px,.92vw);line-height:1.6;color:var(--text-secondary);font-weight:300">「{c["top"]["name"]}」仅 {c["top"]["rows"]} 条却影响 {abs(c["top"]["impact_raw"]) / 1e4:.1f} 万,是"少量记录、巨大金额"的首要原因。它指向制度层面,不是现场操作层面。</p>
+              <p style="font-family:var(--sans),var(--sans-zh);font-size:max(12px,.92vw);line-height:1.6;color:var(--text-secondary);font-weight:300">「{c["top"]["name"]}」仅 {c["top"]["rows"]} 条却多耗 {abs(c["top"]["impact_raw"]) / 1e4:.1f} 万,是"少量记录、巨大金额"的首要多耗来源。它指向制度层面,不是现场操作层面。</p>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:auto 1fr;gap:2vw;align-items:start;padding:2.6vh 0;border-top:1px solid var(--border-subtle);border-bottom:2px solid var(--accent)">
