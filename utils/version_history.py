@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.148",
+        "date": "2026-10-04",
+        "features": "负损(含未投料)看板的「半成品分类」下拉框（QComboBox）也改用 v43.147 的共用固定清单 SEMI_CLASS_ALL，与其余四个看板口径完全统一。控件恒可见：无论主表是否带「半成品重分类」列、该列值是否为空，下拉都列出 全部 + 6 个固定分类。",
+        "fixes": "修复负损看板「半成品分类」下拉只有 1 项（截图仅「食品成品半成品」）、勾选后表格空的问题。根因三层：① 下拉原先只列 unique_vals（数据里实际存在的值），而负损看板取的是主表的负损子集——实测名称含「彩罐/托盘/手包袋」的 592 行「半成品重分类」全部为空值，unique_vals 为空集 → 下拉只剩「全部」，用户无从筛选；② 若主表列名不在取数白名单里，_semi_class_col=None 会走 else 分支把 lbl/分隔线/下拉三者 setVisible(False) 整个隐藏；③ _semi_class_mask 在有列但值全空时只做精确匹配，命中恒 0 条 → 勾任何分类都是空表。修复：下拉改用 merge_semi_class_values() 固定清单；set_data 无条件保持控件可见（缺列时由掩码兜底推断）；_semi_class_mask 增加三层兜底——值非空走精确匹配、值为空用物料编码前缀推断（400→食品成品半成品 / 410→饮料成品半成品，与 semi_dashboard / analyzer.py ③ 号排除法同口径）、无该列用组件物料类型描述/物料分类粗判。同时修复一处**既存崩溃**（HEAD 即有，非本次引入）：_build_semi_checkboxes 与 _build_unit_checkboxes 里的 `self.grp_xxx.itemTexts()` 在 PySide6 中不存在（Qt4/5 的 C++ 侧 API），只要「原选中项仍在新列表里」就 AttributeError 崩溃，改用 findText()（返回 -1 表示不存在）并在原选中项消失时回退「全部」。另在 main_window._show_neg_loss_dashboard 里补空列兜底（缺该列时补空 Series），保证看板能识别到列存在并正常初始化。验证：20 项断言全过（分类列全空/缺列两种场景下拉均 7 项且控件可见、掩码不再恒 0、400/410 前缀分流正确、6 分类逐项掩码与同口径期望完全一致 1674/1042/183/149/88/155、脏数据分类仍追加）；py_compile + pyflakes 双绿（main_window 既存告警 24 条零新增）；回归 22 passed + 2 xfailed 与基线一致。"
+    },
+    {
         "version": "v43.147",
         "date": "2026-10-04",
         "features": "替代料看板 / 偏差率预警看板 / 主表左侧筛选面板的半成品分类复选框组同步改用固定分类清单（SEMI_CLASS_FOOD / SEMI_CLASS_DRINK），与 v43.146 半成品看板口径一致。替代料看板由 QVBoxLayout 竖排改 QGridLayout 两行（食品一行 / 饮料一行）；主表筛选面板由 7 行竖排（占 138px）改 3 列 3 行网格（占 66px，省出 72px 竖向空间）。",

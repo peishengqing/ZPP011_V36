@@ -28,6 +28,7 @@ from gui_pyside6.utils.locate import locate_row
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
+from gui_pyside6.utils.semi_class import merge_semi_class_values  # v43.148 固定分类清单
 from gui_pyside6.widgets.filter_panel import _color_icon
 
 
@@ -441,20 +442,44 @@ class NegLossDashboardDialog(QDialog):
 
     def _semi_class_mask(self, df):
         """半成品重分类掩码：空集合=全True；否则精确匹配列值。多值 OR。
-        无半成品重分类列时,用物料分类/组件物料类型描述/工厂兜底推断(对齐analyzer.py归并规则)。"""
+
+        v43.148 三层兜底（负损看板取数白名单可能不含该列，且负损子集里该列常全空，
+        直接精确匹配会恒 0 条——用户截图「筛选之后是空的」）：
+        ① 有列且值非空 → 直接精确匹配；
+        ② 有列但该值为空 → 用物料编码前缀推断（400→食品成品半成品 / 410→饮料成品半成品，
+           与 semi_dashboard / analyzer.py ③ 号排除法同一口径）；
+        ③ 无该列 → 用组件物料类型描述/物料分类兜底，命中 '__SEMI__' 者对两个成品分类生效。
+        """
         if not self._semi_class_filter:
             return pd.Series(True, index=df.index)
         semi_col = "半成品重分类"
+        blank = None
         if semi_col in df.columns:
             vals = df[semi_col].astype(str).str.strip()
+            blank = vals == ""
         else:
-            # 兜底:半成品类判断(与analyzer.py ③号规则一致)
-            _mtd = df['组件物料类型描述'].astype(str) if '组件物料类型描述' in df.columns else pd.Series('', index=df.index)
-            _semi = (df['物料分类'] == '半成品') | _mtd.str.contains('半成品|成品', na=False)
+            # 无列：用组件物料类型描述/物料分类粗判是否为半成品
+            _mtd = (df['组件物料类型描述'].astype(str)
+                    if '组件物料类型描述' in df.columns
+                    else pd.Series('', index=df.index))
+            _semi = ((df['物料分类'] == '半成品') if '物料分类' in df.columns
+                     else pd.Series(False, index=df.index)) | _mtd.str.contains('半成品|成品', na=False)
             vals = _semi.map({True: '__SEMI__', False: ''}).reindex(df.index)
+            blank = vals == ""
+        # 物料编码前缀 → 分类（400 食品 / 410 饮料），无该列时全空 Series
+        if "物料编码" in df.columns:
+            code = df["物料编码"].astype(str).str.strip()
+        else:
+            code = pd.Series("", index=df.index)
         mask = pd.Series(False, index=df.index)
         for m in self._semi_class_filter:
-            mask = mask | (vals == m)
+            hit = vals == m
+            if m == "食品成品半成品":
+                # 空值行：400 前缀归食品成品（排除已被显式赋值的其他分类）
+                hit = hit | (blank & code.str.startswith("400", na=False))
+            elif m == "饮料成品半成品":
+                hit = hit | (blank & code.str.startswith("410", na=False))
+            mask = mask | hit
         return mask
 
     def _mtd_mask(self, df):
@@ -476,15 +501,27 @@ class NegLossDashboardDialog(QDialog):
         return vals.isin(self._unit_filter)
 
     def _build_semi_checkboxes(self, unique_vals):
-        """构建半成品分类下拉列表：全部 + 虚拟两项 + 实际各值。"""
+        """构建半成品分类下拉列表：全部 + 固定 6 分类 + 数据额外分类。
+
+        v43.148：原先只列 unique_vals（数据里实际存在的值），而负损看板取的是
+        主表的负损子集——子集里往往只有 1~2 个分类（用户截图：只有「食品成品半成品」），
+        其余 5 个分类凭空消失，用户无从筛选。这与 v43.146 半成品看板是同一类问题。
+        改用共用固定清单 SEMI_CLASS_ALL，数据里的额外分类追加在后面（不丢数据）。
+        """
         self.grp_semi_class.blockSignals(True)
         kept = self.grp_semi_class.currentText()
         self.grp_semi_class.clear()
         self.grp_semi_class.addItem("全部")
-        for v in unique_vals:
+        for v in merge_semi_class_values(unique_vals):
             self.grp_semi_class.addItem(v)
-        if kept and kept != "全部" and kept in self.grp_semi_class.itemTexts():
+        # v43.148：原代码用 itemTexts()，但 PySide6 的 QComboBox 无此方法
+        # （C++ 侧 API，Qt4/5 遗留），一旦「原选中项仍在」就 AttributeError 崩溃。
+        # 改用 findText()（返回 -1 表示不存在）。
+        if kept and kept != "全部" and self.grp_semi_class.findText(kept) >= 0:
             self.grp_semi_class.setCurrentText(kept)
+        else:
+            # 原选中项已不在新列表（如上轮数据只有 1 类、本轮变 6 类）→ 回到「全部」
+            self.grp_semi_class.setCurrentText("全部")
         self.grp_semi_class.blockSignals(False)
 
     def _build_unit_checkboxes(self, unique_vals):
@@ -495,8 +532,11 @@ class NegLossDashboardDialog(QDialog):
         self.grp_unit.addItem("全部")
         for v in unique_vals:
             self.grp_unit.addItem(v)
-        if kept and kept != "全部" and kept in self.grp_unit.itemTexts():
+        # v43.148：同上，itemTexts() 在 PySide6 不存在，改用 findText()
+        if kept and kept != "全部" and self.grp_unit.findText(kept) >= 0:
             self.grp_unit.setCurrentText(kept)
+        else:
+            self.grp_unit.setCurrentText("全部")
         self.grp_unit.blockSignals(False)
 
     def _read_mask(self, df, mode):
@@ -664,18 +704,23 @@ class NegLossDashboardDialog(QDialog):
         self.table_view.verticalHeader().setDefaultSectionSize(28)
         if "data_id" in df.columns:
             self.table_view.setColumnHidden(df.columns.get_loc("data_id"), True)
-        # 初始化半成品重分类筛选器（复选框组：全部 + 各值 + 虚拟两项）
-        # 无半成品重分类列时仍可用虚拟项——通过其他列推断（物料分类/组件物料类型描述/工厂）
+        # 初始化半成品重分类筛选器（QComboBox 下拉：全部 + 固定 6 分类 + 数据额外值）
+        # v43.148：原逻辑在「无半成品重分类列」时隐藏整个控件（setVisible(False)），
+        # 但负损看板的取数白名单可能不含该列（用户截图场景），控件就整个消失了；
+        # 且负损子集里该列常全为空值（名称含「彩罐/托盘/手包袋」的 592 行全空），
+        # unique_vals 为空 → 下拉里只剩「全部」，用户无从筛选。
+        # 现改为：无论列在不在、值是否为空，都列出固定 6 分类（缺列时由 _semi_class_mask
+        # 的兜底推断逻辑生效），控件恒可见。
         self._semi_class_col = "半成品重分类" if "半成品重分类" in df.columns else None
+        unique_vals = []
         if self._semi_class_col:
-            unique_vals = df["半成品重分类"].dropna().astype(str).str.strip().unique()
-            unique_vals = sorted(v for v in unique_vals if v)
-            self._build_semi_checkboxes(unique_vals)
-        else:
-            # 无半成品重分类列:隐藏UI控件,保留虚拟筛选能力(由虚拟项推断逻辑兜底)
-            self.semi_sep.setVisible(False)
-            self.lbl_semi_class.setVisible(False)
-            self.grp_semi_class.setVisible(False)
+            unique_vals = sorted(
+                v for v in df["半成品重分类"].dropna().astype(str).str.strip().unique() if v
+            )
+        self._build_semi_checkboxes(unique_vals)
+        self.semi_sep.setVisible(True)
+        self.lbl_semi_class.setVisible(True)
+        self.grp_semi_class.setVisible(True)
         # 初始化 已读/未读 筛选器（默认只显示未读；v43.80 修复：set_data 原先重置回 'all'/'全部'，
         # 覆盖了 __init__ 的 '未读' 默认值，导致默认筛选不生效）
         self._read_filter = "未读"

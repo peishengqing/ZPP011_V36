@@ -1730,6 +1730,11 @@ class MainWindow(QMainWindow):
             ]
             keep = [c for c in candidates if c in df.columns]
             sub = df[keep].copy() if keep else df.copy()
+            # v43.148：若主表列名与看板期望不一致（如「组件物料类型」在、「半成品重分类」不在），
+            # 看板会走「无该列」分支。负损看板已支持缺列兜底（物料编码前缀推断），故此处
+            # 仅在完全缺列时补一个空列，保证看板能识别到列存在并正常初始化筛选器。
+            if "半成品重分类" not in sub.columns:
+                sub["半成品重分类"] = ""
             dialog = NegLossDashboardDialog(sub, self)
             dialog.exec()
         except Exception as e:
