@@ -4935,7 +4935,7 @@ class MainWindow(QMainWindow):
         return None
 
     def _generate_smart_ppt_simple(self):
-        """智能PPT(试用) — 简明版。底层 advanced_ppt_generator_v2，需完整分析 Excel。"""
+        """智能PPT(试用) — 分厂版(9页)。底层 core/ppt_trae.py（TRAE 版式），需完整分析 Excel。"""
         if self.view_model.df is None or self.view_model.df.empty:
             QMessageBox.warning(self, "提示", "请先完成分析，暂无数据可生成 PPT")
             return

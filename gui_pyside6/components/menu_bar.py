@@ -86,9 +86,11 @@ class MenuBarComponent:
         benefit_action.triggered.connect(self.mw._generate_ppt_report)
         tools_menu.addAction(benefit_action)
 
-        # 智能PPT(试用) 子菜单 —— 底层 advanced_ppt_generator_v2，需完整分析 Excel
+        # 智能PPT(试用) 子菜单 —— 两个入口走两套完全不同的生成器，需完整分析 Excel
+        #   · 分厂版(9页) → core/ppt_trae.py（TRAE 版式，食品/饮料分厂专题，数据实时算）
+        #   · 专业版(20+页) → core/advanced_ppt_generator_v2.py（20+ 页深度分析）
         smart_ppt_menu = QMenu("智能PPT(试用)", self.mw)
-        smart_simple_action = QAction("简明版", self.mw)
+        smart_simple_action = QAction("分厂版(9页)", self.mw)
         smart_simple_action.triggered.connect(self.mw._generate_smart_ppt_simple)
         smart_ppt_menu.addAction(smart_simple_action)
         smart_pro_action = QAction("专业版(20+页)", self.mw)

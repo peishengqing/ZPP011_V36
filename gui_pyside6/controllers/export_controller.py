@@ -215,7 +215,7 @@ class ExportController(QObject):
             return False
 
     def generate_simple_ppt(self, audit_data, analysis_output_path, output_dir, parent_widget, log_cb=None):
-        """生成简明版PPT"""
+        """生成「分厂版」智能PPT（9 页，TRAE 版式）"""
         if audit_data is None or audit_data.empty:
             QMessageBox.warning(parent_widget, "提示", "无数据，请先完成分析")
             return False
@@ -228,39 +228,49 @@ class ExportController(QObject):
             if not excel_path:
                 return False
 
-        from core.advanced_ppt_generator_v2 import generate_advanced_report_v2
+        # v43.157：简明版 → 换成 TRAE 分厂版（core/ppt_trae.py，9 页）
+        # 数据全部从「汇总统计」表实时算，不再是硬编码；与专业版彻底分成两份报告。
+        # 注意：ppt_trae 内部已把 DataError / Exception 都吃掉并返回 False，
+        # 具体失败原因已写进 log_cb（error 级），此处不再重复 traceback。
+        from core.ppt_trae import generate_trae_report
 
         if not output_dir:
             output_dir = os.path.expanduser("~/Documents/ZPP011分析报告")
         os.makedirs(output_dir, exist_ok=True)
         output_path = os.path.join(
-            output_dir, f"ZPP011智能报告_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pptx"
+            output_dir, f"ZPP011分厂报告_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pptx"
         )
         try:
             if log_cb:
-                log_cb(f"开始生成智能PPT（简明版）：{excel_path}", "info")
-            # v43.156：显式传 mode="simple"。旧版两个入口都调同一函数、同一参数，
-            # 产出字节数完全一致，「专业版(20+页)」菜单项形同虚设。
-            success = generate_advanced_report_v2(
-                excel_path, output_path, log_cb=log_cb, mode="simple")
+                log_cb(f"开始生成智能PPT（分厂版9页）：{excel_path}", "info")
+            success = generate_trae_report(excel_path, output_path, log_cb=log_cb)
             if success:
                 if log_cb:
-                    log_cb(f"简明版PPT生成成功：{output_path}", "info")
+                    log_cb(f"分厂版PPT生成成功：{output_path}", "info")
                 if QMessageBox.question(
-                    parent_widget, "生成成功", f"简明版报告已生成：\n{output_path}\n是否打开？"
+                    parent_widget, "生成成功",
+                    f"分厂版报告已生成：\n{output_path}\n\n"
+                    "内容：封面 / 目录 / 总体概览 / 食品厂专题(2页)\n"
+                    "饮料厂专题(2页) / 预警对比与建议 / 结尾\n\n是否打开？"
                 ) == QMessageBox.Yes:
                     open_file(output_path)
                 self.log_message.emit(f"PPT生成成功：{output_path}", "info")
                 return True
             else:
-                QMessageBox.warning(parent_widget, "生成失败", "PPT生成返回失败，请查看日志")
+                # 失败原因已由 ppt_trae 通过 log_cb 说清楚，这里只补一条可执行指引
+                QMessageBox.warning(
+                    parent_widget, "生成失败",
+                    "分厂版PPT生成失败，请查看下方日志。\n\n"
+                    "常见原因：所选 Excel 不是「完整分析报告」导出文件\n"
+                    "（本报告需要含「汇总统计」Sheet 的分析结果）。"
+                )
                 return False
         except Exception as e:
             traceback.print_exc()
             if log_cb:
-                log_cb(f"PPT生成失败: {e}", "error")
+                log_cb(f"分厂版PPT生成失败: {e}", "error")
             QMessageBox.critical(parent_widget, "错误", f"生成失败: {e}")
-            self.log_message.emit(f"PPT生成失败: {e}", "error")
+            self.log_message.emit(f"分厂版PPT生成失败: {e}", "error")
             return False
 
     def generate_advanced_report(self, audit_data, analysis_output_path, output_dir, parent_widget, log_cb=None):
