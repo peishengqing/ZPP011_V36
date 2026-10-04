@@ -238,13 +238,16 @@ class ExportController(QObject):
         )
         try:
             if log_cb:
-                log_cb(f"开始生成智能PPT：{excel_path}", "info")
-            success = generate_advanced_report_v2(excel_path, output_path, log_cb=log_cb)
+                log_cb(f"开始生成智能PPT（简明版）：{excel_path}", "info")
+            # v43.156：显式传 mode="simple"。旧版两个入口都调同一函数、同一参数，
+            # 产出字节数完全一致，「专业版(20+页)」菜单项形同虚设。
+            success = generate_advanced_report_v2(
+                excel_path, output_path, log_cb=log_cb, mode="simple")
             if success:
                 if log_cb:
-                    log_cb(f"PPT生成成功：{output_path}", "info")
+                    log_cb(f"简明版PPT生成成功：{output_path}", "info")
                 if QMessageBox.question(
-                    parent_widget, "生成成功", f"报告已生成：\n{output_path}\n是否打开？"
+                    parent_widget, "生成成功", f"简明版报告已生成：\n{output_path}\n是否打开？"
                 ) == QMessageBox.Yes:
                     open_file(output_path)
                 self.log_message.emit(f"PPT生成成功：{output_path}", "info")
@@ -284,13 +287,15 @@ class ExportController(QObject):
         )
         try:
             if log_cb:
-                log_cb(f"开始生成专业版智能PPT：{excel_path}", "info")
-            success = generate_advanced_report_v2(excel_path, output_path, log_cb=log_cb)
+                log_cb(f"开始生成专业版智能PPT（20+页）：{excel_path}", "info")
+            # v43.156：显式传 mode="pro"，走 20+ 页深度版布局
+            success = generate_advanced_report_v2(
+                excel_path, output_path, log_cb=log_cb, mode="pro")
             if success:
                 if log_cb:
                     log_cb(f"专业版报告生成成功：{output_path}", "info")
                 if QMessageBox.question(
-                    parent_widget, "生成成功", f"报告已生成：\n{output_path}\n是否打开？"
+                    parent_widget, "生成成功", f"专业版报告已生成：\n{output_path}\n是否打开？"
                 ) == QMessageBox.Yes:
                     open_file(output_path)
                 self.log_message.emit(f"专业版报告生成成功：{output_path}", "info")
