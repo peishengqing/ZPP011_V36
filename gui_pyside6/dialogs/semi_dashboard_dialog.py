@@ -13,7 +13,7 @@ import pandas as pd
 
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
+    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QLineEdit,
     QCheckBox, QDialogButtonBox, QComboBox, QFrame, QGroupBox, QScrollArea,
     QWidget, QLayout,
@@ -35,6 +35,17 @@ FEED_STATUS_ALL = "全部"
 FEED_STATUS_ITEMS = ("未投料", "负损", "疑似投错", "正常/超投")
 # 400/410 前缀 → 半成品重分类名（无「半成品重分类」列时的兜底）
 PREFIX_TO_SEMI_CLASS = (("400", "食品成品半成品"), ("410", "饮料成品半成品"))
+
+# v43.146：半成品分类固定清单（裴哥 2026-10-04 指定「食品一行、饮料一行」两行排布）。
+# 固定而非纯动态的原因：这些分类名是业务口径的稳定枚举，写死在代码里才能保证
+# ① 每次打开看板的复选框位置/顺序一致（动态 unique_vals 会随数据源抖动）；
+# ② 主表已被筛选面板收窄时 unique_vals 会缺项（曾只列出 2 项，4 个分类消失）。
+# 数据里出现的其他分类名仍会追加到末尾，不会丢。
+SEMI_CLASS_FOOD = ("食品成品半成品", "食品综合组半成品",
+                   "食品配料中心半成品", "食品辅原料")
+SEMI_CLASS_DRINK = ("饮料成品半成品", "饮料综合组半成品仓")
+# 默认勾选：只勾成品半成品（食品+饮料），仓类/辅原料/配料中心需手动勾
+SEMI_CLASS_DEFAULT = ("食品成品半成品", "饮料成品半成品")
 
 
 class SemiDashboardDialog(QDialog):
@@ -90,8 +101,10 @@ class SemiDashboardDialog(QDialog):
         # row3 已读 + 右侧操作
         # row4 颜色标记（独占，约 620px）
         # 实测 5 行内容（行高 22~36 + 行间距 4）需 186px
-        scroll.setMinimumHeight(186)
-        scroll.setMaximumHeight(194)
+        # v43.146：半成品分类组由 36px 增到 58px（两行），row2 变高 22px
+        # → 顶部整体需 208px
+        scroll.setMinimumHeight(208)
+        scroll.setMaximumHeight(216)
         top_widget = QWidget(scroll)
         _top_col = QVBoxLayout(top_widget)
         _top_col.setContentsMargins(4, 2, 4, 2)
@@ -123,15 +136,19 @@ class SemiDashboardDialog(QDialog):
         top.addWidget(self.cmb_feed_status)
 
         # ---- 半成品分类复选框组（v43.138：创建后放到 row2，此处只构建）----
+        # v43.146：QHBoxLayout → QGridLayout 两行（食品一行 / 饮料一行）。
+        # 单行 7 项需要 ~900px，会把 row2 顶宽；两行只需 ~520px。
         self.grp_semi_class = QGroupBox()
         self.grp_semi_class.setFlat(True)
         # SetFixedSize：让容器按 sizeHint 取宽，防止父布局压缩导致中文被裁
         #（v43.137 实测：只设 setMinimumWidth 会被等分压缩，每项仅 ~37px）
         self.grp_semi_class.setMinimumWidth(300)
-        self.grp_semi_class.setFixedHeight(36)
-        self._semi_class_layout = QHBoxLayout(self.grp_semi_class)
+        # v43.146：两行内容（行高 22 + 行间距 4 + 上下边距 8）≈ 56px
+        self.grp_semi_class.setFixedHeight(58)
+        self._semi_class_layout = QGridLayout(self.grp_semi_class)
         self._semi_class_layout.setContentsMargins(6, 4, 6, 4)
-        self._semi_class_layout.setSpacing(8)
+        self._semi_class_layout.setSpacing(4)
+        self._semi_class_layout.setHorizontalSpacing(10)
         self._semi_class_layout.setSizeConstraint(QLayout.SetFixedSize)
         self._semi_class_checkboxes = {}
 
@@ -575,31 +592,58 @@ class SemiDashboardDialog(QDialog):
         return vals.isin(self._unit_filter)
 
     def _build_semi_checkboxes(self, unique_vals):
-        """构建半成品分类复选框组：全部 + 虚拟两项 + 实际各值（去重）。
+        """构建半成品分类复选框组：QGridLayout 两行（v43.146）。
 
-        默认勾选虚拟两项「食品成品半成品」「饮料成品半成品」（排除食品辅原料等其他分类）。
+        row0 = [全部, 食品成品半成品, 食品综合组半成品, 食品配料中心半成品, 食品辅原料]
+        row1 = [饮料成品半成品, 饮料综合组半成品仓, (数据里出现的其他分类…)]
+
+        分类名取自模块级固定清单 SEMI_CLASS_FOOD / SEMI_CLASS_DRINK，
+        不再依赖 unique_vals 动态生成（裴哥 2026-10-04：「再加这 4 个，然后分 2 行，
+        食品饮料分一行」）。原因：① 打开看板取的是主表 source_model 的 df，
+        主表若被左侧筛选面板收窄，unique_vals 会缺项（曾只剩 2 项）；
+        ② 动态列表每次打开顺序可能不同，勾选体验不稳定。
+        数据里出现的固定清单之外的分类仍会追加到 row1 末尾，不会丢数据。
+        默认勾选 SEMI_CLASS_DEFAULT（食品/饮料成品半成品）。
         """
         while self._semi_class_layout.count():
             it = self._semi_class_layout.takeAt(0)
             w = it.widget()
-            if w:
+            if w is not None:
                 w.deleteLater()
         self._semi_class_checkboxes = {}
         all_cb = QCheckBox("全部")
         all_cb.setChecked(False)
+        all_cb.setToolTip("不按半成品分类筛选（显示全部 400/410 记录）")
         all_cb.stateChanged.connect(self._on_semi_class_changed)
-        self._semi_class_layout.addWidget(all_cb)
+        self._semi_class_layout.addWidget(all_cb, 0, 0)
         self._semi_class_checkboxes["__all__"] = all_cb
-        default_on = {"食品成品半成品", "饮料成品半成品"}
-        names = list(default_on) + [v for v in unique_vals if v not in default_on]
-        for v in names:
-            if not v:
+
+        default_on = set(SEMI_CLASS_DEFAULT)
+        row = 0
+        col = 1
+        for names in (SEMI_CLASS_FOOD, SEMI_CLASS_DRINK):
+            for v in names:
+                cb = QCheckBox(v)
+                cb.setChecked(v in default_on)
+                cb.setToolTip("按「%s」筛选" % v)
+                cb.stateChanged.connect(self._on_semi_class_changed)
+                self._semi_class_layout.addWidget(cb, row, col)
+                self._semi_class_checkboxes[v] = cb
+                col += 1
+            row += 1
+            col = 0
+        # 数据里出现的固定清单之外的分类：补到 row1 末尾，避免漏项
+        fixed = set(SEMI_CLASS_FOOD) | set(SEMI_CLASS_DRINK)
+        for v in unique_vals:
+            if not v or v in fixed or v in self._semi_class_checkboxes:
                 continue
             cb = QCheckBox(v)
-            cb.setChecked(v in default_on)
+            cb.setChecked(False)
+            cb.setToolTip("按「%s」筛选" % v)
             cb.stateChanged.connect(self._on_semi_class_changed)
-            self._semi_class_layout.addWidget(cb)
+            self._semi_class_layout.addWidget(cb, 1, col)
             self._semi_class_checkboxes[v] = cb
+            col += 1
         self._semi_class_filter = set(default_on)
 
     def _build_unit_checkboxes(self, unique_vals):
