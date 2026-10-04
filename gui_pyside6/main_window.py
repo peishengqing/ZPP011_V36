@@ -3047,7 +3047,7 @@ class MainWindow(QMainWindow):
             pass
 
     def _on_stats_card_clicked(self, card_type: str):
-        """统计卡片点击：切换对应筛选（审核后变更 / 隔离区卡可过滤对应行）
+        """统计卡片点击：隔离区/偏差率预警开对应窗口，其余切换筛选
 
         注意：这里绝不能直接改写 proxy._custom_filters（旧实现拿 proxy 旧字典
         改一改再 setCustomFilters 写回，会把面板已清掉的条件重新塞回 proxy，
@@ -3068,14 +3068,10 @@ class MainWindow(QMainWindow):
                 msg = "已过滤：仅显示审核后变更的记录"
             self.statusBar().showMessage(msg, 3000)
         elif card_type == 'quarantine':
-            cb = self.filter_panel.color_checks.get('_quarantined_only')
-            if cb is not None and cb.isChecked():
-                self.filter_panel.set_color_filter('all')
-                msg = "已显示全部记录"
-            else:
-                self.filter_panel.set_color_filter('quarantine')
-                msg = "已过滤：仅显示隔离区记录"
-            self.statusBar().showMessage(msg, 3000)
+            # v43.151：原先只 set_color_filter('quarantine') 勾主表颜色标记、不开窗口，
+            # 用户点卡片看不到任何「跳转」，且隔离区的失效复核/按原因筛选/导出/取消隔离
+            # 等能力全在窗口里用不到。改为与顶部「⚠️ 隔离区」菜单一致：直接开窗口。
+            self._open_quarantine_dialog()
         elif card_type == 'anomaly':
             df = self.view_model.df
             rate_col = next((c for c in ['偏差率(%)', '偏差率', 'dev_rate'] if c in df.columns), None)

@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.151",
+        "date": "2026-10-04",
+        "features": "概览面板「隔离区」卡片点击行为改为打开隔离区窗口（与顶部「⚠️ 隔离区」菜单一致），卡片 tooltip 同步更新。",
+        "fixes": "修复概览面板「隔离区」卡片点击没反应（用户截图，2 条隔离记录点不动，而隔壁「偏差率预警」卡片能正常跳转）。**非失效 bug，是设计如此**：_on_stats_card_clicked 的 quarantine 分支只调 set_color_filter('quarantine') 勾主表左侧筛选栏的颜色标记，从不开窗口（tooltip 原就写着「点击仅显示隔离行」）；而 deviation 分支调 _show_deviation_warning_dialog() 弹看板窗口。故信号链路与筛选本身都正常（实测 set_color_filter('quarantine') 使 17647 行收敛到 2 行，与卡片数字一致）。真正的体验问题：隔离区的失效复核（Tab2）、按隔离原因多选、导出 Excel、一键移出隔离等能力全藏在窗口里，卡片只给一个「主表被筛窄」的结果，用户既用不到这些能力也不知道下一步该干什么。修复：quarantine 分支改为 self._open_quarantine_dialog()，与 deviation 分支的「开窗口」语义对齐；同步更新 stats_cards 里该卡 tooltip 为「点击打开隔离区」。实测：卡片点击发出 'quarantine' 信号正常、QTest 模拟点击链路通、窗口构造与 _quarantined==1 过滤口径不变；py_compile 双绿；回归 22 passed + 2 xfailed 与基线一致。"
+    },
+    {
         "version": "v43.150",
         "date": "2026-10-04",
         "features": "看板→主表联动钻取粒度由「订单级」收紧为「订单 + 物料」级：横幅文案同时显示流程订单、物料编码与物料名称，一眼看清当前在看哪个物料。",

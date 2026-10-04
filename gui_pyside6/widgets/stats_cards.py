@@ -96,7 +96,7 @@ class StatsCardsWidget(QWidget):
         self.card_changed = _make_card(self, "--", "审核后变更", "#e53935",
                                         "已审核记录被私自修改的次数（数量/金额/率变动）")
         self.card_quarantine = _make_card(self, "--", "隔离区", "#f9a825",
-                                           "疑难待处理、暂存隔离区的数据条数（点击仅显示隔离行）")
+                                           "疑难待处理、暂存隔离区的数据条数（点击打开隔离区）")
         self.card_deviation = _make_card(self, "--", "偏差率预警", "#ff7043",
                                          "偏差率绝对值 ≥ 10% 的记录数（点击打开偏差率预警看板）")
 
