@@ -4135,7 +4135,19 @@ class MainWindow(QMainWindow):
             return
 
         # 1. 选择保存路径
-        default_name = f"ZPP011偏差分析最终版_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        # 默认文件名用「分析日期区间」而非「此刻时间」（v43.160）：
+        # 同一期数据反复导出时文件名稳定，便于比对与归档，不会因点击时刻不同产生一堆近似名。
+        # 日期取自本次分析参数 _analysis_params['start_date'/'end_date']（格式 yyyy-MM-dd）。
+        # ⚠ 「分析日期范围」留空 = 全部日期，此时两端都是空串，直接拼会得到
+        #   "ZPP011偏差分析最终版__（-）.xlsx" 这种废名，故留空时退回「此刻时间」。
+        _ap = getattr(self, '_analysis_params', None) or {}
+        _sd = str(_ap.get('start_date') or '').strip()
+        _ed = str(_ap.get('end_date') or '').strip()
+        if _sd and _ed:
+            _rng = f"{_sd.replace('-', '')}-{_ed.replace('-', '')}"
+            default_name = f"ZPP011偏差分析最终版_{_rng}_（{_rng}）.xlsx"
+        else:
+            default_name = f"ZPP011偏差分析最终版_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         save_path, _ = QFileDialog.getSaveFileName(
             self, "保存完整Excel文件", default_name, "Excel files (*.xlsx)"
         )
