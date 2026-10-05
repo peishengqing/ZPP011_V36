@@ -1484,8 +1484,22 @@ const initialSlideParam = new URLSearchParams(location.search).get('slide');
 const initialSlide = initialSlideParam ? Number(initialSlideParam) - 1 : 0;
 go(Number.isFinite(initialSlide) ? initialSlide : 0);
 </script>
-<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-<script>lucide.createIcons();</script>
+<script src="./assets/lucide.min.js" onerror="window.__lucideLocalFailed=true"></script>
+<script>
+/* Lucide 图标：本地优先(./assets/)，CDN 兜底。
+   公司内网/断网时 Chromium 渲染进程取不到 unpkg，图标会全丢并破版
+   （v43.161 GUI 实机验收实测 svg.lucide=0），故必须本地优先。
+   Swiss 版 sub-card / stack-block / bar-tower 均按 lucide 尺寸排版，
+   图标缺失会直接破版。双双失败时静默跳过，不阻断其余脚本。 */
+(function(){
+  if (window.lucide && lucide.createIcons) { lucide.createIcons(); return; }
+  var s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/lucide@1.52.0/dist/umd/lucide.min.js';
+  s.onload = function(){ try { lucide.createIcons(); } catch(e){} };
+  s.onerror = function(){ console.warn('[lucide] local + CDN both failed, icons skipped'); };
+  document.head.appendChild(s);
+})();
+</script>
 
 <!-- Motion One 动效引擎 (与原模板一致) -->
 <script type="module">

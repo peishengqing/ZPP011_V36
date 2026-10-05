@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.161",
+        "date": "2026-10-05",
+        "features": "新增 `gui_ui_check.py` —— 归藏网页报告的 GUI 实机验收脚本：真实构造 MainWindow（走真实 `__init__`，含菜单栏挂载）→ 预设 `_full_analysis_cache_path` 模拟「刚分析完」→ 程序化触发 `_open_guizang_magazine()` / `_open_guizang_swiss()` → 后台 QThread 真实读 Excel 算数渲染 → 真实 `QWebEngineView` 加载 `file://` → 在页面里真实执行 JS 断言 → 真实 `QTest`点击刷新/关闭按钮。共 32 项断言覆盖：菜单项挂载、WebEngine 可用性、报告落盘、loadFinished、页面就绪、`motion.min.js` 加载、15 页页数、节约/多耗语义、翻页逻辑、交互入口完整性、刷新重建、浏览器按钮状态。默认注入 `--disable-gpu` 等环境变量（配合软件光栅化），可在 GPU 异常环境下仍完成逻辑验收。",
+        "fixes": "**修复外网依赖：Lucide 改为本地优先。** GUI 实机验收时发现两套模板的 `svg.lucide=0`，排查后确认**并非图标丢失**——经grep 核对，两份模板中 `data-lucide` 元素数为 0、`ico`/`lucide` 类名引用数为 0、magazine 连内联 `<svg>` 都没有，Lucide 库属**从未被使用的死代码引用**（CSS 里的 `.lucide`/`.ico` 只是预留样式）。真实问题只是「为了一个用不上的功能在每次打开报告时白拉一个 446KB 的外部脚本」。已把 `lucide.min.js`(v1.52.0) 下载到 `resources/guizang/{magazine,swiss}/assets/`，模板改成本地优先 + jsDelivr 兜底并加判空（避免 `lucide` 未定义时 `createIcons()` 抛错中断后续脚本）。离线可用性不受影响，开页不再有外网往返；日后若真要用图标，直接写 `<i data-lucide=\"xxx\"></i>` 即可。另补正 v43.158 版本日志中「不依赖任何 CDN」的表述 —— 当时漏查Lucide 这一处，现已补齐。验收脚本本身修正的坑：`loadFinished` **不等于** `<script type=\"module\">` 的 `await import` 完成（首轮曾因竞态误判 motion-ready 超时白等 35s），须轮询 `body.motion-ready` + `window.__playSlide`；Qt 的 `runJavaScript` 对裸表达式返回浮点 `0.0` 而非字符串 `'0'`，比较前须 `JSON.stringify` 归一；翻页状态不在 `.is-active` 类（模板无此类）而在 `window.__currentSlideIndex` + `#deck` 的 `translateX`，且 **`#deck` 是 id 不是 class**；`go()` 首行 `if(lock)return` 且锁 700ms 才释放，连续两次调用必被吞，测试须间隔 >1s；B 键切的是 `window.__lowPowerMode` + `low-power` 类而非 `motion-ready`（后者加载后常驻）。",
+    },
+    {
         "version": "v43.160",
         "date": "2026-10-05",
         "features": "「📋 完整报告」保存对话框的默认文件名改用**分析日期区间**替代「此刻时间」：格式 `ZPP011偏差分析最终版_{起止日期}_（{起止日期}）.xlsx`（如 `ZPP011偏差分析最终版_20260901-20260930_（20260901-20260930）.xlsx`）。同一期数据反复导出时文件名稳定，便于多期比对与归档，不会因点击时刻不同产生一堆仅时间戳不同的近似文件。日期取自 `_analysis_params['start_date'/'end_date']`（`yyyy-MM-dd`，来自「分析日期范围」控件）。",
