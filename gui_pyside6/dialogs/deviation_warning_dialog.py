@@ -187,9 +187,32 @@ class DeviationWarningDialog(QDialog):
         row1.addStretch()
         self._main_filter_vlayout.addLayout(row1)
 
+        # ==== 第1.5行：「筛选 ▾」展开开关（始终可见）====
+        # 为什么不能放第1行：实测第1行 minimumSize 已需 1445px（默认窗口仅 1280），
+        # 塞进第1行须把搜索框 200→140、按钮宽 70→54、分隔间距 16→6 全改一遍，
+        # 实测最激进组合仍需 1310px 仍超，且必然逼出可见的视觉变形 —— 故不动第1行。
+        # 为什么必须独立成行而不是塞进第2行：第2行本身默认隐藏，
+        # 「用来展开第2行的按钮」若藏在第2行里就是死循环（看不到按钮就点不到，
+        # 要看到按钮得先展开第2行，而展开第2行又得先点按钮）。
+        self._row_filter_btn = QWidget()
+        self._row_filter_btn_layout = QHBoxLayout(self._row_filter_btn)
+        self._row_filter_btn_layout.setContentsMargins(0, 0, 0, 0)
+        self._row_filter_btn_layout.setSpacing(6)
+        self.btn_more_filters = QPushButton("筛选 ▾")
+        self.btn_more_filters.setCheckable(True)
+        self.btn_more_filters.setChecked(False)
+        self.btn_more_filters.setMinimumWidth(90)
+        self.btn_more_filters.setToolTip(
+            "展开/收起更多筛选（料别、半成品分类、组件物料类型、替代料、是否备注）")
+        self.btn_more_filters.toggled.connect(self._on_more_filters_toggled)
+        self._row_filter_btn_layout.addWidget(self.btn_more_filters)
+        self._row_filter_btn_layout.addStretch()
+        self._main_filter_vlayout.addWidget(self._row_filter_btn)
+
         # ==== 第2行：料别 + 半成品分类（全屏时显示；车间已提至第1行始终可见）====
         self._row2_widget = QWidget()
         self._row2 = QHBoxLayout(self._row2_widget)
+
         # 料别筛选
         self.mat_sep = QFrame()
         self.mat_sep.setFrameShape(QFrame.VLine)
@@ -257,7 +280,8 @@ class DeviationWarningDialog(QDialog):
         self._row3.addWidget(self.mtd_sep)
         self._row3.addSpacing(8)
 
-        self.lbl_mtd = QLabel("物料类型:")
+        # 原标签「物料类型」易与表格列「物料编码」混淆，且与列名「组件物料类型描述」对不上（v43.162）
+        self.lbl_mtd = QLabel("组件物料类型:")
         self._row3.addWidget(self.lbl_mtd)
 
         self.combo_mtd = QComboBox()
@@ -521,6 +545,28 @@ class DeviationWarningDialog(QDialog):
         """组件物料类型描述下拉框变化时触发筛选"""
         self._mtd_filter = "all" if text == "全部" else text
         self._apply_filter()
+
+    def _on_more_filters_toggled(self, expanded):
+        """「筛选 ▾」展开/收起第2/3/4 行（v43.162）。
+
+        原本这6 个筛选/操作组只能靠「⛶ 放大」露出，而放大按钮自己也在
+        隐藏的第4行里，形成死循环。本按钮给出独立入口。
+        按 blockSignals 避免与 toggle_fullscreen 互相触发导致状态错乱。
+        """
+        for row in (self._row2_widget, self._row3_widget, self._row4_widget):
+            row.setVisible(bool(expanded))
+        self.btn_more_filters.setText("筛选 ▲" if expanded else "筛选 ▾")
+        if expanded:
+            # 展开后才有足够高度给表格；最大化时不要覆盖用户手动调过的列宽
+            if not self.isMaximized():
+                QTimer.singleShot(100, lambda: self.table_view.resizeColumnsToContents())
+
+    def _sync_more_filters_btn(self, expanded):
+        """供 toggle_fullscreen 同步按钮文案/勾选态（不重复切行可见性）。"""
+        self.btn_more_filters.blockSignals(True)
+        self.btn_more_filters.setChecked(bool(expanded))
+        self.btn_more_filters.setText("筛选 ▲" if expanded else "筛选 ▾")
+        self.btn_more_filters.blockSignals(False)
 
     def _mtd_mask(self, df):
         """组件物料类型描述掩码：all=全True / 具体值=列值==该值。"""
@@ -1517,12 +1563,16 @@ class DeviationWarningDialog(QDialog):
             self._row2_widget.setVisible(False)
             self._row3_widget.setVisible(False)
             self._row4_widget.setVisible(False)
+            # 缩小后隐藏区收起，同步把「筛选 ▾」按钮复位（v43.162）
+            self._sync_more_filters_btn(False)
         else:
             self.showMaximized()
             self.btn_fullscreen.setText("⛶ 还原")
             self._row2_widget.setVisible(True)
             self._row3_widget.setVisible(True)
             self._row4_widget.setVisible(True)
+            # 放大必然显示全部隐藏区，按钮同步为「已展开」态（v43.162）
+            self._sync_more_filters_btn(True)
             # 最大化后重新调整列宽
             QTimer.singleShot(100, lambda: self.table_view.resizeColumnsToContents())
 
