@@ -2626,10 +2626,12 @@ class MainWindow(QMainWindow):
         table.setSelectionBehavior(QTableWidget.SelectRows)
         table.verticalHeader().setVisible(False)
         table.setAlternatingRowColors(True)
-        table.setSortingEnabled(True)
-        table.sortByColumn(0, Qt.AscendingOrder)
 
-        # 填充数据
+        # 填充数据（v43.163）
+        # ⚠ 排序开关必须开在 setRowCount/setItem 之后，否则 Qt 会在空表上先行排序，
+        #   之后填入的 item 被按工厂列重新排列，导致部分行「第0列有工厂、第1列分类名丢失」
+        #   （实测 4 个分类会有 2 个分类名称变空）。主面板 _refresh_semi_list_ui 本就是
+        #   先填后排序，这里与之对齐即可。
         categories = self._get_semi_category_list()
         table.setRowCount(len(categories))
         for i, cat in enumerate(categories):
@@ -2637,6 +2639,9 @@ class MainWindow(QMainWindow):
             name = cat.get('name', '')
             table.setItem(i, 0, QTableWidgetItem(str(factory)))
             table.setItem(i, 1, QTableWidgetItem(name))
+
+        table.setSortingEnabled(True)
+        table.sortByColumn(0, Qt.AscendingOrder)
 
         table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
         table.horizontalHeader().resizeSection(0, 80)
