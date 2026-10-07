@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QComboBox, QAbstractItemView, QMessageBox, QTableWidgetItem, QTableWidget,
     QMenu, QGroupBox, QProgressDialog, QInputDialog,
     QScrollArea, QCheckBox, QToolButton,
+    QTreeWidget, QTreeWidgetItem,      # v43.165 半成品分类树
 )
 from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer, QItemSelection, QItemSelectionModel, QModelIndex
 from PySide6.QtGui import QFont, QFontMetrics, QShortcut, QKeySequence, QAction
@@ -2177,38 +2178,30 @@ class MainWindow(QMainWindow):
 
     def _refresh_semi_list_ui(self):
         """根据当前映射刷新左侧面板半成品列表显示"""
-        if not hasattr(self, 'left_panel_component') or not hasattr(self.left_panel_component, 'semi_table'):
+        if not hasattr(self, 'left_panel_component') or not hasattr(self.left_panel_component, 'semi_tree'):
             return
-        # 从dict映射提取唯一分类列表
+        # 从 dict 映射提取唯一分类列表
         categories = self._get_semi_category_list()
-        table = self.left_panel_component.semi_table
-        table.setSortingEnabled(False)
-        table.setRowCount(len(categories))
-        for i, cat in enumerate(categories):
+        tree = self.left_panel_component.semi_tree
+        # v43.165：默认折叠，只显示 4 个父节点（一屏可览，不引入滚动）。
+        # 左栏仅 260px 宽 / 320px 高，全展开 73 行远超可视范围，故不做 expandAll。
+        tree.setSortingEnabled(False)
+        tree.clear()
+        for cat in categories:
             factory = cat.get('factory', '')
             name = cat.get('name', '')
             codes = cat.get('codes') or []
             cnt = int(cat.get('code_count', len(codes)))
-            factory_item = QTableWidgetItem(factory)
-            factory_item.setFlags(factory_item.flags() & ~Qt.ItemIsEditable)
-            name_item = QTableWidgetItem(name)
-            name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
-            name_item.setData(Qt.ItemDataRole.UserRole, name)
-            # v43.164：第3 列物料数、第 4 列物料编码（编码为空时显示 "-" 而非空白）
-            cnt_item = QTableWidgetItem(str(cnt))
-            cnt_item.setFlags(cnt_item.flags() & ~Qt.ItemIsEditable)
-            cnt_item.setTextAlignment(Qt.AlignCenter)
-            codes_text = ', '.join(codes) if codes else '-'
-            codes_item = QTableWidgetItem(codes_text)
-            codes_item.setFlags(codes_item.flags() & ~Qt.ItemIsEditable)
-            codes_item.setToolTip(codes_text)
-            table.setItem(i, 0, factory_item)
-            table.setItem(i, 1, name_item)
-            table.setItem(i, 2, cnt_item)
-            table.setItem(i, 3, codes_item)
-        table.setSortingEnabled(True)
-        table.sortByColumn(0, Qt.AscendingOrder)
-        table.clearSelection()
+            label = f"{factory} · {name}" if factory else name
+            parent = QTreeWidgetItem([label, str(cnt)])
+            parent.setData(0, Qt.ItemDataRole.UserRole, name)
+            for code in codes:
+                # 子节点仅展示，第2 列留空；不可选中删除（叶子）
+                QTreeWidgetItem(parent, [str(code), ''])
+            tree.addTopLevelItem(parent)
+        tree.setSortingEnabled(True)
+        tree.sortByColumn(0, Qt.AscendingOrder)
+        tree.clearSelection()
         if hasattr(self, 'semi_count_label'):
             total_codes = sum(int(c.get('code_count', 0)) for c in categories)
             self.semi_count_label.setText(
@@ -2270,19 +2263,24 @@ class MainWindow(QMainWindow):
         QMessageBox.information(dlg, "成功", f"已添加分类「{cat_name}」")
 
     def _delete_semi_category(self):
-        """删除选中的半成品分类"""
-        table = getattr(self.left_panel_component, 'semi_table', None)
-        if table is None:
+        """删除选中的半成品分类（v43.165：树形下不能用 currentRow() 当分类索引）"""
+        tree = getattr(self.left_panel_component, 'semi_tree', None)
+        if tree is None:
             return
-        current_row = table.currentRow()
-        if current_row < 0:
+        item = tree.currentItem()
+        if item is None:
             QMessageBox.warning(self, "提示", "请先选中要删除的分类")
             return
-        # 获取当前分类名
-        categories = self._get_semi_category_list()
-        if current_row >= len(categories):
+        # 只有父节点（分类级）可删；子节点是单个物料编码
+        if item.childCount() == 0:
+            QMessageBox.warning(self, "提示",
+                                "请选中分类节点（带展开三角的行），物料编码不能单独删除")
             return
-        name = categories[current_row]['name']
+        # 从 UserRole 取分类名，不再依赖行号 —— 树形展开后行号会随子节点错位
+        name = item.data(0, Qt.ItemDataRole.UserRole)
+        if not name:
+            QMessageBox.warning(self, "提示", "请先选中要删除的分类")
+            return
         # 从映射中删除该分类的所有条目
         self._semi_categories = {k: v for k, v in self._semi_categories.items() if v != name}
         self._save_semi_categories(self._semi_categories)

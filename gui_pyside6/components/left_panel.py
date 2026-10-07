@@ -3,10 +3,14 @@
 包含：文件选择 + 替代料配对 + 数据预览
 筛选条件由右侧 FilterPanel 独立管理，负责工厂/车间/物料类型/日期等详细筛选
 """
+# ⚠ QTreeWidget 看似「未用」（pyflakes 会报），实际在 _build_semi_materials 内
+#   通过 self.semi_tree = QTreeWidget() 使用 —— 方法体内的名字解析不到模块级 import。
+#   同理 main_window.py 里的 QTreeWidgetItem（在建树处用）。**不要因为这条告警删 import。**
 from PySide6.QtWidgets import (
     QWidget, QGroupBox, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTableWidget,
-    QHeaderView, QMessageBox,
+    QHeaderView, QMessageBox, QTreeWidget,
+    QAbstractItemView,
 )
 from PySide6.QtCore import Qt, QObject, QEvent
 
@@ -253,27 +257,26 @@ class LeftPanelComponent:
         self.mw.semi_count_label.setObjectName("semiCountLabel")
         layout.addWidget(self.mw.semi_count_label)
 
-        # 表格（仿替代料配对样式，v43.164 扩为 4 列：工厂/分类/物料数/物料编码）
-        self.semi_table = QTableWidget()
-        self.semi_table.setColumnCount(4)
-        self.semi_table.setHorizontalHeaderLabels(["工厂", "分类", "物料数", "物料编码"])
-        self.semi_table.setObjectName("semiTable")
-        hdr = self.semi_table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.Fixed)
-        hdr.resizeSection(0, 60)
+        # 树形（v43.165 由 QTableWidget 改QTreeWidget）
+        # 两级结构：父节点 = 「工厂 · 分类」，子节点 = 该分类下的物料编码。
+        # 实测（offscreen Qt）：左侧栏宽仅 260px，全部展开 4父+69子=73 行需 876px，
+        # 而180px 高只能看 15 行 → 必须**默认折叠** + 高度上限提到 320px
+        #（320px 约 26 行，食品辅原料 6 行 / 配料中心 8 行可完整展开不需滚）。
+        self.semi_tree = QTreeWidget()
+        self.semi_tree.setColumnCount(2)
+        self.semi_tree.setHeaderLabels(["分类 / 物料编码", "物料数"])
+        self.semi_tree.setObjectName("semiTable")   # 复用原样式名，避免重写 QSS
+        hdr = self.semi_tree.header()
+        hdr.setSectionResizeMode(0, QHeaderView.Stretch)
         hdr.setSectionResizeMode(1, QHeaderView.Fixed)
-        hdr.resizeSection(1, 130)
-        hdr.setSectionResizeMode(2, QHeaderView.Fixed)
-        hdr.resizeSection(2, 52)
-        hdr.setSectionResizeMode(3, QHeaderView.Stretch)
-        self.semi_table.verticalHeader().setVisible(False)
-        self.semi_table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.semi_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.semi_table.setAlternatingRowColors(True)
-        self.semi_table.setMinimumHeight(100)
-        self.semi_table.setMaximumHeight(180)
-        self.semi_table.cellClicked.connect(self._on_semi_table_click)
-        layout.addWidget(self.semi_table)
+        hdr.resizeSection(1, 52)
+        self.semi_tree.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.semi_tree.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.semi_tree.setAlternatingRowColors(True)
+        self.semi_tree.setMinimumHeight(100)
+        self.semi_tree.setMaximumHeight(320)
+        self.semi_tree.itemClicked.connect(self._on_semi_tree_click)
+        layout.addWidget(self.semi_tree)
 
         # 操作按钮（仿替代料配对风格）
         btn_layout = QHBoxLayout()
@@ -301,12 +304,16 @@ class LeftPanelComponent:
         zoom_layout.addStretch()
         layout.addLayout(zoom_layout)
 
-    def _on_semi_table_click(self, row: int, col: int):
-        """点击表格行触发明细窗口"""
-        category_item = self.semi_table.item(row, 1)
-        category = category_item.data(Qt.ItemDataRole.UserRole) if category_item else ''
-        if category:
-            self.mw._show_semi_detail_window(category)
+    def _on_semi_tree_click(self, item, _column):
+        """点击树节点：仅**父节点**（分类级）触发明细窗，子节点（单个物料编码）不触发。
+        v43.165：原 QTableWidget 的 cellClicked 语义是「点分类行→筛该分类」，
+        树形下需显式区分层级 —— 用 childCount()==0 判断是否为叶子（编码）。"""
+        if item is None:
+            return
+        if item.childCount() > 0:
+            category = item.data(0, Qt.ItemDataRole.UserRole)
+            if category:
+                self.mw._show_semi_detail_window(category)
 
     def _create_input_row(self, parent_layout: QVBoxLayout, label_text: str,
                          placeholder: str, has_browse: bool = False) -> QWidget:
