@@ -2104,7 +2104,11 @@ class MainWindow(QMainWindow):
             return {}
 
     def _get_semi_category_list(self):
-        """从当前数据和映射dict合并提取唯一分类列表（用于UI显示）"""
+        """从当前数据和映射dict合并提取唯一分类列表（用于UI显示）
+
+        v43.164：每项新增 `codes`（该分类下的物料编码升序列表）与 `code_count`，
+        供左侧表格第3/4 列展示。新增键不影响既有 name/factory 语义。
+        """
         result = []
         seen = set()
 
@@ -2122,7 +2126,14 @@ class MainWindow(QMainWindow):
                             factory = '1102'
                         elif '食品' in str(factory_row):
                             factory = '1101'
-                    result.append({'name': val, 'factory': factory})
+                    # 该分类在本期数据里的物料编码（展示用）
+                    sub = df[df['半成品重分类'] == val]
+                    code_col = '物料编码' if '物料编码' in df.columns else None
+                    codes = sorted(
+                        {str(c).strip() for c in sub[code_col].dropna()}
+                    ) if code_col else []
+                    result.append({'name': val, 'factory': factory,
+                                   'codes': codes, 'code_count': len(codes)})
                     seen.add(val)
 
         # 补充 JSON 中尚未在数据中出现的分类
@@ -2132,8 +2143,25 @@ class MainWindow(QMainWindow):
                 if cls and cls not in seen:
                     code_str = str(code).strip()
                     factory = '1101' if code_str.startswith('400') else ('1102' if code_str.startswith('410') else '')
-                    result.append({'name': cls, 'factory': factory})
+                    result.append({'name': cls, 'factory': factory,
+                                   'codes': [code_str], 'code_count': 1})
                     seen.add(cls)
+        # 同一分类可能对应多个物料编码（配置兜底路径：逐条加入 seen 时会被吞掉），
+        # 故上面 seen.add(cls) 之后需把同分类的其余编码补进来。
+        if isinstance(mapping, dict):
+            merged = {}
+            for code, cls in mapping.items():
+                if not cls:
+                    continue
+                if cls not in merged:
+                    merged[cls] = []
+                cs = str(code).strip()
+                if cs not in merged[cls]:
+                    merged[cls].append(cs)
+            for item in result:
+                codes = sorted(merged.get(item['name'], item.get('codes') or []))
+                item['codes'] = codes
+                item['code_count'] = len(codes)
         return result
 
     def _save_semi_categories(self, mapping):
@@ -2159,18 +2187,33 @@ class MainWindow(QMainWindow):
         for i, cat in enumerate(categories):
             factory = cat.get('factory', '')
             name = cat.get('name', '')
+            codes = cat.get('codes') or []
+            cnt = int(cat.get('code_count', len(codes)))
             factory_item = QTableWidgetItem(factory)
             factory_item.setFlags(factory_item.flags() & ~Qt.ItemIsEditable)
             name_item = QTableWidgetItem(name)
             name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
             name_item.setData(Qt.ItemDataRole.UserRole, name)
+            # v43.164：第3 列物料数、第 4 列物料编码（编码为空时显示 "-" 而非空白）
+            cnt_item = QTableWidgetItem(str(cnt))
+            cnt_item.setFlags(cnt_item.flags() & ~Qt.ItemIsEditable)
+            cnt_item.setTextAlignment(Qt.AlignCenter)
+            codes_text = ', '.join(codes) if codes else '-'
+            codes_item = QTableWidgetItem(codes_text)
+            codes_item.setFlags(codes_item.flags() & ~Qt.ItemIsEditable)
+            codes_item.setToolTip(codes_text)
             table.setItem(i, 0, factory_item)
             table.setItem(i, 1, name_item)
+            table.setItem(i, 2, cnt_item)
+            table.setItem(i, 3, codes_item)
         table.setSortingEnabled(True)
         table.sortByColumn(0, Qt.AscendingOrder)
         table.clearSelection()
         if hasattr(self, 'semi_count_label'):
-            self.semi_count_label.setText(f"共 {len(categories)} 项")
+            total_codes = sum(int(c.get('code_count', 0)) for c in categories)
+            self.semi_count_label.setText(
+                f"共 {len(categories)} 类 · {total_codes} 个物料"
+                if total_codes else f"共 {len(categories)} 项")
 
     def _add_semi_category(self):
         """弹出添加分类对话框：输入名称 + 选择工厂"""
@@ -2618,10 +2661,10 @@ class MainWindow(QMainWindow):
         tip_label.setStyleSheet("color: #aaa; font-size: 11px;")
         layout.addWidget(tip_label)
 
-        # 表格
+        # 表格（v43.164：与左侧主面板统一为 4 列）
         table = QTableWidget()
-        table.setColumnCount(2)
-        table.setHorizontalHeaderLabels(["工厂", "分类名称"])
+        table.setColumnCount(4)
+        table.setHorizontalHeaderLabels(["工厂", "分类名称", "物料数", "物料编码"])
         table.setEditTriggers(QTableWidget.NoEditTriggers)
         table.setSelectionBehavior(QTableWidget.SelectRows)
         table.verticalHeader().setVisible(False)
@@ -2637,15 +2680,28 @@ class MainWindow(QMainWindow):
         for i, cat in enumerate(categories):
             factory = cat.get('factory', '')
             name = cat.get('name', '')
+            codes = cat.get('codes') or []
+            cnt_item = QTableWidgetItem(str(int(cat.get('code_count', len(codes)))))
+            cnt_item.setTextAlignment(Qt.AlignCenter)
+            codes_text = ', '.join(codes) if codes else '-'
+            codes_item = QTableWidgetItem(codes_text)
+            codes_item.setToolTip(codes_text)
             table.setItem(i, 0, QTableWidgetItem(str(factory)))
             table.setItem(i, 1, QTableWidgetItem(name))
+            table.setItem(i, 2, cnt_item)
+            table.setItem(i, 3, codes_item)
 
         table.setSortingEnabled(True)
         table.sortByColumn(0, Qt.AscendingOrder)
 
-        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
-        table.horizontalHeader().resizeSection(0, 80)
-        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        hdr = table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.Fixed)
+        hdr.resizeSection(0, 70)
+        hdr.setSectionResizeMode(1, QHeaderView.Fixed)
+        hdr.resizeSection(1, 180)
+        hdr.setSectionResizeMode(2, QHeaderView.Fixed)
+        hdr.resizeSection(2, 60)
+        hdr.setSectionResizeMode(3, QHeaderView.Stretch)
 
         # 双击筛选（加空值检查，防止排序后双击空行崩溃）
         def _on_semi_double_click(row, col):
