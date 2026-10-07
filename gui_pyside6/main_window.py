@@ -5137,12 +5137,30 @@ class MainWindow(QMainWindow):
             ver = v.get("version", "")
             date = v.get("date", "")
             html_parts.append(f'<div class="ver">{ver}<span class="date">{date}</span></div>')
-            for section_key, section_title in [("features", "✦ 新功能"), ("fixes", "🔧 修复"), ("optimizations", "⚡ 优化"), ("notes", "📌 说明")]:
+            for section_key, section_title in [("features", "✦ 新功能"), ("fixes", "🔧 修复"), ("optimizations", "⚡ 优化"), ("lessons", "⚠ 教训"), ("notes", "📌 说明")]:
                 items = v.get(section_key, [])
+                # ⚠ 兼容 str 与 list 两种写法（v43.166）。
+                #   version_history 里 features/fixes 历来写成**字符串**，而下面
+                #   `for item in items` 对字符串是**逐字符迭代** —— 每个汉字各包一个
+                #   <li>，整段被拆成几百行单列，就是「版本日志文字竖排成一列单字」。
+                #   实测 v43.165 修复前 features 生成 265 个 <li>、fixes 301 个；
+                #   v43.163 的 fixes 更夸张（451 个）。短文案时不明显，长文案即暴露。
+                #   归一化：str 视作单个列表项（保留其内部换行语义）。
+                if isinstance(items, str):
+                    items = [items]
+                elif not isinstance(items, (list, tuple)):
+                    items = [str(items)]
                 if items:
                     html_parts.append(f'<div class="section">{section_title}</div><ul>')
                     for item in items:
-                        html_parts.append(f'<li>{item}</li>')
+                        # ⚠ 转义 < 与 >：版本日志正文里可能引用 HTML 标签名
+                        #   （如 v43.166 自己的 fixes 里就写了 `<li>`），不转义会被
+                        #   QTextBrowser 当成未知标签 —— 要么吞掉、要么把后面的文本吃掉。
+                        #   只转这两个字符，**加粗** 等 Markdown 记号保持原样（它们本就
+                        #   是给日志窗口看的字面文本，不是真Markdown）。
+                        _txt = (str(item).replace('&', '&amp;')
+                                .replace('<', '&lt;').replace('>', '&gt;'))
+                        html_parts.append(f'<li>{_txt}</li>')
                     html_parts.append('</ul>')
         return "".join(html_parts)
 

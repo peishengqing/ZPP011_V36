@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.166",
+        "date": "2026-10-07",
+        "features": "「关于」窗口的版本日志恢复正常排版：每条变更为一个横向列表项，不再出现「每个汉字独占一行、整段竖排成单列」的错乱。",
+        "fixes": "**根因：`for item in items` 对字符串是逐字符迭代。** `main_window._build_version_log_html` 里 `items = v.get(section_key, [])`，而 `version_history` 的 `features`/`fixes` 历来写的是**字符串**（不是数组），于是每个汉字各被包成一个 `<li>`。实测 v43.165 修复前 features 生成 **265 个 `<li>`**、fixes **301 个**，v43.163 的 fixes 更夸张（**451 个**）—— 文字越长竖排越明显，短文案时不明显，故这是**长期存在的隐性 bug**，直到 v43.163 起写入长文案才暴露。修法：在渲染前把 section 值归一化（`str → [该串]`，非 list/tuple 也包一层），同时兼容三种形态而非只判空。`utils/version_history.get_version_history_text()`（纯文本版日志）存在同样逐字符问题，一并修复。**连带修两个存量 bug**：① `VERSION_HISTORY` 279 个条目里有 **3 个（索引 59 / 124 / 236）根本没有 `version` 键**，`get_version_history_text`用 `v['version']` 下标访问会抛 `KeyError: 'version'`（该函数一调就崩），改 `.get` + 占位版本号；② HTML 版渲染漏了 `lessons` section（纯文本版有），两边口径不一致，现补上并把其图标由与 `notes` 冲突的 📌 改为 ⚠。",
+    },
+    {
         "version": "v43.165",
         "date": "2026-10-07",
         "features": "左侧「材料半成品」由 4 列表格改为**两级树形结构**（QTableWidget → QTreeWidget）：父节点 `▸ 1101 · 食品综合组半成品  34`，展开后子节点为该分类下的物料编码（40000001…）。**默认折叠**只显示 4 个父节点（一屏可览，不引入滚动），点击父节点前的三角展开/收起。高度上限由 180px 提到 320px（实测单行约 12px，320px 可视约 26 行，「食品辅原料」6 行与「食品配料中心半成品」8 行可完整展开不需滚动）。计数标签维持「共 4 类 · 69 个物料」。",
@@ -2824,19 +2830,33 @@ def get_version_history_text():
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     ]
 
-    for v in VERSION_HISTORY:
-        lines.append(f"【{v['version']}】{v.get('date', '')}")
+    for i, v in enumerate(VERSION_HISTORY):
+        # ⚠ v43.166：实测 279 个条目中有 3 个（索引 59/ 124 / 236）**根本没有
+        #   'version' 键**（只有 date + features 等）。此处原用 v['version'] 下标访问
+        #   会抛 KeyError: 'version'，该函数一调就崩。改用 .get 并给占位版本号。
+        _ver = v.get('version') or f'(未标注版本 #{i + 1})'
+        lines.append(f"【{_ver}】{v.get('date', '')}")
 
         # 新格式：features / fixes / optimizations / lessons
-        for feat in v.get('features', []):
+        # ⚠ 兼容 str 与 list（v43.166）：这些键历来写成字符串，
+        #   `for x in v.get('features', [])` 对字符串会**逐字符迭代**，
+        #   日志会变成每行一个字的竖排长条。归一化：str → 单元素 list。
+        def _as_list(x):
+            if isinstance(x, str):
+                return [x]
+            if isinstance(x, (list, tuple)):
+                return list(x)
+            return [str(x)] if x else []
+
+        for feat in _as_list(v.get('features')):
             lines.append(f"  ✦ {feat}")
-        for fix in v.get('fixes', []):
+        for fix in _as_list(v.get('fixes')):
             lines.append(f"  🔧 {fix}")
-        for opt in v.get('optimizations', []):
+        for opt in _as_list(v.get('optimizations')):
             lines.append(f"  ⚡ {opt}")
-        for les in v.get('lessons', []):
-            lines.append(f"  📌 {les}")
-        for note in v.get('notes', []):
+        for les in _as_list(v.get('lessons')):
+            lines.append(f"  ⚠ {les}")
+        for note in _as_list(v.get('notes')):
             lines.append(f"  📌 {note}")
 
         # 旧格式兼容：changes 数组（根据前缀符号判断类型）
