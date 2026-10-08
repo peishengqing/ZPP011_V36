@@ -427,7 +427,17 @@ def do_analysis_v2(
     #    - xlsx 命中（按组件物料号）→ 用表里「半成品分类」原值
     #    - 不在表里 → 空（非半成品，不输出任何分类）
     _semi_map = _load_semi_classify_map()
-    df['半成品重分类'] = ''
+    # ⚠ 列序（v43.167）：直接 `df['半成品重分类'] = ''` 会把新列**追加到末尾**，
+    #   实测落在第 32 位、被 _dyn_thresh/_no_quota/_note_source 等内部列夹住，
+    #   在主表里位置很乱。改为在「组件物料类型描述」列**后面插入**，
+    #   使其紧邻同组的组件物料各列（组件物料号/描述/类型/类型描述）。
+    #   ⚠ 这是 analyzer 算列区，按项目红线属「冻结区」——本次是纯列序调整，
+    #   不改任何取值与计算逻辑（值仍由下面 ③ 步填充）。
+    _semi_col_pos = (
+        df.columns.get_loc('组件物料类型描述') + 1
+        if '组件物料类型描述' in df.columns else len(df.columns)
+    )
+    df.insert(_semi_col_pos, '半成品重分类', '')
     if _semi_map:
         df['半成品重分类'] = df['组件物料号_str'].map(_semi_map).fillna('')
 
