@@ -146,7 +146,29 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
             for mat_b_desc in mat_b_descs:
                 rows_b = _match_rows(grp, mat_b_desc, order)
                 if len(rows_b) > 0:
-                    b_list.append(rows_b.iloc[0])
+                    b = rows_b.iloc[0]
+                    # 🔴 自配对守卫（v43.168）：A=B 不成立为替代料，必须丢弃。
+                    # 成因链（实测2026-10-09 数据）：`_match_rows` 三级匹配中第二级是
+                    # 「子串包含」，本为容错（配对表写简称也能匹配上），但当
+                    #   ① 配对表 A/B 名称互为前缀（如「特香包预拌粉」/「特香包预拌粉2号」），
+                    #   ② 且本期数据里A 方物料完全没出现（没投料），
+                    # 则 A 方的「包含匹配」会降级命中到B 方所在行，B 方精确命中的也是同一行，
+                    # 于是产出「物料A== 物料B」的废配对，并被下游 alt_order_mat /
+                    # _is_alt / 备注来源=替代料 全部污染 —— 表现为「负损看板标了替代料，
+                    # 替代料看板却查不到这个物料」。
+                    # 判据用「同一个源行」而非仅比编码：同一行必然既是被包含误命中的 A 方
+                    # 也是 B 方自己。真正的 1 对多（B 方多个不同物料）不受影响。
+                    _a_key = (str(a.get('组件物料编码', a.get('组件物料号', ''))),
+                              str(a['组件物料描述']))
+                    _b_key = (str(b.get('组件物料编码', b.get('组件物料号', ''))),
+                              str(b['组件物料描述']))
+                    if _a_key == _b_key:
+                        dprint(
+                            f"[DEBUG Sheet2] 跳过自配对: 订单 {order} "
+                            f"A={_a_key[1]}({_a_key[0]}) B={_b_key[1]}({_b_key[0]})"
+                        )
+                        continue
+                    b_list.append(b)
 
             if not b_list:
                 continue
