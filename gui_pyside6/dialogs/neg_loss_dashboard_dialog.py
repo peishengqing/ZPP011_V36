@@ -887,23 +887,25 @@ class NegLossDashboardDialog(QDialog):
     def _other_conditions_mask(self, df, exclude):
         """构造「除 exclude 维度外、所有其他筛选条件」的与掩码。
 
-        exclude 取'mtd' / 'workshop'，用于级联时排除自己那一维。
+        exclude 取 'mtd' / 'workshop' / 'unit'，用于级联时排除自己那一维。
         ⚠ 必须用 `_apply_filter` 里同一套掩码函数，否则级联结果与实际过滤不一致
         （历史上「半成品分类」就出过兜底与主链不同导致的空结果）。
         """
         mask = (self._name_mask(df) & self._neg_loss_mask(df)
                 & self._semi_class_mask(df)
-                & self._unit_mask(df)
                 & self._quar_mask(df, self._quar_filter)
                 & self._note_mask(df, self._has_note_filter)
                 & self._color_mask(df)
                 & self._read_mask(df, self._read_filter))
         # 工厂筛选（v43.169）：与本看板共用，取列缺失时为全 True
         mask &= self._factory_mask(df, self._factory_filter)
+        # 三维各自排除自己（v43.175 补unit 分支；原先 unit 被无���叠加进主 mask）
         if exclude != 'mtd':
             mask &= self._mtd_mask(df)
         if exclude != 'workshop':
             mask &= self._workshop_mask(df, self._workshop_filter)
+        if exclude != 'unit':
+            mask &= self._unit_mask(df)
         return mask
 
     def _refresh_cascade_combos(self, changed):
@@ -934,6 +936,28 @@ class NegLossDashboardDialog(QDialog):
         ) if (self._workshop_col and self._workshop_col in sub_ws.columns) else []
         self._replace_combo_items(self.combo_workshop, ws_vals, self._workshop_filter,
                                   '_workshop_filter', '_on_workshop_changed')
+
+        # --- 单位：同样纳入级联（v43.175；原先用的是被删除的 filtered 单向口径）---
+        #本看板单位是**多选**语义（`_unit_filter` 是 set），而公共件
+        # `replace_combo_items` 处理的是单值，故这里保留原有 set 写法，
+        # 但掩码口径换成 exclude-self 以求一致。
+        sub_unit = df[self._other_conditions_mask(df, exclude='unit')]
+        unit_vals = sorted(
+            v for v in sub_unit[self._unit_col].dropna().astype(str).str.strip().unique() if v
+        ) if (self._unit_col and self._unit_col in sub_unit.columns) else []
+        keep_units = {u for u in self._unit_filter if u in unit_vals}
+        wanted_units = ['全部'] + unit_vals
+        have_units = [self.grp_unit.itemText(i) for i in range(self.grp_unit.count())]
+        if wanted_units != have_units:
+            self.grp_unit.blockSignals(True)
+            try:
+                self.grp_unit.clear()
+                self.grp_unit.addItems(wanted_units)
+                self.grp_unit.setCurrentText(
+                    '全部' if not keep_units else sorted(keep_units)[0])
+            finally:
+                self.grp_unit.blockSignals(False)
+        self._unit_filter = keep_units
 
     def _replace_combo_items(self, combo, values, cur_value, attr_name, slot_name):
         """重填 QComboBox 选项，保留「全部」；当前值失效则回退「全部」。
@@ -991,37 +1015,15 @@ class NegLossDashboardDialog(QDialog):
         tag = "含未投料" if self._include_zero else "不含未投料"
         note_tag = {"all": "全部", "yes": "有备注", "no": "无备注"}[self._has_note_filter]
         self.lbl_count.setText("共 %d 条（名称含「%s」· %s · %s）" % (len(filtered), self._keywords, tag, note_tag))
-        # 动态刷新车间下拉：只列出当前可见数据中实际存在的车间
-        if self._workshop_col and not filtered.empty:
-            current = self.combo_workshop.currentText()
-            new_vals = sorted(filtered[self._workshop_col].dropna().astype(str).str.strip().unique())
-            self.combo_workshop.blockSignals(True)
-            self.combo_workshop.clear()
-            self.combo_workshop.addItem("全部")
-            self.combo_workshop.addItems(new_vals)
-            # 保留之前选中的项（若仍存在），否则回退"全部"
-            if current and current != "全部" and current in new_vals:
-                self.combo_workshop.setCurrentText(current)
-            else:
-                self.combo_workshop.setCurrentText("全部")
-                self._workshop_filter = "all"
-            self.combo_workshop.blockSignals(False)
-        # 动态刷新单位下拉：只列出当前可见数据中实际存在的单位
-        if self._unit_col and not filtered.empty:
-            current = self.grp_unit.currentText()
-            new_vals = sorted(filtered[self._unit_col].dropna().astype(str).str.strip().unique())
-            self.grp_unit.blockSignals(True)
-            self.grp_unit.clear()
-            self.grp_unit.addItem("全部")
-            self.grp_unit.addItems(new_vals)
-            # 保留之前选中的项（若仍存在），否则回退"全部"
-            if current and current != "全部" and current in new_vals:
-                self.grp_unit.setCurrentText(current)
-                self._unit_filter = {current}
-            else:
-                self.grp_unit.setCurrentText("全部")
-                self._unit_filter = set()
-            self.grp_unit.blockSignals(False)
+        # ⚠ v43.175 删除了此处原有的两段「动态刷新车间/ 单位下拉」旧逻辑。
+        #   它们与 v43.170 新增的 `_refresh_cascade_combos()` **是两套机制打架**：
+        #     ·旧：用 `filtered`（已含自己过滤的最终结果）重算 → 单向收缩、不可逆
+        #     · 新：用 `_other_conditions_mask(df, exclude=...)`（排除自己）→ 双向可逆
+        #   新级联在 `_apply_filter` 开头已刷新过这两个下拉，旧逻辑在其后**再覆盖一次**，
+        #   结果选「1车间」后车间下拉从 10 项塌缩到 2 项（只剩「全部」+「1车间」），
+        #   用户想换别的车间必须先选回「全部」—— 恰好是本次要消除的单向收缩缺陷。
+        #   单位下拉同理。车间/物料类型的级联统一由 `_refresh_cascade_combos` 负责，
+        #   单位保持「只列出当前可见数据里存在的值」的原口径（单独处理，见下）。
 
     # ------------------------------------------------------------------ 复制
     def eventFilter(self, obj, event):
