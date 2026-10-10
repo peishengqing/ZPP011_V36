@@ -29,6 +29,8 @@ from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
 from gui_pyside6.widgets.filter_panel import _color_icon
+# v43.174：下拉级联公共件（与负损看板/偏差率预警看板同源）
+from gui_pyside6.utils.cascade_filter import replace_combo_items, cascade_options
 
 # 投料状态下拉：全部 + 四档
 FEED_STATUS_ALL = "全部"
@@ -45,6 +47,11 @@ from gui_pyside6.utils.semi_class import (  # noqa: F401
 
 class SemiDashboardDialog(QDialog):
     """半成品看板：400/410 成品半成品 × 投料状态四档 的只读+手动隔离视图。"""
+
+    # v43.174：物料类型下拉永久排除的成品类型（半成品子集永远筛不出它们，v43.81 既有口径）。
+    # 模块级常量 _MTD_EXCLUDE 已上移到此处，供 set_data 首填与级联刷新共用同一份口径，
+    # 避免两处各写一份、改一处忘另一处。
+    _CASCADE_EXCLUDE_MTD = frozenset({"食品成品", "饮料成品"})
 
     def __init__(self, df, main_window, parent=None):
         super().__init__(parent)
@@ -487,20 +494,19 @@ class SemiDashboardDialog(QDialog):
         """按候选顺序取第一个存在的列名，全不存在返回 None。"""
         return next((c for c in candidates if c in df.columns), None)
 
-    def _feed_status_mask(self, df):
-        """投料状态掩码：四档互斥，缺列则全 False。
+    def _feed_status_buckets(self, df):
+        """投料状态四档的**互斥**掩码字典；数量列缺失时返回 None。
 
-        未投料    : actual == 0 且 quota > 0
-        负损      : actual > 0 且 quota > 0 且 actual < quota
-        疑似投错  : quota == 0 且 actual > 0
-        正常/超投 : 以上都不满足（含 quota/actual 为 NaN 的行）
+        v43.174 抽出为独立方法：`_feed_status_mask`（真正筛选）与下拉级联
+        （`_refresh_cascade_combos` 判断某档是否有行）**必须同源**——
+        历史上「半成品分类」就出过兜底与主链不一致导致「筛选之后是空的」。
         """
         act_col = self._first_col(
             df, ["数量-实际", "实际", "实际数量", "数量 - 实际", "actual"])
         qty_col = self._first_col(
             df, ["数量-定额", "定额", "定额数量", "数量 - 定额", "quota"])
         if not act_col or not qty_col:
-            return pd.Series(False, index=df.index)
+            return None
         a = pd.to_numeric(df[act_col], errors="coerce")
         q = pd.to_numeric(df[qty_col], errors="coerce")
         a_is_zero = a == 0
@@ -511,12 +517,24 @@ class SemiDashboardDialog(QDialog):
         m_neg = a_pos & q_pos & (a < q)               # 负损
         m_wrong = q_is_zero & a_pos                   # 疑似投错
         m_normal = ~(m_unfed | m_neg | m_wrong)       # 正常/超投（NaN 也落此档）
-        buckets = {
+        return {
             "未投料": m_unfed,
             "负损": m_neg,
             "疑似投错": m_wrong,
             "正常/超投": m_normal,
         }
+
+    def _feed_status_mask(self, df):
+        """投料状态掩码：四档互斥，缺列则全 False。
+
+        未投料    : actual == 0 且 quota > 0
+        负损      : actual > 0 且 quota > 0 且 actual < quota
+        疑似投错  : quota == 0 且 actual > 0
+        正常/超投 : 以上都不满足（含 quota/actual 为 NaN 的行）
+        """
+        buckets = self._feed_status_buckets(df)
+        if buckets is None:
+            return pd.Series(False, index=df.index)
         want = self._feed_status
         if not want or want == FEED_STATUS_ALL:
             return pd.Series(True, index=df.index)
@@ -875,13 +893,13 @@ class SemiDashboardDialog(QDialog):
         # 初始化组件物料类型描述筛选器
         self._mtd_col = "组件物料类型描述" if "组件物料类型描述" in df.columns else None
         if self._mtd_col:
-            unique_vals = df[self._mtd_col].dropna().astype(str).str.strip().unique()
-            unique_vals = sorted(v for v in unique_vals if v)
-            # 过滤掉在半成品数据中永远筛不出记录的成品类型
-            _MTD_EXCLUDE = {"食品成品", "饮料成品"}
-            unique_vals = [v for v in unique_vals if v not in _MTD_EXCLUDE]
-            self.combo_mtd.addItems(unique_vals)
-            self.combo_mtd.setCurrentText("全部")
+            # v43.174：首填也走公共件 replace_combo_items，与级联刷新同一套逻辑
+            #（含「食品成品/饮料成品」排除，半成品子集永远筛不出成品类型，v43.81 既有口径）
+            unique_vals = sorted(
+                v for v in df[self._mtd_col].dropna().astype(str).str.strip().unique()
+                if v and v not in self._CASCADE_EXCLUDE_MTD)
+            self._mtd_filter, _ = replace_combo_items(
+                self.combo_mtd, unique_vals, "all", '_mtd_filter')
         else:
             self.mtd_sep.setVisible(False)
             self.lbl_mtd.setVisible(False)
@@ -889,15 +907,14 @@ class SemiDashboardDialog(QDialog):
         # 初始化车间筛选器
         self._workshop_col = "车间" if "车间" in df.columns else None
         if self._workshop_col:
-            unique_vals = df["车间"].dropna().astype(str).str.strip().unique()
-            unique_vals = sorted(v for v in unique_vals if v)
-            self.combo_workshop.addItems(unique_vals)
+            unique_vals = sorted(
+                v for v in df["车间"].dropna().astype(str).str.strip().unique() if v)
+            self._workshop_filter, _ = replace_combo_items(
+                self.combo_workshop, unique_vals, "all", '_workshop_filter')
         else:
             self.workshop_sep.setVisible(False)
             self.lbl_workshop.setVisible(False)
             self.combo_workshop.setVisible(False)
-        self._workshop_filter = "all"
-        self.combo_workshop.setCurrentText("全部")
         # 初始化单位筛选器
         self._unit_col = "单位" if "单位" in df.columns else None
         if self._unit_col:
@@ -946,6 +963,110 @@ class SemiDashboardDialog(QDialog):
         self.btn_col_filter.setChecked(on)
         self.btn_col_filter.setText("🔽 列头筛选✓" if on else "🔽 列头筛选")
 
+    # ==================================================================
+    # 投料状态 / 物料类型 / 车间 / 单位 四个下拉的「动态级联」（v43.174）
+    # ==================================================================
+    # 问题（实测2026-10-10 数据 ZPP011_20261001-20261008，offscreen逐选项真点）：
+    #   · combo_mtd（物料类型）**完全没有级联**：只在 set_data 填一次，此后永不刷新。
+    #     选「车间=1车间」后车间下拉收窄到 2 项，物料类型仍是全量 3 项，
+    #     此时选「饮料半成品」→ 0 行（上下文死选项）。
+    #     全量逐组合真点：16 个「车间×物料类型」组合里 7 个死选项（43.8%）。
+    #   · 车间/单位原先用 **filtered（已含自己过滤的最终结果）** 重算选项 → **单向收缩不可逆**：
+    #     初始 8 项选「1车间」后车间下拉**只剩 ['全部','1车间'] 2 项**，
+    #     用户想换别的车间**必须先选回「全部」**。
+    #   · 且两个刷新块都带 `not filtered.empty` 守卫 → 筛到 0 行时整个刷新被跳过，
+    #     下拉保留上一次的陈旧选项，而那个选项在当前条件下必然 0 行。
+    #   · cmb_feed_status（投料状态）5 项硬编码永不收窄，其中「疑似投错」
+    #     （=定额=0 且 实际>0）在整个 400/410 子集里**恒 0 行** → 结构性死选项。
+    #
+    # 修法（与负损看板 v43.170 / 偏差率预警看板 v43.172 同源）：
+    #   ① exclude-self（双向）：重算某下拉时用「除自己以外的所有条件」筛数据，
+    #      而不是已过滤结果 —— 后者把自己算进去，导致选了 A 后 B 只剩 A 的交集。
+    #   ② blockSignals：重填选项会触发 currentTextChanged → _apply_filter → 再刷新，
+    #      无 blockSignals 会无限递归（由公共件 replace_combo_items 负责）。
+    #   ③ 空结果收成只剩「全部」，**不**用 `not filtered.empty` 守卫跳过。
+    #   ④ 级联刷新放在 mask 计算**之前**（否则用户先看到 0 条才刷新）。
+    # ==================================================================
+
+    def _other_conditions_mask(self, df, exclude):
+        """构造「除 exclude 维度外、所有其他筛选条件」的与掩码。
+
+        exclude 取 'feed' / 'mtd' / 'workshop' / 'unit'，用于级联时排除自己那一维。
+        ⚠ 必须用 `_apply_filter` 里**同一套**掩码函数，否则级联结果与实际过滤不一致
+        （历史上「半成品分类」就出过兜底与主链不同导致的空结果）。
+        """
+        mask = self._name_mask(df)
+        if exclude != 'feed':
+            mask = mask & self._feed_status_mask(df)
+        mask = mask & self._semi_class_mask(df)
+        if exclude != 'mtd':
+            mask = mask & self._mtd_mask(df)
+        if exclude != 'unit':
+            mask = mask & self._unit_mask(df)
+        if exclude != 'workshop':
+            mask = mask & self._workshop_mask(df, self._workshop_filter)
+        mask = (mask & self._quar_mask(df, self._quar_filter)
+                & self._note_mask(df, self._has_note_filter)
+                & self._color_mask(df)
+                & self._read_mask(df, self._read_filter))
+        return mask
+
+    def _refresh_cascade_combos(self):
+        """按「除自己以外的所有条件」重算 投料状态/物料类型/车间/单位 四个下拉的选项。
+
+        blockSignals 由公共件 replace_combo_items 负责（防「重填 → currentTextChanged
+        → _apply_filter → 再刷新」无限递归）；已选值失效时公共件直接把回退后的值
+        返回给调用方，由本方法赋回**真实状态属性**。
+        ⚠ 绝不用 setattr 写状态：attr 名漏前导下划线会静默建出幽灵属性、真状态从不更新，
+        且 pyflakes 抓不到（F821 只查读不查 setattr 字符串参数）。
+        """
+        if getattr(self, '_initializing', False):
+            return
+        df = getattr(self, 'original_df', None)
+        if df is None or df.empty or not hasattr(self, 'source_model'):
+            return
+
+        # --- 物料类型：按「除自己外」的条件重算 ---
+        mtd_vals = cascade_options(
+            df, self._other_conditions_mask(df, exclude='mtd'),
+            self._mtd_col, self._CASCADE_EXCLUDE_MTD)
+        keep_mtd, _ = replace_combo_items(
+            self.combo_mtd, mtd_vals, self._mtd_filter, '_mtd_filter')
+        self._mtd_filter = keep_mtd
+
+        # --- 车间：按「除自己外」的条件重算（双向可逆的关键） ---
+        ws_vals = cascade_options(
+            df, self._other_conditions_mask(df, exclude='workshop'),
+            self._workshop_col)
+        keep_ws, _ = replace_combo_items(
+            self.combo_workshop, ws_vals, self._workshop_filter, '_workshop_filter')
+        self._workshop_filter = keep_ws
+
+        # --- 单位：同车间口径（grp_unit 虽是 QComboBox 而非复选框组，状态仍是 set） ---
+        unit_vals = cascade_options(
+            df, self._other_conditions_mask(df, exclude='unit'), self._unit_col)
+        cur_unit = next(iter(self._unit_filter), 'all') if self._unit_filter else 'all'
+        keep_unit, _ = replace_combo_items(
+            self.grp_unit, unit_vals, cur_unit, '_unit_filter')
+        self._unit_filter = set() if keep_unit == 'all' else {keep_unit}
+
+        # --- 投料状态：四档按「除自己外」的条件动态收窄 ---
+        #  ⚠ 业务语义不变：「疑似投错」（=定额=0 且 实际>0）仍是合法的一档，
+        #    只是当前 400/410 子集恰好 0 行而不再列出；换数据集有行时会自动回来。
+        #    判活必须复用 _feed_status_buckets（与 _feed_status_mask 同源），
+        #    不可另写一份数量比较逻辑。
+        buckets = self._feed_status_buckets(df)
+        if buckets is None:
+            feed_vals = []
+        else:
+            other_feed = self._other_conditions_mask(df, exclude='feed')
+            feed_vals = [name for name in FEED_STATUS_ITEMS
+                         if name in buckets and bool((buckets[name] & other_feed).any())]
+        cur_feed = self._feed_status if self._feed_status != FEED_STATUS_ALL else 'all'
+        keep_feed, _ = replace_combo_items(
+            self.cmb_feed_status, feed_vals, cur_feed, '_feed_status')
+        self._feed_status = FEED_STATUS_ALL if keep_feed == 'all' else keep_feed
+
     def _apply_filter(self):
         if getattr(self, "_initializing", False):
             return
@@ -957,6 +1078,9 @@ class SemiDashboardDialog(QDialog):
             self._sort_ctrl.reapply()
             self.lbl_count.setText("共 0 条")
             return
+        # v43.174：四个下拉的选项随其他筛选条件级联刷新。
+        # 放在 mask 计算**之前** —— 放在之后会晚一步（用户先看到 0 条才刷新）。
+        self._refresh_cascade_combos()
         mask = (self._name_mask(df) & self._feed_status_mask(df)
                 & self._semi_class_mask(df)
                 & self._mtd_mask(df)
@@ -977,37 +1101,10 @@ class SemiDashboardDialog(QDialog):
         self.lbl_count.setText("共 %d 条（%s · 投料状态「%s」· 关键字「%s」· %s）"
                                % (len(filtered), semi_tag, self._feed_status,
                                   self._keywords, note_tag))
-        # 动态刷新车间下拉：只列出当前可见数据中实际存在的车间
-        if self._workshop_col and not filtered.empty:
-            current = self.combo_workshop.currentText()
-            new_vals = sorted(filtered[self._workshop_col].dropna().astype(str).str.strip().unique())
-            self.combo_workshop.blockSignals(True)
-            self.combo_workshop.clear()
-            self.combo_workshop.addItem("全部")
-            self.combo_workshop.addItems(new_vals)
-            # 保留之前选中的项（若仍存在），否则回退"全部"
-            if current and current != "全部" and current in new_vals:
-                self.combo_workshop.setCurrentText(current)
-            else:
-                self.combo_workshop.setCurrentText("全部")
-                self._workshop_filter = "all"
-            self.combo_workshop.blockSignals(False)
-        # 动态刷新单位下拉：只列出当前可见数据中实际存在的单位
-        if self._unit_col and not filtered.empty:
-            current = self.grp_unit.currentText()
-            new_vals = sorted(filtered[self._unit_col].dropna().astype(str).str.strip().unique())
-            self.grp_unit.blockSignals(True)
-            self.grp_unit.clear()
-            self.grp_unit.addItem("全部")
-            self.grp_unit.addItems(new_vals)
-            # 保留之前选中的项（若仍存在），否则回退"全部"
-            if current and current != "全部" and current in new_vals:
-                self.grp_unit.setCurrentText(current)
-                self._unit_filter = {current}
-            else:
-                self.grp_unit.setCurrentText("全部")
-                self._unit_filter = set()
-            self.grp_unit.blockSignals(False)
+        # v43.174：原先挂在末尾的「车间/单位动态刷新」两块已删除 ——
+        #   ① 它们用 filtered（含自己过滤的最终结果）重算 → 单向收缩不可逆；
+        #   ② 且带 `not filtered.empty` 守卫 → 筛到 0 行时整块被跳过、下拉留陈旧选项。
+        # 现统一由上方 _refresh_cascade_combos() 按 exclude-self 口径负责。
 
     # ------------------------------------------------------------------ 复制
     def eventFilter(self, obj, event):
