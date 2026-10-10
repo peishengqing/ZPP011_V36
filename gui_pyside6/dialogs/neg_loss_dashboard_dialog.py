@@ -764,12 +764,12 @@ class NegLossDashboardDialog(QDialog):
         self.semi_sep.setVisible(True)
         self.lbl_semi_class.setVisible(True)
         self.grp_semi_class.setVisible(True)
-        # 初始化 已读/未读 筛选器（默认只显示未读；v43.80 修复：set_data 原先重置回 'all'/'全部'，
-        # 覆盖了 __init__ 的 '未读' 默认值，导致默认筛选不生效）
-        self._read_filter = "未读"
+        # ⚠ v43.177：此处只探测 `_read_col` 与控件可见性，**不再设「未读」**——
+        #   默认视图的自适应（含未读空时回退全部）统一交给末尾的
+        #   `_apply_default_filter()`，避免两个地方各设一次、逻辑打架。
         self._read_col = "_read" if "_read" in df.columns else None
         if self._read_col:
-            self.combo_read.setCurrentText("未读")
+            self.combo_read.setCurrentText("未读")   # 仅同步控件显示，状态由末尾统一决定
         else:
             self.combo_read.setVisible(False)
             self.read_sep.setVisible(False)
@@ -840,7 +840,53 @@ class NegLossDashboardDialog(QDialog):
         self._has_note_filter = "all"
         self.btn_note_all.setChecked(True)
         self._initializing = False
+        # v43.177：默认视图自适应 —— 见 `_apply_default_filter` 的说明
+        self._apply_default_filter()
+
+    def _apply_default_filter(self):
+        """默认视图自适应：先试「未读」，未读空但全量非空时回退「全部」（v43.177）。
+
+        v43.80 起本看板默认只显示未读，但**未读是随用户日常标读单调递减的量**：
+        负损记录被陆续处理过一轮后，未读会归零，此时打开看板就是一张空表。
+        v43.173 已在替代料看板做过同一件事（`_apply_default_filter`），本看板照此对齐。
+
+        ⚠ 在负损看板上后果**比替代料看板更严重**：`_read_filter` 不只参与
+        `_apply_filter` 的 mask 链，还被 v43.170 的 `_other_conditions_mask` 用作
+        **级联的一维**。于是「未读 0 行」会同时：
+            ① 表格空（0 行）
+            ② 物料类型 / 车间 / 单位下拉**全部塌缩成只剩「全部」**
+               —— 因为它们是按「除自己外的其它条件」筛出来的，而其它条件里
+                  有一条 `_read_mask(df, '未读')` 把所有行都滤掉了。
+          也就是说级联本身是对的，但被一个「默认维度筛不出东西」给废掉了
+          （实测：全已读时表格 0 行、物料类型下拉只剩「全部」、车间只剩「全部」）。
+
+        必须在 `_initializing = False` 之后、首次 `_apply_filter` 之前调用：
+        否则 source_model 尚未装载，算出的 0 是「还没数据」而非「筛不到」，
+        会把每一次都误判成需回退。
+        """
+        self._read_filter = "未读"
+        if self._read_col and hasattr(self, "combo_read"):
+            self.combo_read.setCurrentText("未读")
+        # 先按「未读」跑一次
         self._apply_filter()
+        sm = getattr(self, "source_model", None)
+        if sm is None or sm.rowCount() > 0:
+            return                      # 有未读 → 保持默认「未读」，不动用户预期
+        # 未读 0 行：确认全量确实非空才回退（两者皆空则保持未读，避免空表套空表）
+        if self.original_df is not None and len(self.original_df) > 0:
+            # ⚠ 本看板的 `_read_filter` 直接存**下拉中文文本**（'_on_read_changed':
+            #   `self._read_filter = text`），`_read_mask` 也按中文分支判定
+            #   （mode=='已读' / mode=='未读'，其余一律全True）。故回退值必须写
+            #   '全部' 而非 'all' —— 写 'all' 虽因落default 分支而筛出全量、结果
+            #   碰巧正确，但状态值与下拉不一致，后续任何按 `== '未读'` 判定的逻辑
+            #   都会踩坑（且 `_refresh_cascade_combos` 里读 `_read_filter` 时同理）。
+            self._read_filter = "全部"
+            if hasattr(self, "combo_read"):
+                # 由 combo_read 的槽统一同步状态与显示，避免「下拉显示未读、
+                # 实际筛的是全部」的错位
+                self.combo_read.setCurrentText("全部")
+            else:
+                self._apply_filter()
 
     def _update_col_filter_hint(self):
         """刷新「列头筛选提示」：显示已设取值过滤的列（N 列 / 列名）。"""
