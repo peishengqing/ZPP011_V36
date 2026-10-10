@@ -336,8 +336,49 @@ class AlertDialog(QDialog):
                 mask = mask | (vals == m)
         return mask
 
+    def _semi_class_visible_options(self, unique_vals):
+        """返回在当前数据下**真正能筛出行**的半成品分类清单（保持固定清单顺序 + 额外值追加）。
+
+        v43.173：`_build_semi_checkboxes` 原先无条件铺满 `SEMI_CLASS_ALL`（食品 4 + 饮料 2），
+        而本看板 `_semi_class_mask`（:330-336）对非「成品半成品」的分类**只做 `vals == m`
+        精确匹配**，于是 `食品配料中心半成品` / `食品辅原料` / `饮料综合组半成品仓`
+        在替代料子集里恒 0 行 —— 这是**结构性**死选项（放开已读限制后仍死）。
+
+        ⚠ 判据必须与 `_semi_class_mask` **严格同源**：逐项临时把 `_semi_class_filter`
+        置为该分类，跑一次看板自己的掩码看命中行数，**不能**另写一份「列值精确匹配」——
+        那会误删两个靠「列值为空 + 工厂名 contains」兜底才活着的
+        `食品成品半成品` / `饮料成品半成品`（本看板该列全空）。
+
+        保守优先：判据出错时宁可保留（不删），绝不误删活选项。
+
+        刻意**不**按「已读/未读」「颜色标记」级联：死选项是结构性的（数据里根本没有
+        这些分类），按已读收窄不会让它们复活，只会让用户切已读时复选框整排消失又整排
+        回来（抖动，可能来不及点就被清空），代价大于收益。
+        """
+        candidates = merge_semi_class_values(unique_vals)
+        col = getattr(self, '_semi_class_col', None)
+        df = self.original_df
+        if not col or df is None or getattr(df, 'empty', True) or col not in df.columns:
+            # 无数据/无该列时无从判定，保持固定清单（交由掩码全 True 语义兜底）
+            return candidates
+
+        visible = []
+        saved = self._semi_class_filter
+        try:
+            for name in candidates:
+                self._semi_class_filter = {name}
+                try:
+                    hit = int(self._semi_class_mask(df).sum()) > 0
+                except Exception:
+                    hit = True  # 判据异常 → 保守保留，不误删
+                if hit:
+                    visible.append(name)
+        finally:
+            self._semi_class_filter = saved
+        return visible
+
     def _build_semi_checkboxes(self, unique_vals):
-        """构建半成品分类复选框组：全部 + 固定分类清单 + 数据里的额外分类。
+        """构建半成品分类复选框组：全部 + **当前数据真有行的**分类。
 
         v43.147 两条修复：
         ① 残影：原代码 takeAt(0) + deleteLater() 只把项摘出布局，旧控件在事件循环
@@ -347,7 +388,15 @@ class AlertDialog(QDialog):
            现统一走共用固定清单 merge_semi_class_values()，额外分类只追加不重复。
         ③ 排版：QVBoxLayout 竖排 → QGridLayout 两行（row0 食品 / row1 饮料），
            「全部」放 row0 col0，与半成品看板一致。
+
+        v43.173：选项清单由 `merge_semi_class_values()` 全量铺满改为
+        `_semi_class_visible_options()` 动态收窄 —— 剔除在当前数据下恒 0 行的
+        结构性死选项（实测 6 → 3，死选项 3 → 0）。判定逻辑见该函数注释。
         """
+        # 重建前记下仍有效的已勾选项：数据变了但分类还在时不丢用户选择
+        kept = {k for k, cb in self._semi_class_checkboxes.items()
+                if k != "__all__" and cb.isChecked()}
+
         while self._semi_class_vlayout.count():
             it = self._semi_class_vlayout.takeAt(0)
             w = it.widget()
@@ -356,32 +405,70 @@ class AlertDialog(QDialog):
                 w.setParent(None)
                 w.deleteLater()
         self._semi_class_checkboxes = {}
-        cb_all = QCheckBox("全部")
-        cb_all.setChecked(True)
-        cb_all.setToolTip("不按半成品分类筛选（显示全部）")
-        cb_all.stateChanged.connect(self._on_semi_class_changed)
+        visible = self._semi_class_visible_options(unique_vals)
+        visible_set = set(visible)
+        # 已勾选但本次被判定为不可见的分类必须从筛选状态里摘掉，
+        # 否则 _semi_class_filter 里的死分类会让掩码恒 0 行（表直接空掉）
+        self._semi_class_filter = kept & visible_set
+
+        # 重建期间静默信号：下面 setChecked 虽在 connect 之前（本身不触发），
+        # 但统一 blockSignals 更稳妥 —— 万一后续有人调整建控件/连接的顺序，
+        # stateChanged → _on_semi_class_changed → _apply_filter 的回环就会被引爆
+
+        def _mk(text, checked, tip):
+            cb = QCheckBox(text)
+            cb.blockSignals(True)
+            try:
+                cb.setChecked(checked)
+            finally:
+                cb.blockSignals(False)
+            cb.setToolTip(tip)
+            cb.stateChanged.connect(self._on_semi_class_changed)
+            return cb
+
+        cb_all = _mk("全部", not self._semi_class_filter,
+                     "不按半成品分类筛选（显示全部）")
         self._semi_class_vlayout.addWidget(cb_all, 0, 0)
         self._semi_class_checkboxes["__all__"] = cb_all
         row, col = 0, 1
         for names in (SEMI_CLASS_FOOD, SEMI_CLASS_DRINK):
             for v in names:
-                cb = QCheckBox(v)
-                cb.setToolTip("按「%s」筛选" % v)
-                cb.stateChanged.connect(self._on_semi_class_changed)
+                if v not in visible_set:
+                    continue
+                cb = _mk(v, v in self._semi_class_filter, "按「%s」筛选" % v)
                 self._semi_class_vlayout.addWidget(cb, row, col)
                 self._semi_class_checkboxes[v] = cb
                 col += 1
             row += 1
             col = 0
-        for v in merge_semi_class_values(unique_vals):
+        for v in visible:
             if v in self._semi_class_checkboxes:
                 continue
-            cb = QCheckBox(v)
-            cb.setToolTip("按「%s」筛选" % v)
-            cb.stateChanged.connect(self._on_semi_class_changed)
+            cb = _mk(v, v in self._semi_class_filter, "按「%s」筛选" % v)
             self._semi_class_vlayout.addWidget(cb, row, col)
             self._semi_class_checkboxes[v] = cb
             col += 1
+
+    def _apply_default_filter(self):
+        """默认视图自适应：先试「未读」，未读空但全量非空时回退「全部」。
+
+        v43.173：原先 set_data 末尾无条件 `self._set_filter("unread")`，
+        而替代料预警的已读比例随用户日常标读单调升高（本批 93 条实测已读 93 /
+        未读 0），于是构造完成就是一张空表 —— 用户不主动点「全部」什么都看不到。
+        钉死在最容易被读空的维度上，等于让看板第一印象取决于历史操作习惯。
+
+        必须在 source_model 已 setDataFrame 之后调用：否则 rowCount 尚未装载，
+        算出来的 0 是「还没数据」而非「筛不到」，会把每一次都误判成需回退。
+        """
+        self._set_filter("unread")
+        sm = getattr(self, "source_model", None)
+        if sm is None or sm.rowCount() > 0:
+            return
+        # 未读 0 行：确认全量确实非行，才回退（两者皆空则保持未读，避免空表套空表）
+        if len(self.original_df) > 0:
+            # 走 _set_filter 而非只改 filter_mode —— 由它统一同步三个
+            # checkable 按钮的 checked 态，杜绝「按钮显示未读、实际筛全部」的错位。
+            self._set_filter("all")
 
     def set_data(self, df):
         """设置表格数据 - 确保 _read 和 data_id 列存在"""
@@ -430,14 +517,16 @@ class AlertDialog(QDialog):
             if _hc in df.columns:
                 self.table_view.setColumnHidden(df.columns.get_loc(_hc), True)
 
-        # 默认打开时显示未读
-        self._set_filter("unread")
-        # 初始化半成品重分类筛选器（复选框组：全部 + 各值 + 虚拟两项）
+        # 先建半成品分类筛选器，再定默认视图 —— 让复选框状态（_semi_class_filter）
+        # 先落定，避免后续 _apply_default_filter 的行数判定被残留筛选影响
         if "半成品重分类" in df.columns:
             self._semi_class_col = "半成品重分类"
             unique_vals = df["半成品重分类"].dropna().astype(str).str.strip().unique()
             unique_vals = sorted(v for v in unique_vals if v)
             self._build_semi_checkboxes(unique_vals)
+        # 默认视图：未读优先，未读空则回退「全部」（v43.173，不能无条件用未读）
+        # 必须在 source_model.setDataFrame() 之后 —— 见 _apply_default_filter 注释
+        self._apply_default_filter()
 
     def export_excel(self):
         path, _ = QFileDialog.getSaveFileName(
