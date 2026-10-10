@@ -777,13 +777,14 @@ class NegLossDashboardDialog(QDialog):
         # 初始化组件物料类型描述筛选器
         self._mtd_col = "组件物料类型描述" if "组件物料类型描述" in df.columns else None
         if self._mtd_col:
-            unique_vals = df[self._mtd_col].dropna().astype(str).str.strip().unique()
-            unique_vals = sorted(v for v in unique_vals if v)
-            # 过滤掉在负损数据中永远筛不出记录的成品类型（v43.81）
-            _MTD_EXCLUDE = {"食品成品", "饮料成品"}
-            unique_vals = [v for v in unique_vals if v not in _MTD_EXCLUDE]
-            self.combo_mtd.addItems(unique_vals)
-            self.combo_mtd.setCurrentText("全部")
+            # v43.170：首次填充也走 _replace_combo_items，与级联刷新同一套逻辑
+            # （含「食品成品/饮料成品」排除，负损看板永远筛不出成品类型，v43.81 既有口径）
+            unique_vals = sorted(
+                v for v in df[self._mtd_col].dropna().astype(str).str.strip().unique() if v
+            )
+            unique_vals = [v for v in unique_vals if v not in self._CASCADE_EXCLUDE_MTD]
+            self._replace_combo_items(self.combo_mtd, unique_vals, "all",
+                                      "_mtd_filter", "_on_mtd_changed")
         else:
             self.mtd_sep.setVisible(False)
             self.lbl_mtd.setVisible(False)
@@ -791,9 +792,11 @@ class NegLossDashboardDialog(QDialog):
         # 初始化车间筛选器
         self._workshop_col = "车间" if "车间" in df.columns else None
         if self._workshop_col:
-            unique_vals = df["车间"].dropna().astype(str).str.strip().unique()
-            unique_vals = sorted(v for v in unique_vals if v)
-            self.combo_workshop.addItems(unique_vals)
+            unique_vals = sorted(
+                v for v in df["车间"].dropna().astype(str).str.strip().unique() if v
+            )
+            self._replace_combo_items(self.combo_workshop, unique_vals, "all",
+                                      "_workshop_filter", "_on_workshop_changed")
         else:
             self.workshop_sep.setVisible(False)
             self.lbl_workshop.setVisible(False)
@@ -867,6 +870,93 @@ class NegLossDashboardDialog(QDialog):
         self.btn_col_filter.setChecked(on)
         self.btn_col_filter.setText("🔽 列头筛选✓" if on else "🔽 列头筛选")
 
+    # ==================================================================
+    #物料类型 / 车间 下拉「动态级联」（v43.170）
+    #=================================================================
+    # 问题：这两个下拉原先在 set_data 时一次性填「全量取值」，后续所有筛选变化
+    #   都不刷新，导致出现「选了必然 0 条」的死选项。实测 2026-10-10 数据：
+    #     · 物料类型 5 个选项里「广宣」在负损子集中根本不存在（负损子集 916 行里 0 行）
+    #       → 用户选中后界面空白却看不出原因
+    #     · 选了「物料类型=食品半成品」后，车间 10 个选项里只有 5 个真能筛出东西
+    #       另外 5 个（24000无菌湿法线/36000热线/注塑线/配料中心/两三片罐并线）都是死的
+    # 修法：任一筛选变化时，按「**除自己以外的所有条件**」重算本下拉的选项列表，
+    #   当前已选值若不在新列表里则自动回退「全部」（避免出现「看似选了、实际 0 条」）。
+    # ==================================================================
+    _CASCADE_EXCLUDE_MTD = {'食品成品', '饮料成品'}  # 负损看板永远筛不出成品的类型（v43.81 既有口径）
+
+    def _other_conditions_mask(self, df, exclude):
+        """构造「除 exclude 维度外、所有其他筛选条件」的与掩码。
+
+        exclude 取'mtd' / 'workshop'，用于级联时排除自己那一维。
+        ⚠ 必须用 `_apply_filter` 里同一套掩码函数，否则级联结果与实际过滤不一致
+        （历史上「半成品分类」就出过兜底与主链不同导致的空结果）。
+        """
+        mask = (self._name_mask(df) & self._neg_loss_mask(df)
+                & self._semi_class_mask(df)
+                & self._unit_mask(df)
+                & self._quar_mask(df, self._quar_filter)
+                & self._note_mask(df, self._has_note_filter)
+                & self._color_mask(df)
+                & self._read_mask(df, self._read_filter))
+        # 工厂筛选（v43.169）：与本看板共用，取列缺失时为全 True
+        mask &= self._factory_mask(df, self._factory_filter)
+        if exclude != 'mtd':
+            mask &= self._mtd_mask(df)
+        if exclude != 'workshop':
+            mask &= self._workshop_mask(df, self._workshop_filter)
+        return mask
+
+    def _refresh_cascade_combos(self, changed):
+        """重算物料类型 / 车间两个下拉的选项（changed='mtd' 或 'workshop'）。
+
+        blockSignals 包裹：重填选项会触发 currentTextChanged → 又回调 _apply_filter，
+        形成无限递归。刷新完由调用方统一_apply_filter 一次。
+        """
+        if getattr(self, '_initializing', False):
+            return
+        df = getattr(self, 'original_df', None)
+        if df is None or df.empty or not hasattr(self, 'source_model'):
+            return
+
+        # --- 物料类型：按「除自己外」的条件重算 ---
+        sub_mtd = df[self._other_conditions_mask(df, exclude='mtd')]
+        mtd_vals = sorted(
+            v for v in sub_mtd[self._mtd_col].dropna().astype(str).str.strip().unique() if v
+        ) if (self._mtd_col and self._mtd_col in sub_mtd.columns) else []
+        mtd_vals = [v for v in mtd_vals if v not in self._CASCADE_EXCLUDE_MTD]
+        self._replace_combo_items(self.combo_mtd, mtd_vals, self._mtd_filter,
+                                  '_mtd_filter', '_on_mtd_changed')
+
+        # --- 车间：按「除自己外」的条件重算 ---
+        sub_ws = df[self._other_conditions_mask(df, exclude='workshop')]
+        ws_vals = sorted(
+            v for v in sub_ws[self._workshop_col].dropna().astype(str).str.strip().unique() if v
+        ) if (self._workshop_col and self._workshop_col in sub_ws.columns) else []
+        self._replace_combo_items(self.combo_workshop, ws_vals, self._workshop_filter,
+                                  '_workshop_filter', '_on_workshop_changed')
+
+    def _replace_combo_items(self, combo, values, cur_value, attr_name, slot_name):
+        """重填 QComboBox 选项，保留「全部」；当前值失效则回退「全部」。
+
+        blockSignals 防「重填 → currentTextChanged → _apply_filter → 再刷新」递归。
+        若值未变化则不动（避免无谓刷新与焦点跳动）。
+        """
+        wanted = ['全部'] + list(values)
+        have = [combo.itemText(i) for i in range(combo.count())]
+        if wanted == have:
+            return False
+        keep = cur_value if cur_value in values else 'all'
+        combo.blockSignals(True)
+        try:
+            combo.clear()
+            combo.addItems(wanted)
+            combo.setCurrentText('全部' if keep == 'all' else keep)
+        finally:
+            combo.blockSignals(False)
+        # 直接改状态属性（信号被 block 了，槽不会触发）
+        setattr(self, attr_name, keep)
+        return True
+
     def _apply_filter(self):
         if getattr(self, "_initializing", False):
             return
@@ -878,6 +968,10 @@ class NegLossDashboardDialog(QDialog):
             self._sort_ctrl.reapply()
             self.lbl_count.setText("共 0 条")
             return
+        # v43.170：物料类型/ 车间下拉的选项随其他筛选条件级联刷新。
+        # 放在 mask 计算**之前**，这样本次过滤用的 df 已是「原始 df」、
+        # 而下拉选项已按最新条件更新；放在之后会晚一步（用户先看到 0 条再刷新）。
+        self._refresh_cascade_combos('apply')
         mask = (self._name_mask(df) & self._neg_loss_mask(df)
                 & self._semi_class_mask(df)
                 & self._mtd_mask(df)
