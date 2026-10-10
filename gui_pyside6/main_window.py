@@ -51,6 +51,7 @@ from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
 from gui_pyside6.dialogs.neg_loss_dashboard_dialog import NegLossDashboardDialogfrom gui_pyside6.dialogs.semi_dashboard_dialog import SemiDashboardDialog
 
 from gui_pyside6.dialogs.quarantine_dialog import QuarantineDialog
+from gui_pyside6.dialogs.pos_loss_dashboard_dialog import PosLossDashboardDialog
 from core.quarantine_manager import add_quarantine, add_quarantine_batch, remove_quarantine, scan_expired_quarantine, get_quarantined_ids
 from core.auto_quarantine import (
     build_all_summary,
@@ -420,6 +421,10 @@ class MainWindow(QMainWindow):
         self.action_btn_neg_loss = QAction("🟠 负损看板", self)
         self.action_btn_neg_loss.triggered.connect(self._show_neg_loss_dashboard)        self.action_btn_semi = QAction("🟡 半成品看板", self)
         self.action_btn_semi.triggered.connect(self._show_semi_dashboard)
+        # 🟢 正损看板（v43.178）：口径「实际 > 定额 且 定额 > 0」（超投），
+        # 与负损看板「0<=实际<定额」互补。独立入口，放在半成品之后。
+        self.action_btn_pos_loss = QAction("🟢 正损看板", self)
+        self.action_btn_pos_loss.triggered.connect(self._show_pos_loss_dashboard)
 
 
         self.action_btn_excel = QAction("📤 Excel 表格 (F6)", self)
@@ -452,10 +457,10 @@ class MainWindow(QMainWindow):
             return btn
 
         self.action_btn_boards = _make_menu_btn(
-            "📊 看板 ▾", "分析看板：管理看板 / 偏差率预警 / 负损看板 / 替代料看板 / 隔离区 / 变动提醒",
+            "📊 看板 ▾", "分析看板：管理看板 / 偏差率预警 / 负损看板 / 正损看板 / 替代料看板 / 半成品看板 / 隔离区 / 变动提醒",
             [self.action_btn_dashboard, self.action_btn_quarantine, self.action_btn_audit_changes,
              self.action_btn_alt_board, self.action_btn_deviation, self.action_btn_neg_loss,
-             self.action_btn_semi])
+             self.action_btn_pos_loss, self.action_btn_semi])
         self.action_btn_export = _make_menu_btn(
             "📤 导出 ▾", "导出当前数据：Excel / 完整报告 / PPT",
             [self.action_btn_excel, self.action_btn_export_full, self.action_btn_ppt])
@@ -1752,6 +1757,38 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开负损看板失败: {e}")
 
+    def _show_pos_loss_dashboard(self):
+        """手动打开正损(超投)看板：名称含关键词 且 实际>定额 且 定额>0（v43.178）。
+
+        与负损看板「0<=实际<定额（含未投料）」互补：本看板看的是**超投**那一侧，
+        实测 2026-10-10 数据正损子集 614 行（负损 785 / 未投料 131 / 疑似投错 238
+        / 持平 397）。判定在 `PosLossDashboardDialog._pos_loss_mask` 内，本方法只负责取数。
+        """
+        try:
+            df = self._get_master_df()  # 与主表同源，避免两边数对不上
+            if df is None or df.empty:
+                QMessageBox.information(self, "提示", "暂无数据，请先分析")
+                return
+            # 列白名单与负损看板保持一致（正损看板是它的完整复制件），
+            # 差别只在对话框内部的口径，故同步维护 v43.176 补的工厂列。
+            candidates = [
+                "订单日期", "流程订单", "物料编码", "物料名称", "物料描述",
+                "工厂", "工厂名称",
+                "车间", "组件物料类型", "组件物料类型描述", "单位",
+                "数量-定额", "定额", "数量-实际", "实际", "偏差数量", "偏差率(%)",
+                "偏差金额", "净偏差数量", "净偏差金额", "是否替代料",
+                "备注", "备注原因", "备注来源", "半成品重分类", "data_id", "_read",
+            ]
+            keep = [c for c in candidates if c in df.columns]
+            sub = df[keep].copy() if keep else df.copy()
+            # 与负损看板同：缺「半成品重分类」时补空列，保证看板识别到列存在
+            #（其 `_semi_class_mask` 有 v43.148 三层兜底，不靠该列也筛得出来）
+            if "半成品重分类" not in sub.columns:
+                sub["半成品重分类"] = ""
+            dialog = PosLossDashboardDialog(sub, self)
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"打开正损看板失败: {e}")
 
     def _show_semi_dashboard(self):
         """手动打开半成品看板：400/410 开头物料，按半成品重分类 + 投料状态筛选。
