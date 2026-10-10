@@ -32,7 +32,8 @@ ZPP011 有 5 个看板（管理/偏差率预警/负损/替代料/半成品），
 """
 from __future__ import annotations
 
-import pandas as pd
+# 注：不 import pandas —— 本模块只操作调用方传进来的 DataFrame/Series（duck typing），
+# 避免给调用方强加 pandas 版本约束，也让这个纯工具模块能被非 pandas 上下文复用。
 
 
 def replace_combo_items(combo, values, cur_value, attr_name, owner=None):
