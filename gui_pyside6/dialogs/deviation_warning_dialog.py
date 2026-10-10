@@ -28,6 +28,7 @@ from gui_pyside6.utils.column_filter import ColumnFilterController
 from gui_pyside6.utils.semi_class import (
     SEMI_CLASS_FOOD, SEMI_CLASS_DRINK, merge_semi_class_values,
 )
+from gui_pyside6.utils.cascade_filter import replace_combo_items, cascade_options
 
 
 
@@ -595,12 +596,16 @@ class DeviationWarningDialog(QDialog):
                 mask = mask | (vals == m)
         return mask
 
-    def _build_semi_checkboxes(self, unique_vals):
+    def _build_semi_checkboxes(self, unique_vals, checked=None, alive=None):
         """构建半成品分类复选框组：全部 + 固定分类清单 + 数据里的额外分类（QGridLayout）。
 
         v43.147：① 残影修复——原 takeAt(0)+deleteLater() 只摘出布局，旧控件在事件循环
         执行前仍是父容器子控件且 visible，会与新控件叠成重复项；现先 setParent(None)。
         ② 分类清单改用共用固定清单 merge_semi_class_values()，不再硬编码虚拟两项。
+        v43.172：③ `alive` 为存活分类集合（None=不收窄），死选项不再铺出来 ——
+        实测固定 6 分类里有 3 个在 warnings_df 518 行中0 行（50% 死选项）。
+        ④ `checked` 为需回填勾选的分类（内部一律 blockSignals，避免 stateChanged
+        → `_on_semi_class_changed` → `_apply_filter` → 又重建 的递归）。
         """
         # 清空旧控件
         while self._semi_class_grid.count():
@@ -612,8 +617,13 @@ class DeviationWarningDialog(QDialog):
                 w.deleteLater()
         self._semi_class_checkboxes = {}
 
+        def _keep(v):
+            # alive 是「有行」的集合：只保留有行的，判死的不再铺出来
+            return (v in alive) if alive is not None else True
+
+        want = set(checked or ())
         all_cb = QCheckBox("全部")
-        all_cb.setChecked(True)
+        all_cb.setChecked(not want)
         all_cb.setToolTip("不按半成品分类筛选（显示全部）")
         all_cb.stateChanged.connect(self._on_semi_class_changed)
         self._semi_class_grid.addWidget(all_cb, 0, 0)
@@ -623,7 +633,10 @@ class DeviationWarningDialog(QDialog):
         row, col = 0, 1
         for names in (SEMI_CLASS_FOOD, SEMI_CLASS_DRINK):
             for v in names:
+                if not _keep(v):
+                    continue
                 cb = QCheckBox(v)
+                cb.setChecked(v in want)
                 cb.setToolTip("按「%s」筛选" % v)
                 cb.stateChanged.connect(self._on_semi_class_changed)
                 self._semi_class_grid.addWidget(cb, row, col)
@@ -632,9 +645,10 @@ class DeviationWarningDialog(QDialog):
             row += 1
             col = 0
         for v in merge_semi_class_values(unique_vals):
-            if v in self._semi_class_checkboxes:
+            if v in self._semi_class_checkboxes or not _keep(v):
                 continue
             cb = QCheckBox(v)
+            cb.setChecked(v in want)
             cb.setToolTip("按「%s」筛选" % v)
             cb.stateChanged.connect(self._on_semi_class_changed)
             self._semi_class_grid.addWidget(cb, row, col)
@@ -773,6 +787,11 @@ class DeviationWarningDialog(QDialog):
         if "_read" not in df.columns:
             df["_read"] = 0
 
+        # v43.172：车间 / 工厂 / 物料类型 下拉 + 半成品分类复选框的选项随其它条件级联刷新。
+        # 放在 mask 计算**之前**：这样本次过滤用的就是已按最新条件更新过的选项，
+        # 放在之后会晚一步（用户先看到 0 条，刷新才把下拉收窄）。
+        self._refresh_cascade_combos()
+
         filtered = df[self._read_mask(df, self.filter_mode)
                       & self._mat_mask(df, self.mat_filter)
                       & self._workshop_mask(df, self._workshop_filter)
@@ -793,11 +812,6 @@ class DeviationWarningDialog(QDialog):
             self.source_model.setDataFrame(filtered)
             self._sort_ctrl.reapply()  # 恢复排序态
         self._update_button_counts()
-        # 车间 / 工厂下拉跟随筛选结果动态收缩（避免表格无数据时仍列出不存在的车间）
-        self._refresh_dependent_combo(
-            filtered, self._workshop_col, self.combo_workshop, "_workshop_filter")
-        self._refresh_dependent_combo(
-            filtered, self._factory_col, self.combo_factory, "_factory_filter")
 
     def _update_col_filter_hint(self):
         """刷新「列头筛选提示」：显示已设取值过滤的列（N 列 / 列名）。"""
@@ -827,24 +841,107 @@ class DeviationWarningDialog(QDialog):
         self.btn_col_filter.setChecked(on)
         self.btn_col_filter.setText("🔽 列头筛选✓" if on else "🔽 列头筛选")
 
-    def _refresh_dependent_combo(self, filtered, col, combo, filter_attr):
-        """筛选后刷新下拉：仅保留 filtered 中实际出现的取值（动态收缩）。
-        col 为 None 或不在 filtered 列中则不处理；当前选中项若仍有效则保留，否则回退'全部'。"""
-        if not col or col not in filtered.columns:
+    # ==================================================================
+    # 车间 / 工厂 / 物料类型 下拉「动态级联」（v43.172）
+    # ==================================================================
+    # 改前实测死选项（2026-10-10 数据 ZPP011_20261001-20261008，warnings_df 518 行）：
+    #   · combo_mtd（组件物料类型）**完全没有级联** —— set_data 只填一次、_apply_filter
+    #     不刷新，选「工厂=云南达利-饮料厂」后仍是全 5 项，其中「广宣」「食品半成品」
+    #     在该条件下 0 行，选了必然空白。
+    #   · 旧 `_refresh_dependent_combo` 用 **filtered**（已含自己过滤的最终结果）重算选项，
+    #     导致**单向收缩不可逆**：初始 9 个车间项 → 选「综合组」后下拉只剩 ['全部','综合组']
+    #     2 项，用户想换别的车间必须先选回「全部」。且它只刷 combo_workshop+combo_factory，
+    #     **漏了 combo_mtd**；刷新时机在 _apply_filter **末尾**（晚一步，用户先看到 0 条才刷新）。
+    # 修法：对齐负损看板 v43.170 口径 —— 用「**除自己以外的所有条件**」筛数据（双向、可逆），
+    #   当前值失效自动回退「全部」，空结果收成只剩「全部」而非留着陈旧死选项。
+    # ==================================================================
+    def _other_conditions_mask(self, df, exclude):
+        """构造「除 exclude 维度外、所有其他筛选条件」的与掩码（级联用）。
+
+        exclude 取 'workshop' / 'factory' / 'mtd' / 'semi' 之一，用于级联时排除自己那一维。
+        ⚠ 必须用 `_apply_filter` 里**完全同一套**掩码函数（本看板共 11 条，见 _apply_filter），
+        否则级联结果与实际过滤不一致 —— 历史上「半成品分类」就出过兜底与主链不同导致空结果。
+        """
+        mask = (self._read_mask(df, self.filter_mode)
+                & self._mat_mask(df, self.mat_filter)
+                & self._quar_mask(df, self._quar_filter)
+                & self._alt_mask(df, self._alt_filter)
+                & self._devdir_mask(df, self._devdir_filter)
+                & self._remark_mask(df, self._remark_filter)
+                & self._keyword_mask(df))
+        if exclude != 'semi':
+            # 半成品分类自己那一维：判它自己有没有行时必须排除，否则 base mask 已
+            # 锁死在当前勾选值上，其它候选一律被判0 行而被误删（实测全灭）。
+            mask &= self._semi_class_mask(df)
+        if exclude != 'workshop':
+            mask &= self._workshop_mask(df, self._workshop_filter)
+        if exclude != 'factory':
+            mask &= self._factory_mask(df, self._factory_filter)
+        if exclude != 'mtd':
+            mask &= self._mtd_mask(df)
+        return mask
+
+    def _refresh_cascade_combos(self):
+        """重算车间 / 工厂 / 物料类型三个下拉的选项（双向、可逆）。
+
+        每个下拉都按「除自己以外的所有条件」重算 → 选了 A 之后 B 仍保留其它可选项，
+        不会出现「想换别的必须先选回全部」的单向收缩。
+
+        blockSignals 防递归：重填选项会触发 currentTextChanged → 又回调 _apply_filter
+        → 再刷新。刷新完由调用方（_apply_filter 开头）统一算一次 mask。
+        """
+        df = getattr(self, 'original_df', None)
+        if df is None or df.empty:
             return
-        new_vals = sorted(filtered[col].dropna().astype(str).str.strip().unique())
-        new_vals = [v for v in new_vals if v]
-        combo.blockSignals(True)
-        combo.clear()
-        combo.addItem("全部")
-        combo.addItems(new_vals)
-        cur = getattr(self, filter_attr, "all")
-        if cur != "all" and cur in new_vals:
-            combo.setCurrentText(cur)
-        else:
-            setattr(self, filter_attr, "all")
-            combo.setCurrentText("全部")
-        combo.blockSignals(False)
+        for key, combo, col, attr in (
+                ('workshop', self.combo_workshop, self._workshop_col, '_workshop_filter'),
+                ('factory', self.combo_factory, self._factory_col, '_factory_filter'),
+                ('mtd', self.combo_mtd, self._mtd_col, '_mtd_filter')):
+            vals = cascade_options(df, self._other_conditions_mask(df, exclude=key), col)
+            keep, _changed = replace_combo_items(
+                combo, vals, getattr(self, attr, 'all'), attr, self)
+            # 必须由调用方把 keep 赋回真实状态属性（信号已被 block，槽不会触发）
+            setattr(self, attr, keep)
+        self._refresh_semi_class_checkboxes(df)
+
+    def _refresh_semi_class_checkboxes(self, df):
+        """按当前其它筛选条件收窄半成品分类复选框：只列出**实际有行**的分类。
+
+        改前 `_build_semi_checkboxes` 无条件铺满固定 6 分类 → 3/6 是死选项（50%）。
+        判据必须与 `_semi_class_mask` 语义严格一致，所以**逐个候选单独跑一次该看板自己的
+        mask**（而不是用 `其它条件mask & ~自己的mask` 反推）：`食品成品半成品`/
+        `饮料成品半成品` 两项有「空值行 + 工厂名contains」的兜底（所以它们即使
+        `半成品重分类` 列全空也能筛出行），用反推法会误删这两个活选项。
+
+        勾选状态保持不变（blockSignals 重建，避免 stateChanged → _apply_filter 递归）；
+        已勾选项若被收窄掉则从 filter 集合移除（宁可少显示，不可留死选项）。
+        """
+        if not getattr(self, '_semi_class_col', None) or not hasattr(self, '_semi_class_grid'):
+            return
+        others = {k: v for k, v in self._semi_class_checkboxes.items() if k != "__all__"}
+        if not others:
+            return
+        other_mask = self._other_conditions_mask(df, exclude='semi')
+
+        def _alive(name):
+            """该候选分类在当前其它条件下能否筛出 > 0 行（用本看板自己的 mask 语义）。"""
+            saved = self._semi_class_filter
+            try:
+                self._semi_class_filter = {name}
+                return bool((self._semi_class_mask(df) & other_mask).any())
+            finally:
+                self._semi_class_filter = saved
+
+        alive = {n for n in others if _alive(n)}
+        if alive == set(others):
+            return  # 无变化：不动控件（避免无谓重建与焦点跳动）
+        # 已勾选项若被判死则从 filter 集合移除（宁可少显示，不可留死选项）
+        keep = self._semi_class_filter & alive
+        self._semi_class_filter = keep
+        # 重建控件：alive 之外的固定分类不再铺出来
+        self._build_semi_checkboxes(
+            df[self._semi_class_col].dropna().astype(str).str.strip().unique(),
+            checked=keep, alive=alive)
 
     def _update_button_counts(self):
         """按钮上显示条数：每个按钮显示「点它之后会得到多少条」（另一组条件保持当前选择）"""
