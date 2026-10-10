@@ -1,0 +1,1501 @@
+# -*- coding: utf-8 -*-
+"""正损(超投)看板对话框。
+
+v43.178 新增。独立看板：显示「名称含指定关键词 且 正损」的记录，与主表/隔离区解耦。
+- 口径：**实际 > 定额 且 定额 > 0**（即超投）。定额为 0 的行属「疑似投错」，
+  不属于本看板；实际为 0 的行属「未投料」，同样不属于本看板。
+  ⚠ 勿复用 semi_dashboard_dialog.py 的「正常/超投」档——那是 ~(未投料|负损|疑似投错)
+  的兜底档，含 a==q 与 NaN 行，不是正损。
+- 本看板 v43.178 完整复制自 neg_loss_dashboard_dialog.py（负损看板），
+  仅核心判定口径不同：负损为 0<=实际<定额（含未投料），正损为 实际>定额 且 定额>0。
+  其余能力（物料类型/车间/工厂/单位级联筛选、半成品分类、隔离区、备注、颜色标记、
+  已读筛选、列头筛选、导出、v43.177 默认视图自适应、v43.175 双向级联）与负损看板一致。
+- 不做任何自动整理；仅支持手动「加入隔离区 / 取消隔离」(与隔离区对话框一致的能力)。
+- 关键词可编辑，默认 彩罐,托盘,手包袋（沿用负损看板既有默认值）。
+- 数据由主窗口传入全量主表（已裁剪关键列），筛选在本对话框内完成，便于关键词/复选框即时重算。
+"""
+
+import re
+import pandas as pd
+
+
+from PySide6.QtWidgets import (
+    QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
+    QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QLineEdit,
+    QCheckBox, QDialogButtonBox, QComboBox, QFrame, QGroupBox, QScrollArea,
+    QWidget,
+)
+from PySide6.QtCore import Qt, QTimer
+from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_color_keys
+from core.quarantine_manager import add_quarantine_batch, remove_quarantine, get_quarantined_ids
+from core.read_status import save_read_status_batch
+from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
+from gui_pyside6.widgets.toast import toast
+from gui_pyside6.utils.locate import locate_row
+from gui_pyside6.utils.table_sort import enable_click_sort
+from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
+from gui_pyside6.utils.column_filter import ColumnFilterController
+from gui_pyside6.utils.semi_class import merge_semi_class_values  # v43.148 固定分类清单
+from gui_pyside6.widgets.filter_panel import _color_icon
+
+
+class PosLossDashboardDialog(QDialog):
+    """正损(超投)看板：名称关键词 × 正损(实际>定额 且 定额>0) 的只读+手动隔离视图。"""
+
+    def __init__(self, df, main_window, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("正损(超投)看板 - 彩罐/托盘/手包袋")
+        self.resize(1280, 640)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
+        self.main_window = main_window
+        self._keywords = ""
+        self._include_zero = False  # v43.178：正损口径下已不参与判定（实际=0 不可能>定额），仅为保留 UI 布局与字段兼容而留
+        self._semi_class_filter = set()  # 半成品重分类筛选：空集合=全部 / 集合内为选中分类（虚拟项模糊匹配）
+        self._semi_class_col = None   # 半成品重分类列名（set_data 时探测）
+        self._read_filter = "未读"    # 已读/未读筛选（全部/已读/未读），默认只显示未读
+        self._mtd_filter = "all"      # 组件物料类型描述筛选（全部/具体类型）
+        self._mtd_col = None          # 组件物料类型描述列名（set_data 时探测）
+        self._workshop_filter = "all"  # 车间筛选（全部/车间名）
+        self._workshop_col = None     # 车间列名（set_data 时探测）
+        # 🔴 工厂筛选（v43.169）：与车间筛选并行叠加，默认「全部」
+        self._factory_filter = "all"  # 工厂筛选（全部/工厂名，取工厂名称列的可读值）
+        self._factory_col = None      # 工厂列名（set_data 时探测）
+        self._quar_filter = "no"      # 隔离区筛选（全部/是/否），默认排除隔离区
+        self._has_note_filter = "all" # 是否有备注筛选（全部/是/否）
+        self._unit_filter = set()     # 单位筛选（set_data 初始化前预置，避免 setCurrentText 触发 _apply_filter 时引用未初始化属性崩溃，v43.82）
+        self.color_filters = set()    # 颜色筛选
+        self.original_df = None
+        self.source_model = None
+        self._kw_timer = None
+        self.setup_ui()
+        self.set_data(df)
+
+    # ------------------------------------------------------------------ UI
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(6)
+
+        # ---- 顶部筛选栏（包在水平滚动区域内，避免控件被挤压重叠）----
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(False)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # v43.139：顶部重排四行（实测单行需 3153px，1400px 窗口下 13 个控件有 8 个不可见）
+        # v43.143：颜色标记独占一行，顶部变五行（实测五行需 186px）
+        scroll.setMinimumHeight(186)
+        scroll.setMaximumHeight(194)
+        top_widget = QWidget(scroll)
+        _top_col = QVBoxLayout(top_widget)
+        _top_col.setContentsMargins(4, 2, 4, 2)
+        _top_col.setSpacing(4)
+        top = QHBoxLayout()
+        top.setContentsMargins(0, 0, 0, 0)
+        top.setSpacing(0)
+        top.addWidget(QLabel("关键字搜索(逗号分隔):"))
+        self.edit_keywords = QLineEdit(self._keywords)
+        self.edit_keywords.setToolTip("全列关键字搜索：匹配任意文本列(名称/编码/车间/备注/原因等)，逗号或顿号分隔多值OR")
+        self.edit_keywords.setMinimumWidth(160)
+        self.edit_keywords.setMaximumWidth(240)
+        top.addWidget(self.edit_keywords)
+        self.edit_keywords.textChanged.connect(self._on_keywords_changed)
+
+        # v43.154：原文案「包含未投料(实际=0 也视为负损)」把 row1 撑到 minimum=1147px，
+        # 超出 1150 窗口的 scroll 可视宽 11px → 该行被压缩、控件轻微重叠。
+        # 括号说明移入 tooltip，勾选框只留短文案，minimum 降到 ~1050px。
+        # v43.178：正损看板下该开关不适用（实际=0 不可能>定额），故禁用；
+        # 控件本身保留以维持顶部筛选栏布局与字段兼容（槽函数仍保留，不触发）。
+        self.chk_include_zero = QCheckBox("含未投料")
+        self.chk_include_zero.setToolTip(
+            "包含未投料：实际=0 的行也视为负损（不影响未投料判定，仅影响负损口径）"
+            "——正损口径下不适用：该开关已禁用，实际=0 的行属「未投料」，不属于正损。")
+        self.chk_include_zero.setChecked(False)
+        self.chk_include_zero.setEnabled(False)
+        self.chk_include_zero.stateChanged.connect(self._on_include_zero_changed)
+        top.addWidget(self.chk_include_zero)
+
+        top.addSpacing(14)
+        self.unit_sep = QFrame()
+        self.unit_sep.setFrameShape(QFrame.VLine)
+        self.unit_sep.setFrameShadow(QFrame.Sunken)
+        top.addWidget(self.unit_sep)
+        top.addSpacing(14)
+        self.lbl_unit = QLabel("单位:")
+        top.addWidget(self.lbl_unit)
+        self.grp_unit = QComboBox()
+        self.grp_unit.setMinimumWidth(130)
+        self.grp_unit.setMaximumWidth(180)
+        self.grp_unit.setEditable(False)
+        self.grp_unit.addItem("全部")
+        self.grp_unit.currentTextChanged.connect(self._on_unit_changed)
+        top.addWidget(self.grp_unit)
+
+        top.addSpacing(14)
+        self.mtd_sep = QFrame()
+        self.mtd_sep.setFrameShape(QFrame.VLine)
+        self.mtd_sep.setFrameShadow(QFrame.Sunken)
+        top.addWidget(self.mtd_sep)
+        top.addSpacing(14)
+        self.lbl_mtd = QLabel("物料类型:")
+        top.addWidget(self.lbl_mtd)
+        self.combo_mtd = QComboBox()
+        self.combo_mtd.setMinimumWidth(130)
+        self.combo_mtd.setMaximumWidth(180)
+        self.combo_mtd.setEditable(False)
+        self.combo_mtd.addItem("全部")
+        self.combo_mtd.currentTextChanged.connect(self._on_mtd_changed)
+        top.addWidget(self.combo_mtd)
+
+        # ---- 车间筛选 ----
+        top.addSpacing(14)
+        self.workshop_sep = QFrame()
+        self.workshop_sep.setFrameShape(QFrame.VLine)
+        self.workshop_sep.setFrameShadow(QFrame.Sunken)
+        top.addWidget(self.workshop_sep)
+        top.addSpacing(14)
+        self.lbl_workshop = QLabel("车间:")
+        top.addWidget(self.lbl_workshop)
+        self.combo_workshop = QComboBox()
+        self.combo_workshop.setMinimumWidth(130)
+        self.combo_workshop.setMaximumWidth(180)
+        self.combo_workshop.setEditable(False)
+        self.combo_workshop.addItem("全部")
+        self.combo_workshop.currentTextChanged.connect(self._on_workshop_changed)
+        top.addWidget(self.combo_workshop)
+
+        # ---- 工厂筛选（v43.169，放在车间之后；与车间并行叠加）----
+        top.addSpacing(14)
+        self.factory_sep = QFrame()
+        self.factory_sep.setFrameShape(QFrame.VLine)
+        self.factory_sep.setFrameShadow(QFrame.Sunken)
+        top.addWidget(self.factory_sep)
+        top.addSpacing(14)
+        self.lbl_factory = QLabel("工厂:")
+        top.addWidget(self.lbl_factory)
+        self.combo_factory = QComboBox()
+        self.combo_factory.setMinimumWidth(150)
+        self.combo_factory.setMaximumWidth(200)
+        self.combo_factory.setEditable(False)
+        self.combo_factory.addItem("全部")
+        self.combo_factory.currentTextChanged.connect(self._on_factory_changed)
+        top.addWidget(self.combo_factory)
+
+        # ---- v43.139 row1 收尾（常用筛选止于车间）----
+        top.addStretch()
+        _top_col.addLayout(top)
+        # ---- row2：半成品分类 + 隔离区 + 备注 ----
+        top2 = QHBoxLayout()
+        top2.setContentsMargins(0, 0, 0, 0)
+        top2.setSpacing(0)
+        top2.addSpacing(14)
+        self.semi_sep = QFrame()
+        self.semi_sep.setFrameShape(QFrame.VLine)
+        self.semi_sep.setFrameShadow(QFrame.Sunken)
+        top2.addWidget(self.semi_sep)
+        top2.addSpacing(14)
+        self.lbl_semi_class = QLabel("半成品分类:")
+        top2.addWidget(self.lbl_semi_class)
+        self.grp_semi_class = QComboBox()
+        self.grp_semi_class.setMinimumWidth(170)
+        self.grp_semi_class.setMaximumWidth(220)
+        self.grp_semi_class.setEditable(False)
+        self.grp_semi_class.addItem("全部")
+        self.grp_semi_class.currentTextChanged.connect(self._on_semi_class_changed)
+        top2.addWidget(self.grp_semi_class)
+
+
+        # ---- 隔离区筛选 ----
+        top2.addSpacing(14)
+        self.quar_sep = QFrame()
+        self.quar_sep.setFrameShape(QFrame.VLine)
+        self.quar_sep.setFrameShadow(QFrame.Sunken)
+        top2.addWidget(self.quar_sep)
+        top2.addSpacing(14)
+        self.lbl_quar = QLabel("隔离区:")
+        top2.addWidget(self.lbl_quar)
+        self.btn_quar_all = QPushButton("全部")
+        self.btn_quar_all.setCheckable(True)
+        self.btn_quar_all.setMinimumWidth(80)
+        self.btn_quar_all.clicked.connect(lambda: self._set_quar_filter("all"))
+        top2.addWidget(self.btn_quar_all)
+        self.btn_quar_yes = QPushButton("是")
+        self.btn_quar_yes.setCheckable(True)
+        self.btn_quar_yes.setMinimumWidth(80)
+        self.btn_quar_yes.clicked.connect(lambda: self._set_quar_filter("yes"))
+        top2.addWidget(self.btn_quar_yes)
+        self.btn_quar_no = QPushButton("否")
+        self.btn_quar_no.setCheckable(True)
+        self.btn_quar_no.setMinimumWidth(80)
+        self.btn_quar_no.clicked.connect(lambda: self._set_quar_filter("no"))
+        top2.addWidget(self.btn_quar_no)
+
+        # ---- 是否有备注筛选 ----
+        top2.addSpacing(14)
+        self.note_sep = QFrame()
+        self.note_sep.setFrameShape(QFrame.VLine)
+        self.note_sep.setFrameShadow(QFrame.Sunken)
+        top2.addWidget(self.note_sep)
+        top2.addSpacing(14)
+        self.lbl_note = QLabel("备注:")
+        top2.addWidget(self.lbl_note)
+        self.btn_note_all = QPushButton("全部")
+        self.btn_note_all.setCheckable(True)
+        self.btn_note_all.setMinimumWidth(80)
+        self.btn_note_all.clicked.connect(lambda: self._set_note_filter("all"))
+        top2.addWidget(self.btn_note_all)
+        self.btn_note_yes = QPushButton("有")
+        self.btn_note_yes.setCheckable(True)
+        self.btn_note_yes.setMinimumWidth(80)
+        self.btn_note_yes.clicked.connect(lambda: self._set_note_filter("yes"))
+        top2.addWidget(self.btn_note_yes)
+        self.btn_note_no = QPushButton("无")
+        self.btn_note_no.setCheckable(True)
+        self.btn_note_no.setMinimumWidth(80)
+        self.btn_note_no.clicked.connect(lambda: self._set_note_filter("no"))
+        top2.addWidget(self.btn_note_no)
+
+        top2.addStretch()
+        _top_col.addLayout(top2)
+        # ---- row3：颜色标记 + 已读 ----
+        top3 = QHBoxLayout()
+        top3.setContentsMargins(0, 0, 0, 0)
+        top3.setSpacing(0)
+        _top_col.addLayout(top3)
+        top3.addStretch()
+        _top_col.addLayout(top3)
+        # ---- v43.143 row4：颜色标记独占一行（约 620px）----
+        # 修复「颜色说明看不清」：原先 color_group 与已读/计数/按钮同处一行，且
+        # setMinimumWidth(300) 硬编码，而 6 个色块复选框 sizeHint 合计 586px
+        # → 父布局只给 300px，每项压到 40px（需要 80~104px），6 个标签全部截断。
+        top_color = QHBoxLayout()
+        top_color.setContentsMargins(0, 0, 0, 0)
+        top_color.setSpacing(0)
+        _top_col.addLayout(top_color)
+        # ---- 颜色筛选 ----
+        top_color.addSpacing(14)
+        self.color_sep = QFrame()
+        self.color_sep.setFrameShape(QFrame.VLine)
+        self.color_sep.setFrameShadow(QFrame.Sunken)
+        top_color.addWidget(self.color_sep)
+        top_color.addSpacing(14)
+        self.lbl_color = QLabel("颜色:")
+        top_color.addWidget(self.lbl_color)
+        self.color_group = QGroupBox()
+        self.color_group.setFlat(True)
+        self.color_group.setFixedHeight(36)
+        self._color_layout = QHBoxLayout(self.color_group)
+        self._color_layout.setContentsMargins(6, 4, 6, 4)
+        self._color_layout.setSpacing(8)
+        self.color_checks = {}
+        _color_items = [
+            ("_changed_only", "审核后变更", (255, 205, 205)),
+            ("_quarantined_only", "隔离区", (255, 248, 200)),
+            ("_substitute_only", "替代料", (205, 230, 255)),
+            ("_unused_only", "未投料", (200, 240, 210)),
+            ("_alert_only", "偏差率预警", (255, 198, 142)),
+            ("_plain_only", "无标记", (235, 235, 235)),
+        ]
+        for key, label, rgb in _color_items:
+            cb = QCheckBox(label)
+            cb.setIcon(_color_icon(rgb))
+            cb.stateChanged.connect(self._on_color_toggled)
+            self.color_checks[key] = cb
+            self._color_layout.addWidget(cb)
+        top_color.addWidget(self.color_group)
+        top_color.addStretch()
+        # 颜色组所需宽度 = 各复选框 sizeHint 合计 + 间距 + 内边距。
+        # 注意：不能用 color_group.sizeHint()——此时它已被父布局拉伸，返回的是分配后宽度。
+        _need = sum(cb.sizeHint().width() for cb in self.color_checks.values())
+        _need += self._color_layout.spacing() * (len(self.color_checks) - 1)
+        _need += self._color_layout.contentsMargins().left()
+        _need += self._color_layout.contentsMargins().right()
+        self.color_group.setMinimumWidth(max(300, _need))
+        for cb in self.color_checks.values():
+            cb.setMinimumWidth(cb.sizeHint().width())
+
+        top3.addSpacing(14)
+        self.read_sep = QFrame()
+        self.read_sep.setFrameShape(QFrame.VLine)
+        self.read_sep.setFrameShadow(QFrame.Sunken)
+        top3.addWidget(self.read_sep)
+        top3.addSpacing(14)
+        self.lbl_read = QLabel("已读:")
+        top3.addWidget(self.lbl_read)
+        self.combo_read = QComboBox()
+        self.combo_read.setMinimumWidth(100)
+        self.combo_read.setMaximumWidth(140)
+        self.combo_read.setEditable(False)
+        self.combo_read.addItems(["全部", "已读", "未读"])
+        self.combo_read.currentTextChanged.connect(self._on_read_changed)
+        top3.addWidget(self.combo_read)
+
+        self.lbl_count = QLabel("共 0 条")
+        self.lbl_count.setStyleSheet("color:#666;")
+        top3.addWidget(self.lbl_count)
+        self.btn_refresh = QPushButton("重新筛选")
+        self.btn_refresh.clicked.connect(self._apply_filter)
+        top3.addWidget(self.btn_refresh)
+        self.btn_col_filter = QPushButton("🔽 列头筛选")
+        self.btn_col_filter.setCheckable(True)
+        self.btn_col_filter.setCursor(Qt.PointingHandCursor)
+        self.btn_col_filter.setToolTip("开启后点列头弹取值勾选浮层（Excel式筛选）；Ctrl+点列头仍可排序")
+        self.btn_col_filter.clicked.connect(self._on_toggle_col_filter)
+        top3.addWidget(self.btn_col_filter)
+        self._col_filter_hint_label = QLabel("🔽 列头筛选：0 列")
+        self._col_filter_hint_label.setStyleSheet("QLabel{padding:2px 8px;font-weight:bold;color:#8a5a00;}")
+        top3.addWidget(self._col_filter_hint_label)
+        scroll.setWidget(top_widget)
+        layout.addWidget(scroll)
+
+        # ---- 表格 ----
+        self.table_view = QTableView()
+        self.table_view.setAlternatingRowColors(True)
+        self.table_view.setSelectionBehavior(QAbstractItemView.SelectItems)
+        self.table_view.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.table_view.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table_view.customContextMenuRequested.connect(self.show_context_menu)
+        self.table_view.doubleClicked.connect(self.on_double_click)
+        self.table_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        # 自定义表头：SortBadgeHeader 画 Excel 式取值过滤漏斗标（橙色三角）
+        self.header = SortBadgeHeader(Qt.Horizontal, self.table_view)
+        self.table_view.setHorizontalHeader(self.header)
+        self._sort_ctrl = enable_click_sort(
+            self.table_view, lambda: getattr(self, "source_model", None), skip_cols=())
+        # Excel 式列头取值筛选控制器：筛选模式→弹层；否则委托排序
+        self.col_filter_ctrl = ColumnFilterController(
+            self.table_view, self.header, self._sort_ctrl,
+            lambda: getattr(self, "source_model", None),
+            self._apply_filter, skip_cols=())
+        self.header.set_sort_columns_getter(lambda: [])
+        self.header.set_filtered_columns_getter(lambda: self.col_filter_ctrl.filtered_col_set)
+        try:
+            self.header.sectionClicked.disconnect(self._sort_ctrl._on_click)
+        except Exception:
+            pass
+        self.header.sectionClicked.connect(self.col_filter_ctrl.on_header_clicked)
+        self.col_filter_ctrl.filtered_cols_changed.connect(self._update_col_filter_hint)
+        # v43.143：提示标签右键 → 清除菜单（逐列 / 全部）。
+        # 此前是纯 QLabel，用户只能开浮层重勾一遍才能取消，观感=「无法取消」。
+        self.col_filter_ctrl.attach_clear_menu(self._col_filter_hint_label)
+        self._update_col_filter_hint()
+        self.table_view.verticalHeader().setVisible(False)
+        self.table_view.verticalHeader().setDefaultSectionSize(28)
+        self.header.setSectionResizeMode(QHeaderView.Interactive)
+        self.header.setMinimumSectionSize(50)
+        self.header.setMaximumSectionSize(420)
+        self.header.setStretchLastSection(False)
+        self.table_view.installEventFilter(self)
+        layout.addWidget(self.table_view)
+
+        # ---- 底部按钮 ----
+        btn_layout = QHBoxLayout()
+        self.btn_add_quar = QPushButton("⚠️ 加入隔离区(选中行)")
+        self.btn_add_quar.clicked.connect(self._add_selected_to_quarantine)
+        btn_layout.addWidget(self.btn_add_quar)
+        export_btn = QPushButton("📎 导出 Excel")
+        export_btn.clicked.connect(self.export_excel)
+        btn_layout.addWidget(export_btn)
+        btn_layout.addStretch()
+        close_btn = QPushButton("关闭")
+        close_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+
+    # ------------------------------------------------------------------ 筛选逻辑
+    def _on_keywords_changed(self, text):
+        self._keywords = text
+        if self._kw_timer is None:
+            self._kw_timer = QTimer(self)
+            self._kw_timer.setSingleShot(True)
+            self._kw_timer.setInterval(300)
+            self._kw_timer.timeout.connect(self._apply_filter)
+        self._kw_timer.start()
+
+    def _on_include_zero_changed(self, state):
+        # v43.178：勾选框已 setEnabled(False)，本槽不会被触发；保留仅为字段/布局兼容。
+        self._include_zero = (state != 0)
+        self._apply_filter()
+
+    def _on_semi_class_changed(self, text):
+        """半成品分类下拉变化：文本='全部'则清空筛选，否则设为该值。"""
+        self._semi_class_filter = set() if text == "全部" else {text}
+        self._apply_filter()
+
+    def _on_mtd_changed(self, text):
+        self._mtd_filter = "all" if text == "全部" else text
+        self._apply_filter()
+
+    def _on_unit_changed(self, text):
+        """单位下拉变化：文本='全部'则清空筛选，否则设为该值。"""
+        self._unit_filter = set() if text == "全部" else {text}
+        self._apply_filter()
+
+    def _on_workshop_changed(self, text):
+        self._workshop_filter = "all" if text == "全部" else text
+        self._apply_filter()
+
+    def _on_factory_changed(self, text):
+        """工厂下拉变化（v43.169）：与车间/单位筛选并行叠加。"""
+        self._factory_filter = "all" if text == "全部" else text
+        self._apply_filter()
+
+    def _set_quar_filter(self, mode):
+        """隔离区筛选（全部/是/否）"""
+        self._quar_filter = mode
+        self.btn_quar_all.setChecked(mode == "all")
+        self.btn_quar_yes.setChecked(mode == "yes")
+        self.btn_quar_no.setChecked(mode == "no")
+        self._apply_filter()
+
+    def _set_note_filter(self, mode):
+        """是否有备注筛选（全部/是/否）"""
+        self._has_note_filter = mode
+        self.btn_note_all.setChecked(mode == "all")
+        self.btn_note_yes.setChecked(mode == "yes")
+        self.btn_note_no.setChecked(mode == "no")
+        self._apply_filter()
+
+    def _on_color_toggled(self):
+        """颜色复选框变化：更新已勾选集合并刷新"""
+        self.color_filters = {k for k, cb in self.color_checks.items() if cb.isChecked()}
+        self._apply_filter()
+
+    @staticmethod
+    def _name_cols(df):
+        """全列关键字搜索：排除内部维护列(data_id/隔离区/_read 等)后，所有文本/对象列均参与匹配。"""
+        _internal = {"data_id", "隔离区", "_read", "_quarantined"}
+        cols = [c for c in df.columns if c not in _internal]
+        # 仅保留可转字符串搜索的列（跳过纯数值对象列也 OK，str() 同样能匹配，故全部纳入）
+        return cols
+
+    def _pos_loss_mask(self, df):
+        """正损掩码：实际 > 定额 且 定额 > 0（超投）。列缺失则全 False。
+
+        v43.178：口径由负损的 0<=实际<定额（含未投料）改为 正损 实际>定额 且 定额>0。
+        ⚠ 不要动 `self._include_zero` 那个开关的语义 —— 新看板不再需要它
+        （正损语境下 a==0 不可能 > q），但**保留字段与勾选框以免破坏 UI 布局**，
+        并让它变成「始终包含」的无害存在：在本掩码里忽略它即可，
+        同时把勾选框 setEnabled(False) + 加 tooltip 说明「正损口径下不适用」。
+        ⚠ 列名 fallback 列表沿用负损看板既有写法，勿写死单列，
+        否则上游数据列名一变就静默失效（恒 False 且不报错）。
+        """
+        act_col = next((c for c in ["数量-实际", "实际", "实际数量", "数量 - 实际", "actual"]
+                        if c in df.columns), None)
+        qty_col = next((c for c in ["数量-定额", "定额", "定额数量", "数量 - 定额", "quota"]
+                        if c in df.columns), None)
+        if not act_col or not qty_col:
+            return pd.Series(False, index=df.index)
+        a = pd.to_numeric(df[act_col], errors="coerce")
+        q = pd.to_numeric(df[qty_col], errors="coerce")
+        # q>0 是「超投」的前提：定额为 0 的行属「疑似投错」，不属于本看板口径
+        return a.notna() & q.notna() & (q > 0) & (a > q)
+
+    def _semi_class_mask(self, df):
+        """半成品重分类掩码：空集合=全True；否则精确匹配列值。多值 OR。
+
+        v43.148 三层兜底（负损看板取数白名单可能不含该列，且负损子集里该列常全空，
+        直接精确匹配会恒0 条——用户截图「筛选之后是空的」）：
+        ① 有列且值非空 → 直接精确匹配；
+        ② 有列但该值为空 → 用物料编码前缀推断（400→食品成品半成品 / 410→饮料成品半成品，
+           与 semi_dashboard / analyzer.py ③ 号排除法同一口径）；
+        ③ 无该列 → 用组件物料类型描述/物料分类兜底，命中 '__SEMI__' 者对两个成品分类生效。
+        v43.178：正损看板原样沿用该三层兜底（负损看板实测这层是必要的，
+        正损子集同样会出现 `半成品重分类` 列全空的情况）。
+        """
+        if not self._semi_class_filter:
+            return pd.Series(True, index=df.index)
+        semi_col = "半成品重分类"
+        blank = None
+        if semi_col in df.columns:
+            vals = df[semi_col].astype(str).str.strip()
+            blank = vals == ""
+        else:
+            # 无列：用组件物料类型描述/物料分类粗判是否为半成品
+            _mtd = (df['组件物料类型描述'].astype(str)
+                    if '组件物料类型描述' in df.columns
+                    else pd.Series('', index=df.index))
+            _semi = ((df['物料分类'] == '半成品') if '物料分类' in df.columns
+                     else pd.Series(False, index=df.index)) | _mtd.str.contains('半成品|成品', na=False)
+            vals = _semi.map({True: '__SEMI__', False: ''}).reindex(df.index)
+            blank = vals == ""
+        # 物料编码前缀 → 分类（400 食品 / 410 饮料），无该列时全空 Series
+        if "物料编码" in df.columns:
+            code = df["物料编码"].astype(str).str.strip()
+        else:
+            code = pd.Series("", index=df.index)
+        mask = pd.Series(False, index=df.index)
+        for m in self._semi_class_filter:
+            hit = vals == m
+            if m == "食品成品半成品":
+                # 空值行：400 前缀归食品成品（排除已被显式赋值的其他分类）
+                hit = hit | (blank & code.str.startswith("400", na=False))
+            elif m == "饮料成品半成品":
+                hit = hit | (blank & code.str.startswith("410", na=False))
+            mask = mask | hit
+        return mask
+
+    def _mtd_mask(self, df):
+        """组件物料类型描述掩码：all=全True / 具体值=列值==该值。"""
+        if self._mtd_filter == "all" or not self._mtd_col:
+            return pd.Series(True, index=df.index)
+        if self._mtd_col not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df[self._mtd_col].astype(str).str.strip()
+        return vals == self._mtd_filter
+
+    def _unit_mask(self, df):
+        """单位掩码：空集合=全True / 非空=列值OR命中被勾选单位集合。列缺失则全True。"""
+        if not self._unit_filter or not self._unit_col:
+            return pd.Series(True, index=df.index)
+        if self._unit_col not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df[self._unit_col].astype(str).str.strip()
+        return vals.isin(self._unit_filter)
+
+    def _build_semi_checkboxes(self, unique_vals):
+        """构建半成品分类下拉列表：全部 + 固定 6 分类 + 数据额外分类。
+
+        v43.148：原先只列 unique_vals（数据里实际存在的值），而负损看板取的是
+        主表的负损子集——子集里往往只有 1~2 个分类（用户截图：只有「食品成品半成品」），
+        其余 5 个分类凭空消失，用户无从筛选。这与 v43.146 半成品看板是同一类问题。
+        改用共用固定清单 SEMI_CLASS_ALL，数据里的额外分类追加在后面（不丢数据）。
+        v43.178：正损看板原样沿用（正损子集同样只含少数分类，固定清单可防止分类凭空消失）。
+        """
+        self.grp_semi_class.blockSignals(True)
+        kept = self.grp_semi_class.currentText()
+        self.grp_semi_class.clear()
+        self.grp_semi_class.addItem("全部")
+        for v in merge_semi_class_values(unique_vals):
+            self.grp_semi_class.addItem(v)
+        # v43.148：原代码用 itemTexts()，但 PySide6 的 QComboBox 无此方法
+        # （C++ 侧 API，Qt4/5 遗留），一旦「原选中项仍在」就 AttributeError 崩溃。
+        # 改用 findText()（返回 -1 表示不存在）。
+        if kept and kept != "全部" and self.grp_semi_class.findText(kept) >= 0:
+            self.grp_semi_class.setCurrentText(kept)
+        else:
+            # 原选中项已不在新列表（如上轮数据只有 1 类、本轮变 6 类）→ 回到「全部」
+            self.grp_semi_class.setCurrentText("全部")
+        self.grp_semi_class.blockSignals(False)
+
+    def _build_unit_checkboxes(self, unique_vals):
+        """构建单位下拉列表：全部 + 各值。"""
+        self.grp_unit.blockSignals(True)
+        kept = self.grp_unit.currentText()
+        self.grp_unit.clear()
+        self.grp_unit.addItem("全部")
+        for v in unique_vals:
+            self.grp_unit.addItem(v)
+        # v43.148：同上，itemTexts() 在 PySide6 不存在，改用 findText()
+        if kept and kept != "全部" and self.grp_unit.findText(kept) >= 0:
+            self.grp_unit.setCurrentText(kept)
+        else:
+            self.grp_unit.setCurrentText("全部")
+        self.grp_unit.blockSignals(False)
+
+    def _read_mask(self, df, mode):
+        """已读/未读掩码：all=全True / 已读=_read==1 / 未读=_read!=1(含0或NaN)。"""
+        if mode == "all" or "_read" not in df.columns:
+            return pd.Series(True, index=df.index)
+        _r = pd.to_numeric(df["_read"], errors="coerce").fillna(0)
+        if mode == "已读":
+            return _r == 1
+        if mode == "未读":
+            return _r != 1
+        return pd.Series(True, index=df.index)
+
+    def _on_read_changed(self, text):
+        self._read_filter = text
+        self._apply_filter()
+
+    def _workshop_mask(self, df, mode):
+        """车间掩码：all=全True / 车间名=车间列==该值。列缺失则全True。"""
+        if mode == "all" or not self._workshop_col:
+            return pd.Series(True, index=df.index)
+        if self._workshop_col not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df[self._workshop_col].astype(str).str.strip()
+        return vals == mode
+
+    def _factory_mask(self, df, mode):
+        """工厂掩码（v43.169）：all=全True / 工厂名=工厂名称列==该值。列缺失则全True。
+
+        列名优先 '工厂名称'（可读值 云南达利-食品厂），与 main_window 筛选面板
+        的列映射口径一致；无该列时回退 '工厂'（编码 1101/1102）。
+        """
+        if mode == "all" or not self._factory_col:
+            return pd.Series(True, index=df.index)
+        if self._factory_col not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df[self._factory_col].astype(str).str.strip()
+        return vals == mode
+
+    def _quar_mask(self, df, mode):
+        """隔离区掩码：all=全True / yes=隔离区列=='是' / no=隔离区列!='是'。列缺失则全True。"""
+        if mode == "all" or "隔离区" not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df["隔离区"].astype(str).str.strip()
+        if mode == "yes":
+            return vals == "是"
+        return vals != "是"
+
+    def _note_mask(self, df, mode):
+        """是否有备注掩码：all=全True / yes=备注非空 / no=备注为空。列缺失则全True。"""
+        if mode == "all" or "备注" not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df["备注"].astype(str).str.strip()
+        if mode == "yes":
+            return vals != ""
+        return vals == ""
+
+    def _color_mask(self, df):
+        """颜色筛选掩码：空集合=全True；否则按 classify_row_color_keys 判断命中颜色集合。"""
+        if not self.color_filters:
+            return pd.Series(True, index=df.index)
+        threshold = 10.0
+        am = getattr(self.main_window, 'alert_monitor', None)
+        if am is not None:
+            try:
+                threshold = float(getattr(am, 'threshold', 10))
+            except (TypeError, ValueError):
+                threshold = 10.0
+        mask = df.apply(
+            lambda r: bool(classify_row_color_keys(r, df, threshold) & self.color_filters),
+            axis=1)
+        return mask
+
+    def _name_mask(self, df):
+        """全列关键字掩码：逗号/、/，分隔多值 OR；无关键词=全 True；无候选列=全 True。"""
+        kws = [k.strip() for k in re.split("[,，、]", self._keywords) if k.strip()]
+        if not kws:
+            return pd.Series(True, index=df.index)
+        cols = self._name_cols(df)
+        if not cols:
+            return pd.Series(True, index=df.index)
+        m = pd.Series(False, index=df.index)
+        for c in cols:
+            s = df[c].astype(str).fillna("")
+            for kw in kws:
+                m = m | s.str.contains(kw, regex=False)
+        return m
+
+    # ------------------------------------------------------------------ 数据装载
+    def set_data(self, df):
+        df = df.copy()
+        # 初始化守卫：set_data 内多处 setCurrentText/setChecked 会触发信号→_apply_filter，
+        # 但此时 _unit_col/_workshop_col 等尚未初始化，直接跑会 AttributeError 崩溃(v43.83 修复)。
+        # 置 _initializing 期间让 _apply_filter 直接 return，初始化完成后再统一跑一次。
+        self._initializing = True
+        # 确保 data_id 存在（隔离区同步用）
+        if "data_id" not in df.columns:
+            if all(c in df.columns for c in ["订单日期", "流程订单", "物料编码"]):
+                df["data_id"] = (df["订单日期"].astype(str) + "|" +
+                                 df["流程订单"].astype(str) + "|" +
+                                 df["物料编码"].astype(str))
+            elif "工厂" in df.columns:
+                df["data_id"] = (df["工厂"].astype(str) + "|" +
+                                 df["订单日期"].astype(str) + "|" +
+                                 df["流程订单"].astype(str) + "|" +
+                                 df["物料编码"].astype(str))
+        # 隔离区列：比对当前隔离集合（兼容4段uid与历史3段uid）
+        try:
+            _qset = get_quarantined_ids()
+        except Exception:
+            _qset = set()
+        if "data_id" in df.columns:
+            _did = df["data_id"].astype(str)
+            _m = _did.isin(_qset)  # 直接匹配主表4段 data_id
+            # 兼容历史3段 uid：隔离集合中取"后3段"(订单日期|流程订单|物料编码)与主表 data_id 后3段比对
+            if _qset:
+                _qset_tail3 = {u if len(u.split("|")) < 4 else "|".join(u.split("|")[-3:])
+                               for u in _qset}
+                _tail3 = _did.str.split("|").str[-3:].str.join("|")
+                _m = _m | _tail3.isin(_qset_tail3)
+            df["隔离区"] = _m.map({True: "是", False: ""})
+        else:
+            df["隔离区"] = ""
+        # 备注列移到 data_id 前面，便于一眼看到疑难原因
+        if "备注" in df.columns and "data_id" in df.columns:
+            cols = list(df.columns)
+            cols.remove("备注")
+            cols.insert(cols.index("data_id"), "备注")
+            df = df[cols]
+
+        # 将隔离区列移到订单日期前（让用户一眼可见）
+        if "隔离区" in df.columns and "订单日期" in df.columns:
+            cols = list(df.columns)
+            cols.remove("隔离区")
+            idx = cols.index("订单日期")
+            cols.insert(idx, "隔离区")
+            df = df[cols]
+
+        self.original_df = df.copy()
+
+        # 从 SQLite 加载已读来源（仅已读行保留来源，未读留空）
+        if "data_id" in self.original_df.columns:
+            try:
+                from core.read_status import load_read_status
+                data_ids = [str(x) for x in self.original_df["data_id"].tolist()]
+                status_map = load_read_status(data_ids)
+                if status_map:
+                    source_map = {did: vals[5] if len(vals) > 5 and vals[5] else ''
+                                  for did, vals in status_map.items()}
+                    self.original_df["_read_source"] = self.original_df["data_id"].astype(str).map(source_map).fillna('').astype(str)
+                    # 只有已读的行才保留来源；未读行清空
+                    if "_read" in self.original_df.columns:
+                        self.original_df.loc[self.original_df["_read"] != 1, "_read_source"] = ''
+                else:
+                    self.original_df["_read_source"] = ''
+            except Exception:
+                self.original_df["_read_source"] = ''
+
+        # 生成已读来源显示列（手动/自动；未读行显示为空）
+        def _fmt_source(v):
+            if pd.isna(v) or v == '':
+                return ''
+            s = str(v).strip().lower()
+            if s == 'auto':
+                return '自动'
+            elif s == 'manual':
+                return '手动'
+            return str(v)
+        if "_read_source" in self.original_df.columns:
+            self.original_df["已读来源"] = self.original_df["_read_source"].apply(_fmt_source)
+        else:
+            self.original_df["已读来源"] = ''
+
+        self.source_model = DataFrameModel()
+        self.source_model.setDataFrame(df)
+        self.table_view.setModel(self.source_model)
+        QTimer.singleShot(0, lambda: self.table_view.resizeColumnsToContents())
+        self.table_view.verticalHeader().setDefaultSectionSize(28)
+        if "data_id" in df.columns:
+            self.table_view.setColumnHidden(df.columns.get_loc("data_id"), True)
+        # 初始化半成品重分类筛选器（QComboBox 下拉：全部 + 固定 6 分类 + 数据额外值）
+        # v43.148：原逻辑在「无半成品重分类列」时隐藏整个控件（setVisible(False)），
+        # 但负损看板的取数白名单可能不含该列（用户截图场景），控件就整个消失了；
+        # 且负损子集里该列常全为空值（名称含「彩罐/托盘/手包袋」的 592 行全空），
+        # unique_vals 为空 → 下拉里只剩「全部」，用户无从筛选。
+        # 现改为：无论列在不在、值是否为空，都列出固定 6 分类（缺列时由 _semi_class_mask
+        # 的兜底推断逻辑生效），控件恒可见。
+        # v43.178：正损看板原样沿用该逻辑（正损子集同样会出现该列全空的情况）。
+        self._semi_class_col = "半成品重分类" if "半成品重分类" in df.columns else None
+        unique_vals = []
+        if self._semi_class_col:
+            unique_vals = sorted(
+                v for v in df["半成品重分类"].dropna().astype(str).str.strip().unique() if v
+            )
+        self._build_semi_checkboxes(unique_vals)
+        self.semi_sep.setVisible(True)
+        self.lbl_semi_class.setVisible(True)
+        self.grp_semi_class.setVisible(True)
+        # ⚠ v43.177：此处只探测 `_read_col` 与控件可见性，**不再设「未读」**——
+        #   默认视图的自适应（含未读空时回退全部）统一交给末尾的
+        #   `_apply_default_filter()`，避免两个地方各设一次、逻辑打架。
+        self._read_col = "_read" if "_read" in df.columns else None
+        if self._read_col:
+            self.combo_read.setCurrentText("未读")   # 仅同步控件显示，状态由末尾统一决定
+        else:
+            self.combo_read.setVisible(False)
+            self.read_sep.setVisible(False)
+            self.lbl_read.setVisible(False)
+        # 初始化组件物料类型描述筛选器
+        self._mtd_col = "组件物料类型描述" if "组件物料类型描述" in df.columns else None
+        if self._mtd_col:
+            # v43.170：首次填充也走 _replace_combo_items，与级联刷新同一套逻辑
+            # （含「食品成品/饮料成品」排除，负损看板永远筛不出成品类型，v43.81 既有口径；
+            #   v43.178 正损看板实测子集本就只有 原辅料/包材/食品半成品 三类，同样不含成品）
+            unique_vals = sorted(
+                v for v in df[self._mtd_col].dropna().astype(str).str.strip().unique() if v
+            )
+            unique_vals = [v for v in unique_vals if v not in self._CASCADE_EXCLUDE_MTD]
+            self._replace_combo_items(self.combo_mtd, unique_vals, "all",
+                                      "_mtd_filter", "_on_mtd_changed")
+        else:
+            self.mtd_sep.setVisible(False)
+            self.lbl_mtd.setVisible(False)
+            self.combo_mtd.setVisible(False)
+        # 初始化车间筛选器
+        self._workshop_col = "车间" if "车间" in df.columns else None
+        if self._workshop_col:
+            unique_vals = sorted(
+                v for v in df["车间"].dropna().astype(str).str.strip().unique() if v
+            )
+            self._replace_combo_items(self.combo_workshop, unique_vals, "all",
+                                      "_workshop_filter", "_on_workshop_changed")
+        else:
+            self.workshop_sep.setVisible(False)
+            self.lbl_workshop.setVisible(False)
+            self.combo_workshop.setVisible(False)
+        self._workshop_filter = "all"
+        self.combo_workshop.setCurrentText("全部")
+        # 初始化工厂筛选器（v43.169）
+        # 列名优先 '工厂名称'（可读值），无则回退 '工厂'（编码）
+        self._factory_col = ("工厂名称" if "工厂名称" in df.columns
+                             else ("工厂" if "工厂" in df.columns else None))
+        if self._factory_col:
+            # setCurrentText 会触发 currentTextChanged，故先清选项再设值
+            self.combo_factory.blockSignals(True)
+            self.combo_factory.clear()
+            self.combo_factory.addItem("全部")
+            unique_vals = df[self._factory_col].dropna().astype(str).str.strip().unique()
+            unique_vals = sorted(v for v in unique_vals if v)
+            self.combo_factory.addItems(unique_vals)
+            self.combo_factory.blockSignals(False)
+        else:
+            self.factory_sep.setVisible(False)
+            self.lbl_factory.setVisible(False)
+            self.combo_factory.setVisible(False)
+        self._factory_filter = "all"
+        self.combo_factory.setCurrentText("全部")
+        # 初始化单位筛选器
+        self._unit_col = "单位" if "单位" in df.columns else None
+        if self._unit_col:
+            unique_vals = df["单位"].dropna().astype(str).str.strip().unique()
+            unique_vals = sorted(v for v in unique_vals if v)
+            self._build_unit_checkboxes(unique_vals)
+        else:
+            self.unit_sep.setVisible(False)
+            self.lbl_unit.setVisible(False)
+            self.grp_unit.setVisible(False)
+        self._unit_filter = set()
+        # 初始化隔离区筛选器（始终可见，因为隔离区列由本对话框计算）
+        self._quar_filter = "no"
+        self.btn_quar_no.setChecked(True)
+        # 初始化备注筛选器
+        self._has_note_filter = "all"
+        self.btn_note_all.setChecked(True)
+        self._initializing = False
+        # v43.177：默认视图自适应 —— 见 `_apply_default_filter` 的说明
+        self._apply_default_filter()
+
+    def _apply_default_filter(self):
+        """默认视图自适应：先试「未读」，未读空但全量非空时回退「全部」（v43.177）。
+
+        v43.80 起本看板默认只显示未读，但**未读是随用户日常标读单调递减的量**：
+        正损记录被陆续处理过一轮后，未读会归零，此时打开看板就是一张空表。
+        v43.173 已在替代料看板做过同一件事（`_apply_default_filter`），本看板照此对齐。
+
+        ⚠ 在正损看板上后果**比替代料看板更严重**：`_read_filter` 不只参与
+        `_apply_filter` 的 mask 链，还被 v43.170 的 `_other_conditions_mask` 用作
+        **级联的一维**。于是「未读 0 行」会同时：
+            ① 表格空（0 行）
+            ② 物料类型 / 车间 / 单位下拉**全部塌缩成只剩「全部」**
+               —— 因为它们是按「除自己外的其它条件」筛出来的，而其它条件里
+                  有一条 `_read_mask(df, '未读')` 把所有行都滤掉了。
+          也就是说级联本身是对的，但被一个「默认维度筛不出东西」给废掉了
+          （实测：全已读时表格 0 行、物料类型下拉只剩「全部」、车间只剩「全部」）。
+
+        必须在 `_initializing = False` 之后、首次 `_apply_filter` 之前调用：
+        否则 source_model 尚未装载，算出的 0 是「还没数据」而非「筛不到」，
+        会把每一次都误判成需回退。
+        """
+        self._read_filter = "未读"
+        if self._read_col and hasattr(self, "combo_read"):
+            self.combo_read.setCurrentText("未读")
+        # 先按「未读」跑一次
+        self._apply_filter()
+        sm = getattr(self, "source_model", None)
+        if sm is None or sm.rowCount() > 0:
+            return                      # 有未读 → 保持默认「未读」，不动用户预期
+        # 未读 0 行：确认全量确实非空才回退（两者皆空则保持未读，避免空表套空表）
+        if self.original_df is not None and len(self.original_df) > 0:
+            # ⚠ 本看板的 `_read_filter` 直接存**下拉中文文本**（'_on_read_changed':
+            #   `self._read_filter = text`），`_read_mask` 也按中文分支判定
+            #   （mode=='已读' / mode=='未读'，其余一律全True）。故回退值必须写
+            #   '全部' 而非 'all' —— 写 'all' 虽因落default 分支而筛出全量、结果
+            #   碰巧正确，但状态值与下拉不一致，后续任何按 `== '未读'` 判定的逻辑
+            #   都会踩坑（且 `_refresh_cascade_combos` 里读 `_read_filter` 时同理）。
+            self._read_filter = "全部"
+            if hasattr(self, "combo_read"):
+                # 由 combo_read 的槽统一同步状态与显示，避免「下拉显示未读、
+                # 实际筛的是全部」的错位
+                self.combo_read.setCurrentText("全部")
+            else:
+                self._apply_filter()
+
+    def _update_col_filter_hint(self):
+        """刷新「列头筛选提示」：显示已设取值过滤的列（N 列 / 列名）。"""
+        col_set = self.col_filter_ctrl.filtered_col_set
+        sm = getattr(self, "source_model", None)
+        display_cols = getattr(sm, "_display_columns", []) if sm is not None else []
+        if not col_set:
+            self._col_filter_hint_label.setText("🔽 列头筛选：0 列")
+            return
+        names = []
+        for c in sorted(col_set):
+            if 0 <= c < len(display_cols):
+                names.append(str(display_cols[c]))
+            else:
+                names.append(f"列{c}")
+        shown = names[:4]
+        more = len(names) - len(shown)
+        text = "🔽 列头筛选：%d 列（%s" % (len(names), "、".join(shown))
+        if more > 0:
+            text += " …+%d" % more
+        text += "）"
+        self._col_filter_hint_label.setText(text)
+
+    def _on_toggle_col_filter(self):
+        """🔽 列头筛选按钮：切换 Excel 式取值筛选模式。"""
+        on = self.col_filter_ctrl.toggle_mode()
+        self.btn_col_filter.setChecked(on)
+        self.btn_col_filter.setText("🔽 列头筛选✓" if on else "🔽 列头筛选")
+
+    # ==================================================================
+    #物料类型 / 车间 下拉「动态级联」（v43.170）
+    #=================================================================
+    #问题：这两个下拉原先在 set_data 时一次性填「全量取值」，后续所有筛选变化
+    #   都不刷新，导致出现「选了必然 0 条」的死选项。实测 2026-10-10 负损子集数据：
+    #     · 物料类型 5 个选项里「广宣」在负损子集中根本不存在（负损子集 916 行里 0 行）
+    #       → 用户选中后界面空白却看不出原因
+    #     · 选了「物料类型=食品半成品」后，车间 10 个选项里只有 5 个真能筛出东西
+    #       另外 5 个（24000无菌湿法线/36000热线/注塑线/配料中心/两三片罐并线）都是死的
+    #   v43.178：正损看板沿用该机制（正损子集实测 614 行、物料类型 3 类：原辅料/包材/食品半成品）。
+    # 修法：任一筛选变化时，按「**除自己以外的所有条件**」重算本下拉的选项列表，
+    #   当前已选值若不在新列表里则自动回退「全部」（避免出现「看似选了、实际 0 条」）。
+    # ==================================================================
+    # v43.178 实测：正损子集的组件物料类型描述只有 原辅料/包材/食品半成品，
+    #   本就不含任何成品类型，故 v43.81 的成品排除口径在正损子集上恒不命中，保留无害。
+    _CASCADE_EXCLUDE_MTD = {'食品成品', '饮料成品'}  # 看板永远筛不出成品的类型（v43.81 既有口径）
+
+    def _other_conditions_mask(self, df, exclude):
+        """构造「除 exclude 维度外、所有其他筛选条件」的与掩码。
+
+        exclude 取 'mtd' / 'workshop' / 'unit'，用于级联时排除自己那一维。
+        ⚠ 必须用 `_apply_filter` 里同一套掩码函数，否则级联结果与实际过滤不一致
+        （历史上「半成品分类」就出过兜底与主链不同导致的空结果）。
+        """
+        mask = (self._name_mask(df) & self._pos_loss_mask(df)
+                & self._semi_class_mask(df)
+                & self._quar_mask(df, self._quar_filter)
+                & self._note_mask(df, self._has_note_filter)
+                & self._color_mask(df)
+                & self._read_mask(df, self._read_filter))
+        # 工厂筛选（v43.169）：与本看板共用，取列缺失时为全 True
+        mask &= self._factory_mask(df, self._factory_filter)
+        # 三维各自排除自己（v43.175 补unit 分支；原先 unit 被无���叠加进主 mask）
+        if exclude != 'mtd':
+            mask &= self._mtd_mask(df)
+        if exclude != 'workshop':
+            mask &= self._workshop_mask(df, self._workshop_filter)
+        if exclude != 'unit':
+            mask &= self._unit_mask(df)
+        return mask
+
+    def _refresh_cascade_combos(self, changed):
+        """重算物料类型 / 车间两个下拉的选项（changed='mtd' 或 'workshop'）。
+
+        blockSignals 包裹：重填选项会触发 currentTextChanged → 又回调 _apply_filter，
+        形成无限递归。刷新完由调用方统一_apply_filter 一次。
+        """
+        if getattr(self, '_initializing', False):
+            return
+        df = getattr(self, 'original_df', None)
+        if df is None or df.empty or not hasattr(self, 'source_model'):
+            return
+
+        # --- 物料类型：按「除自己外」的条件重算 ---
+        sub_mtd = df[self._other_conditions_mask(df, exclude='mtd')]
+        mtd_vals = sorted(
+            v for v in sub_mtd[self._mtd_col].dropna().astype(str).str.strip().unique() if v
+        ) if (self._mtd_col and self._mtd_col in sub_mtd.columns) else []
+        mtd_vals = [v for v in mtd_vals if v not in self._CASCADE_EXCLUDE_MTD]
+        self._replace_combo_items(self.combo_mtd, mtd_vals, self._mtd_filter,
+                                  '_mtd_filter', '_on_mtd_changed')
+
+        # --- 车间：按「除自己外」的条件重算 ---
+        sub_ws = df[self._other_conditions_mask(df, exclude='workshop')]
+        ws_vals = sorted(
+            v for v in sub_ws[self._workshop_col].dropna().astype(str).str.strip().unique() if v
+        ) if (self._workshop_col and self._workshop_col in sub_ws.columns) else []
+        self._replace_combo_items(self.combo_workshop, ws_vals, self._workshop_filter,
+                                  '_workshop_filter', '_on_workshop_changed')
+
+        # --- 单位：同样纳入级联（v43.175；原先用的是被删除的 filtered 单向口径）---
+        #本看板单位是**多选**语义（`_unit_filter` 是 set），而公共件
+        # `replace_combo_items` 处理的是单值，故这里保留原有 set 写法，
+        # 但掩码口径换成 exclude-self 以求一致。
+        sub_unit = df[self._other_conditions_mask(df, exclude='unit')]
+        unit_vals = sorted(
+            v for v in sub_unit[self._unit_col].dropna().astype(str).str.strip().unique() if v
+        ) if (self._unit_col and self._unit_col in sub_unit.columns) else []
+        keep_units = {u for u in self._unit_filter if u in unit_vals}
+        wanted_units = ['全部'] + unit_vals
+        have_units = [self.grp_unit.itemText(i) for i in range(self.grp_unit.count())]
+        if wanted_units != have_units:
+            self.grp_unit.blockSignals(True)
+            try:
+                self.grp_unit.clear()
+                self.grp_unit.addItems(wanted_units)
+                self.grp_unit.setCurrentText(
+                    '全部' if not keep_units else sorted(keep_units)[0])
+            finally:
+                self.grp_unit.blockSignals(False)
+        self._unit_filter = keep_units
+
+    def _replace_combo_items(self, combo, values, cur_value, attr_name, slot_name):
+        """重填 QComboBox 选项，保留「全部」；当前值失效则回退「全部」。
+
+        blockSignals 防「重填 → currentTextChanged → _apply_filter → 再刷新」递归。
+        若值未变化则不动（避免无谓刷新与焦点跳动）。
+        """
+        wanted = ['全部'] + list(values)
+        have = [combo.itemText(i) for i in range(combo.count())]
+        if wanted == have:
+            return False
+        keep = cur_value if cur_value in values else 'all'
+        combo.blockSignals(True)
+        try:
+            combo.clear()
+            combo.addItems(wanted)
+            combo.setCurrentText('全部' if keep == 'all' else keep)
+        finally:
+            combo.blockSignals(False)
+        # 直接改状态属性（信号被 block 了，槽不会触发）
+        setattr(self, attr_name, keep)
+        return True
+
+    def _apply_filter(self):
+        if getattr(self, "_initializing", False):
+            return
+        if self.original_df is None or not hasattr(self, "source_model"):
+            return
+        df = self.original_df
+        if df.empty:
+            self.source_model.setDataFrame(df)
+            self._sort_ctrl.reapply()
+            self.lbl_count.setText("共 0 条")
+            return
+        # v43.170：物料类型/ 车间下拉的选项随其他筛选条件级联刷新。
+        # 放在 mask 计算**之前**，这样本次过滤用的 df 已是「原始 df」、
+        # 而下拉选项已按最新条件更新；放在之后会晚一步（用户先看到 0 条再刷新）。
+        self._refresh_cascade_combos('apply')
+        mask = (self._name_mask(df) & self._pos_loss_mask(df)
+                & self._semi_class_mask(df)
+                & self._mtd_mask(df)
+                & self._unit_mask(df)
+                & self._workshop_mask(df, self._workshop_filter)
+                & self._factory_mask(df, self._factory_filter)
+                & self._quar_mask(df, self._quar_filter)
+                & self._note_mask(df, self._has_note_filter)
+                & self._color_mask(df)
+                & self._read_mask(df, self._read_filter))
+        filtered = df[mask].copy().reset_index(drop=True)
+        # 叠加 Excel 式列头取值过滤（就地过滤，视图行号不变，选中/双击/导出零回归）
+        if hasattr(self, "col_filter_ctrl"):
+            filtered = self.col_filter_ctrl.mask_dataframe(filtered)
+        self.source_model.setDataFrame(filtered)
+        self._sort_ctrl.reapply()
+        tag = "实际>定额"
+        note_tag = {"all": "全部", "yes": "有备注", "no": "无备注"}[self._has_note_filter]
+        self.lbl_count.setText("共 %d 条（名称含「%s」· %s · %s）" % (len(filtered), self._keywords, tag, note_tag))
+        # ⚠ v43.175 删除了此处原有的两段「动态刷新车间/ 单位下拉」旧逻辑。
+        #   它们与 v43.170 新增的 `_refresh_cascade_combos()` **是两套机制打架**：
+        #     ·旧：用 `filtered`（已含自己过滤的最终结果）重算 → 单向收缩、不可逆
+        #     · 新：用 `_other_conditions_mask(df, exclude=...)`（排除自己）→ 双向可逆
+        #   新级联在 `_apply_filter` 开头已刷新过这两个下拉，旧逻辑在其后**再覆盖一次**，
+        #   结果选「1车间」后车间下拉从 10 项塌缩到 2 项（只剩「全部」+「1车间」），
+        #   用户想换别的车间必须先选回「全部」—— 恰好是本次要消除的单向收缩缺陷。
+        #   单位下拉同理。车间/物料类型的级联统一由 `_refresh_cascade_combos` 负责，
+        #   单位保持「只列出当前可见数据里存在的值」的原口径（单独处理，见下）。
+
+    # ------------------------------------------------------------------ 复制
+    def eventFilter(self, obj, event):
+        from PySide6.QtCore import QEvent
+        from PySide6.QtGui import QKeySequence
+        if obj is self.table_view and event.type() == QEvent.KeyPress:
+            if event.matches(QKeySequence.Copy):
+                self._copy_selected_cells()
+                return True
+        return super().eventFilter(obj, event)
+
+    def _copy_selected_cells(self):
+        from PySide6.QtWidgets import QApplication
+        selection = self.table_view.selectionModel()
+        if not selection or not selection.hasSelection():
+            return
+        indexes = selection.selectedIndexes()
+        cells = {}
+        min_r, max_r, min_c, max_c = float('inf'), -1, float('inf'), -1
+        for idx in indexes:
+            r, c = idx.row(), idx.column()
+            cells[(r, c)] = str(idx.data(Qt.DisplayRole) or "").replace("\n", " ").replace("\r", "")
+            min_r, max_r = min(min_r, r), max(max_r, r)
+            min_c, max_c = min(min_c, c), max(max_c, c)
+        if max_r < 0:
+            return
+        lines = ["\t".join(cells.get((r, c), "") for c in range(min_c, max_c + 1))
+                 for r in range(min_r, max_r + 1)]
+        QApplication.clipboard().setText("\n".join(lines))
+
+    # ------------------------------------------------------------------ 右键菜单
+    def show_context_menu(self, pos):
+        index = self.table_view.indexAt(pos)
+        if not index.isValid():
+            return
+        selection = self.table_view.selectionModel()
+        selected_rows = sorted(set(idx.row() for idx in selection.selectedIndexes()))
+        if index.row() not in selected_rows:
+            self.table_view.clearSelection()
+            self.table_view.selectRow(index.row())
+            selected_rows = [index.row()]
+        menu = QMenu()
+        # 标记已读/未读
+        mark_read_action = menu.addAction("✅ 标记为已读（选中行）")
+        mark_read_action.triggered.connect(
+            lambda: self._mark_selected_rows_read(selected_rows))
+        mark_unread_action = menu.addAction("⭕ 标记为未读（选中行）")
+        mark_unread_action.triggered.connect(
+            lambda: self._mark_selected_rows_unread(selected_rows))
+        menu.addSeparator()
+        # 隔离区操作
+        add_action = menu.addAction("⚠️ 加入隔离区(选中行)")
+        add_action.triggered.connect(lambda: self._add_selected_to_quarantine())
+        df = self.source_model.getDataFrame()
+        if df is not None and selected_rows and "隔离区" in df.columns:
+            try:
+                all_q = all(str(df.iloc[r].get("隔离区", "")).strip() == "是"
+                            for r in selected_rows if r < len(df))
+            except Exception:
+                all_q = False
+            if all_q:
+                cancel_action = menu.addAction("↩ 取消隔离(选中行)")
+                cancel_action.triggered.connect(lambda: self._cancel_selected_quarantine())
+        menu.exec_(self.table_view.viewport().mapToGlobal(pos))
+
+    def _mark_selected_rows_read(self, rows):
+        """标记所有选中行为已读（右键菜单）"""
+        df = self.source_model.getDataFrame()
+        if df is None:
+            return
+        # 收集要更新的 data_id 列表
+        target_ids = []
+        for r in rows:
+            if r >= len(df):
+                continue
+            data_id = df.iloc[r].get('data_id')
+            if not data_id:
+                rs = df.iloc[r]
+                if '工厂' in df.columns:
+                    data_id = f"{rs.get('工厂','')}|{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+                else:
+                    data_id = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+            if data_id and data_id not in target_ids:
+                target_ids.append(data_id)
+        if not target_ids:
+            return
+        # 批量同步主表（循环外，向量化操作）
+        count, records = self._sync_main_df_batch(target_ids, 1, df)
+        if records:
+            save_read_status_batch(records)
+        self._refresh_main_table_once()
+        if hasattr(self, 'original_df') and 'data_id' in self.original_df.columns:
+            orig_mask = self.original_df['data_id'].isin(target_ids)
+            if orig_mask.any():
+                self.original_df.loc[orig_mask, '_read'] = 1
+                self.original_df.loc[orig_mask, '_read_source'] = 'manual'
+                if '状态' in self.original_df.columns:
+                    self.original_df.loc[orig_mask, '状态'] = '✓ 已读'
+                if '已读来源' in self.original_df.columns:
+                    self.original_df.loc[orig_mask, '已读来源'] = '手动'
+        self._apply_filter()
+        toast(f"✅ 已标记 {count} 条为已读", parent=self)
+
+    def _mark_selected_rows_unread(self, rows):
+        """标记所有选中行为未读（右键菜单）"""
+        df = self.source_model.getDataFrame()
+        if df is None:
+            return
+        # 收集要更新的 data_id 列表
+        target_ids = []
+        for r in rows:
+            if r >= len(df):
+                continue
+            data_id = df.iloc[r].get('data_id')
+            if not data_id:
+                rs = df.iloc[r]
+                if '工厂' in df.columns:
+                    data_id = f"{rs.get('工厂','')}|{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+                else:
+                    data_id = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+            if data_id and data_id not in target_ids:
+                target_ids.append(data_id)
+        if not target_ids:
+            return
+        # 批量同步主表（循环外，向量化操作）
+        count, records = self._sync_main_df_batch(target_ids, 0, df)
+        if records:
+            save_read_status_batch(records)
+        self._refresh_main_table_once()
+        if hasattr(self, 'original_df') and 'data_id' in self.original_df.columns:
+            orig_mask = self.original_df['data_id'].isin(target_ids)
+            if orig_mask.any():
+                self.original_df.loc[orig_mask, '_read'] = 0
+                if '状态' in self.original_df.columns:
+                    self.original_df.loc[orig_mask, '状态'] = '未读'
+                if '已读来源' in self.original_df.columns:
+                    self.original_df.loc[orig_mask, '已读来源'] = ''
+        self._apply_filter()
+        toast(f"⭕ 已标记 {count} 条为未读", parent=self)
+
+    def _sync_main_df(self, data_id, read_value):
+        """同步主表内存中的已读状态（仅改内存，不做落盘和 UI 重建）
+
+        在循环内调用，避免逐行重建主表模型（setDataFrame 会重建全量缓存，开销大）。
+        落盘与 UI 重建由调用方在循环外统一做一次。
+        返回 (success, already_status, fingerprint)
+        """
+        main_df = self.main_window.view_model.df
+        if main_df is None:
+            return False, False, ''
+
+        # 确保主表有 data_id（不覆盖已有的 data_id，避免和 data_service 格式不一致）
+        if 'data_id' not in main_df.columns:
+            if '工厂' in main_df.columns:
+                main_df['data_id'] = (
+                    main_df['工厂'].astype(str) + '|' +
+                    main_df['订单日期'].astype(str) + '|' +
+                    main_df['流程订单'].astype(str) + '|' +
+                    main_df['物料编码'].astype(str)
+                )
+            elif all(c in main_df.columns for c in ['订单日期', '流程订单', '物料编码']):
+                main_df['data_id'] = (
+                    main_df['订单日期'].astype(str) + "|" +
+                    main_df['流程订单'].astype(str) + "|" +
+                    main_df['物料编码'].astype(str)
+                )
+            else:
+                return False, False, ''
+            self.main_window.view_model.df = main_df
+
+        if 'data_id' not in main_df.columns:
+            return False, False, ''
+
+        if '_read' not in main_df.columns:
+            main_df['_read'] = 0
+            self.main_window.view_model.df = main_df
+
+        mask = main_df['data_id'] == data_id
+        if not mask.any():
+            return False, False, ''
+        idx = main_df[mask].index[0]
+        current_val = main_df.at[idx, '_read']
+        if current_val == read_value:
+            return True, True, ''  # 已经是目标状态
+        main_df.at[idx, '_read'] = read_value
+        fingerprint = main_df.at[idx, 'fingerprint'] if 'fingerprint' in main_df.columns else ''
+        self.main_window.view_model.df = main_df
+        return True, False, fingerprint
+
+    def _sync_main_df_batch(self, target_ids, read_value, source_df):
+        """批量同步主表内存中的已读状态（向量化操作，性能优化）
+
+        相比 _sync_main_df 的逐行操作，此方法在循环外一次性完成所有更新。
+        返回 (count, records) 其中 count 是实际更新的条数，records 是用于落盘的记录列表。
+        """
+        main_df = self.main_window.view_model.df
+        if main_df is None or not target_ids:
+            return 0, []
+
+        # 确保主表有 data_id 列
+        if 'data_id' not in main_df.columns:
+            if '工厂' in main_df.columns:
+                main_df['data_id'] = (
+                    main_df['工厂'].astype(str) + '|' +
+                    main_df['订单日期'].astype(str) + '|' +
+                    main_df['流程订单'].astype(str) + '|' +
+                    main_df['物料编码'].astype(str)
+                )
+            elif all(c in main_df.columns for c in ['订单日期', '流程订单', '物料编码']):
+                main_df['data_id'] = (
+                    main_df['订单日期'].astype(str) + '|' +
+                    main_df['流程订单'].astype(str) + '|' +
+                    main_df['物料编码'].astype(str)
+                )
+
+        # 确保 _read 列存在
+        if '_read' not in main_df.columns:
+            main_df['_read'] = 0
+
+        # 向量化批量更新
+        mask = main_df['data_id'].isin(target_ids)
+        if not mask.any():
+            return 0, []
+
+        # 记录更新前的状态（用于判断是否需要落盘）
+        current_vals = main_df.loc[mask, '_read']
+        need_update = current_vals != read_value
+        updated_ids = main_df.loc[mask, 'data_id'].tolist()
+
+        # 批量赋值（向量化操作，比 at[] 快得多）
+        main_df.loc[mask & need_update, '_read'] = read_value
+
+        # 构建落盘记录
+        records = []
+        count = int(need_update.sum())
+        if count > 0:
+            # 获取 fingerprint
+            fingerprints = {}
+            if 'fingerprint' in main_df.columns:
+                for did in updated_ids:
+                    row_mask = main_df['data_id'] == did
+                    if row_mask.any():
+                        idx = main_df[row_mask].index[0]
+                        fingerprints[did] = main_df.at[idx, 'fingerprint']
+                    else:
+                        fingerprints[did] = ''
+            else:
+                fingerprints = {did: '' for did in updated_ids}
+
+            # 从 source_df 获取 qty 和 note（使用更新后的数据）
+            for did in updated_ids:
+                if did in fingerprints:
+                    qty = snapshot_qty_for(source_df, did)
+                    note = snapshot_note_for(source_df, did)
+                    records.append((did, read_value, fingerprints[did], qty, note, None, 'manual'))
+
+        # 只赋值一次 view_model.df
+        self.main_window.view_model.df = main_df
+        return count, records
+
+    def _refresh_main_table_once(self):
+        """循环外统一重建主表（只调用一次，避免逐行重建，大幅提升连续标记性能）"""
+        main_df = self.main_window.view_model.df
+        if main_df is None:
+            return
+        if hasattr(self.main_window, 'source_model') and self.main_window.source_model:
+            self.main_window.source_model.setDataFrame(main_df)
+            # setDataFrame 会重排列（_read 移到第0列），按列名恢复显隐，避免列错位丢失
+            if hasattr(self.main_window, '_apply_column_visibility_by_name'):
+                self.main_window._apply_column_visibility_by_name()
+
+    def _selected_ids(self):
+        df = self.source_model.getDataFrame() if hasattr(self, "source_model") else None
+        if df is None:
+            return set()
+        selection = self.table_view.selectionModel()
+        if not selection:
+            return set()
+        rows = sorted(set(idx.row() for idx in selection.selectedIndexes()))
+        ids = set()
+        for r in rows:
+            if r >= len(df):
+                continue
+            did = df.iloc[r].get("data_id")
+            if not did:
+                rs = df.iloc[r]
+                if "工厂" in df.columns:
+                    did = f"{rs.get('工厂','')}|{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+                else:
+                    did = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+            if did:
+                ids.add(str(did))
+        return ids
+
+    def _add_selected_to_quarantine(self):
+        ids = self._selected_ids()
+        if not ids:
+            toast("请先选中要加入隔离区的行", parent=self)
+            return
+        reason = _ask_quarantine_reason(self, "加入隔离区")
+        if reason is None:
+            return
+        basis = "手动:" + reason
+        add_quarantine_batch([(uid, reason, basis) for uid in ids])
+        self._sync_quarantine(ids, True)
+        toast(f"⚠️ 已加入隔离区 {len(ids)} 条", parent=self)
+
+    def _cancel_selected_quarantine(self):
+        ids = self._selected_ids()
+        if not ids:
+            return
+        for uid in ids:
+            remove_quarantine(uid)
+        self._sync_quarantine(ids, False)
+        toast(f"↩ 已取消隔离 {len(ids)} 条", parent=self)
+
+    def _sync_quarantine(self, ids, flag):
+        """同步主表内存 _quarantined + source_model，并刷新本看板隔离区列（与隔离区对话框一致）。"""
+        main_df = self.main_window.view_model.df if self.main_window else None
+        if main_df is not None and "data_id" in main_df.columns and "_quarantined" in main_df.columns:
+            main_df.loc[main_df["data_id"].isin(ids), "_quarantined"] = 1 if flag else 0
+            self.main_window.view_model.df = main_df
+            if self.main_window.source_model is not None:
+                self.main_window.source_model.mark_quarantine(ids, flag)
+                if hasattr(self.main_window, "_apply_column_visibility_by_name"):
+                    self.main_window._apply_column_visibility_by_name()
+            if hasattr(self.main_window, "stats_cards") and self.main_window.stats_cards is not None:
+                self.main_window.stats_cards.refresh(main_df)
+        # 同时更新本看板自己的 original_df（关键：否则 _color_mask 会读到旧值，导致加入隔离区后数据消失）
+        if (hasattr(self, "original_df") and "data_id" in self.original_df.columns
+                and "隔离区" in self.original_df.columns):
+            self.original_df.loc[self.original_df["data_id"].isin(ids), "隔离区"] = "是" if flag else ""
+        # 同时更新本看板 source_model 的 _quarantined 列，确保颜色筛选不丢失数据
+        if (hasattr(self, "source_model") and self.source_model is not None
+                and hasattr(self, "original_df") and self.original_df is not None
+                and "data_id" in self.original_df.columns and "_quarantined" in self.original_df.columns):
+            id_set = set(str(i) for i in ids)
+            mask = self.original_df["data_id"].astype(str).isin(id_set)
+            self.source_model._data.loc[mask, "_quarantined"] = 1 if flag else 0
+            positions = {i for i, v in enumerate(mask) if v}
+            if flag:
+                self.source_model._quarantined_rows |= positions
+            else:
+                self.source_model._quarantined_rows -= positions
+            last_col = max(self.source_model.columnCount() - 1, 0)
+            for pos in positions:
+                self.source_model.dataChanged.emit(self.source_model.index(pos, 0),
+                                                   self.source_model.index(pos, last_col))
+        self._apply_filter()
+
+    def on_double_click(self, index):
+        """双击看板行 → 定位主表对应行（原表行号优先，data_id 兜底）。"""
+        if not index.isValid():
+            return
+        df = self.source_model.getDataFrame()
+        if index.row() < len(df):
+            locate_row(self.main_window, df.iloc[index.row()], parent=self, link_source="正损看板")
+            self.accept()
+
+    # ------------------------------------------------------------------ 导出
+    def export_excel(self):
+        cur_df = self.source_model.getDataFrame() if hasattr(self, "source_model") else None
+        if cur_df is None or cur_df.empty:
+            toast("当前筛选结果为空，无可导出的记录", parent=self)
+            return
+        from gui_pyside6.save_guard import safe_save
+        default_name = "正损看板.xlsx"
+        path, _ = QFileDialog.getSaveFileName(
+            self, f"导出正损看板（共 {len(cur_df)} 条）", default_name, "Excel files (*.xlsx)")
+        if path:
+            export_df = cur_df.drop(columns=['data_id', '原表行号'], errors='ignore')
+            saved = safe_save(self, path, lambda p: export_df.to_excel(p, index=False), what="正损看板")
+            if saved:
+                toast(f"已导出 {len(export_df)} 条记录到 {saved}", parent=self)
+
+
+def _ask_quarantine_reason(parent, title: str) -> str | None:
+    """弹出自定义「加入隔离区」对话框（显式确定/取消按钮，替代 QInputDialog.getText）。
+    返回原因字符串，点取消/关闭返回 None。
+    """
+    dlg = QDialog(parent)
+    dlg.setWindowTitle(title)
+    dlg.setFixedWidth(420)
+    layout = QVBoxLayout(dlg)
+
+    hint = QLabel("填写疑难原因（可选）：")
+    layout.addWidget(hint)
+
+    edit = QLineEdit()
+    edit.setPlaceholderText("留空则默认填入「手动隔离」")
+    layout.addWidget(edit)
+
+    btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+    btn_box.accepted.connect(dlg.accept)
+    btn_box.rejected.connect(dlg.reject)
+    layout.addWidget(btn_box)
+
+    edit.setFocus()
+    if dlg.exec() == QDialog.Accepted:
+        return edit.text().strip() or "手动隔离"
+    return None
