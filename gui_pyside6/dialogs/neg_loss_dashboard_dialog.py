@@ -50,6 +50,9 @@ class NegLossDashboardDialog(QDialog):
         self._mtd_col = None          # 组件物料类型描述列名（set_data 时探测）
         self._workshop_filter = "all"  # 车间筛选（全部/车间名）
         self._workshop_col = None     # 车间列名（set_data 时探测）
+        # 🔴 工厂筛选（v43.169）：与车间筛选并行叠加，默认「全部」
+        self._factory_filter = "all"  # 工厂筛选（全部/工厂名，取工厂名称列的可读值）
+        self._factory_col = None      # 工厂列名（set_data 时探测）
         self._quar_filter = "no"      # 隔离区筛选（全部/是/否），默认排除隔离区
         self._has_note_filter = "all" # 是否有备注筛选（全部/是/否）
         self._unit_filter = set()     # 单位筛选（set_data 初始化前预置，避免 setCurrentText 触发 _apply_filter 时引用未初始化属性崩溃，v43.82）
@@ -148,6 +151,23 @@ class NegLossDashboardDialog(QDialog):
         self.combo_workshop.addItem("全部")
         self.combo_workshop.currentTextChanged.connect(self._on_workshop_changed)
         top.addWidget(self.combo_workshop)
+
+        # ---- 工厂筛选（v43.169，放在车间之后；与车间并行叠加）----
+        top.addSpacing(14)
+        self.factory_sep = QFrame()
+        self.factory_sep.setFrameShape(QFrame.VLine)
+        self.factory_sep.setFrameShadow(QFrame.Sunken)
+        top.addWidget(self.factory_sep)
+        top.addSpacing(14)
+        self.lbl_factory = QLabel("工厂:")
+        top.addWidget(self.lbl_factory)
+        self.combo_factory = QComboBox()
+        self.combo_factory.setMinimumWidth(150)
+        self.combo_factory.setMaximumWidth(200)
+        self.combo_factory.setEditable(False)
+        self.combo_factory.addItem("全部")
+        self.combo_factory.currentTextChanged.connect(self._on_factory_changed)
+        top.addWidget(self.combo_factory)
 
         # ---- v43.139 row1 收尾（常用筛选止于车间）----
         top.addStretch()
@@ -402,6 +422,11 @@ class NegLossDashboardDialog(QDialog):
         self._workshop_filter = "all" if text == "全部" else text
         self._apply_filter()
 
+    def _on_factory_changed(self, text):
+        """工厂下拉变化（v43.169）：与车间/单位筛选并行叠加。"""
+        self._factory_filter = "all" if text == "全部" else text
+        self._apply_filter()
+
     def _set_quar_filter(self, mode):
         """隔离区筛选（全部/是/否）"""
         self._quar_filter = mode
@@ -566,6 +591,19 @@ class NegLossDashboardDialog(QDialog):
         if self._workshop_col not in df.columns:
             return pd.Series(True, index=df.index)
         vals = df[self._workshop_col].astype(str).str.strip()
+        return vals == mode
+
+    def _factory_mask(self, df, mode):
+        """工厂掩码（v43.169）：all=全True / 工厂名=工厂名称列==该值。列缺失则全True。
+
+        列名优先 '工厂名称'（可读值 云南达利-食品厂），与 main_window 筛选面板
+        的列映射口径一致；无该列时回退 '工厂'（编码 1101/1102）。
+        """
+        if mode == "all" or not self._factory_col:
+            return pd.Series(True, index=df.index)
+        if self._factory_col not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df[self._factory_col].astype(str).str.strip()
         return vals == mode
 
     def _quar_mask(self, df, mode):
@@ -762,6 +800,25 @@ class NegLossDashboardDialog(QDialog):
             self.combo_workshop.setVisible(False)
         self._workshop_filter = "all"
         self.combo_workshop.setCurrentText("全部")
+        # 初始化工厂筛选器（v43.169）
+        # 列名优先 '工厂名称'（可读值），无则回退 '工厂'（编码）
+        self._factory_col = ("工厂名称" if "工厂名称" in df.columns
+                             else ("工厂" if "工厂" in df.columns else None))
+        if self._factory_col:
+            # setCurrentText 会触发 currentTextChanged，故先清选项再设值
+            self.combo_factory.blockSignals(True)
+            self.combo_factory.clear()
+            self.combo_factory.addItem("全部")
+            unique_vals = df[self._factory_col].dropna().astype(str).str.strip().unique()
+            unique_vals = sorted(v for v in unique_vals if v)
+            self.combo_factory.addItems(unique_vals)
+            self.combo_factory.blockSignals(False)
+        else:
+            self.factory_sep.setVisible(False)
+            self.lbl_factory.setVisible(False)
+            self.combo_factory.setVisible(False)
+        self._factory_filter = "all"
+        self.combo_factory.setCurrentText("全部")
         # 初始化单位筛选器
         self._unit_col = "单位" if "单位" in df.columns else None
         if self._unit_col:
@@ -826,6 +883,7 @@ class NegLossDashboardDialog(QDialog):
                 & self._mtd_mask(df)
                 & self._unit_mask(df)
                 & self._workshop_mask(df, self._workshop_filter)
+                & self._factory_mask(df, self._factory_filter)
                 & self._quar_mask(df, self._quar_filter)
                 & self._note_mask(df, self._has_note_filter)
                 & self._color_mask(df)
