@@ -55,6 +55,7 @@ from gui_pyside6.dialogs.pos_loss_dashboard_dialog import PosLossDashboardDialog
 from gui_pyside6.dialogs.data_stability_dialog import DataStabilityDialog
 from gui_pyside6.dialogs.quarantine_review_dialog import QuarantineReviewDialog
 from gui_pyside6.dialogs.alt_chain_dialog import AltChainDialog
+from gui_pyside6.dialogs.material_profile_dialog import MaterialProfileDialog
 from core.quarantine_manager import add_quarantine, add_quarantine_batch, remove_quarantine, scan_expired_quarantine, get_quarantined_ids
 from core.auto_quarantine import (
     build_all_summary,
@@ -435,6 +436,9 @@ class MainWindow(QMainWindow):
         self.action_btn_quarantine_review.triggered.connect(self._show_quarantine_review_dashboard)
         self.action_btn_alt_chain = QAction("🔗 替代料长链", self)
         self.action_btn_alt_chain.triggered.connect(self._show_alt_chain_dashboard)
+        # v43.182 物料画像：主表选中物料 → 右键「查看物料画像」 / 看板菜单，按物料编码聚合 audit.db 三表
+        self.action_btn_material_profile = QAction("🪪 物料画像", self)
+        self.action_btn_material_profile.triggered.connect(self._show_material_profile)
 
 
         self.action_btn_excel = QAction("📤 Excel 表格 (F6)", self)
@@ -467,11 +471,12 @@ class MainWindow(QMainWindow):
             return btn
 
         self.action_btn_boards = _make_menu_btn(
-            "📊 看板 ▾", "分析看板：管理看板 / 偏差率预警 / 负损看板 / 正损看板 / 替代料看板 / 半成品看板 / 隔离区 / 变动提醒 / 数据稳定性 / 隔离区闭环 / 替代料长链",
+            "📊 看板 ▾", "分析看板：管理看板 / 偏差率预警 / 负损看板 / 正损看板 / 替代料看板 / 半成品看板 / 隔离区 / 变动提醒 / 数据稳定性 / 隔离区闭环 / 替代料长链 / 物料画像",
             [self.action_btn_dashboard, self.action_btn_quarantine, self.action_btn_audit_changes,
              self.action_btn_alt_board, self.action_btn_deviation, self.action_btn_neg_loss,
              self.action_btn_pos_loss, self.action_btn_semi,
-             self.action_btn_data_stability, self.action_btn_quarantine_review, self.action_btn_alt_chain])
+             self.action_btn_data_stability, self.action_btn_quarantine_review, self.action_btn_alt_chain,
+             self.action_btn_material_profile])
         self.action_btn_export = _make_menu_btn(
             "📤 导出 ▾", "导出当前数据：Excel / 完整报告 / PPT",
             [self.action_btn_excel, self.action_btn_export_full, self.action_btn_ppt])
@@ -1847,6 +1852,36 @@ class MainWindow(QMainWindow):
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开替代料长链看板失败: {e}")
+
+    def _show_material_profile(self, code=None, name=None):
+        """v43.182 物料画像：按物料编码聚合 audit.db 三表，弹卡片式浮层。
+
+        入口 1：主表右键「🪪 查看物料画像」→ 传入该行物料编码（名称也从该行取）。
+        入口 2：「📊 看板 ▾」菜单「🪪 物料画像」→ code/name 均空，取主表当前选中行。
+        """
+        if not code or not name:
+            try:
+                sel = self.table_view.selectionModel().selectedIndexes()
+                rows = {self.proxy_model.mapToSource(ix).row() for ix in sel}
+                if rows:
+                    r = sorted(rows)[0]
+                    row_data = self.source_model.getDataFrame().iloc[r]
+                    if not code:
+                        code = str(row_data.get('物料编码', '') or '').strip()
+                    if not name:
+                        name = str(row_data.get('物料名称', '') or '').strip()
+            except Exception:
+                pass
+        if not code:
+            QMessageBox.information(
+                self, "提示",
+                "请先在主表选中一个物料，再点「🪪 查看物料画像」（或右键该行选择）。")
+            return
+        try:
+            dialog = MaterialProfileDialog(code, self, name=name or '')
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"打开物料画像失败: {e}")
 
     def _show_semi_dashboard(self):
         """手动打开半成品看板：400/410 开头物料，按半成品重分类 + 投料状态筛选。
@@ -4620,6 +4655,10 @@ class MainWindow(QMainWindow):
         copy_action = menu.addAction("复制物料编码")
         copy_action.triggered.connect(
             lambda: self.audit_controller.copy_material_code(row_data, self.statusBar().showMessage)
+        )
+        profile_action = menu.addAction("🪪 查看物料画像")
+        profile_action.triggered.connect(
+            lambda: self._show_material_profile(row_data.get('物料编码', ''))
         )
         menu.addSeparator()
         add_sel_action = menu.addAction("➕ 添加为替代料配对（选中2行）")

@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.182",
+        "date": "2026-10-12",
+        "features": "新增「🪪 物料画像」（Octop 借鉴落地的 A 原型）：主表选中某物料行 → 右键「🪪 查看物料画像」（或「📊 看板 ▾」菜单）弹卡片式浮层。按**物料编码**聚合 `audit.db` 三表，展示基本信息（编码/名称/厂）、偏差修改史（累计修改次数、归因漂移=备注原因被改次数、最近一次改了什么、常见原因 Top3）、隔离区（进隔离次数/是否悬挂，悬挂显红）、审核已读（最近标已读时间/总次数）。只读 audit.db，与偏差分析主表完全解耦，不触碰 analyzer 红线区。",
+        "fixes": "**数据口径经实跑核验（纠正豆包 v0.2 的设计前提）**：deviation_history.data_id 为 4 段（云南达利-食品厂|日期|订单|物料编码，含厂）；read_status.data_id 与 quarantine_records.uid 均为 3 段（日期|订单|物料编码，**无厂段**）——故豆包 v0.2 主张的复合键 (厂,物料编码) 不可行，画像主键统一取**物料编码**（三表末列），厂仅从 deviation_history 派生显示。read_status 记操作人字段名是 `user`（非 auditor），实测值多为 'default'（用户维度未启用），故「最近标已读」只展示厂+时间、不承诺具体人。新文件 `gui_pyside6/dialogs/material_profile_dialog.py`；main_window 加 import + QAction + `_show_material_profile(code)` + 右键菜单项 + 看板菜单项。模态 exec()，打开即读全量三表（共约 5 万行，<1s）。",
+    },
+    {
         "version": "v43.181",
         "date": "2026-10-11",
         "features": "新增「数据治理」三看板（挂在「📊 看板 ▾」菜单下）：① **数据稳定性看板**——读 `audit.db` 的 `deviation_history`（4143 条修改流水），按 data_id 聚合列出「被反复修改≥N次的物料/订单」榜、按字段聚列「备注原因改动 TOP」（归因漂移信号），并展示按天改动量趋势（实测 10/4 单日 2131 次 = 全量 51%，为一次大批量审核）；② **隔离区闭环复盘**——读 `quarantine_records`（1492 条，其中 68 条 restored_at 为空=悬挂未放回），列反复进隔离的物料、隔离后多久放回、悬挂未放回清单；③ **替代料长链预警**——读 `%APPDATA%\ZPP011\config\alt_pairs.json`（67 组），算出现在多组的物料（长链，实测 21 个物料出现在多组、20004754 出现 5 组），提示配方标准不统一信号。三个看板均为只读统计，数据源为既有的 audit.db / alt_pairs.json，与偏差分析主表解耦，不触碰 analyzer 红线区。",
