@@ -1101,6 +1101,22 @@ class MainWindow(QMainWindow):
         else:
             start_date, end_date = "", ""
 
+        # v43.180：源文件被外部改过 → 先丢弃陈旧缓存，再**后台重新读取**，
+        #   等读完再续跑分析（不能直接把缓存传 None 让analyzer 前台读文件，那会
+        #   卡住主线程 20~30秒，表现为「点了分析没反应」）。
+        if self._drop_stale_input_cache():
+            if self._heavy_busy:
+                QMessageBox.information(self, "提示", "分析/报告生成进行中，请稍候")
+                return
+            if hasattr(self, 'preview_label') and self.preview_label:
+                self.preview_label.setText("📂 源文件已修改，正在重新读取…")
+            self._pending_analysis_after_reread = True
+            self._file_worker = _FileReadWorker(self.current_input_file)
+            self._file_worker.loaded.connect(self._on_reread_then_analyze)
+            self._file_worker.failed.connect(self._on_file_failed)
+            self._file_worker.start()
+            return
+
         self.analysis_controller.start_analysis(
             self.current_input_file,
             self.alt_controller.get_pairs(),
@@ -1113,6 +1129,13 @@ class MainWindow(QMainWindow):
             getattr(self, '_cached_input_df', None),  # 复用选文件时缓存的 DataFrame，跳过重复文件 IO
             dyn_thresh=dyn_thresh_val,
         )
+
+    def _on_reread_then_analyze(self, df, file_path):
+        """v43.180：源文件重读完成后，自动续跑刚才挂起的那次分析。"""
+        self._on_file_loaded(df, file_path)          # 复用原有装载逻辑（会刷新缓存与预览）
+        if getattr(self, '_pending_analysis_after_reread', False):
+            self._pending_analysis_after_reread = False
+            QTimer.singleShot(0, self._start_analysis)  # 等事件循环转一圈再跑，避开信号回调栈
 
     def _on_analysis_ui_start(self):
         self._heavy_busy = True
@@ -1920,6 +1943,47 @@ class MainWindow(QMainWindow):
         self._file_worker.failed.connect(self._on_file_failed)
         self._file_worker.start()
 
+    @staticmethod
+    def _file_mtime_signature(path):
+        """取源文件的「修改时间 + 大小」作为变更指纹（v43.180）。
+
+        用于判断 `_cached_input_df` 是否已过期：
+        只看 mtime 不够——同一秒内改两次、或某些工具会重写 mtime 而内容变化，
+        故叠加文件大小一起比。任一不同即视为「源文件已变」。
+        读不到（文件被移动/删除/无权限）返回 None，调用方按「已变」处理（重读失败会报错，
+        比静默用陈旧数据更安全）。
+        """
+        if not path:
+            return None
+        try:
+            st = os.stat(path)
+            return (st.st_mtime_ns, st.st_size)
+        except (OSError, ValueError):
+            return None
+
+    def _drop_stale_input_cache(self):
+        """源文件已被外部修改 → 丢弃内存缓存，返回 True（调用方需重新读盘）。
+
+        没有这一步的话：用户改完 Excel 直接点「分析」，程序拿的还是选文件那一刻
+        读进来的旧 DataFrame（`main_window.py:1113` 直接复用缓存、跳过文件 IO），
+        于是「改了数据必须关软件重开」才生效 —— v43.180 修掉。
+        """
+        cached = getattr(self, '_cached_input_df', None)
+        if cached is None:
+            return False
+        cur = self._file_mtime_signature(self.current_input_file)
+        old = getattr(self, '_cached_input_mtime', None)
+        if old is not None and cur is not None and cur == old:
+            return False                      # 没变，沿用缓存（保留秒开优势）
+        # 变了 / 指纹拿不到 → 缓存作废
+        self._cached_input_df = None
+        self._cached_input_mtime = None
+        try:
+            self.log("[分析] 源文件已修改，丢弃旧缓存并重新读取", "info")
+        except Exception:
+            pass
+        return True
+
     def _on_file_loaded(self, df, file_path):
         try:
             # 新一批数据：清零已读计数（每批数据清零口径）
@@ -1931,6 +1995,10 @@ class MainWindow(QMainWindow):
                 self._analysis_time_label.setText("🕒 分析：—")
             # 缓存 Data sheet DataFrame，点击分析时直接复用，跳过 ~20-30s 重复文件 IO
             self._cached_input_df = df
+            # v43.180：连同源文件的修改时间/大小一起记下，供分析前比对
+            #   （发现问题：改了源文件后点分析仍显示旧数据，必须关软件重开才生效 ——
+            #    因为 _start_analysis 直接复用这份缓存、根本不读磁盘）。
+            self._cached_input_mtime = self._file_mtime_signature(file_path)
             if hasattr(self, 'preview_label') and self.preview_label:
                 self.preview_label.setText(self._format_preview_stats(df))
         except Exception as e:
