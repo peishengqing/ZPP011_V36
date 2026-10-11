@@ -52,6 +52,9 @@ from gui_pyside6.dialogs.neg_loss_dashboard_dialog import NegLossDashboardDialog
 
 from gui_pyside6.dialogs.quarantine_dialog import QuarantineDialog
 from gui_pyside6.dialogs.pos_loss_dashboard_dialog import PosLossDashboardDialog
+from gui_pyside6.dialogs.data_stability_dialog import DataStabilityDialog
+from gui_pyside6.dialogs.quarantine_review_dialog import QuarantineReviewDialog
+from gui_pyside6.dialogs.alt_chain_dialog import AltChainDialog
 from core.quarantine_manager import add_quarantine, add_quarantine_batch, remove_quarantine, scan_expired_quarantine, get_quarantined_ids
 from core.auto_quarantine import (
     build_all_summary,
@@ -425,6 +428,13 @@ class MainWindow(QMainWindow):
         # 与负损看板「0<=实际<定额」互补。独立入口，放在半成品之后。
         self.action_btn_pos_loss = QAction("🟢 正损看板", self)
         self.action_btn_pos_loss.triggered.connect(self._show_pos_loss_dashboard)
+        # v43.181 数据治理三看板：只读 audit.db / alt_pairs.json，与偏差分析主表解耦
+        self.action_btn_data_stability = QAction("📈 数据稳定性", self)
+        self.action_btn_data_stability.triggered.connect(self._show_data_stability_dashboard)
+        self.action_btn_quarantine_review = QAction("🔁 隔离区闭环", self)
+        self.action_btn_quarantine_review.triggered.connect(self._show_quarantine_review_dashboard)
+        self.action_btn_alt_chain = QAction("🔗 替代料长链", self)
+        self.action_btn_alt_chain.triggered.connect(self._show_alt_chain_dashboard)
 
 
         self.action_btn_excel = QAction("📤 Excel 表格 (F6)", self)
@@ -457,10 +467,11 @@ class MainWindow(QMainWindow):
             return btn
 
         self.action_btn_boards = _make_menu_btn(
-            "📊 看板 ▾", "分析看板：管理看板 / 偏差率预警 / 负损看板 / 正损看板 / 替代料看板 / 半成品看板 / 隔离区 / 变动提醒",
+            "📊 看板 ▾", "分析看板：管理看板 / 偏差率预警 / 负损看板 / 正损看板 / 替代料看板 / 半成品看板 / 隔离区 / 变动提醒 / 数据稳定性 / 隔离区闭环 / 替代料长链",
             [self.action_btn_dashboard, self.action_btn_quarantine, self.action_btn_audit_changes,
              self.action_btn_alt_board, self.action_btn_deviation, self.action_btn_neg_loss,
-             self.action_btn_pos_loss, self.action_btn_semi])
+             self.action_btn_pos_loss, self.action_btn_semi,
+             self.action_btn_data_stability, self.action_btn_quarantine_review, self.action_btn_alt_chain])
         self.action_btn_export = _make_menu_btn(
             "📤 导出 ▾", "导出当前数据：Excel / 完整报告 / PPT",
             [self.action_btn_excel, self.action_btn_export_full, self.action_btn_ppt])
@@ -1812,6 +1823,30 @@ class MainWindow(QMainWindow):
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开正损看板失败: {e}")
+
+    def _show_data_stability_dashboard(self):
+        """v43.181 数据稳定性看板：读 audit.db deviation_history，展示数据反复修改情况。"""
+        try:
+            dialog = DataStabilityDialog(self)
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"打开数据稳定性看板失败: {e}")
+
+    def _show_quarantine_review_dashboard(self):
+        """v43.181 隔离区闭环复盘：读 audit.db quarantine_records，展示隔离进出闭环。"""
+        try:
+            dialog = QuarantineReviewDialog(self)
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"打开隔离区闭环看板失败: {e}")
+
+    def _show_alt_chain_dashboard(self):
+        """v43.181 替代料长链预警：读 alt_pairs.json，展示出现在多组的物料。"""
+        try:
+            dialog = AltChainDialog(self)
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"打开替代料长链看板失败: {e}")
 
     def _show_semi_dashboard(self):
         """手动打开半成品看板：400/410 开头物料，按半成品重分类 + 投料状态筛选。
