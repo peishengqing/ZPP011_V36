@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.185",
+        "date": "2026-10-12",
+        "features": "「📈 数据稳定性看板」的「反复修改榜」「归因漂移榜」新增**「物料名称」列**，位置在「物料编码」右侧（语义相邻、靠前），开看板即可见物料是什么，不必再回去逐个按编码查。",
+        "fixes": "**名称来源**：`audit.db` 的 `deviation_history` 只有 `data_id`（4 段：云南达利-食品厂|日期|订单|物料编码），**没有物料名称列**；`read_status`/`quarantine_records` 亦无。故名称由 `main_window._show_data_stability_dashboard` 从主表当前数据 `_get_master_df()`（主表实际显示的 source_model 那份，与未读计数同源）抽一份 `物料编码→物料名称` 映射传入看板。**兜底**：主表未加载、或某物料不在当前主表数据里时，该行「物料名称」留空（不猜测、不误报）。空值一律走 `normalize_text` 归一，兼容 numpy 标量/NaN。看板仍只读 audit.db 流水，不写库、不碰 analyzer 红线区。",
+    },
+    {
         "version": "v43.184",
         "date": "2026-10-12",
         "features": "修复「🪪 物料画像」打开时报错 `'numpy.int64' object has no attribute 'strip'`（v43.182 引入）：现在可正常打开。",

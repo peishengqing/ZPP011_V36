@@ -1830,9 +1830,25 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "错误", f"打开正损看板失败: {e}")
 
     def _show_data_stability_dashboard(self):
-        """v43.181 数据稳定性看板：读 audit.db deviation_history，展示数据反复修改情况。"""
+        """v43.181 数据稳定性看板：读 audit.db deviation_history，展示数据反复修改情况。
+
+        v43.185：audit.db 里没有物料名称，故从主表当前数据（_get_master_df，
+        与未读计数同源）抽一份「物料编码→物料名称」映射传给看板；主表未加载
+        或查不到该物料时，看板名称列留空（不猜测）。
+        """
         try:
-            dialog = DataStabilityDialog(self)
+            name_map = {}
+            try:
+                df = self._get_master_df()
+                if (df is not None and '物料编码' in df.columns
+                        and '物料名称' in df.columns):
+                    for code, nm in zip(df['物料编码'], df['物料名称']):
+                        c = normalize_text(code)
+                        if c and c not in name_map:
+                            name_map[c] = normalize_text(nm)
+            except Exception:
+                pass
+            dialog = DataStabilityDialog(self, code_name_map=name_map)
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开数据稳定性看板失败: {e}")

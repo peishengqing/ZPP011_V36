@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+from gui_pyside6.dialogs.material_profile_dialog import normalize_text
+
 _DB_PATH = os.path.join(os.path.expanduser("~"), ".zpp011_audit", "audit.db")
 
 
@@ -28,12 +30,20 @@ def _split_data_id(did):
 
 
 class DataStabilityDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, code_name_map=None):
         super().__init__(parent)
+        # v43.185：物料名称不在 audit.db，由主表当前数据带一份「编码→名称」映射进来。
+        self._name_map = dict(code_name_map) if code_name_map else {}
         self.setWindowTitle("📈 数据稳定性看板")
-        self.resize(920, 640)
+        self.resize(1000, 640)
         self._build_ui()
         self._load()
+
+    def _name_of(self, code):
+        """按物料编码取名称；查不到返回空串（不猜测）。"""
+        if not code:
+            return ''
+        return self._name_map.get(normalize_text(code), '')
 
     def _build_ui(self):
         lay = QVBoxLayout(self)
@@ -52,15 +62,15 @@ class DataStabilityDialog(QDialog):
         self._tabs = QTabWidget()
         # Tab1：反复修改榜
         self._tbl_freq = QTableWidget()
-        self._tbl_freq.setColumnCount(5)
+        self._tbl_freq.setColumnCount(6)
         self._tbl_freq.setHorizontalHeaderLabels(
-            ["工厂", "订单日期", "流程订单", "物料编码", "修改次数"])
+            ["工厂", "订单日期", "流程订单", "物料编码", "物料名称", "修改次数"])
         self._tabs.addTab(self._tbl_freq, "反复修改榜")
         # Tab2：归因漂移榜（备注原因被改）
         self._tbl_note = QTableWidget()
-        self._tbl_note.setColumnCount(5)
+        self._tbl_note.setColumnCount(6)
         self._tbl_note.setHorizontalHeaderLabels(
-            ["工厂", "订单日期", "流程订单", "物料编码", "备注原因改动次数"])
+            ["工厂", "订单日期", "流程订单", "物料编码", "物料名称", "备注原因改动次数"])
         self._tabs.addTab(self._tbl_note, "归因漂移榜")
         # Tab3：按天趋势
         self._tbl_day = QTableWidget()
@@ -102,10 +112,10 @@ class DataStabilityDialog(QDialog):
         tbl.setRowCount(len(rows))
         for i, (did, cnt) in enumerate(rows):
             fac, od, fo, mat = _split_data_id(did)
-            vals = [fac, od, fo, mat, str(cnt)]
+            vals = [fac, od, fo, mat, self._name_of(mat), str(cnt)]
             for j, v in enumerate(vals):
                 it = QTableWidgetItem(v)
-                if j == 4:
+                if j == 5:
                     it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 tbl.setItem(i, j, it)
         tbl.resizeColumnsToContents()
