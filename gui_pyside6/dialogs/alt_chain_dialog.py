@@ -44,21 +44,27 @@ class AltChainDialog(QDialog):
             d = json.load(open(_CFG_PATH, encoding="utf-8"))
             cnt = defaultdict(int)
             name = {}
-            groups = defaultdict(list)
+            groups = defaultdict(list)   # code -> [(搭档编码, 搭档名称), ...]
             for grp in d:
-                for side in grp:
-                    code = str(side[1])
+                sides = [(str(s[1]), s[2]) for s in grp if len(s) >= 3]
+                for code, nm in sides:
                     cnt[code] += 1
                     if code not in name:
-                        name[code] = side[2]
-                    groups[code].append(side[2])
+                        name[code] = nm
+                # v43.183 修 bug：关联物料取「同组内的其它成员」，而非把物料自己塞进去
+                for code, _nm in sides:
+                    for ocode, onm in sides:
+                        if ocode != code:
+                            groups[code].append((ocode, onm))
             chains = [(code, c, name[code], groups[code])
                       for code, c in cnt.items() if c > 1]
             chains.sort(key=lambda x: -x[1])
             self._tbl.setRowCount(len(chains))
             for i, (code, c, nm, grs) in enumerate(chains):
                 uniq = list(dict.fromkeys(grs))
-                rel = "、".join(uniq[:8]) + ("…" if len(uniq) > 8 else "")
+                rel = "；".join("%s %s" % (oc, onm) for oc, onm in uniq[:8])
+                if len(uniq) > 8:
+                    rel += " …"
                 for j, v in enumerate([code, nm, str(c), rel]):
                     it = QTableWidgetItem(v)
                     if j == 2:
