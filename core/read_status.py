@@ -137,6 +137,18 @@ def _get_conn():
                     pass
         conn.execute("CREATE INDEX IF NOT EXISTS idx_deviation_history_data_id ON deviation_history(data_id)")
 
+        # v43.186：编码→名称 持久缓存。
+        # 背景：deviation_history / read_status / quarantine_records 三表均无物料名称列，
+        # 名称只能从源数据拿。把每次分析见到的「编码→名称」沉淀下来，跨月份复用，
+        # 避免「当前这期没该物料 → 看板/画像名称留空」。
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS material_names (
+                code TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                updated_at TEXT
+            )
+        """)
+
         _CONN = conn
         _DDL_DONE = True
         return _CONN
@@ -169,6 +181,44 @@ def close_db():
             del _THREAD_CONNS.conn
         except Exception:
             pass
+
+
+def upsert_material_names(mapping):
+    """把 {编码: 名称} 写入 material_names 持久缓存（INSERT OR REPLACE）。
+
+    v43.186 引入：audit.db 的 deviation_history / read_status / quarantine_records 三表均无
+    物料名称列，名称只能从源数据拿。为避免「当前这期没该物料 → 看板/画像名称留空」，
+    把每次分析见到的编码→名称沉淀下来，跨月份复用。主线程写，子线程只读。
+    """
+    if not mapping:
+        return 0
+    try:
+        conn = _get_conn()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        rows = [(str(c).strip(), str(n).strip(), now)
+                for c, n in mapping.items()
+                if str(c).strip() and str(n).strip().lower() not in ('nan', 'none', '')]
+        if not rows:
+            return 0
+        conn.executemany(
+            "INSERT OR REPLACE INTO material_names(code, name, updated_at) VALUES (?,?,?)",
+            rows)
+        conn.commit()
+        return len(rows)
+    except Exception as e:  # 名称缓存是锦上添花，失败绝不阻断主流程
+        logging.warning("upsert_material_names 失败: %s", e)
+        return 0
+
+
+def get_material_names():
+    """读取持久缓存，返回 {编码: 名称}。无则空 dict。"""
+    try:
+        conn = _get_conn()
+        return {r[0]: r[1] for r in conn.execute("SELECT code, name FROM material_names")}
+    except Exception as e:  # 同上：缓存不可用时静默降级
+        logging.warning("get_material_names 失败: %s", e)
+        return {}
+
 
 def _migrate_add_column(conn, table, col_name, col_def):
     """安全添加列：如果列不存在则 ALTER TABLE ADD COLUMN（兼容旧调用）"""

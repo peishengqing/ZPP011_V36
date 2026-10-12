@@ -76,7 +76,7 @@ from domain.alt_material.alt_manager import (
 from core.config_manager import ConfigManager
 
 from core.fingerprint import calc_fingerprint
-from core.read_status import load_read_status, record_deviation_change
+from core.read_status import load_read_status, record_deviation_change, upsert_material_names, get_material_names
 from gui_pyside6.services.data_service import DataService
 from utils.version_history import get_current_version, VERSION_HISTORY, APP_NAME, AUTHOR
 
@@ -1837,15 +1837,21 @@ class MainWindow(QMainWindow):
         或查不到该物料时，看板名称列留空（不猜测）。
         """
         try:
+            # v43.186：先取持久缓存（含历史月份名称），再用当前主表覆盖（当前优先）
             name_map = {}
+            try:
+                name_map.update(get_material_names())
+            except Exception:
+                pass
             try:
                 df = self._get_master_df()
                 if (df is not None and '物料编码' in df.columns
                         and '物料名称' in df.columns):
                     for code, nm in zip(df['物料编码'], df['物料名称']):
                         c = normalize_text(code)
-                        if c and c not in name_map:
-                            name_map[c] = normalize_text(nm)
+                        n = normalize_text(nm)
+                        if c and n:
+                            name_map[c] = n
             except Exception:
                 pass
             dialog = DataStabilityDialog(self, code_name_map=name_map)
@@ -2087,6 +2093,13 @@ class MainWindow(QMainWindow):
             #   （发现问题：改了源文件后点分析仍显示旧数据，必须关软件重开才生效 ——
             #    因为 _start_analysis 直接复用这份缓存、根本不读磁盘）。
             self._cached_input_mtime = self._file_mtime_signature(file_path)
+            # v43.186：把源数据里的「编码→名称」沉淀进 audit.db 持久缓存，
+            # 供数据稳定性看板 / 物料画像跨月份复用（deviation_history 三表均无名称列）。
+            # 失败时静默降级（名称只是锦上添花，绝不阻断加载主流程）。
+            try:
+                self._persist_material_names(df)
+            except Exception:
+                pass
             if hasattr(self, 'preview_label') and self.preview_label:
                 self.preview_label.setText(self._format_preview_stats(df))
         except Exception as e:
@@ -2096,6 +2109,28 @@ class MainWindow(QMainWindow):
             if self._file_worker is not None:
                 self._file_worker.deleteLater()
                 self._file_worker = None
+
+    def _persist_material_names(self, df):
+        """v43.186：从当前 DataFrame 抽「编码→名称」，沉淀进 audit.db 持久缓存。
+
+        兼容两种列名：分析后的主表用「物料编码/物料名称」，原始 Data sheet
+        用「组件物料号/组件物料描述」。`_on_file_loaded` 拿到的是原始 Data sheet，
+        故两列都要探测。空值/脏值经 normalize_text 归一后再写入。
+        """
+        code_key = next((c for c in ('物料编码', '组件物料号', '物料号')
+                         if c in df.columns), None)
+        name_key = next((c for c in ('物料名称', '组件物料描述', '物料描述')
+                         if c in df.columns), None)
+        if not code_key or not name_key:
+            return
+        mapping = {}
+        for code, nm in zip(df[code_key], df[name_key]):
+            c = normalize_text(code)
+            n = normalize_text(nm)
+            if c and n:
+                mapping[c] = n   # 后出现的覆盖先出现的，取到非空
+        if mapping:
+            upsert_material_names(mapping)
 
     def _on_file_failed(self, msg):
         if hasattr(self, 'preview_label') and self.preview_label:

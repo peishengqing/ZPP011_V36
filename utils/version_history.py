@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.186",
+        "date": "2026-10-12",
+        "features": "修复「📈 数据稳定性看板」的「物料名称」列对历史月份物料留空的问题：audit.db 的 deviation_history / read_status / quarantine_records 三表均无物料名称列，名称原本只能从「当前这期」主表数据取，导致只出现在历史月份订单里的物料（如 10000968 非铁系脱氧剂链状75cc）名称永远为空。新增「编码→名称」**持久缓存**。",
+        "fixes": "**根因**：见 v43.185——名称源头是源数据，而稳定性看板流水跨月，当前主表只含本期物料。\n**修法**：① `core/read_status.py` 新增 `material_names(code, name, updated_at)` 表（建在审计库模块，不碰 analyzer 红线区），+`upsert_material_names(mapping)`/`get_material_names()` 两个 helper（静默降级，失败绝不阻断主流程）；② `main_window._on_file_loaded` 文件加载后顺手 `_persist_material_names(df)` 把当前 DataFrame 的 编码→名称 沉淀进缓存（兼容「物料编码/物料名称」与「组件物料号/组件物料描述」两套列名）；③ 看板 `_show_data_stability_dashboard` 取名称顺序 = 持久缓存 → 当前主表（当前优先），空值被历史名称补齐；④ 附 `tools/backfill_material_names.py` 一次性扫描 `E:\\ZPP011导出文件原数据\\`(94 个 xlsx) 回填 **1491 条** 编码→名称，立刻补齐全部历史物料名。以后任何月份分析的名称都会自动沉淀，跨月不再空。",
+    },
+    {
         "version": "v43.185",
         "date": "2026-10-12",
         "features": "「📈 数据稳定性看板」的「反复修改榜」「归因漂移榜」新增**「物料名称」列**，位置在「物料编码」右侧（语义相邻、靠前），开看板即可见物料是什么，不必再回去逐个按编码查。",
