@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.184",
+        "date": "2026-10-12",
+        "features": "修复「🪪 物料画像」打开时报错 `'numpy.int64' object has no attribute 'strip'`（v43.182 引入）：现在可正常打开。",
+        "fixes": "**根因**：主表右键菜单传入的物料编码是 pandas 单元格值（`row_data.get('物料编码','')`，类型为 `numpy.int64`），而 `MaterialProfileDialog.__init__` 直接对其调 `.strip()`，numpy 标量无该方法 → 抛错，被 `_show_material_profile` 的 except 兜成弹窗「打开物料画像失败」。**修法**：新增 `normalize_text(v)` 统一把单元格值安全转字符串——兼容 `numpy.int64`（str 后即 '20005693'）、`float`（'20005693.0' 去 `.0` 尾）、`NaN`/`None`（→ 空串）；dialog 与 main_window 共用同一 helper（单一口径，不重复实现）。",
+    },
+    {
         "version": "v43.183",
         "date": "2026-10-12",
         "features": "修复「🔗 替代料长链预警」看板的「关联物料」列显示成物料自己（A=A）的 bug：现在正确列出该物料在各配对组中的**搭档物料（编码+名称）**，多个搭档以「；」分隔，超过 8 个省略。",

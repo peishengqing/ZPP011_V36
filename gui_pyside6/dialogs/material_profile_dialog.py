@@ -42,11 +42,30 @@ def _plant_of(did):
     return ''
 
 
+def normalize_text(v):
+    """把单元格值安全转成字符串（v43.184）。
+
+    主表取出的物料编码/名称是 pandas 单元格值，可能是 numpy.int64 / float / NaN，
+    直接调 `.strip()` 会抛 `'numpy.int64' object has no attribute 'strip'`。
+    - numpy.int64 → '20005693'
+    - float '20005693.0' → 去尾 .0 → '20005693'
+    - NaN / None / 'nan' → ''（空串，交由上层走「未提供」分支）
+    """
+    if v is None:
+        return ''
+    s = str(v).strip()
+    if not s or s.lower() in ('nan', 'none'):
+        return ''
+    if s.endswith('.0') and s[:-2].lstrip('-').isdigit():
+        s = s[:-2]
+    return s
+
+
 class MaterialProfileDialog(QDialog):
     def __init__(self, code, parent=None, name=''):
         super().__init__(parent)
-        self._code = (code or '').strip()
-        self._name = (name or '').strip()
+        self._code = normalize_text(code)   # v43.184 修：兼容 numpy.int64/float，勿直接 .strip()
+        self._name = normalize_text(name)
         self.setWindowTitle("🪪 物料画像 — %s" % self._code)
         self.resize(560, 660)
         self._build_ui()

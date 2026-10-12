@@ -55,7 +55,7 @@ from gui_pyside6.dialogs.pos_loss_dashboard_dialog import PosLossDashboardDialog
 from gui_pyside6.dialogs.data_stability_dialog import DataStabilityDialog
 from gui_pyside6.dialogs.quarantine_review_dialog import QuarantineReviewDialog
 from gui_pyside6.dialogs.alt_chain_dialog import AltChainDialog
-from gui_pyside6.dialogs.material_profile_dialog import MaterialProfileDialog
+from gui_pyside6.dialogs.material_profile_dialog import MaterialProfileDialog, normalize_text
 from core.quarantine_manager import add_quarantine, add_quarantine_batch, remove_quarantine, scan_expired_quarantine, get_quarantined_ids
 from core.auto_quarantine import (
     build_all_summary,
@@ -1859,6 +1859,8 @@ class MainWindow(QMainWindow):
         入口 1：主表右键「🪪 查看物料画像」→ 传入该行物料编码（名称也从该行取）。
         入口 2：「📊 看板 ▾」菜单「🪪 物料画像」→ code/name 均空，取主表当前选中行。
         """
+        code = normalize_text(code)   # v43.184 修：单元格值可能是 numpy.int64，勿直接 .strip()
+        name = normalize_text(name)
         if not code or not name:
             try:
                 sel = self.table_view.selectionModel().selectedIndexes()
@@ -1867,9 +1869,9 @@ class MainWindow(QMainWindow):
                     r = sorted(rows)[0]
                     row_data = self.source_model.getDataFrame().iloc[r]
                     if not code:
-                        code = str(row_data.get('物料编码', '') or '').strip()
+                        code = normalize_text(row_data.get('物料编码', ''))
                     if not name:
-                        name = str(row_data.get('物料名称', '') or '').strip()
+                        name = normalize_text(row_data.get('物料名称', ''))
             except Exception:
                 pass
         if not code:
