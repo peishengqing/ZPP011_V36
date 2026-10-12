@@ -99,7 +99,7 @@ h1{
 .fbtn:hover{border-color:var(--c-accent);color:var(--c-accent);box-shadow:0 2px 10px rgba(9,105,218,0.15);transform:translateY(-1px)}
 .fbtn.active{background:var(--c-accent);color:#fff;border-color:var(--c-accent);box-shadow:0 4px 14px rgba(9,105,218,0.32);transform:translateY(-1px)}
 /* ===== 指标卡 ===== */
-.cards{display:flex;gap:14px;margin-bottom:28px;flex-wrap:wrap}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:28px}
 .card{
   flex:1;min-width:170px;
   background:var(--c-card);
@@ -118,9 +118,10 @@ h1{
 .card:hover{box-shadow:0 4px 16px rgba(15,23,42,0.10);transform:translateY(-3px);border-color:transparent}
 .card:hover::before{opacity:1}
 .card-val{font-size:26px;font-weight:800;letter-spacing:-0.02em;line-height:1.2}
+.card-ico{font-size:21px;line-height:1;margin-bottom:6px;filter:saturate(1.1)}
 .card-key{color:var(--c-muted);font-size:12.5px;margin-top:6px;font-weight:500}
 /* ===== 工厂区块 ===== */
-.factory-block{animation:fadeSlideIn 0.35s ease both}
+.factory-block{animation:fadeSlideIn 0.35s ease both;transition:opacity 0.3s ease}
 @keyframes fadeSlideIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 .fac-title{
   font-size:17px;font-weight:700;margin:32px 0 14px;
@@ -128,6 +129,12 @@ h1{
   border-left:4px solid var(--c-pos);
   color:#0f172a;
   display:flex;align-items:center;gap:10px;
+}
+.fac-dot{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:26px;height:26px;border-radius:50%;
+  background:var(--c-pos);color:#fff;font-size:13px;font-weight:700;
+  flex:0 0 auto;box-shadow:0 2px 6px rgba(212,57,47,0.35);
 }
 /* ===== 图表分组 ===== */
 .group{margin-bottom:28px}
@@ -150,16 +157,21 @@ h1{
 .cap{margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start}
 .cap b{font-size:13.5px;font-weight:650;color:#0f172a}
 .cap span{display:block;color:var(--c-muted);font-size:11.5px;margin-top:3px;line-height:1.4}
-.chart-wrap{position:relative;width:100%;height:240px}
-.chart-wrap img{width:100%;height:220px;object-fit:cover;border-radius:10px;cursor:zoom-in;transition:transform 0.2s}
+.chart-wrap{position:relative;width:100%;height:290px}
+.chart-wrap img{width:100%;height:270px;object-fit:contain;border-radius:10px;cursor:zoom-in;transition:transform 0.2s;background:#fbfcfe}
 .chart-wrap img:hover{transform:scale(1.02)}
-.chart-wrap canvas{width:100%!important;height:220px!important}
+.chart-wrap canvas{width:100%!important;height:270px!important}
 .placeholder{
   height:120px;display:flex;align-items:center;justify-content:center;
   color:var(--c-muted);background:linear-gradient(135deg,#f8fafc,#f1f5f9);
   border-radius:10px;font-size:13px;
   border:1.5px dashed var(--c-border);
 }
+.chart-foot{
+  margin-top:9px;padding-top:7px;border-top:1px dashed var(--c-border);
+  font-size:11px;color:var(--c-muted);line-height:1.45;
+}
+.chart-foot b{color:var(--c-gray);font-weight:600}
 /* ===== 「到主表」芯片（联动钻取入口） ===== */
 .chip{
   display:inline-block;margin-top:6px;
@@ -175,12 +187,14 @@ details.group{margin-bottom:18px}
 details.group > summary.grp{
   cursor:pointer;list-style:none;
   font-size:14px;font-weight:700;
-  border-left:4px solid var(--c-accent);
-  padding:6px 10px 6px 10px;margin:0 0 12px;
+  display:inline-block;
+  padding:7px 16px;margin:0 0 12px;
   color:#0f172a;letter-spacing:.01em;
-  background:linear-gradient(90deg,rgba(9,105,218,.06),transparent 60%);
-  border-radius:0 8px 8px 0;
+  background:linear-gradient(90deg,rgba(9,105,218,.14),rgba(9,105,218,.04));
+  border-radius:20px;
+  transition:background .2s;
 }
+details.group > summary.grp:hover{background:rgba(9,105,218,.2)}
 details.group > summary.grp::before{content:'▸ ';color:var(--c-accent);font-size:12px}
 details.group[open] > summary.grp::before{content:'▾ '}
 details.group > summary::-webkit-details-marker{display:none}
@@ -223,8 +237,8 @@ details.group > .grid{margin-top:4px}
   .fbtn{font-size:12px;padding:5px 14px}
   h1{font-size:20px}
   .summary-body{flex-direction:column;gap:10px}
-  .chart-wrap{height:200px}
-  .chart-wrap img{height:180px}
+  .chart-wrap{height:250px}
+  .chart-wrap img{height:230px}
 }
 /* ===== 打印 ===== */
 @media print{
@@ -508,24 +522,24 @@ def chart_remark_coverage(df):
 # 第 4 项 link_key：卡片「到主表」芯片的钻取类型（None = 不挂芯片）
 CHARTS = [
     ("偏差规模与分布", [
-        ("chart_daily_trend", "每日偏差金额趋势", "哪一天偏差最集中、最乱", None),
-        ("chart_pos_neg_stack", "正/负偏差金额构成", "多耗（正）与少耗（负）各自规模", None),
-        ("chart_devrate_hist", "偏差率(%)分布", "整体数据质量，是否大量贴近 0", None),
+        ("chart_daily_trend", "每日偏差金额趋势", "哪一天偏差最集中、最乱", None, "按订单日期聚合偏差金额(含税)，含正/负"),
+        ("chart_pos_neg_stack", "正/负偏差金额构成", "多耗（正）与少耗（负）各自规模", None, "偏差金额(含税) 按正/负区间汇总"),
+        ("chart_devrate_hist", "偏差率(%)分布", "整体数据质量，是否大量贴近 0", None, "偏差率(%) 全量物料，bins=20"),
     ]),
     ("结构拆解", [
-        ("chart_workshop_bar", "各车间偏差金额对比", "哪个车间最该盯", "worst_workshop"),
-        ("chart_material_type_pie", "物料类型偏差占比", "钱压在原料还是包材", None),
-        ("chart_product_top10", "成品线偏差 Top10", "哪些成品线带出的偏差最大", "top_product"),
+        ("chart_workshop_bar", "各车间偏差金额对比", "哪个车间最该盯", "worst_workshop", "按车间汇总偏差金额(含税)"),
+        ("chart_material_type_pie", "物料类型偏差占比", "钱压在原料还是包材", None, "原材料/包材/半成品 金额占比"),
+        ("chart_product_top10", "成品线偏差 Top10", "哪些成品线带出的偏差最大", "top_product", "按成品线 |偏差金额| 降序取前10"),
     ]),
     ("重点风险", [
-        ("chart_component_top10", "组件物料偏差 Top10", "哪些料最烧钱", "top_material"),
-        ("chart_altnet_top10", "替代料净偏差 Top10", "A/B 料互换的净影响（无则跳过）", "top_material"),
-        ("chart_no_remark_by_workshop", "无备注预警偏差", "高风险未解释偏差集中在哪（无则跳过）", "worst_workshop"),
+        ("chart_component_top10", "组件物料偏差 Top10", "哪些料最烧钱", "top_material", "按组件物料 |偏差金额| 降序取前10"),
+        ("chart_altnet_top10", "替代料净偏差 Top10", "A/B 料互换的净影响（无则跳过）", "top_material", "替代料配对净偏差，无则跳过"),
+        ("chart_no_remark_by_workshop", "无备注预警偏差", "高风险未解释偏差集中在哪（无则跳过）", "worst_workshop", "备注为空的偏差金额，按车间汇总"),
     ]),
     ("趋势与归因", [
-        ("chart_material_3phase", "物料偏差率 早/中/近期", "Top5 物料是否在持续变差", None),
-        ("chart_workshop_posneg_stack", "各车间正/负偏差构成", "各车间正负偏差双高吗", None),
-        ("chart_remark_coverage", "备注覆盖率 by 车间", "管理盲区在哪", "lowest_coverage_workshop"),
+        ("chart_material_3phase", "物料偏差率 早/中/近期", "Top5 物料是否在持续变差", None, "Top5 物料按每10天一段偏差率"),
+        ("chart_workshop_posneg_stack", "各车间正/负偏差构成", "各车间正负偏差双高吗", None, "各车间正/负偏差金额(含税)"),
+        ("chart_remark_coverage", "备注覆盖率 by 车间", "管理盲区在哪", "lowest_coverage_workshop", "备注非空条数 / 总条数"),
     ]),
 ]
 
@@ -598,6 +612,15 @@ def short_name(fac):
     return fac.split("-", 1)[-1] if "-" in fac else fac
 
 
+CARD_ICONS = {
+    "偏差明细条数": "📋",
+    "正偏差金额": "🔺",
+    "负偏差金额": "🔻",
+    "净偏差金额": "⚖️",
+    "平均偏差率": "📈",
+    "备注覆盖率": "✅",
+}
+
 def _cards_html(metrics):
     # 净偏差颜色：净额为正（多耗）红、为负（少耗）绿、近零灰
     net_color = C_POS if metrics["net"] > 1 else (C_NEG if metrics["net"] < -1 else "#64748b")
@@ -611,6 +634,7 @@ def _cards_html(metrics):
     ]
     return "".join(
         f'<div class="card" style="border-left:4px solid {c}">'
+        f'<div class="card-ico">{CARD_ICONS.get(k, "")}</div>'
         f'<div class="card-val" style="color:{c}">{v}</div>'
         f'<div class="card-key">{k}</div></div>'
         for k, v, c in cards
@@ -630,7 +654,7 @@ def _charts_html(dev_df, factory=""):
     for grp_name, items in CHARTS:
         figs = []
         for item in items:
-            fn_name, title, desc, link_key = item
+            fn_name, title, desc, link_key, caliber = item
             b64 = _safe(CHART_FUNCS[fn_name], dev_df, title)
             chip = ""
             if link_key and vals.get(link_key):
@@ -640,15 +664,16 @@ def _charts_html(dev_df, factory=""):
                         f'title="点击后主表将钻取到该车间/物料（联动横幅可一键清除）">'
                         f'{LINK_LABELS.get(link_key, "到主表 →")}</a>')
             cap = f'<div class="cap"><div><b>{title}</b><span>{desc}</span>{chip}</div></div>'
+            foot = f'<div class="chart-foot">口径 · {caliber}</div>'
             if not b64:
-                figs.append(f'<div class="cell">{cap}<div class="placeholder">「{title}」本期无数据</div></div>')
+                figs.append(f'<div class="cell">{cap}<div class="placeholder">「{title}」本期无数据</div>{foot}</div>')
                 continue
             imgs = (
                 f'<img src="data:image/png;base64,{b64}" alt="{title}" '
                 f'onclick="zoomChart(this.src,\'{title}\')" '
                 f'style="cursor:zoom-in"/>'
             )
-            figs.append(f'<div class="cell">{cap}{imgs}</div>')
+            figs.append(f'<div class="cell">{cap}{imgs}{foot}</div>')
         # 分组折叠（C）：重点风险默认展开，其余折叠；原生 details，降级模式也能用
         open_attr = " open" if grp_name == "重点风险" else ""
         sections.append(
@@ -736,7 +761,7 @@ def build_html(blocks, meta):
         summary = _summary_html(m, meta, df)
         fac_html += (
             f'<div class="factory-block" data-factory="{fac}">'
-            f'<h2 class="fac-title">{fac}</h2>'
+            f'<h2 class="fac-title"><span class="fac-dot">{fac[0]}</span>{fac}</h2>'
             f'<div class="cards">{card_html}</div>'
             f'{summary}'
             f'{ "".join(sections) }'
@@ -762,7 +787,14 @@ def build_html(blocks, meta):
 <script>
 function showFactory(name){{
   document.querySelectorAll('.factory-block').forEach(function(b){{
-    b.style.display = (name==='all' || b.getAttribute('data-factory')===name) ? 'block' : 'none';
+    var show = (name==='all' || b.getAttribute('data-factory')===name);
+    if(show){{
+      b.style.display='block';
+      requestAnimationFrame(function(){{ b.style.opacity=1; }});
+    }} else {{
+      b.style.opacity=0;
+      setTimeout(function(){{ if(b.style.opacity==='0'||b.style.opacity===0) b.style.display='none'; }},300);
+    }}
   }});
   document.querySelectorAll('.fbtn').forEach(function(b){{
     b.classList.toggle('active', b.getAttribute('data-name')===name);

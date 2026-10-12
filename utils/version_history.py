@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.187",
+        "date": "2026-10-12",
+        "features": "「📊 管理看板」整页视觉重构（按裴哥「不好看，修」的 C 方案全做）：① 根治图表被裁切——`object-fit:cover`→`contain`，轴标题/标签不再被砍；② 指标卡从 `flex` 改为 `grid auto-fit`，6 张永远均匀一行、窄屏不再折行错位；③ 图表高度 220→270px 更舒展；④ 指标卡加语义图标 + 左侧 4px 色条（正偏差红/负偏差绿/净偏差分色）；⑤ 工厂标题加厂徽圆点、分组标题做成 pill 圆角底色；⑥ 厂区间切换加 0.3s 淡入淡出过渡；⑦ 每张图下方加「口径 · …」统一脚注，说明数据来源与口径。",
+        "fixes": "**全部改动集中在 `analysis/dashboard_html.py` 的 `DASHBOARD_CSS` 常量 + `build_html`/`_charts_html`/`_cards_html` 的 HTML 与 JS，未触碰 analyzer 红线区、未改任何计算口径。** 关键点：① `chart-wrap img` 原 `object-fit:cover` 会把 6.2×3.6 的 matplotlib 图按固定高度硬裁、底部 x 轴标签常只剩一半——改 `contain` 并加浅底 `#fbfcfe` 防透明；② `.cards` 原 `display:flex;flex-wrap:wrap` 在 `.wrap`(max 1200) 下 6 张 min-width 170 易在第 5/6 张折行错位——改 `grid-template-columns:repeat(auto-fit,minmax(170px,1fr))`；③ 图表高度 `.chart-wrap` 240→290、img 220→270（响应式同步抬到 250/230）；④ `_cards_html` 新增 `CARD_ICONS` 图标映射（📋🔺🔻⚖️📈✅），色条沿用既有 `border-left`；⑤ `build_html` 工厂标题插 `<span class='fac-dot'>{fac[0]}</span>`，新增 `.fac-dot` 圆形厂徽；⑥ `details.group > summary.grp` 由左边条改 pill 圆角渐变底；⑦ `CHARTS` 每条新增第 5 元素 `caliber`（口径文案），`_charts_html` 解包后渲染 `<div class='chart-foot'>口径 · {caliber}</div>`；⑧ `showFactory` JS 由瞬时 display 切换改为 opacity 过渡（setTimeout 300ms 后才 display:none），配 `.factory-block{transition:opacity .3s}`。",
+    },
+    {
         "version": "v43.186",
         "date": "2026-10-12",
         "features": "修复「📈 数据稳定性看板」的「物料名称」列对历史月份物料留空的问题：audit.db 的 deviation_history / read_status / quarantine_records 三表均无物料名称列，名称原本只能从「当前这期」主表数据取，导致只出现在历史月份订单里的物料（如 10000968 非铁系脱氧剂链状75cc）名称永远为空。新增「编码→名称」**持久缓存**。",
