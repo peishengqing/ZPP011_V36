@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.188",
+        "date": "2026-10-13",
+        "features": "修复「实时预警监控」后台线程在 Windows 上静默崩溃、导致实时预警弹窗停摆的问题（对应运行 `python run_pyside6.py` 时打印的 `Windows fatal exception: code 0x8001010d`）。把 `AlertMonitor` 从裸 `threading.Thread` 改为**主线程 `QTimer` 轮询**。",
+        "fixes": "**根因**：`AlertMonitor`（`core/alert_monitor.py`）用 `threading.Thread` 跑 `_monitor_loop`，但①它经 `data_source_func=lambda: self.view_model.df`（main_window.py:242）跨线程读了 GUI 线程的 QObject `view_model`；②它还在工作线程里直接 `self.alert_triggered.emit(...)`（alert_monitor.py:115）。在 Windows + Qt 下，非 Qt 线程（裸 threading.Thread）跨线程访问 GUI 线程 QObject、并直接 emit Qt 信号，会触发 COM 套间错误 `RPC_E_THREADMODEL`(0x8001010D)——faulthandler 报 `Windows fatal exception`，且该原生错误不被 `except Exception` 兜住，于是监控线程死亡、主窗口靠事件循环仍存活（所以 `[偏差金额计算]` 日志能继续打一整天），但实时预警从此不再扫、不再弹。**修法**：`AlertMonitor` 改为持有一个 `QTimer(self)`（父对象为自身 QObject，随其析构），`start()` 懒建并 `setInterval(max(1000, interval*1000))` 后 `start()`，`stop()` 调 `stop()`，`isRunning()` 看 `isActive()`；`_monitor_loop` 去掉 `while`+`time.sleep`，改成由 QTimer 每次 timeout 调一次的纯轮询回调。所有 QObject 访问与信号发射都发生在 GUI 线程，跨线程 COM 根因消除；轮询内仍是轻量 pandas 过滤（先 `raw.copy()` 快照隔离），不阻塞界面。**对外接口不变**：`start`/`stop`/`isRunning`/`alert_triggered`/`threshold`/`update_config` 全部保留，单测 patch 的 `AlertMonitor.start/stop` 仍是 no-op、构造不依赖 QApplication，不受影响。",
+    },
+    {
         "version": "v43.187",
         "date": "2026-10-12",
         "features": "「📊 管理看板」整页视觉重构（按裴哥「不好看，修」的 C 方案全做）：① 根治图表被裁切——`object-fit:cover`→`contain`，轴标题/标签不再被砍；② 指标卡从 `flex` 改为 `grid auto-fit`，6 张永远均匀一行、窄屏不再折行错位；③ 图表高度 220→270px 更舒展；④ 指标卡加语义图标 + 左侧 4px 色条（正偏差红/负偏差绿/净偏差分色）；⑤ 工厂标题加厂徽圆点、分组标题做成 pill 圆角底色；⑥ 厂区间切换加 0.3s 淡入淡出过渡；⑦ 每张图下方加「口径 · …」统一脚注，说明数据来源与口径。",

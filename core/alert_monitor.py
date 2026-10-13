@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-实时预警监控线程
-后台定期扫描 audit_data，发现超阈值偏差时发射信号
-裴哥 | 2026-06-08 修改（使用 threading.Thread 替代 QThread）
+实时预警监控（主线程 QTimer 轮询）
+后台定期扫描 audit_data，发现超阈值偏差时发射信号。
+裴哥 | 2026-10-13 改：原 threading.Thread 后台线程在 Windows 上跨线程访问 GUI 线程的
+QObject（view_model）并直接 emit Qt 信号，触发 COM 套间错误 0x8001010D（faulthandler
+报 "Windows fatal exception"），导致监控线程静默死亡、实时预警停摆。改用主线程 QTimer
+轮询：所有 Qt 对象访问与信号发射都发生在 GUI 线程，根因消除；轮询间隔内仅做轻量 pandas
+过滤，不阻塞界面。
 """
-import threading
-import time
 import pandas as pd
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, QTimer
 
 
 def filter_alt_alerts(df, threshold):
@@ -44,40 +46,36 @@ class AlertMonitor(QObject):
         self.threshold = threshold
         self.interval = interval
         self.only_alt_materials = only_alt
-        self._stop_flag = False
-        self._thread = None
+        self._timer = None
         self._seen_alerts = set()
 
     def isRunning(self):
-        return self._thread is not None and self._thread.is_alive()
+        return self._timer is not None and self._timer.isActive()
 
     def start(self):
         if self.isRunning():
             return
-        self._stop_flag = False
-        self._thread = threading.Thread(target=self._monitor_loop, daemon=True)
-        self._thread.start()
+        if self._timer is None:
+            self._timer = QTimer(self)
+            self._timer.setInterval(max(1000, int(self.interval * 1000)))
+            self._timer.timeout.connect(self._monitor_loop)
+        self._timer.start()
 
     def stop(self):
-        self._stop_flag = True
-        if self._thread:
-            self._thread.join(timeout=2)
+        if self._timer is not None:
+            self._timer.stop()
 
     def _monitor_loop(self):
-        while not self._stop_flag:
-            try:
-                raw = self.data_source_func()
-                # 注意：空表/None 时【不能】continue —— continue 会跳过下面的 sleep，
-                # 造成裸自旋线程百万次/秒抢 GIL，把同进程其它线程的纯 Python 代码
-                # 拖慢 ~1000 倍（实测 0.081s → 84.9s）。必须走到末尾的 sleep。
-                if raw is not None and not raw.empty:
-                    # 拷贝快照：后台线程不再持有主线程 DataFrame 的引用，
-                    # 避免主线程改写 view_model.df 时与后台读取产生数据竞争
-                    df = raw.copy()
-                    self._check_alerts(df)
-            except Exception as e:
-                print(f"预警监控错误: {e}")
-            time.sleep(self.interval)
+        # 由主线程 QTimer 周期性调用（非后台线程），无需自旋/睡眠。
+        # 仍在取到数据后做快照拷贝：保持与 GUI 侧 view_model.df 的隔离，
+        # 避免主线程改写源 DataFrame 时产生数据竞争。
+        try:
+            raw = self.data_source_func()
+            if raw is not None and not raw.empty:
+                df = raw.copy()
+                self._check_alerts(df)
+        except Exception as e:
+            print(f"预警监控错误: {e}")
 
     def update_config(self, threshold=None, only_alt=None):
         """动态更新预警参数（线程安全）"""
