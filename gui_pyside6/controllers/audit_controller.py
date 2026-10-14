@@ -15,7 +15,7 @@ from gui_pyside6.dialogs.batch_operations_dialog import (
     BatchChangeStatusDialog, BatchExportDialog
 )
 from core.read_status import save_read_status
-from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
+from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for, build_data_id
 
 
 class AuditController(QObject):
@@ -133,10 +133,7 @@ class AuditController(QObject):
                     # 安全取 data_id
                     data_id = df.iloc[row].get('data_id')
                     if not data_id:
-                        if '工厂' in df.columns:
-                            data_id = f"{df.iloc[row].get('工厂')}|{df.iloc[row].get('订单日期')}|{df.iloc[row].get('流程订单')}|{df.iloc[row].get('物料编码')}"
-                        elif all(c in df.columns for c in ['订单日期', '流程订单', '物料编码']):
-                            data_id = f"{df.iloc[row].get('订单日期')}|{df.iloc[row].get('流程订单')}|{df.iloc[row].get('物料编码')}"
+                        data_id = build_data_id(df.iloc[row], df)
                     fingerprint = df.iloc[row].get('fingerprint', '')
                     if data_id:
                         # 方案A：审核时建立实际数量 + 备注原因基线，供后续变更检测

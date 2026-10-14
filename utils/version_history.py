@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.192",
+        "date": "2026-10-14",
+        "features": "ARC-002 方案B 收尾——data_id 构造 23 处收敛单一正版 + 分级制存档。① 新增 `gui_pyside6/services/data_service.py` 模块级 `build_data_id(row, df)`（+ `_seg` 单段字符串化），把此前散落 23 处的 4段/3段 if/else 拼接（alert_dialog×6、deviation_warning_dialog×7、neg/pos/semi 三看板各×3、audit_controller×1）全部收敛为单行调用，拼接类硬门禁落地；② `.architecture/constraints.md` 追加「改动风险分级制」：🔴红区（口径/冻结区零改动）／🟡黄区（动计算逻辑须跑对账网）／🟢绿区（拼接类/UI/文档直接做），并明确拼接类=硬门禁（单一正版+单测锚定）、计算类=只报不拦+人工验证戳。",
+        "fixes": "**根因**：data_id 四段格式（工厂|订单日期|流程订单|物料编码）在 6 个文件复制了 23 份 if/else 拼接，无一致性测试，任一处漏「工厂」前缀即导致隔离/已读匹配永久失效（v43.1xx 已因此类 bug 修过三次）。**修法**：① 新增 `build_data_id` 正版函数（有工厂列→4段、无→3段；`_seg()` 与 `_add_data_id_and_fingerprint` 向量化正版的 astype(str) 语义逐字符对齐）；② `tools/_migrate_data_id.py` 幂等脚本把 23 处 if/else 块替换为 `build_data_id(rs/df.iloc[row], df)` 单行调用，并在 6 个文件既有 data_service import 行追加函数名；③ 新增 `tests/unit/test_data_id.py` 11 条测试（合成行为 7 条 + 单行vs向量化参数化 2 条 + 真实锚定 2 条）。**锚定测试抓出的真问题**：原 22 处 f-string 拼接对 datetime 列会产出 '2026-10-03 00:00:00'，而正版 astype(str) 只出 '2026-10-03'——fallback 一旦触发即产生与 audit.db 存量键错位的键（因 processed df 的 data_id 列恒在，该隐患一直潜伏未触发）；已按 astype(str) 语义修正并加测试锁定。**验证**：py_compile 全过；pyflakes 零新增（仅 2 条存量未用 import `time as _time`/`detect_changes`，HEAD 即有，按规矩只提醒不碰）；pytest tests/unit/ 131 passed + 1 既存失败（test_menu_contents 断言看板菜单 6 项 vs v43.189 已扩至 12 项，ARC-001 时已取证与本次无关）；新增 11 条测试全过，含最强锚定「真实导出→do_analysis_v2→preprocess_audit_data 正版管线全链路 5929 行逐行 build_data_id==data_id 列」。**数据观察**：audit.db deviation_history 3026 个 distinct data_id 中 3025 个为标准 4 段，仅 1 个异常值 'X'（2 条流水），占比 99.97%，测试按 ≥99% 占比断言。",
+    },
+    {
         "version": "v43.191",
         "date": "2026-10-14",
         "features": "ARC-002 治理方案②落地——独立重算对账网（tools/recompute_check.py + core/verify_recompute.py）：机器拿真实 SAP 导出独立重算偏差数量/金额/率，逐行对 analyzer 输出，回答「算错没有」。",

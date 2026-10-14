@@ -22,7 +22,7 @@ from PySide6.QtCore import Qt, QTimer
 from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_color_keys
 from core.quarantine_manager import add_quarantine_batch, remove_quarantine, get_quarantined_ids
 from core.read_status import save_read_status_batch
-from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
+from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for, build_data_id
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.locate import locate_row
 from gui_pyside6.utils.table_sort import enable_click_sort
@@ -1148,10 +1148,7 @@ class NegLossDashboardDialog(QDialog):
             data_id = df.iloc[r].get('data_id')
             if not data_id:
                 rs = df.iloc[r]
-                if '工厂' in df.columns:
-                    data_id = f"{rs.get('工厂','')}|{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
-                else:
-                    data_id = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+                data_id = build_data_id(rs, df)
             if data_id and data_id not in target_ids:
                 target_ids.append(data_id)
         if not target_ids:
@@ -1186,10 +1183,7 @@ class NegLossDashboardDialog(QDialog):
             data_id = df.iloc[r].get('data_id')
             if not data_id:
                 rs = df.iloc[r]
-                if '工厂' in df.columns:
-                    data_id = f"{rs.get('工厂','')}|{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
-                else:
-                    data_id = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+                data_id = build_data_id(rs, df)
             if data_id and data_id not in target_ids:
                 target_ids.append(data_id)
         if not target_ids:
@@ -1356,10 +1350,7 @@ class NegLossDashboardDialog(QDialog):
             did = df.iloc[r].get("data_id")
             if not did:
                 rs = df.iloc[r]
-                if "工厂" in df.columns:
-                    did = f"{rs.get('工厂','')}|{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
-                else:
-                    did = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+                did = build_data_id(rs, df)
             if did:
                 ids.add(str(did))
         return ids

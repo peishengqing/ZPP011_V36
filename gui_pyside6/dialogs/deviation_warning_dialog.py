@@ -19,7 +19,7 @@ from PySide6.QtCore import Qt, QPoint, QTimer
 from gui_pyside6.models.data_frame_model import DataFrameModel
 from core.read_status import save_read_status, save_read_status_batch
 from core.quarantine_manager import add_quarantine_batch, remove_quarantine
-from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
+from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for, build_data_id
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.locate import locate_row
 from gui_pyside6.utils.table_sort import enable_click_sort
@@ -1284,10 +1284,7 @@ class DeviationWarningDialog(QDialog):
             data_id = df.iloc[r].get('data_id')
             if not data_id:
                 rs = df.iloc[r]
-                if '工厂' in df.columns:
-                    data_id = f"{rs.get('工厂','')}|{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
-                else:
-                    data_id = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+                data_id = build_data_id(rs, df)
             if not data_id:
                 continue
             ok, already, fingerprint = self._sync_main_df(data_id, 1)
@@ -1323,10 +1320,7 @@ class DeviationWarningDialog(QDialog):
             data_id = df.iloc[r].get('data_id')
             if not data_id:
                 rs = df.iloc[r]
-                if '工厂' in df.columns:
-                    data_id = f"{rs.get('工厂','')}|{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
-                else:
-                    data_id = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+                data_id = build_data_id(rs, df)
             if not data_id:
                 continue
             ok, already, fingerprint = self._sync_main_df(data_id, 0)
@@ -1365,10 +1359,7 @@ class DeviationWarningDialog(QDialog):
             data_id = df.iloc[r].get("data_id")
             if not data_id:
                 rs = df.iloc[r]
-                if "工厂" in df.columns:
-                    data_id = f"{rs.get('工厂','')}|{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
-                else:
-                    data_id = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+                data_id = build_data_id(rs, df)
             if data_id:
                 ids.add(str(data_id))
         if not ids:
@@ -1475,10 +1466,7 @@ class DeviationWarningDialog(QDialog):
         data_id = df.iloc[view_row].get('data_id')
         if not data_id:
             rs = df.iloc[view_row]
-            if '工厂' in df.columns:
-                data_id = f"{rs.get('工厂','')}|{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
-            else:
-                data_id = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+            data_id = build_data_id(rs, df)
         if not data_id:
             toast("无法定位记录，标记失败", 'error', parent=self)
             return
@@ -1512,10 +1500,7 @@ class DeviationWarningDialog(QDialog):
         data_id = df.iloc[view_row].get('data_id')
         if not data_id:
             rs = df.iloc[view_row]
-            if '工厂' in df.columns:
-                data_id = f"{rs.get('工厂','')}|{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
-            else:
-                data_id = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+            data_id = build_data_id(rs, df)
         if not data_id:
             toast("无法定位记录，标记失败", 'error', parent=self)
             return
@@ -1569,10 +1554,7 @@ class DeviationWarningDialog(QDialog):
             data_id = df.iloc[row].get('data_id')
             if not data_id:
                 rs = df.iloc[row]
-                if '工厂' in df.columns:
-                    data_id = f"{rs.get('工厂','')}|{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
-                else:
-                    data_id = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+                data_id = build_data_id(rs, df)
             if not data_id:
                 continue
 
@@ -1631,10 +1613,7 @@ class DeviationWarningDialog(QDialog):
             data_id = df.iloc[row].get('data_id')
             if not data_id:
                 rs = df.iloc[row]
-                if '工厂' in df.columns:
-                    data_id = f"{rs.get('工厂','')}|{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
-                else:
-                    data_id = f"{rs.get('订单日期','')}|{rs.get('流程订单','')}|{rs.get('物料编码','')}"
+                data_id = build_data_id(rs, df)
             if not data_id:
                 continue
 

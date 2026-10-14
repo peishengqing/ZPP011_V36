@@ -4,6 +4,8 @@
 负责：数据预处理、指纹计算、已读状态恢复、变动检测、净偏差修正等
 """
 
+import datetime
+
 import pandas as pd
 import numpy as np
 import time as _time
@@ -17,6 +19,51 @@ from core.read_status import (
 )
 from core.change_detector import detect_changes
 from core.quarantine_manager import get_quarantined_ids
+
+
+def _seg(v) -> str:
+    """单段字符串化：对齐 _add_data_id_and_fingerprint 向量化正版的 astype(str) 语义。
+
+    唯一与 f-string 分叉的点是 datetime：astype(str) 对零点时刻只出日期
+    （'2026-10-03'），f-string 会带时间（'2026-10-03 00:00:00'）。原 23 处
+    f-string 拼接触发 fallback 时会产生与 audit.db 存量键错位的键（因 processed
+    df 的 data_id 列恒在，该隐患一直未触发）；此处按正版语义修正。
+    """
+    if isinstance(v, np.datetime64):
+        v = pd.Timestamp(v)
+    if v is pd.NaT:
+        return "NaT"
+    if isinstance(v, pd.Timestamp):
+        if v.hour == 0 and v.minute == 0 and v.second == 0 and v.microsecond == 0 and v.nanosecond == 0:
+            return v.strftime("%Y-%m-%d")
+        return str(v)
+    if isinstance(v, datetime.datetime):
+        if v.hour == 0 and v.minute == 0 and v.second == 0 and v.microsecond == 0:
+            return v.strftime("%Y-%m-%d")
+        return str(v)
+    if isinstance(v, datetime.date):
+        return v.strftime("%Y-%m-%d")
+    return f"{v}"
+
+
+def build_data_id(row, df) -> str:
+    """data_id 唯一构造正版（4段/3段自适应）——ARC-002 收敛点。
+
+    2026-10-14 ARC-002 方案B：此前 23 处散落 if/else 拼接（alert/deviation_warning/
+    neg_loss/pos_loss/semi 5 个弹窗 + audit_controller），收敛到此单一入口。
+    - 有「工厂」列 → 4段(工厂|订单日期|流程订单|物料编码)；无 → 3段(订单日期|流程订单|物料编码)。
+    - 单段字符串化走 _seg()，与 _add_data_id_and_fingerprint 的 astype(str) 语义
+      逐字符一致（含 datetime 零点只出日期），确保与 audit.db 存量 data_id 键完全匹配。
+    - row：单行 Series 或含同名键的 dict-like；df：所属 DataFrame（仅用于判「工厂」列存在性）。
+
+    注意：audit_controller 原实现在 3 段分支前多一道 all(c in df.columns) 守卫，
+    真实数据三核心列恒在，等价；此函数按主导的 22 处行为统一为无条件 3 段。
+    """
+    if '工厂' in df.columns:
+        return (_seg(row.get('工厂', '')) + '|' + _seg(row.get('订单日期', '')) + '|'
+                + _seg(row.get('流程订单', '')) + '|' + _seg(row.get('物料编码', '')))
+    return (_seg(row.get('订单日期', '')) + '|' + _seg(row.get('流程订单', '')) + '|'
+            + _seg(row.get('物料编码', '')))
 
 
 class DataService(QObject):
