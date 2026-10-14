@@ -119,8 +119,10 @@ class _FullCacheWorker(QThread):
     """完整报告缓存生成线程。
 
     ARC-003 第二刀（v43.194）：此前内联定义在 _on_analysis_finished_ui 方法体内，
-    每次分析重建类对象、线程生命周期不受模块管理；现提升到模块级，run() 逻辑逐字未改。
-    已知缺陷：无 request_cancel/_cancel_check，点「取消」停不下（见 test_main_window_smoke 探针1）。
+    每次分析重建类对象、线程生命周期不受模块管理；现提升到模块级。
+    v43.198：补协作式取消（request_cancel/_cancel_check，范式同 _FullReportWorker）。
+    此前 run() 两分支都不传 cancel_check、_cancel_analysis/closeEvent 也不碰它，
+    点「取消」停不下完整报告缓存生成；现主线程置位后由下一分析检查点自行退出。
     """
     progress = Signal(int, str)  # 缓存阶段进度 (percent, step_name)，跨线程排队到主线程
 
@@ -133,6 +135,14 @@ class _FullCacheWorker(QThread):
         self.material_search = material_search
         self.output_path = output_path
         self.dyn_thresh = dyn_thresh
+        self._cancel = False
+
+    def request_cancel(self):
+        """主线程调用：置取消标志，worker 在下一检查点自行退出（协作式，不硬杀）。"""
+        self._cancel = True
+
+    def _cancel_check(self, *args):
+        return self._cancel
 
     def run(self):
         import analysis.analyzer as _az
@@ -148,7 +158,7 @@ class _FullCacheWorker(QThread):
                 # 复用 worker 已算好的 Sheet1~5 中间结果，只生成 Sheet6~10 + 保存，避免重算
                 export_full_report_from_intermediates(
                     _li, output_path=self.output_path,
-                    progress_callback=_cb, cancel_check=None)
+                    progress_callback=_cb, cancel_check=self._cancel_check)
             else:
                 # 兜底：中间结果缺失时退回完整分析（理论上不会发生，worker 必先生效）
                 _az.do_analysis_v2(
@@ -160,7 +170,15 @@ class _FullCacheWorker(QThread):
                     return_dataframe=False,
                     dyn_thresh=getattr(self, 'dyn_thresh', None),
                     progress_callback=_cb,
+                    cancel_check=self._cancel_check,
                 )
+        except KeyboardInterrupt:
+            # 协作式取消：analyzer 的 check_cancel() 抛 KeyboardInterrupt，
+            # 它是 BaseException 子类、except Exception 兜不住，须单独捕获。
+            # 优雅返回后 finished 信号照常触发 _on_cache_done 收口（_heavy_busy
+            # 清零 + 计时器收口）；缓存文件不会落盘，导出完整报告时自然回退
+            # 到重新生成，不会留下半成品缓存。
+            print("[_FullCacheWorker] 完整报告缓存生成已取消")
         except Exception:
             import traceback as _tb
             _tb.print_exc()
@@ -1756,6 +1774,11 @@ class MainWindow(QMainWindow):
             cancelled = True
         if self.audit_controller.ai_worker and self.audit_controller.ai_worker.isRunning():
             self.audit_controller.cancel_ai_audit()
+            cancelled = True
+        if self._cache_worker is not None and self._cache_worker.isRunning():
+            # v43.198：补上完整报告缓存生成线程的取消。此前这里只碰主分析与
+            # AI 审核，_FullCacheWorker 没有任何取消入口，点「取消」后它仍算到底。
+            self._cache_worker.request_cancel()
             cancelled = True
         if cancelled:
             self.progress_bar.setVisible(False)
@@ -4116,6 +4139,10 @@ class MainWindow(QMainWindow):
             self.alert_monitor.stop()
         if self._cache_worker:
             if self._cache_worker.isRunning():
+                # v43.198：quit() 对正在执行 run() 的 QThread 是空操作，先置取消
+                # 标志让它在下一分析检查点自行退出，再 quit()+wait() 收尾
+                if hasattr(self._cache_worker, "request_cancel"):
+                    self._cache_worker.request_cancel()
                 self._cache_worker.quit()
                 self._cache_worker.wait(3000)
             else:

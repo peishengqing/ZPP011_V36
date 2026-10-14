@@ -102,7 +102,13 @@ def test_toolbar_grouped_layout(main_window):
 
 
 def test_menu_contents(main_window):
-    """三个收纳菜单内容：看板 6 项 / 导出 3 项 / 维护 2 项。"""
+    """三个收纳菜单内容：看板 12 项 / 导出 3 项 / 维护 2 项。
+
+    历史：v43.189 工具栏收纳改造时看板菜单为 6 项，此后 v43.178~v43.182
+    陆续新增正损看板、半成品看板、数据稳定性、隔离区闭环、替代料长链、
+    物料画像，扩到 12 项但断言一直停在 6（假红数日，v43.198 修正）。
+    除总数外逐个断言新增项，防将来再扩菜单时数字对但内容错。
+    """
     from PySide6.QtWidgets import QToolButton
 
     w = main_window
@@ -111,11 +117,12 @@ def test_menu_contents(main_window):
         m = b.menu()
         menus[b.text()] = [a.text() for a in m.actions() if not a.isSeparator()] if m else []
 
-    assert len(menus.get("📊 看板 ▾", [])) == 6, menus.get("📊 看板 ▾")
+    assert len(menus.get("📊 看板 ▾", [])) == 12, menus.get("📊 看板 ▾")
     assert len(menus.get("📤 导出 ▾", [])) == 3, menus.get("📤 导出 ▾")
     assert len(menus.get("🔧 维护 ▾", [])) == 2, menus.get("🔧 维护 ▾")
-    assert "📊 管理看板" in menus["📊 看板 ▾"]
-    assert "⚠️ 隔离区" in menus["📊 看板 ▾"]
+    for must in ["📊 管理看板", "⚠️ 隔离区", "🟢 正损看板", "🟡 半成品看板",
+                 "📈 数据稳定性", "🔁 隔离区闭环", "🔗 替代料长链", "🪪 物料画像"]:
+        assert must in menus["📊 看板 ▾"], "%s 不在看板菜单（现有 %s）" % (must, menus["📊 看板 ▾"])
     assert "🧹 自动整理隔离区" in menus["🔧 维护 ▾"]
     assert "📋 完整报告" in menus["📤 导出 ▾"]
 

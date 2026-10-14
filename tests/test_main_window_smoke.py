@@ -754,38 +754,28 @@ class TestC_BugProbes:
     为了不让"已确认的 bug"把 CI 拉红，xfail(strict=False) 记录预期。
     """
 
-    def test_bug1_fullcacheworker_missing_request_cancel(self):
-        """探针1【结论：真实存在】：`_FullCacheWorker` 无取消点，取消按钮停不下它。
+    def test_fullcacheworker_has_cancel_point(self):
+        """探针1【v43.198 起：缺陷已修复，断言修复存在】`_FullCacheWorker` 取消点。
 
-        实测结论（v43.125，AST 逐个核实）：
+        历史结论（v43.125 取证，v43.194 更新位置前提）：
+        `_FullCacheWorker` 曾是内联定义在方法体内的 QThread（v43.194 已提升为
+        模块级），方法集仅 {__init__, run}，没有 request_cancel/_cancel_check；
+        run() 给 export_full_report_from_intermediates 传 cancel_check=None，
+        兜底 do_analysis_v2 也不传取消回调——全程无协作式取消点；叠加
+        _cancel_analysis 只取消 analysis_controller.worker 与
+        audit_controller.ai_worker、完全没碰 _cache_worker → 点「取消」后
+        完整报告缓存仍算到底，closeEvent 只能 quit()+wait(3000) 硬等。
 
-        - ``_FullCacheWorker`` 曾是**内联定义**在方法体内的 QThread
-          （v43.194 ARC-003 第二刀已提升为**模块级**类；方法集仅 ``{__init__, run}``，
-          **没有 request_cancel，也没有 _cancel_check**——此结论未随搬动改变）。
-        - 它的 ``run()`` 给 ``export_full_report_from_intermediates`` 传的
-          ``cancel_check=None``（main_window.py:1332），兜底分支
-          ``do_analysis_v2(...)`` 也没传任何取消回调
-          ——即**全程没有任何协作式取消点**。
-        - 原始假设「另外 3 个 worker 都有 request_cancel」**不成立**，实测：
-          ``_FullReportWorker`` 有（79-130，含 request_cancel + _cancel_check），
-          但 ``_PptReportWorker``（158-184）和 ``_FileReadWorker``（187-205）
-          **同样没有** request_cancel。所以真实情况是 4 个 worker 里
-          **只有 1 个**支持协作式取消，不是「3 个都有、就它缺」。
-        - 叠加 ``_cancel_analysis``（1875-1888）只取消
-          ``analysis_controller.worker`` 与 ``audit_controller.ai_worker``，
-          **完全没碰 ``_cache_worker``** → 点「取消」后完整报告缓存仍算到底。
-          而 ``closeEvent`` 兜底只调 ``quit()``，对正在执行 ``run()`` 的
-          QThread 是空操作，只能靠 ``wait(3000)`` 超时放行。
+        v43.198 修复：补 request_cancel/_cancel_check（范式同 _FullReportWorker），
+        run() 两分支均传 cancel_check=self._cancel_check，_cancel_analysis 与
+        closeEvent 接线，KeyboardInterrupt 单独捕获优雅收尾。
 
-        本测试把上述事实钉住：任一条变化（补上取消点、或重构后搬动定义位置）
-        都会让它失败，提示更新探针结论。
+        本测试把「修复存在」钉死：任一条退化（删方法、改回 cancel_check=None、
+        接线被重构丢掉）都会让它失败。
         """
         tree, src = _parse_main_window()
 
-        # 1) _FullCacheWorker 必须仍缺 request_cancel
-        # v43.194（ARC-003 第二刀）：本 worker 已从方法体内联定义提升为模块级类，
-        # 故扫描范围由 ast.walk(cls) 改为模块顶层 + 类内双查。
-        # 「无协作式取消点」这一 bug 结论本身未变，仅定义位置前提已更新。
+        # 1) _FullCacheWorker 必须仍是模块级定义，且方法集含取消二件套
         candidates = [n for n in ast.walk(tree)
                       if isinstance(n, ast.ClassDef) and n.name == "_FullCacheWorker"]
         assert candidates, "未找到 _FullCacheWorker 定义（模块级与类内均未命中）"
@@ -794,25 +784,34 @@ class TestC_BugProbes:
             "_FullCacheWorker 应为模块级定义；若已再次被内联进方法体，请更新本探针"
         )
         methods = {m.name for m in node.body if isinstance(m, ast.FunctionDef)}
-        assert "request_cancel" not in methods, (
-            "_FullCacheWorker 已有 request_cancel——该 bug 已修复，请更新探针结论"
+        assert "request_cancel" in methods, (
+            "_FullCacheWorker 的 request_cancel 消失了——取消点退化，请修复"
+        )
+        assert "_cancel_check" in methods, (
+            "_FullCacheWorker 的 _cancel_check 消失了——取消点退化，请修复"
         )
 
-        # 2) run() 里传给分析器的 cancel_check 必须仍是 None（=无取消点）
+        # 2) run() 必须把取消检查传给下游分析器，且不得再出现 cancel_check=None
         run_node = next(
             m for m in node.body
             if isinstance(m, ast.FunctionDef) and m.name == "run"
         )
         run_src = ast.get_source_segment(src, run_node)
-        assert "cancel_check=None" in run_src, (
-            "_FullCacheWorker.run 已不再传 cancel_check=None——"
-            "取消点可能已实现，请核实后更新探针结论"
+        assert "cancel_check=self._cancel_check" in run_src, (
+            "_FullCacheWorker.run 未传 cancel_check=self._cancel_check——"
+            "取消点可能已失效，请核实后修复"
+        )
+        assert "cancel_check=None" not in run_src, (
+            "_FullCacheWorker.run 又出现 cancel_check=None——取消点被改回无"
+        )
+        assert "except KeyboardInterrupt" in run_src, (
+            "_FullCacheWorker.run 缺少 KeyboardInterrupt 捕获——取消会以"
+            " BaseException 裸死线程（except Exception 兜不住），请修复"
         )
 
-        # 3) 钉住「只有 _FullReportWorker 有 request_cancel」这个实测基线
+        # 3) 其余 worker 的 request_cancel 基线保持不变
         # v43.140：_FullReportWorker/_PptReportWorker/_FileReadWorker 已从 main_window.py
         # 迁到 gui_pyside6/workers/report_workers.py，故扫描源需并入新模块。
-        # 类内容与 request_cancel 基线均未变，仅文件位置改变。
         import gui_pyside6.workers.report_workers as _rw
         import inspect as _inspect
         _rw_tree = ast.parse(_inspect.getsource(_rw))
@@ -832,9 +831,8 @@ class TestC_BugProbes:
         assert actual.get("_FileReadWorker") is False, (
             f"_FileReadWorker 现在竟有 request_cancel：{actual}"
         )
-        # v43.194（ARC-003 第二刀）：_FullCacheWorker 已提升为模块级，
-        # 故它现在会出现在 tree.body 的顶层扫描里，基线仍是「无 request_cancel」。
-        assert actual.get("_FullCacheWorker") is False, (
+        # v43.198：_FullCacheWorker 从「无取消」基线翻转为「有取消」基线
+        assert actual.get("_FullCacheWorker") is True, (
             f"_FullCacheWorker 的 request_cancel 状态变了：{actual}"
         )
 
