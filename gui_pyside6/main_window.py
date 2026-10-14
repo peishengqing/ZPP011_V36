@@ -85,6 +85,7 @@ from gui_pyside6.controllers.audit_controller import AuditController
 from gui_pyside6.controllers.export_controller import ExportController
 from gui_pyside6.controllers.alt_controller import AltController
 from gui_pyside6.controllers.column_controller import ColumnController
+from gui_pyside6.controllers.filter_preset_controller import FilterPresetController
 
 
 class _PptViewShim:
@@ -282,6 +283,8 @@ class MainWindow(QMainWindow):
         self.alt_controller = AltController(self)
         # ARC-003 拆分：列过滤/排序/宽度职责已切出到 ColumnController（纯 UI 逻辑）
         self.column_controller = ColumnController(self)
+        # ARC-003 第三刀：筛选预设职责已切出到 FilterPresetController
+        self.filter_preset_controller = FilterPresetController(self)
         self.data_service = DataService(self.alt_controller)
         self.data_service.log_signal.connect(self._on_data_service_log)
 
@@ -3483,93 +3486,6 @@ class MainWindow(QMainWindow):
             pass
 
     # ------------------------------------------------------------------ #
-    # 筛选预设（filter_history：命名预设 + 「上次使用」自动捕获）
-    # ------------------------------------------------------------------ #
-    def _filter_preset_store(self):
-        return dict(self.config_manager.get("filter_history") or {})
-
-    @staticmethod
-    def _filters_to_jsonable(state):
-        """get_filters() 里的 set / (列, set) 结构转 JSON 可存形式。"""
-        out = {}
-        for k, v in (state or {}).items():
-            if isinstance(v, set):
-                out[k] = sorted(str(x) for x in v)
-            elif isinstance(v, tuple) and len(v) == 2 and isinstance(v[1], set):
-                out[k] = {"col": v[0], "values": sorted(str(x) for x in v[1])}
-            else:
-                out[k] = v
-        return out
-
-    @staticmethod
-    def _jsonable_to_filters(state):
-        """_filters_to_jsonable 的逆变换（供 apply_filters 使用）。"""
-        out = {}
-        for k, v in (state or {}).items():
-            if k == "_semi_class_set" and isinstance(v, list):
-                out[k] = set(v)
-            elif k == "_units" and isinstance(v, dict):
-                out[k] = (v.get("col"), set(v.get("values", [])))
-            else:
-                out[k] = v
-        return out
-
-    def _capture_last_used_filter(self):
-        """每次发起分析前，把当前筛选记为「上次使用」，预设菜单可一键恢复。"""
-        try:
-            state = self._filters_to_jsonable(self.filter_panel.get_filters())
-            if not state:
-                return
-            store = self._filter_preset_store()
-            store["___last___"] = state
-            self.config_manager.set("filter_history", store)
-            self._refresh_filter_preset_menu()
-        except Exception:
-            pass
-
-    def _save_filter_preset(self, name):
-        state = self._filters_to_jsonable(self.filter_panel.get_filters())
-        store = self._filter_preset_store()
-        store[name] = state
-        self.config_manager.set("filter_history", store)
-        self._refresh_filter_preset_menu()
-        toast("筛选预设已保存：%s" % name, level="info", parent=self)
-
-    def _prompt_save_preset(self):
-        n = len([k for k in self._filter_preset_store() if k != "___last___"])
-        name, ok = QInputDialog.getText(self, "保存筛选预设", "预设名称：", text="预设 %d" % (n + 1))
-        name = (name or "").strip()
-        if not ok or not name:
-            return
-        if name == "___last___":
-            QMessageBox.warning(self, "保存筛选预设", "名称「___last___」为系统保留，请换一个。")
-            return
-        self._save_filter_preset(name)
-
-    def _apply_filter_preset(self, name):
-        store = self._filter_preset_store()
-        state = store.get(name)
-        if state is None:
-            toast("暂无%s记录" % ("「上次使用」" if name == "___last___" else "预设「%s」" % name), level="info", parent=self)
-            return
-        self.filter_panel.apply_filters(self._jsonable_to_filters(state))
-        toast("已应用%s" % ("「上次使用」筛选" if name == "___last___" else "筛选预设：" + name), level="info", parent=self)
-
-    def _delete_filter_preset(self, name):
-        store = self._filter_preset_store()
-        if name in store:
-            del store[name]
-            self.config_manager.set("filter_history", store)
-            self._refresh_filter_preset_menu()
-            toast("已删除筛选预设：%s" % name, level="info", parent=self)
-
-    def _refresh_filter_preset_menu(self):
-        try:
-            names = [k for k in self._filter_preset_store() if k != "___last___"]
-            self.filter_panel.set_preset_names(names, "___last___" in self._filter_preset_store())
-        except Exception:
-            pass
-
     def _capture_natural_df(self):
         """数据（重新）加载时记录原始顺序，供"取消排序"恢复；排序过程中的 setDataFrame 忽略。"""
         if getattr(self, "_in_sort", False):
@@ -4902,6 +4818,39 @@ class MainWindow(QMainWindow):
     #  各看板 dialog 的 self.main_window._apply_column_visibility_by_name()），
     # 逻辑零改动。禁止在薄壳内新增业务逻辑。
     # ------------------------------------------------------------------ #
+    # ARC-003 第三刀薄壳（v43.195）：筛选预设 9 个方法已切出到
+    # controllers/filter_preset_controller.py。其中 _filters_to_jsonable /
+    # _jsonable_to_filters 在 controller 侧仍为 @staticmethod，此处经实例转发亦合法。
+    # ------------------------------------------------------------------ #
+    def _filter_preset_store(self):
+        return self.filter_preset_controller._filter_preset_store()
+
+    @staticmethod
+    def _filters_to_jsonable(state):
+        return FilterPresetController._filters_to_jsonable(state)
+
+    @staticmethod
+    def _jsonable_to_filters(state):
+        return FilterPresetController._jsonable_to_filters(state)
+
+    def _capture_last_used_filter(self):
+        return self.filter_preset_controller._capture_last_used_filter()
+
+    def _save_filter_preset(self, name):
+        return self.filter_preset_controller._save_filter_preset(name)
+
+    def _prompt_save_preset(self):
+        return self.filter_preset_controller._prompt_save_preset()
+
+    def _apply_filter_preset(self, name):
+        return self.filter_preset_controller._apply_filter_preset(name)
+
+    def _delete_filter_preset(self, name):
+        return self.filter_preset_controller._delete_filter_preset(name)
+
+    def _refresh_filter_preset_menu(self):
+        return self.filter_preset_controller._refresh_filter_preset_menu()
+
     def _toggle_column_lock(self, *args, **kwargs):
         return self.column_controller._toggle_column_lock(*args, **kwargs)
 
