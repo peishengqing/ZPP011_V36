@@ -63,7 +63,6 @@ from core.auto_quarantine import (
     load_auto_quarantine_config,
 )
 from gui_pyside6.dialogs.dashboard_dialog import DashboardDialog
-from gui_pyside6.dialogs.history_compare_dialog import HistoryCompareDialog
 from gui_pyside6.dialogs.import_wizard_dialog import ImportWizard
 from gui_pyside6.dialogs.health_check_dialog import HealthCheckDialog
 from gui_pyside6.viewmodels.analysis_vm import AnalysisViewModel
@@ -5403,13 +5402,6 @@ class MainWindow(QMainWindow):
 
     def _show_import_wizard(self):
         dialog = ImportWizard(self)
-        dialog.exec()
-
-    def _show_history_compare(self):
-        if self.view_model.df is None or self.view_model.df.empty:
-            QMessageBox.warning(self, "提示", "请先加载数据")
-            return
-        dialog = HistoryCompareDialog(self)
         dialog.exec()
 
     def _show_dashboard(self):

@@ -161,7 +161,6 @@ if __name__ == "__main__":
         "--hidden-import=gui_pyside6.dialogs.alert_dialog",
         "--hidden-import=gui_pyside6.dialogs.unit_summary_dialog",
         "--hidden-import=gui_pyside6.dialogs.dashboard_dialog",
-        "--hidden-import=gui_pyside6.dialogs.history_compare_dialog",
         "--hidden-import=gui_pyside6.dialogs.batch_operations_dialog",
         "--hidden-import=core.alert_monitor",
         "--hidden-import=core.rule_engine",

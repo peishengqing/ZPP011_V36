@@ -124,10 +124,6 @@ class MenuBarComponent:
 
         # 历史菜单
         history_menu = menubar.addMenu("历史")
-        compare_action = QAction("历史对比", self.mw)
-        compare_action.triggered.connect(self.mw._show_history_compare)
-        history_menu.addAction(compare_action)
-
         source_backup_action = QAction("历史源码", self.mw)
         source_backup_action.triggered.connect(self.mw._show_source_backup)
         history_menu.addAction(source_backup_action)

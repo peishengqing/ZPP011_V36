@@ -29,7 +29,6 @@ import zipfile
 from config.settings import DEFAULT_THRESHOLD
 
 # 模块化组件
-from storage import storage
 from domain.alt_material import alt_manager
 
 # Sheet 构建函数（第五步抽取）

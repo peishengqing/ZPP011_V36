@@ -35,45 +35,9 @@ assert standardize_remark('正常') == '其他'
 assert standardize_remark('随机xyz') == '其他'
 print('[OK] test_utils')
 
-# ===== test_storage =====
+# ===== test_alt_manager =====
 import tempfile
 import pandas as pd
-from storage.storage import init_audit_db, save_audit_to_db, restore_audit_from_db
-import storage.storage as ss
-
-with tempfile.TemporaryDirectory() as tmpdir:
-    db_path = os.path.join(tmpdir, 'test.db')
-    original_get = ss.get_audit_db_path
-    ss.get_audit_db_path = lambda: db_path
-    try:
-        init_audit_db()
-        assert os.path.exists(db_path), 'DB not created'
-
-        # save_audit_to_db expects Chinese column names
-        test_df = pd.DataFrame([{
-            '订单日期': '2026-01-01',
-            '订单号': 'TEST001',
-            '组件物料号': 'MAT01',
-            '备注原因': 'test note',
-        }])
-        save_audit_to_db(test_df, auditor='test_user')
-
-        # restore modifies DataFrame in-place
-        restore_df = pd.DataFrame([{
-            '订单日期': '2026-01-01',
-            '订单号': 'TEST001',
-            '组件物料号': 'MAT01',
-            '备注原因': '',
-        }])
-        restore_audit_from_db(restore_df)
-        assert restore_df.iloc[0]['备注原因'] == 'test note', \
-            f"Expected 'test note', got '{restore_df.iloc[0]['备注原因']}'"
-        assert '_audit_status' in restore_df.columns
-        print('[OK] test_storage_save_restore')
-    finally:
-        ss.get_audit_db_path = original_get
-
-# ===== test_alt_manager =====
 from unittest.mock import patch
 from domain.alt_material.alt_manager import (
     load_alt_pairs, save_alt_pairs,

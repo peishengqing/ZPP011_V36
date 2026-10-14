@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.190",
+        "date": "2026-10-14",
+        "features": "架构清理（横木审计 ARC-001 后续，裴哥确认 B 方案彻底清）：整体移除三个指向不存在数据库文件的早期淘汰模块——`core/backup_manager.py`（备份管理器，全仓零生产调用方）、`core/history_db.py` + `gui_pyside6/dialogs/history_compare_dialog.py`（「历史对比」菜单功能，实际指向不存在的 history.db，点击只会弹误导性报错）、`storage/` 包（V36 模块化前的旧存储层，唯一引用是 analyzer.py 的死 import）。移除后 `audit.db` 成为审核库唯一真身。",
+        "fixes": "**根因**：ARC-001 实证审核库存在三个互相矛盾的文件名定义——活库 `~/.zpp011_audit/audit.db`（read_status.py:23，磁盘 11.6MB 在写）vs `audit_log.db`（backup_manager.py:23/:303 与 storage.py:22，磁盘不存在）vs `history.db`（history_db.py:9，磁盘不存在）。三模块为 V36 模块化改造前的早期功能，已被 read_status/quarantine_manager 体系取代，裴哥确属淘汰。**修法**：① git rm 删除 core/backup_manager.py、core/history_db.py、storage/storage.py、storage/__init__.py、gui_pyside6/dialogs/history_compare_dialog.py、tests/test_history_db.py、tests/unit/test_history_db.py、tests/unit/test_backup_manager.py；② `analysis/analyzer.py:32` 删除 `from storage import storage` 死 import（全文件无使用；冻结区唯一破例一行、零逻辑改动，经裴哥特批）；③ main_window.py 删除 HistoryCompareDialog import（:66）与 _show_history_compare 方法（:5408-5413）；④ menu_bar.py 删除「历史→历史对比」菜单项（「历史源码」入口保留）；⑤ build_pyside6_exe.py 删除 history_compare_dialog 的 hidden-import；⑥ tests/unit/run_all.py 删除 test_storage 段。**验证**：py_compile + pyflakes 全绿、pytest tests/unit/ 全过、GUI 启动 smoke 通过。",
+    },
+    {
         "version": "v43.189",
         "date": "2026-10-14",
         "features": "「偏差率预警看板 - |偏差率| ≥ 10%」新增**始终可见**的「组件物料类型描述」动态（级联）筛选下拉：用户要求把该筛选从全屏才显示的第3行提到主筛选栏常驻。",
