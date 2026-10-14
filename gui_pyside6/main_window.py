@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QHeaderView, QDialog, QDialogButtonBox, QSplitter,
     QComboBox, QAbstractItemView, QMessageBox, QTableWidgetItem, QTableWidget,
     QMenu, QGroupBox, QProgressDialog, QInputDialog,
-    QScrollArea, QCheckBox, QToolButton,
+    QToolButton,
     QTreeWidget, QTreeWidgetItem,      # v43.165 半成品分类树
 )
 from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer, QItemSelection, QItemSelectionModel, QModelIndex
@@ -36,7 +36,7 @@ from gui_pyside6.components.main_table import MainTableComponent
 from gui_pyside6.components.bottom_bar import BottomBarComponent
 
 # 导入自定义模块
-from gui_pyside6.models.data_frame_model import DataFrameModel, AuditProxyModel, build_display_key_list
+from gui_pyside6.models.data_frame_model import DataFrameModel, AuditProxyModel
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.workers.report_workers import (
     _FullReportWorker, _PptReportWorker, _FileReadWorker,
@@ -48,7 +48,8 @@ from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.dialogs.unit_summary_dialog import UnitSummaryDialog
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
-from gui_pyside6.dialogs.neg_loss_dashboard_dialog import NegLossDashboardDialogfrom gui_pyside6.dialogs.semi_dashboard_dialog import SemiDashboardDialog
+from gui_pyside6.dialogs.neg_loss_dashboard_dialog import NegLossDashboardDialog
+from gui_pyside6.dialogs.semi_dashboard_dialog import SemiDashboardDialog
 
 from gui_pyside6.dialogs.quarantine_dialog import QuarantineDialog
 from gui_pyside6.dialogs.pos_loss_dashboard_dialog import PosLossDashboardDialog
@@ -83,6 +84,7 @@ from gui_pyside6.controllers.analysis_controller import AnalysisController
 from gui_pyside6.controllers.audit_controller import AuditController
 from gui_pyside6.controllers.export_controller import ExportController
 from gui_pyside6.controllers.alt_controller import AltController
+from gui_pyside6.controllers.column_controller import ColumnController
 
 
 class _PptViewShim:
@@ -227,6 +229,8 @@ class MainWindow(QMainWindow):
 
         self.export_controller = ExportController(self)
         self.alt_controller = AltController(self)
+        # ARC-003 拆分：列过滤/排序/宽度职责已切出到 ColumnController（纯 UI 逻辑）
+        self.column_controller = ColumnController(self)
         self.data_service = DataService(self.alt_controller)
         self.data_service.log_signal.connect(self._on_data_service_log)
 
@@ -422,7 +426,8 @@ class MainWindow(QMainWindow):
         self.action_btn_deviation = QAction("📊 偏差率预警", self)
         self.action_btn_deviation.triggered.connect(self._show_deviation_warning_dialog)
         self.action_btn_neg_loss = QAction("🟠 负损看板", self)
-        self.action_btn_neg_loss.triggered.connect(self._show_neg_loss_dashboard)        self.action_btn_semi = QAction("🟡 半成品看板", self)
+        self.action_btn_neg_loss.triggered.connect(self._show_neg_loss_dashboard)
+        self.action_btn_semi = QAction("🟡 半成品看板", self)
         self.action_btn_semi.triggered.connect(self._show_semi_dashboard)
         # 🟢 正损看板（v43.178）：口径「实际 > 定额 且 定额 > 0」（超投），
         # 与负损看板「0<=实际<定额」互补。独立入口，放在半成品之后。
@@ -2958,146 +2963,6 @@ class MainWindow(QMainWindow):
         self.alt_controller.sort_pairs()
         QMessageBox.information(self, "排序完成", "已按物料A编码升序排列")
 
-    def _toggle_column_lock(self):
-        locked = self.lock_btn.isChecked()
-        header = self.table_view.horizontalHeader()
-        if locked:
-            header.setSectionResizeMode(QHeaderView.Fixed)
-            self.lock_btn.setText("🔓")
-            self.statusBar().showMessage("列宽已锁定", 2000)
-        else:
-            header.setSectionResizeMode(QHeaderView.Interactive)
-            self.lock_btn.setText("🔒")
-            self.statusBar().showMessage("列宽已解锁，可拖拽调整", 2000)
-
-    def _toggle_table_fullscreen(self):
-        """切换全屏模式"""
-        full = not getattr(self, '_is_fullscreen', False)
-        self._is_fullscreen = full
-        if full:
-            self.left_panel.setVisible(False)
-            # 全屏时保留底部合计栏，隐藏系统状态栏
-            if hasattr(self, 'filter_panel') and self.filter_panel:
-                self.filter_panel.setVisible(False)
-            self.statusBar().hide()
-            QApplication.processEvents()
-            self.statusBar().showMessage("全屏模式 (F11 退出)", 3000)
-        else:
-            self.left_panel.setVisible(True)
-            if hasattr(self, 'filter_panel') and self.filter_panel:
-                self.filter_panel.setVisible(True)
-            self.statusBar().show()
-            QApplication.processEvents()
-            self.statusBar().showMessage("已退出全屏", 2000)
-
-    def _show_column_hide_dialog(self):
-        """显示隐藏列对话框（按列名记录显隐，避免列重排后错位丢失）"""
-        model = self.table_view.model()
-        if not model:
-            return
-        col_count = model.columnCount()
-        if col_count == 0:
-            return
-
-        # 收集 (列索引, 列名) —— 列名用于稳定记录显隐状态
-        cols_info = []
-        for col in range(col_count):
-            hdr = model.headerData(col, Qt.Horizontal)
-            name = str(hdr).replace('\n', '') if hdr else f"列{col}"
-            if name == '_post_audit_changed':  # 内部变更标记列，不在显隐对话框列出
-                continue
-            cols_info.append((col, name))
-
-        dialog = QDialog(self)
-        dialog.setWindowTitle("隐藏/显示列")
-        dialog.setMinimumWidth(380)
-        layout = QVBoxLayout(dialog)
-
-        hint = QLabel("勾选要显示的列，取消勾选则隐藏；标「（已隐藏）」的列当前未显示：")
-        layout.addWidget(hint)
-
-        # 快捷按钮：一键恢复全部 / 全部隐藏
-        btn_row = QHBoxLayout()
-        btn_show_all = QPushButton("恢复全部显示")
-        btn_hide_all = QPushButton("全部隐藏")
-        btn_row.addWidget(btn_show_all)
-        btn_row.addWidget(btn_hide_all)
-        btn_row.addStretch()
-        layout.addLayout(btn_row)
-
-        # 复选框列表（滚动区域）；隐藏的列追加「（已隐藏）」标记便于辨认
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll_content = QWidget()
-        scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setContentsMargins(4, 4, 4, 4)
-
-        checkboxes = []
-        for idx, (col, name) in enumerate(cols_info):
-            # 真实可见性：既认 setColumnHidden，也认“宽度被拖成 0”的挤没列
-            is_hidden = self._is_column_effectively_hidden(col)
-            label = f"{idx + 1}. {name}（已隐藏）" if is_hidden else f"{idx + 1}. {name}"
-            cb = QCheckBox(label)
-            cb.setChecked(not is_hidden)
-            checkboxes.append((col, name, cb))
-            scroll_layout.addWidget(cb)
-        scroll_layout.addStretch()
-        scroll.setWidget(scroll_content)
-        layout.addWidget(scroll)
-
-        # 确定按钮
-        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btn_box.accepted.connect(dialog.accept)
-        btn_box.rejected.connect(dialog.reject)
-        layout.addWidget(btn_box)
-
-        # 快捷按钮：恢复全部显示 / 全部隐藏（按列名清空/填满隐藏集合）
-        btn_show_all.clicked.connect(lambda: [cb.setChecked(True) for _, _, cb in checkboxes])
-        btn_hide_all.clicked.connect(lambda: [cb.setChecked(False) for _, _, cb in checkboxes])
-
-        if dialog.exec() == QDialog.Accepted:
-            # 记录被取消勾选（即要隐藏）的列名
-            self._hidden_column_names = {
-                name for _, name, cb in checkboxes if not cb.isChecked()
-            }
-            self._apply_column_visibility_by_name()
-            # 被勾选（要显示）的列若被拖成 0 宽，恢复默认宽度（像 Excel 取消隐藏）
-            for col, name, cb in checkboxes:
-                if cb.isChecked():
-                    self._ensure_column_visible_width(col, name)
-            self._save_column_widths()  # 持久化显隐状态：手动显示/隐藏都记住
-            self.statusBar().showMessage("列显示已更新", 2000)
-
-    def _is_column_effectively_hidden(self, col):
-        """列是否实际不可见：被 setColumnHidden 或宽度被拖成 0 都算"""
-        if self.table_view.isColumnHidden(col):
-            return True
-        try:
-            return self.table_view.columnWidth(col) <= 1
-        except Exception:
-            return False
-
-    def _ensure_column_visible_width(self, col, name):
-        """若列宽被拖成 0（挤没），恢复一个合理的默认宽度"""
-        if self.table_view.columnWidth(col) <= 1:
-            self._apply_default_width(col, name)
-            if self.table_view.columnWidth(col) <= 1:
-                self.table_view.setColumnWidth(col, 120)
-
-    def _apply_column_visibility_by_name(self):
-        """按列名设置列的显隐状态（不受列重排 / 模型重置影响）"""
-        self._hidden_column_names.update({
-            '_post_audit_changed', 'data_id', 'fingerprint', '_quarantined',
-            'AI建议',
-        })  # 内部技术列始终隐藏（即使用户在列显隐对话框里勾选显示）
-        model = self.table_view.model()
-        if not model:
-            return
-        for col in range(model.columnCount()):
-            hdr = model.headerData(col, Qt.Horizontal)
-            name = str(hdr).replace('\n', '') if hdr else ''
-            self.table_view.setColumnHidden(col, name in self._hidden_column_names)
-
     def _on_left_panel_visibility_changed(self, visible: bool):
         """左侧面板显隐时的回调"""
         pass
@@ -3395,125 +3260,6 @@ class MainWindow(QMainWindow):
     # -----------------------------------------------------------
     # 数据相关
     # -----------------------------------------------------------
-    def _set_column_widths(self):
-        header = self.table_view.horizontalHeader()
-        model = self.table_view.model()
-        if not model:
-            return
-
-        # 优先从配置文件恢复用户保存的列宽与隐藏状态
-        saved_widths, saved_hidden = self._load_column_widths()
-        # 恢复隐藏集合（按列名），再按名应用显隐
-        self._hidden_column_names = set(saved_hidden) if saved_hidden else set()
-        self._apply_column_visibility_by_name()
-
-        if saved_widths:
-            for col in range(model.columnCount()):
-                col_name = model.headerData(col, Qt.Horizontal)
-                if col_name:
-                    col_name = str(col_name).replace('\n', '')
-                    if col_name in saved_widths:
-                        self.table_view.setColumnWidth(col, saved_widths[col_name])
-                        continue
-                # 没有保存过的列用默认逻辑
-                self._apply_default_width(col, col_name)
-            return
-
-        # 无配置文件时用默认逻辑。
-        # 注意：不再调用 resizeColumnsToContents()——万行级表格会逐行测量宽度，
-        # 导致主线程卡顿/未响应。改为按列名设定合理最小宽度，让用户可手动拖动。
-        self.table_view.setColumnWidth(0, 35)
-        for col in range(1, model.columnCount()):
-            col_name = model.headerData(col, Qt.Horizontal) if hasattr(model, 'headerData') else ''
-            self._apply_default_width(col, col_name)
-
-    def _apply_default_width(self, col, col_name):
-        """对单列应用默认宽度逻辑（按列名给最小宽度，避免 ResizeToContents 扫描全表）"""
-        if isinstance(col_name, str):
-            if '名称' in col_name or '描述' in col_name or col_name == '物料':
-                if self.table_view.columnWidth(col) < 200:
-                    self.table_view.setColumnWidth(col, 200)
-            elif '编码' in col_name or '号' in col_name or '订单' in col_name or col_name == '半成品重分类':
-                if self.table_view.columnWidth(col) < 120:
-                    self.table_view.setColumnWidth(col, 120)
-            elif '备注' in col_name or '原因' in col_name:
-                if self.table_view.columnWidth(col) < 150:
-                    self.table_view.setColumnWidth(col, 150)
-            else:
-                # 数字/日期等列给一个保底宽度，避免太窄
-                if self.table_view.columnWidth(col) < 80:
-                    self.table_view.setColumnWidth(col, 80)
-
-    def _get_user_config_dir(self):
-        """用户可写的配置目录（打包 onefile 后 __file__ 在临时目录，不能再用它落盘）。"""
-        base = os.environ.get("ZPP011_CONFIG_DIR")
-        if not base:
-            base = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "ZPP011")
-        return base
-
-    def _get_config_path(self):
-        """列宽/列显隐配置的读写路径（用户目录，如 %APPDATA%\\ZPP011\\column_widths.json）。"""
-        config_dir = self._get_user_config_dir()
-        try:
-            os.makedirs(config_dir, exist_ok=True)
-        except Exception:
-            pass
-        return os.path.join(config_dir, 'column_widths.json')
-
-    def _get_default_config_path(self):
-        """仓库内置的默认列宽（只读）：用户配置不存在时作为初始值，保持历史观感。"""
-        return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                            'config', 'column_widths.json')
-
-    def _save_column_widths(self):
-        """保存当前列宽与隐藏状态到配置文件（隐藏按列名记录，可手动在对话框中恢复显示）"""
-        model = self.table_view.model()
-        if not model:
-            return
-        config = {}
-        for col in range(model.columnCount()):
-            col_name = model.headerData(col, Qt.Horizontal)
-            if col_name:
-                col_name = str(col_name).replace('\n', '')
-                config[col_name] = {
-                    'width': self.table_view.columnWidth(col),
-                    'hidden': col_name in self._hidden_column_names,
-                }
-        try:
-            import json
-            with open(self._get_config_path(), 'w', encoding='utf-8') as f:
-                json.dump(config, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            # self.log 是空操作，必须显式提示，否则属静默失败
-            self.statusBar().showMessage(f"列宽保存失败：{e}", 5000)
-            toast(f"列宽保存失败：{e}", level="warning", parent=self)
-
-    def _load_column_widths(self):
-        """从配置文件加载列宽与隐藏状态。返回 (widths_dict, hidden_set)。"""
-        try:
-            import json
-            path = self._get_config_path()
-            if not os.path.exists(path):
-                # 首次运行/旧版本升级：沿用仓库内既有列宽作为初始值
-                path = self._get_default_config_path()
-            if os.path.exists(path):
-                with open(path, 'r', encoding='utf-8') as f:
-                    raw = json.load(f)
-                widths = {}
-                hidden = set()
-                for k, v in raw.items():
-                    if isinstance(v, dict):
-                        widths[k] = v.get('width', 100)
-                        if v.get('hidden'):
-                            hidden.add(k)
-                    else:
-                        # 兼容旧格式（纯宽度数值）
-                        widths[k] = v
-                return widths, hidden
-        except Exception as e:
-            self.log(f"加载列宽失败: {e}", "warning")
-        return None, set()
-
     def _on_filter_panel_changed(self, filters: dict):
         if self.proxy_model is None or self.view_model.df is None:
             return
@@ -3816,378 +3562,6 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-    def _on_header_clicked(self, logical_index):
-        """列头点击：单列为【未排 → 升序 → 降序 → 未排】三态循环；Ctrl+点击为多列多级排序。"""
-        # 三路冗余读取 Ctrl，最大化真实环境命中率，彻底绕开 Qt「鼠标事件读不到 Ctrl」的坑：
-        #   1) self._ctrl_down    —— 由 KeyPress/KeyRelease 事件流实时维护（最可靠，主用）
-        #   2) self._sort_header._ctrl_held —— SortBadgeHeader.mousePressEvent 按下时捕获（兜底）
-        #   3) QApplication.keyboardModifiers() —— 信号触发瞬间查真实键盘态（再兜底）
-        ctrl_pressed = bool(getattr(self, "_ctrl_down", False)) \
-            or bool(getattr(self._sort_header, "_ctrl_held", False)) \
-            or bool(QApplication.keyboardModifiers() & Qt.ControlModifier)
-        # 列头筛选模式：点列头弹取值勾选浮层（Ctrl+点列头仍走排序；第0列_图标列不参与）
-        if self._col_filter_mode and logical_index > 0 and not ctrl_pressed:
-            self._open_column_filter(logical_index)
-            return
-        col = logical_index
-        if col <= 0:
-            return  # 第一列(_read)不参与排序
-        if ctrl_pressed:
-            found = False
-            for i, (c, asc) in enumerate(self.sort_columns):
-                if c == col:
-                    self.sort_columns[i] = (col, not asc)
-                    found = True
-                    break
-            if not found:
-                self.sort_columns.append((col, True))
-        else:
-            active = [(c, a) for (c, a) in self.sort_columns if c == col]
-            if not active:
-                self.sort_columns = [(col, True)]
-            elif active[0][1]:
-                self.sort_columns = [(col, False)]
-            else:
-                self.sort_columns = []
-        self._apply_multi_sort()
-        self._update_sort_indicators()
-
-    def _update_col_filter_hint(self):
-        """刷新状态栏「列头筛选」常驻提示：已筛列数 + 列名（截断显示）。
-
-        修复（2026-10-01）：列头筛选后原本只有表头左上角小橙三角，无法判断哪些列被筛过；
-        现在状态栏常驻显示「🔽 列头筛选：N 列（列名1、列名2…」，无筛选时显示 0 列。
-        列号→列名映射取自 source_model._display_columns（与表头逻辑列对齐）。
-        """
-        label = getattr(self, "_col_filter_hint_label", None)
-        if label is None:
-            return
-        col_set = getattr(self, "_filtered_col_set", set()) or set()
-        if not col_set:
-            label.setText("🔽 列头筛选：0 列")
-            label.show()
-            return
-        # 列号 → 列名（display_columns 与表头逻辑列一致；取不到的显示列号）
-        sm = getattr(self, "source_model", None)
-        display_cols = getattr(sm, "_display_columns", []) if sm is not None else []
-        names = []
-        for c in sorted(col_set):
-            if 0 <= c < len(display_cols):
-                names.append(str(display_cols[c]))
-            else:
-                names.append(f"列{c}")
-        shown = names[:5]
-        more = len(names) - len(shown)
-        text = "🔽 列头筛选：%d 列（%s" % (len(names), "、".join(shown))
-        if more > 0:
-            text += " …+%d" % more
-        text += "）"
-        label.setText(text)
-        label.show()
-        if getattr(self, "_sort_header", None) is not None:
-            # 自绘画在表头本体（Qt6 QHeaderView 的 frame 层），必须 header.update()
-            # 触发 paintEvent；viewport().update() 不会重画漏斗/角标
-            self._sort_header.update()
-
-    def _toggle_col_filter_mode(self):
-        """工具栏「🔽 列头筛选」开关：开启后点列头弹取值勾选浮层（Excel 式筛选）；
-        Ctrl+点列头仍走排序。关闭后点列头恢复排序行为。"""
-        self._col_filter_mode = not self._col_filter_mode
-        btn = self.action_btn_col_filter
-        btn.setChecked(self._col_filter_mode)
-        if self._col_filter_mode:
-            btn.setText("🔽 列头筛选✓")
-        else:
-            btn.setText("🔽 列头筛选")
-            # 关闭模式时顺手关掉可能还开着的浮层
-            if self._col_filter_popup is not None:
-                try:
-                    self._col_filter_popup.close()
-                except Exception:
-                    pass
-                self._col_filter_popup = None
-
-    def _open_column_filter(self, logical_index):
-        """在点击列头处弹出 Excel 式取值勾选浮层。
-        取值取自 source_model 的 DisplayRole（与表格实际显示字符串一致，含偏差率%后缀、(空)占位），
-        确保勾选的值和表格中看到的完全一致。确定后调 proxy_model.setValueFilter。"""
-        proxy = self.proxy_model
-        sm = proxy.sourceModel() if proxy is not None else None
-        if sm is None or not hasattr(sm, "_display_columns"):
-            return
-        if logical_index < 0 or logical_index >= len(sm._display_columns):
-            return
-        col_name = sm._display_columns[logical_index]
-
-        # 收集本列全部展示值及计数（保持首次出现顺序）
-        # 性能（2026-10-02）：向量化取展示键（与 DisplayRole 一致），替代逐行 sm.data()
-        n = sm.rowCount()
-        key_list = build_display_key_list(sm, logical_index)
-        if key_list is None:
-            key_list = []
-            for r in range(n):
-                disp = sm.data(sm.index(r, logical_index), Qt.DisplayRole)
-                key_list.append("(空)" if disp in (None, "") else str(disp))
-        cnt = {}
-        order = []
-        for key in key_list:
-            if key not in cnt:
-                cnt[key] = 0
-                order.append(key)
-            cnt[key] += 1
-        if not order:
-            # 修复（v43.143）：本列无任何取值（被其它条件筛空）时原先直接 return，
-            # 用户看着空表 + 点列头无反应，无法取消任何筛选。改弹兜底浮层给出出口。
-            self._open_empty_column_filter_popup(col_name, logical_index)
-            return
-
-        # 已选集合（来自 proxy 已存的取值过滤）
-        prev = set(proxy._value_filters.get(col_name, set()))
-
-        # 若已有浮层，先关掉
-        if self._col_filter_popup is not None:
-            try:
-                self._col_filter_popup.close()
-            except Exception:
-                pass
-            self._col_filter_popup = None
-
-        popup = QWidget(self, Qt.Popup)
-        popup.setObjectName("colFilterPopup")
-        popup.setMinimumWidth(260)
-        popup.setMaximumHeight(420)
-        outer = QVBoxLayout(popup)
-        outer.setContentsMargins(8, 8, 8, 8)
-        outer.setSpacing(6)
-
-        title = QLabel(f"筛选：{col_name}（共 {n} 行 / {len(order)} 个值）")
-        title.setStyleSheet("font-weight:bold;color:#15598c;")
-        outer.addWidget(title)
-
-        search = QLineEdit()
-        search.setPlaceholderText("搜索取值…")
-        outer.addWidget(search)
-
-        # 全选 / 清空 / 清除此列
-        btn_row = QHBoxLayout()
-        btn_all = QPushButton("全选")
-        btn_none = QPushButton("清空")
-        btn_clear = QPushButton("清除此列")
-        btn_clear.setToolTip("取消本列的全部取值过滤（等同恢复未筛选）")
-        btn_clear.setEnabled(bool(proxy._value_filters.get(col_name)))
-        btn_row.addWidget(btn_all)
-        btn_row.addWidget(btn_none)
-        btn_row.addWidget(btn_clear)
-        btn_row.addStretch(1)
-        outer.addLayout(btn_row)
-
-        # 勾选列表（滚动）
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll_content = QWidget()
-        list_layout = QVBoxLayout(scroll_content)
-        list_layout.setContentsMargins(2, 2, 2, 2)
-        list_layout.setSpacing(2)
-        scroll.setWidget(scroll_content)
-        outer.addWidget(scroll, 1)
-
-        items = []  # (key, checkbox)
-        for key in order:
-            cb = QCheckBox(f"{key}  ({cnt[key]})")
-            cb.setChecked(key in prev)
-            list_layout.addWidget(cb)
-            items.append((key, cb))
-
-        def apply_search(text):
-            t = text.strip().lower()
-            for key, cb in items:
-                cb.setVisible((t in key.lower()) if t else True)
-
-        search.textChanged.connect(apply_search)
-
-        def select_all():
-            for _, cb in items:
-                cb.setChecked(True)
-
-        def select_none():
-            for _, cb in items:
-                cb.setChecked(False)
-
-        def do_clear_column():
-            """「清除此列」：丢弃本列取值过滤 + 漏斗标 + 本列排序，并关浮层。
-
-            与「清空」区别：「清空」只把勾选全取消，点确定后会因空集被 setValueFilter
-            当作「清除」处理（见 do_apply），但用户不知道；这里给一个显式入口。
-            v43.144：连带取消本列排序。
-            """
-            proxy.setValueFilter(col_name, set())
-            self._filtered_col_set.discard(logical_index)
-            self._drop_sort_columns([logical_index])
-            self._update_col_filter_hint()
-            self._sort_header.update()
-            popup.close()
-
-        btn_all.clicked.connect(select_all)
-        btn_none.clicked.connect(select_none)
-        btn_clear.clicked.connect(do_clear_column)
-
-        # 确定 / 取消
-        ok_row = QHBoxLayout()
-        btn_ok = QPushButton("确定")
-        btn_cancel = QPushButton("取消")
-        ok_row.addStretch(1)
-        ok_row.addWidget(btn_cancel)
-        ok_row.addWidget(btn_ok)
-        outer.addLayout(ok_row)
-
-        def do_apply():
-            selected = {key for key, cb in items if cb.isChecked()}
-            if not selected or selected == set(order):
-                # 全选 或 一个都没选：都等价于「不过滤」。
-                # 修复（v43.143）：原先「一个都没选」会走到 else 分支 _filtered_col_set.add()，
-                # 提示栏显示「1 列」但实际无过滤（setValueFilter 空集=清除），状态自相矛盾；
-                # 且用户看到漏斗标却找不到地方取消。现统一走清除分支。
-                proxy.setValueFilter(col_name, set())
-                self._filtered_col_set.discard(logical_index)
-                # v43.144：取消筛选时连带取消本列排序
-                self._drop_sort_columns([logical_index])
-            else:
-                proxy.setValueFilter(col_name, selected)
-                self._filtered_col_set.add(logical_index)
-            self._update_col_filter_hint()  # 其内部已会重画表头
-            # 修复（2026-10-02）：Qt6 QHeaderView 自绘画在表头本体（frame 层），
-            # viewport().update() 只刷内部 viewport，确定后漏斗/角标不会重画。
-            # 与排序角标同款触发方式：header.update()。
-            self._sort_header.update()
-            popup.close()
-
-        btn_ok.clicked.connect(do_apply)
-        btn_cancel.clicked.connect(popup.close)
-
-        self._col_filter_popup = popup
-
-        # 定位到点击列头下方，并避免超出屏幕
-        x = self._sort_header.sectionViewportPosition(logical_index)
-        y = self._sort_header.height()
-        gpos = self._sort_header.viewport().mapToGlobal(QPoint(int(x), int(y)))
-        popup.show()
-        popup.adjustSize()
-        pw = popup.width()
-        ph = popup.height()
-        screen = QApplication.primaryScreen()
-        if screen is not None:
-            sg = screen.availableGeometry()
-            if gpos.x() + pw > sg.right():
-                gpos.setX(max(sg.left(), sg.right() - pw))
-            if gpos.y() + ph > sg.bottom():
-                gpos.setY(max(sg.top(), gpos.y() - ph - self._sort_header.height()))
-        popup.move(gpos)
-
-    def _open_empty_column_filter_popup(self, col_name, logical_index):
-        """本列无取值时的兜底浮层：只给「清除此列 / 清除全部 / 关闭」三个出口。"""
-        if self._col_filter_popup is not None:
-            try:
-                self._col_filter_popup.close()
-            except Exception:
-                pass
-            self._col_filter_popup = None
-        popup = QWidget(self, Qt.Popup)
-        popup.setObjectName("colFilterPopup")
-        popup.setMinimumWidth(300)
-        outer = QVBoxLayout(popup)
-        outer.setContentsMargins(10, 10, 10, 10)
-        outer.setSpacing(8)
-        tip = QLabel(f"「{col_name}」当前没有任何可选取值\n（表格已被其它筛选条件筛空）")
-        tip.setStyleSheet("font-weight:bold;color:#15598c;")
-        tip.setWordWrap(True)
-        outer.addWidget(tip)
-
-        def _after_clear():
-            self._update_col_filter_hint()
-            self._sort_header.update()
-
-        def do_clear_col():
-            self.proxy_model.setValueFilter(col_name, set())
-            self._filtered_col_set.discard(logical_index)
-            self._drop_sort_columns([logical_index])
-            _after_clear()
-            popup.close()
-
-        def do_clear_all():
-            hit = sorted(self._filtered_col_set)
-            self.proxy_model.clearHeaderFilters()
-            self._filtered_col_set.clear()
-            self._drop_sort_columns(hit)
-            _after_clear()
-            popup.close()
-
-        btn_col = QPushButton("清除此列筛选")
-        btn_col.clicked.connect(do_clear_col)
-        btn_all = QPushButton("清除全部列头筛选")
-        btn_all.clicked.connect(do_clear_all)
-        btn_close = QPushButton("关闭")
-        btn_close.clicked.connect(popup.close)
-        outer.addWidget(btn_col)
-        outer.addWidget(btn_all)
-        outer.addWidget(btn_close)
-        self._col_filter_popup = popup
-        x = self._sort_header.sectionViewportPosition(logical_index)
-        y = self._sort_header.height()
-        gpos = self._sort_header.viewport().mapToGlobal(QPoint(int(x), int(y)))
-        popup.show()
-        popup.adjustSize()
-        screen = QApplication.primaryScreen()
-        if screen is not None:
-            sg = screen.availableGeometry()
-            gpos.setX(min(gpos.x(), max(sg.left(), sg.right() - popup.width())))
-            gpos.setY(min(gpos.y(), max(sg.top(), sg.bottom() - popup.height())))
-        popup.move(gpos)
-
-    def _apply_multi_sort(self):
-        """按 self.sort_columns 重排主表（基于原始顺序，避免多次排序叠加）。
-        空列表时恢复加载时的原始顺序（取消排序）。"""
-        if not hasattr(self, "source_model") or self.source_model is None:
-            return
-        if not self.sort_columns:
-            # 取消排序：恢复原始（加载时）顺序
-            if self._natural_df is not None:
-                self._in_sort = True
-                try:
-                    self.source_model.setDataFrame(self._natural_df.copy())
-                finally:
-                    self._in_sort = False
-                self._apply_column_visibility_by_name()
-            return
-        natural = self._natural_df if self._natural_df is not None else self.source_model.getDataFrame()
-        if natural is None or natural.empty:
-            return
-        df = natural.copy()
-        sort_args = []
-        for col, asc in self.sort_columns:
-            if col <= 0 or col >= len(df.columns):
-                continue
-            sort_args.append((df.columns[col], asc))
-        if not sort_args:
-            return
-        cols = [c for c, _ in sort_args]
-        asc_list = [a for _, a in sort_args]
-        sort_keys = {}
-        for c in cols:
-            has_pct = df[c].astype(str).str.contains("%", na=False).any()
-            if has_pct:
-                numeric_vals = pd.to_numeric(df[c].astype(str).str.replace("%", "").str.strip(), errors="coerce").fillna(0)
-                sort_keys[c] = numeric_vals
-        if sort_keys:
-            df_sorted = df.sort_values(by=cols, ascending=asc_list, key=lambda col: sort_keys.get(col.name, col), na_position="last")
-        else:
-            df_sorted = df.sort_values(by=cols, ascending=asc_list, na_position="last")
-        self._in_sort = True
-        try:
-            self.source_model.setDataFrame(df_sorted)
-        finally:
-            self._in_sort = False
-        self._apply_column_visibility_by_name()
-
     def _capture_natural_df(self):
         """数据（重新）加载时记录原始顺序，供"取消排序"恢复；排序过程中的 setDataFrame 忽略。"""
         if getattr(self, "_in_sort", False):
@@ -4197,23 +3571,6 @@ class MainWindow(QMainWindow):
             if df is not None:
                 self._natural_df = df.copy()
 
-    def _update_sort_indicators(self):
-        """刷新列头多级排序角标（见 SortBadgeHeader）。
-        纯自绘方案：关闭原生箭头（setSortingEnabled(False) 下原生 setSortIndicator 不可靠、
-        且不显示多级），由 SortBadgeHeader.paintEvent 在各级已排序列角上叠「层级数字+▲▼」角标。
-        取消排序(sort_columns 为空)时角标自然消失。"""
-        header = self.table_view.horizontalHeader()
-        header.blockSignals(True)
-        try:
-            header.setSortIndicatorShown(False)  # 关原生箭头，避免与自绘角标重复
-        finally:
-            header.blockSignals(False)
-        # 触发表头重绘以刷新自绘角标（1▲/2▼ ...）
-        header.update()
-
-    # -----------------------------------------------------------
-    # 工厂切换
-    # -----------------------------------------------------------
     def _on_factory_changed(self, factory_name):
         if not factory_name:
             return
@@ -5529,71 +4886,85 @@ class MainWindow(QMainWindow):
     # 在此提前结束，若插在 __init__ 等方法序列中间，其后所有语句会被吸进新方法体，
     # __init__ 提前 return → 组件装配全部缺失（proxy_model 为 None）。
     # ------------------------------------------------------------------ #
-    def _show_col_filter_clear_menu(self, label, pos):
-        """列头筛选提示标签的清除菜单：逐列清除 + 一键清除全部。
 
-        v43.143 新增：此前提示标签是纯 QLabel，用户想取消筛选只能开浮层重新勾一遍
-        （且关掉「🔽 列头筛选」模式开关并不清筛选），观感=「无法取消」。
-        """
-        menu = QMenu(label)
-        col_set = getattr(self, "_filtered_col_set", set()) or set()
-        sm = getattr(self, "source_model", None)
-        display_cols = getattr(sm, "_display_columns", []) if sm is not None else []
-        if not col_set:
-            act_none = menu.addAction("当前没有列头筛选")
-            act_none.setEnabled(False)
-        else:
-            menu.addSection("逐列清除")
-            for c in sorted(col_set):
-                name = str(display_cols[c]) if 0 <= c < len(display_cols) else f"列{c}"
-                menu.addAction("清除此列：%s" % name,
-                               lambda _=False, n=name: self._clear_col_filter_by_name(n))
-            menu.addSeparator()
-            menu.addAction("清除全部列头筛选", self._clear_all_col_filters)
-        menu.exec(label.mapToGlobal(pos))
+    # ------------------------------------------------------------------ #
+    # ARC-003 薄壳转发层（v43.193）：列过滤/排序/宽度 24 个方法已切出到
+    # controllers/column_controller.py。以下薄壳仅为保持既有外部调用签名不变
+    # （components/main_table.py 信号绑定 self.mw._on_header_clicked 等、
+    #  各看板 dialog 的 self.main_window._apply_column_visibility_by_name()），
+    # 逻辑零改动。禁止在薄壳内新增业务逻辑。
+    # ------------------------------------------------------------------ #
+    def _toggle_column_lock(self, *args, **kwargs):
+        return self.column_controller._toggle_column_lock(*args, **kwargs)
 
-    def _clear_col_filter_by_name(self, col_name, clear_sort=True):
-        """按列名清除主表的列头取值过滤（含漏斗标与提示刷新）。
+    def _toggle_table_fullscreen(self, *args, **kwargs):
+        return self.column_controller._toggle_table_fullscreen(*args, **kwargs)
 
-        v43.144：`clear_sort=True` 时连带把该列从 sort_columns 移除并重排。
-        原先只清筛选不清排序，取消后该列排序角标/箭头仍留着，视觉上像还在筛。
-        """
-        if self.proxy_model is None:
-            return
-        self.proxy_model.setValueFilter(col_name, set())
-        sm = getattr(self, "source_model", None)
-        display_cols = getattr(sm, "_display_columns", []) if sm is not None else []
-        hit = []
-        if col_name in display_cols:
-            hit = [display_cols.index(col_name)]
-        else:
-            hit = [c for c in list(self._filtered_col_set)
-                   if 0 <= c < len(display_cols) and str(display_cols[c]) == col_name]
-        for c in hit:
-            self._filtered_col_set.discard(c)
-        if clear_sort and hit:
-            self._drop_sort_columns(hit)
-        self._update_col_filter_hint()
+    def _show_column_hide_dialog(self, *args, **kwargs):
+        return self.column_controller._show_column_hide_dialog(*args, **kwargs)
 
-    def _clear_all_col_filters(self, clear_sort=True):
-        """清除主表全部列头取值过滤（v43.144：连带取消这些列的排序）。"""
-        if self.proxy_model is not None:
-            self.proxy_model.clearHeaderFilters()
-        hit = sorted(self._filtered_col_set)
-        self._filtered_col_set.clear()
-        if clear_sort and hit:
-            self._drop_sort_columns(hit)
-        self._update_col_filter_hint()
+    def _is_column_effectively_hidden(self, *args, **kwargs):
+        return self.column_controller._is_column_effectively_hidden(*args, **kwargs)
 
-    def _drop_sort_columns(self, col_indexes):
-        """把给定列号从多级排序中移除并重排（移除后为空则整体恢复原始顺序）。"""
-        before = len(self.sort_columns)
-        self.sort_columns = [(c, asc) for c, asc in self.sort_columns
-                             if c not in set(col_indexes)]
-        if len(self.sort_columns) == before:
-            return          # 本来就没排这些列，不必重排
-        self._apply_multi_sort()
-        self._update_sort_indicators()
+    def _ensure_column_visible_width(self, *args, **kwargs):
+        return self.column_controller._ensure_column_visible_width(*args, **kwargs)
+
+    def _apply_column_visibility_by_name(self, *args, **kwargs):
+        return self.column_controller._apply_column_visibility_by_name(*args, **kwargs)
+
+    def _set_column_widths(self, *args, **kwargs):
+        return self.column_controller._set_column_widths(*args, **kwargs)
+
+    def _apply_default_width(self, *args, **kwargs):
+        return self.column_controller._apply_default_width(*args, **kwargs)
+
+    def _get_user_config_dir(self, *args, **kwargs):
+        return self.column_controller._get_user_config_dir(*args, **kwargs)
+
+    def _get_config_path(self, *args, **kwargs):
+        return self.column_controller._get_config_path(*args, **kwargs)
+
+    def _get_default_config_path(self, *args, **kwargs):
+        return self.column_controller._get_default_config_path(*args, **kwargs)
+
+    def _save_column_widths(self, *args, **kwargs):
+        return self.column_controller._save_column_widths(*args, **kwargs)
+
+    def _load_column_widths(self, *args, **kwargs):
+        return self.column_controller._load_column_widths(*args, **kwargs)
+
+    def _on_header_clicked(self, *args, **kwargs):
+        return self.column_controller._on_header_clicked(*args, **kwargs)
+
+    def _update_col_filter_hint(self, *args, **kwargs):
+        return self.column_controller._update_col_filter_hint(*args, **kwargs)
+
+    def _toggle_col_filter_mode(self, *args, **kwargs):
+        return self.column_controller._toggle_col_filter_mode(*args, **kwargs)
+
+    def _open_column_filter(self, *args, **kwargs):
+        return self.column_controller._open_column_filter(*args, **kwargs)
+
+    def _open_empty_column_filter_popup(self, *args, **kwargs):
+        return self.column_controller._open_empty_column_filter_popup(*args, **kwargs)
+
+    def _apply_multi_sort(self, *args, **kwargs):
+        return self.column_controller._apply_multi_sort(*args, **kwargs)
+
+    def _update_sort_indicators(self, *args, **kwargs):
+        return self.column_controller._update_sort_indicators(*args, **kwargs)
+
+    def _show_col_filter_clear_menu(self, *args, **kwargs):
+        return self.column_controller._show_col_filter_clear_menu(*args, **kwargs)
+
+    def _clear_col_filter_by_name(self, *args, **kwargs):
+        return self.column_controller._clear_col_filter_by_name(*args, **kwargs)
+
+    def _clear_all_col_filters(self, *args, **kwargs):
+        return self.column_controller._clear_all_col_filters(*args, **kwargs)
+
+    def _drop_sort_columns(self, *args, **kwargs):
+        return self.column_controller._drop_sort_columns(*args, **kwargs)
 
 
 def _ask_quarantine_reason(parent, title: str) -> str | None:
@@ -5621,10 +4992,3 @@ def _ask_quarantine_reason(parent, title: str) -> str | None:
     if dlg.exec() == QDialog.Accepted:
         return edit.text().strip() or "手动隔离"
     return None
-
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    app.setStyle("Fusion")
-    window = MainWindow()
-    sys.exit(app.exec())

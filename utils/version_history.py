@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.193",
+        "date": "2026-10-14",
+        "features": "ARC-003 第一刀（裴哥批准 B 方案·单领域垂直切出）：列过滤/排序/宽度职责从 MainWindow 切出到新模块 `gui_pyside6/controllers/column_controller.py`（ColumnController），24 个方法共约 748 行；main_window.py 5630 → 4967 行。外部接口签名零变化（components/main_table.py 的 `self.mw._on_header_clicked` 等 4 处信号绑定、5 个看板 dialog 的 `self.main_window._apply_column_visibility_by_name()` 全部照旧）。",
+        "fixes": "**根因（实测修正审计结论）**：横木审计记的「5638 行 God Object」病灶描述不准。取证发现方法体量中位仅 17 行、均值 27 行——真正的问题是**200 个薄方法共享 131 个 self 状态字段**造成的耦合网（67 个方法 2352 行因共享状态而横跨领域、无法归类），而非单方法肥胖。**切法**：既有 `controllers/` 已是组合式先例（`AnalysisController(self)` 等 4 个），故沿用——ColumnController 持 `self.mw` 反向引用，方法体逐字搬迁、`self.`→`self.mw.`，MainWindow 侧保留 24 个同名薄壳转发（`return self.column_controller.<name>(*args, **kwargs)`）以零改动维持外部接口。**取证否决了 mixin 继承方案**：5 个 dialog 各自有同名但签名不同的 `_update_col_filter_hint`（接收 col_filter_ctrl/label/model 参数），继承+super() 链极易误绑，故走组合。**拆分中修掉一个真 F821**：模块级函数 `_ask_quarantine_reason` 被误搬进 controller，导致 main_window:4155 调用点 NameError；已迁回原位并加测试锁定。**验证**：py_compile 全过；pyflakes F821 归零（对齐 HEAD 基线）；pytest 159 passed + 1 既存失败（test_menu_contents，与本次无关）+ 2 xfailed，零新增回归；GUI 离屏 smoke 通过（ColumnController 就位、薄壳实调 OK）；**反证测试暴露测试盲区**——把薄壳注入 `return None` 后原 6 个 MainWindow 测试仍 14 passed 全过（拦不住转发被破坏），遂新增 `tests/unit/test_column_controller_split.py` 6 条专门覆盖转发链路（mock 打桩断言返回值透传、controller 持 mw 回指、`_ask_quarantine_reason` 归属、MainWindow <5000 行护栏），重跑反证确认新测试 1 failed 精确捕获。**治理文档**：`.architecture/reviews` 中 ARC-003 更新为 `status: in-progress` 并订正病灶描述、记录已切/未切领域，双指纹经 `architecture_tool.py fingerprint-artifact` 重算（连带 ARC-002 关联指纹同步重算），validate-review + validate-project 均通过。**已知副作用（仓库历史遗留，非本次引入）**：本仓库 core.autocrlf=true 但历史 blob 存的是 CRLF，本次改动触发 git 对 main_window.py 的行尾规范化，`git diff` 显示为全文件变更；归一化比对确认内容真实差异仅 +88/−724（搬迁 24 方法 + 新增 24 薄壳 + 装配代码），其余为行尾噪声。已用 --renormalize 验证无法在不污染 blame/history 前提下消除，故保留现状，不做整仓行尾整改。",
+    },
+    {
         "version": "v43.192",
         "date": "2026-10-14",
         "features": "ARC-002 方案B 收尾——data_id 构造 23 处收敛单一正版 + 分级制存档。① 新增 `gui_pyside6/services/data_service.py` 模块级 `build_data_id(row, df)`（+ `_seg` 单段字符串化），把此前散落 23 处的 4段/3段 if/else 拼接（alert_dialog×6、deviation_warning_dialog×7、neg/pos/semi 三看板各×3、audit_controller×1）全部收敛为单行调用，拼接类硬门禁落地；② `.architecture/constraints.md` 追加「改动风险分级制」：🔴红区（口径/冻结区零改动）／🟡黄区（动计算逻辑须跑对账网）／🟢绿区（拼接类/UI/文档直接做），并明确拼接类=硬门禁（单一正版+单测锚定）、计算类=只报不拦+人工验证戳。",

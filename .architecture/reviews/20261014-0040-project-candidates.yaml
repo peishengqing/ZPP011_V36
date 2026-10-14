@@ -451,20 +451,20 @@ findings:
 - id: ZPP011-ARC-003
   kind: risk
   rule_id: PROJECT.COHESION.001
-  title: main_window.py 5638 行 God Object——UI、数据变更、分析编排、内联 QThread 四类职责合一
+  title: main_window.py God Object（审计时 5638 行；2026-10-14 实测病灶为「200 个薄方法 + 131 个共享状态 + 函数内 QThread」，非单一巨型方法）
   invariant: A logical change is owned by a bounded set of components rather than a grab-bag.
   severity: high
   confidence: 0.9
   verification:
     status: candidate
-    rationale: 行数与职责混合为直接实证；拆分方案不在本审计范围。
-  status: open
+    rationale: 行数与职责混合为直接实证；拆分方案不在本审计范围。2026-10-14 ARC-003 第一刀完成（裴哥批准 B 方案·单领域垂直切出）：列过滤/排序/宽度 24 个方法切出到 gui_pyside6/controllers/column_controller.py（组合式，controller 持 self.mw 反向引用；MainWindow 侧保留 24 个薄壳转发以保持 components/main_table.py 信号绑定与各看板 dialog 的 self.main_window._apply_column_visibility_by_name() 签名不变），main_window.py 5630 → 4967 行，新增 tests/unit/test_column_controller_split.py 6 条防假通断言与 <5000 行护栏。反证测试发现原 6 个 MainWindow 测试拦不住薄壳被改成 return None，已由新测试覆盖。未切出领域：看板/弹窗、半成品分类、替代料管理、筛选预设、隔离区/规则、监控扫描、PPT 生成、定位复制、配置版本、AI/统计，以及 _show_audit_changes_dialog(344 行)/_assemble_layout(237 行)/__init__(203 行) 三巨型方法与 line 1281 函数内 QThread。
+  status: in-progress
   evidence:
   - type: source
     location: gui_pyside6/main_window.py
     path: gui_pyside6/main_window.py
     line_start: 1
-    observation: 全文件 5638 行（wc -l 实测），超过此前记录的 3888 行。
+    observation: 全文件 5638 行（wc -l 实测，审计时 bf98cca），超过此前记录的 3888 行。2026-10-14 拆分后降至 4967 行。
     commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
   - type: source
     location: gui_pyside6/main_window.py:1280-1300
@@ -510,7 +510,7 @@ findings:
   - maintainability
   evidence_level: E1
   fingerprint: 98f6a567fa4838ba1c8d34b2ebee753dfb26781154b17b9a0985e026125d1afb
-  evidence_fingerprint: c38142a14023a50eceb78eefb9b402a59261161a34a2c53b666dc1d18060cbe1
+  evidence_fingerprint: 1aa9a8067fe013937979f0079285a670f450829924340ef929022551c8f84fd4
   fact_inference_boundary:
     facts:
     - 5638 行单文件，含 UI、内联线程类、df 状态变更、analysis 编排四类职责
