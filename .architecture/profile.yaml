@@ -1,0 +1,283 @@
+schema_version: '1.1'
+project:
+  id: zpp011-v2
+  name: zpp011_v2
+  type:
+  - software-project
+  lifecycle: active
+  criticality: medium
+  owners:
+  - peishengqing (裴盛清, 云南达利食品有限公司材料审核员, 415608798@qq.com)
+  critical_qualities:
+  - maintainability
+  - recoverability
+  quality_attributes:
+  - id: maintainability
+    priority: high
+    rationale: Changes must remain bounded to an accountable owner.
+    target:
+      architecture_boundary_tests: required
+    evidence:
+    - Repository architecture tests
+    scenario:
+      source: A maintainer changes one owned module.
+      trigger: A feature or correction changes module behavior.
+      environment: Normal development and CI.
+      target: The owning module and its public boundary.
+      response: The change remains bounded and violations fail deterministically.
+      measure: Architecture boundary checks pass.
+  - id: reliability.recoverability
+    priority: high
+    rationale: Critical work must reach an explicit terminal outcome.
+    target:
+      recovery_test: required
+    evidence:
+    - Critical-flow recovery tests
+    scenario:
+      source: An expected interruption occurs.
+      trigger: A critical flow is interrupted after work begins.
+      environment: Normal operation under a declared failure.
+      target: The critical-flow state owner.
+      response: The flow resumes, compensates, or terminates safely.
+      measure: Recovery tests prove no duplicate irreversible effect.
+  business_context:
+    product_stage: mature
+    team_count: 1
+    ownership_model: Single maintainer (peishengqing) with AI pair-programming (WorkBuddy).
+    operational_maturity: medium
+    distributed_system_experience: limited
+    on_call: false
+    change_frequency: frequent
+    regulatory_constraints:
+    - 公司生产数据仅限内网使用，不得外发至未授权服务
+    user_scale: 单座位桌面应用；服务云南达利 1101 食品/1102 饮料两厂 16 车间的材料审核作业
+    throughput: 单用户交互式；无并发吞吐要求
+    latency_targets: 分析/导出允许分钟级（net_offset.py P0-4 优化后实测 2.5x 加速）
+    availability_target: 单机本地应用，无 SLA 要求；崩溃恢复靠 _recovery_needed.flag 与 .bak
+    data_volume: 已实测 audit.db 11.6MB + WAL 4.2MB；deviation_history 4143 行、quarantine_records 1492 行、read_status 44234 行（2026-09-12~10-11）
+    consistency: 单写者本地 SQLite，WAL 模式
+    offline_requirement: full
+    deployment_model: Windows 10 x64 单机桌面（PySide6），PyInstaller 打包 exe 分发（build_pyside6_exe.py）
+    budget: unknown
+    deadlines: Unknown; confirm before migration planning.
+    required_stack:
+    - Python 3.11
+    - PySide6
+    - pandas
+    prohibited_services:
+    - 禁止引入云端依赖（本产品为纯本地桌面应用）
+    - 禁止新增第三方运行时依赖（维护者明确红线）
+    migration_limits:
+    - Preserve public and persisted contracts.
+    - 冻结区零改动：analysis/analyzer.py 与 analysis/excel_builder/sheet2_alt.py
+  repository_facts:
+    path: .architecture/reviews/inputs/20261013-zpp011-r1-repository-facts.yaml
+    sha256: 8e2aa799b2fb3633a549a82c43cc83feba26726fbb3e3b67be23368cf509a9e0
+  required_knowledge_domains: []
+  profile_sources:
+    detected:
+    - .architecture/repository-facts.yaml
+    declared: []
+    inferred:
+    - inference: Project domains and types inferred from detected files and dependencies.
+      confidence: 0.8
+      basis:
+      - _dbg_alert.py
+      - _dbg_all.py
+      - _dbg_all2.py
+      - _dbg_all3.py
+      - _dbg_all4.py
+      - _dbg_fb.py
+      - _dbg_ppt.py
+      - _dbg_real.py
+      - _dbg_shot.py
+      - _dbg_trae.py
+      - _dbg_v145.py
+      - _dbg_v146.py
+      - _dbg_v147.py
+      - _dbg_v148.py
+      - _dbg_v150.py
+      - _dbg_v151.py
+      - _dbg_v152.py
+      - _dbg_v152b.py
+      - _dbg_v152c.py
+      - _dbg_v152d.py
+      - _dbg_v153.py
+      - _dbg_v153b.py
+      - _dbg_v154.py
+      - _dbg_v154b.py
+      - _dbg_v155.py
+      - _dbg_v155b.py
+      - _dbg_v156.py
+      - _dbg_w.py
+      - _dbg_z004.py
+      - _probe_header3.py
+      - analysis/__init__.py
+      - analysis/analyzer.py
+      - analysis/dashboard_html.py
+      - analysis/debug_util.py
+      - analysis/excel_builder/__init__.py
+      - analysis/excel_builder/post_process.py
+      - analysis/excel_builder/sheet10_trend.py
+      - analysis/excel_builder/sheet1_summary.py
+      - analysis/excel_builder/sheet2_alt.py
+      - analysis/excel_builder/sheet3_no_note.py
+      - analysis/excel_builder/sheet4_middle.py
+      - analysis/excel_builder/sheet5_full.py
+      - analysis/excel_builder/sheet6_anomaly.py
+      - analysis/excel_builder/sheet7_amount.py
+      - analysis/excel_builder/sheet8_reason_summary.py
+      - analysis/excel_builder/sheet9_reason_detail.py
+      - analysis/excel_builder/write_sheet_util.py
+      - analysis/net_offset.py
+      - build_ppt_net.py
+      - build_pyside6_exe.py
+      - config/__init__.py
+      - config/constants.py
+      - config/paths.py
+      - config/settings.py
+      - core/__init__.py
+      - core/advanced_ppt_generator_v2.py
+      - core/ai_client.py
+      - core/alert_monitor.py
+      - core/audit_logger.py
+      - core/auto_closer.py
+      - core/auto_quarantine.py
+      - core/auto_read_rules.py
+      - core/backup_manager.py
+      - core/bias_calculator.py
+      - core/change_detector.py
+      - core/config_loader.py
+      - core/config_manager.py
+      - core/fingerprint.py
+      - core/guizang_magazine.py
+      - core/guizang_report.py
+      - core/guizang_swiss.py
+      - core/history_db.py
+      - core/history_freq.py
+      - core/import_handlers.py
+      - core/logger.py
+      - core/ppt_trae.py
+      - core/quarantine_manager.py
+      - core/read_status.py
+      - core/rule_engine.py
+      - core/view_manager.py
+      - domain/__init__.py
+      - domain/alt_material/__init__.py
+      - domain/alt_material/alt_manager.py
+      - fixbom.py
+      - gui_pyside6/__init__.py
+      - gui_pyside6/components/__init__.py
+      - gui_pyside6/components/bottom_bar.py
+      - gui_pyside6/components/left_panel.py
+      - gui_pyside6/components/main_table.py
+      - gui_pyside6/components/menu_bar.py
+      - gui_pyside6/components/title_bar.py
+      - gui_pyside6/controllers/__init__.py
+      - gui_pyside6/controllers/alt_controller.py
+      - gui_pyside6/controllers/analysis_controller.py
+      - gui_pyside6/controllers/audit_controller.py
+      - gui_pyside6/controllers/export_controller.py
+      - gui_pyside6/dialogs/__init__.py
+      - gui_pyside6/dialogs/alert_dialog.py
+      - gui_pyside6/dialogs/alt_chain_dialog.py
+      - gui_pyside6/dialogs/auto_quarantine_rule_dialog.py
+      - gui_pyside6/dialogs/auto_read_rule_dialog.py
+      - gui_pyside6/dialogs/auto_rules_center_dialog.py
+      - gui_pyside6/dialogs/batch_operations_dialog.py
+      - gui_pyside6/dialogs/dashboard_dialog.py
+      - gui_pyside6/dialogs/data_stability_dialog.py
+      - gui_pyside6/dialogs/deviation_warning_dialog.py
+      - gui_pyside6/dialogs/guizang_dialog.py
+      - gui_pyside6/dialogs/health_check_dialog.py
+      - gui_pyside6/dialogs/history_compare_dialog.py
+      - gui_pyside6/dialogs/import_wizard_dialog.py
+      - gui_pyside6/dialogs/material_presets_dialog.py
+      - gui_pyside6/dialogs/material_profile_dialog.py
+      - gui_pyside6/dialogs/neg_loss_dashboard_dialog.py
+      - gui_pyside6/dialogs/pos_loss_dashboard_dialog.py
+      - gui_pyside6/dialogs/quarantine_dialog.py
+      - gui_pyside6/dialogs/quarantine_review_dialog.py
+      - gui_pyside6/dialogs/semi_dashboard_dialog.py
+      - gui_pyside6/dialogs/unit_summary_dialog.py
+      - gui_pyside6/main_window.py
+      - gui_pyside6/models/__init__.py
+      - gui_pyside6/models/data_frame_model.py
+      - gui_pyside6/models/workers.py
+      - gui_pyside6/save_guard.py
+      - gui_pyside6/services/__init__.py
+      - gui_pyside6/services/data_service.py
+      - gui_pyside6/utils/__init__.py
+      - gui_pyside6/utils/cascade_filter.py
+      - gui_pyside6/utils/click_debug.py
+      - gui_pyside6/utils/column_filter.py
+      - gui_pyside6/utils/locate.py
+      - gui_pyside6/utils/semi_class.py
+      - gui_pyside6/utils/table_sort.py
+      - gui_pyside6/viewmodels/__init__.py
+      - gui_pyside6/viewmodels/analysis_vm.py
+      - gui_pyside6/widgets/__init__.py
+      - gui_pyside6/widgets/filter_panel.py
+      - gui_pyside6/widgets/sort_badge_header.py
+      - gui_pyside6/widgets/stats_cards.py
+      - gui_pyside6/widgets/toast.py
+      - gui_pyside6/widgets/unread_summary_popup.py
+      - gui_pyside6/workers/report_workers.py
+      - gui_ui_check.py
+      - htmlcov/coverage_html_cb_188fc9a4.js
+      - inspect3.py
+      - inspect_data2.py
+      - modules/audit/__init__.py
+      - modules/audit/filters/__init__.py
+      - modules/audit/filters/filter_engine.py
+      - probe.py
+      - probe2.py
+      - resources/guizang/magazine/assets/lucide.min.js
+      - resources/guizang/magazine/assets/motion.min.js
+      - resources/guizang/swiss/assets/lucide.min.js
+      - resources/guizang/swiss/assets/motion.min.js
+      - run_pyside6.py
+      - storage/__init__.py
+      - storage/storage.py
+      - tools/backfill_material_names.py
+      - tools/diag_sap2.py
+      - tools/gen_dashboard.py
+      - tools/gen_material_audit_meeting_doc.py
+      - tools/sap_pull.py
+      - utils/__init__.py
+      - utils/excel_io.py
+      - utils/helpers.py
+      - utils/version_history.py
+      - work/gen_final.py
+      - work/gen_final2.py
+      - work/gen_final3.py
+      - work/gen_final4.py
+      - work/gen_final5.py
+      - work/gen_final6.py
+      - work/gen_final7.py
+      - work/gen_final8.py
+      - work/gen_final9.py
+      - work/probe_bev.py
+      - work/probe_share.py
+      - work/probe_slide4.py
+      - work/probe_wh.py
+      - work/run_gen.py
+      - work/splice.py
+      - work/云南达利积压分析_v2.0_优化版.py
+    - inference: One provisional team and medium operations maturity.
+      confidence: 0.25
+      basis:
+      - No declared team or operating model was supplied.
+  required_reviews:
+  - project-architecture
+  review_requirements:
+  - id: project-architecture
+    kind: project
+    rule_packs:
+    - project-core
+  rule_packs:
+  - project-core
+  data_classification: internal
+  constraints_file: .architecture/constraints.md
+  critical_flows_file: .architecture/critical-flows.md
+  review_output: .architecture/reviews

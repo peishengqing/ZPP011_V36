@@ -1,0 +1,932 @@
+schema_version: '1.2'
+review:
+  id: zpp011-v2-20261014-project
+  kind: project
+  workflow: project-architecture
+  subject:
+    id: zpp011-v2
+    name: ZPP011 生产偏差分析器
+    repository: .
+  performed_at: '2026-10-14T00:40:00+08:00'
+  commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  scope:
+  - .
+  verification_state: candidates
+  reviewers:
+  - architecture-auditor
+  profile: .architecture/profile.yaml
+  repository_identity: zpp011-v2
+  profile_sha256: 9fd6fdaf4f4d23ded989be22493ddc0ff25040c8778232c0aa94b12496c9b3bc
+  dirty_tree: true
+  rule_packs:
+  - id: project-core
+    version: 1.0.0
+    sha256: b211d548ad5fe367b9dab8416051c43f3a206da81bd2a8e7596cd788ed3f100c
+  scope_manifest:
+  - .
+summary:
+  architecture: 单座位 Windows 桌面应用（PySide6 GUI + Python 分析器），服务生产偏差审核。分层为 config/（配置）→ core/（领域服务约 20 模块）+ domain/ + modules/audit/
+    + storage/ + analysis/（冻结计算区 analyzer.py + excel_builder/sheet1-10 + net_offset.py）→ gui_pyside6/（5638 行 main_window.py
+    + components/controllers/dialogs/viewmodels/ widgets/services/models/workers）。数据持久化到 ~/.zpp011_audit/audit.db（SQLite WAL）。
+    长任务走 6 个纯 QThread worker；启动链 run_pyside6.py → main_window.py。 底层包对 GUI 零反向依赖（分层方向正确）；主要结构性风险集中在数据访问边界缺失、 业务键重复构造与主窗口 God
+    Object。
+  raw_findings: 7
+  confirmed: 0
+  rejected: 0
+  needs_evidence: 0
+coverage:
+- rule_id: PROJECT.BOUNDARY.001
+  status: assessed
+  finding_ids: []
+  reason: 主窗口 5638 行混合 UI/数据变更/分析编排职责；3 个 GUI 对话框绕过 core 数据层直连 SQLite。分层包间方向正确（无反向依赖）。
+  evidence:
+  - path: gui_pyside6/main_window.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: 15bb62182cf6385123231bdfae1a156a74f49df0
+    line_start: 1
+    observation: 5638 行主窗口混合四类职责（实测 wc -l）。
+  - path: gui_pyside6/dialogs/data_stability_dialog.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: c53faac45411895c33c737027efef3bd7074d502
+    line_start: 88
+    observation: GUI 对话框直连 SQLite，绕过 core 数据层。
+- rule_id: PROJECT.DEPENDENCY.001
+  status: assessed
+  finding_ids: []
+  reason: 已 grep 验证 core/analysis/domain/modules/storage/config/utils 对 gui_pyside6 零 import；依赖方向正确，未发现违反。
+  evidence:
+  - path: core/history_db.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: 8995234819bfb4184e02bb21f0045b83021a9e8c
+    line_start: 9
+    observation: core 层代表文件；grep 全 core/analysis/domain/modules/storage/config/utils 对 gui_pyside6 零 import，方向正确。
+- rule_id: PROJECT.COHESION.001
+  status: assessed
+  finding_ids:
+  - ZPP011-ARC-003
+  reason: main_window.py 承担 UI + 隔离状态变更 + 分析编排 + data_id 查找；根目录另积压 27+ 个 _dbg_/probe 脚本与 10 个 work/gen_final 生成脚本。
+  evidence:
+  - path: gui_pyside6/main_window.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: 15bb62182cf6385123231bdfae1a156a74f49df0
+    line_start: 1280
+    observation: 主窗口内联 QThread 承担分析编排。
+- rule_id: PROJECT.FRONTEND.001
+  status: not_applicable
+  finding_ids: []
+  reason: 单座位本地桌面应用，无 client/server 分离；权威校验与安全执行天然同进程。
+- rule_id: PROJECT.DATA.001
+  status: assessed
+  finding_ids:
+  - ZPP011-ARC-001
+  - ZPP011-ARC-002
+  reason: 审计库存在三个互相矛盾的文件名定义（audit.db/audit_log.db/history.db）；data_id 业务键在 7 处重复构造。
+  evidence:
+  - path: core/read_status.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: d0f8a924c50114366c188accfe4a682b4e9fff01
+    line_start: 23
+    observation: audit.db 路径定义。
+  - path: core/history_db.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: 8995234819bfb4184e02bb21f0045b83021a9e8c
+    line_start: 9
+    observation: history.db 路径定义——与 audit.db 分歧。
+- rule_id: PROJECT.OWNERSHIP.001
+  status: assessed
+  finding_ids:
+  - ZPP011-ARC-006
+  reason: 同一 SQLite 库被 9 个模块（3 个层）直连写入；无单一数据访问边界；活库路径仅 read_status.py 与实际磁盘一致。
+  evidence:
+  - path: gui_pyside6/dialogs/quarantine_review_dialog.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: d72b72400b01399d5bb4aabac6741276b13517fa
+    line_start: 67
+    observation: 对话框直连审核库。
+  - path: core/read_status.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: d0f8a924c50114366c188accfe4a682b4e9fff01
+    line_start: 23
+    observation: 活库唯一定义与磁盘一致。
+- rule_id: PROJECT.CONTRACT.001
+  status: assessed
+  finding_ids: []
+  reason: data_id 是 GUI df 与审计库的关联契约，但 6 处 GUI 位置各自实现构造逻辑，无单测锁定各处一致。
+  evidence:
+  - path: gui_pyside6/services/data_service.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: 264edb576d4164b32ada7d9b5178ba85cbbca087
+    line_start: 137
+    observation: data_id 正版构造；另 6 处重复实现无契约测试。
+- rule_id: PROJECT.TRANSACTION.001
+  status: assessed
+  finding_ids: []
+  reason: 已观察的写入均为单语句级（sqlite3 默认自动提交）；未发现需要多语句原子性的业务不变量。多语句写入路径未逐例展开，列入 limitations。
+  evidence:
+  - path: core/history_db.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: 8995234819bfb4184e02bb21f0045b83021a9e8c
+    line_start: 110
+    observation: save_analysis_result 单语句写入，sqlite 自动提交；未发现多语句原子性需求。
+- rule_id: PROJECT.IDEMPOTENCY.001
+  status: not_assessed
+  finding_ids: []
+  reason: 重试/去毒路径未追踪；已知 10/4 单日 2131 次偏差变更中 1293 次 change_reason 改动的写入去重语义需专项分析。
+- rule_id: PROJECT.RELIABILITY.001
+  status: assessed
+  finding_ids:
+  - ZPP011-ARC-004
+  reason: core+gui 共 319 处 except Exception，其中 90 处紧随 pass 无日志；失败不可观测。AI 客户端有分档超时（5/20/45s）但未观察到重试。
+  evidence:
+  - path: core/ai_client.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: 5fddc7f729b7748358252e42647630aea28ec70f
+    line_start: 199
+    observation: requests.post timeout=5 分档超时；无重试；319 处 except Exception/90 处静默 pass。
+- rule_id: PROJECT.STATE.001
+  status: not_assessed
+  finding_ids: []
+  reason: 长生命周期工作流状态机未追踪；_recovery_needed.flag（2026-09-06 残留）表明存在崩溃恢复设计但流程未验证。
+- rule_id: PROJECT.SECURITY.001
+  status: assessed
+  finding_ids: []
+  reason: 未发现违反（优势项）：ai_client 明确不硬编码密钥（models.json→配置→环境变量三级）；sap_pull 交互式密码；.gitignore 挡 sap_pull_secret.json/*.db/*.bak。
+  evidence:
+  - path: core/ai_client.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: 5fddc7f729b7748358252e42647630aea28ec70f
+    line_start: 26
+    observation: AGNES_API_KEY 空值+三级加载注释，不硬编码。
+  - path: tools/sap_pull.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: b785ef6f91243e75decbb3adee568162e00770f4
+    line_start: 265
+    observation: get_password() 交互式输入；sap_pull_secret.json 已 gitignore。
+- rule_id: PROJECT.PRIVACY.001
+  status: not_assessed
+  finding_ids: []
+  reason: 数据保留/导出/删除生命周期未完整追踪；cleanup_old_records(months=6) 存在但保留策略未与业务确认。
+- rule_id: PROJECT.OBSERVABILITY.001
+  status: assessed
+  finding_ids: []
+  reason: 90 处静默 pass 使关键流失败无法关联定位；logger 使用不一致（部分路径 log()、部分静默）。
+  evidence:
+  - path: gui_pyside6/dialogs/history_compare_dialog.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: 50f6cc5f4e30a1c6b966fedc226feafc14e8ebf8
+    line_start: 15
+    observation: try-import-except-None 静默降级模式典型样本。
+- rule_id: PROJECT.CONFIG.001
+  status: assessed
+  finding_ids: []
+  reason: 未发现违反：AI 端点/key 有明确优先级链；但 core 内存在 config_loader.py 与 config_manager.py 双加载器（观察项，未达候选阈值）。
+  evidence:
+  - path: core/ai_client.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: 5fddc7f729b7748358252e42647630aea28ec70f
+    line_start: 26
+    observation: models.json→ai.api_key→环境变量的明确优先级链。
+- rule_id: PROJECT.PERFORMANCE.001
+  status: not_assessed
+  finding_ids: []
+  reason: 未声明延迟/吞吐/内存预算；net_offset.py 有实测 2.5x 优化记录但无既定预算可对照。
+- rule_id: PROJECT.TEST.001
+  status: assessed
+  finding_ids:
+  - ZPP011-ARC-005
+  reason: 30+ 测试文件存在且 conftest fixture 成体系，但两套 CI workflow 均只跑 tests/unit/；e2e/integration/smoke 不在 CI；test.yml 覆盖率只采 core
+    与 modules/audit/filters。
+  evidence:
+  - path: .github/workflows/ci.yml
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: 947109ea65c69f4f7dd71fd15ff159773a3f6cc3
+    line_start: 29
+    observation: pytest 仅 tests/unit/。
+  - path: tests/test_analyzer_e2e.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: 97281948a34574d7e9ed826881a3d3d9021201bb
+    line_start: 1
+    observation: e2e 测试存在但不在 CI。
+- rule_id: PROJECT.DEPLOY.001
+  status: assessed
+  finding_ids: []
+  reason: build_pyside6_exe.py 打包链存在且 .gitignore 覆盖 dist/；依赖锁版本与 hidden-imports 完整性未验证（limitations）。
+  evidence:
+  - path: build_pyside6_exe.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: 78f0b4b79047c57575e8c8f03d2e3505d41e1154
+    line_start: 1
+    observation: PyInstaller 打包链存在；.gitignore 覆盖 dist/。
+- rule_id: PROJECT.CHANGE.001
+  status: assessed
+  finding_ids: []
+  reason: 数据库路径/文件名演进无迁移证据（audit.db→audit_log.db 分歧自 commit 6b5793c 引入 backup_manager）；version_history.py 提供版本记录但不管持久化契约迁移。
+  evidence:
+  - path: core/backup_manager.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: d1c9a63d5b5042a51f61bad34a4ab5ccf78015dc
+    line_start: 303
+    observation: audit_log.db 于 commit 6b5793c 引入，与活库 audit.db 分歧且无迁移。
+- rule_id: PROJECT.DEBT.001
+  status: assessed
+  finding_ids:
+  - ZPP011-ARC-007
+  reason: 48 个未跟踪条目 + 已入库孤儿脚本；债务成本体现为导航/审查噪音与 AI 结对时的误引风险，非样式问题。
+  evidence:
+  - path: .gitignore
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: c50d8bacd4c758554248269591b9301d1632b5ba
+    line_start: 30
+    observation: .gitignore 未覆盖 _dbg_*/probe*/work/gen_final* 等孤儿脚本模式，48 个未跟踪条目散落工作区（其中 probe.py、work/gen_final.py 经 git rev-parse
+      证实未入库）。
+- rule_id: PROJECT.DESIGN.001
+  status: assessed
+  finding_ids: []
+  reason: 未发现过度设计：worker/dialog 抽象与当前单座位规模相称；dashboard WebEngine 延迟加载等规避措施有明确现实动因。
+  evidence:
+  - path: gui_pyside6/dialogs/dashboard_dialog.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: a5156a75bcc2c16d8385d6e4330be215da260068
+    line_start: 41
+    observation: WebEngine 延迟加载有明确启动 hang 动因，规避与规模相称。
+findings:
+- id: ZPP011-ARC-001
+  kind: risk
+  rule_id: PROJECT.DATA.001
+  title: 审计库身份三分裂——audit.db/audit_log.db/history.db 三个路径定义并存，磁盘仅 audit.db 存在
+  invariant: Persisted models express identity, lifecycle, constraints, and relationships without contradictory sources of
+    truth.
+  severity: high
+  confidence: 0.9
+  verification:
+    status: candidate
+    rationale: 证据为源码行 + 磁盘实证 + git 史，待独立验证通道确认调用图与历史演进。
+  status: open
+  evidence:
+  - type: source
+    location: core/read_status.py:23
+    path: core/read_status.py
+    line_start: 23
+    observation: 活库路径 DB_PATH = ~/.zpp011_audit/audit.db，主线程单例连接，deviation_history/read_status 表所在。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: source
+    location: core/backup_manager.py:303
+    path: core/backup_manager.py
+    line_start: 303
+    observation: 同文件第二个 get_audit_db_path() 定义返回 audit_log.db（Python 取最后定义，第 23 行的 audit_log.db 版本同样指向该名，前者被覆盖但同名同值）。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: source
+    location: core/history_db.py:9
+    path: core/history_db.py
+    line_start: 9
+    observation: 分析结果持久层 DB_PATH = ~/.zpp011_audit/history.db，save_analysis_result/get_analysis_data/compare_analyses 均默认此路径。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: source
+    location: storage/storage.py:22
+    path: storage/storage.py
+    line_start: 22
+    observation: 旧存储层 get_audit_db_path() 返回 audit_log.db。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: runtime
+    location: C:/Users/Administrator/.zpp011_audit/
+    observation: 磁盘实证（2026-10-14）：仅 audit.db（11.6MB）+ wal/shm + audit.db.bak_20260919_112219 + audit.db.bak_20261012_0839
+      + source_backups/；audit_log.db 与 history.db 均不存在。
+  - type: history
+    location: core/backup_manager.py
+    observation: git log -S 显示 audit_log.db 于 commit 6b5793c 引入 backup_manager；磁盘 .bak 命名（audit.db.bak_*）与当前代码备份名模式（audit_log_{ts}.db）不一致，写入方未知。
+    commit: 6b5793c
+  impact:
+    affected_components:
+    - core/backup_manager.py
+    - storage/storage.py
+    - core/history_db.py
+    - core/read_status.py
+    - gui_pyside6/dialogs/history_compare_dialog.py
+    failure_mode: 分析前备份复制不存在的 audit_log.db（os.path.exists 守卫使其静默跳过 DB 备份）；export_audit_backup 对活库不可用；history_compare 读取空库或落入防御性降级。
+    blast_radius: 审计数据的安全网（备份/导出/历史对比）对线上 audit.db 实际失效；用户以为有的保护不存在。
+  counter_evidence:
+  - 磁盘上确有 audit.db.bak_20260919 与 audit.db.bak_20261012 两份备份，说明某种备份机制曾正确运行——可能是旧版本代码、外部脚本或人工拷贝；若能定位写入方，爆炸半径可下调。
+  first_seen: '2026-10-14'
+  last_seen: '2026-10-14'
+  found_by:
+  - architecture-auditor
+  related_findings:
+  - ZPP011-ARC-006
+  quality_attribute_impacts:
+  - reliability
+  - maintainability
+  evidence_level: E1
+  fingerprint: 241aaba1a302e87e18301e3d33dafd8dff9819894967d51a7fe6d695f90fd791
+  evidence_fingerprint: 99af5d93144d48d46c74661df5e454fd6b4226fd87a5fd08c1a5c013c93a6759
+  fact_inference_boundary:
+    facts:
+    - 四个模块给出三个不同的数据库文件名定义
+    - 磁盘上只存在 audit.db
+    - audit_log.db 于 commit 6b5793c 进入 backup_manager
+    inferences:
+    - 当前 backup_manager/storage 的备份与导出对活库无效
+    - history_db 层指向的 history.db 从未在生产落盘
+    unknowns:
+    - audit.db.bak_20260919/20261012 的真实写入方
+    - audit_log.db/history.db 是否在更早版本存在过
+  applicability:
+    profile_conditions:
+    - data_classification=internal
+    - offline_requirement=full
+  source_candidate_ids:
+  - zpp011-v2-20261014-project
+  rule_pack_version: 1.0.0
+  staleness_state: current
+  decision_references: []
+  tags:
+  - data-ownership
+  - persistence
+  - backup
+- id: ZPP011-ARC-002
+  kind: risk
+  rule_id: PROJECT.DATA.001
+  title: data_id 业务键构造在 7 处重复实现，无一致性测试锁定
+  invariant: Persisted models express identity without contradictory sources of truth.
+  severity: high
+  confidence: 0.85
+  verification:
+    status: candidate
+    rationale: 七处实现均已逐行定位；待独立验证评估各处分叉的實際行为差异。
+  status: open
+  evidence:
+  - type: source
+    location: gui_pyside6/services/data_service.py:137-148
+    path: gui_pyside6/services/data_service.py
+    line_start: 137
+    line_end: 148
+    observation: 正版实现：有工厂列时四段 工厂|订单日期|流程订单|物料编码，无工厂列三段，最终降级 df.index。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: source
+    location: gui_pyside6/dialogs/semi_dashboard_dialog.py:775-779
+    path: gui_pyside6/dialogs/semi_dashboard_dialog.py
+    line_start: 775
+    line_end: 779
+    observation: 重复实现四段/三段分支。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: source
+    location: gui_pyside6/dialogs/alert_dialog.py:482-489
+    path: gui_pyside6/dialogs/alert_dialog.py
+    line_start: 482
+    line_end: 489
+    observation: 重复实现四段/三段分支。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: source
+    location: gui_pyside6/dialogs/neg_loss_dashboard_dialog.py:668-672
+    path: gui_pyside6/dialogs/neg_loss_dashboard_dialog.py
+    line_start: 668
+    line_end: 672
+    observation: 重复实现四段/三段分支。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: source
+    location: gui_pyside6/dialogs/pos_loss_dashboard_dialog.py:691-695
+    path: gui_pyside6/dialogs/pos_loss_dashboard_dialog.py
+    line_start: 691
+    line_end: 695
+    observation: 重复实现四段/三段分支。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: source
+    location: gui_pyside6/dialogs/deviation_warning_dialog.py:1027-1034
+    path: gui_pyside6/dialogs/deviation_warning_dialog.py
+    line_start: 1027
+    line_end: 1034
+    observation: 重复实现四段/三段分支。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: source
+    location: gui_pyside6/controllers/audit_controller.py:117-124
+    path: gui_pyside6/controllers/audit_controller.py
+    line_start: 117
+    line_end: 124
+    observation: 控制器层再次重复实现。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: test
+    location: tests/
+    observation: 未发现任何测试断言七处构造结果一致或 data_id 格式契约。
+  impact:
+    affected_components:
+    - gui_pyside6/services/data_service.py
+    - gui_pyside6/dialogs/（5 个看板/告警对话框）
+    - gui_pyside6/controllers/audit_controller.py
+    - core/quarantine_manager.py
+    failure_mode: data_id 格式调整（如领料单链路加第五段）需手工同步 7 处；漏一处即导致看板定位错行、已读状态错标、隔离漏放——且无测试能发现。
+    blast_radius: 全部依赖 data_id 的 GUI 定位/隔离/已读功能 + 审计库关联完整性。
+  counter_evidence:
+  - 各对话框从正版复制后未再改动，短期行为一致；缺陷在演进时暴露而非当下。
+  first_seen: '2026-10-14'
+  last_seen: '2026-10-14'
+  found_by:
+  - architecture-auditor
+  related_findings:
+  - ZPP011-ARC-003
+  quality_attribute_impacts:
+  - maintainability
+  - reliability
+  evidence_level: E1
+  fingerprint: df6c2f343bde19040380ac6026be81f2c85e884b4dbf7b78ee377e0ef0d67a51
+  evidence_fingerprint: 6f0ce33e109c384014b958be035432e1a2213b0c0b09b1288c175e5efeece0ea
+  fact_inference_boundary:
+    facts:
+    - 七个位置各自实现 data_id 拼接（含四段/三段/降级分支）
+    - tests/ 无 data_id 一致性测试
+    inferences:
+    - 任何键格式演进存在 7 倍同步成本与静默错配风险
+    unknowns:
+    - 各处实现在边界输入（空流程订单/空工厂）下的行为是否完全一致未逐例比对
+  applicability:
+    profile_conditions:
+    - migration_limits=Preserve public and persisted contracts.
+  source_candidate_ids:
+  - zpp011-v2-20261014-project
+  rule_pack_version: 1.0.0
+  staleness_state: current
+  decision_references: []
+  tags:
+  - business-key
+  - duplication
+  - gui
+- id: ZPP011-ARC-003
+  kind: risk
+  rule_id: PROJECT.COHESION.001
+  title: main_window.py 5638 行 God Object——UI、数据变更、分析编排、内联 QThread 四类职责合一
+  invariant: A logical change is owned by a bounded set of components rather than a grab-bag.
+  severity: high
+  confidence: 0.9
+  verification:
+    status: candidate
+    rationale: 行数与职责混合为直接实证；拆分方案不在本审计范围。
+  status: open
+  evidence:
+  - type: source
+    location: gui_pyside6/main_window.py
+    path: gui_pyside6/main_window.py
+    line_start: 1
+    observation: 全文件 5638 行（wc -l 实测），超过此前记录的 3888 行。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: source
+    location: gui_pyside6/main_window.py:1280-1300
+    path: gui_pyside6/main_window.py
+    line_start: 1280
+    line_end: 1300
+    observation: 文件内部定义内联 QThread 类执行 export_full_report_from_intermediates，分析编排逻辑驻留主窗口。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: source
+    location: gui_pyside6/main_window.py:4807
+    path: gui_pyside6/main_window.py
+    line_start: 4807
+    observation: df.loc[df['data_id'].isin(ids), '_quarantined'] = 1/0——隔离状态变更直接在窗口类写 df。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: source
+    location: gui_pyside6/main_window.py:4894
+    path: gui_pyside6/main_window.py
+    line_start: 4894
+    observation: 第二处 _quarantined 批量置位；与 gui_pyside6/services/data_service.py:479 的同类赋值构成重复变更语义。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: source
+    location: gui_pyside6/main_window.py:1291,4551,4648
+    path: gui_pyside6/main_window.py
+    line_start: 1291
+    observation: 三处直接 import analysis.analyzer / analysis.net_offset（虽在后台路径内，编排仍驻留主窗口）。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  impact:
+    affected_components:
+    - gui_pyside6/main_window.py
+    - gui_pyside6/services/data_service.py（重复变更语义）
+    - gui_pyside6/workers/report_workers.py（平行的导出 worker）
+    failure_mode: 任何 GUI 需求都落入同一文件；AI 结对开发持续向其追加；回归面等于全应用；数据变更语义两处漂移即产生隔离状态不一致。
+    blast_radius: 全部 GUI 功能 + 隔离正确性 + 导出编排。
+  counter_evidence:
+  - 已有 controllers/viewmodels/workers 分层骨架与 6 个纯 QThread worker，拆分是演进而非重写；直接 import 均位于后台执行路径，无 UI 线程阻塞实证。
+  first_seen: '2026-10-14'
+  last_seen: '2026-10-14'
+  found_by:
+  - architecture-auditor
+  related_findings:
+  - ZPP011-ARC-002
+  quality_attribute_impacts:
+  - maintainability
+  evidence_level: E1
+  fingerprint: 98f6a567fa4838ba1c8d34b2ebee753dfb26781154b17b9a0985e026125d1afb
+  evidence_fingerprint: c38142a14023a50eceb78eefb9b402a59261161a34a2c53b666dc1d18060cbe1
+  fact_inference_boundary:
+    facts:
+    - 5638 行单文件，含 UI、内联线程类、df 状态变更、analysis 编排四类职责
+    - _quarantined 变更逻辑在 main_window 与 data_service 各有一份
+    inferences:
+    - 单人+AI 结对模式下该文件是最高频变更点，结构性风险随功能增加线性上升
+    unknowns:
+    - 各职责的实际变更频率分布（需 git 历史按区段统计）
+  applicability:
+    profile_conditions:
+    - change_frequency=frequent
+    - ownership_model=single-maintainer-with-ai-pair-programming
+  source_candidate_ids:
+  - zpp011-v2-20261014-project
+  rule_pack_version: 1.0.0
+  staleness_state: current
+  decision_references: []
+  tags:
+  - god-object
+  - gui
+  - maintainability
+- id: ZPP011-ARC-004
+  kind: risk
+  rule_id: PROJECT.RELIABILITY.001
+  title: 319 处 except Exception 中 90 处紧随 pass——失败静默不可观测
+  invariant: Timeouts, retries, backoff, cancellation, overload, and degraded behavior are deliberate and observable.
+  severity: medium
+  confidence: 0.75
+  verification:
+    status: candidate
+    rationale: 计数为 grep 实证；抽样区分"有意降级"与"无意吞异常"的专项未完成。
+  status: open
+  evidence:
+  - type: source
+    location: core/ gui_pyside6/ analysis/
+    observation: grep 实测：except Exception 共 319 处（core+gui_pyside6+analysis）；其中 core 与 gui_pyside6 内 90 处下一行即为 pass，无日志无重抛。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: source
+    location: gui_pyside6/dialogs/history_compare_dialog.py:15-17
+    path: gui_pyside6/dialogs/history_compare_dialog.py
+    line_start: 15
+    line_end: 17
+    observation: 典型模式：try import history_db except 置 None，再用 warning 弹窗兜底——属有意降级，说明团队知晓此模式，但也说明降级路径已被用户当作正常路径。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  impact:
+    affected_components:
+    - core/（约 20 模块）
+    - gui_pyside6/controllers/ 与 dialogs/
+    failure_mode: 关键流（备份、AI 审核、持久化）失败时无日志痕迹，维护者只能靠截图与人工对账发现问题——与历史故障（弹窗 NameError、save 被拦截）的发现方式一致。
+    blast_radius: 全应用可观测性；问题定位成本。
+  counter_evidence:
+  - '部分 pass 是有意功能降级（如 history_db 缺失时的提示弹窗）；裸 except: 为 0 处，说明并非完全无纪律。'
+  first_seen: '2026-10-14'
+  last_seen: '2026-10-14'
+  found_by:
+  - architecture-auditor
+  related_findings:
+  - ZPP011-ARC-001
+  quality_attribute_impacts:
+  - reliability
+  - maintainability
+  evidence_level: E2
+  fingerprint: 8728f9f0c3c97377ce79dc512f95ac0a48a6e78b8d7adebc733d73aa1d15a89f
+  evidence_fingerprint: 854720ca25ede2464f409cba49f59eb691f6c7703448f238e7d8cfaa403f08df
+  fact_inference_boundary:
+    facts:
+    - 319 处 except Exception、90 处紧随 pass、0 处裸 except
+    inferences:
+    - 失败路径的静默比例高到影响排障效率
+    unknowns:
+    - 90 处中有意降级与无意吞异常的比例
+  applicability:
+    profile_conditions:
+    - on_call=false
+    - team_count=1
+  source_candidate_ids:
+  - zpp011-v2-20261014-project
+  rule_pack_version: 1.0.0
+  staleness_state: current
+  decision_references: []
+  tags:
+  - error-handling
+  - observability
+- id: ZPP011-ARC-005
+  kind: risk
+  rule_id: PROJECT.TEST.001
+  title: CI 只跑 tests/unit/——e2e/集成/smoke 测试与 analysis/gui 覆盖率缺口
+  invariant: Critical invariants have stable seams and behavioral protection at the owning boundary.
+  severity: medium
+  confidence: 0.85
+  verification:
+    status: candidate
+    rationale: workflow 文件为直接证据；测试未入 CI 的原因（环境依赖/时长）未与维护者确认。
+  status: open
+  evidence:
+  - type: config
+    location: .github/workflows/ci.yml:29
+    path: .github/workflows/ci.yml
+    line_start: 29
+    observation: CI 仅执行 python -m pytest tests/unit/ -v；pyflakes F821/F822 门禁为真门禁（优势）。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: config
+    location: .github/workflows/test.yml:29
+    path: .github/workflows/test.yml
+    line_start: 29
+    observation: 第二套 workflow 同样只跑 tests/unit/；覆盖率仅 --cov=core --cov=modules/audit/filters。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: test
+    location: tests/
+    observation: tests/ 根下存在 test_analyzer_e2e.py、test_analyzer_integration.py、test_data_service.py、test_main_window_smoke.py、test_net_offset.py、test_history_db.py
+      等 30+ 文件，均不被任何 CI 覆盖。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  impact:
+    affected_components:
+    - analysis/（冻结区 analyzer.py/sheet2_alt.py 的集成保护）
+    - gui_pyside6/（smoke 保护）
+    - 领料单链路等新功能（将新增 data_id 关联契约，见 ARC-002）
+    failure_mode: 冻结区只有单测保护；集成层回归靠维护者人肉截图验证；新功能的数据契约无 CI 锁定。
+    blast_radius: 分析口径正确性 + GUI 回归 + 新功能接入质量。
+  counter_evidence:
+  - 单人项目对 CI 时长敏感；smoke 测试依赖 Qt 环境在 CI 可能不可靠——这是合理的工程取舍，但应以显式决策记录而非默认缺失。
+  first_seen: '2026-10-14'
+  last_seen: '2026-10-14'
+  found_by:
+  - architecture-auditor
+  related_findings:
+  - ZPP011-ARC-002
+  quality_attribute_impacts:
+  - reliability
+  - maintainability
+  evidence_level: E1
+  fingerprint: 4f7bdd7af906f8b8d11127144559e4ad96fdf3d0bad76fbf5e3aaccfdf01f918
+  evidence_fingerprint: d01ec919c2fcef951d14a0d5a351e871fcdea8c0ad9b9e1c8a7f177205080138
+  fact_inference_boundary:
+    facts:
+    - 两套 workflow 的 pytest 目标均为 tests/unit/
+    - e2e/integration/smoke 测试文件存在但不在 CI
+    inferences:
+    - 冻结区与集成层的 CI 保护实际缺位
+    unknowns:
+    - 这些测试本地通过率如何（未运行）
+  applicability:
+    profile_conditions:
+    - migration_limits=冻结区零改动
+  source_candidate_ids:
+  - zpp011-v2-20261014-project
+  rule_pack_version: 1.0.0
+  staleness_state: current
+  decision_references: []
+  tags:
+  - ci
+  - test-coverage
+- id: ZPP011-ARC-006
+  kind: risk
+  rule_id: PROJECT.OWNERSHIP.001
+  title: GUI 对话框直连审计库——数据访问边界不存在，9 模块 3 层共写一库
+  invariant: Every authoritative datum has one declared owner and controlled writers.
+  severity: medium
+  confidence: 0.8
+  verification:
+    status: candidate
+    rationale: connect 调用点全部定位；读写比例与 Schema 耦合深度未逐模块评估。
+  status: open
+  evidence:
+  - type: source
+    location: gui_pyside6/dialogs/data_stability_dialog.py:88
+    path: gui_pyside6/dialogs/data_stability_dialog.py
+    line_start: 88
+    observation: 对话框直接 sqlite3.connect(_DB_PATH) 读 deviation_history。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: source
+    location: gui_pyside6/dialogs/material_profile_dialog.py:114
+    path: gui_pyside6/dialogs/material_profile_dialog.py
+    line_start: 114
+    observation: 同上，对话框直连。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: source
+    location: gui_pyside6/dialogs/quarantine_review_dialog.py:67
+    path: gui_pyside6/dialogs/quarantine_review_dialog.py
+    line_start: 67
+    observation: 同上，对话框直连隔离审核数据。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: source
+    location: core/ storage/
+    observation: sqlite3.connect 另分布于 core/history_db.py(6)、core/read_status.py(2)、core/quarantine_manager.py(1)、core/history_freq.py(3)、core/backup_manager.py(3)、core/audit_logger.py(5)、storage/storage.py(5)——合计
+      9 模块跨 3 层。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  impact:
+    affected_components:
+    - gui_pyside6/dialogs/（3 个）
+    - core/（6 个）
+    - storage/
+    failure_mode: Schema 演进（如领料单链路新增表/列）需在 9 处同步；任一处遗漏产生静默不一致；无单一处可加缓存/校验/迁移。
+    blast_radius: 审计数据一致性 + 新功能接入成本。
+  counter_evidence:
+  - 对话框连接以只读查询为主；单写入者场景下并发风险低；core/read_status.py 的主线程单例 + check_same_thread=False 说明有线程 awareness。
+  first_seen: '2026-10-14'
+  last_seen: '2026-10-14'
+  found_by:
+  - architecture-auditor
+  related_findings:
+  - ZPP011-ARC-001
+  quality_attribute_impacts:
+  - maintainability
+  - reliability
+  evidence_level: E1
+  fingerprint: 4db5ec418202f0fd1705cd7359b72e7e887e2cb86871b260323475e678992261
+  evidence_fingerprint: 9134766b3c829c0d2c51d1e41e2131b62ed7ef4ce5665ca9099c93f3449c8cad
+  fact_inference_boundary:
+    facts:
+    - 3 个 GUI 对话框直接 sqlite3.connect 同一库
+    - core+storage 另有 6 模块直连，合计 9 模块
+    inferences:
+    - 不存在数据访问边界，Schema 变更成本 ×9
+    unknowns:
+    - 各连接的读写比例与长连接持有情况
+  applicability:
+    profile_conditions:
+    - data_classification=internal
+  source_candidate_ids:
+  - zpp011-v2-20261014-project
+  rule_pack_version: 1.0.0
+  staleness_state: current
+  decision_references: []
+  tags:
+  - data-access
+  - layering
+- id: ZPP011-ARC-007
+  kind: risk
+  rule_id: PROJECT.DEBT.001
+  title: 仓库卫生债务——48 个未跟踪条目 + 已入库孤儿脚本（_dbg_×27、probe、work/gen_final×10 等）
+  invariant: Debt has demonstrated change or operational cost rather than disliked style.
+  severity: low
+  confidence: 0.65
+  verification:
+    status: candidate
+    rationale: 孤儿属性经 import 检索实证；成本论证（导航噪音/AI 误引）为推断，需维护者确认实际痛点。
+  status: open
+  evidence:
+  - type: source
+    location: 仓库根目录
+    observation: git status --porcelain 显示 48 个未跟踪条目（含 27 个 _dbg_*.py）；git ls-files 246 个已跟踪文件中，probe.py/probe2.py/inspect3.py/inspect_data2.py/fixbom.py/build_ppt_net.py/work/gen_final*.py(10
+      个)/work/probe_*.py(5 个) 无任何生产调用方（grep import 全仓仅 tests/test_main_window_smoke.py:814 import inspect 为标准库）。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  - type: source
+    location: .architecture/profile.yaml
+    observation: prepare-project-audit 生成的 profile_sources.inferred.basis 列表包含全部 27 个 _dbg_*.py 与 probe/work 脚本——调试 debris
+      进入架构画像推断依据的实证。
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+  impact:
+    affected_components:
+    - 仓库根目录
+    - work/
+    - tools/
+    failure_mode: AI 结对编程时过时调试脚本被误当参考实现引用；新人（或未来的维护者）导航成本上升；facts 采集与架构画像被噪音稀释——本次审计已实证：inspect-repository 的档案推断依据（profile_sources.inferred.basis）纳入了全部
+      27 个 _dbg_*.py 文件，调试 debris 直接污染了架构画像输入。
+    blast_radius: 认知与检索成本，不影响运行时。
+  counter_evidence:
+  - 对单人+AI 调试流，_dbg_ 脚本有实战价值；维护者明确不接受删除——正确处置是归档到备份目录而非清理，本条仅作记录不作为行动项。
+  first_seen: '2026-10-14'
+  last_seen: '2026-10-14'
+  found_by:
+  - architecture-auditor
+  related_findings: []
+  quality_attribute_impacts:
+  - maintainability
+  evidence_level: E2
+  fingerprint: 49a840640601b135716fd58538b1dedaca5b4436d397cb0a1447b87e6ee776f7
+  evidence_fingerprint: ca21c18733a933141420ebc66a332767261f51089a5ebfb9880a057dfc04f183
+  fact_inference_boundary:
+    facts:
+    - 48 个未跟踪条目；一批已入库根脚本无生产调用方
+    - inspect-repository 产出的档案推断依据包含 27 个 _dbg_ 调试文件
+    inferences:
+    - 检索/引用噪音构成真实但低度的变更成本
+    unknowns:
+    - 维护者自身是否感知到该成本
+  applicability:
+    profile_conditions:
+    - ownership_model=single-maintainer-with-ai-pair-programming
+  source_candidate_ids:
+  - zpp011-v2-20261014-project
+  rule_pack_version: 1.0.0
+  staleness_state: current
+  decision_references: []
+  tags:
+  - hygiene
+  - debt
+evidence_sources:
+- gui_pyside6/main_window.py
+- gui_pyside6/services/data_service.py
+- gui_pyside6/dialogs/neg_loss_dashboard_dialog.py
+- gui_pyside6/dialogs/pos_loss_dashboard_dialog.py
+- gui_pyside6/dialogs/semi_dashboard_dialog.py
+- gui_pyside6/dialogs/alert_dialog.py
+- gui_pyside6/dialogs/deviation_warning_dialog.py
+- gui_pyside6/dialogs/data_stability_dialog.py
+- gui_pyside6/dialogs/material_profile_dialog.py
+- gui_pyside6/dialogs/quarantine_review_dialog.py
+- gui_pyside6/dialogs/history_compare_dialog.py
+- gui_pyside6/dialogs/dashboard_dialog.py
+- gui_pyside6/controllers/audit_controller.py
+- gui_pyside6/controllers/export_controller.py
+- gui_pyside6/models/workers.py
+- gui_pyside6/workers/report_workers.py
+- core/read_status.py
+- core/history_db.py
+- core/history_freq.py
+- core/quarantine_manager.py
+- core/audit_logger.py
+- core/backup_manager.py
+- core/ai_client.py
+- storage/storage.py
+- config/paths.py
+- .github/workflows/ci.yml
+- .github/workflows/test.yml
+- .gitignore
+- tests/conftest.py
+limitations:
+- 静态审计：未运行应用，无运行时遥测；GUI 实机行为未验证。
+- 原计划 4 个只读专家子代理并行审计，委托通道返回空结果，降级为主代理顺序执行，覆盖广度低于并行专项（循环 import 全图验证、逐模块读写比例未完成）。
+- analysis/analyzer.py（1301 行，冻结区）未逐行细读；冻结区内部复杂度未评估。
+- requirements.txt 依赖锁版本情况未验证；build_pyside6_exe.py 的 hidden-imports 完整性未验证。
+- 磁盘状态为审计时刻快照（2026-10-14），git 脏工作区（1 modified + 48 untracked）可能影响结论复现。
+coverage_complete: true
+repository_facts:
+  path: .architecture/reviews/inputs/20261013-zpp011-r1-repository-facts.yaml
+  sha256: 8e2aa799b2fb3633a549a82c43cc83feba26726fbb3e3b67be23368cf509a9e0
+knowledge_selection:
+  path: .architecture/reviews/inputs/20261013-zpp011-r1-knowledge-selection.yaml
+  sha256: 2074161166fed9ccb0236dd27fedff05f441470daded3c8aad768b9e77b4cf1a
+selected_knowledge:
+- id: foundation.system-boundaries
+  version: 1.0.0
+  sha256: a326964ec74303e0f08f3e7207e4836a0ff04c93c7f8516e6190b47925ec06db
+- id: foundation.data-ownership
+  version: 1.0.0
+  sha256: 260f240ec9782f5a42a68481652912532cfcd6a0b07fdc5366d44388cc3d0204
+- id: foundation.evidence-reasoning
+  version: 1.0.0
+  sha256: e3c370e04b8a9be5e64ea0d107281043652b1cdba3393fb61b57efd77262650f
+- id: foundation.proportional-design
+  version: 1.0.0
+  sha256: ccfa63d523fab3503c47dbf73fc7a9ae85c7fc516856bcf422322c0d92a409df
+- id: foundation.quality-attributes
+  version: 1.0.0
+  sha256: 50d92ab7563d70605408ba4592d9445f79f6eb0cecb50195471b56e42418b680
+- id: domain.desktop-application
+  version: 1.0.0
+  sha256: c662229e6e86021611a4d730fc4a6d7abc9998699446aa2572d67248d21ed995
+- id: foundation.maintainability
+  version: 1.0.0
+  sha256: 84ac29ee75bfb409091ae5af6ccc6b51d68c571147e8718df991c4b6af63914e
+- id: migration.internal-extension-to-plugin
+  version: 1.0.0
+  sha256: a54900d935353aa5f91741743a936e2b7f2967fdbdfaecbce6cde6f7847215f2
+critical_flow_coverage:
+- id: flow-cf1-import-analyze-export-sap-excel
+  status: assessed
+  reason: 已追踪 import_handlers → data_service → analyzer（冻结区）→ excel_builder → report_workers QThread → save_guard；后台化正确，目标占用有副本降级。
+  evidence:
+  - path: gui_pyside6/services/data_service.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: 264edb576d4164b32ada7d9b5178ba85cbbca087
+    line_start: 137
+    observation: data_id 构造正版。
+  - path: gui_pyside6/workers/report_workers.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: 83c82a3fe36be2a158dbfb6521698643af81ebd8
+    line_start: 18
+    observation: _FullReportWorker QThread 后台导出。
+- id: flow-cf2-audit-persist
+  status: assessed
+  reason: 已追踪 read_status/quarantine_manager/history_freq/audit_logger 及 3 对话框直连；库身份分歧见 ZPP011-ARC-001，边界缺失见 ZPP011-ARC-006。
+  evidence:
+  - path: core/read_status.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: d0f8a924c50114366c188accfe4a682b4e9fff01
+    line_start: 23
+    observation: 活库路径与主线程单例连接。
+  - path: gui_pyside6/dialogs/data_stability_dialog.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: c53faac45411895c33c737027efef3bd7074d502
+    line_start: 88
+    observation: 对话框直连同库。
+- id: flow-cf3-dashboard-render
+  status: assessed
+  reason: 已追踪 4 看板对话框 → analysis/dashboard_html.py → WebEngine（延迟 import）+ matplotlib Agg 后台绘制；规避措施有文档化注释。
+  evidence:
+  - path: gui_pyside6/dialogs/dashboard_dialog.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: a5156a75bcc2c16d8385d6e4330be215da260068
+    line_start: 41
+    observation: WebEngine 延迟 import + matplotlib Agg 后台绘制。
+- id: flow-cf4-ai-audit-agnes-ai
+  status: assessed
+  reason: 已追踪 AIAuditWorker → core/ai_client.py（三级密钥加载、分档超时 5/20/45s、无重试）；外发字段边界待维护者确认（C-SE-03）。
+  evidence:
+  - path: core/ai_client.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: 5fddc7f729b7748358252e42647630aea28ec70f
+    line_start: 199
+    observation: 分档超时；无重试。
+- id: flow-cf5-backup-recovery
+  status: assessed
+  reason: 已追踪 BackupManager/storage 备份导出与 _recovery_needed.flag；目标文件分歧使安全网对活库存疑，见 ZPP011-ARC-001。
+  evidence:
+  - path: core/backup_manager.py
+    commit: bf98cca3a3ef840ccbcbb3e38e79b506eae93eaa
+    blob_sha: d1c9a63d5b5042a51f61bad34a4ab5ccf78015dc
+    line_start: 137
+    observation: shutil.copy2 备份目标为 audit_log.db（磁盘不存在）。
+unknowns:
+- audit.db.bak_20260919_112219 与 audit.db.bak_20261012_0839 的真实写入方（命名格式与当前代码不符）
+- history.db / audit_log.db 是否在更早版本被生产使用过
+- 90 处静默 pass 中有意降级与无意吞异常的比例
+- 各 GUI 对话框数据库连接的读写比例
+- analyzer.py 冻结区内部复杂度（1301 行未细读）
+- requirements.txt 锁版本与 PyInstaller hidden-imports 完整性
