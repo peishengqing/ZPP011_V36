@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.191",
+        "date": "2026-10-14",
+        "features": "ARC-002 治理方案②落地——独立重算对账网（tools/recompute_check.py + core/verify_recompute.py）：机器拿真实 SAP 导出独立重算偏差数量/金额/率，逐行对 analyzer 输出，回答「算错没有」。",
+        "fixes": "**根因**：此前自写的检查公式错配列——把 dev「实际/定额」（实为数量维度，analyzer 内部由 数量-实际/数量-定额 改名）当成金额去减，并误用「偏差金额≈实际−定额」做金额自洽，导致 4503/785 条假阳性误报。**修法**：① 数量对账用原始(数量-实际−数量-定额)直接比 dev 偏差数量；② 率对账用原始 偏差率(%) 透传比 dev（analyzer 不重算该列）；③ 金额对账用独立重算 = 原始数量差 × 原始实际单价(含税) 比 dev 偏差金额（= 偏差数量×单价口径）；④ 修正 verify_recompute.selfcheck 的 alt_group_qty 假阳性——原实现把组内每行重复的同一个组净值再求和，致 2/3 行组出 2×/3× 伪差异，改为取组内唯一组净值比较；⑤ 修订过时 docstring/公式注释。**验证**：py_compile+pyflakes 全绿；对真实数据 ZPP011_20261001-20261014.xlsx（5575 行×33 列，66 组替代料）跑通——①数量 0 差异 ②率 0 差异 ③金额 0 差异（连舍入噪声都为 0）④自洽扫描 9 条且 0 实质差异（extreme_rate 37、zero_amount_nonzero_qty 268 属需复核级；alt_group_qty 仅剩 7 条且全为 0.01 级四舍五入非守恒违规）。结论：analyzer 数量/率/金额三维均忠于源，无计算错误。",
+    },
+    {
         "version": "v43.190",
         "date": "2026-10-14",
         "features": "架构清理（横木审计 ARC-001 后续，裴哥确认 B 方案彻底清）：整体移除三个指向不存在数据库文件的早期淘汰模块——`core/backup_manager.py`（备份管理器，全仓零生产调用方）、`core/history_db.py` + `gui_pyside6/dialogs/history_compare_dialog.py`（「历史对比」菜单功能，实际指向不存在的 history.db，点击只会弹误导性报错）、`storage/` 包（V36 模块化前的旧存储层，唯一引用是 analyzer.py 的死 import）。移除后 `audit.db` 成为审核库唯一真身。",
