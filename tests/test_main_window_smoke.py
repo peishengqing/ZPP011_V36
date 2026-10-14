@@ -759,9 +759,9 @@ class TestC_BugProbes:
 
         实测结论（v43.125，AST 逐个核实）：
 
-        - ``_FullCacheWorker`` 是**内联定义**在方法体内的 QThread
-          （main_window.py:1316），方法集仅 ``{__init__, run}``，
-          **没有 request_cancel，也没有 _cancel_check**。
+        - ``_FullCacheWorker`` 曾是**内联定义**在方法体内的 QThread
+          （v43.194 ARC-003 第二刀已提升为**模块级**类；方法集仅 ``{__init__, run}``，
+          **没有 request_cancel，也没有 _cancel_check**——此结论未随搬动改变）。
         - 它的 ``run()`` 给 ``export_full_report_from_intermediates`` 传的
           ``cancel_check=None``（main_window.py:1332），兜底分支
           ``do_analysis_v2(...)`` 也没传任何取消回调
@@ -781,15 +781,18 @@ class TestC_BugProbes:
         都会让它失败，提示更新探针结论。
         """
         tree, src = _parse_main_window()
-        cls = _main_window_class(tree)
 
-        # 1) 内联定义的 _FullCacheWorker 必须仍缺 request_cancel
-        inline = [
-            n for n in ast.walk(cls)
-            if isinstance(n, ast.ClassDef) and n.name == "_FullCacheWorker"
-        ]
-        assert inline, "未找到内联 _FullCacheWorker 定义（若已被重构成模块级请更新本探针）"
-        node = inline[0]
+        # 1) _FullCacheWorker 必须仍缺 request_cancel
+        # v43.194（ARC-003 第二刀）：本 worker 已从方法体内联定义提升为模块级类，
+        # 故扫描范围由 ast.walk(cls) 改为模块顶层 + 类内双查。
+        # 「无协作式取消点」这一 bug 结论本身未变，仅定义位置前提已更新。
+        candidates = [n for n in ast.walk(tree)
+                      if isinstance(n, ast.ClassDef) and n.name == "_FullCacheWorker"]
+        assert candidates, "未找到 _FullCacheWorker 定义（模块级与类内均未命中）"
+        node = candidates[0]
+        assert node in tree.body, (
+            "_FullCacheWorker 应为模块级定义；若已再次被内联进方法体，请更新本探针"
+        )
         methods = {m.name for m in node.body if isinstance(m, ast.FunctionDef)}
         assert "request_cancel" not in methods, (
             "_FullCacheWorker 已有 request_cancel——该 bug 已修复，请更新探针结论"
@@ -829,9 +832,10 @@ class TestC_BugProbes:
         assert actual.get("_FileReadWorker") is False, (
             f"_FileReadWorker 现在竟有 request_cancel：{actual}"
         )
-        # 内联的 _FullCacheWorker 不在 tree.body 里，单独记一条
-        assert actual.get("_FullCacheWorker") is None, (
-            "_FullCacheWorker 已被提到模块级——请同步更新本探针"
+        # v43.194（ARC-003 第二刀）：_FullCacheWorker 已提升为模块级，
+        # 故它现在会出现在 tree.body 的顶层扫描里，基线仍是「无 request_cancel」。
+        assert actual.get("_FullCacheWorker") is False, (
+            f"_FullCacheWorker 的 request_cancel 状态变了：{actual}"
         )
 
     def test_bug2_factory_switch_does_not_duplicate_connections(self, main_window):
