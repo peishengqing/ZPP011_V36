@@ -210,6 +210,35 @@ class DeviationWarningDialog(QDialog):
         self._row_filter_btn_layout.addStretch()
         self._main_filter_vlayout.addWidget(self._row_filter_btn)
 
+        # ==== 第1.6行：组件物料类型（始终可见的动态级联筛选，v43.189）====
+        # 用户要求在偏差率预警看板始终可见地加一个「组件物料类型描述」动态筛选。
+        # 该下拉在 v43.172 已是级联（_refresh_cascade_combos 的 'mtd' 键），但原藏在第3行、
+        # 仅全屏可见；现独立成始终可见行，与「筛选 ▾」展开的行互不干扰；列缺失时由 set_data 整体隐藏。
+        self._row_mtd_widget = QWidget()
+        self._row_mtd = QHBoxLayout(self._row_mtd_widget)
+        self._row_mtd.setContentsMargins(0, 0, 0, 0)
+        self._row_mtd.setSpacing(6)
+
+        self.mtd_sep = QFrame()
+        self.mtd_sep.setFrameShape(QFrame.VLine)
+        self.mtd_sep.setFrameShadow(QFrame.Sunken)
+        self._row_mtd.addWidget(self.mtd_sep)
+        self._row_mtd.addSpacing(8)
+
+        self.lbl_mtd = QLabel("组件物料类型:")
+        self._row_mtd.addWidget(self.lbl_mtd)
+
+        self.combo_mtd = QComboBox()
+        self.combo_mtd.setMinimumWidth(100)
+        self.combo_mtd.setMaximumWidth(140)
+        self.combo_mtd.setEditable(False)
+        self.combo_mtd.addItem("全部")
+        self.combo_mtd.currentTextChanged.connect(self._on_mtd_changed)
+        self._row_mtd.addWidget(self.combo_mtd)
+
+        self._row_mtd.addStretch()
+        self._main_filter_vlayout.addWidget(self._row_mtd_widget)
+
         # ==== 第2行：料别 + 半成品分类（全屏时显示；车间已提至第1行始终可见）====
         self._row2_widget = QWidget()
         self._row2 = QHBoxLayout(self._row2_widget)
@@ -271,28 +300,9 @@ class DeviationWarningDialog(QDialog):
         self._main_filter_vlayout.addWidget(self._row2_widget)
         self._row2_widget.setVisible(False)  # 默认隐藏，全屏时显示
 
-        # ==== 第3行：物料类型 + 替代料 + 是否备注（全屏时显示；隔离区已提至第1行始终可见）====
+        # ==== 第3行：替代料 + 是否备注（全屏时显示；隔离区已提至第1行、组件物料类型已提至第1.6行始终可见）====
         self._row3_widget = QWidget()
         self._row3 = QHBoxLayout(self._row3_widget)
-        # 物料类型
-        self.mtd_sep = QFrame()
-        self.mtd_sep.setFrameShape(QFrame.VLine)
-        self.mtd_sep.setFrameShadow(QFrame.Sunken)
-        self._row3.addWidget(self.mtd_sep)
-        self._row3.addSpacing(8)
-
-        # 原标签「物料类型」易与表格列「物料编码」混淆，且与列名「组件物料类型描述」对不上（v43.162）
-        self.lbl_mtd = QLabel("组件物料类型:")
-        self._row3.addWidget(self.lbl_mtd)
-
-        self.combo_mtd = QComboBox()
-        self.combo_mtd.setMinimumWidth(100)
-        self.combo_mtd.setMaximumWidth(140)
-        self.combo_mtd.setEditable(False)
-        self.combo_mtd.addItem("全部")
-        self.combo_mtd.currentTextChanged.connect(self._on_mtd_changed)
-        self._row3.addWidget(self.combo_mtd)
-
         # 替代料
         self.alt_sep = QFrame()
         self.alt_sep.setFrameShape(QFrame.VLine)
@@ -1172,6 +1182,7 @@ class DeviationWarningDialog(QDialog):
         self.mtd_sep.setVisible(has_mtd)
         self.lbl_mtd.setVisible(has_mtd)
         self.combo_mtd.setVisible(has_mtd)
+        self._row_mtd_widget.setVisible(has_mtd)
         self._mtd_filter = "all"
         self.combo_mtd.setCurrentText("全部")
         if has_mtd:

@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.189",
+        "date": "2026-10-14",
+        "features": "「偏差率预警看板 - |偏差率| ≥ 10%」新增**始终可见**的「组件物料类型描述」动态（级联）筛选下拉：用户要求把该筛选从全屏才显示的第3行提到主筛选栏常驻。",
+        "fixes": "**根因**：「组件物料类型描述」下拉 `combo_mtd` 在 v43.172 已实现级联（_refresh_cascade_combos 的 'mtd' 键，选项随其它条件双向、可逆收窄，杜绝死选项），但被放在仅全屏才显示的第3行，非全屏窗口下根本看不到，等于「有功能用不了」。**修法**：在 `gui_pyside6/dialogs/deviation_warning_dialog.py` 的 `setup_ui` 里把 `combo_mtd`（连同标签「组件物料类型:」与分隔条）从隐藏的第3行拆出，独立成一个**始终可见**的第1.6行（放在「筛选 ▾」按钮行之后），与「筛选 ▾」展开的第2/3/4 行互不干扰；第3行现在只保留「替代料 + 是否备注」。级联逻辑（`_other_conditions_mask`/`_refresh_cascade_combos`/`_mtd_mask`/`_on_mtd_changed`）全部复用、零改动；`set_data` 里新增 `self._row_mtd_widget.setVisible(has_mtd)` 在缺「组件物料类型描述」列时整体隐藏本行。`toggle_fullscreen` 只切 row2/3/4，不影响本行常驻。",
+    },
+    {
         "version": "v43.188",
         "date": "2026-10-13",
         "features": "修复「实时预警监控」后台线程在 Windows 上静默崩溃、导致实时预警弹窗停摆的问题（对应运行 `python run_pyside6.py` 时打印的 `Windows fatal exception: code 0x8001010d`）。把 `AlertMonitor` 从裸 `threading.Thread` 改为**主线程 `QTimer` 轮询**。",
