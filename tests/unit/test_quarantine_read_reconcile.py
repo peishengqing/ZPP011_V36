@@ -19,8 +19,10 @@ from unittest.mock import patch
 pytest.importorskip("PySide6")
 
 from gui_pyside6.main_window import MainWindow as MW
+from gui_pyside6.controllers.quarantine_manager_controller import QuarantineManagerController
 
 MAIN = "gui_pyside6.main_window"
+CTRL = "gui_pyside6.controllers.quarantine_manager_controller"
 RS = "core.read_status"
 QM = "core.quarantine_manager"
 AUTORULES = "core.auto_read_rules"
@@ -80,13 +82,18 @@ class _FakeDataService:
 
 
 def _bare_mw():
-    """造一个不跑 __init__ 的 MainWindow 裸实例，装配对账所需最小属性。"""
+    """造一个不跑 __init__ 的 MainWindow 裸实例，装配对账所需最小属性。
+
+    v43.203：方法体已切出到 QuarantineManagerController，薄壳经
+    self.quarantine_manager_controller 转发，故 bare 须装配真 controller。
+    """
     bare = MW.__new__(MW)
     bare.data_service = _FakeDataService()
     bare.statusBar = lambda: _FakeStatusBar()
     bare._update_read_counter = lambda: None
     bare._auto_read_count = 0
     bare._manual_read_count = 0
+    bare.quarantine_manager_controller = QuarantineManagerController(bare)
     return bare
 
 
@@ -120,7 +127,7 @@ def test_auto_read_excludes_quarantined():
          patch(f"{AUTORULES}.compute_auto_read_mask",
                return_value=(pd.Series([True] * len(df), index=df.index), [])) as m, \
          patch(f"{RS}.mark_read_batch", side_effect=fake_mark), \
-         patch(f"{MAIN}.toast", return_value=None):
+         patch(f"{CTRL}.toast", return_value=None):
         assert m.called or True  # 仅占位，确保导入路径正确
         MW._auto_read_by_rules(bare, df)
 
@@ -150,7 +157,7 @@ def test_auto_read_zero_hit_tip_mentions_quarantine():
          patch(f"{AUTORULES}.compute_auto_read_mask",
                return_value=(pd.Series([True] * len(df), index=df.index), [])), \
          patch(f"{RS}.mark_read_batch", return_value=None), \
-         patch(f"{MAIN}.toast", side_effect=fake_toast):
+         patch(f"{CTRL}.toast", side_effect=fake_toast):
         # 全部未读的隔离行都已被排除 → target 为空 → 走 0 命中分支
         MW._auto_read_by_rules(bare, df)
 
@@ -174,7 +181,7 @@ def test_reconcile_resolved_unread_gets_read():
          patch(f"{RS}.load_read_status", return_value=read_map), \
          patch(f"{RS}.mark_read_batch", side_effect=lambda d, s, **k: captured.setdefault('read', list(d))), \
          patch(f"{RS}.save_read_status_batch", return_value=None), \
-         patch(f"{MAIN}.toast", return_value=None):
+         patch(f"{CTRL}.toast", return_value=None):
         MW._reconcile_quarantine_read_status(bare, df)
 
     assert captured.get('read') == ['A'], "已解决未读记录 A 应被自动标已读"
@@ -195,7 +202,7 @@ def test_reconcile_resolved_already_read_untouched():
          patch(f"{RS}.load_read_status", return_value=read_map), \
          patch(f"{RS}.mark_read_batch", side_effect=lambda d, s, **k: called.setdefault('read', list(d))), \
          patch(f"{RS}.save_read_status_batch", return_value=None), \
-         patch(f"{MAIN}.toast", return_value=None):
+         patch(f"{CTRL}.toast", return_value=None):
         MW._reconcile_quarantine_read_status(bare, df)
 
     assert 'read' not in called, "已解决已读记录不应再调 mark_read_batch"
@@ -218,7 +225,7 @@ def test_reconcile_still_neg_auto_read_rolled_back():
          patch(f"{RS}.mark_read_batch", return_value=None), \
          patch(f"{RS}.save_read_status_batch",
                side_effect=lambda recs: rolled.setdefault('recs', list(recs))), \
-         patch(f"{MAIN}.toast", return_value=None):
+         patch(f"{CTRL}.toast", return_value=None):
         MW._reconcile_quarantine_read_status(bare, df)
 
     recs = rolled.get('recs', [])
@@ -244,7 +251,7 @@ def test_reconcile_manual_read_preserved():
          patch(f"{RS}.mark_read_batch", return_value=None), \
          patch(f"{RS}.save_read_status_batch",
                side_effect=lambda recs: rolled.setdefault('recs', list(recs))), \
-         patch(f"{MAIN}.toast", return_value=None):
+         patch(f"{CTRL}.toast", return_value=None):
         MW._reconcile_quarantine_read_status(bare, df)
 
     assert 'recs' not in rolled, "手动已读的 D 绝不应被翻回未读"
@@ -267,7 +274,7 @@ def test_reconcile_non_quarantined_ignored():
          patch(f"{RS}.mark_read_batch", side_effect=lambda d, s, **k: touched.setdefault('read', list(d))), \
          patch(f"{RS}.save_read_status_batch",
                side_effect=lambda recs: touched.setdefault('rollback', list(recs))), \
-         patch(f"{MAIN}.toast", return_value=None):
+         patch(f"{CTRL}.toast", return_value=None):
         MW._reconcile_quarantine_read_status(bare, df)
 
     all_ids = set(touched.get('read', [])) | {r[0] for r in touched.get('rollback', [])}
@@ -285,7 +292,8 @@ def test_call_site_wired_in_analysis_finished():
 
 def test_auto_read_has_not_quarantined_filter():
     src = open(os.path.join(os.path.dirname(os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__)))), "gui_pyside6", "main_window.py"),
+        os.path.dirname(os.path.abspath(__file__)))),
+        "gui_pyside6", "controllers", "quarantine_manager_controller.py"),
         encoding="utf-8").read()
     # 仅在校验 _auto_read_by_rules 函数体内存在该过滤变量
     assert "not_quarantined" in src, "_auto_read_by_rules 应含隔离区排除过滤"

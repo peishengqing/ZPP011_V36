@@ -55,10 +55,8 @@ from gui_pyside6.dialogs.data_stability_dialog import DataStabilityDialog
 from gui_pyside6.dialogs.quarantine_review_dialog import QuarantineReviewDialog
 from gui_pyside6.dialogs.alt_chain_dialog import AltChainDialog
 from gui_pyside6.dialogs.material_profile_dialog import MaterialProfileDialog, normalize_text
-from core.quarantine_manager import add_quarantine, add_quarantine_batch, remove_quarantine, scan_expired_quarantine, get_quarantined_ids
 from core.auto_quarantine import (
     build_all_summary,
-    compute_auto_quarantine_ids,
     load_auto_quarantine_config,
 )
 from gui_pyside6.dialogs.dashboard_dialog import DashboardDialog
@@ -87,6 +85,7 @@ from gui_pyside6.controllers.filter_preset_controller import FilterPresetControl
 from gui_pyside6.controllers.dashboard_controller import DashboardController
 from gui_pyside6.controllers.semi_category_controller import SemiCategoryController
 from gui_pyside6.controllers.interaction_controller import InteractionController
+from gui_pyside6.controllers.quarantine_manager_controller import QuarantineManagerController
 
 
 class _PptViewShim:
@@ -314,6 +313,8 @@ class MainWindow(QMainWindow):
         self.dashboard_controller = DashboardController(self)
         # ARC-003 第六刀：交互职责（定位/选中/复制）已切出到 InteractionController
         self.interaction_controller = InteractionController(self)
+        # ARC-003 第七刀：隔离区管理职责（自动已读/读写/失效复核/自动移入）已切出到 QuarantineManagerController
+        self.quarantine_manager_controller = QuarantineManagerController(self)
         self.data_service = DataService(self.alt_controller)
         self.data_service.log_signal.connect(self._on_data_service_log)
 
@@ -1432,219 +1433,12 @@ class MainWindow(QMainWindow):
         self.top_panel.setVisible(stats_visible or progress_visible)
 
     def _auto_read_by_rules(self, df):
-        """分析完成后：按「自动已读规则中心」配置，把命中任意启用规则的未读行自动标为已读，
-        并逐条规则报告命中数（清晰 toast + 状态栏，解决「自动已读没告诉我」的盲区）。
-
-        判定：多条规则 OR 并存；命中行若已读过则跳过（不重复打扰，数据变动会自动翻回未读）。
-        落库：复用与手动标已读同一套 snapshot + mark_read_batch。
-        """
-        try:
-            if df is None or df.empty or '_read' not in df.columns or 'data_id' not in df.columns:
-                return
-            from core.auto_read_rules import load_auto_read_rules_config, compute_auto_read_mask
-            cfg = load_auto_read_rules_config()
-            if not cfg.get('enabled', True):
-                toast("ℹ️ 自动已读已关闭（规则中心总开关）", "info", parent=self, duration=6000)
-                return
-            union_mask, per_rule = compute_auto_read_mask(df, cfg)
-            unread = (df['_read'] == 0)
-            # 隔离区记录由「隔离区已读对账」(_reconcile_quarantine_read_status) 专门管理，
-            # 自动已读规则中心绝不触碰隔离区——防止负损隔离记录被误标已读（v43.200 根因修复）
-            _q = pd.to_numeric(
-                df.get('_quarantined', pd.Series(0, index=df.index)),
-                errors='coerce',
-            ).fillna(0).astype(int)
-            not_quarantined = ~(_q == 1)
-            target = union_mask & unread & not_quarantined
-            n_auto = int(target.sum())
-            n_would = int(union_mask.sum())
-            if n_auto == 0:
-                if n_would == 0:
-                    toast("ℹ️ 本次无符合自动已读规则的行", "info", parent=self, duration=6000)
-                else:
-                    excluded = int((union_mask & unread & ~not_quarantined).sum())
-                    if excluded:
-                        toast(
-                            f"ℹ️ 符合自动已读规则 {n_would} 条，其中 {excluded} 条在隔离区（按规则不自动已读），其余均已读过",
-                            "info", parent=self, duration=6000,
-                        )
-                    else:
-                        toast(f"ℹ️ 符合自动已读规则共 {n_would} 条，均已读过，无需自动已读", "info", parent=self, duration=6000)
-                return
-
-            # —— 建立变更检测基线（向量化 dict(zip)，避免逐行 df.loc 的 O(n²)）——
-            from core.read_status import mark_read_batch
-            qty_col = self.data_service._find_real_qty_col(df)
-            note_col = self.data_service._find_remark_col(df)
-            yield_col = self.data_service._find_yield_col(df)
-            qty_lookup = {str(k): v for k, v in zip(df['data_id'], df[qty_col])} if qty_col else {}
-            note_lookup = {str(k): str(v) for k, v in zip(df['data_id'], df[note_col].astype(str))} if note_col else {}
-            yield_lookup = {str(k): v for k, v in zip(df['data_id'], df[yield_col])} if yield_col else {}
-
-            dids = [str(x) for x in df.loc[target, 'data_id'].tolist()]
-            snapshot_map = {}
-            for did in dids:
-                q = qty_lookup.get(did)
-                n = note_lookup.get(did, '')
-                y = yield_lookup.get(did)
-                snapshot_map[did] = (
-                    self.data_service._safe_qty(q) if qty_col else None,
-                    self.data_service._norm_note(n) if note_col else '',
-                    self.data_service._safe_qty(y) if yield_col else None,
-                )
-            if dids:
-                mark_read_batch(dids, snapshot_map, read_source='auto')
-                df.loc[target, '_read'] = 1
-                df.loc[target, '_read_source'] = 'auto'
-                self._auto_read_count += n_auto
-                self._update_read_counter()
-
-            # —— 逐规则命中数（仅在未读且非隔离区范围内统计，供反馈）——
-            parts = []
-            for rule, m in per_rule:
-                cnt = int((m & unread & not_quarantined).sum())
-                if cnt > 0:
-                    parts.append("「%s」%d" % (rule.get('name', '未命名'), cnt))
-
-            toast(
-                f"✅ 自动已读 {n_auto} 条｜" + "｜".join(parts),
-                "success", parent=self, duration=6000,
-            )
-            self.statusBar().showMessage(
-                f"自动已读 {n_auto} 条（" + "；".join(parts)
-                + f"）｜符合规则共 {n_would} 条",
-                6000,
-            )
-        except Exception as e:
-            print(f"[WARN] 自动已读失败(不影响主流程): {e}", flush=True)
+        """薄壳：自动已读规则中心（ARC-003 第七刀切出到 QuarantineManagerController）。"""
+        return self.quarantine_manager_controller._auto_read_by_rules(df)
 
     def _reconcile_quarantine_read_status(self, df):
-        """分析完成后：按隔离区记录当前偏差，对账其已读状态（v43.200 新功能）。
-
-        隔离区记录由本函数专门管理，与「自动已读规则中心」互斥（规则中心不再碰隔离区）：
-        - 已解决（实际≥定额，或实际≤0 已归零）→ 自动标已读（仅当当前未读；已读的手动/自动均不动，保留来源）
-        - 仍负损（0<实际<定额）→ 若此前是「自动已读」则翻回未读；手动已读不动（尊重人工判断）
-
-        这样「补投后偏差归零/转正」的隔离记录自动收口为已读，仍负损的重新回到未读待复核。
-        偏差口径与 scan_expired_quarantine 的 neg_loss 判定同源（actual vs quota），保证一致。
-        落库复用 mark_read_batch / save_read_status_batch，并同步内存 _read / _read_source 供 UI 刷新。
-        """
-        try:
-            if df is None or df.empty or 'data_id' not in df.columns:
-                return
-            from core.read_status import (load_read_status, save_read_status_batch,
-                                         mark_read_batch)
-            from core.quarantine_manager import get_quarantined_ids
-
-            uids = get_quarantined_ids()
-            if not uids:
-                return
-
-            # 实际 / 定额 / 备注 / 产量 列（与 scan_expired_quarantine、_auto_read_by_rules 同源）
-            actual_col = self.data_service._find_real_qty_col(df)
-            quota_col = None
-            for c in ('数量-定额', '定额', '定额数量', '数量 - 定额', 'quota'):
-                if c in df.columns:
-                    quota_col = c
-                    break
-            if not actual_col or not quota_col:
-                return
-            note_col = self.data_service._find_remark_col(df)
-            yield_col = self.data_service._find_yield_col(df)
-
-            qty_lookup = {str(k): v for k, v in zip(df['data_id'], df[actual_col])} if actual_col else {}
-            note_lookup = {str(k): str(v) for k, v in zip(df['data_id'], df[note_col].astype(str))} if note_col else {}
-            yield_lookup = {str(k): v for k, v in zip(df['data_id'], df[yield_col])} if yield_col else {}
-
-            # O(1) 索引：data_id(str) -> row（与 scan_expired_quarantine 一致，防重复 data_id）
-            try:
-                df_index = df.drop_duplicates(subset='data_id', keep='first').set_index(df['data_id'].astype(str))
-            except Exception:
-                df_index = None
-
-            cur_map = load_read_status(list(uids))
-
-            auto_read, rolled_back = [], []
-            snap_map = {}
-            for uid in uids:
-                try:
-                    uid_s = str(uid)
-                    if df_index is not None:
-                        try:
-                            row = df_index.loc[uid_s]
-                        except KeyError:
-                            continue
-                    else:
-                        sub = df[df['data_id'].astype(str) == uid_s]
-                        if sub.empty:
-                            continue
-                        row = sub.iloc[0]
-                    actual = self.data_service._safe_qty(row.get(actual_col))
-                    quota = self.data_service._safe_qty(row.get(quota_col))
-                    if actual is None or quota is None:
-                        continue
-                    # 与 neg_loss 口径一致：0<实际<定额 仍负损；其余（≥定额/≤0）视为已解决
-                    still_neg = (actual > 0) and (actual < quota)
-                    cur = cur_map.get(uid_s)  # (is_read, fp, sq, sn, sy, src)
-                    is_read = int(cur[0]) if cur else 0
-                    src = (cur[5] if cur else '') or ''
-                    if not still_neg:
-                        # 已解决：当前未读才自动标已读（已读的手动/自动均保留来源）
-                        if is_read == 0:
-                            auto_read.append(uid_s)
-                            q = qty_lookup.get(uid_s)
-                            n = note_lookup.get(uid_s, '')
-                            y = yield_lookup.get(uid_s)
-                            snap_map[uid_s] = (
-                                self.data_service._safe_qty(q) if actual_col else None,
-                                self.data_service._norm_note(n) if note_col else '',
-                                self.data_service._safe_qty(y) if yield_col else None,
-                            )
-                    else:
-                        # 仍负损：仅把「自动已读」翻回未读，手动已读保留
-                        if is_read == 1 and src == 'auto':
-                            rolled_back.append(uid_s)
-                except Exception as _e:
-                    print(f"[WARN] 隔离区已读对账单行失败(uid={uid}): {_e}", flush=True)
-
-            if auto_read:
-                mark_read_batch(auto_read, snap_map, read_source='auto')
-            if rolled_back:
-                recs = []
-                for d in rolled_back:
-                    old_fp = cur_map.get(d, ('', '', '', '', '', ''))[1] or ''
-                    recs.append((d, 0, old_fp, None, None, ''))
-                save_read_status_batch(recs)
-
-            # 同步内存 _read / _read_source，供 setDataFrame 后 UI 刷新
-            if auto_read or rolled_back:
-                dids_r = set(auto_read)
-                dids_u = set(rolled_back)
-                try:
-                    if dids_r:
-                        mask_r = df['data_id'].astype(str).isin(dids_r)
-                        df.loc[mask_r, '_read'] = 1
-                        df.loc[mask_r, '_read_source'] = 'auto'
-                    if dids_u:
-                        mask_u = df['data_id'].astype(str).isin(dids_u)
-                        df.loc[mask_u, '_read'] = 0
-                        df.loc[mask_u, '_read_source'] = ''
-                except Exception as _e:
-                    print(f"[WARN] 隔离区已读对账内存同步失败: {_e}", flush=True)
-
-            if auto_read or rolled_back:
-                parts = []
-                if auto_read:
-                    parts.append("已解决自动已读 %d 条" % len(auto_read))
-                if rolled_back:
-                    parts.append("仍负损翻回未读 %d 条" % len(rolled_back))
-                toast("🧊 隔离区已读对账：" + "｜".join(parts), "success", parent=self, duration=6000)
-                self.statusBar().showMessage("隔离区已读对账：" + "；".join(parts), 6000)
-                if auto_read:
-                    self._auto_read_count += len(auto_read)
-                    self._update_read_counter()
-        except Exception as e:
-            print(f"[WARN] 隔离区已读对账失败(不影响主流程): {e}", flush=True)
+        """薄壳：隔离区已读对账（ARC-003 第七刀切出到 QuarantineManagerController）。"""
+        return self.quarantine_manager_controller._reconcile_quarantine_read_status(df)
 
     def _update_read_counter(self):
         """刷新状态栏常驻的「已读计数」标签（自动 N / 手动 M）。"""
@@ -3463,199 +3257,32 @@ class MainWindow(QMainWindow):
         self.audit_controller.batch_export(rows, df_subset, self)
 
     def _set_quarantine(self, rows, flag: bool):
-        """右键菜单：将选中行移入/移出隔离区，并同步主表与卡片"""
-        df = self.view_model.df
-        if df is None or 'data_id' not in df.columns:
-            return
-        ids = set()
-        for r in rows:
-            if r >= len(df):
-                continue
-            uid = df.iloc[r].get('data_id')
-            if uid:
-                ids.add(str(uid))
-        if not ids:
-            return
-        if flag:
-            reason = _ask_quarantine_reason(self, "移入隔离区")
-            if reason is None:
-                return
-            basis = "手动:" + (reason.strip() if reason.strip() else "手动隔离")
-            add_quarantine_batch([(uid, reason, basis) for uid in ids])
-        else:
-            for uid in ids:
-                remove_quarantine(uid)
-        df.loc[df['data_id'].isin(ids), '_quarantined'] = 1 if flag else 0
-        self.view_model.df = df
-        if self.source_model:
-            # 就地更新隔离标记，不整表 setDataFrame → 保留滚动/排序/选中/筛选视图
-            self.source_model.mark_quarantine(ids, flag)
-            if hasattr(self, '_apply_column_visibility_by_name'):
-                self._apply_column_visibility_by_name()
-        if hasattr(self, 'stats_cards') and self.stats_cards is not None:
-            self.stats_cards.refresh(df)
-        toast(f"{'⚠️ 已移入隔离区' if flag else '↩ 已取消隔离'} {len(ids)} 条", parent=self)
+        """薄壳：手动移入/移出隔离区（ARC-003 第七刀切出到 QuarantineManagerController）。"""
+        return self.quarantine_manager_controller._set_quarantine(rows, flag)
 
     def _repair_quarantine_consistency(self, silent=False):
-        """修复隔离区一致性：把界面中标记隔离(_quarantined==1)但 SQLite 库内缺失的行补写进库。
-
-        救回因旧版本写库未落盘、或数据重导后复合主键漂移造成的「内存孤儿」记录——
-        否则重载数据后这些行因水合读不到库而消失，且永远进不了基于库的统计/失效复核。
-        返回修复条数。
-        """
-        df = self.view_model.df
-        if df is None or '_quarantined' not in df.columns or 'data_id' not in df.columns:
-            return 0
-        try:
-            qids = get_quarantined_ids()
-        except Exception as e:
-            self.statusBar().showMessage(f"修复隔离区一致性失败: {e}")
-            return 0
-        mask = pd.to_numeric(df['_quarantined'], errors='coerce').fillna(0).astype(int) == 1
-        orphan_ids = []
-        for d in df.loc[mask, 'data_id']:
-            s = str(d)
-            if s in qids or s in ('', 'nan', 'None') or not pd.notna(d):
-                continue
-            orphan_ids.append(s)
-        if not orphan_ids:
-            if not silent:
-                toast("隔离区一致性正常，无需修复", parent=self)
-            return 0
-        items = [(uid, "自动修复:界面标记隔离但库内缺失", "手动:自动修复") for uid in orphan_ids]
-        try:
-            add_quarantine_batch(items)
-        except Exception as e:
-            self.statusBar().showMessage(f"修复隔离区一致性写库失败: {e}")
-            return 0
-        msg = f"🔧 已修复隔离区一致性，补写 {len(orphan_ids)} 条到库"
-        self.statusBar().showMessage(msg)
-        if not silent:
-            toast(msg, parent=self)
-        return len(orphan_ids)
+        """薄壳：修复隔离区一致性（ARC-003 第七刀切出到 QuarantineManagerController）。"""
+        return self.quarantine_manager_controller._repair_quarantine_consistency(silent)
 
     def _auto_move_to_quarantine(self, manual=False):
-        """按 config/auto_quarantine_config.json 配置把符合条件的记录移入隔离区。
-        配置项：关键词 / 是否限定包材 / 是否排除替代料 / 是否要求负损。
-        manual=True 来自工具栏手动按钮（弹窗反馈）；False 为分析完成后静默执行。"""
-        cfg = load_auto_quarantine_config()
-        if not cfg.get("enabled", True):
-            if manual:
-                QMessageBox.information(
-                    self, "自动整理隔离区",
-                    "自动隔离已关闭（配置 enabled=false），可在工具栏「⚙ 规则」中开启。")
-            return
-        df = self.view_model.df
-        if df is None or 'data_id' not in df.columns:
-            if manual:
-                QMessageBox.information(self, "自动整理隔离区", "暂无数据，无法执行。")
-            return
-        matched = compute_auto_quarantine_ids(df, cfg)
-        if not matched:
-            if manual:
-                QMessageBox.information(
-                    self, "自动整理隔离区",
-                    "没有符合规则的记录（%s）。" % build_all_summary(cfg))
-            return
-        # 仅对「尚未在隔离区」的新记录执行，避免重复打扰 / 覆盖用户手动取消隔离的行
-        already = set()
-        if '_quarantined' in df.columns:
-            already = set(df.loc[df['_quarantined'] == 1, 'data_id'].astype(str))
-        new_ids = set(matched) - already
-        if not new_ids:
-            if manual:
-                QMessageBox.information(
-                    self, "自动整理隔离区",
-                    f"符合规则的 {len(matched)} 条均已在隔离区，无需重复移入。")
-            return
-        # 批量写入 SQLite：单事务 executemany，替代逐行 connect/commit/close（12K 行下卡死的根因之一）
-        from core.quarantine_manager import add_quarantine_batch
-        # basis 用自动规则 reason 文本（含「自动规则」标识），供失效复核重跑规则判定
-        add_quarantine_batch([(uid, matched[uid], matched[uid]) for uid in new_ids])
-        df.loc[df['data_id'].isin(new_ids), '_quarantined'] = 1
-        self.view_model.df = df
-        if self.source_model:
-            self.source_model.setDataFrame(df)
-            if hasattr(self, '_apply_column_visibility_by_name'):
-                self._apply_column_visibility_by_name()
-        self.stats_cards.refresh(df)
-        msg = f"🧹 自动移入隔离区 {len(new_ids)} 条（{build_all_summary(cfg)}）"
-        toast(msg, parent=self)
-        if manual:
-            QMessageBox.information(self, "自动整理隔离区", msg)
+        """薄壳：按规则自动移入隔离区（ARC-003 第七刀切出到 QuarantineManagerController）。"""
+        return self.quarantine_manager_controller._auto_move_to_quarantine(manual)
 
     # ------------------------------------------------------------------ #
     # 隔离区失效复核（监控旧数据改动：负损→补投相符 / 自动规则不再命中）
+    # —— ARC-003 第七刀：主体已切出到 QuarantineManagerController，此处保留薄壳
     # ------------------------------------------------------------------ #
     def _update_quarantine_badge(self, expired_list):
-        """更新隔离区按钮角标：显示当前失效记录数。无失效则去掉角标。"""
-        if not hasattr(self, 'action_btn_quarantine'):
-            return
-        n = len(expired_list) if expired_list else 0
-        if n > 0:
-            self.action_btn_quarantine.setText(f"⚠️ 隔离区 ({n}失效)")
-            self.action_btn_quarantine.setToolTip(
-                f"隔离区：{n} 条记录的入区原因已失效（如负损已补投相符），点击查看")
-        else:
-            self.action_btn_quarantine.setText("⚠️ 隔离区")
-            self.action_btn_quarantine.setToolTip("隔离区：查看/管理疑难记录")
+        """薄壳：隔离区角标刷新（ARC-003 第七刀切出到 QuarantineManagerController）。"""
+        return self.quarantine_manager_controller._update_quarantine_badge(expired_list)
 
     def _scan_expired_quarantine_after_analysis(self):
-        """分析完成后静默扫描隔离区失效。仅当「新增」失效记录出现时才弹窗告知。"""
-        df = self.view_model.df
-        if df is None or 'data_id' not in df.columns:
-            return
-        cfg = load_auto_quarantine_config()
-        expired = scan_expired_quarantine(df, cfg)
-        # 缓存当前失效集，供隔离区弹窗与角标复用
-        self._expired_q_cache = {r['uid']: r for r in expired}
-        self._update_quarantine_badge(expired)
-        # 仅对新出现的失效 uid 弹窗（避免每次分析重复打扰）
-        notified = getattr(self, '_expired_q_notified', set())
-        new_uids = [r['uid'] for r in expired if r['uid'] not in notified]
-        if new_uids:
-            notified.update(new_uids)
-            self._expired_q_notified = notified
-            self._notify_expired_quarantine(new_uids, expired)
+        """薄壳：分析完成后失效扫描（ARC-003 第七刀切出到 QuarantineManagerController）。"""
+        return self.quarantine_manager_controller._scan_expired_quarantine_after_analysis()
 
     def _notify_expired_quarantine(self, new_uids, expired_all):
-        """弹窗告知失效记录（仅列出本次新增的）。"""
-        df = self.view_model.df
-        # 用 data_id → 行的索引，避免每条都全表扫描
-        _idx = {}
-        if df is not None and "data_id" in df.columns:
-            try:
-                _idx = dict(zip(df["data_id"].astype(str), range(len(df))))
-            except Exception:
-                pass
-
-        detail_lines = []
-        for r in expired_all:
-            if r['uid'] not in new_uids:
-                continue
-            actual = r.get('actual')
-            quota = r.get('quota')
-            aq = ""
-            if actual is not None and quota is not None:
-                aq = f"（实际={actual:g}，定额={quota:g}）"
-            # 用物料编码+物料名称替代裸 data_id（uid 格式：日期|流程订单|物料编码）
-            label = r['uid']
-            row_idx = _idx.get(r['uid'])
-            if row_idx is not None:
-                row = df.iloc[row_idx]
-                mat_code = str(row.get("物料编码", "") or "").strip()
-                mat_name = str(row.get("物料名称", "") or row.get("物料描述", "") or "").strip()
-                if mat_code:
-                    label = mat_code
-                    if mat_name:
-                        label = f"{mat_code}  {mat_name}"
-            detail_lines.append(f"• {label}：{r['detail']}{aq}")
-        if not detail_lines:
-            return
-        msg = ("以下隔离区记录的「入区原因已失效」，建议复核并移出隔离区：\n\n"
-               + "\n".join(detail_lines)
-               + "\n\n可在「⚠️ 隔离区」弹窗的「失效复核」页一键移出。")
-        QMessageBox.information(self, "隔离区失效复核", msg)
+        """薄壳：失效记录弹窗（ARC-003 第七刀切出到 QuarantineManagerController）。"""
+        return self.quarantine_manager_controller._notify_expired_quarantine(new_uids, expired_all)
 
     def _open_auto_quarantine_rule_dialog(self):
         """打开自动隔离规则配置对话框（独立入口，保留兼容）。保存成功后提示。"""
