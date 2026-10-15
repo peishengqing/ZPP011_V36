@@ -118,6 +118,7 @@ def test_locate_row_by_excel_no_matches_column_not_index(qapp):
 
     from gui_pyside6.main_window import MainWindow
     from gui_pyside6.models.data_frame_model import DataFrameModel
+    from gui_pyside6.controllers.interaction_controller import InteractionController
 
     df = pd.DataFrame({
         "原表行号": [2, 3, 4, 5],
@@ -138,8 +139,9 @@ def test_locate_row_by_excel_no_matches_column_not_index(qapp):
     stub.activateWindow = lambda: None
     stub.raise_ = lambda: None
     stub.log = lambda *a, **k: None
-    # 关键：被测方法内部会调 self._select_source_row，桩对象必须绑定同一实现
-    stub._select_source_row = lambda src_row: MainWindow._select_source_row(stub, src_row)
+    # v43.199：定位方法已迁至 InteractionController，MainWindow 侧为薄壳；
+    # 桩对象装配真 controller，测「薄壳 → controller」完整链路
+    stub.interaction_controller = InteractionController(stub)
 
     assert MainWindow._locate_row_by_excel_no(stub, 4) is True
     selected = view.selectionModel().selectedRows()
@@ -159,6 +161,7 @@ def test_locate_row_by_index_unchanged_semantics(qapp):
 
     from gui_pyside6.main_window import MainWindow
     from gui_pyside6.models.data_frame_model import DataFrameModel
+    from gui_pyside6.controllers.interaction_controller import InteractionController
 
     df = pd.DataFrame({"data_id": ["a", "b", "c"], "物料编码": ["M1", "M2", "M3"]})
     model = DataFrameModel()
@@ -175,8 +178,9 @@ def test_locate_row_by_index_unchanged_semantics(qapp):
     stub.activateWindow = lambda: None
     stub.raise_ = lambda: None
     stub.log = lambda *a, **k: None
-    # 关键：被测方法内部会调 self._select_source_row，桩对象必须绑定同一实现
-    stub._select_source_row = lambda src_row: MainWindow._select_source_row(stub, src_row)
+    # v43.199：定位方法已迁至 InteractionController，MainWindow 侧为薄壳；
+    # 桩对象装配真 controller，测「薄壳 → controller」完整链路
+    stub.interaction_controller = InteractionController(stub)
 
     assert MainWindow._locate_row_by_index(stub, 2) is True
     assert view.selectionModel().selectedRows()[0].row() == 2

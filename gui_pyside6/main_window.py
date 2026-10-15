@@ -6,13 +6,11 @@ ZPP011 主窗口 (PySide6 迁移版)
 """
 
 import sys
-import logging
 import os
 import time
 import json
 from datetime import datetime
 import pandas as pd
-import numpy as np
 import subprocess
 import re
 
@@ -21,7 +19,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QFileDialog,
     QHeaderView, QDialog, QDialogButtonBox, QSplitter,
     QComboBox, QAbstractItemView, QMessageBox, QTableWidgetItem, QTableWidget,
-    QMenu, QGroupBox, QProgressDialog, QInputDialog,
+    QMenu, QProgressDialog, QInputDialog,
     QToolButton,
     QTreeWidget, QTreeWidgetItem,      # v43.165 半成品分类树
 )
@@ -88,6 +86,7 @@ from gui_pyside6.controllers.column_controller import ColumnController
 from gui_pyside6.controllers.filter_preset_controller import FilterPresetController
 from gui_pyside6.controllers.dashboard_controller import DashboardController
 from gui_pyside6.controllers.semi_category_controller import SemiCategoryController
+from gui_pyside6.controllers.interaction_controller import InteractionController
 
 
 class _PptViewShim:
@@ -313,6 +312,8 @@ class MainWindow(QMainWindow):
         self.filter_preset_controller = FilterPresetController(self)
         # ARC-003 第四刀：11 个看板/弹窗展示职责已切出到 DashboardController
         self.dashboard_controller = DashboardController(self)
+        # ARC-003 第六刀：交互职责（定位/选中/复制）已切出到 InteractionController
+        self.interaction_controller = InteractionController(self)
         self.data_service = DataService(self.alt_controller)
         self.data_service.log_signal.connect(self._on_data_service_log)
 
@@ -1100,28 +1101,11 @@ class MainWindow(QMainWindow):
 
     def _select_source_row(self, src_row):
         """选中主表某一行（源行位置 → 代理行映射），供各定位方法复用。"""
-        src_idx = self.source_model.index(src_row, 0)
-        proxy = self.table_view.model()
-        proxy_idx = proxy.mapFromSource(src_idx) if hasattr(proxy, 'mapFromSource') else src_idx
-        self.table_view.selectRow(proxy_idx.row())
-        self.table_view.scrollTo(proxy_idx)
-        self.table_view.setFocus()
-        self.activateWindow()
-        self.raise_()
-        return True
+        return self.interaction_controller._select_source_row(src_row)
 
     def _locate_row_by_index(self, row_index):
         """按 DataFrame index 标签定位主表行（兼容旧调用方）"""
-        try:
-            if self.source_model is None:
-                return False
-            df = self.source_model.getDataFrame()
-            if df is None or row_index not in df.index:
-                return False
-            return self._select_source_row(df.index.get_loc(row_index))
-        except Exception as e:
-            self.log(f"定位主表失败: {e}", "error")
-            return False
+        return self.interaction_controller._locate_row_by_index(row_index)
 
     def _locate_row_by_excel_no(self, excel_row):
         """按「原表行号」列的取值定位主表行。
@@ -1130,40 +1114,11 @@ class MainWindow(QMainWindow):
         RangeIndex，拿 Excel 行号去匹配会失配或错位（行号 5 → 第 6 行）；这里按列值
         精确匹配，是看板双击定位最可靠的一条路径。
         """
-        try:
-            if self.source_model is None:
-                return False
-            df = self.source_model.getDataFrame()
-            if df is None or df.empty or '原表行号' not in df.columns:
-                return False
-            key = str(excel_row).strip()
-            if not key:
-                return False
-            hits = df.index[df['原表行号'].astype(str).str.strip() == key].tolist()
-            if not hits:
-                return False
-            return self._select_source_row(df.index.get_loc(hits[0]))
-        except Exception as e:
-            self.log(f"定位主表失败: {e}", "error")
-            return False
+        return self.interaction_controller._locate_row_by_excel_no(excel_row)
 
     def _locate_row_in_main_table(self, data_id, silent=False):
         """变动提醒弹窗双击某行时，定位并选中主表对应行（经 proxy_model 映射）"""
-        try:
-            if self.source_model is None:
-                return False
-            df = self.source_model.getDataFrame()
-            if df is None or 'data_id' not in df.columns:
-                return False
-            matches = df.index[df['data_id'].astype(str) == str(data_id)].tolist()
-            if not matches:
-                if not silent:
-                    toast("主表中未找到该记录", parent=self)
-                return False
-            return self._select_source_row(df.index.get_loc(matches[0]))
-        except Exception as e:
-            self.log(f"定位主表失败: {e}", "error")
-            return False
+        return self.interaction_controller._locate_row_in_main_table(data_id, silent)
 
     def _start_analysis(self):
         if not self.current_input_file:
@@ -1725,47 +1680,7 @@ class MainWindow(QMainWindow):
 
     def _on_selection_changed(self, selected, deselected):
         """选中变化时，显示选中合计"""
-        if self.proxy_model is None or self.view_model.df is None:
-            self.statusBar().showMessage("")
-            return
-        
-        # 如果没有选中行，恢复整体合计
-        if not selected:
-            self._update_all_summary()
-            return
-        
-        indexes = self.table_view.selectionModel().selectedIndexes()
-        if not indexes:
-            self.statusBar().showMessage("")
-            return
-        df = self.source_model.getDataFrame()
-        # 收集选中行中的唯一行号
-        selected_rows = set()
-        for idx in indexes:
-            source_idx = self.proxy_model.mapToSource(idx)
-            selected_rows.add(source_idx.row())
-        
-        # 按列累加选中行的值
-        col_sums = {}
-        # 从 df 中找出所有可能的数值列
-        numeric_candidates = ["配额", "定额", "数量-定额", "实际", "数量-实际", "偏差金额", "偏差金额(含税)", "偏差数量", "数量偏差", "净偏差数量", "净偏差金额"]
-        
-        for row in selected_rows:
-            for col_idx, col_name in enumerate(df.columns):
-                if col_idx == 0:  # 跳过行号列
-                    continue
-                if col_name not in numeric_candidates:
-                    continue
-                val = df.iloc[row, col_idx]
-                if pd.notna(val) and isinstance(val, (int, float, np.integer, np.floating)):
-                    col_sums[col_name] = col_sums.get(col_name, 0) + val
-        
-        if col_sums:
-            # 更新选中合计显示
-            self._update_selection_summary(col_sums)
-        else:
-            self.statusBar().showMessage("选中合计：无有效数值", 2000)
-            self._clear_selection_summary()
+        return self.interaction_controller._on_selection_changed(selected, deselected)
 
     def _cancel_analysis(self):
         cancelled = False
@@ -3023,49 +2938,11 @@ class MainWindow(QMainWindow):
 
     def _update_selection_summary(self, col_sums: dict):
         """更新选中行合计到底部栏"""
-        # 收集显示的列名和值
-        display_map = {}
-        for k, v in col_sums.items():
-            # 映射到标准名称
-            if k in ("配额", "定额", "数量-定额"):
-                display_map["配额"] = v
-            elif k in ("实际", "数量-实际"):
-                display_map["实际"] = v
-            elif k in ("偏差金额", "偏差金额(含税)"):
-                display_map["偏差金额"] = v
-            elif k in ("偏差数量", "数量偏差"):
-                display_map["偏差数量"] = v
-            else:
-                display_map[k] = v
-        
-        # 如果有关键数值列，更新底部栏
-        if "配额" in display_map or "实际" in display_map or "偏差金额" in display_map or "偏差数量" in display_map:
-            quota = display_map.get("配额", 0)
-            actual = display_map.get("实际", 0)
-            amount = display_map.get("偏差金额", 0)
-            qty = display_map.get("偏差数量", 0)
-            
-            # 更新底部栏
-            self.summary_quota.setText(f"配额: {quota:,.2f}")
-            self.summary_actual.setText(f"实际: {actual:,.2f}")
-            self.summary_amount.setText(f"偏差金额: {amount:,.2f}")
-            self.summary_qty.setText(f"偏差量: {qty:,.2f}")
-            
-            # 状态栏显示详细合计
-            parts = []
-            for k, v in display_map.items():
-                if "%" in k:
-                    parts.append(f"{k}: {v:.2f}")
-                else:
-                    parts.append(f"{k}: {v:,.2f}")
-            self.statusBar().showMessage("选中合计：" + " | ".join(parts))
+        return self.interaction_controller._update_selection_summary(col_sums)
 
     def _clear_selection_summary(self):
         """清空选中合计，恢复默认"""
-        self.summary_quota.setText("配额: 0.00")
-        self.summary_actual.setText("实际: 0.00")
-        self.summary_amount.setText("偏差金额: 0.00")
-        self.summary_qty.setText("偏差量: 0.00")
+        return self.interaction_controller._clear_selection_summary()
 
 
     # _update_stat_cards 已删除（统计卡片不再使用）
@@ -3709,103 +3586,16 @@ class MainWindow(QMainWindow):
         原先 main_window 有两份实现：菜单连这份、Ctrl+C 连 _copy_selected_cells，
         两者行为不一致；现统一为本实现，两条入口共用。
         """
-        tv = self.table_view
-        model = tv.model()
-        selection = tv.selectionModel()
-        indexes = selection.selectedIndexes()
-        if not indexes:
-            return
-        cells = {}
-        min_row, max_row = float('inf'), -1
-        min_col, max_col = float('inf'), -1
-        for idx in indexes:
-            r, c = idx.row(), idx.column()
-            cells[(r, c)] = idx.data(Qt.DisplayRole) or ""
-            min_row = min(min_row, r)
-            max_row = max(max_row, r)
-            min_col = min(min_col, c)
-            max_col = max(max_col, c)
-        lines = []
-        for r in range(min_row, max_row + 1):
-            row_vals = []
-            for c in range(min_col, max_col + 1):
-                row_vals.append(str(cells.get((r, c), "")))
-            lines.append("\t".join(row_vals))
-        QApplication.clipboard().setText("\n".join(lines))
-        self.statusBar().showMessage(f"已复制 {max_row - min_row + 1} 行 × {max_col - min_col + 1} 列", 2000)
+        return self.interaction_controller._copy_selected_cells()
 
     # -----------------------------------------------------------
     # 双击明细
     # -----------------------------------------------------------
     def _on_cell_double_clicked(self, index):
-        try:
-            if self.proxy_model and self.source_model:
-                source_index = self.proxy_model.mapToSource(index)
-                row = source_index.row()
-                df = self.source_model.getDataFrame()
-                if row < len(df):
-                    row_data = df.iloc[row]
-                    self._show_row_detail(row_data)
-                else:
-                    self.log(f"双击弹窗: row={row} 超出范围 len={len(df)}", "warn")
-            else:
-                self.log(f"双击弹窗失败: proxy_model={self.proxy_model}, source_model={self.source_model}", "error")
-        except Exception as e:
-            import traceback
-            self.log(f"双击弹窗失败: {e}\n{traceback.format_exc()}", "error")
+        return self.interaction_controller._on_cell_double_clicked(index)
 
     def _show_row_detail(self, row_data):
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QLabel, QDialogButtonBox
-        from PySide6.QtCore import Qt
-        def _val(*keys):
-            for k in keys:
-                if k in row_data.index:
-                    v = row_data[k]
-                    if not (v is None or (pd.isna(v) if not isinstance(v, str) else False)):
-                        return v
-                for col in row_data.index:
-                    if col.strip() == k:
-                        v = row_data[col]
-                        if not (v is None or (pd.isna(v) if not isinstance(v, str) else False)):
-                            return v
-            return ""
-        dialog = QDialog(self)
-        mat_code = _val("物料编码", "物料号")
-        mat_name = _val("物料描述", "物料名称", "物料")
-        dialog.setWindowTitle(f"明细 - {mat_code} {mat_name}")
-        dialog.setMinimumWidth(520)
-        layout = QVBoxLayout(dialog)
-        def _mk_label(text=""):
-            lbl = QLabel(str(text))
-            lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            return lbl
-        gb1 = QGroupBox("基本信息")
-        fl1 = QFormLayout(gb1)
-        for label, keys in [("工厂", ["工厂", "工厂名称"]), ("车间", ["车间"]), ("订单日期", ["订单日期"]), ("流程订单", ["流程订单"]), ("物料编码", ["物料编码", "物料号"]), ("物料描述", ["物料描述", "物料名称"]), ("组件物料类型", ["组件物料类型"]), ("组件物料类型描述", ["组件物料类型描述"])]:
-            fl1.addRow(f"{label}：", _mk_label(_val(*keys)))
-        layout.addWidget(gb1)
-        gb2 = QGroupBox("偏差数据")
-        fl2 = QFormLayout(gb2)
-        for label, keys in [("定额用量", ["定额"]), ("实际用量", ["实际"]), ("偏差数量", ["偏差数量"]), ("偏差率", ["偏差率", "偏差率(%)"]), ("偏差金额", ["偏差金额"]), ("总偏差金额(含税)", ["总偏差金额(含税)", "偏差金额"]), ("审核结果", ["审核结果", "audit_result"]), ("备注来源", ["备注来源"])]:
-            val = _val(*keys)
-            display = str(val)
-            if "偏差率" in label and val:
-                try:
-                    display = f"{float(val):.2f}%"
-                except Exception as e:
-                    logging.warning("偏差率格式转换失败: %s", e)
-            fl2.addRow(f"{label}：", _mk_label(display))
-        layout.addWidget(gb2)
-        gb3 = QGroupBox("备注与建议")
-        fl3 = QFormLayout(gb3)
-        remark_label = _mk_label(_val("备注原因", "备注"))
-        remark_label.setWordWrap(True)
-        fl3.addRow("备注：", remark_label)
-        layout.addWidget(gb3)
-        btn = QDialogButtonBox(QDialogButtonBox.Ok)
-        btn.accepted.connect(dialog.accept)
-        layout.addWidget(btn)
-        dialog.exec()
+        return self.interaction_controller._show_row_detail(row_data)
 
     # -----------------------------------------------------------
     # 工具函数
