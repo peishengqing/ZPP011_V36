@@ -331,7 +331,11 @@ def compute_auto_quarantine_ids(df: pd.DataFrame, cfg=None) -> dict:
     workshop_col = _first_col(df, ["车间", "工厂车间", "生产车间", "work_shop", "车间号"])
     remark_col = _first_col(df, ["备注", "备注原因", "remark", "备注说明"])
     dev_qty_col = _first_col(df, ["偏差数量", "偏差量", "差异数量"])
-    unit_col = _first_col(df, ["单位", "产量单位", "组件单位"])
+    # v43.202：单位列对齐全项目既定口径（auto_read_rules.py / 各报表 sheet 均用组件单位，
+    # 从不用产量单位）。旧候选把「产量单位」排在「组件单位」前——真实 SAP 表无裸「单位」列，
+    # 于是命中「产量单位」（产品母件出货量单位，取值无「片」），导致按「组件投料单位=片」的
+    # 规则（如脱氧剂）永远 0 命中。改为组件单位优先，与自动已读规则彻底一致。
+    unit_col = _first_col(df, ["单位", "组件单位", "基本单位", "计量单位"])
 
     result = {}  # data_id -> reason（只记靠前规则）
     for idx, rule in enumerate(rules, 1):
