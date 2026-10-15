@@ -74,7 +74,7 @@ from domain.alt_material.alt_manager import (
 from core.config_manager import ConfigManager
 
 from core.fingerprint import calc_fingerprint
-from core.read_status import load_read_status, record_deviation_change, upsert_material_names, get_material_names
+from core.read_status import record_deviation_change, upsert_material_names, get_material_names
 from gui_pyside6.services.data_service import DataService
 from utils.version_history import get_current_version, VERSION_HISTORY, APP_NAME, AUTHOR
 
@@ -1293,6 +1293,8 @@ class MainWindow(QMainWindow):
                 processed_df = df if '_read' in df.columns else self.data_service.preprocess_audit_data(df)
             # 新增：分析完成后按「自动已读规则中心」配置自动标已读，并逐规则报告命中数
             self._auto_read_by_rules(processed_df)
+            # 新增：隔离区已读对账（仅管理隔离区记录的已读/未读，与规则中心互斥）
+            self._reconcile_quarantine_read_status(processed_df)
             self.source_model.setDataFrame(processed_df)
             QApplication.processEvents()
             self._schedule_unread_summary()
@@ -1446,14 +1448,28 @@ class MainWindow(QMainWindow):
                 return
             union_mask, per_rule = compute_auto_read_mask(df, cfg)
             unread = (df['_read'] == 0)
-            target = union_mask & unread
+            # 隔离区记录由「隔离区已读对账」(_reconcile_quarantine_read_status) 专门管理，
+            # 自动已读规则中心绝不触碰隔离区——防止负损隔离记录被误标已读（v43.200 根因修复）
+            _q = pd.to_numeric(
+                df.get('_quarantined', pd.Series(0, index=df.index)),
+                errors='coerce',
+            ).fillna(0).astype(int)
+            not_quarantined = ~(_q == 1)
+            target = union_mask & unread & not_quarantined
             n_auto = int(target.sum())
             n_would = int(union_mask.sum())
             if n_auto == 0:
                 if n_would == 0:
                     toast("ℹ️ 本次无符合自动已读规则的行", "info", parent=self, duration=6000)
                 else:
-                    toast(f"ℹ️ 符合自动已读规则共 {n_would} 条，均已读过，无需自动已读", "info", parent=self, duration=6000)
+                    excluded = int((union_mask & unread & ~not_quarantined).sum())
+                    if excluded:
+                        toast(
+                            f"ℹ️ 符合自动已读规则 {n_would} 条，其中 {excluded} 条在隔离区（按规则不自动已读），其余均已读过",
+                            "info", parent=self, duration=6000,
+                        )
+                    else:
+                        toast(f"ℹ️ 符合自动已读规则共 {n_would} 条，均已读过，无需自动已读", "info", parent=self, duration=6000)
                 return
 
             # —— 建立变更检测基线（向量化 dict(zip)，避免逐行 df.loc 的 O(n²)）——
@@ -1483,10 +1499,10 @@ class MainWindow(QMainWindow):
                 self._auto_read_count += n_auto
                 self._update_read_counter()
 
-            # —— 逐规则命中数（仅在未读范围内统计，供反馈）——
+            # —— 逐规则命中数（仅在未读且非隔离区范围内统计，供反馈）——
             parts = []
             for rule, m in per_rule:
-                cnt = int((m & unread).sum())
+                cnt = int((m & unread & not_quarantined).sum())
                 if cnt > 0:
                     parts.append("「%s」%d" % (rule.get('name', '未命名'), cnt))
 
@@ -1501,6 +1517,134 @@ class MainWindow(QMainWindow):
             )
         except Exception as e:
             print(f"[WARN] 自动已读失败(不影响主流程): {e}", flush=True)
+
+    def _reconcile_quarantine_read_status(self, df):
+        """分析完成后：按隔离区记录当前偏差，对账其已读状态（v43.200 新功能）。
+
+        隔离区记录由本函数专门管理，与「自动已读规则中心」互斥（规则中心不再碰隔离区）：
+        - 已解决（实际≥定额，或实际≤0 已归零）→ 自动标已读（仅当当前未读；已读的手动/自动均不动，保留来源）
+        - 仍负损（0<实际<定额）→ 若此前是「自动已读」则翻回未读；手动已读不动（尊重人工判断）
+
+        这样「补投后偏差归零/转正」的隔离记录自动收口为已读，仍负损的重新回到未读待复核。
+        偏差口径与 scan_expired_quarantine 的 neg_loss 判定同源（actual vs quota），保证一致。
+        落库复用 mark_read_batch / save_read_status_batch，并同步内存 _read / _read_source 供 UI 刷新。
+        """
+        try:
+            if df is None or df.empty or 'data_id' not in df.columns:
+                return
+            from core.read_status import (load_read_status, save_read_status_batch,
+                                         mark_read_batch)
+            from core.quarantine_manager import get_quarantined_ids
+
+            uids = get_quarantined_ids()
+            if not uids:
+                return
+
+            # 实际 / 定额 / 备注 / 产量 列（与 scan_expired_quarantine、_auto_read_by_rules 同源）
+            actual_col = self.data_service._find_real_qty_col(df)
+            quota_col = None
+            for c in ('数量-定额', '定额', '定额数量', '数量 - 定额', 'quota'):
+                if c in df.columns:
+                    quota_col = c
+                    break
+            if not actual_col or not quota_col:
+                return
+            note_col = self.data_service._find_remark_col(df)
+            yield_col = self.data_service._find_yield_col(df)
+
+            qty_lookup = {str(k): v for k, v in zip(df['data_id'], df[actual_col])} if actual_col else {}
+            note_lookup = {str(k): str(v) for k, v in zip(df['data_id'], df[note_col].astype(str))} if note_col else {}
+            yield_lookup = {str(k): v for k, v in zip(df['data_id'], df[yield_col])} if yield_col else {}
+
+            # O(1) 索引：data_id(str) -> row（与 scan_expired_quarantine 一致，防重复 data_id）
+            try:
+                df_index = df.drop_duplicates(subset='data_id', keep='first').set_index(df['data_id'].astype(str))
+            except Exception:
+                df_index = None
+
+            cur_map = load_read_status(list(uids))
+
+            auto_read, rolled_back = [], []
+            snap_map = {}
+            for uid in uids:
+                try:
+                    uid_s = str(uid)
+                    if df_index is not None:
+                        try:
+                            row = df_index.loc[uid_s]
+                        except KeyError:
+                            continue
+                    else:
+                        sub = df[df['data_id'].astype(str) == uid_s]
+                        if sub.empty:
+                            continue
+                        row = sub.iloc[0]
+                    actual = self.data_service._safe_qty(row.get(actual_col))
+                    quota = self.data_service._safe_qty(row.get(quota_col))
+                    if actual is None or quota is None:
+                        continue
+                    # 与 neg_loss 口径一致：0<实际<定额 仍负损；其余（≥定额/≤0）视为已解决
+                    still_neg = (actual > 0) and (actual < quota)
+                    cur = cur_map.get(uid_s)  # (is_read, fp, sq, sn, sy, src)
+                    is_read = int(cur[0]) if cur else 0
+                    src = (cur[5] if cur else '') or ''
+                    if not still_neg:
+                        # 已解决：当前未读才自动标已读（已读的手动/自动均保留来源）
+                        if is_read == 0:
+                            auto_read.append(uid_s)
+                            q = qty_lookup.get(uid_s)
+                            n = note_lookup.get(uid_s, '')
+                            y = yield_lookup.get(uid_s)
+                            snap_map[uid_s] = (
+                                self.data_service._safe_qty(q) if actual_col else None,
+                                self.data_service._norm_note(n) if note_col else '',
+                                self.data_service._safe_qty(y) if yield_col else None,
+                            )
+                    else:
+                        # 仍负损：仅把「自动已读」翻回未读，手动已读保留
+                        if is_read == 1 and src == 'auto':
+                            rolled_back.append(uid_s)
+                except Exception as _e:
+                    print(f"[WARN] 隔离区已读对账单行失败(uid={uid}): {_e}", flush=True)
+
+            if auto_read:
+                mark_read_batch(auto_read, snap_map, read_source='auto')
+            if rolled_back:
+                recs = []
+                for d in rolled_back:
+                    old_fp = cur_map.get(d, ('', '', '', '', '', ''))[1] or ''
+                    recs.append((d, 0, old_fp, None, None, ''))
+                save_read_status_batch(recs)
+
+            # 同步内存 _read / _read_source，供 setDataFrame 后 UI 刷新
+            if auto_read or rolled_back:
+                dids_r = set(auto_read)
+                dids_u = set(rolled_back)
+                try:
+                    if dids_r:
+                        mask_r = df['data_id'].astype(str).isin(dids_r)
+                        df.loc[mask_r, '_read'] = 1
+                        df.loc[mask_r, '_read_source'] = 'auto'
+                    if dids_u:
+                        mask_u = df['data_id'].astype(str).isin(dids_u)
+                        df.loc[mask_u, '_read'] = 0
+                        df.loc[mask_u, '_read_source'] = ''
+                except Exception as _e:
+                    print(f"[WARN] 隔离区已读对账内存同步失败: {_e}", flush=True)
+
+            if auto_read or rolled_back:
+                parts = []
+                if auto_read:
+                    parts.append("已解决自动已读 %d 条" % len(auto_read))
+                if rolled_back:
+                    parts.append("仍负损翻回未读 %d 条" % len(rolled_back))
+                toast("🧊 隔离区已读对账：" + "｜".join(parts), "success", parent=self, duration=6000)
+                self.statusBar().showMessage("隔离区已读对账：" + "；".join(parts), 6000)
+                if auto_read:
+                    self._auto_read_count += len(auto_read)
+                    self._update_read_counter()
+        except Exception as e:
+            print(f"[WARN] 隔离区已读对账失败(不影响主流程): {e}", flush=True)
 
     def _update_read_counter(self):
         """刷新状态栏常驻的「已读计数」标签（自动 N / 手动 M）。"""
