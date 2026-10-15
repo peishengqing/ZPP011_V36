@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.201",
+        "date": "2026-10-15",
+        "features": "修复 v43.196 看板控制器重构引发的运行时崩溃：DashboardController 的 10 个看板/弹窗方法把组合控制器自身 `self` 当作 `main_window`/`parent` 传给对话框，而这些对话框内部硬编码 `self.main_window.view_model.df`——控制器没有 `view_model` 属性，点开任一弹窗即抛 `AttributeError: 'DashboardController' object has no attribute 'view_model'`。",
+        "fixes": "**根因**：v43.196 把 11 个看板/弹窗方法切到 `DashboardController(self)`（组合式持 `self.mw`），方法体内打开对话框时仍按旧 MainWindow 习惯传 `self`（即控制器实例），而非 `self.mw`（真实 MainWindow）。`view_model` 只在 MainWindow 上定义（`main_window.py:321 self.view_model = AnalysisViewModel(self)`），对话框经 `self.main_window.view_model.df` 取主表——传进控制器后属性链断裂，触发崩溃。这是系统性回归（10 个调用点，非偶发）。**修法**：dashboard_controller.py 的 10 个对话框实例化点全部由 `, self)` / `Dialog(self` 改为传 `self.mw`——AlertDialog / DeviationWarningDialog / NegLossDashboardDialog / PosLossDashboardDialog / DataStabilityDialog / QuarantineReviewDialog / AltChainDialog / MaterialProfileDialog / SemiDashboardDialog / DashboardDialog 均传真实 MainWindow；仅 L345 `QDialog(self)`（自定义明细窗口，只作父控件、不访问 view_model）保持原样。其余 controller（interaction/column/semi_category/audit/alt/export）逐文件复核：所有 Dialog 用 `self.mw` 或 `parent_widget`，无同类隐患，确认未扩散。**测试**：新增 `tests/unit/test_dashboard_controller_mainwindow_wiring.py` 4 条——`test_show_dashboard_passes_main_window_not_controller`（断言 AlertDialog 的 `main_window is mw` 且 `parent is mw`）、`test_show_neg_loss_passes_main_window`、`test_show_semi_passes_main_window`（断言 NegLoss/Semi 看板的 `a[1] is mw`）、`test_controller_never_passed_as_dialog_main_window`（AST 护栏：10 个对话框均用 `self.mw`、无一用 `, self)`，断言源码 `self.mw)` 出现 ≥ 8 次）。**验证**：py_compile 全过；pyflakes dashboard_controller.py + 新测试文件零告警；pytest 新文件 **4 passed**；GUI 离屏 smoke 10 个弹窗薄壳实调全通；**反证**——把任一 AlertDialog 的实参改回 `self` → `test_controller_never_passed_as_dialog_main_window` 立即 1 failed，证明护栏能钉住回归。",
+    },
+    {
         "version": "v43.200",
         "date": "2026-10-15",
         "features": "隔离区已读对账（自动已读规则中心与隔离区解耦）：① 新增 `_reconcile_quarantine_read_status(df)`，分析完成后按隔离区记录当前偏差统一管理其已读状态——已解决（实际≥定额，或实际≤0 已归零）自动标已读（仅当当前未读，已读的手动/自动均保留来源）；仍负损（0<实际<定额）则把「自动已读」翻回未读，手动已读不动（尊重人工判断）；② 自动已读规则中心（`_auto_read_by_rules`）加 `not_quarantined` 过滤，**彻底不碰隔离区**（此前负损隔离记录会被自动已读误标，见 fixes 根因）。偏差口径与 `scan_expired_quarantine` 的 neg_loss 判定同源（actual vs quota）。落库复用 `mark_read_batch` / `save_read_status_batch`，并同步内存 `_read`/`_read_source` 供 UI 刷新。",

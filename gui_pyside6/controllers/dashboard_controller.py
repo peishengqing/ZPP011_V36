@@ -72,7 +72,7 @@ class DashboardController:
             if "_read" in alerts_df.columns:
                 alerts_df["状态"] = alerts_df["_read"].map({0: "未读", 1: "已读"})
                 alerts_df = alerts_df[["状态"] + [c for c in alerts_df.columns if c != "状态"]]
-            dialog = AlertDialog(alerts_df, self)
+            dialog = AlertDialog(alerts_df, self.mw)
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开替代料看板失败: {e}")
@@ -123,7 +123,7 @@ class DashboardController:
             if "_read" in warnings_df.columns:
                 warnings_df["状态"] = warnings_df["_read"].map({0: "未读", 1: "已读"})
                 warnings_df = warnings_df[["状态"] + [c for c in warnings_df.columns if c != "状态"]]
-            dialog = DeviationWarningDialog(warnings_df, self)
+            dialog = DeviationWarningDialog(warnings_df, self.mw)
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开偏差率预警看板失败: {e}")
@@ -157,7 +157,7 @@ class DashboardController:
             # 仅在完全缺列时补一个空列，保证看板能识别到列存在并正常初始化筛选器。
             if "半成品重分类" not in sub.columns:
                 sub["半成品重分类"] = ""
-            dialog = NegLossDashboardDialog(sub, self)
+            dialog = NegLossDashboardDialog(sub, self.mw)
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开负损看板失败: {e}")
@@ -191,7 +191,7 @@ class DashboardController:
             #（其 `_semi_class_mask` 有 v43.148 三层兜底，不靠该列也筛得出来）
             if "半成品重分类" not in sub.columns:
                 sub["半成品重分类"] = ""
-            dialog = PosLossDashboardDialog(sub, self)
+            dialog = PosLossDashboardDialog(sub, self.mw)
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开正损看板失败: {e}")
@@ -222,7 +222,7 @@ class DashboardController:
                             name_map[c] = n
             except Exception:
                 pass
-            dialog = DataStabilityDialog(self, code_name_map=name_map)
+            dialog = DataStabilityDialog(self.mw, code_name_map=name_map)
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开数据稳定性看板失败: {e}")
@@ -231,7 +231,7 @@ class DashboardController:
     def _show_quarantine_review_dashboard(self):
         """v43.181 隔离区闭环复盘：读 audit.db quarantine_records，展示隔离进出闭环。"""
         try:
-            dialog = QuarantineReviewDialog(self)
+            dialog = QuarantineReviewDialog(self.mw)
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开隔离区闭环看板失败: {e}")
@@ -240,7 +240,7 @@ class DashboardController:
     def _show_alt_chain_dashboard(self):
         """v43.181 替代料长链预警：读 alt_pairs.json，展示出现在多组的物料。"""
         try:
-            dialog = AltChainDialog(self)
+            dialog = AltChainDialog(self.mw)
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开替代料长链看板失败: {e}")
@@ -273,7 +273,7 @@ class DashboardController:
                 "请先在主表选中一个物料，再点「🪪 查看物料画像」（或右键该行选择）。")
             return
         try:
-            dialog = MaterialProfileDialog(code, self, name=name or '')
+            dialog = MaterialProfileDialog(code, self.mw, name=name or '')
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开物料画像失败: {e}")
@@ -311,7 +311,7 @@ class DashboardController:
             ]
             keep = [c for c in candidates if c in sub.columns]
             sub = sub[keep].copy() if keep else sub.copy()
-            dialog = SemiDashboardDialog(sub, self)
+            dialog = SemiDashboardDialog(sub, self.mw)
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开半成品看板失败: {e}")
@@ -409,7 +409,7 @@ class DashboardController:
             QMessageBox.warning(self, "提示", "无数据，请先进行分析")
             return
         # material_df 暂无独立来源，传 None（DashboardDialog 内部仅预留）
-        dialog = DashboardDialog(audit_df, None, parent=self, main_window=self)
+        dialog = DashboardDialog(audit_df, None, parent=self.mw, main_window=self.mw)
         # 「到主表」芯片桥：看板内点芯片 → 主表联动钻取（降级模式信号不触发）
         dialog.focus_requested.connect(self.mw._apply_board_focus)
         dialog.exec()
