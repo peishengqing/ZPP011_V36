@@ -61,7 +61,7 @@ class DashboardController:
                 return
             # 只保留关键列（含"工厂"以便 dialog 生成正确的 data_id 与主表匹配）
             required_cols = [c for c in [
-                "工厂", "订单日期", "流程订单", "物料编码", "物料名称", "物料描述",
+                "工厂", "订单日期", "订单类型", "流程订单", "物料编码", "物料名称", "物料描述",
                 "备注", "备注来源", "审核结果",
                 "车间", "定额", "实际", "偏差数量", "偏差率(%)",
                 "净偏差数量", "净偏差金额", "净偏差率(%)",
@@ -110,7 +110,7 @@ class DashboardController:
             # 注意：不要同时列「组件物料号」和「物料编码」——sheet5_full 已把组件物料号统一映射为物料编码，
             # 两个来源列并存会让列顺序被打乱（表现为流程订单列显示日期、物料编码列显示流程订单号）。
             candidates = [
-                "工厂", "订单日期", "流程订单", "原表行号", "产品物料号码", "产品物料描述",
+                "工厂", "订单日期", "订单类型", "流程订单", "原表行号", "产品物料号码", "产品物料描述",
                 "物料编码", "物料名称", "物料描述",
                 "备注", "备注来源",
                 "车间", "组件物料类型", "组件物料类型描述", "单位",
@@ -139,7 +139,7 @@ class DashboardController:
             # 保留关键列（含数量-实际/数量-定额 供负损计算，备注列供优先展示）
             # 同偏差率预警看板：不列「组件物料号」，统一用「物料编码」，避免两来源列并存打乱列序
             candidates = [
-                "订单日期", "流程订单", "物料编码", "物料名称", "物料描述",
+                "订单日期", "订单类型", "流程订单", "物料编码", "物料名称", "物料描述",
                 # 🔴 工厂筛选必需（v43.176）：v43.169 在负损看板加了「工厂:」下拉，
                 # 但白名单里既无「工厂」也无「工厂名称」，真实入口裁列后工厂列被整条丢掉
                 # → 看板走「无该列」分支把控件隐藏，表现为「加了工厂筛选却看不见」。
@@ -178,7 +178,7 @@ class DashboardController:
             # 列白名单与负损看板保持一致（正损看板是它的完整复制件），
             # 差别只在对话框内部的口径，故同步维护 v43.176 补的工厂列。
             candidates = [
-                "订单日期", "流程订单", "物料编码", "物料名称", "物料描述",
+                "订单日期", "订单类型", "流程订单", "物料编码", "物料名称", "物料描述",
                 "工厂", "工厂名称",
                 "车间", "组件物料类型", "组件物料类型描述", "单位",
                 "数量-定额", "定额", "数量-实际", "实际", "偏差数量", "偏差率(%)",
@@ -303,7 +303,7 @@ class DashboardController:
             # 列白名单与负损看板一致（含数量-实际/数量-定额 供投料状态计算）
             # 注意：不要同时列「组件物料号」和「物料编码」——两来源列并存会打乱列顺序
             candidates = [
-                "订单日期", "流程订单", "物料编码", "物料名称", "物料描述",
+                "订单日期", "订单类型", "流程订单", "物料编码", "物料名称", "物料描述",
                 "车间", "组件物料类型", "组件物料类型描述", "单位",
                 "数量-定额", "定额", "数量-实际", "实际", "偏差数量", "偏差率(%)",
                 "偏差金额", "净偏差数量", "净偏差金额", "是否替代料",
@@ -355,8 +355,8 @@ class DashboardController:
 
         # 表格
         table = QTableWidget()
-        table.setColumnCount(5)
-        table.setHorizontalHeaderLabels(["工厂", "订单日期", "流程订单", "组件物料号", "物料描述"])
+        table.setColumnCount(6)
+        table.setHorizontalHeaderLabels(["工厂", "订单日期", "订单类型", "流程订单", "组件物料号", "物料描述"])
         table.setEditTriggers(QTableWidget.NoEditTriggers)
         table.setSelectionBehavior(QTableWidget.SelectRows)
         table.verticalHeader().setVisible(False)
@@ -367,9 +367,10 @@ class DashboardController:
         for i, (_, row) in enumerate(detail_df.iterrows()):
             table.setItem(i, 0, QTableWidgetItem(str(row.get('工厂', ''))))
             table.setItem(i, 1, QTableWidgetItem(str(row.get('订单日期', ''))))
-            table.setItem(i, 2, QTableWidgetItem(str(row.get('流程订单', ''))))
-            table.setItem(i, 3, QTableWidgetItem(str(row.get('组件物料号', ''))))
-            table.setItem(i, 4, QTableWidgetItem(str(row.get('组件物料描述', ''))))
+            table.setItem(i, 2, QTableWidgetItem(str(row.get('订单类型', ''))))
+            table.setItem(i, 3, QTableWidgetItem(str(row.get('流程订单', ''))))
+            table.setItem(i, 4, QTableWidgetItem(str(row.get('组件物料号', ''))))
+            table.setItem(i, 5, QTableWidgetItem(str(row.get('组件物料描述', ''))))
 
         hdr = table.horizontalHeader()
         hdr.setSectionResizeMode(0, QHeaderView.Fixed)
