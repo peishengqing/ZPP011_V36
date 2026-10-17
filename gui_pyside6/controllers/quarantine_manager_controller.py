@@ -238,7 +238,9 @@ class QuarantineManagerController:
                 recs = []
                 for d in rolled_back:
                     old_fp = cur_map.get(d, ('', '', '', '', '', ''))[1] or ''
-                    recs.append((d, 0, old_fp, None, None, ''))
+                    # 7 元组：第5位=yield(产量)补 None，第6位=read_source=''；
+                    # 旧 6 元组会把 '' 落到 yield 位致 save_read_status_batch 的 float('') 静默失败，翻回未读永不落库
+                    recs.append((d, 0, old_fp, None, None, None, ''))
                 save_read_status_batch(recs)
 
             # 同步内存 _read / _read_source，供 setDataFrame 后 UI 刷新

@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.205",
+        "date": "2026-10-17",
+        "features": "修复隔离区已读对账「翻回未读」分支因 6/7 元组错位导致静默失败：仍负损的自动已读隔离行现在能正确翻回未读。",
+        "fixes": "**根因**：v43.200 的 `_reconcile_quarantine_read_status` 翻回分支用 6 元组 `(d, 0, old_fp, None, None, '')` 构造 `save_read_status_batch` 入参，而 `core/read_status.py:322` 按位置取 `rec[5]=yld(产量)`、`rec[6]=src(来源)`——`''` 落到产量位致 `float('')` 异常，函数只打 WARNING 不落库。后果：隔离行「已解决」时被自动已读（打 auto）后若回退成负损，对账翻回未读每次静默失败，该行（及所有同类隔离行）永久赖着「自动已读」，v43.200 翻回功能形同虚设。**修法**：补成 7 元组 `(d, 0, old_fp, None, None, None, '')`（产量位 None、来源位=''）。自动已读分支走 `mark_read_batch` 签名不同、不受影响。**验收**：py_compile+pyflakes 双关全绿；对 audit.db 目标行（云南达利-食品厂|2026-10-14|500004483|20001114，原 is_read=1/read_source=auto/仍负损）用修正 7 元组跑翻回，DB 实查 is_read=0/read_source=''；反证用旧 6 元组复现 `could not convert string to float: ''` 且不落库，印证根因。",
+    },
+    {
         "version": "v43.204",
         "date": "2026-10-16",
         "features": "「每个看板」统一在「流程订单」正前方加一列「订单类型」：替代料看板、偏差率预警看板、负损看板、正损看板、半成品看板、半成品明细窗口（QTableWidget）。主表（主偏差表）按用户确认不动。",
