@@ -317,14 +317,15 @@ class DataFrameModel(QAbstractTableModel):
             return False
 
         elif role == Qt.BackgroundRole:
+            # 投料为负：整行醒目红标（疑似录错）——最高优先级，连替代料组色也盖掉
+            # （替代料的实际同样不能为负，必须和正常料一样一眼看到红）
+            if row in self._neg_feed_rows:
+                return QColor(255, 150, 150)
             # 替代料组：同组用同一柔和色，覆盖下面的变更/替代料/预警等标记，保证视觉归组
             if row < len(self._alt_group_color_list):
                 gc = self._alt_group_color_list[row]
                 if gc is not None:
                     return gc
-            # 投料为负：整行醒目红标（疑似录错，优先于其他标记）
-            if row in self._neg_feed_rows:
-                return QColor(255, 150, 150)
             # 审核后变更行：整行浅红标记（优先）
             if row in self._changed_rows:
                 return QColor(255, 205, 205)

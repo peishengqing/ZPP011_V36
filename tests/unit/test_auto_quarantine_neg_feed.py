@@ -66,3 +66,14 @@ def test_neg_feed_reverse_when_flag_off_but_loss_on():
     cfg = {"enabled": True, "rules": [r]}
     hit = compute_auto_quarantine_ids(df, cfg)
     assert "A|1|1|1" not in hit, "neg_actual_required=False 时负实际不应命中（反证失败）"
+
+
+def test_neg_feed_includes_alt_material():
+    """替代料(是否替代料=是)实际<0 也必须被命中——替代料的实际同样不能为负。"""
+    df = pd.DataFrame([
+        {"data_id": "A|1|1|9", "是否替代料": "是", "组件物料号": "20009",
+         "组件物料描述": "替代料X", "数量-实际": -3.0, "数量-定额": 10.0},
+    ])
+    cfg = {"enabled": True, "rules": [dict(NEG_RULE)]}
+    hit = compute_auto_quarantine_ids(df, cfg)
+    assert "A|1|1|9" in hit, "替代料实际<0 必须被投料为负规则命中"
