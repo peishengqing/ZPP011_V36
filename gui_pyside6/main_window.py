@@ -1340,6 +1340,16 @@ class MainWindow(QMainWindow):
             self._set_column_widths()
             QApplication.processEvents()
             self.statusBar().showMessage(f"分析完成，共加载 {len(processed_df)} 行 × {len(processed_df.columns)} 列")
+            # 投料为负强提醒（BCD-C）：分析完成后扫描「实际<0」并弹强提醒
+            _neg_act_col = next((c for c in ['数量-实际', '实际'] if c in processed_df.columns), None)
+            if _neg_act_col:
+                _neg_n = int((pd.to_numeric(processed_df[_neg_act_col], errors='coerce').fillna(0.0) < -0.001).sum())
+                if _neg_n > 0:
+                    toast(
+                        f"⚠️ 发现 {_neg_n} 条投料为负（实际耗用<0，疑似录错）：已整行标红并自动隔离，请核查。",
+                        "warning", parent=self)
+                    self.statusBar().showMessage(
+                        f"⚠️ 发现 {_neg_n} 条投料为负（实际<0），已标红+自动隔离，请核查")
             # 更新左侧"数据预览"卡片（文字统计，使用与表格一致的预处理后 df）
             if hasattr(self, 'preview_label') and self.preview_label:
                 self.preview_label.setText(self._format_preview_stats(processed_df))

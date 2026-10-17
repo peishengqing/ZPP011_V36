@@ -92,6 +92,7 @@ DEFAULT_RULE = {
     "category_value": "包材",
     "name_keywords": ["箱", "手包袋"],
     "negative_loss_required": True,
+    "neg_actual_required": False,      # 是否要求投料为负（实际<0，疑似录错）
     # —— 新增条件（默认关闭 / 空值，向后兼容旧配置）——
     "dev_rate_required": False,      # 是否要求偏差率落在范围
     "dev_rate_min": 10,              # 偏差率下限（开区间，不含端点）
@@ -113,7 +114,7 @@ DEFAULT_CONFIG = {"enabled": True, "rules": [dict(DEFAULT_RULE)]}
 # 单条规则的全部合法字段
 _RULE_FIELDS = (
     "name", "enabled", "exclude_alt", "category_required",
-    "category_value", "name_keywords", "negative_loss_required",
+    "category_value", "name_keywords", "negative_loss_required", "neg_actual_required",
     "dev_rate_required", "dev_rate_min", "dev_rate_max",
     "mat_code_prefix", "workshop_required", "workshop_value",
     "remark_mode", "name_exclude_keywords",
@@ -239,6 +240,8 @@ def build_rule_summary(rule=None):
         parts.append("名称含「%s」" % "/".join(kws))
     if rule.get("negative_loss_required", True):
         parts.append("实际>0 且 实际<定额")
+    if rule.get("neg_actual_required", False):
+        parts.append("实际<0（投料为负）")
     # —— 新增条件预览 ——
     if rule.get("dev_rate_required", False):
         parts.append("偏差率∈(%s,%s)" % (rule.get("dev_rate_min"), rule.get("dev_rate_max")))
@@ -426,6 +429,17 @@ def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_c
     else:
         m_qty = pd.Series(True, index=df.index)
 
+    # 4.5 投料为负（实际<0，疑似录错 / 冲销方向错）
+    if rule.get("neg_actual_required", False):
+        if actual_col:
+            actual_na = pd.to_numeric(df[actual_col], errors="coerce")
+            # 实际<0 即为投料为负（-0.001 吸收浮点误差）；与是否替代料无关
+            m_neg = actual_na.notna() & (actual_na < -0.001)
+        else:
+            m_neg = pd.Series(False, index=df.index)  # 开着无列 → 不匹配
+    else:
+        m_neg = pd.Series(True, index=df.index)
+
     # 5. 偏差率范围（开区间，不含端点；无列 → 不匹配）
     if rule.get("dev_rate_required", False):
         if dev_rate_col:
@@ -527,4 +541,4 @@ def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_c
     else:
         m_ex = pd.Series(True, index=df.index)  # 没填 → 不限制
 
-    return m_alt & m_cat & m_name & m_qty & m_rate & m_prefix & m_ws & m_unit & m_remark & m_dq & m_ex
+    return m_alt & m_cat & m_name & m_qty & m_neg & m_rate & m_prefix & m_ws & m_unit & m_remark & m_dq & m_ex
