@@ -9,6 +9,8 @@ B 类：_reconcile_quarantine_read_status 的四态行为——
 结构/AST 护栏：调用点存在 + 过滤变量存在。
 """
 import os
+import tempfile
+import sqlite3
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -233,6 +235,54 @@ def test_reconcile_still_neg_auto_read_rolled_back():
     assert rolled_ids == {'C'}, "只有仍负损的自动已读 C 应被翻回；D(手动) 不应"
     c_rec = next(r for r in recs if r[0] == 'C')
     assert c_rec[1] == 0, "翻回的记录 is_read 必须为 0"
+
+
+def test_reconcile_rollback_tuple_real_db_not_silently_failing():
+    """回归钉死 v43.205：翻回未读的元组必须能被真实 save_read_status_batch 消费。
+
+    v43.200~v43.204 的翻回分支用 6 元组 `(d,0,old_fp,None,None,'')`，
+    而 save_read_status_batch 按位置取 rec[5]=yield、rec[6]=src —— '' 落到 yield 位
+    触发 float('') 异常，函数只打 WARNING 不落库，行永远翻不回未读（静默失败）。
+
+    本测试让 save_read_status_batch 走**真实实现**（指向临时库，不污染真实 audit.db），
+    验证 C（仍负损+自动已读）翻回后临时库里 is_read 真变为 0。若再退化成 6 元组，
+    float('') 异常被 reconcile 的 except 吞掉、C 仍是 is_read=1 → 断言失败，钉住回归。
+    """
+    import core.read_status as RS_MOD
+    tmp = tempfile.mktemp(suffix=".db")
+    old_path, old_conn, old_ddl = RS_MOD.DB_PATH, RS_MOD._CONN, RS_MOD._DDL_DONE
+    RS_MOD.DB_PATH, RS_MOD._CONN, RS_MOD._DDL_DONE = tmp, None, False
+    try:
+        bare = _bare_mw()
+        df = _base_df()  # B/C/D 均仍负损
+        # 预置临时库：C = 已读 + auto（即待翻回状态）
+        RS_MOD.save_read_status_batch([('C', 1, 'fpC', None, None, None, 'auto')])
+        read_map = {
+            'A': (0, 'fpA', None, None, None, ''),
+            'B': (0, 'fpB', None, None, None, ''),
+            'C': (1, 'fpC', None, None, None, 'auto'),
+            'D': (1, 'fpD', None, None, None, 'manual'),
+        }
+        with patch(f"{QM}.get_quarantined_ids", return_value={'A', 'B', 'C', 'D'}), \
+             patch(f"{RS}.load_read_status", return_value=read_map), \
+             patch(f"{RS}.mark_read_batch", return_value=None), \
+             patch(f"{CTRL}.toast", return_value=None):
+            # 关键：此处不 patch save_read_status_batch → 走真实实现（核心断言点）
+            MW._reconcile_quarantine_read_status(bare, df)
+
+        conn = sqlite3.connect(tmp)
+        row = conn.execute(
+            "SELECT is_read, read_source FROM read_status WHERE data_id='C'").fetchone()
+        conn.close()
+        assert row is not None, "临时库应存在 C 行"
+        assert row[0] == 0, ("翻回未读失败：C 仍是 is_read=1（v43.205 修复前会静默失败）")
+        assert row[1] == '', "翻回后 read_source 应为空"
+    finally:
+        RS_MOD.DB_PATH, RS_MOD._CONN, RS_MOD._DDL_DONE = old_path, old_conn, old_ddl
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
 
 
 def test_reconcile_manual_read_preserved():

@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.206",
+        "date": "2026-10-17",
+        "features": "为 v43.205 的隔离区对账翻回未读修复补充回归测试。",
+        "fixes": "新增 `tests/unit/test_quarantine_read_reconcile.py::test_reconcile_rollback_tuple_real_db_not_silently_failing`：让翻回分支的 `save_read_status_batch` 走**真实实现**（指向临时库，不污染真实 audit.db），验证仍负损的自动已读隔离行翻回后临时库 `is_read` 真变为 0。旧测试把 `save_read_status_batch` 整 mock 掉、只查 `r[0]/r[1]`，故 v43.200~v43.204 的 6/7 元组错位 bug 能从测试网下溜走；本测试直接打真实落库，从根上钉死。**反证**：临时把控制器退回 6 元组 `(d,0,old_fp,None,None,'')`，该测试精确失败并打出根因日志 `could not convert string to float: ''`；恢复 7 元组后 10 条全绿。",
+    },
+    {
         "version": "v43.205",
         "date": "2026-10-17",
         "features": "修复隔离区已读对账「翻回未读」分支因 6/7 元组错位导致静默失败：仍负损的自动已读隔离行现在能正确翻回未读。",
