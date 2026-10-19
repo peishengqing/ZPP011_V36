@@ -39,7 +39,6 @@ class DataFrameModel(QAbstractTableModel):
         self._alt_group_color_list = []  # 替代料组行对应的组色（QColor 或 None）
         self._unused_rows = set()  # 未投料行（实际=0 且 定额>0 且 否替代料，整行浅青绿标）
         self._alert_rows = set()  # 偏差率预警行（|偏差率|>=10% 且排除实际=0定额>0，整行浅橙标）
-        self._neg_feed_rows = set()  # 投料为负行（实际<0，整行醒目红标，疑似录错）
         if data is not None:
             self.setDataFrame(data)
 
@@ -106,7 +105,6 @@ class DataFrameModel(QAbstractTableModel):
             self._alt_group_color_list = []
             self._unused_rows = set()
             self._alert_rows = set()
-            self._neg_feed_rows = set()
             return
 
         self._display_columns = list(self._data.columns)
@@ -161,14 +159,6 @@ class DataFrameModel(QAbstractTableModel):
             self._alert_rows = set(np.where(alert_mask.values)[0])
         else:
             self._alert_rows = set()
-
-        # 投料为负：实际耗用 < 0（疑似录错 / 冲销方向错），整行标红
-        if _sub_actual_col:
-            act = pd.to_numeric(self._data[_sub_actual_col], errors='coerce').fillna(0.0)
-            neg_feed_mask = act < -0.001
-            self._neg_feed_rows = set(np.where(neg_feed_mask.values)[0])
-        else:
-            self._neg_feed_rows = set()
 
         # 替代料组：按 _替代料组 分组生成稳定柔和色（同组同色，便于一眼归组）
         self._alt_group_color_list = [None] * n
@@ -245,10 +235,6 @@ class DataFrameModel(QAbstractTableModel):
                 return {'auto': '由自动已读规则标记已读', 'manual': '人工手动标记已读', '—': '未读'}.get(v, '未读')
             # 其余角色交给下方统一处理
 
-        # 投料为负：悬停提示（优先于替代料提示）
-        if role == Qt.ToolTipRole and row in self._neg_feed_rows:
-            return "投料为负（实际耗用<0），疑似录错，请核查；已自动标红并隔离。"
-
         # 替代料/非耗用行：鼠标悬停显示检测依据与备注原因
         if role == Qt.ToolTipRole and row in self._substitute_rows:
             remark = ''
@@ -317,10 +303,6 @@ class DataFrameModel(QAbstractTableModel):
             return False
 
         elif role == Qt.BackgroundRole:
-            # 投料为负：整行醒目红标（疑似录错）——最高优先级，连替代料组色也盖掉
-            # （替代料的实际同样不能为负，必须和正常料一样一眼看到红）
-            if row in self._neg_feed_rows:
-                return QColor(255, 150, 150)
             # 替代料组：同组用同一柔和色，覆盖下面的变更/替代料/预警等标记，保证视觉归组
             if row < len(self._alt_group_color_list):
                 gc = self._alt_group_color_list[row]
