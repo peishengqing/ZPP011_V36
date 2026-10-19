@@ -109,7 +109,7 @@
       "enabled": true,
       "exclude_alt": true,
       "category_required": true,
-      "category_value": "原辅料",
+      "category_value": "原材料,原辅料",
       "name_keywords": [
         "脱氧剂"
       ],
