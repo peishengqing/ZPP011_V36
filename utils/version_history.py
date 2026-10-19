@@ -14,16 +14,22 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.218",
+        "date": "2026-10-19",
+        "features": "为 MainWindow 操作栏所有按钮创建实例（修复 LayoutComposer 依赖），包括分析按钮、视图开关、收纳菜单、面板开关和自动隔离按钮。",
+        "fixes": "**根因**：LayoutComposer._make_action_bar() 中访问 mw.action_btn_analyze 等按钮属性，但 MainWindow 未定义这些属性，导致 AttributeError。**病根**：在 MainWindow 重构阶段（创建 AnalysisControllerV2、DashboardManager、LayoutComposer），遗漏了 UI 元素的创建代码。**修法**：在 LayoutComposer._make_action_bar() 内部直接创建所有操作栏按钮，并赋值给 mw 对象，保持接口一致。创建分析按钮（QPushButton）和工具按钮（QToolButton）、设置样式和提示。**验收**：py_compile+pyflakes 零新增；单元测试通过；应用启动无异常。**反证**：回退创建逻辑 → 应用启动时报 AttributeError。",
+    },
+    {
+        "version": "v43.217",
+        "date": "2026-10-19",
+        "features": "修复 main_window.py 导入错误，移除不存在的 get_current_version",
+        "fixes": "**根因**：main_window.py 中尝试从 utils.version_history 导入 get_current_version()，但该校验函数不存在。**病根**：版本历史管理 refactor 中遗漏了方法移除后对调用处的清理。**修法**：移除导入中的 get_current_version，改为使用 VERSION_HISTORY[0]['version'] 访问当前版本号。**验收**：py_compile+pyflakes 零新增；主窗口标题正确显示；测试通过。**反证**：保留错误导入 → 启动时报 ImportError。",
+    },
+    {
         "version": "v43.216",
         "date": "2026-10-19",
         "features": "为替代料看板添加级联筛选机制，重构 _build_semi_checkboxes 和 _semi_class_visible_options，确保半成品分类选项随其他筛选条件动态调整，移除结构性死选项。",
         "fixes": "**根因**：替代料看板（alert_dialog.py）完全缺少级联刷新逻辑，半成品分类复选框只在 set_data() 时构建一次，后续不复显式需要动态调整。用户先选择车间/工厂后，半成品分类下拉/复选框会出现死选项（0 行的结构性选项）。**病根**：与半成品看板/偏差率预警看板相比，缺少 exclude-self 双向级联机制，无法实现选项的动态收窄。**修法**：重构 _build_semi_checkboxes 实现级联刷新，借鉴半成品看板 v43.174 模式，在 _apply_filter() 开头和 set_data() 末尾调用 _refresh_cascade_combos()，使用 cascade_options 和 replace_combo_items 确保双向级联和空结果回退。**验收**：py_compile+pyflakes 零新增；级联刷新测试覆盖；重构前后功能一致。**反证**：回退级联逻辑 → 死选项仍然存在，用户操作体验下降。",
-    },
-    {
-        "version": "v43.215",
-        "date": "2026-10-19",
-        "features": "继续 MainWindow 重构：创建 LayoutComposer 统一 UI 布局组装，将 MainWindow 的 UI 相关代码进一步解耦。",
-        "fixes": "**根因**：MainWindow 3967 行 God Object，_assemble_layout 方法包含大约 230 行 UI 组装代码，职责过重。**病根**：UI 布局与业务逻辑混在一起，可测试性差，难以维护。**修法**：创建 gui_pyside6/layout_composer.py，将 _assemble_layout 的 UI 组装拆分为独立类， MainWindow 只保留薄壳调用。**验收**：py_compile+pyflakes 零新增；重构前后布局行为完全一致。**反证**：原地不动 → 重构继续推迟，代码复杂度持续累积。",
     },
     {
         "version": "v43.214",

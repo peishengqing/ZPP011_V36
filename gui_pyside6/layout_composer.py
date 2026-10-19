@@ -10,6 +10,7 @@ Layout 组装器 (LayoutComposer) - 纯 UI 组装，逻辑下沉
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QLabel,
+    QPushButton, QToolButton,
 )
 from PySide6.QtCore import Qt
 
@@ -65,23 +66,124 @@ class LayoutComposer:
         action_layout.setSpacing(6)
 
         # ═══ 主操作（高频，平铺 + 强调色）═══
-        for _w in [mw.action_btn_analyze]:
-            action_layout.addWidget(_w)
+        # 创建分析按钮
+        mw.action_btn_analyze = QPushButton("分析")
+        mw.action_btn_analyze.setObjectName("actionBtnAnalyze")
+        mw.action_btn_analyze.setStyleSheet("""
+            QPushButton#actionBtnAnalyze {
+                background-color: #7F77DD;
+                color: #EAE8E4;
+                border: none;
+                padding: 6px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QPushButton#actionBtnAnalyze:hover {
+                background-color: #6D65CC;
+            }
+            QPushButton#actionBtnAnalyze:pressed {
+                background-color: #5A53BB;
+            }
+        """)
+        action_layout.addWidget(mw.action_btn_analyze)
 
         action_layout.addWidget(self._make_separator())
         # ═══ 视图开关（用户常用，按需求保留在工具栏）═══
-        for _w in [mw.action_btn_left_panel, mw.action_btn_filter, mw.action_btn_col_filter]:
-            action_layout.addWidget(_w)
+        # 创建视图开关按钮
+        mw.action_btn_left_panel = QToolButton()
+        mw.action_btn_left_panel.setText("☰ 左侧栏")
+        mw.action_btn_left_panel.setCheckable(True)
+        mw.action_btn_left_panel.setToolTip("切换左侧栏显示")
+        mw.action_btn_left_panel.setStyleSheet(
+            "QToolButton { border: none; color: #666; font-size: 12px; padding: 4px 8px; }\n"
+            "QToolButton:hover { color: #333; background: #eee; }")
+        action_layout.addWidget(mw.action_btn_left_panel)
+
+        mw.action_btn_filter = QToolButton()
+        mw.action_btn_filter.setText("🔍 筛选")
+        mw.action_btn_filter.setCheckable(True)
+        mw.action_btn_filter.setToolTip("切换筛选面板")
+        mw.action_btn_filter.setStyleSheet(
+            "QToolButton { border: none; color: #666; font-size: 12px; padding: 4px 8px; }\n"
+            "QToolButton:hover { color: #333; background: #eee; }")
+        action_layout.addWidget(mw.action_btn_filter)
+
+        mw.action_btn_col_filter = QToolButton()
+        mw.action_btn_col_filter.setText("🔽 列头筛选")
+        mw.action_btn_col_filter.setCheckable(True)
+        mw.action_btn_col_filter.setToolTip("列头取值过滤模式")
+        mw.action_btn_col_filter.setStyleSheet(
+            "QToolButton { border: none; color: #666; font-size: 12px; padding: 4px 8px; }\n"
+            "QToolButton:hover { color: #333; background: #eee; }")
+        action_layout.addWidget(mw.action_btn_col_filter)
 
         action_layout.addWidget(self._make_separator())
         # ═══ 收纳菜单：看板 / 导出 / 维护 ═══
-        for _w in [mw.action_btn_boards, mw.action_btn_export, mw.action_btn_maint]:
-            action_layout.addWidget(_w)
+        # 创建菜单按钮
+        mw.action_btn_boards = QToolButton()
+        mw.action_btn_boards.setText("📊 看板")
+        mw.action_btn_boards.setToolTip("打开看板")
+        mw.action_btn_boards.setStyleSheet(
+            "QToolButton { border: none; color: #666; font-size: 12px; padding: 4px 8px; }\n"
+            "QToolButton:hover { color: #333; background: #eee; }")
+        action_layout.addWidget(mw.action_btn_boards)
+
+        mw.action_btn_export = QToolButton()
+        mw.action_btn_export.setText("📤 导出")
+        mw.action_btn_export.setToolTip("导出当前表格")
+        mw.action_btn_export.setStyleSheet(
+            "QToolButton { border: none; color: #666; font-size: 12px; padding: 4px 8px; }\n"
+            "QToolButton:hover { color: #333; background: #eee; }")
+        action_layout.addWidget(mw.action_btn_export)
+
+        mw.action_btn_maint = QToolButton()
+        mw.action_btn_maint.setText("🔧 维护")
+        mw.action_btn_maint.setToolTip("维护工具")
+        mw.action_btn_maint.setStyleSheet(
+            "QToolButton { border: none; color: #666; font-size: 12px; padding: 4px 8px; }\n"
+            "QToolButton:hover { color: #333; background: #eee; }")
+        action_layout.addWidget(mw.action_btn_maint)
 
         action_layout.addWidget(self._make_separator())
         # ═══ 面板开关 + 通知（低频，保留平铺，置于分组尾端）═══
-        for _w in [mw.action_btn_toggle_stats, mw.action_btn_toggle_progress, mw.action_btn_unread_summary]:
-            action_layout.addWidget(_w)
+        # 创建面板开关按钮
+        mw.action_btn_toggle_stats = QToolButton()
+        mw.action_btn_toggle_stats.setText("📊 概览")
+        mw.action_btn_toggle_stats.setCheckable(True)
+        mw.action_btn_toggle_stats.setChecked(True)
+        mw.action_btn_toggle_stats.setToolTip("切换概览面板")
+        mw.action_btn_toggle_stats.setStyleSheet(
+            "QToolButton { border: none; color: #666; font-size: 12px; padding: 4px 8px; }\n"
+            "QToolButton:hover { color: #333; background: #eee; }")
+        action_layout.addWidget(mw.action_btn_toggle_stats)
+
+        mw.action_btn_toggle_progress = QToolButton()
+        mw.action_btn_toggle_progress.setText("⚡ 进度")
+        mw.action_btn_toggle_progress.setCheckable(True)
+        mw.action_btn_toggle_progress.setChecked(True)
+        mw.action_btn_toggle_progress.setToolTip("切换分析进度")
+        mw.action_btn_toggle_progress.setStyleSheet(
+            "QToolButton { border: none; color: #666; font-size: 12px; padding: 4px 8px; }\n"
+            "QToolButton:hover { color: #333; background: #eee; }")
+        action_layout.addWidget(mw.action_btn_toggle_progress)
+
+        mw.action_btn_unread_summary = QToolButton()
+        mw.action_btn_unread_summary.setText("📢 未读")
+        mw.action_btn_unread_summary.setToolTip("未读汇总")
+        mw.action_btn_unread_summary.setStyleSheet(
+            "QToolButton { border: none; color: #666; font-size: 12px; padding: 4px 8px; }\n"
+            "QToolButton:hover { color: #333; background: #eee; }")
+        action_layout.addWidget(mw.action_btn_unread_summary)
+
+        # 自动隔离规则按钮（ARC-003 第七刀，需额外创建）
+        mw.action_btn_auto_q = QToolButton()
+        mw.action_btn_auto_q.setText("🔒 自动隔离")
+        mw.action_btn_auto_q.setToolTip("按规则自动移入隔离区")
+        mw.action_btn_auto_q.setStyleSheet(
+            "QToolButton { border: none; color: #666; font-size: 12px; padding: 4px 8px; }\n"
+            "QToolButton:hover { color: #333; background: #eee; }")
+        action_layout.addWidget(mw.action_btn_auto_q)
 
         action_layout.addStretch()
         shortcut_hint = QLabel("F5:分析 | F6:导出 | F7:效益 | F11:全屏")
