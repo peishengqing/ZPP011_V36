@@ -74,7 +74,7 @@ from core.config_manager import ConfigManager
 from core.fingerprint import calc_fingerprint
 from core.read_status import record_deviation_change, upsert_material_names, get_material_names
 from gui_pyside6.services.data_service import DataService
-from utils.version_history import get_current_version, VERSION_HISTORY, APP_NAME, AUTHOR
+from utils.version_history import VERSION_HISTORY, APP_NAME, AUTHOR
 
 from gui_pyside6.controllers.analysis_controller import AnalysisController
 from gui_pyside6.controllers.audit_controller import AuditController
@@ -202,7 +202,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"ZPP011 生产偏差分析器 {get_current_version()} (PySide6)")
+        self.setWindowTitle(f"ZPP011 生产偏差分析器 {VERSION_HISTORY[0]['version']} (PySide6)")
 
         # 状态变量
         self._audit_df = None
@@ -342,7 +342,7 @@ class MainWindow(QMainWindow):
 
         # 创建组件
         self.menu_bar = MenuBarComponent(self)
-        self.title_bar = TitleBarWidget(get_current_version(), self)
+        self.title_bar = TitleBarWidget(VERSION_HISTORY[0]['version'], self)
         self.left_panel_component = LeftPanelComponent(self)
         self.main_table = MainTableComponent(self)
         self.stats_cards = StatsCardsWidget(self)  # 统计卡片（审核概览 + 变更感知）
@@ -3299,7 +3299,7 @@ class MainWindow(QMainWindow):
     def _show_about(self):
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QPushButton, QFrame, QTextBrowser
         dialog = QDialog(self)
-        dialog.setWindowTitle(f"关于 - ZPP011 v{get_current_version()}")
+        dialog.setWindowTitle(f"关于 - ZPP011 v{VERSION_HISTORY[0]['version']}")
         dialog.setMinimumSize(680, 560)
         dialog.setObjectName("aboutDialog")
         main_layout = QVBoxLayout(dialog)
@@ -3313,7 +3313,7 @@ class MainWindow(QMainWindow):
         info_layout.setContentsMargins(28, 24, 28, 16)
         title_row = QHBoxLayout()
         icon_label = QLabel("\U0001F3ED")
-        title_label = QLabel(f"{APP_NAME} v{get_current_version()}")
+        title_label = QLabel(f"{APP_NAME} v{VERSION_HISTORY[0]['version']}")
         title_label.setObjectName("aboutTitle")
         title_row.addWidget(icon_label)
         title_row.addWidget(title_label)
