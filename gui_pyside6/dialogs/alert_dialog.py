@@ -6,7 +6,7 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QCheckBox,
-    QComboBox, QGroupBox,
+    QGroupBox,
 )
 from PySide6.QtCore import Qt, QPoint
 import pandas as pd
@@ -37,6 +37,7 @@ class AlertDialog(QDialog):
         self.color_filters = set()
         self._semi_class_filter = set()  # 半成品重分类筛选：空集合=全部 / 集合内为选中分类（虚拟项模糊匹配）
         self._semi_class_col = None
+        self._initializing = False  # 初始化守卫
         self.setup_ui()
         self.set_data(alerts_df)
 
@@ -250,6 +251,11 @@ class AlertDialog(QDialog):
         """从 original_df 重新过滤并刷新模型"""
         if not hasattr(self, "original_df") or self.original_df is None:
             return
+        if getattr(self, '_initializing', False):
+            return
+        # 级联刷新：在 mask 计算**之前**调用，确保用户操作时下拉选项先刷新
+        if hasattr(self, '_semi_class_checkboxes'):
+            self._refresh_cascade_combos()
         df = self.original_df.copy()
         if df.empty:
             return
@@ -315,45 +321,10 @@ class AlertDialog(QDialog):
                 self._semi_class_filter = set()
         self._apply_filter()
 
-    def _semi_class_mask(self, df):
-        """半成品重分类掩码：空集合=全True；虚拟项「食品/饮料成品半成品」精确匹配+空白
-        （列值==分类名 或 列值为空 且 工厂含'食品'/'饮料'）；其他=列值精确==分类名。多值 OR。"""
-        if not self._semi_class_filter or not getattr(self, '_semi_class_col', None):
-            return pd.Series(True, index=df.index)
-        col = self._semi_class_col
-        if col not in df.columns:
-            return pd.Series(True, index=df.index)
-        vals = df[col].astype(str).str.strip()
-        blank = df[col].fillna('').astype(str).str.strip() == ''
-        fac = df['工厂'].astype(str) if '工厂' in df.columns else pd.Series('', index=df.index)
-        mask = pd.Series(False, index=df.index)
-        for m in self._semi_class_filter:
-            if m == "食品成品半成品":
-                mask = mask | ((vals == m) | blank) & fac.str.contains('食品', na=False)
-            elif m == "饮料成品半成品":
-                mask = mask | ((vals == m) | blank) & fac.str.contains('饮料', na=False)
-            else:
-                mask = mask | (vals == m)
-        return mask
-
     def _semi_class_visible_options(self, unique_vals):
         """返回在当前数据下**真正能筛出行**的半成品分类清单（保持固定清单顺序 + 额外值追加）。
 
-        v43.173：`_build_semi_checkboxes` 原先无条件铺满 `SEMI_CLASS_ALL`（食品 4 + 饮料 2），
-        而本看板 `_semi_class_mask`（:330-336）对非「成品半成品」的分类**只做 `vals == m`
-        精确匹配**，于是 `食品配料中心半成品` / `食品辅原料` / `饮料综合组半成品仓`
-        在替代料子集里恒 0 行 —— 这是**结构性**死选项（放开已读限制后仍死）。
-
-        ⚠ 判据必须与 `_semi_class_mask` **严格同源**：逐项临时把 `_semi_class_filter`
-        置为该分类，跑一次看板自己的掩码看命中行数，**不能**另写一份「列值精确匹配」——
-        那会误删两个靠「列值为空 + 工厂名 contains」兜底才活着的
-        `食品成品半成品` / `饮料成品半成品`（本看板该列全空）。
-
-        保守优先：判据出错时宁可保留（不删），绝不误删活选项。
-
-        刻意**不**按「已读/未读」「颜色标记」级联：死选项是结构性的（数据里根本没有
-        这些分类），按已读收窄不会让它们复活，只会让用户切已读时复选框整排消失又整排
-        回来（抖动，可能来不及点就被清空），代价大于收益。
+        该函数必须在级联刷新时调用，确保只显示活选项（能筛出至少一行的分类）。
         """
         candidates = merge_semi_class_values(unique_vals)
         col = getattr(self, '_semi_class_col', None)
@@ -376,6 +347,96 @@ class AlertDialog(QDialog):
         finally:
             self._semi_class_filter = saved
         return visible
+
+    def _refresh_cascade_combos(self):
+        """级联刷新半成品分类复选框：根据当前筛选条件动态调整可见选项。"""
+        if getattr(self, '_initializing', False):
+            return
+        df = getattr(self, 'original_df', None)
+        if df is None or df.empty:
+            return
+
+        # 重建前记下仍有效的已勾选项：数据变了但分类还在时不丢用户选择
+        kept = {k for k, cb in self._semi_class_checkboxes.items()
+                if k != "__all__" and cb.isChecked()}
+
+        # 获取唯一值
+        unique_vals = sorted(df["半成品重分类"].dropna().astype(str).str.strip().unique())
+        unique_vals = [v for v in unique_vals if v]  # 清理空值
+
+        # 计算当前有效选项
+        visible = self._semi_class_visible_options(unique_vals)
+        visible_set = set(visible)
+
+        # 清理旧控件，重建新控件
+        while self._semi_class_vlayout.count():
+            it = self._semi_class_vlayout.takeAt(0)
+            w = it.widget()
+            if w:
+                w.setParent(None)
+                w.deleteLater()
+        self._semi_class_checkboxes = {}
+
+        # 保留有效的已勾选状态
+        self._semi_class_filter = kept & visible_set
+
+        # 重建复选框
+        def _mk(text, checked, tip):
+            cb = QCheckBox(text)
+            cb.blockSignals(True)
+            try:
+                cb.setChecked(checked)
+            finally:
+                cb.blockSignals(False)
+            cb.setToolTip(tip)
+            cb.stateChanged.connect(self._on_semi_class_changed)
+            return cb
+
+        cb_all = _mk("全部", not self._semi_class_filter,
+                     "不按半成品分类筛选（显示全部）")
+        self._semi_class_vlayout.addWidget(cb_all, 0, 0)
+        self._semi_class_checkboxes["__all__"] = cb_all
+
+        row, col = 0, 1
+        for names in (SEMI_CLASS_FOOD, SEMI_CLASS_DRINK):
+            for v in names:
+                if v not in visible_set:
+                    continue
+                cb = _mk(v, v in self._semi_class_filter, "按「%s」筛选" % v)
+                self._semi_class_vlayout.addWidget(cb, row, col)
+                self._semi_class_checkboxes[v] = cb
+                col += 1
+            row += 1
+            col = 0
+
+        for v in visible:
+            if v in self._semi_class_checkboxes:
+                continue
+            cb = _mk(v, v in self._semi_class_filter, "按「%s」筛选" % v)
+            self._semi_class_vlayout.addWidget(cb, row, col)
+            self._semi_class_checkboxes[v] = cb
+            col += 1
+
+    def _semi_class_mask(self, df):
+        """半成品重分类掩码：空集合=全True；虚拟项「食品/饮料成品半成品」精确匹配+空白
+        （列值==分类名 或 列值为空 且 工厂含'食品'/'饮料'）；其他=列值精确==分类名。多值 OR。"""
+        if not self._semi_class_filter or not getattr(self, '_semi_class_col', None):
+            return pd.Series(True, index=df.index)
+        col = self._semi_class_col
+        if col not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df[col].astype(str).str.strip()
+        blank = df[col].fillna('').astype(str).str.strip() == ''
+        fac = df['工厂'].astype(str) if '工厂' in df.columns else pd.Series('', index=df.index)
+        mask = pd.Series(False, index=df.index)
+        for m in self._semi_class_filter:
+            if m == "食品成品半成品":
+                mask = mask | ((vals == m) | blank) & fac.str.contains('食品', na=False)
+            elif m == "饮料成品半成品":
+                mask = mask | ((vals == m) | blank) & fac.str.contains('饮料', na=False)
+            else:
+                mask = mask | (vals == m)
+        return mask
 
     def _build_semi_checkboxes(self, unique_vals):
         """构建半成品分类复选框组：全部 + **当前数据真有行的**分类。
@@ -542,6 +603,8 @@ class AlertDialog(QDialog):
             unique_vals = df["半成品重分类"].dropna().astype(str).str.strip().unique()
             unique_vals = sorted(v for v in unique_vals if v)
             self._build_semi_checkboxes(unique_vals)
+            # 级联刷新：构建后首次级联，确保复选框状态正确
+            self._refresh_cascade_combos()
         # 默认视图：未读优先，未读空则回退「全部」（v43.173，不能无条件用未读）
         # 必须在 source_model.setDataFrame() 之后 —— 见 _apply_default_filter 注释
         self._apply_default_filter()

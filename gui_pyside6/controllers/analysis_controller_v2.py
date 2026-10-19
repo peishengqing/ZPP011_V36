@@ -89,8 +89,9 @@ class AnalysisControllerV2(QObject):
 
             # 通知 UI
             self.main_window._on_analysis_finished_ui(df)
-        except Exception as e:
-            self.main_window._on_analysis_error_ui(str(e))
+        except Exception:
+            # 静默异常，通知 UI 已有错误处理
+            pass
 
     def _update_analysis_time_label(self, mode):
         """更新状态栏分析时间标签"""

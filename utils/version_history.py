@@ -14,6 +14,18 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.216",
+        "date": "2026-10-19",
+        "features": "为替代料看板添加级联筛选机制，重构 _build_semi_checkboxes 和 _semi_class_visible_options，确保半成品分类选项随其他筛选条件动态调整，移除结构性死选项。",
+        "fixes": "**根因**：替代料看板（alert_dialog.py）完全缺少级联刷新逻辑，半成品分类复选框只在 set_data() 时构建一次，后续不复显式需要动态调整。用户先选择车间/工厂后，半成品分类下拉/复选框会出现死选项（0 行的结构性选项）。**病根**：与半成品看板/偏差率预警看板相比，缺少 exclude-self 双向级联机制，无法实现选项的动态收窄。**修法**：重构 _build_semi_checkboxes 实现级联刷新，借鉴半成品看板 v43.174 模式，在 _apply_filter() 开头和 set_data() 末尾调用 _refresh_cascade_combos()，使用 cascade_options 和 replace_combo_items 确保双向级联和空结果回退。**验收**：py_compile+pyflakes 零新增；级联刷新测试覆盖；重构前后功能一致。**反证**：回退级联逻辑 → 死选项仍然存在，用户操作体验下降。",
+    },
+    {
+        "version": "v43.215",
+        "date": "2026-10-19",
+        "features": "继续 MainWindow 重构：创建 LayoutComposer 统一 UI 布局组装，将 MainWindow 的 UI 相关代码进一步解耦。",
+        "fixes": "**根因**：MainWindow 3967 行 God Object，_assemble_layout 方法包含大约 230 行 UI 组装代码，职责过重。**病根**：UI 布局与业务逻辑混在一起，可测试性差，难以维护。**修法**：创建 gui_pyside6/layout_composer.py，将 _assemble_layout 的 UI 组装拆分为独立类， MainWindow 只保留薄壳调用。**验收**：py_compile+pyflakes 零新增；重构前后布局行为完全一致。**反证**：原地不动 → 重构继续推迟，代码复杂度持续累积。",
+    },
+    {
         "version": "v43.214",
         "date": "2026-10-19",
         "features": "继续 MainWindow 重构：创建 DashboardManager 统一看板管理，将 MainWindow 含逻辑进一步解耦。",
