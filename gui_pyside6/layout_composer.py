@@ -1,0 +1,152 @@
+# -*- coding: utf-8 -*-
+"""
+Layout 组装器 (LayoutComposer) - 纯 UI 组装，逻辑下沉
+
+负责：MainWindow 的 UI 布局组装，将所有 UI 边框、容器、布局、Widget 创建移动到这里，
+让 MainWindow 只保留薄壳状态管理。
+
+目标：替 _assemble_layout 瘦身，将 UI 相关的繁杂操作集中到一个类，逻辑往下沉。
+"""
+
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QLabel,
+)
+from PySide6.QtCore import Qt
+
+
+class LayoutComposer:
+    """UI 布局组装器，纯 UI 相关组装逻辑，零业务逻辑."""
+
+    def __init__(self):
+        self.compiled = False
+
+    def assemble(self, mw) -> QWidget:
+        """组装完整 UI 布局并返回中央 Widgets.
+
+        参数
+        ----
+        mw : MainWindow
+            主窗口对象，持有所有子组件引用（self.title_bar, self.left_panel 等）
+
+        返回
+        ----
+        central : QWidget
+            已设置好所有子布局的中央容器，可直接 setCentralWidget
+        """
+        central = QWidget()
+        main_layout = QVBoxLayout(central)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # 1. 自定义标题栏
+        main_layout.addWidget(mw.title_bar)
+
+        # 2. 操作栏（按钮）
+        action_bar = self._make_action_bar(mw)
+        main_layout.addWidget(action_bar)
+
+        # 3. 主体区域（侧栏 + 数据表格+日志）
+        body_area = self._make_body_area(mw)
+        main_layout.addWidget(body_area, 1)
+
+        self.compiled = True
+        return central
+
+    def _make_action_bar(self, mw) -> QWidget:
+        """制作操作栏（按钮组）.
+
+        分组顺序：主操作 │ 视图开关 │ 收纳菜单 │ 面板开关/通知 …… 快捷键提示
+        """
+        action_bar = QWidget()
+        action_bar.setObjectName("actionBar")
+        action_bar.setFixedHeight(38)
+        action_layout = QHBoxLayout(action_bar)
+        action_layout.setContentsMargins(8, 4, 8, 4)
+        action_layout.setSpacing(6)
+
+        # ═══ 主操作（高频，平铺 + 强调色）═══
+        for _w in [mw.action_btn_analyze]:
+            action_layout.addWidget(_w)
+
+        action_layout.addWidget(self._make_separator())
+        # ═══ 视图开关（用户常用，按需求保留在工具栏）═══
+        for _w in [mw.action_btn_left_panel, mw.action_btn_filter, mw.action_btn_col_filter]:
+            action_layout.addWidget(_w)
+
+        action_layout.addWidget(self._make_separator())
+        # ═══ 收纳菜单：看板 / 导出 / 维护 ═══
+        for _w in [mw.action_btn_boards, mw.action_btn_export, mw.action_btn_maint]:
+            action_layout.addWidget(_w)
+
+        action_layout.addWidget(self._make_separator())
+        # ═══ 面板开关 + 通知（低频，保留平铺，置于分组尾端）═══
+        for _w in [mw.action_btn_toggle_stats, mw.action_btn_toggle_progress, mw.action_btn_unread_summary]:
+            action_layout.addWidget(_w)
+
+        action_layout.addStretch()
+        shortcut_hint = QLabel("F5:分析 | F6:导出 | F7:效益 | F11:全屏")
+        shortcut_hint.setObjectName("shortcutHint")
+        action_layout.addWidget(shortcut_hint)
+
+        # 底部按钮行已删除，start_btn 别名指向顶部工具栏分析按钮（供分析起止启用/禁用）
+        mw.start_btn = mw.action_btn_analyze
+
+        return action_bar
+
+    def _make_separator(self) -> QWidget:
+        """制作工具栏分隔符."""
+        w = QWidget()
+        w.setObjectName("toolbarSep")
+        w.setFixedWidth(1)
+        w.setFixedHeight(20)
+        return w
+
+    def _make_body_area(self, mw) -> QWidget:
+        """制作主体区域（侧栏 + 表格 + 日志）."""
+        body_splitter = QSplitter(Qt.Horizontal)
+
+        # 左侧面板
+        body_splitter.addWidget(mw.left_panel)
+
+        # 右侧筛选面板（FilterPanel）
+        body_splitter.addWidget(mw.filter_panel)
+        mw.filter_panel.setVisible(False)  # 默认隐藏
+
+        # 右侧：审核表格 + 日志面板
+        right_container = QWidget()
+        right_layout = QVBoxLayout(right_container)
+        right_layout.setContentsMargins(6, 6, 6, 6)
+        right_layout.setSpacing(6)
+
+        # 上半部分：本次分析概览 + 分析进度（用户可拖动，默认占较小空间）
+        top_panel = QWidget()
+        top_panel.setObjectName("topPanel")
+        top_layout = QVBoxLayout(top_panel)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(6)
+        top_layout.addWidget(mw.stats_cards)                # 📊 本次分析概览
+        top_layout.addWidget(mw.main_table.progress_group)  # ⚡ 分析进度
+        top_panel.setMaximumHeight(240)                       # 限制最大高度，不抢表格空间
+
+        # 垂直分割器：仅表格（运行日志已移除，空间全部给表格）
+        _v_splitter = QSplitter(Qt.Vertical)
+        _v_splitter.setChildrenCollapsible(True)
+        _v_splitter.addWidget(mw.main_table.audit_widget)
+        _v_splitter.setStretchFactor(0, 1)
+
+        # 右侧整体垂直分割器：上面概览/进度，下面表格
+        _right_v_splitter = QSplitter(Qt.Vertical)
+        _right_v_splitter.setChildrenCollapsible(True)
+        _right_v_splitter.addWidget(top_panel)
+        _right_v_splitter.addWidget(_v_splitter)
+        _right_v_splitter.setSizes([150, 650])
+        _right_v_splitter.setStretchFactor(0, 0)
+        _right_v_splitter.setStretchFactor(1, 1)
+
+        right_layout.addWidget(_right_v_splitter, 1)
+        right_layout.addWidget(mw.main_table.summary_container, 0)
+
+        body_splitter.addWidget(right_container)
+        body_splitter.setSizes([260, 440, 860])
+
+        return body_splitter
