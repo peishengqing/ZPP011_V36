@@ -376,7 +376,13 @@ def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_c
         if vals:
             # 优先匹配半成品重分类（精确匹配）
             if semi_class_col and semi_class_col in df.columns:
-                semi_str = df[semi_class_col].astype(str).str.strip()
+                # v43.211：半成品重分类 缺值（NaN）也视作「无半成品分类」→ 回退物料分类。
+                # 原料/包材（脱氧剂等）本就不属半成品，该列空是预期；但该列在部分数据
+                # 路径下是 NaN（非空串），旧逻辑只认 '' 不认 NaN，把缺值当成「有值」做
+                # 精确匹配失败且**不回退**，原料类规则整条漏隔离。fillna('') 让 NaN 与
+                # 空串统一走回退分支（注意：pandas 2.x 的 astype(str) 对 NaN 仍保留 NaN，
+                # 故不能用 .replace({'nan':''})，必须在 astype 之前 fillna）。
+                semi_str = df[semi_class_col].fillna("").astype(str).str.strip()
                 # 逐行判断：有值则精确匹配，为空则回退到物料分类
                 if cat_col and cat_col in df.columns:
                     cat_str = df[cat_col].fillna("").astype(str)
