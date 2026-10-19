@@ -26,7 +26,7 @@ from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
 from gui_pyside6.utils.semi_class import (
-    SEMI_CLASS_FOOD, SEMI_CLASS_DRINK, merge_semi_class_values,
+    SEMI_CLASS_FOOD, SEMI_CLASS_DRINK, merge_semi_class_values, ensure_semi_class_column,
 )
 from gui_pyside6.utils.cascade_filter import replace_combo_items, cascade_options
 
@@ -1028,6 +1028,14 @@ class DeviationWarningDialog(QDialog):
     def set_data(self, df):
         """设置表格数据 - 确保 _read / data_id / 状态 列存在，初始按内容自适应列宽"""
         df = df.copy()
+        # v43.210：缺「半成品重分类」列时就地补齐（与半成品看板 v43.155 同一口径），
+        # 否则主表经筛选/列过滤后丢列，本看板表格看不到这列却仍能筛（走 400/410 兜底），
+        # 用户「筛了却不知道在筛哪类」。规则与 analyzer ②+③ 一致。
+        if "半成品重分类" not in df.columns:
+            try:
+                df, _added = ensure_semi_class_column(df)
+            except Exception:
+                df["半成品重分类"] = ""
         if "_read" not in df.columns:
             df["_read"] = 0
         if "data_id" not in df.columns:
@@ -1089,6 +1097,16 @@ class DeviationWarningDialog(QDialog):
             idx = cols.index("data_id")
             cols.insert(idx, "备注")
             df = df[cols]
+
+        # v43.210：半成品重分类列定位到「组件物料类型描述」之后（与半成品看板 v43.155 一致），
+        # 让顶部筛选器在筛的列与表格可见列对齐，避免「筛了看不到列」。
+        if "半成品重分类" in df.columns:
+            _cols = list(df.columns)
+            _cols.remove("半成品重分类")
+            _anchor = next((c for c in ("组件物料类型描述", "组件物料类型", "物料类型") if c in _cols), None)
+            _idx = _cols.index(_anchor) + 1 if _anchor else len(_cols)
+            _cols.insert(_idx, "半成品重分类")
+            df = df[_cols]
 
         self.source_model = DataFrameModel()
         self.source_model.setDataFrame(df)

@@ -35,7 +35,7 @@ from gui_pyside6.utils.locate import locate_row
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
-from gui_pyside6.utils.semi_class import merge_semi_class_values  # v43.148 固定分类清单
+from gui_pyside6.utils.semi_class import merge_semi_class_values, ensure_semi_class_column  # v43.148 固定分类清单 / v43.210 补列
 from gui_pyside6.widgets.filter_panel import _color_icon
 
 
@@ -681,6 +681,14 @@ class PosLossDashboardDialog(QDialog):
     # ------------------------------------------------------------------ 数据装载
     def set_data(self, df):
         df = df.copy()
+        # v43.210：缺「半成品重分类」列时就地补齐（与半成品看板 v43.155 同一口径），
+        # 否则主表经筛选/列过滤后丢列，本看板表格看不到这列却仍能筛（走 400/410 兜底），
+        # 用户「筛了却不知道在筛哪类」。规则与 analyzer ②+③ 一致。
+        if "半成品重分类" not in df.columns:
+            try:
+                df, _added = ensure_semi_class_column(df)
+            except Exception:
+                df["半成品重分类"] = ""
         # 初始化守卫：set_data 内多处 setCurrentText/setChecked 会触发信号→_apply_filter，
         # 但此时 _unit_col/_workshop_col 等尚未初始化，直接跑会 AttributeError 崩溃(v43.83 修复)。
         # 置 _initializing 期间让 _apply_filter 直接 return，初始化完成后再统一跑一次。
@@ -727,6 +735,16 @@ class PosLossDashboardDialog(QDialog):
             idx = cols.index("订单日期")
             cols.insert(idx, "隔离区")
             df = df[cols]
+
+        # v43.210：半成品重分类列定位到「组件物料类型描述」之后（与半成品看板 v43.155 一致），
+        # 让顶部筛选器在筛的列与表格可见列对齐，避免「筛了看不到列」。
+        if "半成品重分类" in df.columns:
+            _cols = list(df.columns)
+            _cols.remove("半成品重分类")
+            _anchor = next((c for c in ("组件物料类型描述", "组件物料类型", "物料类型") if c in _cols), None)
+            _idx = _cols.index(_anchor) + 1 if _anchor else len(_cols)
+            _cols.insert(_idx, "半成品重分类")
+            df = df[_cols]
 
         self.original_df = df.copy()
 
