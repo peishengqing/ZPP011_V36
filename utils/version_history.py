@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.222",
+        "date": "2026-10-20",
+        "features": "MainWindow 重构继续：迁移 UI 状态更新控制器，料对管理全到 AltController。",
+        "fixes": "**根因**：MainWindow 仍有大量料对和 UI 状态更新逻辑，职责不清。**病根**：代码散落在主窗口，难以维护和测试。**修法**：创建 UISettingsController 接管所有 UI 状态更新；将 12 个料对管理方法完全迁移到 AltController。**验收**：py_compile 无语法错误；主窗口代码减少约 400 行。**反证**：回退迁移 → 主窗口再次变回 God Object。",
+    },
+    {
         "version": "v43.221",
         "date": "2026-10-20",
         "features": "跨平台文件打开异常处理；P1 缺陷修复；代码质量提升。",

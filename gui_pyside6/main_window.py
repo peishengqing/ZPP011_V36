@@ -86,6 +86,7 @@ from gui_pyside6.controllers.dashboard_controller import DashboardController
 from gui_pyside6.controllers.semi_category_controller import SemiCategoryController
 from gui_pyside6.controllers.interaction_controller import InteractionController
 from gui_pyside6.controllers.quarantine_manager_controller import QuarantineManagerController
+from gui_pyside6.controllers.uisettings_controller import UISettingsController
 
 
 class _PptViewShim:
@@ -320,6 +321,8 @@ class MainWindow(QMainWindow):
         self.interaction_controller = InteractionController(self)
         # ARC-003 第七刀：隔离区管理职责（自动已读/读写/失效复核/自动移入）已切出到 QuarantineManagerController
         self.quarantine_manager_controller = QuarantineManagerController(self)
+        # ARC-003 第八刀：UI 状态更新职责已切出到 UISettingsController
+        self.ui_settings_controller = UISettingsController(self)
         self.data_service = DataService(self.alt_controller)
         self.data_service.log_signal.connect(self._on_data_service_log)
 
@@ -1148,21 +1151,13 @@ class MainWindow(QMainWindow):
     # 顶部面板（概览 / 进度）显隐控制
     # ------------------------------------------------------------------ #
     def _toggle_stats_from_toolbar(self):
-        """工具栏「📊 概览」按钮：切换本次分析概览面板显隐"""
-        if self.stats_cards._user_hidden:
-            self.stats_cards.show_panel()
-        else:
-            self.stats_cards._toggle_cards(False)
+        self.ui_settings_controller.toggle_stats_from_toolbar(not self.stats_cards._user_hidden)
 
     def _toggle_progress_from_toolbar(self):
-        """工具栏「⚡ 进度」按钮：切换分析进度面板显隐"""
-        self.main_table.set_progress_visible(self.main_table._progress_hidden)
+        self.ui_settings_controller.toggle_progress_from_toolbar(not self.main_table._progress_hidden)
 
     def _auto_collapse_progress_after_analysis(self):
-        """分析完成 6s 后自动收起进度面板；若新一轮分析已开始（_heavy_busy）则放弃。"""
-        if getattr(self, '_heavy_busy', False):
-            return
-        self.main_table.set_progress_visible(False)
+        self.ui_settings_controller.auto_collapse_progress_after_analysis()
 
     def _on_cache_progress_ui(self, percent, step_name):
         """完整报告缓存阶段进度（worker 线程发射，跨线程排队到主线程）。
@@ -1188,26 +1183,13 @@ class MainWindow(QMainWindow):
             pass
 
     def _on_stats_visibility_changed(self, visible: bool):
-        """概览面板显隐变化时同步工具栏按钮文字和顶部容器可见性"""
-        self.action_btn_toggle_stats.setText("📊 概览" if visible else "📊 显示概览")
-        self.action_btn_toggle_stats.setToolTip("隐藏本次分析概览" if visible else "显示本次分析概览")
-        self._update_top_panel_visibility()
+        self.ui_settings_controller.on_stats_visibility_changed(visible)
 
     def _on_progress_visibility_changed(self, visible: bool):
-        """进度面板显隐变化时同步工具栏按钮文字和顶部容器可见性"""
-        self.action_btn_toggle_progress.setText("⚡ 进度" if visible else "⚡ 显示进度")
-        self.action_btn_toggle_progress.setToolTip("隐藏分析进度" if visible else "显示分析进度")
-        self._update_top_panel_visibility()
+        self.ui_settings_controller.on_progress_visibility_changed(visible)
 
     def _update_top_panel_visibility(self):
-        """两个面板都隐藏时，把顶部容器也隐藏，释放空间给表格。
-        注意：必须用各自的「用户期望可见」状态变量判断，不能用 isVisible()——
-        因为 isVisible() 受父级 top_panel 可见性影响：一旦 top_panel 被隐藏，
-        子 widget 的 isVisible() 也会返回 False，会导致「显示」时 top_panel 永远
-        无法重新出现（死循环）。"""
-        stats_visible = not self.stats_cards._user_hidden
-        progress_visible = not self.main_table._progress_hidden
-        self.top_panel.setVisible(stats_visible or progress_visible)
+        self.ui_settings_controller.update_top_panel_visibility()
 
     def _auto_read_by_rules(self, df):
         """薄壳：自动已读规则中心（ARC-003 第七刀切出到 QuarantineManagerController）。"""
@@ -1218,23 +1200,10 @@ class MainWindow(QMainWindow):
         return self.quarantine_manager_controller._reconcile_quarantine_read_status(df)
 
     def _update_read_counter(self):
-        """刷新状态栏常驻的「已读计数」标签（自动 N / 手动 M）。"""
-        try:
-            self._read_counter_label.setText(
-                f"📖 已读：自动 {self._auto_read_count} / 手动 {self._manual_read_count}"
-            )
-        except RuntimeError:
-            # 标签已被 deleteLater 回收（关窗时序），忽略
-            pass
+        self.ui_settings_controller.update_read_counter()
 
     def _update_analysis_time_label(self, mode):
-        """刷新状态栏常驻的「分析时间」标签。mode 为 '自动' 或 '手动'。"""
-        try:
-            ts = time.strftime("%m-%d %H:%M:%S")
-            self._analysis_time_label.setText(f"🕒 分析：{mode} {ts}")
-        except RuntimeError:
-            # 标签已被 deleteLater 回收（关窗时序），忽略
-            pass
+        self.ui_settings_controller.update_analysis_time_label(mode)
 
     def _on_manual_marked(self, n):
         """手动标记已读后累计计数并刷新标签（来自 audit_controller / 两个弹窗的回调）。"""
@@ -1768,44 +1737,13 @@ class MainWindow(QMainWindow):
     # 替代料配对
     # -----------------------------------------------------------
     def _refresh_alt_view(self):
-        if self.alt_table is None:
-            return
-        pairs = self.alt_controller.get_pairs()
-        self.alt_table.setRowCount(0)
-        for idx, (a, b) in enumerate(pairs):
-            a_display, a_tip = self.alt_controller.format_material_short(a)
-            b_display, b_tip = self.alt_controller.format_material_short(b)
-            row = self.alt_table.rowCount()
-            self.alt_table.insertRow(row)
-            item_a = QTableWidgetItem(a_display)
-            item_a.setToolTip(a_tip)
-            item_a.setData(Qt.UserRole, idx)
-            self.alt_table.setItem(row, 0, item_a)
-            arrow = QTableWidgetItem(" ↔ ")
-            arrow.setFlags(Qt.NoItemFlags)
-            self.alt_table.setItem(row, 1, arrow)
-            item_b = QTableWidgetItem(b_display)
-            item_b.setToolTip(b_tip)
-            item_b.setData(Qt.UserRole, idx)
-            self.alt_table.setItem(row, 2, item_b)
-        if self.alt_count_label is not None:
-            self.alt_count_label.setText(f"共 {len(pairs)} 对")
+        self.alt_controller.refresh_view(self.alt_table, self.alt_count_label)
 
     def _on_alt_pairs_changed(self):
-        self._refresh_alt_view()
-        self._recalculate_net_offset(silent=True)
+        self.alt_controller.on_pairs_changed(self)
 
     def _on_alt_rows_moved(self, parent, start, end, destination, row):
-        new_pairs = []
-        pairs = self.alt_controller.get_pairs()
-        for r in range(self.alt_table.rowCount()):
-            item = self.alt_table.item(r, 0)
-            if item:
-                orig_idx = item.data(Qt.UserRole)
-                if orig_idx is not None and orig_idx < len(pairs):
-                    new_pairs.append(pairs[orig_idx])
-        if new_pairs and len(new_pairs) == len(pairs):
-            self.alt_controller.set_pairs_from_list(new_pairs)
+        self.alt_controller.on_rows_moved(self, parent, start, end, destination, row)
 
     def _add_alt_pair(self):
         self.alt_controller.show_add_dialog(self)
@@ -1884,11 +1822,7 @@ class MainWindow(QMainWindow):
         file_path, _ = QFileDialog.getOpenFileName(self, "导入替代料配对", "", "JSON files (*.json);;Excel files (*.xlsx *.xls)")
         if not file_path:
             return
-        if file_path.endswith(".json"):
-            self.alt_controller.import_from_file(file_path, self)
-        else:
-            wizard = ImportWizard(self, self.alt_controller.get_pairs(), None, on_alt_changed=self._refresh_alt_view, on_rules_changed=None)
-            wizard.exec()
+        self.alt_controller.import_from_file(file_path, self)
 
     def _export_alt_pairs(self):
         file_path, _ = QFileDialog.getSaveFileName(self, "导出替代料配对", "alt_pairs.json", "JSON (*.json)")
@@ -1902,83 +1836,7 @@ class MainWindow(QMainWindow):
         self.alt_controller.show_zoom_window(self)
 
     def _zoom_semi_table(self):
-        """弹出半成品分类放大窗口，支持双击筛选"""
-        from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QPushButton
-        from PySide6.QtCore import Qt
-
-        dialog = QDialog(self)
-        dialog.setWindowTitle("半成品分类详情")
-        dialog.resize(600, 400)
-        layout = QVBoxLayout(dialog)
-        layout.setSpacing(8)
-
-        # 说明标签
-        tip_label = QLabel("双击任意行可筛选该分类。点击「关闭」退出。")
-        tip_label.setStyleSheet("color: #aaa; font-size: 11px;")
-        layout.addWidget(tip_label)
-
-        # 表格（v43.164：与左侧主面板统一为 4 列）
-        table = QTableWidget()
-        table.setColumnCount(4)
-        table.setHorizontalHeaderLabels(["工厂", "分类名称", "物料数", "物料编码"])
-        table.setEditTriggers(QTableWidget.NoEditTriggers)
-        table.setSelectionBehavior(QTableWidget.SelectRows)
-        table.verticalHeader().setVisible(False)
-        table.setAlternatingRowColors(True)
-
-        # 填充数据（v43.163）
-        # ⚠ 排序开关必须开在 setRowCount/setItem 之后，否则 Qt 会在空表上先行排序，
-        #   之后填入的 item 被按工厂列重新排列，导致部分行「第0列有工厂、第1列分类名丢失」
-        #   （实测 4 个分类会有 2 个分类名称变空）。主面板 _refresh_semi_list_ui 本就是
-        #   先填后排序，这里与之对齐即可。
-        categories = self._get_semi_category_list()
-        table.setRowCount(len(categories))
-        for i, cat in enumerate(categories):
-            factory = cat.get('factory', '')
-            name = cat.get('name', '')
-            codes = cat.get('codes') or []
-            cnt_item = QTableWidgetItem(str(int(cat.get('code_count', len(codes)))))
-            cnt_item.setTextAlignment(Qt.AlignCenter)
-            codes_text = ', '.join(codes) if codes else '-'
-            codes_item = QTableWidgetItem(codes_text)
-            codes_item.setToolTip(codes_text)
-            table.setItem(i, 0, QTableWidgetItem(str(factory)))
-            table.setItem(i, 1, QTableWidgetItem(name))
-            table.setItem(i, 2, cnt_item)
-            table.setItem(i, 3, codes_item)
-
-        table.setSortingEnabled(True)
-        table.sortByColumn(0, Qt.AscendingOrder)
-
-        hdr = table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.Fixed)
-        hdr.resizeSection(0, 70)
-        hdr.setSectionResizeMode(1, QHeaderView.Fixed)
-        hdr.resizeSection(1, 180)
-        hdr.setSectionResizeMode(2, QHeaderView.Fixed)
-        hdr.resizeSection(2, 60)
-        hdr.setSectionResizeMode(3, QHeaderView.Stretch)
-
-        # 双击筛选（加空值检查，防止排序后双击空行崩溃）
-        def _on_semi_double_click(row, col):
-            item = table.item(row, 1)
-            if item is None:
-                return
-            category = item.text()
-            self._filter_semi_materials(category)
-        table.cellDoubleClicked.connect(_on_semi_double_click)
-
-        layout.addWidget(table)
-
-        # 按钮区
-        btn_row = QHBoxLayout()
-        close_btn = QPushButton("关闭")
-        close_btn.clicked.connect(dialog.close)
-        btn_row.addStretch()
-        btn_row.addWidget(close_btn)
-        layout.addLayout(btn_row)
-
-        dialog.exec()
+        self.alt_controller.zoom_semi_table(self)
 
     def _sort_alt_pairs(self):
         self.alt_controller.sort_pairs()
@@ -2561,95 +2419,10 @@ class MainWindow(QMainWindow):
     # _refresh_stats_cards 已删除（stats_cards 不再使用）
 
     def _update_summary(self):
-        if self.view_model.df is None or self.view_model.df.empty:
-            self.summary_quota.setText("配额: 0.00")
-            self.summary_actual.setText("实际: 0.00")
-            self.summary_amount.setText("偏差率: 0.00%")
-            self.summary_qty.setText("偏差量: 0.00")
-            return
-        df = self.view_model.df
-        # 配额列
-        quota_col = next((c for c in ["配额", "定额", "数量-定额", "quota"] if c in df.columns), None)
-        actual_col = next((c for c in ["实际", "数量-实际", "actual"] if c in df.columns), None)
-        rate_col = next((c for c in ["偏差率(%)", "偏差率"] if c in df.columns), None)
-        qty_col = next((c for c in ["偏差数量", "数量偏差", "dev_qty"] if c in df.columns), None)
-        net_rate_col = next((c for c in ["净偏差率(%)", "净偏差率"] if c in df.columns), None)
-
-        quota_sum = df[quota_col].fillna(0).sum() if quota_col else 0
-        actual_sum = df[actual_col].fillna(0).sum() if actual_col else 0
-
-        # 偏差率平均值
-        if rate_col:
-            rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
-            avg_rate = rates.mean()
-            rate_str = f"{avg_rate:.2f}%"
-        else:
-            if actual_col and quota_col:
-                avg_rate = ((df[actual_col].fillna(0) - df[quota_col].fillna(0)) / df[quota_col].fillna(0).replace(0, float('nan'))).mean()
-                rate_str = f"{avg_rate:.2f}%"
-            else:
-                rate_str = "0.00%"
-                avg_rate = 0
-
-        # 净偏差率平均值
-        if net_rate_col:
-            net_rates = pd.to_numeric(df[net_rate_col], errors='coerce').fillna(0)
-            net_rate_str = f"{net_rates.mean():.2f}%"
-        else:
-            net_rate_str = ""
-
-        # 偏差量汇总
-        if qty_col:
-            qty_sum = df[qty_col].fillna(0).sum()
-        elif actual_col and quota_col:
-            qty_sum = (df[actual_col].fillna(0) - df[quota_col].fillna(0)).sum()
-        else:
-            qty_sum = 0
-
-        self.summary_quota.setText(f"配额: {quota_sum:,.2f}")
-        self.summary_actual.setText(f"实际: {actual_sum:,.2f}")
-        if net_rate_str:
-            self.summary_amount.setText(f"偏差率: {rate_str} | 净偏差率: {net_rate_str}")
-        else:
-            self.summary_amount.setText(f"偏差率: {rate_str}")
-        self.summary_qty.setText(f"偏差量: {qty_sum:,.2f}")
+        self.ui_settings_controller.update_summary()
 
     def _update_mark_stats(self):
-        """更新主表上方『标记统计』标签：当前筛选后可见行中，各类颜色标记的行数。
-
-        三类标记来自 source_model 的私有集合（set of 源行号）：
-          - 偏差预警(橙) = _alert_rows（|偏差率|>=10% 且非未投料）
-          - 替代料(蓝)   = _substitute_rows（是否替代料=是）
-          - 未投料(灰)   = _unused_rows（实际≈0 且 定额>0 且非替代料）
-        计数按 proxy_model 当前可见行统计，故筛选/搜索变化即动态刷新。
-        触发：proxy.layoutChanged（筛选/排序）+ source.dataChanged/modelReset（数据重算）。
-        """
-        lbl = getattr(self.main_table, "mark_stats_label", None)
-        if lbl is None:
-            return
-        if self.source_model is None or self.proxy_model is None:
-            lbl.setText("标记统计：—")
-            return
-        sm = self.source_model
-        pm = self.proxy_model
-        alert = getattr(sm, "_alert_rows", set())
-        sub = getattr(sm, "_substitute_rows", set())
-        unused = getattr(sm, "_unused_rows", set())
-        n_alert = n_sub = n_unused = 0
-        rows = pm.rowCount()
-        if rows:
-            for r in range(rows):
-                sr = pm.mapToSource(pm.index(r, 0)).row()
-                if sr in alert:
-                    n_alert += 1
-                if sr in sub:
-                    n_sub += 1
-                if sr in unused:
-                    n_unused += 1
-        lbl.setText(
-            "🔴 偏差预警 %d 条    🔵 替代料 %d 条    ⚪ 未投料 %d 条"
-            % (n_alert, n_sub, n_unused)
-        )
+        self.ui_settings_controller.update_mark_stats()
 
     def _update_selection_summary(self, col_sums: dict):
         """更新选中行合计到底部栏"""
@@ -2663,27 +2436,16 @@ class MainWindow(QMainWindow):
     # _update_stat_cards 已删除（统计卡片不再使用）
 
     def _on_export_full_excel(self):
-        """点击「导出完整Excel」— 完整逻辑内联，不依赖 export_controller"""
-        import shutil
-        from datetime import datetime
-        from PySide6.QtWidgets import QFileDialog, QProgressDialog, QApplication
-
+        """点击「导出完整Excel」"""
         audit_data = self.view_model.df
         if audit_data is None or audit_data.empty:
             QMessageBox.warning(self, "提示", "无数据，请先进行分析")
             return
 
-        # 若分析/缓存/上次报告生成仍在进行，避免再叠加一个 do_analysis_v2 导致 UI 卡死
         if self._heavy_busy:
             QMessageBox.information(self, "提示", "分析/报告生成进行中，请稍候再导出")
             return
 
-        # 1. 选择保存路径
-        # 默认文件名用「分析日期区间」而非「此刻时间」（v43.160）：
-        # 同一期数据反复导出时文件名稳定，便于比对与归档，不会因点击时刻不同产生一堆近似名。
-        # 日期取自本次分析参数 _analysis_params['start_date'/'end_date']（格式 yyyy-MM-dd）。
-        # ⚠ 「分析日期范围」留空 = 全部日期，此时两端都是空串，直接拼会得到
-        #   "ZPP011偏差分析最终版__（-）.xlsx" 这种废名，故留空时退回「此刻时间」。
         _ap = getattr(self, '_analysis_params', None) or {}
         _sd = str(_ap.get('start_date') or '').strip()
         _ed = str(_ap.get('end_date') or '').strip()
@@ -2692,6 +2454,7 @@ class MainWindow(QMainWindow):
             default_name = f"ZPP011偏差分析最终版_{_rng}_（{_rng}）.xlsx"
         else:
             default_name = f"ZPP011偏差分析最终版_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+
         save_path, _ = QFileDialog.getSaveFileName(
             self, "保存完整Excel文件", default_name, "Excel files (*.xlsx)"
         )
@@ -2702,7 +2465,6 @@ class MainWindow(QMainWindow):
         current_input_file = self.current_input_file
         cache_path = self._full_analysis_cache_path
 
-        # 检查参数是否有效
         has_valid_params = (
             analysis_params
             and isinstance(analysis_params, dict)
@@ -2710,7 +2472,6 @@ class MainWindow(QMainWindow):
             and current_input_file
         )
 
-        # 2. 如果有有效参数，询问是否生成完整多Sheet
         if has_valid_params:
             reply = QMessageBox.question(
                 self, "导出选项",
@@ -2720,12 +2481,11 @@ class MainWindow(QMainWindow):
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes
             )
             if reply == QMessageBox.Yes:
-                self._export_full_analysis_inline(
-                    save_path, analysis_params, cache_path
+                self.export_controller.export_full_analysis_inline(
+                    save_path, analysis_params, cache_path, self
                 )
                 return
 
-        # 3. 仅导出当前表格数据
         try:
             from gui_pyside6.save_guard import safe_save
             saved = safe_save(
@@ -2748,148 +2508,8 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "错误", f"导出失败: {e}")
             self.log(f"导出失败: {e}", "error")
 
-    def _export_full_analysis_inline(self, save_path, analysis_params, cache_path):
-        """生成完整多Sheet Excel（优先使用缓存）"""
-        import shutil
-        from PySide6.QtWidgets import QApplication, QProgressDialog
-
-        # 缓存命中：直接复制
-        if cache_path and os.path.exists(cache_path):
-            try:
-                from gui_pyside6.save_guard import safe_save
-                _saved = safe_save(self, save_path,
-                                   lambda p: shutil.copy2(cache_path, p),
-                                   what="报告")
-                if not _saved:
-                    self.log("导出已取消（目标文件被占用）", "warning")
-                    return
-                save_path = _saved
-                if QMessageBox.question(
-                    self, "导出成功",
-                    f"完整分析报告已导出到\n{save_path}\n\n"
-                    "（使用缓存，秒传完成）\n\n"
-                    "包含Sheet:\n"
-                    "📋 分析说明 · 汇总统计(带预警颜色)\n"
-                    "完整偏差明细 · 替代料明细 · 无备注预警\n"
-                    "中间地带明细 · 异常预警 · 偏差金额分析\n"
-                    "偏差原因汇总 · 偏差原因分析 · 趋势分析\n\n"
-                    "是否立即打开？"
-                ) == QMessageBox.Yes:
-                    _open_file(save_path)
-                self.log(f"已导出完整分析报告到 {save_path} (缓存)", "info")
-                return
-            except Exception as e:
-                QMessageBox.warning(
-                    self, "缓存复制失败",
-                    f"缓存复制失败：{e}\n\n将重新分析生成报告。"
-                )
-                self.log(f"缓存复制失败，回退重新分析: {e}", "warning")
-
-        # 重新分析要跑几十秒，先确认目标文件写得进去，免得白算一场
-        from gui_pyside6.save_guard import precheck_save_path
-        save_path = precheck_save_path(self, save_path, what="报告")
-        if not save_path:
-            self.log("导出已取消（目标文件被占用）", "warning")
-            return
-
-        # 重新分析生成（转后台线程，避免主线程冻结）
-        self._export_full_analysis_background(
-            save_path, analysis_params, cache_path
-        )
-
-    def _export_full_analysis_background(self, save_path, analysis_params, cache_path):
-        """后台线程重新分析生成完整报告，完成后弹窗通知；界面不锁。"""
-        from PySide6.QtWidgets import QProgressDialog, QApplication
-        from analysis.analyzer import do_analysis_v2
-
-        # 导出前确认目标文件写得进去（后台线程里弹不了窗，必须在这拦）
-        from gui_pyside6.save_guard import precheck_save_path
-        save_path = precheck_save_path(self, save_path, what="报告")
-        if not save_path:
-            self.log("导出已取消（目标文件被占用）", "warning")
-            return
-
-        progress_dlg = QProgressDialog("正在后台生成完整报告...", "取消", 0, 100, self)
-        progress_dlg.setWindowTitle("导出中")
-        progress_dlg.setWindowModality(Qt.NonModal)  # 不锁界面，可继续操作主表
-        progress_dlg.setMinimumDuration(0)
-        progress_dlg.show()
-
-        worker = _FullReportWorker(
-            input_file=analysis_params['input_file'],
-            alt_pairs=analysis_params['alt_pairs'],
-            start_date=analysis_params.get('start_date'),
-            end_date=analysis_params.get('end_date'),
-            material_search=analysis_params.get('material_search'),
-            output_path=save_path,
-        )
-        # 进度回调（主线程）
-        worker.progress.connect(
-            lambda pct, txt: (progress_dlg.setValue(pct),
-                              progress_dlg.setLabelText(f"{txt} ({pct}%)"))[0]
-        )
-        # 取消：进度对话框 wasCanceled → worker 取消标志
-        progress_dlg.canceled.connect(worker.request_cancel)
-        # 完成/失败回调（主线程）
-        worker.finished_ok.connect(
-            lambda out_path: self._on_full_report_done(out_path, cache_path, progress_dlg)
-        )
-        worker.failed.connect(
-            lambda err: (progress_dlg.close(),
-                         setattr(self, '_heavy_busy', False),
-                         QMessageBox.critical(self, "错误", f"导出完整报告失败: {err}"),
-                         self.log(f"导出完整报告失败: {err}", "error"))
-        )
-        self._full_report_worker = worker  # 防止被 GC
-        self._heavy_busy = True
-        worker.start()
-
-    def _on_full_report_done(self, save_path, cache_path, progress_dlg):
-        """后台生成完成：回存缓存 + 弹窗通知（不锁界面）"""
-        self._heavy_busy = False
-        progress_dlg.close()
-        # 回存缓存
-        if cache_path and not os.path.exists(cache_path):
-            try:
-                import shutil
-                shutil.copy2(save_path, cache_path)
-            except Exception:
-                pass
-        reply = QMessageBox.question(
-            self, "导出成功",
-            f"完整分析报告已生成：\n{save_path}\n\n"
-            "包含Sheet:\n"
-            "📋 分析说明 · 汇总统计(带预警颜色)\n"
-            "完整偏差明细 · 替代料明细 · 无备注预警\n"
-            "中间地带明细 · 异常预警 · 偏差金额分析\n"
-            "偏差原因汇总 · 偏差原因分析 · 趋势分析\n\n"
-            "是否立即打开？"
-        )
-        if reply == QMessageBox.Yes:
-            _open_file(save_path)
-        self.log(f"已导出完整分析报告到 {save_path}", "info")
-
-    # -----------------------------------------------------------
-    # 净偏差
-    # -----------------------------------------------------------
     def _sync_alt_pairs_for_full_report(self):
-        """重算净偏差后，把当前替代料配对同步给完整报告并失效旧缓存，
-        保证「加料 → 刷新净偏差 → 导出完整报告」三者一致。
-
-        背景：完整报告导出(_export_full_analysis_inline)优先复制上次分析生成的缓存，
-        或重跑分析时使用 analysis_params['alt_pairs']（上次「分析」快照）。
-        仅改内存 df 不会更新这两者，导致新增的替代料不进完整报告。"""
-        # 1. 同步最新配对到完整报告所用分析参数（导出读取的就是它）
-        if isinstance(self._analysis_params, dict):
-            self._analysis_params['alt_pairs'] = list(self.alt_controller.get_pairs())
-        # 2. 失效完整报告缓存（否则下次导出直接复制不含新料的旧缓存）
-        cp = getattr(self, '_full_analysis_cache_path', None)
-        if cp and os.path.exists(cp):
-            try:
-                os.remove(cp)
-            except OSError:
-                pass
-        self._full_analysis_cache_path = None
+        self.export_controller.sync_alt_pairs_for_full_report()
 
     def _recalculate_net_offset(self, silent=False):
         df = self.view_model.df

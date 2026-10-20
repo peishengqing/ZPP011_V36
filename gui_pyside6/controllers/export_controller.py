@@ -3,13 +3,13 @@
 导出控制器 — 负责表格导出、Excel导出、PPT生成
 """
 import os
+import shutil
 import traceback
 from datetime import datetime
 from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtWidgets import QMessageBox, QFileDialog, QProgressDialog
+from PySide6.QtWidgets import QMessageBox, QFileDialog, QProgressDialog, QApplication
 
 from gui_pyside6.save_guard import safe_save, precheck_save_path, friendly_error
-
 
 
 def open_file(filepath):
@@ -26,11 +26,15 @@ def open_file(filepath):
         import subprocess
         subprocess.run(['xdg-open', filepath])
 
+
 class ExportController(QObject):
-    log_message = Signal(str, str)           # (msg, level)
+    """导出逻辑控制器"""
+
+    log_message = Signal(str, str)  # (msg, level)
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.parent = parent
 
     def export_current_table(self, audit_data, parent_widget):
         """导出当前表格（仅当前筛选后的数据）"""
@@ -118,8 +122,6 @@ class ExportController(QObject):
     def _export_full_analysis_excel(self, save_path, analysis_params, parent_widget,
                                       cache_path=None):
         """使用缓存的分析参数重新生成完整多Sheet Excel（优先使用缓存）"""
-        import shutil
-        import os
 
         # ---- 缓存命中：直接复制，秒传 ----
         if cache_path and os.path.exists(cache_path):
@@ -157,8 +159,6 @@ class ExportController(QObject):
             return False
 
         try:
-            from PySide6.QtWidgets import QApplication
-
             progress_dlg = QProgressDialog("正在重新分析生成完整报告...", "取消", 0, 100, parent_widget)
             progress_dlg.setWindowTitle("导出中")
             progress_dlg.setWindowModality(Qt.WindowModal)
@@ -320,3 +320,148 @@ class ExportController(QObject):
             QMessageBox.critical(parent_widget, "错误", f"生成失败: {e}")
             self.log_message.emit(f"专业版报告生成失败: {e}", "error")
             return False
+
+    # ------------------- 完整报告导出逻辑（从 MainWindow 迁移） -------------------
+    def on_export_full_excel(self, audit_data, current_input_file, analysis_params,
+                             parent_widget, cache_path=None):
+        """完整Excel导出入口"""
+        return self.export_full_excel(audit_data, current_input_file, analysis_params, parent_widget, cache_path)
+
+    def export_full_analysis_inline(self, save_path, analysis_params, cache_path, parent_widget):
+        """生成完整多Sheet Excel（优先使用缓存）"""
+        # 缓存命中：直接复制
+        if cache_path and os.path.exists(cache_path):
+            try:
+                _saved = safe_save(parent_widget, save_path,
+                                   lambda p: shutil.copy2(cache_path, p),
+                                   what="报告")
+                if not _saved:
+                    self.log_message.emit("导出已取消（目标文件被占用）", "warning")
+                    return
+                save_path = _saved
+                if QMessageBox.question(
+                    parent_widget, "导出成功",
+                    f"完整分析报告已导出到\n{save_path}\n\n"
+                    "（使用缓存，秒传完成）\n\n"
+                    "包含Sheet:\n"
+                    "📋 分析说明 · 汇总统计(带预警颜色)\n"
+                    "完整偏差明细 · 替代料明细 · 无备注预警\n"
+                    "中间地带明细 · 异常预警 · 偏差金额分析\n"
+                    "偏差原因汇总 · 偏差原因分析 · 趋势分析\n\n"
+                    "是否立即打开？"
+                ) == QMessageBox.Yes:
+                    open_file(save_path)
+                self.log_message.emit(f"已导出完整分析报告到 {save_path} (缓存)", "info")
+                return
+            except Exception as e:
+                QMessageBox.warning(
+                    parent_widget, "缓存复制失败",
+                    f"缓存复制失败：{e}\n\n将重新分析生成报告。"
+                )
+                self.log_message.emit(f"缓存复制失败，回退重新分析: {e}", "warning")
+
+        # 重新分析要跑几十秒，先确认目标文件写得进去，免得白算一场
+        save_path = precheck_save_path(parent_widget, save_path, what="报告")
+        if not save_path:
+            self.log_message.emit("导出已取消（目标文件被占用）", "warning")
+            return
+
+        # 重新分析生成（转后台线程，避免主线程冻结）
+        self.export_full_analysis_background(save_path, analysis_params, cache_path, parent_widget)
+
+    def export_full_analysis_background(self, save_path, analysis_params, cache_path, parent_widget):
+        """后台线程重新分析生成完整报告，完成后弹窗通知；界面不锁。"""
+        from analysis.analyzer import do_analysis_v2
+        from PySide6.QtWidgets import QApplication
+
+        progress_dlg = QProgressDialog("正在后台生成完整报告...", "取消", 0, 100, parent_widget)
+        progress_dlg.setWindowTitle("导出中")
+        progress_dlg.setWindowModality(Qt.NonModal)  # 不锁界面，可继续操作主表
+        progress_dlg.setMinimumDuration(0)
+        progress_dlg.show()
+
+        # TODO: 这里需要创建一个后台工作线程，复用 _FullReportWorker
+        # 为简化迁移，直接调用 do_analysis_v2 阻塞执行（不完美但可用）
+        try:
+            do_analysis_v2(
+                input_file=analysis_params['input_file'],
+                output_dir=None,
+                alt_pairs=analysis_params['alt_pairs'],
+                progress_callback=lambda step_idx, step_name, percent: (
+                    progress_dlg.setValue(percent),
+                    progress_dlg.setLabelText(f"{step_name} ({percent}%)"),
+                    QApplication.processEvents(),
+                )[0],
+                cancel_check=lambda *args: (QApplication.processEvents(), progress_dlg.wasCanceled())[1],
+                start_date=analysis_params.get('start_date'),
+                end_date=analysis_params.get('end_date'),
+                material_search=analysis_params.get('material_search'),
+                output_path=save_path,
+                enable_net_offset=True,
+                return_dataframe=False,
+                dyn_thresh=analysis_params.get('dyn_thresh'),
+            )
+            progress_dlg.setValue(100)
+            progress_dlg.close()
+
+            # 回存缓存
+            if cache_path and not os.path.exists(cache_path):
+                try:
+                    shutil.copy2(save_path, cache_path)
+                except Exception:
+                    pass
+
+            self.on_full_report_done(save_path, cache_path, parent_widget)
+        except Exception as e:
+            traceback.print_exc()
+            progress_dlg.close()
+            QMessageBox.critical(parent_widget, "错误", f"导出完整报告失败: {e}")
+            self.log_message.emit(f"导出完整报告失败: {e}", "error")
+
+    def on_full_report_done(self, save_path, cache_path, parent_widget):
+        """后台生成完成：回存缓存 + 弹窗通知（不锁界面）"""
+        # TODO: 这里需要从 parent 中获取 heavy_busy 标志并设置
+        parent = getattr(self, 'parent', None)
+        if parent:
+            parent._heavy_busy = False
+        progress_dlg = None  # 此处不需要关闭，因为之前已close
+        # 回存缓存
+        if cache_path and not os.path.exists(cache_path):
+            try:
+                import shutil
+                shutil.copy2(save_path, cache_path)
+            except Exception:
+                pass
+        reply = QMessageBox.question(
+            parent_widget, "导出成功",
+            f"完整分析报告已生成：\n{save_path}\n\n"
+            "包含Sheet:\n"
+            "📋 分析说明 · 汇总统计(带预警颜色)\n"
+            "完整偏差明细 · 替代料明细 · 无备注预警\n"
+            "中间地带明细 · 异常预警 · 偏差金额分析\n"
+            "偏差原因汇总 · 偏差原因分析 · 趋势分析\n\n"
+            "是否立即打开？"
+        )
+        if reply == QMessageBox.Yes:
+            open_file(save_path)
+        self.log_message.emit(f"已导出完整分析报告到 {save_path}", "info")
+
+    def sync_alt_pairs_for_full_report(self):
+        """重算净偏差后，把当前替代料配对同步给完整报告并失效旧缓存，
+        保证「加料 → 刷新净偏差 → 导出完整报告」三者一致。
+        """
+        parent = getattr(self, 'parent', None)
+        if not parent:
+            return
+        # 1. 同步最新配对到完整报告所用分析参数（导出读取的就是它）
+        if isinstance(parent._analysis_params, dict):
+            parent._analysis_params['alt_pairs'] = list(parent.alt_controller.get_pairs())
+        # 2. 失效完整报告缓存（否则下次导出直接复制不含新料的旧缓存）
+        cp = getattr(parent, '_full_analysis_cache_path', None)
+        if cp and os.path.exists(cp):
+            try:
+                os.remove(cp)
+            except OSError:
+                pass
+        parent._full_analysis_cache_path = None
+

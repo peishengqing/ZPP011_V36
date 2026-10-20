@@ -549,3 +549,50 @@ class AltController(QObject):
             refresh_callback()
             self.data_changed.emit()
             QMessageBox.information(parent_widget, "修改成功", "已更新该替代料配对")
+
+    # ------------------- 界面刷新方法（供主窗口调用） -------------------
+    def refresh_view(self, alt_table, alt_count_label):
+        """刷新替代料列表显示"""
+        if alt_table is None:
+            return
+        pairs = self.get_pairs()
+        alt_table.setRowCount(0)
+        for idx, (a, b) in enumerate(pairs):
+            a_display, a_tip = self.format_material_short(a)
+            b_display, b_tip = self.format_material_short(b)
+            row = alt_table.rowCount()
+            alt_table.insertRow(row)
+            item_a = QTableWidgetItem(a_display)
+            item_a.setToolTip(a_tip)
+            item_a.setData(Qt.UserRole, idx)
+            alt_table.setItem(row, 0, item_a)
+            arrow = QTableWidgetItem(" ↔ ")
+            arrow.setFlags(Qt.NoItemFlags)
+            alt_table.setItem(row, 1, arrow)
+            item_b = QTableWidgetItem(b_display)
+            item_b.setToolTip(b_tip)
+            item_b.setData(Qt.UserRole, idx)
+            alt_table.setItem(row, 2, item_b)
+        if alt_count_label is not None:
+            alt_count_label.setText(f"共 {len(pairs)} 对")
+
+    def on_pairs_changed(self, main_window):
+        """替代料变更时的处理：刷新视图并重算净偏差"""
+        self.refresh_view(main_window.alt_table, main_window.alt_count_label)
+        if hasattr(main_window, '_recalculate_net_offset'):
+            main_window._recalculate_net_offset(silent=True)
+
+    def on_rows_moved(self, main_window, parent, start, end, destination, row):
+        """处理行移动（拖拽排序）"""
+        if main_window.alt_table is None:
+            return
+        new_pairs = []
+        pairs = self.get_pairs()
+        for r in range(main_window.alt_table.rowCount()):
+            item = main_window.alt_table.item(r, 0)
+            if item:
+                orig_idx = item.data(Qt.UserRole)
+                if orig_idx is not None and orig_idx < len(pairs):
+                    new_pairs.append(pairs[orig_idx])
+        if new_pairs and len(new_pairs) == len(pairs):
+            self.set_pairs_from_list(new_pairs)
