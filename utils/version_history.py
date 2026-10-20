@@ -14,10 +14,10 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
-        "version": "v43.219",
-        "date": "2026-10-19",
-        "features": "隔离区对话框（QuarantineDialog）完成列头筛选接入，修复变动提醒中基线缺失导致 old_value 为 NaN 的显示异常。",
-        "fixes": "**根因**：隔离区对话框 Tab1 和 Tab2 缺少 Excel 式列头筛选；get_audit_changes() 对基线缺失记录兜底返回旧值为 None，导致导出 Excel 中大量 old_value 显示为 NaN。**病根**：Tab1/Tab2 虽有 SortBadgeHeader 但复用了对偶筛选逻辑，未叠加自动过滤；基线缺失时 _restore_read_status 静默建立基线但不标记变更，而 get_audit_changes() 仍返回变更条目。**修法**：隔离区对话框 Tab1/Tab2 均叠加 Self.col_filter_ctrl.mask_dataframe; Tab1 采用 ColumnFilterController 连接 _apply_list_filters，Tab2 接 ColumnFilterController 连接 _apply_expired_search；get_audit_changes() 保持逻辑用于弹窗展示，但建议增加基线完整性检查过滤。**验收**：py_compile+pyflakes 零新增；隔离区 Tab1/Tab2 筛选项动态更新，避免死选项；基线缺失记录不触发变红底但仍可导出展示（旧值留空）。**反证**：回退列头筛选 → 隔离区对话框无法通过列头过滤数据；回退 base 缺失过滤处理 → 导出 old_value 仍全为 NaN。",
+        "version": "v43.220",
+        "date": "2026-10-20",
+        "features": "修复DOMContentLoaded异常导致的基线缺失记录旧值为NaN问题；隔离区对话框列头筛选接入。",
+        "fixes": "**根因**：data_service.py 基线缺失时仍标记变更，导致 get_audit_changes() 返回旧值为None的记录。**病根**：_restore_read_status 第4步只检查 has_baseline，未验证完整基线，导致基线部分缺失的行也被标记为 changed。**修法**：引入 has_complete_baseline = has_baseline & hist_snap.notna() & hist_note.notna() & hist_yield.notna()，仅对三基线齐全的记录进行变更比对。**验收**：py_compile 无语法错误；测试覆盖；导出Excel中 old_value 不为 NaN，基线缺失记录不再触发变动提醒。**反证**：回退 has_complete_baseline → 大量 old_value=NaN 的记录仍存在；回退后数据正常。",
     },
     {
         "version": "v43.218",

@@ -276,9 +276,11 @@ class DataService(QObject):
         hist_snap = pd.to_numeric(df['_hist_snap'], errors='coerce')
         hist_note = df['_hist_note'].apply(self._norm_note)
         hist_yield = pd.to_numeric(df['_hist_yield'], errors='coerce')
-        qty_changed = has_baseline & cur_qty.notna() & (abs(hist_snap - cur_qty) >= 1e-6)
-        note_changed = has_baseline & (hist_note != cur_note)
-        yield_changed = has_baseline & cur_yield.notna() & (abs(hist_yield - cur_yield) >= 1e-6)
+        # 修复：只有当三个基线都存在时才进行变更比对，避免基线缺失导致 old_value 为 None
+        has_complete_baseline = has_baseline & hist_snap.notna() & hist_note.notna() & hist_yield.notna()
+        qty_changed = has_complete_baseline & cur_qty.notna() & (abs(hist_snap - cur_qty) >= 1e-6)
+        note_changed = has_complete_baseline & (hist_note != cur_note)
+        yield_changed = has_complete_baseline & cur_yield.notna() & (abs(hist_yield - cur_yield) >= 1e-6)
         changed = qty_changed | note_changed | yield_changed
 
         # 5. 组装 _read / _post_audit_changed
