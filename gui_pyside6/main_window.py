@@ -183,18 +183,23 @@ class _FullCacheWorker(QThread):
 
 
 def _open_file(filepath):
-    """跨平台打开文件"""
+    """跨平台打开文件（带异常处理）"""
     import platform
+    import traceback
     system = platform.system()
-    if system == 'Windows':
-        import os
-        os.startfile(filepath)
-    elif system == 'Darwin':  # macOS
-        import subprocess
-        subprocess.run(['open', filepath])
-    else:  # Linux and others
-        import subprocess
-        subprocess.run(['xdg-open', filepath])
+    try:
+        if system == 'Windows':
+            import os
+            os.startfile(filepath)
+        elif system == 'Darwin':  # macOS
+            import subprocess
+            subprocess.run(['open', filepath])
+        else:  # Linux and others
+            import subprocess
+            subprocess.run(['xdg-open', filepath])
+    except Exception as e:
+        print(f"[ERROR] 无法打开文件 {filepath}: {e}")
+        traceback.print_exc()
 
 
 class MainWindow(QMainWindow):

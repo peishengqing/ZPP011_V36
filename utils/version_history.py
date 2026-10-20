@@ -14,9 +14,15 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.221",
+        "date": "2026-10-20",
+        "features": "跨平台文件打开异常处理；P1 缺陷修复；代码质量提升。",
+        "fixes": "**根因**：_open_file() 函数缺少异常处理，文件打开失败时可能静默失败或崩溃。**病根**：原始实现没有 try/except，导致跨平台文件打开时错误无法捕获。**修法**：为 _open_file() 添加 try/except 块，捕获异常并打印错误信息和堆栈跟踪。**验收**：py_compile 无语法错误；文件打开失败时输出错误日志。**反证**：回退异常处理 → 文件打开失败时不输出任何错误信息。",
+    },
+    {
         "version": "v43.220",
         "date": "2026-10-20",
-        "features": "修复DOMContentLoaded异常导致的基线缺失记录旧值为NaN问题；隔离区对话框列头筛选接入。",
+        "features": "修复基线缺失导致 old_value=NaN 的异常变动提醒；隔离区对话框列头筛选接入。",
         "fixes": "**根因**：data_service.py 基线缺失时仍标记变更，导致 get_audit_changes() 返回旧值为None的记录。**病根**：_restore_read_status 第4步只检查 has_baseline，未验证完整基线，导致基线部分缺失的行也被标记为 changed。**修法**：引入 has_complete_baseline = has_baseline & hist_snap.notna() & hist_note.notna() & hist_yield.notna()，仅对三基线齐全的记录进行变更比对。**验收**：py_compile 无语法错误；测试覆盖；导出Excel中 old_value 不为 NaN，基线缺失记录不再触发变动提醒。**反证**：回退 has_complete_baseline → 大量 old_value=NaN 的记录仍存在；回退后数据正常。",
     },
     {
