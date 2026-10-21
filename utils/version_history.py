@@ -14,10 +14,22 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.228",
+        "date": "2026-10-21",
+        "features": "恢复看板与导出的下拉菜单选项，替代料看板等不再单独按钮，而是通过工具栏按钮显示菜单",
+        "fixes": "**根因**：重构后工具栏按钮缺少下拉菜单，导致所有看板选项和导出选项无法选择。**病根**：LayoutComposer 移除了 QMenu 的创建。**修法**：为 action_btn_boards 和 action_btn_export 按钮添加 QMenu，菜单项包括所有看板（替代料、偏差率预警、负损、正损、隔离区复盘、数据稳定性、替代料长链、物料画像、半成品）和导出选项。**验收**：py_compile 无语法错误；点击工具栏按钮显示下拉菜单，所有选项可点击并打开相应对话框。**反证**：回退菜单添加 → 工具栏按钮点击后无任何菜单出现，功能无法使用。",
+    },
+    {
+        "version": "v43.227",
+        "date": "2026-10-21",
+        "features": "修复 body_splitter 属性缺失错误：将 body_splitter 引用保存到 MainWindow",
+        "fixes": "**根因**：body_splitter 在 LayoutComposer 内部创建后未保存到 MainWindow，导致 _toggle_left_panel() 和 _toggle_filter_panel() 访问时属性缺失。**病根**：UI 组装器创建局部变量未外泄，导致 MainWindow 自身方法无法访问。**修法**：在 assemble() 方法末尾添加 mw.body_splitter = body_area，将 body_splitter 引用保存到主窗口。**验收**：py_compile 无语法错误；程序启动正常，左侧/筛选面板切换功能正常。**反证**：回退 → 程序报 'MainWindow' object has no attribute 'body_splitter'。",
+    },
+    {
         "version": "v43.226",
         "date": "2026-10-21",
-        "features": "修复 top_panel 与 body_splitter 属性缺失错误：将 UI 组件引用保存到 MainWindow",
-        "fixes": "**根因**：LayoutComposer 创建 top_panel 和 body_splitter 后未保存到主窗口，控制器和方法访问时属性缺失。**病根**：UI 组装器创建局部变量未外泄，导致 UISettingsController 和 MainWindow 自身方法无法访问。**修法**：在 _make_body_area() 中创建 top_panel 后添加 mw.top_panel = top_panel；在 assemble() 末尾添加 mw.body_splitter = body_area。**验收**：py_compile 无语法错误；程序启动正常，top_panel 可见性控制与左侧/筛选面板切换功能正常。**反证**：回退 → 程序报 'MainWindow' object has no attribute 'top_panel' 或 'body_splitter'。",
+        "features": "修复 top_panel 属性缺失错误：将 top_panel 引用保存到 MainWindow",
+        "fixes": "**根因**：LayoutComposer 创建 top_panel 后未保存到主窗口，控制器访问时属性缺失。**病根**：UI 组装器创建局部变量未外泄，导致 UISettingsController 无法访问。**修法**：在 _make_body_area() 中创建 top_panel 后，添加 mw.top_panel = top_panel，将引用保存到 MainWindow 对象。**验收**：py_compile 无语法错误；程序启动正常，top_panel 可见性控制功能正常。**反证**：回退 → 程序报 'MainWindow' object has no attribute 'top_panel'。",
     },
     {
         "version": "v43.225",

@@ -10,7 +10,7 @@ Layout 组装器 (LayoutComposer) - 纯 UI 组装，逻辑下沉
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QLabel,
-    QPushButton, QToolButton,
+    QPushButton, QToolButton, QMenu,
 )
 from PySide6.QtCore import Qt
 
@@ -130,6 +130,20 @@ class LayoutComposer:
         mw.action_btn_boards.setStyleSheet(
             "QToolButton { border: none; color: #666; font-size: 12px; padding: 4px 8px; }\n"
             "QToolButton:hover { color: #333; background: #eee; }")
+
+        # 为看板按钮添加下拉菜单
+        mw.action_btn_boards.setPopupMode(QToolButton.MenuButtonPopup)
+        boards_menu = QMenu(mw)
+        boards_menu.addAction("🔔 替代料看板", lambda: mw._show_alert_dashboard())
+        boards_menu.addAction("⚠️ 偏差率预警", lambda: mw._show_deviation_warning_dialog())
+        boards_menu.addAction("📉 负损看板", lambda: mw._show_neg_loss_dashboard())
+        boards_menu.addAction("📈 正损看板", lambda: mw._show_pos_loss_dashboard())
+        boards_menu.addAction("🔒 隔离区复盘", lambda: mw._show_quarantine_review_dashboard())
+        boards_menu.addAction("📋 数据稳定性", lambda: mw._show_data_stability_dashboard())
+        boards_menu.addAction("🔄 替代料长链", lambda: mw._show_alt_chain_dashboard())
+        boards_menu.addAction("🪪 物料画像", lambda: mw._show_material_profile())
+        boards_menu.addAction("🧵 半成品看板", lambda: mw._show_semi_dashboard())
+        mw.action_btn_boards.setMenu(boards_menu)
         action_layout.addWidget(mw.action_btn_boards)
 
         mw.action_btn_export = QToolButton()
@@ -138,6 +152,13 @@ class LayoutComposer:
         mw.action_btn_export.setStyleSheet(
             "QToolButton { border: none; color: #666; font-size: 12px; padding: 4px 8px; }\n"
             "QToolButton:hover { color: #333; background: #eee; }")
+
+        # 为导出按钮添加下拉菜单
+        export_menu = QMenu(mw)
+        export_menu.addAction("📄 导出当前表格", lambda: mw.export_controller.export_current_table(mw.view_model.df, mw))
+        export_menu.addAction("📊 导出完整偏差", lambda: mw._on_export_full_excel())
+        mw.action_btn_export.setMenu(export_menu)
+        mw.action_btn_export.setPopupMode(QToolButton.MenuButtonPopup)
         action_layout.addWidget(mw.action_btn_export)
 
         mw.action_btn_maint = QToolButton()
