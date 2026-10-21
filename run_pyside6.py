@@ -126,8 +126,8 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("ZPP011")
-    from utils.version_history import get_current_version
-    app.setApplicationVersion(get_current_version())
+    from utils.version_history import VERSION_HISTORY
+    app.setApplicationVersion(VERSION_HISTORY[0]['version'])
     app.setOrganizationName("云南达利食品有限公司")
 
     # 设置字体（中文友好）

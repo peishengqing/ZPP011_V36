@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.224",
+        "date": "2026-10-21",
+        "features": "工具栏按钮信号连接修复；pandas 导入缺失修复；启动错误修复。",
+        "fixes": "**根因**：工具栏按钮点击事件未连接；UISettingsController 缺少 pandas 导入；run_pyside6.py 使用已废弃 get_current_version。**病根**：重构后遗漏按钮信号连接；__init__.py 引入新文件但未检查依赖；版本历史管理 refactor 后遗留未清理。**修法**：在 _setup_connections() 中添加 12 个工具栏按钮点击连接；uisettings_controller.py 添加 import pandas as pd；run_pyside6.py 使用 VERSION_HISTORY[0]['version']。**验收**：py_compile 无语法错误；工具栏按钮恢复正常功能；程序启动无 ImportError。**反证**：回退 → 工具栏按钮点击无响应；运行程序报 ImportError。",
+    },
+    {
         "version": "v43.223",
         "date": "2026-10-21",
         "features": "ARC-003 第十刀：创建 FileMonitorController 并迁移文件监控方法，主窗口代码精简完毕。",

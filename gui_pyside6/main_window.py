@@ -479,6 +479,7 @@ class MainWindow(QMainWindow):
         self.main_table.progress_visibility_changed.connect(self._on_progress_visibility_changed)
         self.analysis_controller.analysis_error.connect(self._on_analysis_error_ui)
         self.audit_controller.progress_started.connect(self._on_ai_ui_start)
+
         self.audit_controller.progress_updated.connect(self._on_ai_progress_ui)
         self.audit_controller.progress_finished.connect(self._on_ai_finished_ui)
         self.audit_controller.progress_error.connect(self._on_ai_error_ui)
@@ -495,6 +496,23 @@ class MainWindow(QMainWindow):
         self.main_table.link_banner_cleared.connect(self._clear_link_drilldown)
         self._link_snapshot = None  # 联动钻取前的筛选快照（清除时恢复）
         self._refresh_filter_preset_menu()
+
+        # 分析按钮点击连接（ARC-003 第八刀，必须创建）
+        self.action_btn_analyze.clicked.connect(self._start_analysis)
+
+        # 工具栏信号连接（解决按钮失效问题）
+        self.action_btn_left_panel.clicked.connect(self._toggle_left_panel)
+        self.action_btn_filter.clicked.connect(self._toggle_filter_panel)
+        self.action_btn_col_filter.clicked.connect(self._toggle_col_filter_mode)
+        self.action_btn_boards.clicked.connect(self._show_dashboard)
+        self.action_btn_export.clicked.connect(self._on_export_full_excel)
+        self.action_btn_maint.clicked.connect(self._open_auto_quarantine_rule_dialog)
+        self.action_btn_toggle_stats.clicked.connect(self._toggle_stats_from_toolbar)
+        self.action_btn_toggle_progress.clicked.connect(self._toggle_progress_from_toolbar)
+        self.action_btn_unread_summary.clicked.connect(self._show_unread_summary)
+        self.action_btn_auto_q.clicked.connect(self._auto_move_to_quarantine)
+
+
 
     def _on_title_factory_selected(self, factory_name):
         self._on_factory_changed(factory_name)
@@ -1592,151 +1610,39 @@ class MainWindow(QMainWindow):
     )
 
     def _is_monitor_accepted_file(self, fname):
-        """监控自动加载白名单：该文件名是否应被自动加载。"""
-        base = os.path.basename(fname)
-        if base.startswith("~$"):
-            return False
-        return bool(self._MONITOR_ACCEPT_RE.match(base))
+        """薄壳：文件系统接受规则（ARC-003 第十刀切出到 FileMonitorController）。
+"""
+        return self.file_monitor_controller._is_monitor_accepted_file(fname)
 
     def _toggle_folder_monitor(self, checked):
-        """工具栏/菜单开关：监控 E:/ZPP011导出文件原数据 目录，发现新 Excel 自动加载。"""
-        self._monitor_enabled = checked
-        if checked:
-            # 开始监控：重置稳定性缓存，保留已加载指纹（同名文件重新导出仍可识别）
-            self._monitor_last_size = {}
-            if not os.path.isdir(self._monitor_dir):
-                toast(f"⚠️ 监控目录不存在：{self._monitor_dir}", "warning", parent=self)
-            else:
-                toast(f"👁 已开始监控文件夹：{self._monitor_dir}", "info", parent=self)
-            self._monitor_timer.start()
-        else:
-            self._monitor_timer.stop()
-            toast("⏹ 已停止监控文件夹", "info", parent=self)
+        """薄壳：文件夹监控开关（ARC-003 第十刀切出到 FileMonitorController）。
+"""
+        return self.file_monitor_controller._toggle_folder_monitor(checked)
 
     def _seed_monitor_baseline(self):
-        """默认开启时调用：把当前目录里最新文件登记为基线，避免启动即触发一次分析，
-        之后只有比基线更新的导出文件才会被自动加载。"""
-        d = self._monitor_dir
-        if not os.path.isdir(d):
-            return
-        try:
-            files = [os.path.join(d, f) for f in os.listdir(d)
-                     if f.lower().endswith((".xlsx", ".xls")) and self._is_monitor_accepted_file(f)]
-        except Exception:
-            return
-        if not files:
-            return
-        def _mtime(fp):
-            try:
-                return os.stat(fp).st_mtime
-            except Exception:
-                return 0
-        files.sort(key=_mtime, reverse=True)
-        fp = os.path.normpath(files[0])
-        try:
-            st = os.stat(fp)
-        except Exception:
-            return
-        self._monitor_last_size[fp] = st.st_size
-        self._monitor_loaded.add((fp, int(st.st_mtime), st.st_size))
+        """薄壳：设置监控基线（ARC-003 第十刀切出到 FileMonitorController）。
+"""
+        return self.file_monitor_controller._seed_monitor_baseline()
 
     def _scan_monitor_dir(self):
-        if not self._monitor_enabled:
-            return
-        d = self._monitor_dir
-        if not os.path.isdir(d):
-            return
-        try:
-            files = [os.path.join(d, f) for f in os.listdir(d)
-                     if f.lower().endswith((".xlsx", ".xls")) and self._is_monitor_accepted_file(f)]
-        except Exception:
-            return
-        if not files:
-            return
-        # 只盯「最新」文件：按 mtime 降序取第一个，避免 NTFS 下列出顺序不定导致加载到旧文件
-        def _mtime(fp):
-            try:
-                return os.stat(fp).st_mtime
-            except Exception:
-                return 0
-        files.sort(key=_mtime, reverse=True)
-        fp = os.path.normpath(files[0])
-        try:
-            st = os.stat(fp)
-        except Exception:
-            return
-        # 稳定性判定：与上次的 size 比较，连续两次相同且 >0 视为写完，避免读半截文件
-        prev = self._monitor_last_size.get(fp)
-        if prev is None:
-            self._monitor_last_size[fp] = st.st_size
-            return
-        if prev != st.st_size:
-            self._monitor_last_size[fp] = st.st_size
-            return
-        key = (fp, int(st.st_mtime), st.st_size)
-        if key in self._monitor_loaded:
-            return
-        # 已在等待加载队列中，避免重复排队
-        if key in self._monitor_pending:
-            return
-        # 新稳定文件（且是当前目录最新）-> 延迟加载
-        # 延迟目的：下载工具常自动打开文件预览，用户还没关闭就被监控到，
-        # 立刻加载会因文件被占用而报「被占用」。延迟 5 秒给关闭窗口留时间，
-        # 即使仍被占用，_monitor_try_load 也会自动重试而不直接报错。
-        self._monitor_pending.add(key)
-        toast(f"📥 监控到新文件，{self._monitor_delay_ms // 1000} 秒后自动加载："
-              f"{os.path.basename(fp)}（若已自动打开请先关闭）", "info", parent=self)
-        QTimer.singleShot(self._monitor_delay_ms, lambda: self._monitor_try_load(fp, key))
+        """薄壳：扫描监控目录（ARC-003 第十刀切出到 FileMonitorController）。
+"""
+        return self.file_monitor_controller._scan_monitor_dir()
 
     def _monitor_file_busy(self, fp):
-        """检测文件是否被占用（与 analyzer 的占用判定一致：以 r+b 方式打开尝试）。"""
-        try:
-            with open(fp, "r+b"):
-                pass
-            return False
-        except PermissionError:
-            return True
-        except Exception:
-            return False
+        """薄壳：检测文件占用（ARC-003 第十刀切出到 FileMonitorController）。
+"""
+        return self.file_monitor_controller._monitor_file_busy(fp)
 
     def _monitor_try_load(self, fp, key, attempt=0):
-        """延迟后真正加载：若文件仍被占用（预览窗口未关闭），自动重试若干次；
-        重试耗尽则放弃本次，等下次扫描重新触发，避免直接报「被占用」。"""
-        if not self._monitor_enabled:
-            self._monitor_pending.discard(key)
-            return
-        if self._monitor_file_busy(fp):
-            if attempt < self._monitor_busy_retry:
-                QTimer.singleShot(self._monitor_busy_interval,
-                                  lambda: self._monitor_try_load(fp, key, attempt + 1))
-                return
-            # 重试耗尽：移除排队标记，下次扫描会重新检测到该文件并再次尝试
-            self._monitor_pending.discard(key)
-            toast(f"⚠️ 文件仍被占用，暂未加载：{os.path.basename(fp)}"
-                  f"（关闭预览后将被自动重新检测）", "warning", parent=self)
-            return
-        # 文件可用 -> 正式加载（记录指纹 + 移除排队 + 标记为监控自动加载）
-        self._monitor_pending.discard(key)
-        self._monitor_loaded.add(key)
-        self._monitor_current_key = key
-        self._monitor_auto_loading = True
-        self._auto_load_from_monitor(fp)
+        """薄壳：监控加载重试（ARC-003 第十刀切出到 FileMonitorController）。
+"""
+        return self.file_monitor_controller._monitor_try_load(fp, key, attempt)
 
     def _auto_load_from_monitor(self, fp):
-        """监控到新文件：写入当前输入文件并触发分析加载（复用主流程）。"""
-        fp = os.path.normpath(fp)
-        # 若分析/缓存/导出等重型操作正在进行，稍后重试（避免并发 do_analysis_v2 卡死 UI）
-        if self._heavy_busy or (self.analysis_controller.worker and self.analysis_controller.worker.isRunning()):
-            # 延迟 3 秒再试一次，期间仍视为监控自动加载
-            QTimer.singleShot(3000, lambda: self._auto_load_from_monitor(fp))
-            return
-        self.current_input_file = fp
-        if hasattr(self, "input_file_edit") and self.input_file_edit:
-            self.input_file_edit.setText(os.path.basename(fp))
-            self.input_file_edit.setToolTip(fp)
-        toast(f"📥 监控到新文件，自动加载：{os.path.basename(fp)}", "info", parent=self)
-        self._monitor_auto_loading = True
-        self._start_analysis()
+        """薄壳：监控自动加载（ARC-003 第十刀切出到 FileMonitorController）。
+"""
+        return self.file_monitor_controller._auto_load_from_monitor(fp)
 
 
     # -----------------------------------------------------------

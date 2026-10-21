@@ -4,6 +4,7 @@ UI 设置控制器
 负责：统计卡片更新、进度/状态标签管理、视图可见性控制
 """
 
+import pandas as pd
 import time
 from PySide6.QtCore import QObject, Signal, QTimer
 from PySide6.QtWidgets import QLabel, QProgressBar
