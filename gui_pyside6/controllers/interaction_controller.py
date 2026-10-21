@@ -238,8 +238,11 @@ class InteractionController:
             self.mw.log(f"双击弹窗失败: {e}\n{traceback.format_exc()}", "error")
 
     def _show_row_detail(self, row_data):
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QLabel, QDialogButtonBox
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QLabel, QDialogButtonBox, QPushButton
         from PySide6.QtCore import Qt
+        from PySide6.QtGui import QPixmap, QClipboard
+        import sys
+
         def _val(*keys):
             for k in keys:
                 if k in row_data.index:
@@ -252,21 +255,26 @@ class InteractionController:
                         if not (v is None or (pd.isna(v) if not isinstance(v, str) else False)):
                             return v
             return ""
+
+        # 创建对话框
         dialog = QDialog(self.mw)
         mat_code = _val("物料编码", "物料号")
         mat_name = _val("物料描述", "物料名称", "物料")
         dialog.setWindowTitle(f"明细 - {mat_code} {mat_name}")
         dialog.setMinimumWidth(520)
         layout = QVBoxLayout(dialog)
+
         def _mk_label(text=""):
             lbl = QLabel(str(text))
             lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
             return lbl
+
         gb1 = QGroupBox("基本信息")
         fl1 = QFormLayout(gb1)
         for label, keys in [("工厂", ["工厂", "工厂名称"]), ("车间", ["车间"]), ("订单日期", ["订单日期"]), ("流程订单", ["流程订单"]), ("物料编码", ["物料编码", "物料号"]), ("物料描述", ["物料描述", "物料名称"]), ("组件物料类型", ["组件物料类型"]), ("组件物料类型描述", ["组件物料类型描述"])]:
             fl1.addRow(f"{label}：", _mk_label(_val(*keys)))
         layout.addWidget(gb1)
+
         gb2 = QGroupBox("偏差数据")
         fl2 = QFormLayout(gb2)
         for label, keys in [("定额用量", ["定额"]), ("实际用量", ["实际"]), ("偏差数量", ["偏差数量"]), ("偏差率", ["偏差率", "偏差率(%)"]), ("偏差金额", ["偏差金额"]), ("总偏差金额(含税)", ["总偏差金额(含税)", "偏差金额"]), ("审核结果", ["审核结果", "audit_result"]), ("备注来源", ["备注来源"])]:
@@ -279,13 +287,38 @@ class InteractionController:
                     logging.warning("偏差率格式转换失败: %s", e)
             fl2.addRow(f"{label}：", _mk_label(display))
         layout.addWidget(gb2)
+
         gb3 = QGroupBox("备注与建议")
         fl3 = QFormLayout(gb3)
         remark_label = _mk_label(_val("备注原因", "备注"))
         remark_label.setWordWrap(True)
         fl3.addRow("备注：", remark_label)
         layout.addWidget(gb3)
+
+        # 按钮区域：复制图片 + OK
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+
+        # 复制图片按钮
+        copy_img_btn = QPushButton("📋 复制图片")
+        def _copy_dialog_as_image():
+            # 捕获对话框的屏幕图像
+            try:
+                pixmap = QPixmap.grabWindow(dialog.winId())
+                # 复制到剪贴板
+                QApplication.clipboard().setPixmap(pixmap)
+                # 显示提示
+                self.mw.statusBar().showMessage("已复制到剪贴板", 2000)
+            except Exception as e:
+                self.mw.statusBar().showMessage(f"复制图片失败: {e}", 5000)
+
+        copy_img_btn.clicked.connect(_copy_dialog_as_image)
+        btn_layout.addWidget(copy_img_btn)
+
+        # OK 按钮
         btn = QDialogButtonBox(QDialogButtonBox.Ok)
         btn.accepted.connect(dialog.accept)
-        layout.addWidget(btn)
+        btn_layout.addWidget(btn)
+
+        layout.addLayout(btn_layout)
         dialog.exec()
