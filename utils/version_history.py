@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.225",
+        "date": "2026-10-21",
+        "features": "修复按钮属性不存在错误：调整 UI 初始化顺序",
+        "fixes": "**根因**：_setup_connections() 在 _assemble_layout() 之前调用，导致按钮属性不存在。**病根**：顺序错误导致 signal slot 连接失败。**修法**：调整调用顺序，先 _assemble_layout() 创建按钮，再 _setup_connections() 连接信号。**验收**：py_compile 无语法错误；程序启动正常，工具栏按钮点击有效。**反证**：回退顺序 → 程序崩溃报 'MainWindow' object has no attribute 'action_btn_analyze'。",
+    },
+    {
         "version": "v43.224",
         "date": "2026-10-21",
         "features": "工具栏按钮信号连接修复；pandas 导入缺失修复；启动错误修复。",

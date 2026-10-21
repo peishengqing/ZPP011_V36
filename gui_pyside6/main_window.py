@@ -412,12 +412,12 @@ class MainWindow(QMainWindow):
         # 初始化表格模型
         self._init_table_model()
 
-        # 连接按钮信号
+        # 组装布局（必须在 show 之前，且必须先于 _setup_connections，因为按钮由 LayoutComposer 创建）
+        self._assemble_layout()
+
+        # 连接按钮信号（必须在布局组装之后，因为按钮是由布局组件创建的）
         self._setup_connections()
         self._setup_shortcuts()
-
-        # 组装布局（必须在 show 之前）
-        self._assemble_layout()
 
         # 加载亮色主题（在所有组件创建和布局组装之后，show 之前）
         self._is_dark_theme = False
