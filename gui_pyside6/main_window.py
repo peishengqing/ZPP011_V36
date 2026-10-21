@@ -2561,7 +2561,19 @@ class MainWindow(QMainWindow):
                             v = ''
                         return str(v).strip()
                 return ''
-            order = get_col('流程订单', 'order', 'SAP订单')
+            order = get_col('流程订单', 'order', 'SAP订单', '订单号')
+            # 日期使用订单号，或者获取订单中的日期部分，如果没有则显示今天
+            from datetime import datetime
+            date_val = get_col('订单日期', 'order_date', 'date')
+            if not date_val:
+                # 尝试从流程订单中提取 (比如 "SAP20260512001" -> 2026-05-12)
+                import re
+                match = re.search(r'\d{8}', order)
+                if match:
+                    d = match.group()
+                    date_val = f"{d[:4]}-{d[4:6]}-{d[6:]}"
+                else:
+                    date_val = datetime.now().strftime("%Y-%m-%d")
             code = get_col('物料编码', '物料号', 'code', '组件物料号')
             name = get_col('物料名称', '物料描述', 'name', '组件物料描述')[:20]
             quota = get_col('定额', '标准用量')
@@ -2570,7 +2582,8 @@ class MainWindow(QMainWindow):
             dev_rate = get_col('偏差率(%)', 'deviation_rate', '偏差率') or get_col('偏差率', '')
             dev_amt = get_col('偏差金额(含税)', '偏差金额')
             remark = get_col('备注', '备注原因')
-            lines.append(f"订单：{order}")
+            lines.append(f"订单日期：{date_val}")
+            lines.append(f"订单号：{order}")
             lines.append(f"物料：{code} {name}")
             lines.append(f"定额：{quota}，实际：{actual}，偏差数量：{dev_qty}")
             if dev_rate:
