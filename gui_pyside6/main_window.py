@@ -2735,6 +2735,7 @@ class MainWindow(QMainWindow):
     # 双击明细
     # -----------------------------------------------------------
     def _on_cell_double_clicked(self, index):
+        self.log("双击事件触发：index={}".format(index), "info")
         return self.interaction_controller._on_cell_double_clicked(index)
 
     def _show_row_detail(self, row_data):

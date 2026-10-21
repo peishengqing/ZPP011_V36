@@ -221,16 +221,20 @@ class InteractionController:
         self.mw.statusBar().showMessage(f"已复制 {max_row - min_row + 1} 行 × {max_col - min_col + 1} 列", 2000)
 
     def _on_cell_double_clicked(self, index: Any):
+        import logging
+        self.mw.log("InteractionController: _on_cell_double_clicked 被调用", "info")
         try:
             if self.mw.proxy_model and self.mw.source_model:
                 source_index = self.mw.proxy_model.mapToSource(index)
                 row = source_index.row()
                 df = self.mw.source_model.getDataFrame()
+                self.mw.log(f"双击: row={row}, len(df)={len(df)}", "info")
                 if row < len(df):
                     row_data = df.iloc[row]
+                    self.mw.log(f"双击: 找到行数据，调用_show_row_detail", "info")
                     self.mw._show_row_detail(row_data)
                 else:
-                    self.mw.log(f"双击弹窗: row={row} 超出范围 len={len(df)}", "warn")
+                    self.mw.log(f"双击弹窗失败: row={row} 超出范围 len={len(df)}", "warn")
             else:
                 self.mw.log(f"双击弹窗失败: proxy_model={self.mw.proxy_model}, source_model={self.mw.source_model}", "error")
         except Exception as e:
