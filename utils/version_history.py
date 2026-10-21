@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.229",
+        "date": "2026-10-21",
+        "features": "修复 QDialog 创建时父容器传递错误：将 QDialog(self) 改为 QDialog(self.mw)",
+        "fixes": "**根因**：ColumnController 和 DashboardController 中创建的 QDialog 使用 self 作为父容器，但控制器不是 QWidget，导致错误。**病根**：控制器类是纯 Python 类，不是 QWidget 子类，不能作为 QDialog 的父容器。**修法**：将所有 QDialog(self) 改为 QDialog(self.mw)。**验收**：py_compile 无语法错误；程序启动正常，弹窗工作正常。**反证**：回退 → 程序崩溃报 'PySide6.QtWidgets.QWidget.__init__' called with wrong argument types'。",
+    },
+    {
         "version": "v43.228",
         "date": "2026-10-21",
         "features": "恢复看板与导出的下拉菜单选项，替代料看板等不再单独按钮，而是通过工具栏按钮显示菜单",

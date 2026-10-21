@@ -342,7 +342,7 @@ class DashboardController:
         count = len(detail_df)
 
         # 创建窗口
-        dialog = QDialog(self)
+        dialog = QDialog(self.mw)
         dialog.setWindowTitle(f"{category} — {count} 条物料明细")
         dialog.resize(1000, 500)
         layout = QVBoxLayout(dialog)

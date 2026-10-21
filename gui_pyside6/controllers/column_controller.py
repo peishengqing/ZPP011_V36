@@ -80,7 +80,7 @@ class ColumnController:
                 continue
             cols_info.append((col, name))
 
-        dialog = QDialog(self)
+        dialog = QDialog(self.mw)
         dialog.setWindowTitle("隐藏/显示列")
         dialog.setMinimumWidth(380)
         layout = QVBoxLayout(dialog)
