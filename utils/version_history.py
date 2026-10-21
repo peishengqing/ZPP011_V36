@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.223",
+        "date": "2026-10-21",
+        "features": "ARC-003 第十刀：创建 FileMonitorController 并迁移文件监控方法，主窗口代码精简完毕。",
+        "fixes": "**根因**：MainWindow 仍有文件监控、自动加载等逻辑，职责分散。**病根**：文件夹监控、占用检测、自动加载等文件监控相关逻辑散落在主窗口，耦合严重。**修法**：新建 FileMonitorController，迁移 8 个文件监控相关方法。**验收**：py_compile + pyflakes 零新增；主窗口代码从 3,739 行降至 3,284 行，减少 455 行。**反证**：回退迁移 → 主窗口再次变回 God Object，监控逻辑散乱。",
+    },
+    {
         "version": "v43.222",
         "date": "2026-10-20",
         "features": "MainWindow 重构继续：迁移 UI 状态更新控制器，料对管理全到 AltController。",

@@ -87,6 +87,8 @@ from gui_pyside6.controllers.semi_category_controller import SemiCategoryControl
 from gui_pyside6.controllers.interaction_controller import InteractionController
 from gui_pyside6.controllers.quarantine_manager_controller import QuarantineManagerController
 from gui_pyside6.controllers.uisettings_controller import UISettingsController
+from gui_pyside6.controllers.ppt_controller import PptController
+from gui_pyside6.controllers.file_monitor_controller import FileMonitorController
 
 
 class _PptViewShim:
@@ -323,6 +325,10 @@ class MainWindow(QMainWindow):
         self.quarantine_manager_controller = QuarantineManagerController(self)
         # ARC-003 第八刀：UI 状态更新职责已切出到 UISettingsController
         self.ui_settings_controller = UISettingsController(self)
+        # ARC-003 第九刀：PPT 报告职责已切出到 PptController
+        self.ppt_controller = PptController(self)
+        # ARC-003 第十刀：文件监控职责已切出到 FileMonitorController
+        self.file_monitor_controller = FileMonitorController(self)
         self.data_service = DataService(self.alt_controller)
         self.data_service.log_signal.connect(self._on_data_service_log)
 
@@ -2789,126 +2795,40 @@ class MainWindow(QMainWindow):
         return f"{m:02d}:{s:02d}"
 
     def _generate_ppt_report(self):
-        """生成 PPT 偏差分析报告（后台线程，完成后弹窗，界面不冻结）。"""
-        if self.view_model.df is None or self.view_model.df.empty:
-            QMessageBox.warning(self, "提示", "请先完成分析，暂无数据可生成 PPT")
-            return
-        default_name = f"ZPP011偏差分析_{datetime.now():%Y%m%d_%H%M}.pptx"
-        default_dir = os.path.join(os.path.expanduser('~'), 'Documents', 'ZPP011分析报告')
-        os.makedirs(default_dir, exist_ok=True)
-        save_path, _ = QFileDialog.getSaveFileName(
-            self, "生成 PPT 报告", os.path.join(default_dir, default_name),
-            "PPT files (*.pptx)",
-        )
-        if not save_path:
-            return
-        if not save_path.lower().endswith('.pptx'):
-            save_path += '.pptx'
-        # PPT 生成较慢且在后台线程落盘，先确认目标文件没被 PowerPoint 占着
-        from gui_pyside6.save_guard import precheck_save_path
-        save_path = precheck_save_path(self, save_path, what="PPT 报告")
-        if not save_path:
-            self.log("PPT 生成已取消（目标文件被占用）", "warning")
-            return
-
-        # 进度条（非模态，不锁界面；PPT 生成本身不可中断，故不提供取消按钮）
-        self._ppt_progress = QProgressDialog("正在生成 PPT 报告...", None, 0, 100, self)
-        self._ppt_progress.setWindowTitle("生成中")
-        self._ppt_progress.setWindowModality(Qt.NonModal)
-        self._ppt_progress.setMinimumDuration(0)
-        self._ppt_progress.setCancelButton(None)
-        self._ppt_progress.show()
-
-        src_name = None
-        ap = getattr(self, 'analysis_params', None)
-        if ap and ap.get('output_path'):
-            src_name = os.path.basename(ap['output_path'])
-        self._ppt_worker = _PptReportWorker(
-            self.view_model.df.copy(), save_path, src_name)
-        self._ppt_worker.progress.connect(
-            lambda p, s: (self._ppt_progress.setValue(p), self._ppt_progress.setLabelText(s))
-        )
-        self._ppt_worker._log.connect(lambda m, lvl: self.log(m, lvl))
-        self._ppt_worker.finished_ok.connect(self._on_ppt_done)
-        self._ppt_worker.failed.connect(self._on_ppt_fail)
-        self._ppt_worker.start()
+        """薄壳：PPT 生成入口（ARC-003 第九刀切出到 PptController）。"""
+        return self.ppt_controller._generate_ppt_report()
 
     def _on_ppt_done(self, path):
-        if hasattr(self, '_ppt_progress'):
-            self._ppt_progress.setValue(100)
-            self._ppt_progress.close()
-        if QMessageBox.question(
-            self, "生成成功",
-            f"PPT 报告已生成：\n{path}\n\n是否立即打开？"
-        ) == QMessageBox.Yes:
-            _open_file(path)
-        self.log(f"已生成 PPT 报告：{path}", "info")
+        """薄壳：PPT 完成回调（ARC-003 第九刀切出到 PptController）。"""
+        return self.ppt_controller._on_ppt_done(path)
 
     def _on_ppt_fail(self, err):
-        if hasattr(self, '_ppt_progress'):
-            self._ppt_progress.close()
-        QMessageBox.critical(self, "错误", f"生成 PPT 失败：{err}")
-        self.log(f"生成 PPT 失败：{err}", "error")
+        """薄壳：PPT 失败回调（ARC-003 第九刀切出到 PptController）。"""
+        return self.ppt_controller._on_ppt_fail(err)
 
     def _resolve_smart_ppt_excel(self):
-        """智能PPT 取数：优先用最近分析生成的完整报告缓存；没有则返回 None（由控制器弹框手选）。"""
-        cp = getattr(self, '_full_analysis_cache_path', None)
-        if cp and os.path.exists(cp):
-            return cp
-        ap = getattr(self, 'analysis_output_path', None)
-        if ap and os.path.exists(ap):
-            return ap
-        return None
+        """薄壳：智能 PPT 取数（ARC-003 第九刀切出到 PptController）。"""
+        return self.ppt_controller._resolve_smart_ppt_excel()
 
     def _generate_smart_ppt_simple(self):
-        """智能PPT(试用) — 分厂版(9页)。底层 core/ppt_trae.py（TRAE 版式），需完整分析 Excel。"""
-        if self.view_model.df is None or self.view_model.df.empty:
-            QMessageBox.warning(self, "提示", "请先完成分析，暂无数据可生成 PPT")
-            return
-        excel_path = self._resolve_smart_ppt_excel()
-        self.export_controller.generate_simple_ppt(
-            self.view_model.df, excel_path, None, self, log_cb=self.log)
+        """薄壳：分厂版智能 PPT（ARC-003 第九刀切出到 PptController）。"""
+        return self.ppt_controller._generate_smart_ppt_simple()
 
     def _generate_smart_ppt_pro(self):
-        """智能PPT(试用) — 专业版(20+页)。底层 advanced_ppt_generator_v2，需完整分析 Excel。"""
-        if self.view_model.df is None or self.view_model.df.empty:
-            QMessageBox.warning(self, "提示", "请先完成分析，暂无数据可生成 PPT")
-            return
-        excel_path = self._resolve_smart_ppt_excel()
-        self.export_controller.generate_advanced_report(
-            self.view_model.df, excel_path, None, self, log_cb=self.log)
+        """薄壳：专业版智能 PPT（ARC-003 第九刀切出到 PptController）。"""
+        return self.ppt_controller._generate_smart_ppt_pro()
 
     def _open_guizang_magazine(self):
-        """归藏-Magazine（网页版）— 电子杂志风横滑报告。
-
-        与智能PPT入口同一取数逻辑：优先用最近分析生成的完整报告缓存，
-        没有则弹框手选分析结果 Excel；数字每次实时计算注入模板（动态版）。
-        """
-        self._open_guizang("magazine")
+        """薄壳：归藏-Magazine（ARC-003 第九刀切出到 PptController）。"""
+        return self.ppt_controller._open_guizang_magazine()
 
     def _open_guizang_swiss(self):
-        """归藏-Swiss（网页版）— 瑞士国际主义风横滑报告。同样为动态注入版。"""
-        self._open_guizang("swiss")
+        """薄壳：归藏-Swiss（ARC-003 第九刀切出到 PptController）。"""
+        return self.ppt_controller._open_guizang_swiss()
 
     def _open_guizang(self, style):
-        """打开归藏网页版报告窗（动态注入：从分析结果 Excel 实时算数渲染）。
-
-        QtWebEngine 由 GuizangDialog 内部延迟加载；报告构建走后台 QThread。
-        """
-        try:
-            from gui_pyside6.dialogs.guizang_dialog import GuizangDialog
-            excel_path = self._resolve_smart_ppt_excel()
-            if not excel_path:
-                excel_path, _ = QFileDialog.getOpenFileName(
-                    self, "请选择分析结果 Excel 文件", "", "Excel files (*.xlsx)"
-                )
-                if not excel_path:
-                    return
-            dlg = GuizangDialog(style, excel_path, parent=self, main_window=self)
-            dlg.exec()
-        except Exception as e:  # noqa: BLE001
-            self.log(f"打开归藏报告失败：{e}", "error")
-            QMessageBox.critical(self, "打开失败", f"无法打开归藏报告：\n{e}")
+        """薄壳：归藏报告通用方法（ARC-003 第九刀切出到 PptController）。"""
+        return self.ppt_controller._open_guizang(style)
 
     def _show_health_check(self):
         dialog = HealthCheckDialog(self)
