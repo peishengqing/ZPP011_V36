@@ -16,8 +16,8 @@ VERSION_HISTORY = [
     {
         "version": "v43.226",
         "date": "2026-10-21",
-        "features": "修复 top_panel 属性缺失错误：将 top_panel 引用保存到 MainWindow",
-        "fixes": "**根因**：LayoutComposer 创建 top_panel 后未保存到主窗口，控制器访问时属性缺失。**病根**：UI 组装器创建局部变量未外泄，导致 UISettingsController 无法访问。**修法**：在 _make_body_area() 中创建 top_panel 后，添加 mw.top_panel = top_panel，将引用保存到 MainWindow 对象。**验收**：py_compile 无语法错误；程序启动正常，top_panel 可见性控制功能正常。**反证**：回退 → 程序报 'MainWindow' object has no attribute 'top_panel'。",
+        "features": "修复 top_panel 与 body_splitter 属性缺失错误：将 UI 组件引用保存到 MainWindow",
+        "fixes": "**根因**：LayoutComposer 创建 top_panel 和 body_splitter 后未保存到主窗口，控制器和方法访问时属性缺失。**病根**：UI 组装器创建局部变量未外泄，导致 UISettingsController 和 MainWindow 自身方法无法访问。**修法**：在 _make_body_area() 中创建 top_panel 后添加 mw.top_panel = top_panel；在 assemble() 末尾添加 mw.body_splitter = body_area。**验收**：py_compile 无语法错误；程序启动正常，top_panel 可见性控制与左侧/筛选面板切换功能正常。**反证**：回退 → 程序报 'MainWindow' object has no attribute 'top_panel' 或 'body_splitter'。",
     },
     {
         "version": "v43.225",

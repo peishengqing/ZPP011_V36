@@ -50,6 +50,9 @@ class LayoutComposer:
         body_area = self._make_body_area(mw)
         main_layout.addWidget(body_area, 1)
 
+        # 将 body_splitter 引用保存到主窗口，供控制器和外部的 _toggle_left_panel/_toggle_filter_panel 访问
+        mw.body_splitter = body_area
+
         self.compiled = True
         return central
 
