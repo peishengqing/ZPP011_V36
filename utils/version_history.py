@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.226",
+        "date": "2026-10-21",
+        "features": "修复 top_panel 属性缺失错误：将 top_panel 引用保存到 MainWindow",
+        "fixes": "**根因**：LayoutComposer 创建 top_panel 后未保存到主窗口，控制器访问时属性缺失。**病根**：UI 组装器创建局部变量未外泄，导致 UISettingsController 无法访问。**修法**：在 _make_body_area() 中创建 top_panel 后，添加 mw.top_panel = top_panel，将引用保存到 MainWindow 对象。**验收**：py_compile 无语法错误；程序启动正常，top_panel 可见性控制功能正常。**反证**：回退 → 程序报 'MainWindow' object has no attribute 'top_panel'。",
+    },
+    {
         "version": "v43.225",
         "date": "2026-10-21",
         "features": "修复按钮属性不存在错误：调整 UI 初始化顺序",

@@ -230,6 +230,9 @@ class LayoutComposer:
         top_layout.addWidget(mw.main_table.progress_group)  # ⚡ 分析进度
         top_panel.setMaximumHeight(240)                       # 限制最大高度，不抢表格空间
 
+        # 将 top_panel 引用保存到主窗口，以便控制器访问
+        mw.top_panel = top_panel
+
         # 垂直分割器：仅表格（运行日志已移除，空间全部给表格）
         _v_splitter = QSplitter(Qt.Vertical)
         _v_splitter.setChildrenCollapsible(True)
