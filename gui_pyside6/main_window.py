@@ -2532,9 +2532,59 @@ class MainWindow(QMainWindow):
         menu.addSeparator()
         repair_action = menu.addAction("🔧 修复隔离区一致性（补写库内缺失行）")
         repair_action.triggered.connect(lambda: self._repair_quarantine_consistency())
+        # 复制为微信草稿（用于快速沟通）
+        wechat_action = menu.addAction("📋 复制为微信草稿")
+        wechat_action.triggered.connect(lambda: self._copy_wechat_draft(selected_rows))
+        # 复制选中区域（原功能保留）
         copy_region_action = menu.addAction("复制选中区域")
         copy_region_action.triggered.connect(self.copy_selected_cells)
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
+
+    def _copy_wechat_draft(self, rows):
+        """将选中行整理成微信沟通草稿，复制到剪贴板"""
+        if not rows or self.source_model is None:
+            return
+        df = self.source_model.getDataFrame()
+        if df is None or df.empty:
+            return
+        lines = ["【偏差沟通】"]
+        for row in rows[:10]:
+            if row >= len(df):
+                continue
+            r = df.iloc[row]
+            # 兼容多种列名
+            def get_col(*keys):
+                for k in keys:
+                    if k in df.columns:
+                        v = r.get(k, '')
+                        if v is None:
+                            v = ''
+                        return str(v).strip()
+                return ''
+            order = get_col('流程订单', 'order', 'SAP订单')
+            code = get_col('物料编码', '物料号', 'code', '组件物料号')
+            name = get_col('物料名称', '物料描述', 'name', '组件物料描述')[:20]
+            quota = get_col('定额', '标准用量')
+            actual = get_col('实际', '实际用量')
+            dev_qty = get_col('偏差数量', 'dev_qty')
+            dev_rate = get_col('偏差率(%)', 'deviation_rate', '偏差率') or get_col('偏差率', '')
+            dev_amt = get_col('偏差金额(含税)', '偏差金额')
+            remark = get_col('备注', '备注原因')
+            lines.append(f"订单：{order}")
+            lines.append(f"物料：{code} {name}")
+            lines.append(f"定额：{quota}，实际：{actual}，偏差数量：{dev_qty}")
+            if dev_rate:
+                lines.append(f"偏差率：{dev_rate}%")
+            if dev_amt:
+                lines.append(f"偏差金额：¥{dev_amt}")
+            lines.append(f"备注：{remark or '无'}")
+            lines.append("")
+        if len(rows) > 10:
+            lines.append(f"... 共 {len(rows)} 条，仅显示前10条")
+        lines.append("请核实处理，谢谢！")
+        text = "\n".join(lines)
+        QApplication.clipboard().setText(text)
+        self.statusBar().showMessage(f"已复制 {len(rows)} 条记录的微信草稿", 3000)
 
     def _get_displayed_dataframe(self):
         """返回当前主表筛选+排序后「正在显示」的数据（按显示顺序）。
