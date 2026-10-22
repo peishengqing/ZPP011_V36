@@ -815,8 +815,15 @@ class QuarantineDialog(QDialog):
         """切换单条隔离记录的豁免状态"""
         is_ex = self._is_row_exempted(uid)
         set_exempted(uid, not is_ex)
-        # 刷新当前表
-        self._apply_list_filters()
+        # 直接更新内存中的数据，然后重新渲染表格
+        if hasattr(self, 'full_df') and self.full_df is not None:
+            mask = self.full_df['data_id'].astype(str) == uid
+            if mask.any():
+                self.full_df.loc[mask, '豁免'] = "是" if not is_ex else ""
+                self._render_table(self.full_df.copy())
+        else:
+            # 降级：重新加载
+            self._apply_list_filters()
         # 更新菜单文本显示
         msg = "↩ 已取消豁免" if is_ex else "✅ 已标记为已豁免"
         toast(f"{msg} {uid}", parent=self)
