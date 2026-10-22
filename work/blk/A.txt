@@ -1,0 +1,121 @@
+﻿# ---- 1.1 / 2.1 大类汇总（通用：左侧表格 + 右侧 TOP 面板，可分页）----
+def _class_summary_rows(m1_df, m2_df, factory: str):
+    """返回 (rows, t1, t2, g1, g2)：大类取两月并集、按较新月金额降序；rows 不含合计行。"""
+    if factory == FOOD_LABEL:
+        d1, _ = split_food_bev(m1_df)
+        d2, _ = split_food_bev(m2_df)
+    else:
+        _, d1 = split_food_bev(m1_df)
+        _, d2 = split_food_bev(m2_df)
+    g1 = d1.groupby("大类")["合计积压金额"].sum()
+    g2 = d2.groupby("大类")["合计积压金额"].sum()
+    cats = sorted(set(g1.index) | set(g2.index),
+                  key=lambda c: (float(g2.get(c, 0)), float(g1.get(c, 0))), reverse=True)
+    rows = []
+    for k in cats:
+        v1 = float(g1.get(k, 0))
+        v2 = float(g2.get(k, 0))
+        share = v2 / g2.sum() * 100 if g2.sum() else 0.0
+        rows.append([k, _to_wan(v1), _to_wan(v2), _to_wan(v2 - v1), _pct(v2, v1), f"{share:.2f}%"])
+    t1 = float(g1.sum())
+    t2 = float(g2.sum())
+    return rows, t1, t2, g1, g2
+
+
+def _paginate_simple(rows, max_rows):
+    """无分组结构时按固定行数切页；空表返回一个空页（占位用）。"""
+    return [rows[i:i + max_rows] for i in range(0, len(rows), max_rows)] or [[]]
+
+
+def _info_card(slide, x, y, w, h, title: str, lines, size: int = 10) -> None:
+    """浅色信息卡：标题 + 若干着色文本行。lines 元素: (text, color) 或 (text, color, bold)。"""
+    card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, y, w, h)
+    card.fill.solid()
+    card.fill.fore_color.rgb = C_CARD_BG
+    card.line.color.rgb = C_CARD_LINE
+    card.line.width = Pt(0.75)
+    tb = slide.shapes.add_textbox(x + Inches(0.18), y + Inches(0.12), w - Inches(0.36), h - Inches(0.24))
+    tf = tb.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    r = p.add_run()
+    _set_run(r, title, size=12, bold=True, color=C_DARK_BLUE)
+    for item in lines:
+        txt, color = item[0], item[1]
+        bold = item[2] if len(item) > 2 else color in (C_UP, C_DOWN)
+        pi = tf.add_paragraph()
+        pi.space_before = Pt(5)
+        ri = pi.add_run()
+        _set_run(ri, txt, size=size, color=color, bold=bold)
+
+
+def _add_top_panel(slide, g1, g2, month2: str) -> None:
+    """大类汇总页右侧面板：TOP 大类 + 环比涨幅/降幅 TOP。"""
+    px, pw = Inches(8.75), Inches(4.25)
+    cats_all = sorted(set(g1.index) | set(g2.index),
+                      key=lambda c: (float(g2.get(c, 0)), float(g1.get(c, 0))), reverse=True)
+    tot2 = float(g2.sum())
+    top3 = [(c, float(g2.get(c, 0))) for c in cats_all if float(g2.get(c, 0)) > 0][:3]
+    lines = []
+    if top3:
+        for i, (c, v) in enumerate(top3, 1):
+            share = v / tot2 * 100 if tot2 else 0.0
+            lines.append((f"TOP{i}　{c}　{v / WAN:,.2f} 万（{share:.1f}%）", C_BODY_FG))
+    else:
+        lines.append(("本月无大类积压数据", C_SUB_FG))
+    _info_card(slide, px, Inches(1.05), pw, Inches(2.1), f"{month2} TOP 大类", lines)
+
+    deltas = [(c, float(g2.get(c, 0)) - float(g1.get(c, 0))) for c in cats_all]
+    up = sorted([x for x in deltas if x[1] > 1e-9], key=lambda x: -x[1])
+    dn = sorted([x for x in deltas if x[1] < -1e-9], key=lambda x: x[1])
+    lines2 = [("环比涨幅 TOP", C_SUB_FG)]
+    if up:
+        c, dv = up[0]
+        lines2.append((f"▲ {c}　+{dv / WAN:,.2f} 万（{_pct(float(g2.get(c, 0)), float(g1.get(c, 0)))}）", C_UP))
+    else:
+        lines2.append(("本月无上升大类", C_SUB_FG))
+    lines2.append(("　", C_SUB_FG))
+    lines2.append(("环比降幅 TOP", C_SUB_FG))
+    if dn:
+        c, dv = dn[0]
+        lines2.append((f"▼ {c}　{dv / WAN:,.2f} 万（{_pct(float(g2.get(c, 0)), float(g1.get(c, 0)))}）", C_DOWN))
+    else:
+        lines2.append(("本月无下降大类", C_SUB_FG))
+    _info_card(slide, px, Inches(3.35), pw, Inches(2.4), "环比变动", lines2)
+
+
+def add_class_summary_pages(prs, pages, t1, t2, g1, g2, month1, month2, page_no, page_total,
+                            chapter: str, factory: str):
+    """大类汇总页（可多页）：首页带 TOP 面板，末页带合计行 + KPI 条。"""
+    headers = ["大类", f"{month1}（万）", f"{month2}（万）", "环比增长（万）", "环比增长率", f"{month2}占比"]
+    n = len(pages)
+    for pi, pg in enumerate(pages):
+        slide = _slide(prs)
+        title = f"{chapter} {factory}按大类汇总（{month1} vs {month2}）"
+        if pi > 0:
+            title += f"（续{pi + 1}）"
+        add_title_bar(slide, title, page_no + pi, page_total)
+        pg_rows = [list(r) for r in pg]
+        if pi == n - 1:
+            _tot_pct = "100.00%" if t2 > 0 else "—"
+            pg_rows.append((["合计", _to_wan(t1), _to_wan(t2), _to_wan(t2 - t1),
+                             _pct(t2, t1), _tot_pct], True))
+        add_table(slide, headers, pg_rows, left=Inches(0.3), width=Inches(8.15),
+                  col_ratios=[1.6, 1.0, 1.0, 1.15, 1.1, 1.0],
+                  left_cols={0}, delta_cols={3, 4}, bottom_limit=Inches(6.4))
+        if pi == 0 and n == 1:
+            _add_top_panel(slide, g1, g2, month2)
+        if pi == n - 1:
+            add_kpi_row(slide, [
+                (f"{factory}总额", f"{_to_wan(t2)} 万"),
+                ("环比变动", f"{(t2 - t1) / WAN:+,.2f} 万", t2 - t1),
+                ("环比增长率", _pct(t2, t1), t2 - t1),
+            ])
+
+
+def add_food_class_summary(prs, m1_df, m2_df, month1, month2, slide_num, total):
+    """兼容旧接口：转通用大类汇总（食品）。"""
+    rows, t1, t2, g1, g2 = _class_summary_rows(m1_df, m2_df, FOOD_LABEL)
+    add_class_summary_pages(prs, _paginate_simple(rows, MAX_ROWS_PER_PAGE),
+                            t1, t2, g1, g2, month1, month2, slide_num, total,
+                            "1.1", FOOD_LABEL)

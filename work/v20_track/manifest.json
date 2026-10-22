@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "backend": "native",
+  "rasterEngine": "libreoffice",
+  "source": "saved",
+  "inputPath": "H:\\zpp011_v2\\work\\v20_8月vs9月.pptx",
+  "sourceSha256": "c77801e16c4e59b83ee0f2f0b2421e9f4c87cb0a0a0213e5d3aa2e99268c4484",
+  "dpi": 110,
+  "pageCount": 30,
+  "images": [
+    {
+      "index": 1,
+      "page": 12,
+      "path": "H:\\zpp011_v2\\work\\v20_track\\page-0001.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 69640
+    },
+    {
+      "index": 2,
+      "page": 13,
+      "path": "H:\\zpp011_v2\\work\\v20_track\\page-0002.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 120947
+    },
+    {
+      "index": 3,
+      "page": 14,
+      "path": "H:\\zpp011_v2\\work\\v20_track\\page-0003.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 101713
+    },
+    {
+      "index": 4,
+      "page": 24,
+      "path": "H:\\zpp011_v2\\work\\v20_track\\page-0004.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 43656
+    },
+    {
+      "index": 5,
+      "page": 25,
+      "path": "H:\\zpp011_v2\\work\\v20_track\\page-0005.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 69054
+    },
+    {
+      "index": 6,
+      "page": 26,
+      "path": "H:\\zpp011_v2\\work\\v20_track\\page-0006.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 92776
+    }
+  ],
+  "missingFonts": []
+}

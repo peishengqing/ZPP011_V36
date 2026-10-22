@@ -26,6 +26,7 @@ from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
 
 _HIDDEN_INTERNAL = ['_read', 'data_id', '_quarantined', '_post_audit_changed', 'fingerprint']
+# 注意：'exempt' 不在隐藏列表中，因为我们需要在表格中显示它
 
 
 class QuarantineDialog(QDialog):
@@ -262,10 +263,11 @@ class QuarantineDialog(QDialog):
         df = df.copy()
         if "_read" not in df.columns:
             df["_read"] = 0
-        # 回填隔离原因（存于 quarantine_manager 的 SQLite，主表不存副本）
+        # 回填隔离原因和豁免状态（存于 quarantine_manager 的 SQLite）
         try:
             recs = get_quarantine_records()
             reason_map = {str(r['uid']): (r.get('reason') or '') for r in recs}
+            exempted_map = {str(r['uid']): r.get('exempted', False) for r in recs}
             df['隔离原因'] = df['data_id'].astype(str).map(reason_map)
             df['隔离原因'] = df['隔离原因'].fillna('').replace('', '（未填写原因）')
             # 简化：自动规则[第N条:完整描述] → 第N条
@@ -278,8 +280,12 @@ class QuarantineDialog(QDialog):
                     return f'第{m.group(1)}条'
                 return v
             df['隔离原因'] = df['隔离原因'].apply(_shorten_reason)
+            # 添加豁免状态列：True->"是", False->""
+            df['豁免'] = df['data_id'].astype(str).map(exempted_map).fillna(False).astype(bool)
+            df['豁免'] = df['豁免'].apply(lambda v: "是" if v else "")
         except Exception:
             df['隔离原因'] = '（未填写原因）'
+            df['豁免'] = False
 
         df = self._sync_read_from_main(df)
 
@@ -398,6 +404,16 @@ class QuarantineDialog(QDialog):
                 cols = list(df.columns)
                 cols.remove('已读来源')
                 cols.insert(1, '已读来源')
+                df = df[cols]
+            # 豁免列放在隔离原因之后，data_id 之前
+            if '隔离原因' in df.columns and '豁免' in df.columns:
+                cols = list(df.columns)
+                # 先移除豁免列
+                cols.remove('豁免')
+                # 找到隔离原因的位置
+                idx = cols.index('隔离原因')
+                # 在隔离原因后面插入豁免列
+                cols.insert(idx + 1, '豁免')
                 df = df[cols]
         # 叠加 Excel 式列头取值过滤（就地过滤，视图行号不变，选中/双击/导出零回归）
         if hasattr(self, "col_filter_ctrl") and self.col_filter_ctrl.has_any():
@@ -791,7 +807,7 @@ class QuarantineDialog(QDialog):
                 if uid:
                     uid_str = str(uid)
                     is_ex = self._is_row_exempted(uid_str)
-                    exe_action = menu.addAction("🔒 标记为已豁免" if is_ex else "✅ 取消豁免")
+                    exe_action = menu.addAction("✅ 取消豁免" if is_ex else "🔒 标记为已豁免")
                     exe_action.triggered.connect(lambda _, uid=uid_str: self._toggle_exempted(uid))
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
 

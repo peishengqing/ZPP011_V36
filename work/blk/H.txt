@@ -1,0 +1,70 @@
+﻿def add_conclusion_slide(prs, m1_df, m2_df, month1, month2, page_no, page_total, material_warn=None):
+    """核心结论与建议：双卡片版式（核心结论 / 管理建议），内容全部数据驱动。"""
+    slide = _slide(prs)
+    add_title_bar(slide, f"核心结论与建议（{month1} vs {month2}）", page_no, page_total)
+
+    grand1 = float(m1_df["合计积压金额"].sum())
+    grand2 = float(m2_df["合计积压金额"].sum())
+    diff = grand2 - grand1
+    pct = diff / grand1 * 100 if grand1 else 0.0
+    f1, b1 = split_food_bev(m1_df)
+    f2, b2 = split_food_bev(m2_df)
+    food1 = float(f1["合计积压金额"].sum())
+    food2 = float(f2["合计积压金额"].sum())
+    bev1 = float(b1["合计积压金额"].sum())
+    bev2 = float(b2["合计积压金额"].sum())
+    food_diff = food2 - food1
+    bev_diff = bev2 - bev1
+
+    # 大类维度（食品 + 饮料并集）
+    all1 = pd.concat([f1, b1], ignore_index=True)
+    all2 = pd.concat([f2, b2], ignore_index=True)
+    g1 = all1.groupby("大类")["合计积压金额"].sum()
+    g2 = all2.groupby("大类")["合计积压金额"].sum()
+    cats = sorted(set(g1.index) | set(g2.index), key=lambda c: float(g2.get(c, 0)), reverse=True)
+    deltas = {c: float(g2.get(c, 0)) - float(g1.get(c, 0)) for c in cats}
+    top3 = [c for c in cats if float(g2.get(c, 0)) > 0][:3]
+    risers = sorted((c for c in cats if deltas[c] > 1e-9), key=lambda c: -deltas[c])[:3]
+    warn20 = [c for c in cats if float(g1.get(c, 0)) > 0 and deltas[c] / float(g1.get(c, 0)) > 0.2]
+    cleared = [c for c in cats if float(g1.get(c, 0)) > 0 and float(g2.get(c, 0)) <= 1e-9]
+    newcats = [c for c in cats if float(g1.get(c, 0)) <= 1e-9 and float(g2.get(c, 0)) > 0]
+
+    def _share(c):
+        return float(g2.get(c, 0)) / grand2 * 100 if grand2 else 0.0
+
+    concl = [
+        (f"{month2} 积压总额 {grand2 / WAN:,.2f} 万，较 {month1} {diff / WAN:+,.2f} 万（{pct:+.1f}%）", C_DARK_BLUE, True),
+        (f"食品 {food_diff / WAN:+,.2f} 万（{food_diff / food1 * 100 if food1 else 0:+.1f}%），"
+         f"饮料 {bev_diff / WAN:+,.2f} 万（{bev_diff / bev1 * 100 if bev1 else 0:+.1f}%）", C_BODY_FG, False),
+    ]
+    if top3:
+        concl.append(("占比前三：" + "、".join(f"{c}（{_share(c):.0f}%）" for c in top3), C_BODY_FG, False))
+    if risers:
+        concl.append(("环比增长最多：" + "、".join(f"{c} +{deltas[c] / WAN:,.2f} 万" for c in risers), C_UP, False))
+    if cleared:
+        concl.append((f"已清零大类 {len(cleared)} 个：" + "、".join(cleared[:6]), C_DOWN, False))
+    if newcats:
+        concl.append((f"新增大类 {len(newcats)} 个：" + "、".join(newcats[:6]), C_UP, False))
+    if not risers and not cleared and not newcats and not top3:
+        concl.append(("大类结构基本稳定，无显著变动", C_SUB_FG, False))
+
+    adv = []
+    if warn20:
+        adv.append((f"环比增长 >20% 大类 {len(warn20)} 个（{'、'.join(warn20[:4])}），建议启动专项盘点并明确处置方案与时间", C_UP, False))
+    adv.append(("包装材料积压反映销售预测与订单偏差，建议月度复盘销售计划与包装订购量", C_BODY_FG, False))
+    adv.append(("对不流动（>180 天）物料加强预警与跨厂调拨/处置，控制资金占用", C_BODY_FG, False))
+    if bev_diff < 0 and food_diff > 0:
+        adv.append(("饮料积压下降、食品积压上升：总结饮料侧处置经验，推广至食品端", C_DOWN, False))
+    elif food_diff < 0 and bev_diff > 0:
+        adv.append(("食品积压下降、饮料积压上升：总结食品侧处置经验，推广至饮料端", C_DOWN, False))
+    else:
+        adv.append(("两厂积压方向一致，建议设定月度积压压降目标并跟踪执行", C_BODY_FG, False))
+
+    _info_card(slide, Inches(0.3), Inches(1.05), Inches(6.35), Inches(5.1), "核心结论", concl, size=11)
+    _info_card(slide, Inches(6.95), Inches(1.05), Inches(6.05), Inches(5.1), "管理建议", adv, size=11)
+
+    add_kpi_row(slide, [
+        (f"{month2} 积压总额", f"{_to_wan(grand2)} 万"),
+        ("环比变动", f"{diff / WAN:+,.2f} 万", diff),
+        ("环比增长率", f"{pct:+.2f}%", diff),
+    ])

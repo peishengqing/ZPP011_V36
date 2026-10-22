@@ -138,7 +138,7 @@ class LayoutComposer:
         boards_menu.addAction("⚠️ 偏差率预警", lambda: mw._show_deviation_warning_dialog())
         boards_menu.addAction("📉 负损看板", lambda: mw._show_neg_loss_dashboard())
         boards_menu.addAction("📈 正损看板", lambda: mw._show_pos_loss_dashboard())
-        boards_menu.addAction("🔒 隔离区", lambda: mw._show_quarantine_review_dashboard())
+        boards_menu.addAction("🔒 隔离区", lambda: mw._open_quarantine_dialog())
         boards_menu.addAction("📋 数据稳定性", lambda: mw._show_data_stability_dashboard())
         boards_menu.addAction("🔄 替代料长链", lambda: mw._show_alt_chain_dashboard())
         boards_menu.addAction("🪪 物料画像", lambda: mw._show_material_profile())

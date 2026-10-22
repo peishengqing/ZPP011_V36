@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "backend": "native",
+  "rasterEngine": "libreoffice",
+  "source": "saved",
+  "inputPath": "H:\\zpp011_v2\\work\\edge_no_bev.pptx",
+  "sourceSha256": "d8e04b1784316b63e3d7764769a49494d6f97ea6e24aa680df232c4eb149411d",
+  "dpi": 100,
+  "pageCount": 18,
+  "images": [
+    {
+      "index": 1,
+      "page": 2,
+      "path": "H:\\zpp011_v2\\work\\edge_no_bev_render\\page-0001.png",
+      "width": 1334,
+      "height": 751,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 43439
+    },
+    {
+      "index": 2,
+      "page": 10,
+      "path": "H:\\zpp011_v2\\work\\edge_no_bev_render\\page-0002.png",
+      "width": 1334,
+      "height": 751,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 54207
+    },
+    {
+      "index": 3,
+      "page": 14,
+      "path": "H:\\zpp011_v2\\work\\edge_no_bev_render\\page-0003.png",
+      "width": 1334,
+      "height": 751,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 27846
+    },
+    {
+      "index": 4,
+      "page": 18,
+      "path": "H:\\zpp011_v2\\work\\edge_no_bev_render\\page-0004.png",
+      "width": 1334,
+      "height": 751,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 68043
+    }
+  ],
+  "missingFonts": []
+}

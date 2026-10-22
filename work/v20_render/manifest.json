@@ -1,0 +1,307 @@
+{
+  "schemaVersion": 1,
+  "backend": "native",
+  "rasterEngine": "libreoffice",
+  "source": "saved",
+  "inputPath": "H:\\zpp011_v2\\work\\v20_8月vs9月.pptx",
+  "sourceSha256": "427cb37e55cc1cde4e30f1bb67ac6c795114dee4330f79e9b3cb8beda5455bbf",
+  "dpi": 110,
+  "pageCount": 21,
+  "images": [
+    {
+      "index": 1,
+      "page": 1,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0001.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 44427
+    },
+    {
+      "index": 2,
+      "page": 2,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0002.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 54671
+    },
+    {
+      "index": 3,
+      "page": 3,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0003.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 73581
+    },
+    {
+      "index": 4,
+      "page": 4,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0004.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 52963
+    },
+    {
+      "index": 5,
+      "page": 5,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0005.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 45456
+    },
+    {
+      "index": 6,
+      "page": 6,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0006.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 42959
+    },
+    {
+      "index": 7,
+      "page": 7,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0007.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 44477
+    },
+    {
+      "index": 8,
+      "page": 8,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0008.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 44617
+    },
+    {
+      "index": 9,
+      "page": 9,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0009.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 54960
+    },
+    {
+      "index": 10,
+      "page": 10,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0010.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 44721
+    },
+    {
+      "index": 11,
+      "page": 11,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0011.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 80808
+    },
+    {
+      "index": 12,
+      "page": 12,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0012.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 71526
+    },
+    {
+      "index": 13,
+      "page": 13,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0013.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 75458
+    },
+    {
+      "index": 14,
+      "page": 14,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0014.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 51251
+    },
+    {
+      "index": 15,
+      "page": 15,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0015.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 42729
+    },
+    {
+      "index": 16,
+      "page": 16,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0016.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 56083
+    },
+    {
+      "index": 17,
+      "page": 17,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0017.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 49960
+    },
+    {
+      "index": 18,
+      "page": 18,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0018.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 45841
+    },
+    {
+      "index": 19,
+      "page": 19,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0019.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 78768
+    },
+    {
+      "index": 20,
+      "page": 20,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0020.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 44122
+    },
+    {
+      "index": 21,
+      "page": 21,
+      "path": "H:\\zpp011_v2\\work\\v20_render\\page-0021.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 82154
+    }
+  ],
+  "missingFonts": []
+}

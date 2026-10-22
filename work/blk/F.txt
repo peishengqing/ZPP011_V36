@@ -1,0 +1,33 @@
+﻿def add_detail_pages(prs, pages, t1, t2, month1, month2, page_no, page_total,
+                     chapter: str, factory: str, level: int):
+    """明细页渲染（可多页）。level=2：大类/仓库；level=3：大类/仓库/分类。末页带 KPI 条。"""
+    if level == 2:
+        headers = ["大类", "仓库", f"{month1}（万）", f"{month2}（万）", "环比增长（万）", "环比增长率"]
+        ratios = [1.35, 1.5, 1.0, 1.0, 1.2, 1.1]
+        sub = "大类/仓库"
+    else:
+        headers = ["大类", "仓库", "分类", f"{month1}（万）", f"{month2}（万）", "环比增长（万）", "环比增长率"]
+        ratios = [1.25, 1.4, 1.6, 0.95, 0.95, 1.15, 1.0]
+        sub = "大类/仓库/分类"
+    n = len(pages)
+    for pi, pg in enumerate(pages):
+        slide = _slide(prs)
+        title = f"{chapter} {factory}积压明细 · {sub}（{month1} vs {month2}）"
+        if pi > 0:
+            title += f"（续{pi + 1}）"
+        add_title_bar(slide, title, page_no + pi, page_total)
+        add_table(slide, headers, pg,
+                  left_cols={0, 1, 2} if level == 3 else {0, 1},
+                  col_ratios=ratios, delta_cols={len(headers) - 2, len(headers) - 1},
+                  bottom_limit=Inches(6.4))
+        if pi == n - 1:
+            add_kpi_row(slide, [
+                (f"{factory}总额", f"{_to_wan(t2)} 万"),
+                ("环比变动", f"{(t2 - t1) / WAN:+,.2f} 万", t2 - t1),
+                ("环比增长率", _pct(t2, t1), t2 - t1),
+            ])
+
+
+def add_food_class_warehouse_slide(prs, pages, t1, t2, month1, month2, slide_num, total):
+    """兼容旧接口：食品三级明细页。"""
+    add_detail_pages(prs, pages, t1, t2, month1, month2, slide_num, total, "1.2", FOOD_LABEL, 3)

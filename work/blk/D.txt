@@ -1,0 +1,67 @@
+﻿def _material_slide(prs, m1_df, m2_df, month1, month2, page_no, page_total,
+                    title: str, chapter: str, factory: str, kw_in: List[str], kw_out: List[str]):
+    """包装/原料材料页：大类表格 + 柱图（较新月前 6）+ 饼图（前 3 + 其他）；空数据给友好提示。"""
+    slide = _slide(prs)
+    add_title_bar(slide, f"{chapter} {title}（{month1} vs {month2}）", page_no, page_total)
+    if factory == FOOD_LABEL:
+        f1, _ = split_food_bev(m1_df)
+        f2, _ = split_food_bev(m2_df)
+    else:
+        _, f1 = split_food_bev(m1_df)
+        _, f2 = split_food_bev(m2_df)
+
+    def _pick(d):
+        text = (d["分类"].astype(str) + d["大类"].astype(str))
+        mask = text.apply(lambda s: any(k in s for k in kw_in)) & ~text.apply(lambda s: any(k in s for k in kw_out))
+        return d[mask]
+
+    p1, p2 = _pick(f1), _pick(f2)
+    g1 = p1.groupby("大类")["合计积压金额"].sum()
+    g2 = p2.groupby("大类")["合计积压金额"].sum()
+    # 两月并集（修 v1.9 只取旧月大类的缺陷），按较新月金额降序
+    cats = sorted(set(g1.index) | set(g2.index),
+                  key=lambda c: (float(g2.get(c, 0)), float(g1.get(c, 0))), reverse=True)
+    rows = []
+    for k in cats:
+        v1 = float(g1.get(k, 0))
+        v2 = float(g2.get(k, 0))
+        if v1 == 0 and v2 == 0:
+            continue
+        share = v2 / g2.sum() * 100 if g2.sum() else 0.0
+        rows.append([k, _to_wan(v1), _to_wan(v2), _to_wan(v2 - v1), _pct(v2, v1), f"{share:.2f}%"])
+    t1 = float(g1.sum())
+    t2 = float(g2.sum())
+    if not rows:
+        rows.append((["合计", "0.00", "0.00", "0.00", "—", "—"], True))
+    else:
+        _tot_pct = "100.00%" if t2 > 0 else "—"
+        rows.append((["合计", _to_wan(t1), _to_wan(t2), _to_wan(t2 - t1), _pct(t2, t1), _tot_pct], True))
+    headers = ["大类", f"{month1}（万）", f"{month2}（万）", "环比增长（万）", "环比增长率", f"{month2}占比"]
+    add_table(slide, headers, rows, left=Inches(0.3), width=Inches(6.5),
+              col_ratios=[1.4, 0.9, 0.9, 1.0, 1.0, 0.9],
+              left_cols={0}, delta_cols={3, 4}, bottom_limit=Inches(6.4))
+
+    if cats and (t1 > 0 or t2 > 0):
+        add_bar_chart(slide, cats,
+                      [float(g1.get(c, 0)) / WAN for c in cats],
+                      [float(g2.get(c, 0)) / WAN for c in cats],
+                      s1_name=month1, s2_name=month2,
+                      left=Inches(7.0), top=Inches(1.0), width=Inches(6.0), height=Inches(2.5),
+                      title=f"{title}金额对比（万）", topn=6)
+        if t2 > 0:
+            add_pie_chart(slide, cats, [float(g2.get(c, 0)) for c in cats],
+                          left=Inches(7.0), top=Inches(3.65), width=Inches(6.0), height=Inches(2.6),
+                          title=f"{month2} 占比", topn=3)
+        else:
+            add_pie_chart(slide, cats, [float(g1.get(c, 0)) for c in cats],
+                          left=Inches(7.0), top=Inches(3.65), width=Inches(6.0), height=Inches(2.6),
+                          title=f"{month1} 占比（{month2} 已清零）", topn=3)
+    else:
+        _info_card(slide, Inches(7.0), Inches(2.8), Inches(6.0), Inches(1.5),
+                   f"{title}：本月无数据",
+                   [("两月均无相关积压记录，无处置风险。", C_SUB_FG, False)])
+    add_kpi_row(slide, [
+        (f"{title}总额", f"{_to_wan(t2)} 万"),
+        ("环比变动", f"{(t2 - t1) / WAN:+,.2f} 万", t2 - t1),
+        ("环比增长率", _pct(t2, t1), t2 - t1),
+    ])

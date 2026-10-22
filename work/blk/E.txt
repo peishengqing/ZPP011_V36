@@ -1,0 +1,6 @@
+﻿def add_bev_class_summary(prs, m1_df, m2_df, month1, month2, slide_num, total):
+    """兼容旧接口：转通用大类汇总（饮料）。"""
+    rows, t1, t2, g1, g2 = _class_summary_rows(m1_df, m2_df, BEV_LABEL)
+    add_class_summary_pages(prs, _paginate_simple(rows, MAX_ROWS_PER_PAGE),
+                            t1, t2, g1, g2, month1, month2, slide_num, total,
+                            "2.1", BEV_LABEL)

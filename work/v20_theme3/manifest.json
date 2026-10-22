@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "backend": "native",
+  "rasterEngine": "libreoffice",
+  "source": "saved",
+  "inputPath": "H:\\zpp011_v2\\work\\v20_8月vs9月.pptx",
+  "sourceSha256": "3528be35f4d00dac7e3dd6f984492a4496075e96f8f60fb73c6241f2c95f0caa",
+  "dpi": 110,
+  "pageCount": 24,
+  "images": [
+    {
+      "index": 1,
+      "page": 4,
+      "path": "H:\\zpp011_v2\\work\\v20_theme3\\page-0001.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 45659
+    },
+    {
+      "index": 2,
+      "page": 5,
+      "path": "H:\\zpp011_v2\\work\\v20_theme3\\page-0002.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 53733
+    },
+    {
+      "index": 3,
+      "page": 9,
+      "path": "H:\\zpp011_v2\\work\\v20_theme3\\page-0003.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 69529
+    },
+    {
+      "index": 4,
+      "page": 10,
+      "path": "H:\\zpp011_v2\\work\\v20_theme3\\page-0004.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 120578
+    }
+  ],
+  "missingFonts": []
+}

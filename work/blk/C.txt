@@ -1,0 +1,41 @@
+﻿def _build_class_warehouse_rows_2level(m1_df, m2_df, month1, month2, factory):
+    """返回 (rows, t1, t2)：大类→仓库 两级明细。
+    大类行=小计（黄底），仓库行=普通明细（缩进、隔行底纹），末行总计。"""
+    if factory == FOOD_LABEL:
+        f1, _ = split_food_bev(m1_df)
+        f2, _ = split_food_bev(m2_df)
+    else:
+        _, f1 = split_food_bev(m1_df)
+        _, f2 = split_food_bev(m2_df)
+    # 优先用 M列"仓库类型"(包装/原辅料)，与总览页一致；缺省回退 D列"仓库"(归属仓库)
+    wh_key = "仓库类型" if "仓库类型" in f1.columns else "仓库"
+    g1 = f1.groupby(["大类", wh_key])["合计积压金额"].sum()
+    g2 = f2.groupby(["大类", wh_key])["合计积压金额"].sum()
+    all_keys = sorted(set(g1.keys()) | set(g2.keys()), key=_pinyin_key)
+    class_total_m2 = g2.groupby(level=0).sum()
+    class_order = sorted({k[0] for k in all_keys},
+                         key=lambda c: float(class_total_m2.get(c, 0)), reverse=True)
+    rows = []
+    for cls in class_order:
+        cls_keys = [k for k in all_keys if k[0] == cls]
+        wh_order = sorted({k[1] for k in cls_keys}, key=_pinyin_key)
+        cls_v1 = cls_v2 = 0.0
+        wh_data = []
+        for wh in wh_order:
+            v1 = float(g1.get((cls, wh), 0))
+            v2 = float(g2.get((cls, wh), 0))
+            if v1 or v2:
+                wh_data.append((wh, v1, v2))
+                cls_v1 += v1
+                cls_v2 += v2
+        if not (cls_v1 or cls_v2):
+            continue
+        rows.append(([cls, "", _to_wan(cls_v1), _to_wan(cls_v2),
+                      _to_wan(cls_v2 - cls_v1), _pct(cls_v2, cls_v1)], "sub"))
+        for wh, v1, v2 in wh_data:
+            rows.append(["", "　" + wh, _to_wan(v1), _to_wan(v2),
+                         _to_wan(v2 - v1), _pct(v2, v1)])
+    t1 = float(g1.sum())
+    t2 = float(g2.sum())
+    rows.append((["总计", "", _to_wan(t1), _to_wan(t2), _to_wan(t2 - t1), _pct(t2, t1)], True))
+    return rows, t1, t2

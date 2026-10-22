@@ -17,7 +17,6 @@
         "封口膜"
       ],
       "negative_loss_required": true,
-      "neg_actual_required": false,
       "dev_rate_required": false,
       "dev_rate_min": 7.0,
       "dev_rate_max": 100.0,
@@ -43,7 +42,6 @@
         "瓶盖"
       ],
       "negative_loss_required": true,
-      "neg_actual_required": false,
       "dev_rate_required": false,
       "dev_rate_min": 10.0,
       "dev_rate_max": 100.0,
@@ -66,7 +64,6 @@
       "category_value": "",
       "name_keywords": [],
       "negative_loss_required": true,
-      "neg_actual_required": false,
       "dev_rate_required": false,
       "dev_rate_min": -100.0,
       "dev_rate_max": -1.0,
@@ -89,7 +86,6 @@
       "category_value": "",
       "name_keywords": [],
       "negative_loss_required": true,
-      "neg_actual_required": false,
       "dev_rate_required": false,
       "dev_rate_min": 10.0,
       "dev_rate_max": 100.0,
@@ -114,7 +110,6 @@
         "脱氧剂"
       ],
       "negative_loss_required": true,
-      "neg_actual_required": false,
       "dev_rate_required": false,
       "dev_rate_min": 11.0,
       "dev_rate_max": 100.0,

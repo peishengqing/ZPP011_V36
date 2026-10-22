@@ -1,0 +1,171 @@
+﻿def _placeholder_slide(prs, title: str, page_no: int, page_total: int, note: str):
+    """缺数据占位页。"""
+    slide = _slide(prs)
+    add_title_bar(slide, title, page_no, page_total)
+    add_placeholder_box(slide, note)
+
+
+def generate_ppt(f1_path: str, d1_path: str, f2_path: str, d2_path: str,
+                 month1: Optional[str] = None, month2: Optional[str] = None, out: str = "") -> str:
+    prs = Presentation()
+    prs.slide_width = SLIDE_W
+    prs.slide_height = SLIDE_H
+
+    def need(path, label):
+        if not path or not os.path.isfile(path):
+            return None
+        return read_inventory_file(path)
+
+    m1_food_df = need(f1_path, "f1")
+    m1_bev_df = need(d1_path, "d1")
+    m2_food_df = need(f2_path, "f2")
+    m2_bev_df = need(d2_path, "d2")
+
+    # 月份自动识别（不写死）：从文件名 6 位年月解析；相邻月/跨月都支持，月2 须较新（反了自动对调）
+    if month1 is None or month2 is None:
+        m1_ym = m2_ym = None
+        if month1 is None:
+            if f1_path:
+                m1_ym, month1 = _parse_ym(f1_path), parse_month_from_filename(f1_path)
+            elif d1_path:
+                m1_ym, month1 = _parse_ym(d1_path), parse_month_from_filename(d1_path)
+            else:
+                raise ValueError("缺少月1(较早月)的食品/饮料文件路径，无法自动识别月份")
+        if month2 is None:
+            if f2_path:
+                m2_ym, month2 = _parse_ym(f2_path), parse_month_from_filename(f2_path)
+            elif d2_path:
+                m2_ym, month2 = _parse_ym(d2_path), parse_month_from_filename(d2_path)
+            else:
+                raise ValueError("缺少月2(较新月)的食品/饮料文件路径，无法自动识别月份")
+        # 校验食品/饮料同月
+        for p, who, grp in ((f1_path, "月1食品", "月1"), (d1_path, "月1饮料", "月1"),
+                            (f2_path, "月2食品", "月2"), (d2_path, "月2饮料", "月2")):
+            if p:
+                ym = _parse_ym(p)
+                if grp == "月1" and m1_ym is not None and ym != m1_ym:
+                    raise ValueError(f"{who} 月份({ym})与月1({m1_ym})不一致")
+                if grp == "月2" and m2_ym is not None and ym != m2_ym:
+                    raise ValueError(f"{who} 月份({ym})与月2({m2_ym})不一致")
+        # 相邻月、跨月（如 5月 vs 8月）都允许，只要求「月2 比 月1 新」；顺序反了自动对调
+        if m1_ym is not None and m2_ym is not None:
+            if m2_ym == m1_ym:
+                raise ValueError(f"对比两月不能相同：{month1} vs {month2}")
+            if m2_ym < m1_ym:
+                logger.info(f"月份顺序反了（{month1} vs {month2}），已自动对调为「较早月 vs 较新月」")
+                f1_path, f2_path = f2_path, f1_path
+                d1_path, d2_path = d2_path, d1_path
+                m1_food_df, m2_food_df = m2_food_df, m1_food_df
+                m1_bev_df, m2_bev_df = m2_bev_df, m1_bev_df
+                m1_ym, m2_ym = m2_ym, m1_ym
+                month1, month2 = month2, month1
+
+    # 合并食品+饮料到 m1_df / m2_df，供总览/结论使用
+    m1_df = pd.concat([d for d in (m1_food_df, m1_bev_df) if d is not None], ignore_index=True) if (m1_food_df is not None or m1_bev_df is not None) else None
+    m2_df = pd.concat([d for d in (m2_food_df, m2_bev_df) if d is not None], ignore_index=True) if (m2_food_df is not None or m2_bev_df is not None) else None
+
+    # —— 预计算各节数据与分页（页脚页码 = 真实总页数）——
+    def precalc(df1, df2, factory):
+        rows, t1, t2, g1, g2 = _class_summary_rows(df1, df2, factory)
+        d2l, dv1, dv2 = _build_class_warehouse_rows_2level(df1, df2, month1, month2, factory)
+        d3l, sv1, sv2 = _build_class_warehouse_rows(df1, df2, month1, month2, factory)
+        return {
+            "pg11": _paginate_simple(rows, MAX_ROWS_PER_PAGE),
+            "pg22": _paginate_rows_2level(d2l, MAX_ROWS_PER_PAGE),
+            "pg33": _paginate_rows(d3l, MAX_ROWS_PER_PAGE),
+            "sum": (t1, t2, g1, g2),
+            "d2": (dv1, dv2),
+            "d3": (sv1, sv2),
+        }
+
+    st_food = precalc(m1_food_df, m2_food_df, FOOD_LABEL) if (m1_food_df is not None and m2_food_df is not None) else None
+    st_bev = precalc(m1_bev_df, m2_bev_df, BEV_LABEL) if (m1_bev_df is not None and m2_bev_df is not None) else None
+
+    def npg(st, key):
+        return len(st[key]) if st else 1
+
+    page_total = (1                                   # 封面
+                  + 1                                 # 总览
+                  + npg(st_food, "pg11") + npg(st_food, "pg22") + npg(st_food, "pg33") + 1 + 1
+                  + npg(st_bev, "pg11") + npg(st_bev, "pg22") + npg(st_bev, "pg33") + 1 + 1
+                  + 1)                                 # 结论
+
+    pn = 0
+
+    # 0 封面
+    pn += 1
+    add_cover_slide(prs, month1, month2, [p for p in (f1_path, d1_path, f2_path, d2_path) if p])
+
+    if m1_df is None or m2_df is None:
+        # 缺数据：封面 + 一页占位
+        slide = _slide(prs)
+        add_title_bar(slide, f"积压材料总览（{month1} vs {month2}）", 2, 2)
+        add_placeholder_box(slide, f"暂无 {month1}-{month2} 对比数据（请在 GUI 中指定文件）")
+        os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+        prs.save(out)
+        logger.info(f"生成完成: {out}（缺数据占位）")
+        return out
+
+    def factory_block(st, factory, ch11, ch12, ch13, ch14, m1f, m2f, miss_note):
+        """食品/饮料五节：大类汇总 → 两层明细 → 三层明细 → 包装 → 原料；缺数据自动占位。"""
+        nonlocal pn
+        if st:
+            pn += 1
+            s = st["sum"]
+            add_class_summary_pages(prs, st["pg11"], s[0], s[1], s[2], s[3],
+                                    month1, month2, pn, page_total, ch11, factory)
+            pn += len(st["pg11"]) - 1
+        else:
+            pn += 1
+            _placeholder_slide(prs, f"{ch11} {factory}按大类汇总（{month1} vs {month2}）",
+                               pn, page_total, miss_note)
+        if st:
+            pn += 1
+            add_detail_pages(prs, st["pg22"], st["d2"][0], st["d2"][1], month1, month2,
+                             pn, page_total, ch12, factory, 2)
+            pn += len(st["pg22"]) - 1
+        else:
+            pn += 1
+            _placeholder_slide(prs, f"{ch12} {factory}积压明细 · 大类/仓库（{month1} vs {month2}）",
+                               pn, page_total, miss_note)
+        if st:
+            pn += 1
+            add_detail_pages(prs, st["pg33"], st["d3"][0], st["d3"][1], month1, month2,
+                             pn, page_total, ch12, factory, 3)
+            pn += len(st["pg33"]) - 1
+        else:
+            pn += 1
+            _placeholder_slide(prs, f"{ch12} {factory}积压明细 · 大类/仓库/分类（{month1} vs {month2}）",
+                               pn, page_total, miss_note)
+        pn += 1
+        if st:
+            (add_food_packaging_slide if factory == FOOD_LABEL else add_bev_packaging_slide)(
+                prs, m1f, m2f, month1, month2, pn, page_total)
+        else:
+            _placeholder_slide(prs, f"{ch13} {factory}包装材料积压（{month1} vs {month2}）",
+                               pn, page_total, miss_note)
+        pn += 1
+        if st:
+            (add_food_raw_slide if factory == FOOD_LABEL else add_bev_raw_slide)(
+                prs, m1f, m2f, month1, month2, pn, page_total)
+        else:
+            _placeholder_slide(prs, f"{ch14} {factory}原料材料积压（{month1} vs {month2}）",
+                               pn, page_total, miss_note)
+
+    # 1 总览
+    pn += 1
+    add_overview_slide(prs, m1_df, m2_df, month1, month2, pn, page_total)
+    # 2~5 食品
+    factory_block(st_food, FOOD_LABEL, "1.1", "1.2", "1.3", "1.4",
+                  m1_food_df, m2_food_df, "源数据缺少食品 sheet 或文件不存在")
+    # 6~9 饮料
+    factory_block(st_bev, BEV_LABEL, "2.1", "2.2", "2.3", "2.4",
+                  m1_bev_df, m2_bev_df, "源数据缺少饮料 sheet 或文件不存在")
+    # 10 结论
+    pn += 1
+    add_conclusion_slide(prs, m1_df, m2_df, month1, month2, pn, page_total)
+
+    os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+    prs.save(out)
+    logger.info(f"生成完成: {out}（共 {sum(1 for _ in prs.slides)} 页）")
+    return out

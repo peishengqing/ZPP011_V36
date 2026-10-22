@@ -1,0 +1,237 @@
+{
+  "schemaVersion": 1,
+  "backend": "native",
+  "rasterEngine": "libreoffice",
+  "source": "saved",
+  "inputPath": "C:\\Users\\Administrator\\Desktop\\云南达利积压分析报告\\云南达利积压分析_v1.9_8月vs9月_20261003_085728.pptx",
+  "sourceSha256": "3bc1f5b0bf09b69c8494875f3fabd7c7e1b3a96df04c115edd71001e824170e3",
+  "dpi": 110,
+  "pageCount": 16,
+  "images": [
+    {
+      "index": 1,
+      "page": 1,
+      "path": "H:\\zpp011_v2\\work\\baseline_v19\\page-0001.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 61806
+    },
+    {
+      "index": 2,
+      "page": 2,
+      "path": "H:\\zpp011_v2\\work\\baseline_v19\\page-0002.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 59901
+    },
+    {
+      "index": 3,
+      "page": 3,
+      "path": "H:\\zpp011_v2\\work\\baseline_v19\\page-0003.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 67457
+    },
+    {
+      "index": 4,
+      "page": 4,
+      "path": "H:\\zpp011_v2\\work\\baseline_v19\\page-0004.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 56120
+    },
+    {
+      "index": 5,
+      "page": 5,
+      "path": "H:\\zpp011_v2\\work\\baseline_v19\\page-0005.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 69391
+    },
+    {
+      "index": 6,
+      "page": 6,
+      "path": "H:\\zpp011_v2\\work\\baseline_v19\\page-0006.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 69120
+    },
+    {
+      "index": 7,
+      "page": 7,
+      "path": "H:\\zpp011_v2\\work\\baseline_v19\\page-0007.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 73399
+    },
+    {
+      "index": 8,
+      "page": 8,
+      "path": "H:\\zpp011_v2\\work\\baseline_v19\\page-0008.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 96587
+    },
+    {
+      "index": 9,
+      "page": 9,
+      "path": "H:\\zpp011_v2\\work\\baseline_v19\\page-0009.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 80105
+    },
+    {
+      "index": 10,
+      "page": 10,
+      "path": "H:\\zpp011_v2\\work\\baseline_v19\\page-0010.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 63971
+    },
+    {
+      "index": 11,
+      "page": 11,
+      "path": "H:\\zpp011_v2\\work\\baseline_v19\\page-0011.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 82798
+    },
+    {
+      "index": 12,
+      "page": 12,
+      "path": "H:\\zpp011_v2\\work\\baseline_v19\\page-0012.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 67175
+    },
+    {
+      "index": 13,
+      "page": 13,
+      "path": "H:\\zpp011_v2\\work\\baseline_v19\\page-0013.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 82286
+    },
+    {
+      "index": 14,
+      "page": 14,
+      "path": "H:\\zpp011_v2\\work\\baseline_v19\\page-0014.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 96732
+    },
+    {
+      "index": 15,
+      "page": 15,
+      "path": "H:\\zpp011_v2\\work\\baseline_v19\\page-0015.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 42459
+    },
+    {
+      "index": 16,
+      "page": 16,
+      "path": "H:\\zpp011_v2\\work\\baseline_v19\\page-0016.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 82154
+    }
+  ],
+  "missingFonts": []
+}

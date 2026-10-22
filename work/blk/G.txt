@@ -1,0 +1,3 @@
+﻿def add_bev_class_warehouse_slide(prs, pages, t1, t2, month1, month2, slide_num, total):
+    """兼容旧接口：饮料三级明细页。"""
+    add_detail_pages(prs, pages, t1, t2, month1, month2, slide_num, total, "2.2", BEV_LABEL, 3)

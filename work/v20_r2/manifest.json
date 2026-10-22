@@ -1,0 +1,391 @@
+{
+  "schemaVersion": 1,
+  "backend": "native",
+  "rasterEngine": "libreoffice",
+  "source": "saved",
+  "inputPath": "H:\\zpp011_v2\\work\\v20_8月vs9月.pptx",
+  "sourceSha256": "8bce5d8a3b18d9de55c2e8e8aa2a20e5db9207738043a351da3d77527b98ed6b",
+  "dpi": 110,
+  "pageCount": 27,
+  "images": [
+    {
+      "index": 1,
+      "page": 1,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0001.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 44341
+    },
+    {
+      "index": 2,
+      "page": 2,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0002.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 54591
+    },
+    {
+      "index": 3,
+      "page": 3,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0003.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 72190
+    },
+    {
+      "index": 4,
+      "page": 4,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0004.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 35951
+    },
+    {
+      "index": 5,
+      "page": 5,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0005.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 36520
+    },
+    {
+      "index": 6,
+      "page": 6,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0006.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 50510
+    },
+    {
+      "index": 7,
+      "page": 7,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0007.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 37597
+    },
+    {
+      "index": 8,
+      "page": 8,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0008.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 45226
+    },
+    {
+      "index": 9,
+      "page": 9,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0009.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 44612
+    },
+    {
+      "index": 10,
+      "page": 10,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0010.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 40666
+    },
+    {
+      "index": 11,
+      "page": 11,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0011.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 38917
+    },
+    {
+      "index": 12,
+      "page": 12,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0012.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 51216
+    },
+    {
+      "index": 13,
+      "page": 13,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0013.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 82630
+    },
+    {
+      "index": 14,
+      "page": 14,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0014.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 71288
+    },
+    {
+      "index": 15,
+      "page": 15,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0015.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 74231
+    },
+    {
+      "index": 16,
+      "page": 16,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0016.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 37739
+    },
+    {
+      "index": 17,
+      "page": 17,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0017.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 38413
+    },
+    {
+      "index": 18,
+      "page": 18,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0018.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 43043
+    },
+    {
+      "index": 19,
+      "page": 19,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0019.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 35283
+    },
+    {
+      "index": 20,
+      "page": 20,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0020.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 36493
+    },
+    {
+      "index": 21,
+      "page": 21,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0021.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 37589
+    },
+    {
+      "index": 22,
+      "page": 22,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0022.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 39969
+    },
+    {
+      "index": 23,
+      "page": 23,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0023.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 37630
+    },
+    {
+      "index": 24,
+      "page": 24,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0024.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 44253
+    },
+    {
+      "index": 25,
+      "page": 25,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0025.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 79872
+    },
+    {
+      "index": 26,
+      "page": 26,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0026.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 44143
+    },
+    {
+      "index": 27,
+      "page": 27,
+      "path": "H:\\zpp011_v2\\work\\v20_r2\\page-0027.png",
+      "width": 1467,
+      "height": 826,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 720.0666666666667
+      },
+      "byteLength": 82059
+    }
+  ],
+  "missingFonts": []
+}
