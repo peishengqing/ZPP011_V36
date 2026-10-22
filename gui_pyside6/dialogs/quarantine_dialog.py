@@ -14,7 +14,7 @@ from PySide6.QtCore import Qt, QPoint, QTimer
 from gui_pyside6.models.data_frame_model import DataFrameModel
 from core.quarantine_manager import (
     remove_quarantine_batch, get_quarantine_records, scan_expired_quarantine,
-    update_quarantine_reason,
+    update_quarantine_reason, set_exempted, is_exempted,
 )
 from core.auto_quarantine import load_auto_quarantine_config
 from core.read_status import save_read_status_batch
@@ -782,7 +782,32 @@ class QuarantineDialog(QDialog):
         menu.addSeparator()
         edit_reason_action = menu.addAction("✎ 修改隔离原因（选中行）")
         edit_reason_action.triggered.connect(lambda: self._edit_reason_for_rows(selected_rows))
+        menu.addSeparator()
+        # 豁免功能
+        if len(selected_rows) == 1:
+            r = selected_rows[0]
+            if r < len(df):
+                uid = df.iloc[r].get('data_id')
+                if uid:
+                    uid_str = str(uid)
+                    is_ex = self._is_row_exempted(uid_str)
+                    exe_action = menu.addAction("🔒 标记为已豁免" if is_ex else "✅ 取消豁免")
+                    exe_action.triggered.connect(lambda _, uid=uid_str: self._toggle_exempted(uid))
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
+
+    def _toggle_exempted(self, uid: str):
+        """切换单条隔离记录的豁免状态"""
+        is_ex = self._is_row_exempted(uid)
+        set_exempted(uid, not is_ex)
+        # 刷新当前表
+        self._apply_list_filters()
+        # 更新菜单文本显示
+        msg = "↩ 已取消豁免" if is_ex else "✅ 已标记为已豁免"
+        toast(f"{msg} {uid}", parent=self)
+
+    def _is_row_exempted(self, uid: str) -> bool:
+        """检查单条隔离记录是否已被标记为豁免"""
+        return is_exempted(uid)
 
     def _edit_reason_for_rows(self, rows):
         """隔离区右键：修改选中行的隔离原因（人工修正），仅写 reason 字段，

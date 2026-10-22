@@ -16,7 +16,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QGroupBox
+from PySide6.QtWidgets import QApplication, QGroupBox, QMessageBox
 
 from gui_pyside6.widgets.toast import toast
 
@@ -235,17 +235,20 @@ class InteractionController:
                     self.mw._show_row_detail(row_data)
                 else:
                     self.mw.log(f"双击弹窗失败: row={row} 超出范围 len={len(df)}", "warn")
+                    QMessageBox.warning(self.mw, "提示", f"行号 {row} 超出数据范围 (最大 {len(df)-1})")
             else:
-                self.mw.log(f"双击弹窗失败: proxy_model={self.mw.proxy_model}, source_model={self.mw.source_model}", "error")
+                msg = f"双击弹窗失败: 缺少表格模型 (proxy={self.mw.proxy_model}, source={self.mw.source_model})"
+                self.mw.log(msg, "error")
+                QMessageBox.warning(self.mw, "提示", msg)
         except Exception as e:
             import traceback
-            self.mw.log(f"双击弹窗失败: {e}\n{traceback.format_exc()}", "error")
+            msg = f"双击弹窗失败: {e}"
+            self.mw.log(f"{msg}\n{traceback.format_exc()}", "error")
+            QMessageBox.critical(self.mw, "错误", f"双击 failed:\n{e}")
 
     def _show_row_detail(self, row_data):
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QLabel, QDialogButtonBox, QPushButton
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QDialogButtonBox, QPushButton
         from PySide6.QtCore import Qt
-        from PySide6.QtGui import QPixmap, QClipboard
-        import sys
 
         def _val(*keys):
             for k in keys:
@@ -308,7 +311,10 @@ class InteractionController:
         def _copy_dialog_as_image():
             # 捕获对话框的屏幕图像
             try:
-                pixmap = QPixmap.grabWindow(dialog.winId())
+                # Qt6 已移除 QPixmap.grabWindow，改用 QWidget.grab() 捕获窗口像素
+                pixmap = dialog.grab()
+                if pixmap is None or pixmap.isNull():
+                    raise RuntimeError("widget.grab() 未生成图像")
                 # 复制到剪贴板
                 QApplication.clipboard().setPixmap(pixmap)
                 # 显示提示

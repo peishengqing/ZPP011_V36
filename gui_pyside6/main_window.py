@@ -110,8 +110,10 @@ class _PptViewShim:
         return None
 
     def log(self, msg, level='info'):
+        """运行日志输出到状态栏，便于调试"""
         try:
-            self._log_emit(msg, level)
+            if self.statusBar():
+                self.statusBar().showMessage(f"{msg} [{level}]", 3000)
         except Exception:
             pass
 

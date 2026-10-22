@@ -38,6 +38,10 @@ def _get_conn():
         conn.execute("ALTER TABLE quarantine_records ADD COLUMN reason_basis TEXT DEFAULT ''")
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE quarantine_records ADD COLUMN exempted BOOL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # 已存在
     return conn
 
 
@@ -213,6 +217,10 @@ def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
     result = []
     for rec in records:
         uid = str(rec["uid"])
+        # ---------------------------- 新增：跳过已标记豁免的记录 ----------------------------
+        if is_exempted(uid):
+            continue
+        # -----------------------------------------------------------------------------------
         basis = (rec.get("reason_basis") or "").strip()
         reason = (rec.get("reason") or "").strip()
         # 优先用 basis，缺省降级用 reason
@@ -305,13 +313,36 @@ def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
 
 
 def get_quarantine_records() -> List[Dict]:
-    """返回当前隔离区明细（供弹窗展示），含 reason / quarantined_at / reason_basis"""
+    """返回当前隔离区明细（供弹窗展示），含 reason / quarantined_at / reason_basis / exempted"""
     conn = _get_conn()
     cur = conn.execute(
-        "SELECT uid, reason, quarantined_at, reason_basis FROM quarantine_records "
+        "SELECT uid, reason, quarantined_at, reason_basis, exempted FROM quarantine_records "
         "WHERE restored_at IS NULL ORDER BY quarantined_at DESC"
     )
-    columns = ['uid', 'reason', 'quarantined_at', 'reason_basis']
+    columns = ['uid', 'reason', 'quarantined_at', 'reason_basis', 'exempted']
     result = [dict(zip(columns, row)) for row in cur.fetchall()]
     conn.close()
     return result
+
+
+def set_exempted(uid: str, exempted: bool) -> None:
+    """设置或取消隔离记录的豁免状态"""
+    conn = _get_conn()
+    conn.execute(
+        "UPDATE quarantine_records SET exempted = ? WHERE uid = ?",
+        (bool(exempted), str(uid))
+    )
+    conn.commit()
+    conn.close()
+
+
+def is_exempted(uid: str) -> bool:
+    """检查隔离记录是否已标记为豁免"""
+    conn = _get_conn()
+    cur = conn.execute(
+        "SELECT exempted FROM quarantine_records WHERE uid = ?",
+        (str(uid),)
+    )
+    row = cur.fetchone()
+    conn.close()
+    return row is not None and row[0] == 1
