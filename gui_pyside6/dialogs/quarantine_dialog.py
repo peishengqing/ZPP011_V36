@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QPoint, QTimer
 from gui_pyside6.models.data_frame_model import DataFrameModel
 from core.quarantine_manager import (
-    remove_quarantine_batch, get_quarantine_records, scan_expired_quarantine,
+    remove_quarantine, remove_quarantine_batch, get_quarantine_records, scan_expired_quarantine,
     update_quarantine_reason, set_exempted, is_exempted,
 )
 from core.auto_quarantine import load_auto_quarantine_config
@@ -812,20 +812,34 @@ class QuarantineDialog(QDialog):
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
 
     def _toggle_exempted(self, uid: str):
-        """切换单条隔离记录的豁免状态"""
+        """切换单条隔离记录的豁免状态：标记为已豁免时自动移出隔离区"""
         is_ex = self._is_row_exempted(uid)
+        # 设置豁免状态
         set_exempted(uid, not is_ex)
-        # 直接更新内存中的数据，然后重新渲染表格
+        if not is_ex:
+            # === 标记为已豁免：自动移出隔离区 ===
+            remove_quarantine(uid)
+            msg = "✅ 已标记为已豁免 并移出隔离区"
+        else:
+            msg = "↩ 已取消豁免"
+        # 更新内存中的数据，然后重新渲染表格
         if hasattr(self, 'full_df') and self.full_df is not None:
-            mask = self.full_df['data_id'].astype(str) == uid
-            if mask.any():
-                self.full_df.loc[mask, '豁免'] = "是" if not is_ex else ""
+            # 如果已移除隔离区，该行应该从列表中消失
+            if not is_ex:
+                # 从 full_df 中删除该行
+                self.full_df = self.full_df[self.full_df['data_id'].astype(str) != uid].copy()
+                # 从主表移除标记
+                if self.main_window and hasattr(self.main_window, 'view_model') and self.main_window.view_model is not None:
+                    main_df = self.main_window.view_model.df
+                    if main_df is not None and 'data_id' in main_df.columns:
+                        main_df.loc[main_df['data_id'].astype(str) == uid, '_quarantined'] = 0
+                        self.main_window.view_model.df = main_df
+                        self.main_window.source_model.setDataFrame(main_df)
+            else:
+                self.full_df.loc[self.full_df['data_id'].astype(str) == uid, '豁免'] = "是"
                 self._render_table(self.full_df.copy())
         else:
-            # 降级：重新加载
             self._apply_list_filters()
-        # 更新菜单文本显示
-        msg = "↩ 已取消豁免" if is_ex else "✅ 已标记为已豁免"
         toast(f"{msg} {uid}", parent=self)
 
     def _is_row_exempted(self, uid: str) -> bool:

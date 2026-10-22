@@ -49,7 +49,13 @@ def build_sheet1(df, report_progress, progress_idx=1):
         warning = '红色预警' if risk_rate >= 0.1 else ('黄色预警' if risk_rate >= 0.03 else '绿色预警')
         pos_amt = round(pos_dev['偏差金额(含税)'].sum(), 2) if len(pos_dev) > 0 else 0
         neg_amt = round(neg_dev['偏差金额(含税)'].sum(), 2) if len(neg_dev) > 0 else 0
-        total_amt = round(grp['偏差金额(含税)'].sum(), 2)
+        # 口径统一（v43.233 优化）：总条数/总偏差金额只统计数量偏差≠0 的记录（正+负），
+        # 排除零偏差行。此前 total_amt=全量合计、总条数=全量，会因「零偏差但金额差≠0」
+        # 的行（材料偏差=0 但 金额-实际(含税)≠金额-定额(含税)）导致 正+负 ≠ 总 的勾稽失败。
+        # 现 total_amt=pos_amt+neg_amt、总条数=正条数+负条数，三列金额与两列条数均自洽。
+        # 总数量保持全量求和（零偏差行材料偏差=0，数值上等于 正数量+负数量，语义等价）。
+        total_amt = round(pos_amt + neg_amt, 2)
+        total_cnt = len(pos_dev) + len(neg_dev)
         summary_rows.append({
             '序号': idx,
             '工厂': factory,
@@ -62,7 +68,7 @@ def build_sheet1(df, report_progress, progress_idx=1):
             '负偏差条数': len(neg_dev),
             '负偏差数量': round(neg_dev['材料偏差'].sum(), 2),
             '负偏差金额(含税)': neg_amt,
-            '总条数': len(grp),
+            '总条数': total_cnt,
             '总数量': round(grp['材料偏差'].sum(), 2),
             '总偏差金额(含税)': total_amt,
             '备注覆盖率': f"{note_rate:.0%}",
