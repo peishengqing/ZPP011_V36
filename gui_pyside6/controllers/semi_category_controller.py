@@ -214,7 +214,7 @@ class SemiCategoryController:
             QDialog, QDialogButtonBox, QLabel, QLineEdit,
             QComboBox, QVBoxLayout,
         )
-        dlg = QDialog(self)
+        dlg = QDialog(self.mw)
         dlg.setWindowTitle("添加半成品分类")
         dlg.setFixedSize(400, 180)
         layout = QVBoxLayout(dlg)

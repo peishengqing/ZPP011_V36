@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.247",
+        "date": "2026-10-23",
+        "fixes": "半成品分类「添加」按钮点击报 AttributeError：QDialog.__init__(SemiCategoryController)。根因：SemiCategoryController._add_semi_category（semi_category_controller.py:217）写 dlg = QDialog(self)，self 是控制器实例（非 QWidget），作父窗口传入 QDialog 构造即崩。column_controller:83 / dashboard_controller:345 / interaction_controller:267 均用 QDialog(self.mw)（self.mw 即 MainWindow，QWidget）。修法：该行改为 dlg = QDialog(self.mw)，与其他控制器一致。",
+        "features": "",
+    },
+    {
         "version": "v43.246",
         "date": "2026-10-23",
         "fixes": "半成品分类卡片「放大」按钮点击报 AttributeError：'AltController' object has no attribute 'zoom_semi_table'。根因：v43.222 ARC-003 重构把 _zoom_semi_table 的方法体从 MainWindow 迁出时漏了这条（薄壳 self.alt_controller.zoom_semi_table(self) 指向不存在的方法），left_panel.py:302 的放大按钮一按就崩。修法：把放大窗口实现直接恢复在 MainWindow._zoom_semi_table（用 _get_semi_category_list 与左侧 semi_tree 同源），不再转发。",
