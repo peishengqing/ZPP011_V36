@@ -249,8 +249,16 @@ def _apply_number_formats(ws, hdr_row, headers, last_row):
     金额/日期整列一个格式没问题（#,##0.00 固定两位小数是记账惯例、yyyy-mm-dd
     没有可选小数位的问题）；**数量列必须逐格选**（见 _count_fmt），否则整数会
     拖出一个小数点尾巴。
+
+    比率列（含「率」「占比」，如 偏差率A/B、净偏差率、备注覆盖率、偏差率）：
+    值是**比率小数**（0.08171 表 8.17%），必须套 0.00% 格式才会显示成百分比。
+    漏掉这一步的坑（v43.242 修复，用户截图反馈）：v43.241 把 替代料明细
+    偏差率A/B/净偏差率 的值折算成了比率小数，但 _apply_number_formats 只认
+    日期/金额/数量三类，比率列落在哪个都不套 → 0.08171 原样显示。注意与
+    _normalize_ratio_columns 的区别：后者只处理「以 % 结尾的文本」（如 '19.6%'
+    → 0.196），处理不了已经是真数值的列；本处按列名补套，两者互补。
     """
-    date_cols, amount_cols, count_cols = [], [], []
+    date_cols, amount_cols, count_cols, ratio_cols = [], [], [], []
     for col, name in headers.items():
         if not name:
             continue
@@ -260,7 +268,9 @@ def _apply_number_formats(ws, hdr_row, headers, last_row):
             amount_cols.append(col)
         elif any(k in name for k in _COUNT_KEYS):
             count_cols.append(col)
-    if not (date_cols or amount_cols or count_cols):
+        elif any(k in name for k in _RATIO_KEYS):
+            ratio_cols.append(col)
+    if not (date_cols or amount_cols or count_cols or ratio_cols):
         return
     map_ = _cells_of(ws)
 
@@ -284,6 +294,8 @@ def _apply_number_formats(ws, hdr_row, headers, last_row):
             fmt = _count_fmt(c.value)
             if str(c.number_format) != fmt:
                 c.number_format = fmt
+    for col in ratio_cols:
+        _set(col, _FMT_RATIO)
 
 
 def _has_rule(ws, rng, operator):
