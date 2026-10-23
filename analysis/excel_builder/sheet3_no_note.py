@@ -31,11 +31,15 @@ def build_sheet3(df, report_progress, progress_idx=3, dyn_thresh=None):
     has_dev = df[df['材料偏差'] != 0]
     no_note = has_dev[~(has_dev['备注原因'].notna()) &
                         (has_dev['备注原因'] != '')].copy()
-    # v43.244 口径修正：纳入条件从严格 > 改为 >= 阈值；同时排除 |偏差率|=100%
-    # （完全未投料 / 恰好翻倍 属明确模式，不属「模糊无备注预警」范畴，
-    #   前者另有独立分析入口，后者业务上是可识别模式）。
+    # v43.245 口径修正：纳入 >= dyn_thresh，且**只**排除恰好 = 100%（浮点容差 1e-6）
+    # >100% 行（实际远超定额）继续纳入，作为可预警的严重超耗模式保留。
+    # 排除 100.0% 的理由：完全未投料(-100%)和恰好翻倍(+100%)属明确业务模式，
+    #   前者另有独立分析入口，后者业务上是可识别巧合，都不属「模糊无备注预警」范畴。
     _rate_abs_pre = no_note[col_p].abs()
-    no_note = no_note[(_rate_abs_pre >= dyn_thresh) & (_rate_abs_pre < 100)].copy()
+    no_note = no_note[
+        (_rate_abs_pre >= dyn_thresh)
+        & ((_rate_abs_pre - 100).abs() >= 1e-6)
+    ].copy()
 
     # 向量化构建（原 iterrows 列表推导，2026-07-27 性能优化）
     if no_note.empty:
@@ -45,10 +49,10 @@ def build_sheet3(df, report_progress, progress_idx=3, dyn_thresh=None):
         no_note_df['订单日期'] = pd.to_datetime(no_note['订单开始日期'], errors='coerce').dt.strftime('%Y-%m-%d').fillna('')
         no_note_df['工厂'] = no_note['工厂名称']
         no_note_df['车间'] = no_note['车间']
-        # v43.243 P1 + v43.244 口径修正：严重度标签列。规则（按业务端最紧急优先）：
-        # 前置过滤：本 sheet 只含 10% <= |偏差率| < 100% 的行，|100%| 已被上面过滤剔除。
-        #   🔴 完全未投料  = 定额>0 且 实际=0 且 |偏差率|>99（且<100，因前置已排除 100）
-        #   🟠 严重偏差    = |偏差率|>=50 且 <100
+        # v43.243 P1 + v43.245 口径修正：严重度标签列。规则（按业务端最紧急优先）：
+        # 前置过滤：本 sheet 含 10% <= |偏差率| 且 != 100.0% 的行（浮点容差 1e-6）。
+        #   🔴 完全未投料  = 定额>0 且 实际=0 且 |偏差率|>99（排除 =100 后基本仅剩 (99,100) 边缘行）
+        #   🟠 严重偏差    = |偏差率|>=50 且 !=100（含 50~99 与 >100 两区间，均由此标签兜住）
         #   🟡 超阈值      = |偏差率|>=dyn_thresh（默认 10）且 <50
         _quota = no_note['数量-定额'] if '数量-定额' in no_note.columns else 0
         _actual = no_note['数量-实际'] if '数量-实际' in no_note.columns else 0
