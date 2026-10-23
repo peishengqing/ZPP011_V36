@@ -8,6 +8,10 @@ gen_dashboard.py — ZPP011 偏差分析 12 图 HTML 看板生成器（CLI 入�
 
 所有 12 图绘制与 HTML 拼装逻辑都在 analysis/dashboard_html.py（CLI 与 GUI 共用）。
 
+替代料配对来自 domain.alt_material.alt_manager.load_alt_pairs（与 GUI 侧同一份
+用户配置；配置文件缺失/损坏时自动回退内置 DEFAULT_ALT_PAIRS，不抛异常），
+保证 CLI 与 GUI 出图口径一致（含「替代料净偏差 Top10」图）。
+
 用法:
     python tools/gen_dashboard.py \
         --input "E:/ZPP011导出文件原数据/ZPP011_20260701-20260722.xlsx" \
@@ -23,7 +27,6 @@ from datetime import datetime
 
 import matplotlib
 matplotlib.use("Agg")  # CLI 无界面，纯出图
-import pandas as pd
 
 # ---------- 让项目 analysis 模块可 import ----------
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -32,6 +35,7 @@ if PROJECT_ROOT not in sys.path:
 
 from analysis.analyzer import do_analysis_v2  # noqa: E402
 from analysis.dashboard_html import build_html, compute_metrics, short_name  # noqa: E402
+from domain.alt_material.alt_manager import load_alt_pairs  # noqa: E402
 
 
 def main():
@@ -47,15 +51,17 @@ def main():
     work_dir = args.work_dir or tempfile.mkdtemp(prefix="zpp011_dash_")
     os.makedirs(work_dir, exist_ok=True)
 
-    print(f"[1/3] 调用 do_analysis_v2 计算偏差明细（窗口 {args.start}~{args.end}）...")
+    # 替代料配对：读用户配置（与 GUI 同一来源），缺失/损坏时函数内部回退默认值
+    alt_pairs = load_alt_pairs()
+    print(f"[1/3] 替代料配对 {len(alt_pairs)} 组；调用 do_analysis_v2 计算偏差明细（窗口 {args.start}~{args.end}）...")
     log_path = os.path.join(tempfile.gettempdir(), "gen_dashboard_run.log")
     dev_df = None
-    # 吞掉 do_analysis_v2 内部的大量 DEBUG 打印，避免刷屏
-    with contextlib.redirect_stdout(open(log_path, "w", encoding="utf-8")):
+    # 吞掉 do_analysis_v2 内部的大量 DEBUG 打印，避免刷屏（日志落盘到 log_path）
+    with open(log_path, "w", encoding="utf-8") as log_f, contextlib.redirect_stdout(log_f):
         dev_df = do_analysis_v2(
             input_file=args.input,
             output_dir=work_dir,
-            alt_pairs=[],            # 无替代料配对时传空；如需可扩展为读取配置文件
+            alt_pairs=alt_pairs,      # 用配置里的真实替代料配对，保证 CLI 与 GUI 口径一致
             start_date=args.start,
             end_date=args.end,
             return_dataframe=True,

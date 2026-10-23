@@ -45,7 +45,7 @@ analysis/analyzer.py :: export_full_report_from_intermediates()
 """
 import os
 
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.formatting.rule import CellIsRule, FormulaRule
 
@@ -646,9 +646,23 @@ def _add_dashboard(wb):
                     if isinstance(v, (int, float)):
                         s += v
                 return s
-            k_pos = _col_sum(('正偏差金额(含税)',))
-            k_neg = _col_sum(('负偏差金额(含税)',))
+            k_total = _col_sum(('总偏差金额(含税)',))
             k_cnt = _col_sum(('总条数',))
+            # 备注覆盖率：按「总条数」加权（Σ覆盖率×条数 ÷ Σ条数）。
+            # 直接平均各行覆盖率会把条数少的车间算重，不是本期口径。
+            k_cov = None
+            c_cov = _find_col(hds, '备注覆盖率')
+            c_rows = _find_col(hds, '总条数')
+            if c_cov and c_rows:
+                num = den = 0.0
+                for r in range(h_row + 1, l_row + 1):
+                    cv = src.cell(row=r, column=c_cov).value
+                    rv = src.cell(row=r, column=c_rows).value
+                    if isinstance(cv, (int, float)) and isinstance(rv, (int, float)) and rv:
+                        num += float(cv) * float(rv)
+                        den += float(rv)
+                if den:
+                    k_cov = num / den
             k_unread = 0
             try:
                 if '无备注预警' in wb.sheetnames:
@@ -657,11 +671,15 @@ def _add_dashboard(wb):
                     k_unread = _last_data_row(s2, h2) - h2
             except Exception:
                 k_unread = 0
+            # KPI 只摆**闭合口径**：「正偏差金额 + 负偏差金额 ≠ 总偏差金额」
+            # （差额 = 价格差异行，属设计口径），并排摆出来会被业务方直接相加、
+            # 发现「对不上总偏差」而误判为数据错误。故只给「总偏差金额(含税)」，
+            # 多耗/少耗的分解交给下方图2。
             kpis = [
                 ('总偏差记录', f'{int(k_cnt):,}', '条'),
-                ('正偏差金额(含税)', f'{k_pos:,.2f}', '元'),
-                ('负偏差金额(含税)', f'{k_neg:,.2f}', '元'),
-                ('无备注预警', f'{k_unread:,}', '条'),
+                ('总偏差金额(含税)', f'{k_total:,.2f}', '元'),
+                ('偏差率超阈未填备注', f'{k_unread:,}', '条'),
+                ('备注覆盖率', ('%.1f%%' % (k_cov * 100)) if k_cov is not None else '—', ''),
             ]
             for k, (lab, val, unit) in enumerate(kpis):
                 col = 2 + k * 3
@@ -674,7 +692,15 @@ def _add_dashboard(wb):
                 uc = ws_dash.cell(row=_kpi_row + 2, column=col, value=unit)
                 uc.font = Font(size=9, color='666666')
                 uc.alignment = Alignment(horizontal='center')
-                ws_dash.column_dimensions[chr(ord('A') + col)].width = 16
+                # 列宽：KPI 落在第 2/5/8/11 列（B/E/H/K）。原先用 chr(ord('A')+col)
+                # 算出来是 C/F/I/L，**整体偏移一列**，等于没设到 KPI 上；改用
+                # get_column_letter 按真实列号取。数字带千分位两位小数，16 太窄。
+                ws_dash.column_dimensions[get_column_letter(col)].width = 18
+            # 口径注：把「正/负不闭合」这件事写在脸上，避免被误读为数据错误
+            nc = ws_dash.cell(row=_kpi_row + 3, column=2, value=(
+                '口径：总偏差金额(含税)为全量合计（汇总统计「正/负偏差金额」两列不闭合，'
+                '差额=价格差异行，故不单列）；多耗/少耗分解见下方图2；备注覆盖率按总条数加权。'))
+            nc.font = Font(size=9, color='666666')
     except Exception as e:
         _log('[post_process] 驾驶舱KPI失败: %s' % e)
 
@@ -699,7 +725,8 @@ def _add_dashboard(wb):
                 ch.set_categories(Reference(src, min_col=c_cat, min_row=hdr_row + 1,
                                             max_row=last_row))
                 ch.height, ch.width = 9, 22
-                ws_dash.add_chart(ch, 'B4')
+                # 锚点下移 4 行：KPI 数字块占 row4-6，原 B4 会让图压住 KPI 标签
+                ws_dash.add_chart(ch, 'B8')
                 charts += 1
     except Exception as e:
         _log('[post_process] 驾驶舱图1失败: %s' % e)
@@ -722,7 +749,7 @@ def _add_dashboard(wb):
                 ch.set_categories(Reference(src, min_col=c_cat, min_row=hdr_row + 1,
                                             max_row=end))
                 ch.height, ch.width = 12, 22
-                ws_dash.add_chart(ch, 'B24')
+                ws_dash.add_chart(ch, 'B28')
                 charts += 1
     except Exception as e:
         _log('[post_process] 驾驶舱图2失败: %s' % e)
@@ -748,7 +775,7 @@ def _add_dashboard(wb):
                 ch.set_categories(Reference(src, min_col=c_cat, min_row=hdr_row + 1,
                                             max_row=last_row))
                 ch.height, ch.width = 9, 22
-                ws_dash.add_chart(ch, 'B50')
+                ws_dash.add_chart(ch, 'B54')
                 charts += 1
     except Exception as e:
         _log('[post_process] 驾驶舱图3失败: %s' % e)
@@ -762,6 +789,215 @@ def _add_dashboard(wb):
     return charts
 
 
+# ---------------------------------------------------------------- 各表事实卡
+
+# 事实卡「关键度量」列的候选优先级：按顺序取第一个能匹配上的列。
+# 为什么不取「率」类：同一本工作簿里「占车间偏差比%」是**百分点**（14.57），
+# 而「偏差率/净偏差率」是**比率小数**（0.143），两者数字格式不同，混进候选必踩口径坑。
+# 另：匹配到的列一律以**表头原文**作标签（_find_col 允许子串命中，如「净偏差金额」
+# 会被 '偏差金额' 命中），避免标签与实际列对不上。
+_FACT_METRIC_COLS = (
+    '总偏差金额(含税)', '偏差金额(含税)', '偏差金额',
+    '净偏差金额', '净偏差数量', '偏差数量',
+)
+
+# 不做事实卡的表：驾驶舱（其 KPI 另有出处，且图表锚点与数据行混排）
+_FACT_SKIP_SHEETS = ('📊 驾驶舱',)
+
+# 事实卡区块标题前缀（兼作幂等标记）
+_FACT_MARKER = '各表事实卡'
+
+
+def _fact_col_stats(ws, hdr_row, last_row, col):
+    """统计某列的 合计/最大/最小（**只读**已渲染单元格，不改任何值）。
+
+    返回 (sum, mx, mn, n_num, n_skip)：
+      - n_num  = 参与统计的数值单元格数
+      - n_skip = 非数值占位（如导出把 0 写成 '-'）的单元格数，**不计入统计**
+    """
+    map_ = _cells_of(ws)
+    s = 0.0
+    mx = None
+    mn = None
+    n_num = 0
+    n_skip = 0
+    for r in range(hdr_row + 1, last_row + 1):
+        c = map_.get((r, col))
+        if c is None:
+            continue
+        v = c.value
+        if v is None or v == '':
+            continue
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            n_skip += 1
+            continue
+        fv = float(v)
+        s += fv
+        n_num += 1
+        if mx is None or fv > mx:
+            mx = fv
+        if mn is None or fv < mn:
+            mn = fv
+    return s, mx, mn, n_num, n_skip
+
+
+def _fact_numfmt(metric_name):
+    """按度量名给数字格式：金额两位小数千分位；数量最多三位小数。"""
+    if '金额' in metric_name:
+        return '#,##0.00'
+    if '率' in metric_name:
+        return '0.00%'
+    return '#,##0.###'
+
+
+def _add_fact_cards(wb):
+    """在「📋 分析说明」页追加「各表事实卡」区块：每张表的行数/列数/关键度量统计。
+
+    设计约束（改本函数前先读）：
+    1. **只统计、不改数**：所有数字取自各表**已渲染的单元格**（_cells_of），不重算
+       任何业务口径 —— 这样「事实卡 = 表内数字」可逐格对账，不会两套算法打架。
+    2. **口径文案复用**：直接读「各Sheet说明」区块里已有的说明文字，不另写一份，
+       避免同一口径在两处说法不一致。
+    3. **不新增 sheet**：sheet 数不变，下游按 sheet 名取数的报表（归藏报告/PPT）零影响。
+    4. **幂等**：区块标题已存在则先删旧区块再重写。
+    5. **非数值占位透明**：导出时把 0 写成 '-' 的行不计入统计，并在「统计备注」列写明
+       跳过多少行，避免合计被误读成全量口径。
+    """
+    info_name = None
+    for nm in wb.sheetnames:
+        if '分析说明' in nm:
+            info_name = nm
+            break
+    if not info_name:
+        return 0
+    ws_info = wb[info_name]
+    map_ = _cells_of(ws_info)
+
+    # 1) 读「各Sheet说明」的口径文案（列A=表名 → 列B=说明）
+    caliber = {}
+    for (r, c), cell in map_.items():
+        if c != 1:
+            continue
+        a = cell.value
+        if not isinstance(a, str):
+            continue
+        a = a.strip()
+        if not a or a.startswith(_FACT_MARKER) or a not in wb.sheetnames:
+            continue
+        bc = map_.get((r, 2))
+        if bc is not None and isinstance(bc.value, str) and bc.value.strip():
+            caliber[a] = bc.value.strip()
+
+    # 2) 幂等：找到旧区块标题就整块删掉重写
+    marker_row = None
+    for (r, c), cell in map_.items():
+        if c == 1 and isinstance(cell.value, str) \
+                and cell.value.strip().startswith(_FACT_MARKER):
+            marker_row = r
+            break
+    if marker_row:
+        start = marker_row
+        try:
+            ws_info.delete_rows(marker_row, ws_info.max_row - marker_row + 1)
+        except Exception as e:
+            _log('[post_process] 事实卡旧区块删除失败: %s' % e)
+            return 0
+    else:
+        start = ws_info.max_row + 2      # 空一行分隔
+
+    # 3) 逐表统计
+    cards = []
+    for nm in wb.sheetnames:
+        if nm == info_name or nm in _FACT_SKIP_SHEETS:
+            continue
+        ws = wb[nm]
+        try:
+            hdr_row, headers = _header_info(ws)
+            last_row = _last_data_row(ws, hdr_row)
+        except Exception:
+            continue
+        n_rows = last_row - hdr_row
+        if n_rows <= 0:
+            continue
+        col = None
+        actual = ''
+        for cand in _FACT_METRIC_COLS:
+            c_ = _find_col(headers, cand)
+            if c_:
+                col = c_
+                actual = headers.get(c_) or cand
+                break
+        s = mx = mn = None
+        n_num = n_skip = 0
+        if col:
+            s, mx, mn, n_num, n_skip = _fact_col_stats(ws, hdr_row, last_row, col)
+        cards.append({
+            'name': nm, 'rows': n_rows, 'cols': ws.max_column,
+            'metric': actual, 'col': col,
+            'sum': s, 'max': mx, 'min': mn, 'n_num': n_num, 'n_skip': n_skip,
+            'caliber': caliber.get(nm, ''),
+        })
+    if not cards:
+        return 0
+
+    # 4) 写区块
+    title = ws_info.cell(row=start, column=1, value=(
+        '%s（导出后处理自动生成：行数/列数/度量统计均取自本工作簿各表已渲染单元格，'
+        '可与表内数字逐格对账；口径沿用上方「各Sheet说明」，两处一致）' % _FACT_MARKER))
+    title.font = Font(bold=True, size=12, color='1B5E20')
+    title.alignment = Alignment(horizontal='left', vertical='center')
+    ws_info.row_dimensions[start].height = 22
+
+    hdr = start + 1
+    heads = ['表名', '口径（与「各Sheet说明」一致）', '数据行数', '列数',
+             '关键度量', '合计', '最大', '最小', '统计备注']
+    for j, h in enumerate(heads, 1):
+        c = ws_info.cell(row=hdr, column=j, value=h)
+        c.font = Font(bold=True, size=10, color='FFFFFF')
+        c.fill = PatternFill('solid', fgColor='1B5E20')
+        c.alignment = Alignment(horizontal='center', vertical='center')
+    ws_info.row_dimensions[hdr].height = 20
+
+    r = hdr + 1
+    for cd in cards:
+        ws_info.cell(row=r, column=1, value=cd['name']).font = Font(bold=True, size=10)
+        ws_info.cell(row=r, column=2, value=cd['caliber']).font = Font(size=9)
+        ws_info.cell(row=r, column=3, value=int(cd['rows'])).font = Font(size=10)
+        ws_info.cell(row=r, column=4, value=int(cd['cols'])).font = Font(size=10)
+        ws_info.cell(row=r, column=5, value=cd['metric']).font = Font(size=10)
+        if cd['col']:
+            fmt = _fact_numfmt(cd['metric'])
+            for j, v in ((6, cd['sum']), (7, cd['max']), (8, cd['min'])):
+                cc = ws_info.cell(row=r, column=j,
+                                  value=(None if v is None else round(float(v), 2)))
+                cc.number_format = fmt
+                cc.font = Font(size=10)
+        else:
+            for j in (6, 7, 8):
+                cc = ws_info.cell(row=r, column=j, value='—')
+                cc.font = Font(size=10, color='888888')
+                cc.alignment = Alignment(horizontal='center')
+        note = ''
+        if cd['n_skip']:
+            note = '另有 %d 行为非数值占位（"-"），未计入合计/最大/最小' % cd['n_skip']
+        elif cd['col'] and cd['n_num'] < cd['rows']:
+            note = '仅 %d/%d 行有数值' % (cd['n_num'], cd['rows'])
+        ws_info.cell(row=r, column=9, value=note).font = Font(size=9, color='666666')
+        r += 1
+
+    tip = ws_info.cell(row=r, column=1, value=(
+        '注：合计/最大/最小仅统计数值单元格；导出时把 0 写成 "-" 的占位行不计入，'
+        '各表跳过行数见「统计备注」列（已逐表标注）。'))
+    tip.font = Font(size=9, color='666666')
+    tip.alignment = Alignment(horizontal='left', vertical='center')
+
+    # 列宽：A/B 沿用分析说明既有版式（28/62），C-I 为本区块专用
+    for letter, w in (('C', 11), ('D', 8), ('E', 20), ('F', 18),
+                      ('G', 16), ('H', 16), ('I', 40)):
+        ws_info.column_dimensions[letter].width = w
+    return len(cards)
+
+
 # ---------------------------------------------------------------- 入口
 
 def decorate_workbook(wb, add_dashboard=True):
@@ -770,7 +1006,7 @@ def decorate_workbook(wb, add_dashboard=True):
     任何一步失败都不抛异常——美化问题绝不能阻断导出。
     """
     stats = {'sheets': 0, 'dates': 0, 'ids': 0, 'blanks': 0, 'flags': 0,
-             'ratios': 0, 'dups': 0, 'charts': 0}
+             'ratios': 0, 'dups': 0, 'charts': 0, 'cards': 0}
     if _is_skipped():
         _log('[post_process] 已按 ZPP011_SKIP_POST_PROCESS 跳过')
         return stats
@@ -814,6 +1050,11 @@ def decorate_workbook(wb, add_dashboard=True):
                 stats['charts'] = _add_dashboard(wb)
             except Exception as e:
                 _log('[post_process] 驾驶舱失败: %s' % e)
+        # v43.248：各表事实卡（可对账的统计摘要），写在「📋 分析说明」里
+        try:
+            stats['cards'] = _add_fact_cards(wb)
+        except Exception as e:
+            _log('[post_process] 事实卡失败: %s' % e)
     except Exception as e:
         _log('[post_process] 整体失败（已吞掉，不影响导出）: %s' % e)
     _log('[post_process] 完成 %s' % stats)

@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.248",
+        "date": "2026-10-23",
+        "fixes": "修复「📊 驾驶舱」KPI 数字块从未生成的真 bug（pyflakes F821×3）：post_process.py 用了 Alignment(...) 却**从未 import**，KPI 写入在第一行就抛 NameError 并被外层 try/except 静默吞掉 —— 成品驾驶舱只剩一个孤零零的「总偏差记录」标签，无任何数字/单位，另 3 个 KPI 全无。同源三处附带缺陷一并修：① KPI 块（row4-6）与图1 锚点 B4 重叠（KPI 会被图表盖住）→ 图锚点整体下移 4 行（B8/B28/B54）；② KPI 列宽用 chr(ord('A')+col) 算出 C/F/I/L，**整体偏移一列**、等于没设到 KPI 上 → 改 get_column_letter 按真实列号取；③ KPI 原摆「正偏差金额/负偏差金额」两格，但二者相加 ≠ 总偏差金额（差额=价格差异行，属设计口径），并排摆出会被业务方直接相加、误判为数据错误 → 改为只摆**闭合口径**「总偏差金额(含税)」+ 条数加权备注覆盖率，并在 KPI 下补一行口径注（正负分解见图2）。注：该 F821 长期未被发现，是因为此前只对 main_window.py 跑过 pyflakes，未覆盖 post_process.py。",
+        "features": "新增「各表事实卡」区块：导出后处理在「📋 分析说明」页追加各数据表的 数据行数/列数/关键度量(合计·最大·最小)/统计备注。口径文案直接复用「各Sheet说明」原文（两处不打架）；数字全部取自各表**已渲染单元格**，可与表内数字逐格对账；导出时写成 '-' 的占位行不计入统计并逐表标注跳过行数；幂等（重跑先删旧区块）；不新增 sheet，下游按 sheet 名取数的报表（归藏报告/PPT）零影响。",
+    },
+    {
         "version": "v43.247",
         "date": "2026-10-23",
         "fixes": "半成品分类「添加」按钮点击报 AttributeError：QDialog.__init__(SemiCategoryController)。根因：SemiCategoryController._add_semi_category（semi_category_controller.py:217）写 dlg = QDialog(self)，self 是控制器实例（非 QWidget），作父窗口传入 QDialog 构造即崩。column_controller:83 / dashboard_controller:345 / interaction_controller:267 均用 QDialog(self.mw)（self.mw 即 MainWindow，QWidget）。修法：该行改为 dlg = QDialog(self.mw)，与其他控制器一致。",
