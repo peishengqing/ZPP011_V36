@@ -1750,7 +1750,77 @@ class MainWindow(QMainWindow):
         self.alt_controller.show_zoom_window(self)
 
     def _zoom_semi_table(self):
-        self.alt_controller.zoom_semi_table(self)
+        """弹出半成品分类放大窗口，支持双击筛选。
+
+        历史坑：v43.222 重构把方法体从 MainWindow 迁出时漏了这条（薄壳指向
+        不存在的 alt_controller.zoom_semi_table，left_panel 放大按钮一按就
+        AttributeError）。v43.243 起把实现直接恢复在 MainWindow，不再转发。
+        数据源用 _get_semi_category_list()（与左侧 semi_tree 同源，含
+        name/factory/codes/code_count），避免重复实现分类提取逻辑。
+        """
+        from PySide6.QtWidgets import (
+            QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+            QPushButton, QTableWidget, QTableWidgetItem, QHeaderView
+        )
+        from PySide6.QtCore import Qt
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("半成品分类详情")
+        dialog.resize(720, 480)
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(8)
+
+        tip_label = QLabel("双击任意行可筛选该分类。点击「关闭」退出。")
+        tip_label.setStyleSheet("color: #aaa; font-size: 11px;")
+        layout.addWidget(tip_label)
+
+        # 表格：列 = [工厂 · 分类 / 物料数 / 示例物料]
+        table = QTableWidget()
+        table.setColumnCount(3)
+        table.setHorizontalHeaderLabels(["工厂 · 分类", "物料数", "示例物料（前 3 个编码）"])
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.setAlternatingRowColors(True)
+        table.verticalHeader().setVisible(False)
+
+        # 数据源：与左侧 semi_tree 同源（_get_semi_category_list），零重复逻辑
+        categories = self._get_semi_category_list()
+        table.setRowCount(len(categories))
+        for r, cat in enumerate(categories):
+            label = f"{cat.get('factory', '')} · {cat.get('name', '')}".strip(' ·')
+            codes = cat.get('codes') or []
+            name_item = QTableWidgetItem(label)
+            name_item.setData(Qt.UserRole, cat.get('name', ''))
+            table.setItem(r, 0, name_item)
+            table.setItem(r, 1, QTableWidgetItem(str(cat.get('code_count', len(codes)))))
+            example = '、'.join(codes[:3]) + (' …' if len(codes) > 3 else '')
+            ex_item = QTableWidgetItem(example)
+            ex_item.setToolTip('、'.join(codes))
+            table.setItem(r, 2, ex_item)
+
+        layout.addWidget(table)
+
+        # 双击筛选（_filter_semi_materials 按"分类名"匹配，不是"工厂·分类"全标签）
+        def _on_double_click(row_idx, _col):
+            item = table.item(row_idx, 0)
+            if item:
+                cat_name = item.data(Qt.UserRole)
+                self._filter_semi_materials(cat_name)
+        table.doubleClicked.connect(
+            lambda idx: _on_double_click(idx.row(), idx.column()))
+
+        # 关闭按钮
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        close_btn = QPushButton("关闭")
+        close_btn.clicked.connect(dialog.accept)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+
+        dialog.exec()
 
     def _sort_alt_pairs(self):
         self.alt_controller.sort_pairs()

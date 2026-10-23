@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.246",
+        "date": "2026-10-23",
+        "fixes": "半成品分类卡片「放大」按钮点击报 AttributeError：'AltController' object has no attribute 'zoom_semi_table'。根因：v43.222 ARC-003 重构把 _zoom_semi_table 的方法体从 MainWindow 迁出时漏了这条（薄壳 self.alt_controller.zoom_semi_table(self) 指向不存在的方法），left_panel.py:302 的放大按钮一按就崩。修法：把放大窗口实现直接恢复在 MainWindow._zoom_semi_table（用 _get_semi_category_list 与左侧 semi_tree 同源），不再转发。",
+        "features": "半成品分类放大窗口：显示 工厂·分类 / 物料数 / 示例物料 三列，双击任意行筛选该分类到主表。",
+    },
+    {
         "version": "v43.245",
         "date": "2026-10-23",
         "fixes": "无备注预警口径再次对齐业务方（裴哥 15:34 明确 B 选项）：从 v43.244 的「10%<=|偏差率|<100%」放宽为「|偏差率|>=10% 且 !=100.0%」（浮点容差 1e-6）。含义：>100% 的严重超耗行回归无备注预警（此前 v43.244 一并排除），仅排除恰好=100% 一条线（未投料-100% + 恰好翻倍+100%）。理由：>100% 属可预警的严重超耗模式，业务价值明显；仅 100.0% 精确值属巧合/边界，剔除即可。",
