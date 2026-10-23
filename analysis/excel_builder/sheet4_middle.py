@@ -33,6 +33,11 @@ def build_sheet4(df, alt_df, alt_pairs, report_progress, progress_idx=4, dyn_thr
     middle = df[(df[col_p].notna()) & (df[col_p] >= -thresh)
                 & (df[col_p] <= thresh)].copy()
 
+    # v43.243 P0：排除 0 偏差死行（定额=实际、材料偏差=0 的完美对齐行，
+    # 无分析价值却占 28.5% 行量）。保留 |材料偏差|>0 的真偏差记录。
+    if not middle.empty:
+        middle = middle[middle['材料偏差'] != 0].copy()
+
     alt_orders = list(set(alt_df['订单号'])) if len(alt_df) > 0 else []
     alt_all_descs = [(a[-1] if isinstance(a, (list,tuple)) else a) for a, b in alt_pairs] + [(b[-1] if isinstance(b, (list,tuple)) else b) for a, b in alt_pairs]
     esc_descs = [re.escape(d) for d in alt_all_descs]

@@ -41,6 +41,19 @@ def build_sheet3(df, report_progress, progress_idx=3, dyn_thresh=None):
         no_note_df['订单日期'] = pd.to_datetime(no_note['订单开始日期'], errors='coerce').dt.strftime('%Y-%m-%d').fillna('')
         no_note_df['工厂'] = no_note['工厂名称']
         no_note_df['车间'] = no_note['车间']
+        # v43.243 P1：严重度标签列。规则（按业务端最紧急优先）：
+        #   🔴 完全未投料  = 定额>0 且 实际=0 且 |偏差率|>99
+        #   🟠 严重偏差    = |偏差率|>=50
+        #   🟡 超阈值      = |偏差率|>dyn_thresh（默认10）
+        _quota = no_note['数量-定额'] if '数量-定额' in no_note.columns else 0
+        _actual = no_note['数量-实际'] if '数量-实际' in no_note.columns else 0
+        _rate_abs = no_note[col_p].abs()
+        _is_under = (_quota > 0) & (_actual == 0) & (_rate_abs > 99)
+        _is_severe = ~_is_under & (_rate_abs >= 50)
+        _level = _is_under.map(lambda b: '🔴 完全未投料' if b else '')
+        _level = _level.mask(_is_severe, '🟠 严重偏差')
+        _level = _level.mask(~(_is_under | _is_severe), '🟡 超阈值')
+        no_note_df['预警等级'] = _level.values
         no_note_df['物料名称'] = no_note['组件物料描述']
         no_note_df['物料类型'] = no_note['物料分类']
         no_note_df['单位'] = no_note['组件单位'].fillna('')
@@ -63,10 +76,15 @@ def build_sheet3(df, report_progress, progress_idx=3, dyn_thresh=None):
     if no_note_df.empty:
         report_progress(progress_idx, "Sheet3-无备注预警", 100)
         return no_note_df
+
+    # v43.243 P1：双键排序 —— 预警等级优先（🔴→🟠→🟡），同级内按 |金额| 降序
+    _level_rank = {'🔴 完全未投料': 0, '🟠 严重偏差': 1, '🟡 超阈值': 2, '': 3}
+    no_note_df['_level_w'] = no_note_df['预警等级'].map(_level_rank).fillna(3)
     no_note_df['_abs_amt'] = no_note_df['偏差金额(含税)'].apply(
         lambda x: abs(x) if isinstance(x, (int, float)) else 0)
     no_note_df = no_note_df.sort_values(
-        '_abs_amt', ascending=False).drop('_abs_amt', axis=1)
+        ['_level_w', '_abs_amt'], ascending=[True, False]
+    ).drop(['_level_w', '_abs_amt'], axis=1)
 
     report_progress(progress_idx, "Sheet3-无备注预警", 100)
     return no_note_df

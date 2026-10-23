@@ -25,6 +25,12 @@ def build_sheet9(df, report_progress, progress_idx=9):
         df['备注原因'] != '') & (df['材料偏差'] != 0)].copy()
     has_reason['_std_reason'] = has_reason['备注原因'].apply(standardize_remark)
 
+    # v43.243 独立维度：过滤掉「替代料」类别。该类别 34 条记录的两侧对冲
+    # （A 多耗 X + B 少耗 X = 净额 -152）会掩盖真实结构，已由「替代料明细」
+    # sheet 独立展示完整配对清单及替代有效性（净偏差率、A/B 各自偏差）。
+    # 此处剔除后「偏差原因分析」表可聚焦真实原因结构。
+    has_reason = has_reason[has_reason['_std_reason'] != '替代料'].copy()
+
     # ⑤ 预计算各车间的偏差数量绝对值合计，作为"占车间偏差比%"的分母
     ws_dev_abs = has_reason.groupby(['工厂名称', '车间'])['材料偏差'].apply(
         lambda s: s.abs().sum()).to_dict()

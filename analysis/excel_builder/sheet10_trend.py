@@ -70,21 +70,29 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
 
     def write_trend_sheet(wb_inner, dev_df_inner, date_min_inner):
         ws = wb_inner.create_sheet('趋势分析（自然日分组）')
-        # 列序与 Sheet5/Sheet6/Sheet7 统一：物料类型 放在 物料编码 之前
-        headers = ['物料类型', '物料编码', '物料名称', '单位',
+        # v43.243 P2：加最早/最新订单日期两列，用户可追溯趋势来自哪个订单窗口；
+        # period_desc 从 row2 挪到 row1 独立说明行，表头下移到 row2、数据从 row4 起。
+        headers = ['最早订单日期', '最新订单日期',
+                   '物料类型', '物料编码', '物料名称', '单位',
                    '早期偏差率', '中期偏差率', '近期偏差率', '趋势']
-        col_widths = [12, 16, 30, 8, 16, 16, 16, 14]
+        col_widths = [13, 13, 12, 16, 30, 8, 16, 16, 16, 14]
+        ncol = len(headers)
+
+        # row 1：period_desc 说明行（跨列合并）
+        # row 2：表头
+        # row 3+：数据（实际数据从 row 4 起，row 3 留空避免说明行紧贴表头）
+        data_start_row = 4
 
         for j, h in enumerate(headers, 1):
-            c = ws.cell(row=1, column=j, value=h)
+            c = ws.cell(row=2, column=j, value=h)
             c.font = header_font
             c.fill = header_fill
             c.alignment = center
             c.border = border
-        ws.freeze_panes = 'A2'
+        ws.freeze_panes = 'A3'
 
         if dev_df_inner is None or dev_df_inner.empty:
-            ws.cell(row=2, column=1, value='无数据，无法生成趋势')
+            ws.cell(row=3, column=1, value='无数据，无法生成趋势')
             return
 
         dev = dev_df_inner.copy()
@@ -93,7 +101,7 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
         dev['订单日期'] = pd.to_datetime(dev['订单日期'], errors='coerce')
         dev = dev.dropna(subset=['订单日期'])
         if dev.empty:
-            ws.cell(row=2, column=1, value='无有效订单日期，无法生成趋势')
+            ws.cell(row=3, column=1, value='无有效订单日期，无法生成趋势')
             return
 
         # 解析偏差率：兼容字符串 "10.5%" 和数值类型
@@ -120,7 +128,7 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
         dprint(f"[DEBUG Sheet10] 总行数={total}, 有效偏差率={valid_rate}")
 
         if valid_rate == 0:
-            ws.cell(row=2, column=1, value='无有效偏差率数据，无法生成趋势')
+            ws.cell(row=3, column=1, value='无有效偏差率数据，无法生成趋势')
             return
 
         # 按时间跨度三等分
@@ -154,11 +162,11 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
 
         dprint(f"[DEBUG Sheet10] {period_desc}")
 
-        # 在表头下方写入日期范围说明
-        ws.cell(row=2, column=1, value=period_desc)
-        ws.cell(row=2, column=1).font = info_font
-        ws.cell(row=2, column=1).alignment = left_align
-        ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=8)
+        # v43.243 P2：period_desc 挪到 row1 独立说明行（原在 row2 与表头冲突）
+        ws.cell(row=1, column=1, value=period_desc)
+        ws.cell(row=1, column=1).font = info_font
+        ws.cell(row=1, column=1).alignment = left_align
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncol)
 
         def assign_period(dt):
             if total_span <= 0:
@@ -174,7 +182,7 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
         dev = dev.dropna(subset=['_period', '_dev_rate_num'])
 
         if dev.empty:
-            ws.cell(row=3, column=1, value='无有效分组数据，无法生成趋势')
+            ws.cell(row=4, column=1, value='无有效分组数据，无法生成趋势')
             return
 
         # 确保分组列存在
@@ -182,6 +190,13 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
         for c in group_cols:
             if c not in dev.columns:
                 dev[c] = ''
+
+        # v43.243 P2：先算每个物料的最早/最新订单日期，供表格里显示
+        date_range = (
+            dev.groupby(group_cols)['订单日期']
+            .agg(['min', 'max']).reset_index()
+            .set_index(group_cols)
+        )
 
         period_avg = (
             dev.groupby(group_cols + ['_period'])['_dev_rate_num']
@@ -195,9 +210,19 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
             r_mid = row.get('mid', None)
             r_early = row.get('early', None)
 
+            # 最早/最新订单日期
+            try:
+                d_min = date_range.loc[idx, 'min']
+                d_max = date_range.loc[idx, 'max']
+                s_min = pd.Timestamp(d_min).strftime('%m/%d') if pd.notna(d_min) else '-'
+                s_max = pd.Timestamp(d_max).strftime('%m/%d') if pd.notna(d_max) else '-'
+            except (KeyError, TypeError):
+                s_min, s_max = '-', '-'
+
             arrow = _judge_trend(r_early, r_mid, r_recent)
 
             rows.append([
+                s_min, s_max,
                 typ, code, name, unit,
                 f"{r_early:.2f}%" if r_early is not None and pd.notna(r_early) else "-",
                 f"{r_mid:.2f}%" if r_mid is not None and pd.notna(r_mid) else "-",
@@ -222,27 +247,27 @@ def build_sheet10(wb, dev_df, date_min, report_progress, progress_idx=10):
             行被压到 566 行以后，看起来就像「近期列全空」（2026-10-02 裴哥截图）。
             实际数据一个都没丢，纯属排序把有值行藏起来了。
             """
-            v = _abs_pct(r[6])
+            v = _abs_pct(r[8])
             if v is not None:
                 return (0, -v)
-            v_mid = _abs_pct(r[5])
+            v_mid = _abs_pct(r[7])
             if v_mid is not None:
                 return (1, -v_mid)
-            v_early = _abs_pct(r[4])
+            v_early = _abs_pct(r[6])
             if v_early is not None:
                 return (1, -v_early)
             return (1, 0.0)
 
         rows.sort(key=sort_key)
 
-        # 数据从第3行开始（第2行是日期范围说明）
-        for i, row in enumerate(rows, 3):
+        # 数据从 data_start_row 起（row1=说明, row2=表头, row3=空行）
+        for i, row in enumerate(rows, data_start_row):
             for j, v in enumerate(row, 1):
                 c = ws.cell(row=i, column=j, value=v)
                 c.font = data_font
                 c.border = border
                 c.alignment = center
-                if j == 8:
+                if j == 10:  # 趋势列（v43.243 加订单日期后列数从 8 → 10）
                     if '↑' in str(v):
                         c.font = Font(size=10, color='C00000')
                     elif '↓' in str(v):

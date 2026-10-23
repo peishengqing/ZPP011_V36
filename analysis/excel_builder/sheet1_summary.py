@@ -53,6 +53,11 @@ def build_sheet1(df, report_progress, progress_idx=1):
         # 正/负偏差金额 = 仅材料偏差≠0 的子集合计。故 正+负 ≠ 总 属设计口径（差额=零数量偏差的价格差），
         # 非勾稽错误。详见 post_process.py 模块注释「已知数据事实」。
         total_amt = round(grp['偏差金额(含税)'].sum(), 2)
+        # v43.243 P1：把「正+负 ≠ 总」的差额显式拆出来，让口径可勾稽。
+        # 数量偏差合计金额 = 正 + 负（材料偏差≠0 子集，即"实际记账口径"）
+        # 价格差异金额 = 总 - 数量偏差合计（材料偏差=0 但金额≠定额 的价格差行）
+        qty_total_amt = round(pos_amt + neg_amt, 2)
+        price_diff_amt = round(total_amt - qty_total_amt, 2)
         summary_rows.append({
             '序号': idx,
             '工厂': factory,
@@ -68,6 +73,8 @@ def build_sheet1(df, report_progress, progress_idx=1):
             '总条数': len(grp),
             '总数量': round(grp['材料偏差'].sum(), 2),
             '总偏差金额(含税)': total_amt,
+            '数量偏差合计金额(含税)': qty_total_amt,
+            '价格差异金额(含税)': price_diff_amt,
             '备注覆盖率': f"{note_rate:.0%}",
             '预警': warning,
         })
