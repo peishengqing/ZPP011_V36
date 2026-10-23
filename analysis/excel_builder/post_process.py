@@ -598,7 +598,7 @@ def _add_anomaly_flag(ws, hdr_row, headers, last_row):
 # ---------------------------------------------------------------- 驾驶舱
 
 def _add_dashboard(wb):
-    """新建「📊 驾驶舱」页，集中 3 张图。已存在则跳过（幂等）。"""
+    """新建「📊 驾驶舱」页：KPI 数字块 + 3 张图。已存在则跳过（幂等）。"""
     from openpyxl.chart import BarChart, Reference
     name = '📊 驾驶舱'
     if name in wb.sheetnames:
@@ -614,6 +614,57 @@ def _add_dashboard(wb):
     ws_dash.cell(row=2, column=2,
                  value='图表数据源：本工作簿「汇总统计」「偏差金额分析」；随每次导出自动生成'
                  ).font = Font(size=10, color='666666')
+
+    # ── KPI 数字块（v43.233 优化）：驾驶舱原先只有 3 张图、没有任何数字，
+    # 打开文件第一眼看不到总条数/总偏差金额/无备注占比。现从「汇总统计」
+    # 直接求合写出 4 个 KPI，与图表排成一行，补充管理层速览。──
+    _kpi_row = 4
+    try:
+        if '汇总统计' in wb.sheetnames:
+            src = wb['汇总统计']
+            h_row, hds = _header_info(src)
+            l_row = _last_data_row(src, h_row)
+            def _col_sum(names):
+                c_ = _find_col(hds, *names)
+                if not c_:
+                    return 0.0
+                s = 0.0
+                for r in range(h_row + 1, l_row + 1):
+                    v = src.cell(row=r, column=c_).value
+                    if isinstance(v, (int, float)):
+                        s += v
+                return s
+            k_pos = _col_sum(('正偏差金额(含税)',))
+            k_neg = _col_sum(('负偏差金额(含税)',))
+            k_cnt = _col_sum(('总条数',))
+            k_unread = 0
+            try:
+                if '无备注预警' in wb.sheetnames:
+                    s2 = wb['无备注预警']
+                    h2, _ = _header_info(s2)
+                    k_unread = _last_data_row(s2, h2) - h2
+            except Exception:
+                k_unread = 0
+            kpis = [
+                ('总偏差记录', f'{int(k_cnt):,}', '条'),
+                ('正偏差金额(含税)', f'{k_pos:,.2f}', '元'),
+                ('负偏差金额(含税)', f'{k_neg:,.2f}', '元'),
+                ('无备注预警', f'{k_unread:,}', '条'),
+            ]
+            for k, (lab, val, unit) in enumerate(kpis):
+                col = 2 + k * 3
+                lc = ws_dash.cell(row=_kpi_row, column=col, value=lab)
+                lc.font = Font(bold=True, size=11, color='1B5E20')
+                lc.alignment = Alignment(horizontal='center')
+                vc = ws_dash.cell(row=_kpi_row + 1, column=col, value=val)
+                vc.font = Font(bold=True, size=16, color='1B5E20')
+                vc.alignment = Alignment(horizontal='center')
+                uc = ws_dash.cell(row=_kpi_row + 2, column=col, value=unit)
+                uc.font = Font(size=9, color='666666')
+                uc.alignment = Alignment(horizontal='center')
+                ws_dash.column_dimensions[chr(ord('A') + col)].width = 16
+    except Exception as e:
+        _log('[post_process] 驾驶舱KPI失败: %s' % e)
 
     charts = 0
 

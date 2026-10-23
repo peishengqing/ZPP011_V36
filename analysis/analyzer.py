@@ -947,7 +947,7 @@ def export_full_report_from_intermediates(intermediates, output_path=None, outpu
             ws5.cell(row=i, column=21)._style.fillId = _gx_fid  # 第21列 = 是否替代料
 
     ws6 = wb.create_sheet('异常预警')
-    headers6 = ['订单开始日期', '订单类型', '订单号', '异常类型', '工厂', '车间',
+    headers6 = ['订单日期', '订单类型', '订单号', '异常类型', '工厂', '车间',
                 '原表行号', '产品物料号码', '产品物料描述', '物料类型', '物料编码', '物料名称',
                 '单位', '定额', '实际',
                 '偏差数量', '净偏差数量', '净偏差金额', '净偏差率', '偏差率', '备注', '处理建议', '替代料']
@@ -1092,15 +1092,23 @@ def export_full_report_from_intermediates(intermediates, output_path=None, outpu
 
     # ── 分析说明 sheet ────────────────────────────
     ws_info = wb.create_sheet('📋 分析说明', index=0)
+    # 导出时间戳 + 版本号（v43.233 优化：便于追溯，文件名之外再留一处来源记录）
+    try:
+        from utils.version_history import VERSION_HISTORY
+        _app_ver = VERSION_HISTORY[0]['version'] if VERSION_HISTORY else 'unknown'
+    except Exception:
+        _app_ver = 'unknown'
+    _exported_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     info_rows = [
         ['ZPP011 偏差分析器 · 分析说明', ''],
         ['', ''],
         ['分析日期范围', f"{pd.Timestamp(date_min).strftime('%Y-%m-%d')} ～ {pd.Timestamp(date_max).strftime('%Y-%m-%d')}"],
         ['动态阈值方法', thresh_desc],
         ['动态阈值数值', f"±{dyn_thresh:.1f}%"],
+        ['导出时间 / 软件版本', f"{_exported_at} / {_app_ver}"],
         ['', ''],
         ['各Sheet说明', ''],
-        ['汇总统计', '按车间×物料分类统计偏差条数、数量、金额、备注覆盖率'],
+        ['汇总统计', '按车间×物料分类统计偏差条数、数量、金额、备注覆盖率。注：「总偏差金额(含税)」为全量记录合计（含零数量偏差但实际/定额金额不同的价格差异行），故「总偏差金额 ≠ 正偏差金额+负偏差金额」属设计口径，差额=价格差异金额'],
         ['替代料明细', '识别到的替代料配对及净偏差'],
         ['无备注预警', f'偏差率超过 ±{dyn_thresh:.1f}% 但未填备注的记录（按偏差金额降序）'],
         ['中间地带明细', f'偏差率在 ±{dyn_thresh:.1f}% 区间内（不纳入汇总统计）'],
@@ -1118,9 +1126,9 @@ def export_full_report_from_intermediates(intermediates, output_path=None, outpu
             if i == 1:
                 c.font = Font(bold=True, size=14, color='1B5E20')
                 c.alignment = Alignment(horizontal='left', vertical='center')
-            elif i == 7:
+            elif i == 8:
                 c.font = Font(bold=True, size=11)
-            elif i > 7:
+            elif i > 8:
                 c.font = Font(size=11)
                 if j == 1:
                     c.font = Font(bold=True, size=11)

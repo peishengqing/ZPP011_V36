@@ -49,6 +49,21 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
     code_col = next((c for c in df.columns if c in ('组件物料编码', '组件物料号')), None)
     alt_rows = []
 
+    # 量纲统一（v43.233 优化）：主表「偏差率(%)」列是百分数值（-100 表 -100%、13.429 表
+    # 13.4%），替代料明细原样直读，与「完整偏差明细/无备注预警」的比率小数口径不一致，
+    # 读者无法分辨 100 是 100% 还是 100 倍。导出前统一折算为**比率小数**
+    # （-1.0 / 0.13429 / -0.00027），由 post_process 的 0.00% 数字格式显示。
+    # NaN/非数值保持空（折算后写 ''，避免把缺失值伪装成 0）。
+    def _to_ratio(x):
+        try:
+            if x is None or (isinstance(x, float) and pd.isna(x)):
+                return ''
+            if x == '':
+                return ''
+            return round(float(x) / 100.0, 6)
+        except (TypeError, ValueError):
+            return x
+
     # 性能（2026-10-01）：订单级缓存 code 列的 str 形态。
     # 原 _match_rows 每次第三级匹配都 grp[code_col].astype(str)，同一订单匹配
     # 多个 B 时重复 astype。按订单切片缓存一次。
@@ -198,15 +213,16 @@ def build_sheet2(df, alt_pairs, report_progress, progress_idx=2):
                     '物料A': a['组件物料描述'],
                     '单位': a['组件单位'] if pd.notna(a['组件单位']) else '',
                     '偏差A': a['材料偏差'],
-                    '偏差率A': a[col_p],
+                    '偏差率A': _to_ratio(a[col_p]),
                     '物料B编码': b.get('组件物料编码', b.get('组件物料号', '')),
                     '物料B': b['组件物料描述'],
                     '偏差B': b['材料偏差'],
-                    '偏差率B': b[col_p],
+                    '偏差率B': _to_ratio(b[col_p]),
                     '净偏差': net_qty,
                     '净偏差数量': net_qty,
                     '净偏差金额': net_amt,
-                    '净偏差率': f"{(net_qty / a['数量-定额'] * 100):.1f}%" if a.get('数量-定额', 0) != 0 else '',
+                    # 净偏差率：比率小数 + round 6 位（修浮点长尾 -0.009000000000000001）
+                    '净偏差率': round(net_qty / a['数量-定额'], 6) if a.get('数量-定额', 0) != 0 else '',
                     '备注': '替代料' if len(b_list) == 1 else '替代料(1对多)',
                     '标准原因': a.get('标准原因', ''),
                 })

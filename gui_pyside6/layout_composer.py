@@ -141,7 +141,6 @@ class LayoutComposer:
         boards_menu.addAction("🔒 隔离区", lambda: mw._open_quarantine_dialog())
         boards_menu.addAction("📋 数据稳定性", lambda: mw._show_data_stability_dashboard())
         boards_menu.addAction("🔄 替代料长链", lambda: mw._show_alt_chain_dashboard())
-        boards_menu.addAction("🪪 物料画像", lambda: mw._show_material_profile())
         boards_menu.addAction("🧵 半成品看板", lambda: mw._show_semi_dashboard())
         mw.action_btn_boards.setMenu(boards_menu)
         action_layout.addWidget(mw.action_btn_boards)
@@ -167,6 +166,12 @@ class LayoutComposer:
         mw.action_btn_maint.setStyleSheet(
             "QToolButton { border: none; color: #666; font-size: 12px; padding: 4px 8px; }\n"
             "QToolButton:hover { color: #333; background: #eee; }")
+        # 维护按钮改为下拉菜单（自动隔离规则 + 物料画像）
+        mw.action_btn_maint.setPopupMode(QToolButton.MenuButtonPopup)
+        maint_menu = QMenu(mw)
+        maint_menu.addAction("🔒 自动隔离规则", lambda: mw._open_auto_quarantine_rule_dialog())
+        maint_menu.addAction("🪪 物料画像", lambda: mw._show_material_profile())
+        mw.action_btn_maint.setMenu(maint_menu)
         action_layout.addWidget(mw.action_btn_maint)
 
         action_layout.addWidget(self._make_separator())
