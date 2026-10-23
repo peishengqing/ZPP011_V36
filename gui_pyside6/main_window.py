@@ -2046,9 +2046,29 @@ class MainWindow(QMainWindow):
             self._show_deviation_warning_dialog()
 
     def log(self, msg, level="info"):
-        """运行日志面板已移除，保留接口为空操作，避免各处 self.log(...) 调用崩溃。
-        如需重新启用日志，恢复 bottom_bar 与 _v_splitter 中的日志项即可。"""
-        pass
+        """运行日志面板已移除（v43.235 前为空操作 pass）。
+
+        历史坑：空实现导致「双击定位主表」等自诊断路径完全静默——用户侧看起来
+        「功能失效」却无任何提示，排查无从下手。v43.239 起回显到状态栏 + 落盘
+        logs/（复用 core.logger.get_logger，避免重复造轮子 / 重复加 handler）。
+
+        行为约定：
+          - 状态栏瞬时提示 5s（level=info/debug 也显示，便于现场看）；
+          - 文件写 logs/YYYY-MM-DD.log（get_logger 已配 TimedRotatingFileHandler，
+            按天滚动保留 30 天）；
+          - 任何一步失败都不抛——日志接口本身绝不能成为新的故障源。
+        """
+        # 1) 状态栏回显（最直观的现场反馈）
+        try:
+            self.statusBar().showMessage(f"[{level}] {msg}", 5000)
+        except Exception:
+            pass
+        # 2) 落盘（复用项目统一 logger，自动去重 handler）
+        try:
+            from core.logger import get_logger
+            get_logger("ZPP011").info("%s", f"[{level}] {msg}")
+        except Exception:
+            pass
 
     # -----------------------------------------------------------
     # 数据相关
@@ -2439,6 +2459,12 @@ class MainWindow(QMainWindow):
             df = df.copy()
             df["净偏差数量"] = df.get("偏差数量", 0)
             df["是否替代料"] = "否"
+            # v43.240 修复：净偏差重算不改变被变更检测比对的「实际数量/备注原因/产量」，
+            # 但本函数读的是 view_model.df——其 _read 副本未被「变动提醒-全设为已读」更新（仍是 0），
+            # 若直接 setDataFrame 会把刚标好的已读(_read=1)覆盖回未读，导致变动提醒又翻回未读。
+            # 故重算后从 DB 重新派生 _read/_post_audit_changed，让已读状态跨净偏差重算存活。
+            if '_read' in df.columns and 'data_id' in df.columns:
+                df = self.data_service._restore_read_status(df)
             self._schedule_unread_summary()
             self.view_model.df = df
             if self.source_model is not None:
@@ -2452,6 +2478,10 @@ class MainWindow(QMainWindow):
             return
         try:
             new_df = apply_net_offset(df, alt_pairs, group_key=["订单日期", "流程订单"])
+            # v43.240 修复：与空配对分支同理，重算后从 DB 重新对账已读状态，
+            # 避免把「变动提醒-全设为已读」标好的 _read=1 覆盖回 0（清空替代料看板→变动提醒又变未读）。
+            if '_read' in new_df.columns and 'data_id' in new_df.columns:
+                new_df = self.data_service._restore_read_status(new_df)
             self._schedule_unread_summary()
             self.view_model.df = new_df
             if self.source_model is not None:
@@ -2737,8 +2767,21 @@ class MainWindow(QMainWindow):
     # 双击明细
     # -----------------------------------------------------------
     def _on_cell_double_clicked(self, index):
+        # v43.236 调试增强：log() 目前是空实现（运行日志面板已移除），仅靠它无法确认
+        # 双击信号是否真的到达。这里同时写状态栏 + 打 traceback，保证任何路径（成功/
+        # 越界/异常）都留可见痕迹，便于定位"双击无响应"。
+        try:
+            self.statusBar().showMessage(
+                f"[双击] row={index.row() if index.isValid() else 'invalid'}", 4000)
+        except Exception:
+            pass
         self.log("双击事件触发：index={}".format(index), "info")
-        return self.interaction_controller._on_cell_double_clicked(index)
+        try:
+            return self.interaction_controller._on_cell_double_clicked(index)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            raise
 
     def _show_row_detail(self, row_data):
         return self.interaction_controller._show_row_detail(row_data)
