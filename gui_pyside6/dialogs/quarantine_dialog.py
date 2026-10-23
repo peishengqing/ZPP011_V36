@@ -261,6 +261,22 @@ class QuarantineDialog(QDialog):
     # ------------------------------------------------------------------ 数据
     def set_data(self, df):
         df = df.copy()
+        # v43.239：打开/刷新隔离区前，先对主表跑一次「隔离区已读对账」。
+        # 作用：把"之前已解决被自动已读、现数据变动成仍负损"的记录翻回未读，
+        # 并弹变动提醒（如"仍负损翻回未读 N 条"）。
+        # 根因：对账原函数只在"重新分析"时触发，打开对话框不触发，
+        # 导致陈旧 auto 标记残留——隔离区里"仍负损"记录却显示"自动已读"。
+        try:
+            mw = self.main_window
+            if mw is not None and hasattr(mw, 'quarantine_manager_controller'):
+                qmc = mw.quarantine_manager_controller
+                vm = getattr(mw, 'view_model', None)
+                main_df = getattr(vm, 'df', None) if vm is not None else None
+                if main_df is not None and not main_df.empty and 'data_id' in main_df.columns:
+                    # 传副本：只落库已读状态，不意外改动主表内存
+                    qmc._reconcile_quarantine_read_status(main_df.copy())
+        except Exception as _e:
+            print(f"[WARN] 隔离区打开时已读对账失败(不影响展示): {_e}", flush=True)
         if "_read" not in df.columns:
             df["_read"] = 0
         # 回填隔离原因和豁免状态（存于 quarantine_manager 的 SQLite）
