@@ -52,6 +52,29 @@ DESIGN_DIRECTIONS = [
     "杂志专题风：大图式留白封面、跨页大标题、引文式结论、编号小节",
 ]
 
+# ── 归藏（guizang）双风格：裴哥 2026-10-24 点名「用归藏做，都 AI、不套模板」。
+# 视觉规范提炼自 guizang-ppt-skill 的 references/themes.md + layouts.md（杂志风）
+# 与 themes-swiss.md + layouts-swiss.md（瑞士风）；AI 按规范自由设计版式，
+# 不复制 skill 的 template.html，数字仍全部来自数据字典 + 过数字护栏。
+GZ_MAGAZINE = """归藏 · 电子杂志 × 电子墨水（Guizang Magazine × E-ink）。严格遵循以下规范，规范内自由发挥：
+【主题色】从归藏 5 套预设选一套，一份 deck 只用一套不混搭：① 墨水经典 ink#0a0a0b/paper#f1efea/paper-tint#e8e5de ② 靛蓝瓷 ink#0a1f3d/paper#f1f3f5/tint#e4e8ec ③ 森林墨 ink#1a2e1f/paper#f5f1e8/tint#ece7da ④ 牛皮纸 ink#2a1e13/paper#eedfc7/tint#e0d0b6 ⑤ 沙丘 ink#1f1a14/paper#f0e6d2/tint#e3d7bf。数据审核类报告推荐靛蓝瓷或墨水经典。不许自定义 hex。
+【排版】大标题用系统衬线栈（Noto Serif SC/Source Han Serif SC/Georgia/Songti SC），正文无衬线，元数据与数字标签用等宽栈（JetBrains Mono/SFMono/Consolas）。纸感底色 + 墨字，发丝细分割线（currentColor 驱动）。
+【语言】西式版式语言只影响字体/网格/色彩，**不影响语言**：所有可见文字必须是简体中文（标题/栏目标签/表头/图例/注释/结论建议），禁止英文标题与英文标签（Net Deviation/Top 5/Factory Detail 一类全不许）；等宽字体只渲染数字与编码，不写英文标语。唯一例外：ZPP011、SAP、ERP、A/B、物料编码/订单号。
+【编辑元素】每页 kicker 小栏目标签 + meta-row（期号/日期/页码）；核心数字用 stat-card 组合（大数字+单位+标签+注脚）；重要结论用 callout 引述块；流程用 pipeline 步骤条（编号+标题+描述）。
+【布局】杂志式不对称网格分栏（如 2-7-5 / 2-6-6 / 2-8-4 / 3-3），大量留白；hero 封面页可用原生 Canvas/WebGL 做流体/等高线/色散背景（零外链），也可用纸感纯色+细线网格；内页保持纸面安静。
+【动效】原生 CSS/JS 级联淡入（元素带 data-anim，翻到当前页依次淡入），hero 页更慢更有仪式感，大引用页逐句揭示；必须保留键盘 ←→/空格/PageUp/PageDown 翻页、ESC 总览、B 静态模式（关动效）。"""
+
+GZ_SWISS = """归藏 · 瑞士国际主义（Guizang Swiss / International Typographic Style）。严格遵循以下规范，规范内自由发挥：
+【主题色】单一高饱和锚点色只选一个、绝不混搭：克莱因蓝 #002FA7（推荐，数据/商业）、柠檬黄 #FFD500、柠檬绿 #C5E803、安全橙 #FF6B35。底色 #fafaf8 纸白，文字 #0a0a0a 近黑，灰阶 #f0f0ee（浅灰块）/#d4d4d2（分割线）/#737373（辅助文字）。浅色 accent（黄/绿）上文字必须用纯黑。
+【排版】Inter / Helvetica Neue 系统无衬线栈 + JetBrains Mono 等宽；大标题 font-weight 200（极细）配 letter-spacing:-0.04em、line-height:0.9，重点词/数字 300；正文 300；小标签 t-cat 600。中文大标题按长度降字号：1 行≤8 字 min(6.4vw,11.2vh)；2 行每行≤8 字 min(5.8vw,10.2vh)；任一行 9-12 字 min(5.2vw,9.2vh)；更长就改写标题。
+【语言】瑞士的西式设计语言（Inter/Helvetica/Mono、网格、字重、单一锚点色）只影响版式，**不影响语言**：所有可见文字必须是简体中文（标题/栏目标签/表头/图例/注释/结论建议），禁止英文标题与英文标签（Net Deviation/Top 5/Factory Detail/Overage 一类全不许——实测有整份报告中文仅占 18% 的废版）；等宽字体只渲染数字与编码，不写英文标语。唯一例外：ZPP011、SAP、ERP、A/B、物料编码/订单号。
+【网格】16 列 grid（grid-template-columns:repeat(16,1fr) + gap:16px）；画布卡 100vw×100vh、直角无圆角、padding 5.6vh 5vw 4.4vh；页眉/主体/脚注共用同一条 5vw 边线，主体绝不二次加水平 padding；不用 WebGL 背景，body 即纸白。
+【硬规则】直角、纯色、不透明；禁止渐变、禁止圆角、禁止阴影；accent 只做局部高亮不满屏；SVG 只画几何不写可见文字（标签一律放 HTML）。
+【锚点色唯一性】只允许定义一个强调色变量（--accent = 选定的那一个），**不许定义或使用任何第二个强调色**（如 --accent-light / 辅助黄 / 辅助绿 / 第二高亮）——页面上出现的强调色必须且只能是选定的那一个，这是瑞士风的灵魂。需要“浅色强调块”时用 --accent 的低透明度叠在纸白上（如 color-mix 或手算同色系浅 tint），不许换成另一个色相。
+【动效】原生 CSS/JS 入场（级联淡入/方向性揭示），保留键盘翻页 + B 静态模式（low-power 停 WebGL/RAF/动画，localStorage 记忆选择）。"""
+
+DESIGN_DIRECTIONS += [GZ_MAGAZINE, GZ_SWISS]
+
 # 页码/年份等常量白名单：这些不是业务数字，AI 一定会用
 _CONSTANT_NUMBERS = {
     "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
@@ -88,6 +111,11 @@ _PROSE_UNIT_RE = re.compile(
 # 可见文本下限：低于此值说明内容被藏进 <script> 用 JS 注入（v43.259 实测，
 # AI 把整份报告塞进单个 script → 总字符 35,438 但可见文本仅 82 → 护栏真空通过）
 MIN_VISIBLE_TEXT = 3000
+# 中文门（v43.260 实测）：瑞士风一版全文英文（中文仅 363 字 / 占比 18%），
+# 数字全对但用户看不懂。12~16 页中文管理报告不可能低于 600 个汉字；
+# 汉字占（汉字+英文）比例低于 50% 同样判废。
+MIN_CJK_CHARS = 600
+MIN_CJK_RATIO = 0.5
 
 # 系统提示词：把「不许自己算数」放到最前，这是全模块的命门
 SYSTEM_PROMPT = """你是一位世界级的编辑设计师 + 前端工程师，专做数据驱动的年度/月度报告。
@@ -118,7 +146,14 @@ SYSTEM_PROMPT = """你是一位世界级的编辑设计师 + 前端工程师，�
 7. 不许用 <img src="http...">、@import、url(https://...)。
 
 【内容纪律】
-8. 中文。语气专业、客观、可执行，像给管理层看的月度审核报告。
+8. **中文——所有可见文字必须是简体中文**：标题、副标题、栏目标签、表头、
+   图例、图表注释、按钮文案、页码指示器、结论与建议，一律中文。
+   禁止英文标题与英文标签——「Net Deviation」「Top 5」「Factory Detail」
+   「Overage」这类全部不许出现（实测踩过：瑞士风一版中文仅占 18%，用户看不懂）。
+   等宽字体（JetBrains Mono 等）只用于渲染数字与编码，不用于英文标语。
+   唯一例外：ZPP011、SAP、ERP、A/B、物料编码/订单号等专有名词与代码。
+   西式设计语言（网格/字重/色彩）只影响版式，**不影响语言**。
+   语气专业、客观、可执行，像给管理层看的月度审核报告。
 9. 必须覆盖：封面、总览（头条数字）、口径说明（明细逐行加总 vs 汇总统计）、
    食品厂、饮料厂、车间排名、重点物料、无备注风险、替代料、趋势、结论与建议。
    「替代料」一节必须引用数据字典 causes.substitute 里的真实数字（明细条数 /
@@ -280,13 +315,22 @@ def extract_html(raw: str) -> Optional[str]:
     return s[i:j + len("</html>")].strip()
 
 
+def cjk_stats(text: str) -> tuple:
+    """(汉字数, 英文字符数) —— 语言门判定用。"""
+    cjk = len(re.findall(r"[\u4e00-\u9fff]", text))
+    en = sum(len(w) for w in re.findall(r"[A-Za-z][A-Za-z\-/&\.']{2,}", text))
+    return cjk, en
+
+
 def looks_complete(html: str) -> bool:
-    """粗校验：像一份完整 HTML（首尾标签齐全、有一定体量、内容真的在标签里）。
+    """粗校验：像一份完整 HTML（首尾标签齐全、有一定体量、内容真的在标签里、是中文报告）。
 
     ⚠️ v43.259 新增可见文本下限：实测第 6 次生成 AI 把整份报告（含数据字典）
     塞进单个 <script> 用 JS 注入 DOM —— 总字符 35,438 但可见文本只有 82，
     数字护栏只扫可见文本 → **真空通过**。12~16 页中文报告可见文本不可能低于
-    3,000 字符（实测正常生成 15,000~17,000），低于即判定结构不合格。
+    3,000 字符（实测正常生成 13,000~17,000），低于即判定结构不合格。
+    ⚠️ v43.260 新增中文门：实测瑞士风一版全文英文（汉字 363、占比 18%），
+    数字全对但管理层看不懂——低于 600 汉字或汉字占比低于 50% 判废。
     """
     if not html or len(html) < 20000:   # 12+ 页的报告不可能更小
         return False
@@ -297,7 +341,13 @@ def looks_complete(html: str) -> bool:
         return False
     if low.count("<section") + low.count("<div") < 20:
         return False
-    if len(visible_text(html)) < MIN_VISIBLE_TEXT:
+    vt = visible_text(html)
+    if len(vt) < MIN_VISIBLE_TEXT:
+        return False
+    cjk, en = cjk_stats(vt)
+    if cjk < MIN_CJK_CHARS:
+        return False
+    if cjk < MIN_CJK_RATIO * (cjk + en):
         return False
     return True
 
@@ -389,9 +439,11 @@ def generate_ai_html(data: dict, client=None, design_direction: Optional[str] = 
         try:
             if log_cb:
                 log_cb(f"AI 设计第 {attempt}/{max_attempts} 次尝试（{result['model']}）…", "info")
-            # 420s：实测 agnes-3.0-flash 生成 3~6 万字符 HTML 需 3~5 分钟，
-            # 300s 会被整次掐断（第一次实跑就是 300s 整超时），宁可慢不可断。
-            raw = client.generate_text(system, user, max_tokens=60000, timeout=420)
+            # 540s：实测 agnes-3.0-flash 生成 3~6 万字符 HTML 需 3~5 分钟，
+            # 300s 会被整次掐断（第一次实跑就是 300s 整超时）；v43.260 起 prompt
+            # 增至 15 条硬约束 + 归藏双风格详细规范，连续 4 跑有 3 跑在 420s 被
+            # 读超时打断（修正机会白丢一轮）→ 提到 540s，宁可慢不可断。
+            raw = client.generate_text(system, user, max_tokens=60000, timeout=540)
         except Exception as e:
             result["error"] = f"AI 调用失败：{e}"
             if log_cb:
@@ -400,27 +452,32 @@ def generate_ai_html(data: dict, client=None, design_direction: Optional[str] = 
 
         html = extract_html(raw)
         if html is None or not looks_complete(html):
-            # 区分两种成因给不同修正提示：截断/围栏 vs 内容藏进 script（v43.259 实测）
-            _vis = len(visible_text(html)) if html else 0
-            if html and _vis < MIN_VISIBLE_TEXT:
-                result["error"] = (
-                    f"AI 输出结构不合格：可见文本仅 {_vis} 字符"
-                    "（内容疑似被藏进 <script> 用 JS 注入，数字无法核对）"
+            # 多成因诊断，各自给专属修正提示（v43.259 script 洞 / v43.260 英文版）
+            _reasons, _hints = [], []
+            if html:
+                _vt = visible_text(html)
+                _cjk, _en = cjk_stats(_vt)
+                if len(_vt) < MIN_VISIBLE_TEXT:
+                    _reasons.append(f"可见文本仅 {len(_vt)} 字符（内容被藏进 <script>）")
+                    _hints.append("所有内容必须直接写在 HTML 标签里（<section>/<div>/<p>/<table>…），"
+                                  "不许塞进 <script> 用 JS 注入 DOM")
+                if _cjk < MIN_CJK_CHARS or _cjk < MIN_CJK_RATIO * (_cjk + _en):
+                    _ratio = 100.0 * _cjk / max(1, _cjk + _en)
+                    _reasons.append(f"中文仅 {_cjk} 字（占比 {_ratio:.0f}%）")
+                    _hints.append("所有可见文字必须是简体中文（标题/栏目标签/表头/图例/注释/结论建议），"
+                                  "禁止英文标题与英文标签（Net Deviation/Top 5/Factory Detail 一类全不许），"
+                                  "等宽字体只渲染数字与编码，西式版式不影响语言")
+            if not _reasons:
+                _reasons.append("不是完整 HTML（代码围栏包裹或被截断）")
+            result["error"] = "AI 输出结构不合格：" + "；".join(_reasons)
+            if log_cb:
+                log_cb(f"第 {attempt} 次：结构不合格——{'；'.join(_reasons)}", "warning")
+            if attempt < max_attempts:
+                data = dict(data)
+                data["_fix_hint"] = (
+                    "上一次输出未通过结构检查（" + "；".join(_reasons) + "）。"
+                    "请重新输出完整 HTML：" + "；".join(_hints) + "。"
                 )
-                if log_cb:
-                    log_cb(f"第 {attempt} 次：内容被藏进 <script>（可见文本 {_vis} 字符），不予采用", "warning")
-                if attempt < max_attempts:
-                    data = dict(data)
-                    data["_fix_hint"] = (
-                        "上一次输出把报告内容（连同数据字典）塞进了 <script> 里用 JS 注入 DOM，"
-                        "这样数字无法被核对，整份作废。请重新输出：所有内容必须直接写在 HTML "
-                        "标签里（<section>/<div>/<p>/<table>…），<script> 只写翻页/键盘等交互逻辑，"
-                        "其中不许出现任何业务数字。"
-                    )
-            else:
-                result["error"] = "AI 输出不是完整 HTML（可能是代码围栏包裹或被截断）"
-                if log_cb:
-                    log_cb(f"第 {attempt} 次：AI 输出不是完整 HTML", "warning")
             continue
 
         violations = verify_numbers(html, allowed)
@@ -472,7 +529,14 @@ if __name__ == "__main__":
         print("用法: python -m core.guizang_ai <分析结果.xlsx> [设计方向]")
         raise SystemExit(2)
     _data = build_report_data(_sys.argv[1])
-    _dir = _sys.argv[2] if len(_sys.argv) > 2 else None
+    # 设计方向：支持方向名快捷映射（magazine/swiss → 归藏双风格规范），
+    # 也可直接传任意方向文本；不传则从池里随机挑（保证每期不一样）。
+    _raw = _sys.argv[2] if len(_sys.argv) > 2 else None
+    _GZ_MAP = {
+        "magazine": GZ_MAGAZINE, "gz-magazine": GZ_MAGAZINE, "归藏杂志": GZ_MAGAZINE,
+        "swiss": GZ_SWISS, "gz-swiss": GZ_SWISS, "归藏瑞士": GZ_SWISS,
+    }
+    _dir = _GZ_MAP.get((_raw or "").strip().lower(), _raw)
     _t0 = time.time()
     _r = generate_ai_html(_data, design_direction=_dir,
                           log_cb=lambda m, l: print(f"[{l}] {m}"))
