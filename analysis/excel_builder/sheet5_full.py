@@ -26,10 +26,28 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
     has_real_dev = df[df[col_p].abs() >= threshold].copy()
 
     # 计算偏差金额（含税）
-    if '单价' in has_real_dev.columns and has_real_dev['单价'].notna().any():
+    #
+    # v43.254 口径修正：原实现是「实际单价反算」= 金额-实际(含税) ÷ 数量-实际。
+    # 对**未投料行**（数量-实际=0）除零 → fillna(0) → 金额被整列清零，
+    # 于是「整单完全没投料」的订单在明细里看不到任何金额损失（实测 35 单 /
+    # -332.40 万，占全期总偏差 56.1% 全被抹掉）；这也是「完整偏差明细金额合计
+    # 8.68万 vs 汇总统计 -592.91万」差 601.59 万的根源。
+    #
+    # 现改为**行金额直接相减**，与 analyzer.py:512 的 df['偏差金额(含税)'] 同口径：
+    #     偏差金额(含税) = 金额-实际(含税) - 金额-定额(含税)
+    # 正常行两者结果一致（材料偏差 × 实际单价 == 金额差，当同一物料同一订单
+    # 定额/实际单价相同）；未投料行不再被清零 → 明细与汇总口径自动闭合。
+    _has_amt_pair = ('金额-实际(含税)' in has_real_dev.columns
+                      and '金额-定额(含税)' in has_real_dev.columns)
+    if _has_amt_pair:
+        has_real_dev['_偏差金额'] = (
+            pd.to_numeric(has_real_dev['金额-实际(含税)'], errors='coerce')
+            - pd.to_numeric(has_real_dev['金额-定额(含税)'], errors='coerce')
+        ).fillna(0.0)
+    elif '单价' in has_real_dev.columns and has_real_dev['单价'].notna().any():
         has_real_dev['_偏差金额'] = has_real_dev['材料偏差'] * has_real_dev['单价'] * 1.13
     elif '金额-实际(含税)' in has_real_dev.columns and '数量-实际' in has_real_dev.columns:
-        # 反算单价：金额-实际(含税) / 数量-实际
+        # 兜底：反算单价（数量-实际=0 的行仍会失真，仅在缺金额列时用）
         unit_price = has_real_dev['金额-实际(含税)'] / has_real_dev['数量-实际'].replace(0, np.nan)
         unit_price = unit_price.fillna(0)
         has_real_dev['_偏差金额'] = has_real_dev['材料偏差'] * unit_price
