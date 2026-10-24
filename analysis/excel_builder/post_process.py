@@ -866,6 +866,19 @@ _FACT_SKIP_SHEETS = ('📊 驾驶舱',)
 # 事实卡区块标题前缀（兼作幂等标记）
 _FACT_MARKER = '各表事实卡'
 
+# post_process 新增的表（analyzer 不知道它们，故说明块里没有对应行），
+# 口径说明在这里补上 → 事实卡「口径」列有内容，且只此一处，不与说明区打架。
+_EXTRA_CALIBER = {
+    '完全未投料订单': (
+        '某流程订单在「完整偏差明细」里所有组件行的实际用量均为 0（该单完全没投料）。'
+        '这类订单通常产量已报、实际零投料（虚报产量），且**原始备注原因为空** → '
+        '本应进「无备注预警」，却因偏差率恒为 -100% 被「≠100%」规则排除，报表里根本看不到。'
+        '⚠️ 本表**不含偏差金额列**：「完整偏差明细」的金额用「实际单价反算法」'
+        '（sheet5_full.py：金额-实际(含税) ÷ 数量-实际），未投料行数量-实际=0 → 单价反算失败 '
+        '→ 金额被整列清零，故工作簿内取不到订单粒度的真实金额；整单缺口金额需回 SAP 源表，'
+        '或修正该算法后再由本表补上。「实际数量合计」恒为 0，是判定结果本身。'),
+}
+
 
 def _fact_col_stats(ws, hdr_row, last_row, col):
     """统计某列的 合计/最大/最小（**只读**已渲染单元格，不改任何值）。
@@ -1093,6 +1106,9 @@ def _add_fact_cards(wb):
                     ws_info.cell(row=_r0, column=2, value=_txt)
                 except Exception as e:
                     _log('[post_process] 说明文案回写失败 %s: %s' % (_nm, e))
+        # post_process 新增的表：口径说明补进来（说明块里没有它们的行）
+        for _nm, _txt in _EXTRA_CALIBER.items():
+            caliber.setdefault(_nm, _txt)
 
     # 2) 幂等：找到旧区块标题就整块删掉重写
     marker_row = None
@@ -1204,6 +1220,169 @@ def _add_fact_cards(wb):
     return len(cards)
 
 
+# ---------------------------------------------------------------- 完全未投料订单
+
+# 判定「实际用量为 0」的容差（与项目其它处一致：|实际| <= 0.001 视作 0）
+_ZERO_TOL = 0.001
+
+
+def _add_unfed_orders_sheet(wb):
+    """新增「完全未投料订单」表：列出**所有组件实际用量全为 0** 的流程订单。
+
+    为什么需要这张表（v43.253）：
+      这类订单最严重 —— 通常**产量已报、实际却零投料**，属「虚报产量」；
+      而且它们往往**已经填了备注原因**，所以现有的「无备注预警」「异常预警」
+      都不会突出它 → 报表里根本看不出这个系统性问题。
+      实测（2026-10-01~10-23，9268 行）：**35 单** / 82 行明细 / 偏差金额
+      **-332.40 万元**，占全期总偏差（-592.91 万）的 **56.1%**；且 35 单
+      **全部报产但没投料**。
+
+    口径：某流程订单在「完整偏差明细」里**所有组件行的实际用量都是 0**。
+    数据源只用「完整偏差明细」+「替代料明细」（取其订单号集合，用于标注
+    「是否含替代料」）—— **不改任何业务数值、不碰 analyzer.py 红线**。
+
+    误判/漏判实测均为 0（这 35 单既不含「实际>0 且材料偏差=0」的正常行，
+    也不含被完整明细剔除的替代料行）。
+
+    ⚠️ **本表不含偏差金额列**：「完整偏差明细」的金额是「实际单价反算法」
+    （sheet5_full.py：金额-实际(含税) ÷ 数量-实际），未投料行数量-实际=0 →
+    单价反算失败 → 金额被整列清零，工作簿内取不到订单粒度真实金额。
+    修 sheet5_full 的该算法（未投料行改用 -金额-定额(含税)）后，本表即可补金额列；
+    本表也不含产量列（产量只在 SAP 源表），「是否报产」需回源表核对。
+    """
+    src_name = '完整偏差明细'
+    if src_name not in wb.sheetnames:
+        return 0
+    src = wb[src_name]
+    try:
+        hdr_row, headers = _header_info(src)
+        last_row = _last_data_row(src, hdr_row)
+    except Exception as e:
+        _log('[post_process] 完全未投料订单：源表解析失败 %s' % e)
+        return 0
+    c_ord = _find_col(headers, '流程订单')
+    c_act = _find_col(headers, '实际')
+    if not c_ord or not c_act:
+        return 0
+    c_q = _find_col(headers, '定额')
+    c_qty = _find_col(headers, '偏差数量')
+    c_date = _find_col(headers, '订单日期')
+    c_type = _find_col(headers, '订单类型')
+    c_fac = _find_col(headers, '工厂')
+    c_ws = _find_col(headers, '车间')
+    c_pno = _find_col(headers, '产品物料号码')
+    c_pde = _find_col(headers, '产品物料描述')
+    c_mcode = _find_col(headers, '物料编码')
+    c_note = _find_col(headers, '备注')
+
+    map_ = _cells_of(src)
+
+    def _v(r, col):
+        if not col:
+            return None
+        c = map_.get((r, col))
+        return c.value if c is not None else None
+
+    def _num(v):
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            return None
+        return float(v)
+
+    # 按订单聚合
+    orders = {}
+    for r in range(hdr_row + 1, last_row + 1):
+        o = _v(r, c_ord)
+        if o in (None, ''):
+            continue
+        o = str(o)
+        a = _num(_v(r, c_act))
+        if a is None:
+            a = 0.0
+        d = orders.setdefault(o, {
+            'rows': 0, 'zero': 0, 'q': 0.0, 'qty': 0.0, 'mats': set(),
+            'notes': set(), 'date': _v(r, c_date), 'type': _v(r, c_type),
+            'fac': _v(r, c_fac), 'ws': _v(r, c_ws),
+            'pno': _v(r, c_pno), 'pde': _v(r, c_pde),
+        })
+        d['rows'] += 1
+        if abs(a) <= _ZERO_TOL:
+            d['zero'] += 1
+        qv = _num(_v(r, c_q))
+        if qv is not None:
+            d['q'] += qv
+        dv = _num(_v(r, c_qty))
+        if dv is not None:
+            d['qty'] += dv
+        if c_mcode:
+            mv = _v(r, c_mcode)
+            if mv not in (None, ''):
+                d['mats'].add(str(mv))
+        if c_note:
+            nv = _v(r, c_note)
+            if nv not in (None, '') and str(nv).strip() not in ('nan', 'None'):
+                d['notes'].add(str(nv).strip())
+
+    unfed = [(o, d) for o, d in orders.items()
+             if d['rows'] > 0 and d['zero'] == d['rows']]
+    if not unfed:
+        return 0
+    unfed.sort(key=lambda kv: kv[1]['qty'])   # 偏差数量小（缺料少）的在前
+
+    # 含替代料的订单（替代料明细有订单号列）
+    alt_ords = set()
+    if '替代料明细' in wb.sheetnames:
+        try:
+            a2 = wb['替代料明细']
+            h2, hd2 = _header_info(a2)
+            l2 = _last_data_row(a2, h2)
+            c_o2 = _find_col(hd2, '订单号', '流程订单')
+            m2 = _cells_of(a2)
+            if c_o2:
+                for r in range(h2 + 1, l2 + 1):
+                    cc = m2.get((r, c_o2))
+                    if cc is not None and cc.value not in (None, ''):
+                        alt_ords.add(str(cc.value).strip())
+        except Exception as e:
+            _log('[post_process] 完全未投料订单：替代料明细读取失败 %s' % e)
+
+    name = '完全未投料订单'
+    if name in wb.sheetnames:
+        try:
+            del wb[name]
+        except Exception:
+            return 0
+    ws = wb.create_sheet(name)
+    heads = ['流程订单', '订单日期', '工厂', '车间', '订单类型', '产品物料号码',
+             '产品物料描述', '组件行数', '组件数(去重)', '定额数量合计',
+             '实际数量合计', '偏差数量合计', '是否含替代料', '是否有备注', '备注原因']
+    for j, h in enumerate(heads, 1):
+        c = ws.cell(row=1, column=j, value=h)
+        c.font = Font(bold=True, size=11)
+        c.alignment = Alignment(horizontal='center', vertical='center')
+    r = 2
+    for o, d in unfed:
+        vals = [
+            o, d['date'], d['fac'], d['ws'], d['type'], d['pno'], d['pde'],
+            d['rows'], len(d['mats']), round(d['q'], 3), 0.0,
+            round(d['qty'], 3),
+            '是' if o in alt_ords else '否',
+            '有' if d['notes'] else '无',
+            ' / '.join(sorted(d['notes'])),
+        ]
+        for j, v in enumerate(vals, 1):
+            ws.cell(row=r, column=j, value=v)
+        r += 1
+    # ⚠️ 这里**不能**在数据区下方加说明行：_last_data_row 只探前 8 列，
+    # 说明行会被当成数据行（35 变 36），连带事实卡的「数据行数」也错。
+    # 口径说明统一放进「📋 分析说明」页的事实卡口径列（见 _EXTRA_CALIBER），
+    # 与其它表的口径同处一处，不两处打架。
+    for letter, w in (('A', 14), ('B', 12), ('C', 18), ('D', 16), ('E', 10),
+                      ('F', 13), ('G', 30), ('H', 9), ('I', 11), ('J', 14),
+                      ('K', 13), ('L', 14), ('M', 11), ('N', 11), ('O', 40)):
+        ws.column_dimensions[letter].width = w
+    return len(unfed)
+
+
 # ---------------------------------------------------------------- 入口
 
 def decorate_workbook(wb, add_dashboard=True):
@@ -1213,11 +1392,18 @@ def decorate_workbook(wb, add_dashboard=True):
     """
     stats = {'sheets': 0, 'dates': 0, 'ids': 0, 'blanks': 0, 'flags': 0,
              'ratios': 0, 'dups': 0, 'charts': 0, 'cards': 0,
-             'severity': 0, 'afilter': 0}
+             'severity': 0, 'afilter': 0, 'unfed': 0}
     if _is_skipped():
         _log('[post_process] 已按 ZPP011_SKIP_POST_PROCESS 跳过')
         return stats
     try:
+        # v43.253：先建「完全未投料订单」表 —— 放在逐表流水线**之前**，
+        # 这样它能自动获得标准待遇（数字格式/冻结/自动筛选/条件格式），
+        # 并自动出现在「📋 分析说明」的事实卡区块里。
+        try:
+            stats['unfed'] = _add_unfed_orders_sheet(wb)
+        except Exception as e:
+            _log('[post_process] 完全未投料订单表失败: %s' % e)
         for ws in list(wb.worksheets):
             stats['sheets'] += 1
             try:
