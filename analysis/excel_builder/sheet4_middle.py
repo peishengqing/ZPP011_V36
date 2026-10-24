@@ -30,8 +30,14 @@ def build_sheet4(df, alt_df, alt_pairs, report_progress, progress_idx=4, dyn_thr
 
 # 确保数值列为数值类型（防止字符串导致比较错误）
     ensure_numeric_cols(df, NUMERIC_COLS)
-    middle = df[(df[col_p].notna()) & (df[col_p] >= -thresh)
-                & (df[col_p] <= thresh)].copy()
+    # v43.249：边界改**开区间**，与「无备注预警」的 |偏差率| >= dyn_thresh 精确互补。
+    # 原双边闭区间（-thresh <= r <= thresh）会让「恰好 10.0%」的行**同时**出现在
+    # 无备注预警与中间地带明细两张表里 → 双计；而它归哪张表原先还取决于浮点
+    # 表示（-9.999999999999998 与 10.000000000000002 会落到不同表），属隐患。
+    # 现规定：|偏差率| >= 10% → 无备注预警（业务规则「≥10% 需要备注原因」）；
+    #       |偏差率| <  10% → 中间地带。两边互补，不重不漏。
+    middle = df[(df[col_p].notna()) & (df[col_p] > -thresh)
+                & (df[col_p] < thresh)].copy()
 
     # v43.243 P0：排除 0 偏差死行（定额=实际、材料偏差=0 的完美对齐行，
     # 无分析价值却占 28.5% 行量）。保留 |材料偏差|>0 的真偏差记录。

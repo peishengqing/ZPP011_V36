@@ -44,9 +44,12 @@ analysis/analyzer.py :: export_full_report_from_intermediates()
   所以「正+负 ≠ 总」是**设计如此**，不是勾稽错误 —— 不要在此表做勾稽检查或重算。
 """
 import os
+import re
+from copy import copy
 
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from openpyxl.utils.cell import range_boundaries
 from openpyxl.formatting.rule import CellIsRule, FormulaRule
 
 
@@ -850,6 +853,104 @@ def _fact_numfmt(metric_name):
     return '#,##0.###'
 
 
+# ---------------------------------------------------------------- 预警等级列
+
+def _add_severity_column(ws, hdr_row, headers, last_row):
+    """给「无备注预警」表追加「预警等级」列（v43.249）。
+
+    为什么在 post_process 做、而不是改 analyzer 的写表头：
+      `analysis/analyzer.py` 是**红线区**（核心计算模块零改动）。而
+      `analysis/excel_builder/sheet3_no_note.py` 的 build_sheet3 早已把等级算进
+      DataFrame，只是 analyzer 写表时那张**写死的列清单**里没有它 → v43.243
+      引入的严重度分级功能**从未落到 Excel 上**。post_process 是既定的「表现层
+      后处理」，在这里补列既不动红线，也不改任何数值。
+
+    等级怎么算：不用表内「偏差率」列 —— 它只保留 1 位小数（49.96 → '50.0%'），
+    拿它判 50 这条线会误判一档；改用表内**数量列**重算
+    |偏差率| = |偏差数量| / 定额 × 100（原始 float，无精度损失）。
+    本 sheet 的行必然「定额 != 0」（定额=0 的行偏差率恒 100%，已被 !=100 规则
+    排除在外），故除法安全。
+
+    分档规则来自 `sheet3_no_note.severity_level`（**单一来源**，不重复实现）。
+    """
+    from analysis.excel_builder.sheet3_no_note import severity_level
+    if '无备注预警' not in (ws.title or ''):
+        return 0
+    c_q = _find_col(headers, '定额')
+    c_d = _find_col(headers, '偏差数量')
+    if not c_q or not c_d:
+        return 0
+    map_ = _cells_of(ws)
+    # 幂等：已有「预警等级」列就**就地重写**，不追加第二列。
+    # （v43.249 初版只管追加，第二次调用 decorate_workbook 会多出一列 —— 已修）
+    c_lv = _find_col(headers, '预警等级')
+    if c_lv:
+        col = c_lv
+    else:
+        col = ws.max_column + 1
+        # 表头：复用本表首个表头单元格的样式（字体/填充/对齐/边框），保持版式一致
+        hc = ws.cell(row=hdr_row, column=col, value='预警等级')
+        ref = map_.get((hdr_row, 1))
+        if ref is not None:
+            try:
+                hc._style = copy(ref._style)
+            except Exception:
+                pass
+        else:
+            hc.font = Font(bold=True, size=11)
+            hc.alignment = Alignment(horizontal='center', vertical='center')
+        ws.column_dimensions[get_column_letter(col)].width = 12
+
+    rates = []
+    rows = []
+    for r in range(hdr_row + 1, last_row + 1):
+        cq = map_.get((r, c_q))
+        cd = map_.get((r, c_d))
+        q = cq.value if cq is not None else None
+        d = cd.value if cd is not None else None
+        rows.append(r)
+        if (not isinstance(q, (int, float)) or isinstance(q, bool) or not q
+                or not isinstance(d, (int, float)) or isinstance(d, bool)):
+            rates.append(float('nan'))
+        else:
+            rates.append(abs(float(d)) / abs(float(q)) * 100.0)
+    if not rows:
+        return 0
+    levels = severity_level(rates)
+    for r, lv in zip(rows, levels):
+        cell = ws.cell(row=r, column=col, value=str(lv))
+        cell.alignment = Alignment(horizontal='center')
+    return len(rows)
+
+
+def _extend_autofilter(ws, hdr_row, last_row):
+    """把自动筛选的**末列**补到当前最大列（v43.249）。
+
+    背景：builder 在写表时就设好了 `auto_filter`，但 post_process 之后还会给表
+    **追加列** —— 完整偏差明细→「异常标记」、无备注预警/中间地带明细→「重复行」、
+    无备注预警（v43.249）再→「预警等级」。而 autofilter 的范围是写死的旧宽度，
+    追加的列落在筛选范围**之外**：点表头漏斗根本选不到它（实测 3 张表各短 1 列，
+    加上预警等级后无备注预警会短 2 列）。
+
+    只改末列，不动首行/末行；「📋 分析说明」页排除在外（它的筛选器是给 2 列
+    说明块用的，把后面的事实卡列卷进来反而更难用）。
+    """
+    if '分析说明' in (ws.title or ''):
+        return 0
+    ref = ws.auto_filter.ref
+    if not ref:
+        return 0
+    try:
+        min_c, min_r, max_c, max_r = range_boundaries(ref)
+    except Exception:
+        return 0
+    if ws.max_column <= max_c:
+        return 0
+    ws.auto_filter.ref = '%s%d:%s%d' % (
+        get_column_letter(min_c), min_r, get_column_letter(ws.max_column), max_r)
+    return 1
+
+
 def _add_fact_cards(wb):
     """在「📋 分析说明」页追加「各表事实卡」区块：每张表的行数/列数/关键度量统计。
 
@@ -873,8 +974,25 @@ def _add_fact_cards(wb):
     ws_info = wb[info_name]
     map_ = _cells_of(ws_info)
 
-    # 1) 读「各Sheet说明」的口径文案（列A=表名 → 列B=说明）
+    # 0) 读动态阈值（分析说明里有一行「动态阈值数值」=「±10.0%」）——
+    #    下面修正文案要用同一个数字，**不写死 10**，免得与 GUI 改的阈值脱钩。
+    thresh = None
+    for (r, c), cell in map_.items():
+        if c == 1 and isinstance(cell.value, str) \
+                and cell.value.strip() == '动态阈值数值':
+            bc = map_.get((r, 2))
+            if bc is not None and isinstance(bc.value, str):
+                m = re.search(r'(\d+(?:\.\d+)?)\s*%', bc.value)
+                if m:
+                    try:
+                        thresh = float(m.group(1))
+                    except ValueError:
+                        thresh = None
+            break
+
+    # 1) 读「各Sheet说明」的口径文案（列A=表名 → 列B=说明），并记住所在行
     caliber = {}
+    caliber_row = {}
     for (r, c), cell in map_.items():
         if c != 1:
             continue
@@ -887,6 +1005,32 @@ def _add_fact_cards(wb):
         bc = map_.get((r, 2))
         if bc is not None and isinstance(bc.value, str) and bc.value.strip():
             caliber[a] = bc.value.strip()
+            if a not in caliber_row or r < caliber_row[a]:
+                caliber_row[a] = r
+
+    # 1b) v43.249：修正两处与实现不符的说明文案，并**回写**到「各Sheet说明」原行，
+    #     使「说明区」与「事实卡口径列」两处说法一致（否则又是一处口径打架）。
+    #     · 无备注预警：旧文案写「超过 ±10%」但实现是「≥」（含边界）；排序实为
+    #       「预警等级→偏差金额绝对值降序」，旧文案却写「按偏差金额降序」。
+    #     · 中间地带明细：旧文案写「在 ±10% 区间内」（闭区间），与无备注预警的 ≥
+    #       边界重叠；v43.249 起改为开区间 < 10%，两边互补不双计。
+    if thresh is not None:
+        fixes = {
+            '无备注预警': (
+                '|偏差率| ≥ %.1f%% 且 ≠100%% 但未填备注原因的记录'
+                '（按预警等级→偏差金额绝对值降序）' % thresh),
+            '中间地带明细': (
+                '|偏差率| < %.1f%% 的记录（不纳入汇总统计；'
+                '|偏差率| ≥ %.1f%% 归入「无备注预警」）' % (thresh, thresh)),
+        }
+        for _nm, _txt in fixes.items():
+            caliber[_nm] = _txt
+            _r0 = caliber_row.get(_nm)
+            if _r0:
+                try:
+                    ws_info.cell(row=_r0, column=2, value=_txt)
+                except Exception as e:
+                    _log('[post_process] 说明文案回写失败 %s: %s' % (_nm, e))
 
     # 2) 幂等：找到旧区块标题就整块删掉重写
     marker_row = None
@@ -1006,7 +1150,8 @@ def decorate_workbook(wb, add_dashboard=True):
     任何一步失败都不抛异常——美化问题绝不能阻断导出。
     """
     stats = {'sheets': 0, 'dates': 0, 'ids': 0, 'blanks': 0, 'flags': 0,
-             'ratios': 0, 'dups': 0, 'charts': 0, 'cards': 0}
+             'ratios': 0, 'dups': 0, 'charts': 0, 'cards': 0,
+             'severity': 0, 'afilter': 0}
     if _is_skipped():
         _log('[post_process] 已按 ZPP011_SKIP_POST_PROCESS 跳过')
         return stats
@@ -1032,7 +1177,12 @@ def decorate_workbook(wb, add_dashboard=True):
                 ('ratios', lambda: _normalize_ratio_columns(ws, hdr_row, headers, last_row), 'ratios'),
                 ('condfmt', lambda: _apply_conditional_formats(
                     ws, hdr_row, headers, last_row, ratio_cols), None),
+                # v43.249：给「无备注预警」补「预警等级」列（须在 dup 之前，
+                # 使等级列排在「重复行」之前，版式更顺），并补齐 autofilter 末列
+                ('severity', lambda: _add_severity_column(
+                    ws, hdr_row, headers, last_row), 'severity'),
                 ('dup', lambda: _mark_duplicate_rows(ws, hdr_row, headers, last_row), 'dups'),
+                ('afilter', lambda: _extend_autofilter(ws, hdr_row, last_row), 'afilter'),
             )
             for name, fn, key in steps:
                 try:

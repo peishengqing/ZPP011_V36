@@ -3,10 +3,40 @@
 """
 sheet3_no_note.py — Sheet3 无备注预警（v36 抽取，未修改逻辑）
 """
+import numpy as np
 import pandas as pd
 from analysis.excel_builder.write_sheet_util import ensure_numeric_cols, NUMERIC_COLS
 from config.settings import DEFAULT_THRESHOLD
 from analysis.debug_util import dprint
+
+
+# v43.249：预警等级分档（**规则单一来源**，sheet3 与 post_process 写表共用）
+#
+# 为什么删掉原来的「🔴 完全未投料」档：
+#   v43.245 起本 sheet 只收 |偏差率| >= dyn_thresh 且 **!= 100%** 的行；而
+#   「完全未投料」（定额>0 且 实际=0）的偏差率**恒为 -100.0%**，必然被 !=100
+#   规则挡在表外 → 🔴 档位在数学上不可能出现。实测本期 158 行满足「完全未投料」
+#   的判定条件，但 158 行的 |偏差率| 全是 100.0%，实际进表 **0 行**。
+#   留着这一档只会让人以为表里该有而没有，属误导性死代码。
+#
+# 现仅两档：
+#   🟠 严重偏差 = |偏差率| >= 50（含 50~99 与 >100 两区间）
+#   🟡 超阈值   = 其余（|偏差率| >= dyn_thresh 且 < 50）
+SEVERE_RATE = 50.0          # 严重偏差阈值（百分点）
+LEVEL_SEVERE = '🟠 严重偏差'
+LEVEL_OVER = '🟡 超阈值'
+
+
+def severity_level(rate_abs):
+    """按 |偏差率|（百分点）判定预警等级。
+
+    参数可以是标量或 numpy/Series 数组，返回同形状的等级数组。
+    ⚠️ 调用方传入的 |偏差率| 必须是**未经四舍五入的原始值**：表内「偏差率」列
+    只保留 1 位小数（49.96 → '50.0%'），拿它判 50 这条线会误判一档。
+    post_process 侧因此改用表内「偏差数量/定额」重算（原始 float，无精度损失）。
+    """
+    arr = np.asarray(rate_abs, dtype=float)
+    return np.where(arr >= SEVERE_RATE, LEVEL_SEVERE, LEVEL_OVER)
 
 
 def build_sheet3(df, report_progress, progress_idx=3, dyn_thresh=None):
@@ -49,20 +79,15 @@ def build_sheet3(df, report_progress, progress_idx=3, dyn_thresh=None):
         no_note_df['订单日期'] = pd.to_datetime(no_note['订单开始日期'], errors='coerce').dt.strftime('%Y-%m-%d').fillna('')
         no_note_df['工厂'] = no_note['工厂名称']
         no_note_df['车间'] = no_note['车间']
-        # v43.243 P1 + v43.245 口径修正：严重度标签列。规则（按业务端最紧急优先）：
-        # 前置过滤：本 sheet 含 10% <= |偏差率| 且 != 100.0% 的行（浮点容差 1e-6）。
-        #   🔴 完全未投料  = 定额>0 且 实际=0 且 |偏差率|>99（排除 =100 后基本仅剩 (99,100) 边缘行）
-        #   🟠 严重偏差    = |偏差率|>=50 且 !=100（含 50~99 与 >100 两区间，均由此标签兜住）
-        #   🟡 超阈值      = |偏差率|>=dyn_thresh（默认 10）且 <50
-        _quota = no_note['数量-定额'] if '数量-定额' in no_note.columns else 0
-        _actual = no_note['数量-实际'] if '数量-实际' in no_note.columns else 0
+        # v43.243 P1 + v43.245/v43.249 口径修正：严重度标签列。
+        # 前置过滤：本 sheet 含 |偏差率| >= dyn_thresh 且 != 100.0% 的行（浮点容差 1e-6）。
+        #   🟠 严重偏差 = |偏差率| >= 50（含 50~99 与 >100 两区间）
+        #   🟡 超阈值   = |偏差率| >= dyn_thresh（默认 10）且 < 50
+        # 原「🔴 完全未投料」档已于 v43.249 删除：其判定条件（定额>0 且 实际=0）
+        # 必然使偏差率 = -100%，被 !=100 规则挡在表外 → 该档永不出现（详见 severity_level 注释）。
+        # 用原始「偏差率(%)」列判定，精度不被 1 位小数的展示文本破坏。
         _rate_abs = no_note[col_p].abs()
-        _is_under = (_quota > 0) & (_actual == 0) & (_rate_abs > 99)
-        _is_severe = ~_is_under & (_rate_abs >= 50)
-        _level = _is_under.map(lambda b: '🔴 完全未投料' if b else '')
-        _level = _level.mask(_is_severe, '🟠 严重偏差')
-        _level = _level.mask(~(_is_under | _is_severe), '🟡 超阈值')
-        no_note_df['预警等级'] = _level.values
+        no_note_df['预警等级'] = severity_level(_rate_abs)
         no_note_df['物料名称'] = no_note['组件物料描述']
         no_note_df['物料类型'] = no_note['物料分类']
         no_note_df['单位'] = no_note['组件单位'].fillna('')
@@ -86,8 +111,9 @@ def build_sheet3(df, report_progress, progress_idx=3, dyn_thresh=None):
         report_progress(progress_idx, "Sheet3-无备注预警", 100)
         return no_note_df
 
-    # v43.243 P1：双键排序 —— 预警等级优先（🔴→🟠→🟡），同级内按 |金额| 降序
-    _level_rank = {'🔴 完全未投料': 0, '🟠 严重偏差': 1, '🟡 超阈值': 2, '': 3}
+    # v43.243 P1：双键排序 —— 预警等级优先（🟠→🟡），同级内按 |金额| 降序
+    # v43.249：🔴 档已删除（永不出现，见 severity_level 注释），排序只剩两级
+    _level_rank = {'🟠 严重偏差': 0, '🟡 超阈值': 1, '': 2}
     no_note_df['_level_w'] = no_note_df['预警等级'].map(_level_rank).fillna(3)
     no_note_df['_abs_amt'] = no_note_df['偏差金额(含税)'].apply(
         lambda x: abs(x) if isinstance(x, (int, float)) else 0)
