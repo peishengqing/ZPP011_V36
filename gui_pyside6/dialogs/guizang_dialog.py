@@ -84,11 +84,14 @@ class _GuizangBuildWorker(QThread):
 
 
 class _GuizangAiWorker(QThread):
-    """后台线程：AI 现场设计报告（v43.258）。
+    """后台线程：AI 现场设计报告（v43.258 / v43.261 混合外壳）。
 
-    流程：build_report_data 算数 → generate_ai_html 让 AI 设计并写 HTML
-    → 数字护栏校验。html_ready 只在护栏通过时发出；violations 信号把越界数字
-    清单交回界面，由用户决定重试 / 用模板版 / 强行使用。
+    流程：build_report_data 算数 → generate_ai_html 让 AI 设计并写内容
+    → 数字护栏校验。style 传入时走混合外壳模式（v43.261）：模板外壳
+    （WebGL 背景 / Motion One 动效 / 导航点）全保留，AI 只写 <section>
+    幻灯片 fragment 并注入 %%GZ_SLIDES%%——效果与模板版一致，内容每期不同。
+    html_ready 只在护栏通过时发出；violations 信号把越界数字清单交回界面，
+    由用户决定重试 / 用模板版 / 强行使用。
     """
 
     html_ready = Signal(str)
@@ -96,9 +99,10 @@ class _GuizangAiWorker(QThread):
     violations = Signal(list)          # [{"number":..,"context":..}, ...]
     progress = Signal(str)
 
-    def __init__(self, excel_path: str, parent=None):
+    def __init__(self, excel_path: str, style: str = "magazine", parent=None):
         super().__init__(parent)
         self.excel_path = excel_path
+        self.style = style if style in GZ_STYLES else "magazine"
         self.last_html = ""      # 护栏未通过时也保留，供「仍要使用 AI 版」取用
 
     def run(self):
@@ -111,9 +115,10 @@ class _GuizangAiWorker(QThread):
 
             self.progress.emit("正在读取分析结果并计算…")
             data = build_report_data(self.excel_path)
-            self.progress.emit("AI 正在设计这一期的报告版式（约 1~3 分钟）…")
+            self.progress.emit("AI 正在设计这一期的报告内容（约 1~3 分钟）…")
             r = generate_ai_html(
                 data,
+                style=self.style,
                 log_cb=lambda m, l="info": self.progress.emit(m),
             )
             if r.get("ok") and r.get("html"):
@@ -183,9 +188,11 @@ class GuizangDialog(QDialog):
         self._refresh_btn.clicked.connect(self._start_build)
         top.addWidget(self._refresh_btn)
 
-        # v43.258：AI 每期重新设计（数字护栏硬门校验）
+        # v43.258 / v43.261：AI 每期重新设计（混合外壳：模板动效全保留 +
+        # 数字护栏硬门校验）
         self._ai_btn = QPushButton("✨ AI 重新设计")
-        self._ai_btn.setToolTip("让 AI 现场设计一套全新版式；生成后自动核对每个数字，")
+        self._ai_btn.setToolTip("让 AI 现场设计这一期的幻灯片内容（WebGL 背景/动效/导航"
+                                "保留模板原效果）；生成后自动核对每个数字，")
         self._ai_btn.clicked.connect(self._start_ai_build)
         top.addWidget(self._ai_btn)
 
@@ -251,7 +258,7 @@ class GuizangDialog(QDialog):
         self._ai_btn.setEnabled(False)
         self._browser_btn.setEnabled(False)
         self._status.setText("AI 正在设计这一期的报告…")
-        self._worker = _GuizangAiWorker(self.excel_path)
+        self._worker = _GuizangAiWorker(self.excel_path, self.style)
         self._worker.html_ready.connect(self._on_html_ready)
         self._worker.build_failed.connect(self._on_build_failed)
         self._worker.violations.connect(self._on_ai_violations)

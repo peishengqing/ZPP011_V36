@@ -1,11 +1,21 @@
 # -*- coding: utf-8 -*-
-"""guizang_ai.py — 归藏报告「AI 每期重新设计」模块（v43.258）
+"""guizang_ai.py — 归藏报告「AI 每期重新设计」模块（v43.258 / v43.261 混合外壳）
 
 是什么
 ------
-让 AI（Agnes）每期现场设计一份全新的报告版式并写出完整 HTML，取代
-「template.html + Python 注入」那套固定外壳。数据仍然全部来自
+让 AI（Agnes）每期现场设计报告版式，数据仍然全部来自
 core.guizang_report.build_report_data() 算出的数据字典，AI 不接触任何原始数据。
+
+两种模式
+--------
+· 全页模式（style=None，v43.258 原行为）：AI 写出完整单文件 HTML（含
+  <head>/<style>/<script>），视觉从零设计。
+· **混合外壳模式（style='magazine'|'swiss'，v43.261，裴哥选定的方向）**：
+  模板外壳（resources/guizang/{style}/template.html）全保留——WebGL 背景、
+  Motion One 动效（90 处 animate）、导航点、键盘翻页/B 静态/ESC 总览、
+  预置 CSS 一个不少；AI **只生成 `<section>` 幻灯片 fragment**（类名必须取自
+  模板 CSS 词表），由 inject_fragment() 注入 `%%GZ_SLIDES%%` 占位符。
+  效果 = 模板版 100%，内容仍每期不同，数字护栏照跑。
 
 为什么需要数字护栏（本模块的核心）
 ----------------------------------
@@ -36,7 +46,9 @@ import json
 import random
 import re
 import time
+from functools import lru_cache
 from html import unescape
+from pathlib import Path
 from typing import Optional
 
 # ── 设计方向池：每次生成挑一个，保证「每期不一样」──────────────────
@@ -74,6 +86,263 @@ GZ_SWISS = """归藏 · 瑞士国际主义（Guizang Swiss / International Typog
 【动效】原生 CSS/JS 入场（级联淡入/方向性揭示），保留键盘翻页 + B 静态模式（low-power 停 WebGL/RAF/动画，localStorage 记忆选择）。"""
 
 DESIGN_DIRECTIONS += [GZ_MAGAZINE, GZ_SWISS]
+
+
+# ═══════════════════════════════════════════════════════════════
+# 混合外壳模式（v43.261）：模板外壳 + AI 只写 <section> fragment
+#
+# 背景（裴哥 2026-10-24「怎么感觉没有原来的效果」）：实测纯 AI 单文件版
+# animate()=0 / motion.min.js=0 / canvas=0，模板版有 90 处 animate +
+# motion.min.js + WebGL 网格背景 + 导航点——效果全在外壳里。所以让 AI 只产
+# 幻灯片内容，外壳（含全部动效机器）一个字节不动。
+# ═══════════════════════════════════════════════════════════════
+
+TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "resources" / "guizang"
+
+# fragment 至少几张 slide（模板版实测 15 张；低于 8 张说明 AI 偷工）
+MIN_FRAGMENT_SECTIONS = 8
+
+
+def load_template_shell(style: str) -> str:
+    """读 resources/guizang/{style}/template.html 外壳原文。"""
+    p = TEMPLATE_DIR / style / "template.html"
+    if not p.exists():
+        raise FileNotFoundError(f"归藏模板不存在：{p}")
+    return p.read_text(encoding="utf-8")
+
+
+@lru_cache(maxsize=8)
+def template_class_vocab(style: str) -> tuple:
+    """模板 <style> 块里预定义的全部类名（AI 只许用这些，发明的新类名无效）。"""
+    tpl = load_template_shell(style)
+    m = re.search(r"(?is)<style>(.*?)</style>", tpl)
+    css = m.group(1) if m else ""
+    return tuple(sorted(set(re.findall(r"\.([a-zA-Z_][a-zA-Z0-9_-]*)", css))))
+
+
+@lru_cache(maxsize=8)
+def template_recipes(style: str) -> tuple:
+    """模板支持的 data-animate 动效配方名（section 级，驱动翻页入场动效）。
+
+    瑞士：RECIPES 对象键（21 种；注意模板把 pipeline 留了空桩——
+    源码注释「当前 deck 不用 pipeline recipe」，故不在表里，prompt 也禁止用）；
+    杂志：if 分支（pipeline/directional/quote/hero，默认 cascade，pipeline 有
+    完整的 step/arrow 步进实装）。
+    """
+    tpl = load_template_shell(style)
+    if style == "swiss":
+        m = re.search(r"(?s)const RECIPES\s*=\s*\{(.*?)\n  \};", tpl)
+        if m:
+            return tuple(re.findall(r"^\s{4}[\"']?([a-z0-9-]+)[\"']?\s*:", m.group(1), re.M))
+        return ()
+    # magazine
+    keys = re.findall(r"recipe === '([a-z-]+)'", tpl)
+    return tuple(sorted(set(keys))) + ("hero", "cascade")
+
+
+def _vocab_prompt(style: str) -> str:
+    """类名词表 → prompt 片段（按前缀粗分组，便于 AI 查阅）。"""
+    vocab = template_class_vocab(style)
+    groups = {
+        "布局/网格": [c for c in vocab if c.startswith(("grid-", "r-", "span-", "split", "half", "frame", "col", "row", "tile", "stack", "layer"))],
+        "标题/文本": [c for c in vocab if c.startswith(("h-", "h1", "h2", "h3", "display", "title", "ttl", "lead", "kicker", "t-", "body", "note", "cite", "label", "lbl", "name", "desc", "tag", "sub", "meta", "unit", "nb", "num", "sign", "en", "zh"))],
+        "数据/组件": [c for c in vocab if c.startswith(("stat", "kpi", "callout", "pipeline", "timeline", "tl-", "th-", "bar", "row-", "card", "canvas", "accent", "ink", "grey", "paper", "step", "chart", "big-num", "mid-num", "pillar", "vrule", "rule", "sep", "line", "fill", "mark", "hi", "ghost", "idx", "q-"))],
+        "状态/主题": [c for c in vocab if c in ("slide", "light", "dark", "hero", "accent", "grey", "active", "low-power", "motion-ready", "nowrap", "center", "fit-contain", "tight", "dense", "reverse", "solid", "thick", "thin", "up", "down", "left", "right", "top", "bottom", "pos-absolute", "va-center")],
+    }
+    seen, lines = set(), []
+    for gname, members in groups.items():
+        fresh = [c for c in members if c not in seen]
+        seen.update(fresh)
+        if fresh:
+            lines.append(f"  【{gname}】" + " ".join(fresh))
+    rest = [c for c in vocab if c not in seen]
+    if rest:
+        lines.append("  【其他】" + " ".join(rest))
+    return "\n".join(lines)
+
+
+# fragment 模式系统提示词：与全页版共用数字/中文/内容纪律，
+# 差别只在输出形态（只要 <section> fragment）与视觉来源（外壳已定）。
+FRAGMENT_SYSTEM_PROMPT = """你是一位世界级的编辑设计师 + 前端工程师，专做数据驱动的年度/月度报告。
+
+你的任务：根据用户给出的「数据字典」（JSON，唯一数据来源），为一份名为
+《ZPP011 生产偏差分析》的中文报告**现场设计并写出幻灯片内容 fragment**——
+横向翻页幻灯片形式，默认 12~16 页。**外壳（配色/字体/动效/导航）已由模板
+全部提供，你只负责每页的内容与排版**。
+
+═══════════ 硬性约束（违反任何一条都算失败）═══════════
+
+【输出形态 —— 本模式特有，最重要】
+1. **只输出 `<section>` 幻灯片元素**：从第一个 <section ...> 开始，到最后一个
+   </section> 结束。不许输出 <!DOCTYPE>/<html>/<head>/<body>/<style>/<script>/
+   任何解释文字/Markdown 围栏——外壳一个字节都不归你管。
+2. 每个 slide 是一个 `<section class="slide ...">`，所有 section 平级 consecutive
+   输出（它们会被整体插进外壳的 <div id="deck">）。
+3. **类名只能使用下面「模板类名词表」里列出的**（模板 CSS 已全部预置；
+   词表以外的类名不会有效果，等于白发）。需要词表里没有的细微样式时，用
+   内联 style 属性表达（模板自己的渲染器就是这么做的）。
+4. **颜色一律用模板 CSS 变量**：var(--accent)（强调）、var(--ink)（主文字）、
+   var(--paper)（纸底）、var(--grey-1)（浅灰块）、var(--grey-2)（分割线）、
+   var(--grey-3)（辅助文字）、var(--paper-tint)（杂志风纸色阶）等。
+   **禁止写死 hex 色值**（如 #FF6B35）、禁止 @font-face、禁止 <style> 块；
+   字体直接用模板已定义的栈变量（如 var(--serif-zh)/var(--sans)/var(--mono)）。
+   需要半透明时用 color-mix(in srgb, var(--accent) 12%, transparent) 这类同色系
+   手法，不许引入第二个色相。
+
+【数字纪律 —— 最重要，没有之一】
+5. 所有数字必须**原样取自数据字典**。禁止你做任何算术：不许相加、不许相除、
+   不许求百分比、不许四舍五入到别的位数。字典里没有的数字，一个字都不许出现。
+6. 需要某个比例/合计但字典里没有时：改用字典里已有的数字来描述，
+   或者直接不写这个数（写「见明细」「以工作簿为准」都可以）。
+7. 金额单位是万元，负数用 −（U+2212，不是 ASCII 连字符）。正=多耗、负=节约。
+8. 数字格式（千分位、小数位数）照抄字典里的格式化字符串，不要自己改。
+9. **行文、结论、建议里同样不许出现字典没有的数字**。以下都是违规（实测踩过）：
+   · 把多行相加（「三条记录合计 −268.84 万」——字典只有各行的数，没有合计）；
+   · 求平均或占比（「单行平均 2.38 万」——字典写 23,800 元就原样写 23,800 元）；
+   · 做单位换算（23,800 元 ≠ 2.38 万，字典是什么单位就照抄）；
+   · 在目标/建议里编数（「收敛至 −300 万以内」——字典里没有这个数）。
+   要强调程度时，改用字典里已有的数字描述，或写「见明细」「以工作簿为准」。
+
+【中文纪律】
+10. **所有可见文字必须是简体中文**：标题、副标题、栏目标签、表头、图例、
+    图表注释、按钮文案、页码指示器、结论与建议，一律中文。
+    禁止英文标题与英文标签（「Net Deviation」「Top 5」「Factory Detail」
+    「Overage」这类全部不许出现）。等宽字体只渲染数字与编码，不写英文标语。
+    唯一例外：ZPP011、SAP、ERP、A/B、物料编码/订单号等专有名词与代码。
+    西式版式语言只影响字体/网格/色彩，**不影响语言**。语气专业、客观、可执行。
+
+【内容纪律】
+11. 必须覆盖：封面、总览（头条数字）、口径说明（明细逐行加总 vs 汇总统计）、
+    食品厂、饮料厂、车间排名、重点物料、无备注风险、替代料、趋势、结论与建议。
+    「替代料」一节必须引用数据字典 causes.substitute 里的真实数字（明细条数 /
+    净偏差金额），字典是多少就写多少；本期为 0 条时才可写「本期无替代料」。
+12. 必须写清两个口径：① 正=多耗 / 负=节约；② 本报告数字来自「完整偏差明细」
+    净偏差金额逐行加总。若数据字典 quality 里 sum_total 与 detail_net 相差很小
+    （见 closed 字段），说明明细与汇总已闭合，就按闭合写；否则按「不采用汇总统计
+    那个数、采用明细逐行加总」写。
+13. 结论必须具体到车间/物料，不许只写「建议加强管理」这类空话。
+"""
+
+
+def build_fragment_prompts(data: dict, style: str,
+                           design_direction: Optional[str] = None) -> tuple:
+    """组 fragment 模式 prompt（混合外壳）。design_direction 可传内容编排方向。"""
+    direction = design_direction or (
+        GZ_MAGAZINE if style == "magazine" else GZ_SWISS)
+    recipes = template_recipes(style)
+    if style == "swiss":
+        structure = (
+            "【swiss section 结构】每页：<section class=\"slide light|dark|accent|grey\" "
+            "data-animate=\"配方名\">（light 可省略，默认纸白底）。内层元素按需带 "
+            "data-anim 属性（值从这些里选：kicker/title/kpi/stats/note/table/bars/"
+            "left/right/bottom/lead/line/up），它们驱动翻页时的级联入场动效——"
+            "**没有 data-anim 的元素就是静态的，重要元素都要带**。"
+            f"可用的 data-animate 配方（{'/'.join(recipes) if recipes else '见模板'}）："
+            "封面用 hero；对照/镜像用 duo-mirror；排名/条形用 bar-grow 或 measure-up；"
+            "步骤/机制/系统图用 system-diagram 或 stack-build；分栏宣言用 "
+            "split-statement 或 statement；卡片组用 four-cards 或 grid-reveal；"
+            "表格页用 field-notes 或 stacked-ledger；时间线用 timeline-walk；"
+            "⚠️ 不要用 pipeline（瑞士模板未实装该配方，写了只会走平凡淡入）；"
+            "其余按语义挑，不确定就用 progression。"
+        )
+    else:
+        structure = (
+            "【magazine section 结构】每页：<section class=\"slide light|dark|hero light|hero dark\" "
+            "data-theme=\"light|dark\">（封面/节扉用 hero，收尾页也可用 hero）。"
+            "内层元素按需带 data-anim 属性（kicker/title/kpi/stats/note/table/lead/meta/"
+            "left/right/divider/line/step/arrow），驱动级联入场。"
+            f"可选 data-animate 配方（{'/'.join(recipes)}）：左右分栏用 directional；"
+            "引述/大结论用 quote；流程步骤用 pipeline（配 data-anim=\"step\"/\"arrow\"）；"
+            "封面与默认页不写 data-animate 即走 cascade/hero。"
+            "⚠️ 模板既有约定：封面与收尾 section 的元素照常带 data-anim，"
+            "但 section 上不要写 data-animate=\"hero\"（按模板注释的既有规矩）。"
+        )
+    period = data.get("period_range") or data.get("period") or ""
+    user = (
+        f"请为 ZPP011 生产偏差分析报告设计并输出幻灯片内容 fragment。\n\n"
+        f"【本期内容编排方向】{direction}\n"
+        f"（此方向只影响内容组织与编辑节奏；配色/字体/动效由模板外壳统一提供，"
+        f"以本提示词第 1/4 条为准）\n\n"
+        f"【报告期】{period}\n\n"
+        f"{structure}\n\n"
+        f"【模板类名词表 —— 只许用这些类名，词表外的一个都不许写】\n"
+        f"{_vocab_prompt(style)}\n\n"
+    )
+    fix_hint = data.get("_fix_hint")
+    if fix_hint:
+        user += f"【上一次的修正要求 —— 必须遵守】\n{fix_hint}\n\n"
+    user += (
+        f"【数据字典 —— 唯一数据来源，所有数字必须原样取自这里】\n"
+        f"{serialize_data(data)}\n\n"
+        f"现在只输出 <section> 幻灯片 fragment（从第一个 <section 开始，"
+        f"到最后一个 </section> 结束，不要任何其他文字）："
+    )
+    return FRAGMENT_SYSTEM_PROMPT, user
+
+
+def extract_fragment(raw: str) -> Optional[str]:
+    """从模型输出里抠出 section fragment（容忍 ```html 围栏和前后废话）。"""
+    if not raw:
+        return None
+    s = raw.strip()
+    s = re.sub(r"(?is)^\s*```(?:html)?\s*", "", s)
+    s = re.sub(r"(?is)\s*```\s*$", "", s)
+    low = s.lower()
+    i = low.find("<section")
+    if i < 0:
+        return None
+    j = low.rfind("</section>")
+    if j < 0:
+        return None
+    return s[i:j + len("</section>")].strip()
+
+
+def looks_complete_fragment(frag: str) -> bool:
+    """fragment 级结构硬门（混合外壳模式）。
+
+    与全页版 looks_complete 的差异：不要 DOCTYPE/html 首尾（外壳才有），
+    改为要求 `<section` 打头 `</section>` 收尾 + ≥8 个 section；
+    **禁止出现外壳级标签**（html/head/body/doctype/style/script）——
+    AI 重造外壳会与模板打架（两套 WebGL/两套 motion）；
+    可见文本下限与中文门与全页版一致（内容量不会因为少个外壳就变少）。
+    """
+    if not frag or len(frag) < 8000:      # 8+ 页幻灯片不可能更小
+        return False
+    low = frag.lower()
+    if not low.lstrip().startswith("<section"):
+        return False
+    if not low.rstrip().endswith("</section>"):
+        return False
+    if low.count("<section") < MIN_FRAGMENT_SECTIONS:
+        return False
+    for bad in ("<!doctype", "<html", "<head", "<body", "<style", "<script"):
+        if bad in low:
+            return False
+    vt = visible_text(frag)
+    if len(vt) < MIN_VISIBLE_TEXT:
+        return False
+    cjk, en = cjk_stats(vt)
+    if cjk < MIN_CJK_CHARS:
+        return False
+    if cjk < MIN_CJK_RATIO * (cjk + en):
+        return False
+    return True
+
+
+def inject_fragment(style: str, fragment: str, title: str) -> str:
+    """把 AI fragment 注入模板外壳，返回完整 HTML（可直接落盘/加载）。"""
+    if style == "swiss":
+        # 瑞士模板的 pipeline 是空桩（源码注释「当前 deck 不用 pipeline recipe」，
+        # RECIPES 无此键）：prompt 已明令禁用，实测第 3 轮 AI 还是写过一次 →
+        # playSlide 查不到配方只会平凡淡入。这里确定性换成真实配方 progression，
+        # 不让一页动效因为 AI 不听话而退化（杂志的 pipeline 有完整实装，不清洗）。
+        fragment = re.sub(r'data-animate="pipeline"', 'data-animate="progression"', fragment)
+    shell = load_template_shell(style)
+    html = shell.replace("%%GZ_SLIDES%%", fragment)
+    html = html.replace("%%TITLE%%", title)
+    if "%%GZ_SLIDES%%" in html or "%%TITLE%%" in html:
+        raise RuntimeError("归藏模板占位符替换失败，请检查 template.html 完整性")
+    return html
 
 # 页码/年份等常量白名单：这些不是业务数字，AI 一定会用
 _CONSTANT_NUMBERS = {
@@ -401,12 +670,17 @@ def build_prompts(data: dict, design_direction: Optional[str] = None) -> tuple:
 
 
 def generate_ai_html(data: dict, client=None, design_direction: Optional[str] = None,
-                     max_attempts: int = 2, log_cb=None) -> dict:
+                     max_attempts: int = 2, log_cb=None,
+                     style: Optional[str] = None) -> dict:
     """AI 现场设计并生成报告 HTML。
+
+    style=None      → 全页模式（v43.258 原行为）：AI 写完整单文件 HTML。
+    style=magazine/swiss → 混合外壳模式（v43.261）：AI 只写 <section>
+                      fragment，注入模板外壳（WebGL/Motion One/导航全保留）。
 
     返回 {
         "ok": bool,                 # 是否拿到通过数字护栏的 HTML
-        "html": str|None,
+        "html": str|None,           # 完整 HTML（fragment 模式已注入外壳）
         "violations": [..],         # 未通过时给出违规数字清单
         "attempts": int,
         "model": str,
@@ -418,6 +692,8 @@ def generate_ai_html(data: dict, client=None, design_direction: Optional[str] = 
     由调用方决定重试或回退到 Python 渲染（render_html）。
     """
     from core.ai_client import AIClient
+
+    fragment_mode = style in ("magazine", "swiss")
 
     result = {
         "ok": False, "html": None, "violations": [], "attempts": 0,
@@ -435,10 +711,14 @@ def generate_ai_html(data: dict, client=None, design_direction: Optional[str] = 
 
     for attempt in range(1, max_attempts + 1):
         result["attempts"] = attempt
-        system, user = build_prompts(data, design_direction)
+        if fragment_mode:
+            system, user = build_fragment_prompts(data, style, design_direction)
+        else:
+            system, user = build_prompts(data, design_direction)
         try:
             if log_cb:
-                log_cb(f"AI 设计第 {attempt}/{max_attempts} 次尝试（{result['model']}）…", "info")
+                _mode = "混合外壳" if fragment_mode else "全页"
+                log_cb(f"AI 设计第 {attempt}/{max_attempts} 次尝试（{_mode}，{result['model']}）…", "info")
             # 540s：实测 agnes-3.0-flash 生成 3~6 万字符 HTML 需 3~5 分钟，
             # 300s 会被整次掐断（第一次实跑就是 300s 整超时）；v43.260 起 prompt
             # 增至 15 条硬约束 + 归藏双风格详细规范，连续 4 跑有 3 跑在 420s 被
@@ -450,13 +730,33 @@ def generate_ai_html(data: dict, client=None, design_direction: Optional[str] = 
                 log_cb(f"AI 调用失败：{e}", "error")
             continue
 
-        html = extract_html(raw)
-        if html is None or not looks_complete(html):
-            # 多成因诊断，各自给专属修正提示（v43.259 script 洞 / v43.260 英文版）
+        if fragment_mode:
+            payload = extract_fragment(raw)
+        else:
+            payload = extract_html(raw)
+        if payload is None or (not looks_complete_fragment(payload) if fragment_mode
+                               else not looks_complete(payload)):
+            # 多成因诊断，各自给专属修正提示（v43.259 script 洞 / v43.260 英文版
+            # / v43.261 fragment 外壳标签与 section 数）
             _reasons, _hints = [], []
-            if html:
-                _vt = visible_text(html)
+            if payload:
+                _vt = visible_text(payload)
                 _cjk, _en = cjk_stats(_vt)
+                if fragment_mode:
+                    _low = payload.lower()
+                    _shell_tags = [t for t in ("<!doctype", "<html", "<head", "<body",
+                                               "<style", "<script")
+                                   if t in _low]
+                    if _shell_tags:
+                        _reasons.append(f"输出了外壳级标签（{' '.join(_shell_tags)}）")
+                        _hints.append("只输出 <section> 幻灯片元素，不许输出 "
+                                      "<!DOCTYPE>/<html>/<head>/<body>/<style>/<script>——"
+                                      "外壳由模板提供，重造会与模板动画打架")
+                    if _low.count("<section") < MIN_FRAGMENT_SECTIONS:
+                        _reasons.append(f"只有 {_low.count('<section')} 个 section"
+                                        f"（要求 ≥{MIN_FRAGMENT_SECTIONS} 页）")
+                        _hints.append("按 12~16 页输出足够多的 <section> 幻灯片，"
+                                      "每页一个 <section class=\"slide ...\">")
                 if len(_vt) < MIN_VISIBLE_TEXT:
                     _reasons.append(f"可见文本仅 {len(_vt)} 字符（内容被藏进 <script>）")
                     _hints.append("所有内容必须直接写在 HTML 标签里（<section>/<div>/<p>/<table>…），"
@@ -468,7 +768,7 @@ def generate_ai_html(data: dict, client=None, design_direction: Optional[str] = 
                                   "禁止英文标题与英文标签（Net Deviation/Top 5/Factory Detail 一类全不许），"
                                   "等宽字体只渲染数字与编码，西式版式不影响语言")
             if not _reasons:
-                _reasons.append("不是完整 HTML（代码围栏包裹或被截断）")
+                _reasons.append("不是完整幻灯片 fragment（代码围栏包裹或被截断）")
             result["error"] = "AI 输出结构不合格：" + "；".join(_reasons)
             if log_cb:
                 log_cb(f"第 {attempt} 次：结构不合格——{'；'.join(_reasons)}", "warning")
@@ -476,13 +776,22 @@ def generate_ai_html(data: dict, client=None, design_direction: Optional[str] = 
                 data = dict(data)
                 data["_fix_hint"] = (
                     "上一次输出未通过结构检查（" + "；".join(_reasons) + "）。"
-                    "请重新输出完整 HTML：" + "；".join(_hints) + "。"
+                    "请重新输出：" + "；".join(_hints) + "。"
                 )
             continue
 
-        violations = verify_numbers(html, allowed)
+        violations = verify_numbers(payload, allowed)
         if violations:
-            result["html"] = html          # 保留，供「仍要使用」与人工检查
+            # fragment 模式也尽量注入外壳：护栏不过只是数字存疑，「仍要使用」
+            # 路径（GUI 弹窗里的强行使用）需要一份**有效果**的报告供人工抽查
+            if fragment_mode:
+                try:
+                    from core.guizang_report import report_title
+                    result["html"] = inject_fragment(style, payload, report_title(data))
+                except Exception:  # noqa: BLE001
+                    result["html"] = None
+            else:
+                result["html"] = payload   # 保留，供「仍要使用」与人工检查
             result["violations"] = violations
             result["error"] = (
                 f"数字护栏未通过：发现 {len(violations)} 个字典里不存在的数字"
@@ -493,13 +802,13 @@ def generate_ai_html(data: dict, client=None, design_direction: Optional[str] = 
             # 第二次尝试时把违规数字回喂给 AI，让它自己改
             if attempt < max_attempts:
                 data = dict(data)
-                # 带上上下文片段：光给数字，AI 3000 行 HTML 里根本找不到在哪
+                # 带上上下文片段：光给数字，AI 几千行 HTML 里根本找不到在哪
                 _items = []
                 for v in violations[:15]:
                     _ctx = " ".join(v["context"].split())[:46]
                     _items.append(f"{v['number']}（{_ctx}）")
                 data["_fix_hint"] = (
-                    "上一次生成里有这些数字与数据字典不符，请逐一改正后重新输出完整 HTML："
+                    "上一次生成里有这些数字与数据字典不符，请逐一改正后重新输出："
                     + "；".join(_items)
                     + "。\n\n特别注意：数字必须**按字典原样逐字符抄写**，"
                     "包括小数位数（字典写 −26.39 就必须写 −26.39，不许四舍五入成 −26.4）、"
@@ -508,6 +817,17 @@ def generate_ai_html(data: dict, client=None, design_direction: Optional[str] = 
                 )
             continue
 
+        if fragment_mode:
+            try:
+                from core.guizang_report import report_title
+                html = inject_fragment(style, payload, report_title(data))
+            except Exception as e:  # noqa: BLE001
+                result["error"] = f"fragment 注入模板外壳失败：{e}"
+                if log_cb:
+                    log_cb(f"fragment 注入失败：{e}", "error")
+                continue
+        else:
+            html = payload
         result["ok"] = True
         result["html"] = html
         result["error"] = None
@@ -521,35 +841,54 @@ def generate_ai_html(data: dict, client=None, design_direction: Optional[str] = 
 
 
 if __name__ == "__main__":
-    # 手工自测：python -m core.guizang_ai <分析结果.xlsx>
+    # 手工自测：python -m core.guizang_ai <分析结果.xlsx> [设计方向] [--style=magazine|swiss]
     import sys as _sys
     from core.guizang_report import build_report_data
 
-    if len(_sys.argv) < 2:
-        print("用法: python -m core.guizang_ai <分析结果.xlsx> [设计方向]")
+    _rest, _style = [], None
+    for _a in _sys.argv[1:]:
+        if _a.startswith("--style="):
+            _style = _a.split("=", 1)[1].strip().lower() or None
+        else:
+            _rest.append(_a)
+    if not _rest:
+        print("用法: python -m core.guizang_ai <分析结果.xlsx> [设计方向] [--style=magazine|swiss]")
         raise SystemExit(2)
-    _data = build_report_data(_sys.argv[1])
     # 设计方向：支持方向名快捷映射（magazine/swiss → 归藏双风格规范），
     # 也可直接传任意方向文本；不传则从池里随机挑（保证每期不一样）。
-    _raw = _sys.argv[2] if len(_sys.argv) > 2 else None
+    _raw = _rest[1] if len(_rest) > 1 else None
     _GZ_MAP = {
         "magazine": GZ_MAGAZINE, "gz-magazine": GZ_MAGAZINE, "归藏杂志": GZ_MAGAZINE,
         "swiss": GZ_SWISS, "gz-swiss": GZ_SWISS, "归藏瑞士": GZ_SWISS,
     }
     _dir = _GZ_MAP.get((_raw or "").strip().lower(), _raw)
+    # --style 走混合外壳（fragment 注入模板，动效全保留）；不传则全页自由设计
+    if _style not in ("magazine", "swiss"):
+        _style = None
+    _data = build_report_data(_rest[0])
     _t0 = time.time()
-    _r = generate_ai_html(_data, design_direction=_dir,
+    _r = generate_ai_html(_data, design_direction=_dir, style=_style,
                           log_cb=lambda m, l: print(f"[{l}] {m}"))
-    print(f"\n用时 {time.time() - _t0:.1f}s | ok={_r['ok']} | attempts={_r['attempts']} | model={_r['model']}")
+    print(f"\n用时 {time.time() - _t0:.1f}s | ok={_r['ok']} | attempts={_r['attempts']} | "
+          f"model={_r['model']} | 模式={'混合外壳(' + _style + ')' if _style else '全页'}")
     if _r["ok"]:
-        _out = _sys.argv[1].rsplit(".", 1)[0] + "_ai.html"
+        _out = _rest[0].rsplit(".", 1)[0] + ("_ai_shell.html" if _style else "_ai.html")
         with open(_out, "w", encoding="utf-8") as f:
             f.write(_r["html"])
         print(f"已写出 {_out}")
+        if _style:
+            # 外壳引用 ./assets/motion.min.js 等相对路径，必须把 assets 复制到
+            # 输出同目录，否则 motion 加载失败 → 静默丢动画（裴哥看到的就是这个）
+            import shutil as _shutil
+            _src = TEMPLATE_DIR / _style / "assets"
+            _dst = Path(_out).resolve().parent / "assets"
+            if _src.is_dir() and not _dst.exists():
+                _shutil.copytree(_src, _dst)
+                print(f"已复制动效资源 {_src} → {_dst}")
     else:
         # 失败也把最后一次的 HTML 落盘，便于人工检查 AI 到底设计了什么、错在哪
         if _r.get("html"):
-            _dbg = _sys.argv[1].rsplit(".", 1)[0] + "_ai_last_attempt.html"
+            _dbg = _rest[0].rsplit(".", 1)[0] + "_ai_last_attempt.html"
             with open(_dbg, "w", encoding="utf-8") as f:
                 f.write(_r["html"])
             print(f"（AI 最后版本已落盘供检查：{_dbg}）")
