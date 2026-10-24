@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.251",
+        "date": "2026-10-24",
+        "fixes": "修复「列头筛选」的搜索框**打不进汉字**（中文输入法唤不起来）。根因：列头筛选浮层用 `QWidget(..., Qt.Popup)` 构造，而 **Qt.Popup 默认 `WA_InputMethodEnabled=False`**，浮层自身不参与输入法；显示时焦点按 Qt.Popup 规则落在浮层（QWidget 默认 NoFocus 策略）而非里面的 QLineEdit → 子控件永远拿不到 IME 焦点 → 中文输入法候选窗弹不出来。offscreen 实测五方案对比坐实：现状 focusWidget=None；只加 `WA_InputMethodEnabled` 仍是 None（不够）；只 `edit.setFocus()` 有效；**加 IME 属性后 popup 在 show() 时会自动把焦点交给第一个可聚焦子控件**，再补一次 `QTimer.singleShot(0, search.setFocus)` 兜底最稳。同时实测 `QInputMethodEvent` 提交「透明胶带」能正常进 QLineEdit、匹配逻辑 `t in key.lower()` 对中文完全正常 → 问题纯在焦点/输入法激活，与文本处理无关。改动覆盖**全部 4 个列头筛选浮层**（`controllers/column_controller.py` 主表 2 处 + `utils/column_filter.py` 各看板 2 处）：4 处统一加 `WA_InputMethodEnabled`，其中**带搜索框的 2 处**（主表 + 各看板共用控制器）再加显式焦点。",
+        "features": "列头筛选搜索框支持中文输入法直接打字筛选（主表 + 隔离区/预警/负损/正损/半成品等各看板同步生效）。",
+    },
+    {
         "version": "v43.250",
         "date": "2026-10-24",
         "fixes": "GUI 侧「偏差率预警」口径统一排除 |偏差率| 恰为 100% 的 SAP 除零钳位假值（定额=0 恒 +100.0%、实际=0 恒 -100.0%），与工作簿「无备注预警」sheet（!=100%）及业务规则「≥10% 且 ≠100% 需要备注原因」对齐。改动分两类：**① 三处同源实现**（`data_frame_model.py` 的 `classify_row_color_keys` 标量判定、`DataFrameModel.setDataFrame` 的 `_alert_rows` 向量化判定、`AuditProxyModel._build_plan` 的颜色筛选 plan）——后两处是标量版的**向量孪生**，源码注释明写「复现 classify_row_color_keys 的向量化判定」，只改标量版会让主表行着色/颜色筛选与看板判定分裂，故一并同步；**② 四处绕过 classify_row_color_keys 另算阈值的旁路**（`dashboard_manager.py` 与 `controllers/dashboard_controller.py` 的偏差率预警看板预筛、`main_window.py` 的「偏差率预警未读」统计、`widgets/stats_cards.py` 的统计卡条数）——这四处若不改，用户在界面看到的条数与看板内容仍会把 100% 钳位行算进去，口径裂缝不闭合。排除式统一写作 `abs(rv-100.0) >= 1e-6`（浮点容差）：只显式排除 +100.0%，-100.0% 由既有的 `not no_input`（实际≈0 且 定额>0）排除，两者合起来等价于「排除 |偏差率|=100%」。同步更新 `tests/unit/test_filter_plan_consistency.py` 的镜像参考实现 `ref_accepts`（该测试的作用就是逐行比对 plan 与镜像，镜像不同步必然分叉）；`tests/unit/test_filter_engine.py` 无需改动（其用例不依赖 100% 判为 alert，且走的是 `filter_engine.py` 独立的 stat 判定分支）。",

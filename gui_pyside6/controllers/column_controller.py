@@ -13,7 +13,7 @@ import os
 
 import pandas as pd
 
-from PySide6.QtCore import Qt, QPoint
+from PySide6.QtCore import Qt, QPoint, QTimer
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton,
@@ -427,6 +427,10 @@ class ColumnController:
 
         popup = QWidget(self, Qt.Popup)
         popup.setObjectName("colFilterPopup")
+        # v43.251：Qt.Popup 默认 WA_InputMethodEnabled=False，浮层不参与输入法 →
+        # 里面的搜索框拿不到 IME 焦点 → **打不进汉字**（中文输入法唤不起来）。
+        # 打开这个属性后，popup 在 show() 时会把焦点自动交给第一个可聚焦子控件。
+        popup.setAttribute(Qt.WA_InputMethodEnabled, True)
         popup.setMinimumWidth(260)
         popup.setMaximumHeight(420)
         outer = QVBoxLayout(popup)
@@ -555,6 +559,11 @@ class ColumnController:
             if gpos.y() + ph > sg.bottom():
                 gpos.setY(max(sg.top(), gpos.y() - ph - self.mw._sort_header.height()))
         popup.move(gpos)
+        # v43.251：把焦点显式交给搜索框。Qt.Popup 显示时焦点默认落在浮层自身
+        # （QWidget 默认 NoFocus 策略），子控件拿不到焦点 → IME 唤不起来 →
+        # 搜索框打不进汉字。WA_InputMethodEnabled 已让 show() 后焦点自动落到搜索框，
+        # 这里再显式设一次兜底；延到事件循环执行，避免与 show 的焦点分配抢先后。
+        QTimer.singleShot(0, search.setFocus)
 
     def _open_empty_column_filter_popup(self, col_name, logical_index):
         """本列无取值时的兜底浮层：只给「清除此列 / 清除全部 / 关闭」三个出口。"""
@@ -566,6 +575,8 @@ class ColumnController:
             self.mw._col_filter_popup = None
         popup = QWidget(self, Qt.Popup)
         popup.setObjectName("colFilterPopup")
+        # v43.251：同主浮层，打开输入法支持（此处无搜索框，但保持浮层约定一致）
+        popup.setAttribute(Qt.WA_InputMethodEnabled, True)
         popup.setMinimumWidth(300)
         outer = QVBoxLayout(popup)
         outer.setContentsMargins(10, 10, 10, 10)
