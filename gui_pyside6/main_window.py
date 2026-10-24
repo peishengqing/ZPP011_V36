@@ -1975,7 +1975,10 @@ class MainWindow(QMainWindow):
         # 4. 偏差率预警未读
         if rate_col:
             rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
-            alert_mask = (rates.abs() >= 10) & (~no_input)
+            # v43.250：与主表橙色高亮 / 偏差率预警看板 / 颜色筛选同口径，排除
+            # |偏差率| 恰为 100% 的 SAP 除零钳位假值（定额=0 恒 +100.0%）；
+            # -100.0%（实际=0 且 定额>0）已由 ~no_input 排除。
+            alert_mask = (rates.abs() >= 10) & ((rates - 100.0).abs() >= 1e-6) & (~no_input)
             n_d = int((alert_mask & read_mask).sum())
         else:
             n_d = 0

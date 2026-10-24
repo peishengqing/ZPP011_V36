@@ -316,9 +316,13 @@ class StatsCardsWidget(QWidget):
             a = pd.to_numeric(df[act_col], errors='coerce').fillna(0)
             q = pd.to_numeric(df[qty_col], errors='coerce').fillna(0)
             no_input = (a.abs() <= 0.001) & (q > 0.001)
-            cnt = int(((rates.abs() >= 10) & (~no_input)).sum())
+            # v43.250：排除 |偏差率| 恰为 100% 的 SAP 除零钳位假值（定额=0 恒
+            # +100.0%），与主表橙色高亮 / 偏差率预警看板 / 颜色筛选 / 工作簿
+            # 「无备注预警」全口径一致（-100.0% 已由 ~no_input 排除）。
+            cnt = int(((rates.abs() >= 10) & ((rates - 100.0).abs() >= 1e-6)
+                       & (~no_input)).sum())
         else:
-            cnt = int((rates.abs() >= 10).sum())
+            cnt = int(((rates.abs() >= 10) & ((rates - 100.0).abs() >= 1e-6)).sum())
         self._set_card_value(self.card_deviation, str(cnt) if cnt else "0")
 
     @staticmethod

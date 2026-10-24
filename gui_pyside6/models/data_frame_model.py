@@ -150,12 +150,14 @@ class DataFrameModel(QAbstractTableModel):
 
         # 偏差率预警：|偏差率| >= 10% 的行整行浅橙（与偏差率预警看板阈值一致）
         # 排除「实际=0 且 定额>0」的行：偏差率恒为 -100%，是未真实投料的机械结果，不是真偏差
+        # 另排除 |偏差率| 恰为 100% 的 SAP 除零钳位假值（定额=0 恒 +100.0%、实际=0 恒 -100.0%），
+        # 与 classify_row_color_keys / 工作簿「无备注预警」sheet（!=100%）口径一致。
         _alert_rate_col = next((c for c in ['偏差率(%)', '偏差率'] if c in self._data.columns), None)
         if _alert_rate_col:
             rates = pd.to_numeric(
                 self._data[_alert_rate_col].astype(str).str.replace('%', '').str.strip(),
                 errors='coerce').fillna(0.0)
-            alert_mask = (rates.abs() >= 10) & (~no_input)
+            alert_mask = (rates.abs() >= 10) & ((rates - 100.0).abs() >= 1e-6) & (~no_input)
             self._alert_rows = set(np.where(alert_mask.values)[0])
         else:
             self._alert_rows = set()
@@ -1021,7 +1023,10 @@ class AuditProxyModel(QSortFilterProxyModel):
                 rv = pd.to_numeric(
                     df[c_rate_col].astype(str).str.replace('%', '').str.strip(),
                     errors='coerce')  # NaN 保留：abs(nan)>=thr 恒 False → 不告警（与原一致）
-                alert = (rv.abs() >= thr) & (~no_input) & (~changed) & (~quar)
+                # 与 classify_row_color_keys 同口径：排除 |偏差率| 恰为 100% 的 SAP 除零钳位假值
+                # （浮点容差 1e-6；NaN 行本就恒 False，不受影响）
+                alert = ((rv.abs() >= thr) & ((rv - 100.0).abs() >= 1e-6)
+                         & (~no_input) & (~changed) & (~quar))
             else:
                 alert = pd.Series(False, index=idx)
             plain = ~(changed | quar | sub | unused | alert)
@@ -1157,7 +1162,9 @@ def classify_row_color_keys(row_data, df, threshold=10.0):
       _quarantined_only 隔离区
       _substitute_only  替代料
       _unused_only      未投料（实际=0 定额>0 且非替代料）
-      _alert_only       偏差率预警（|偏差率|>=threshold 且非未投料/非被覆盖行）
+      _alert_only       偏差率预警（|偏差率|>=threshold 且排除 |偏差率| 恰为 100%
+                       的 SAP 除零钳位假值（定额=0 恒 +100%、实际=0 恒 -100%），
+                       且非未投料/非被覆盖行）
       _plain_only       无标记（五类皆非）
     """
     def _to_float_safe(v):
@@ -1200,7 +1207,8 @@ def classify_row_color_keys(row_data, df, threshold=10.0):
             rv = float(str(rv_raw).replace('%', '').strip())
         except (ValueError, TypeError):
             rv = 0.0
-        if abs(rv) >= threshold and not no_input and not (is_changed or is_quarantined):
+        if (abs(rv) >= threshold and abs(rv - 100.0) >= 1e-6
+                and not no_input and not (is_changed or is_quarantined)):
             is_alert = True
 
     is_plain = not (is_changed or is_quarantined or is_substitute or is_unused or is_alert)

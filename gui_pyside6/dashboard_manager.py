@@ -96,9 +96,12 @@ class DashboardManager:
                 a = pd.to_numeric(df[act_col], errors='coerce').fillna(0)
                 q = pd.to_numeric(df[qty_col], errors='coerce').fillna(0)
                 no_input = (a.abs() <= 0.001) & (q > 0.001)
-                mask = (rates.abs() >= 10) & (~no_input)
+                # v43.250：与主表橙色高亮 / 颜色筛选 / 工作簿「无备注预警」同口径，
+                # 排除 |偏差率| 恰为 100% 的 SAP 除零钳位假值（定额=0 恒 +100.0%）；
+                # -100.0%（实际=0 且 定额>0）已由 ~no_input 排除。
+                mask = (rates.abs() >= 10) & ((rates - 100.0).abs() >= 1e-6) & (~no_input)
             else:
-                mask = rates.abs() >= 10
+                mask = (rates.abs() >= 10) & ((rates - 100.0).abs() >= 1e-6)
             warnings_df = df[mask].copy()
             warnings_df["原表行号"] = warnings_df.index
             if warnings_df.empty:

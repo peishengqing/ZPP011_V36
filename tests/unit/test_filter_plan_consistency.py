@@ -230,7 +230,8 @@ def ref_accepts(row, df, cf, threshold=10.0):
                 rv = float(str(rv_raw).replace("%", "").strip())
             except (ValueError, TypeError):
                 rv = 0.0
-            if abs(rv) >= threshold and not no_input and not (is_changed or is_quarantined):
+            if (abs(rv) >= threshold and abs(rv - 100.0) >= 1e-6
+                    and not no_input and not (is_changed or is_quarantined)):
                 is_alert = True
         is_plain = not (is_changed or is_quarantined or is_substitute or is_unused or is_alert)
         keys = set()
