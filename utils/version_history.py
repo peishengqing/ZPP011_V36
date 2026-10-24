@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.256",
+        "date": "2026-10-24",
+        "fixes": "**修复归藏报告读取「趋势分析（自然日分组）」直接崩溃（v43.243 版式变更引发的回归，两个风格入口全中）**：sheet10_trend.py 在 v43.243 把该 sheet 版式改为「row1=期间说明行（跨列合并）、row2=表头、row3=空行、row4+=数据」，旧版式是「row1=表头、row2=说明行」。而 core/guizang_report.py:338 一直用 pandas 默认 header=0 读这张表，于是把 row1 的说明行当成了表头 → `trend[\"趋势\"]` 抛 KeyError → build_report_data 整个失败。**影响面：v43.243（10-23 13:59）之后生成的任何分析结果，点「归藏-Magazine / 归藏-Swiss」两个菜单入口都会弹「生成失败」**（10-21 那份预览之所以正常，是因为它用的是 v43.243 之前的旧分析结果文件）。该回归此前未被发现，是因为 v43.243 之后没有人从新分析结果走过一遍归藏流程。修法：新增 `_read_trend_sheet()` —— 先以 header=None 无表头读入，在前 10 行内定位含「趋势」单元格的那一行作表头（新旧两种版式均能正确识别），再丢掉全空行（新版式的 row3）；表头行按原文去空格后作为列名。不改变任何趋势数值与五分类统计逻辑。",
+        "features": "归藏报告对 v43.243+ 新版式分析结果的兼容性恢复：两种表头版式自动识别，后续 sheet10 再调整行序也不会再打断归藏链路。",
+    },
+    {
         "version": "v43.255",
         "date": "2026-10-24",
         "fixes": "修复 CORE-10「审计日志 N+1 连接」（core/audit_logger.py，零业务影响）：`AuditLogger._worker()` 原在循环体内 `with sqlite3.connect(...)`，**每写一条日志就新建一个连接**（开文件 + 读 WAL + 关文件），实测写 50 条 = 50 次 connect；日志是高频路径（每次改备注/改状态都写一条），该开销纯属浪费。连带发现第二个隐患：**`with sqlite3.connect(...)` 并不关闭连接**（with 块只管事务提交/回滚，连接对象要等 GC 才真正 close），原实现在高频写日志时持续泄漏连接对象。修法：① `_worker()` 改为**整个 worker 生命周期只开一个连接**、逐条复用，退出时在 `finally` 里显式 close；② 单条写失败时**丢弃损坏连接并重建**（自愈），不中断 worker，降级 fallback 文件的行为不变；③ `_init_db`/`_cleanup_old_logs`/`export_csv_async` 统一走新的 `_connect()` + 显式 `try/finally: close()`，并统一设 `PRAGMA busy_timeout`（写线程与导出线程并发时不立刻报「库被锁」）；④ `export_csv_async` **补上异常回调** —— 原实现在导出失败时静默 return、**永远不回调**，调用方会一直等结果（第二个真缺陷）。实测：写 100 条日志 connect 仅 1 次（修前 100 次）、再写 300 条 0 次、5 线程并发 200 条零丢失、shutdown 后全程仅 4 次 connect（无句柄泄漏）、数据逐字段正确；tests/unit/test_audit_logger.py 6 passed。另清掉该文件既有的未使用 import（time）告警。",

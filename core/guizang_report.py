@@ -17,7 +17,7 @@
 - 原因结构：    读「偏差原因分析」sheet 按备注原因分组；排除「替代料」；
                 合并「非正常生产」+「包装材料问题」；净影响 = (多耗+少耗)/1e4；按净影响降序
 - 趋势五分类：  读「趋势分析（自然日分组）」sheet 的「趋势」列 value_counts
-                （首行说明行需剔除）
+                （表头行自动定位，兼容 v43.243 前后的两种版式，见 _read_trend_sheet）
 - 汇总统计质量页：直接读「汇总统计」sheet 三列合计（总/正/负偏差金额(含税)）
 
 唯一与人工首版不同处：第 02 页"正/负偏差"原写 +102.4/−102.4（无法复现），
@@ -116,6 +116,36 @@ def _read_sheet(xl: pd.ExcelFile, name: str, log_cb=None) -> pd.DataFrame:
     return df
 
 
+def _read_trend_sheet(xl: pd.ExcelFile, log_cb=None) -> pd.DataFrame:
+    """读「趋势分析（自然日分组）」，返回带「趋势」列的 DataFrame。
+
+    ⚠️ 该 sheet 的版式在 v43.243 改过，两种都要能读：
+      · 新版（v43.243 起）：row1=期间说明行（跨列合并）、row2=表头、row3=空行、row4+=数据
+      · 旧版（v43.243 前）：row1=表头、row2=说明行、row3+=数据
+    直接用 pd.read_excel(默认 header=0) 会把新版 row1 的说明行当成表头，
+    导致 trend["趋势"] KeyError（v43.256 修复的回归）。
+    故先无表头读入，在前 10 行内定位含「趋势」单元格的行作表头。
+    """
+    name = "趋势分析（自然日分组）"
+    if name not in xl.sheet_names:
+        raise ValueError(f"分析结果 Excel 缺少工作表「{name}」，请先在软件内完成分析并导出。")
+    raw = pd.read_excel(xl, name, header=None)
+    hdr_idx = None
+    for i in range(min(len(raw), 10)):
+        vals = {str(v).strip() for v in raw.iloc[i].tolist() if pd.notna(v)}
+        if "趋势" in vals:
+            hdr_idx = i
+            break
+    if hdr_idx is None:
+        raise ValueError(f"工作表「{name}」未找到含「趋势」列的表头行，请检查分析结果文件。")
+    df = raw.iloc[hdr_idx + 1:].copy()
+    df.columns = [str(v).strip() for v in raw.iloc[hdr_idx].tolist()]
+    df = df.reset_index(drop=True).dropna(how="all")  # 丢掉新版式 row3 那样的全空行
+    if log_cb:
+        log_cb(f"已读取「{name}」{len(df)} 行（表头位于第 {hdr_idx + 1} 行）")
+    return df
+
+
 def _parse_period(xl: pd.ExcelFile, detail: pd.DataFrame) -> tuple:
     """返回 (period, period_range)，如 ('2026-09', '2026-09-01 — 09-30')。"""
     period, start_s, end_s = None, None, None
@@ -156,7 +186,7 @@ def build_report_data(excel_path, log_cb: Optional[Callable[[str], None]] = None
     summary = _read_sheet(xl, "汇总统计", log)
     noremark = _read_sheet(xl, "无备注预警", log)
     causes = _read_sheet(xl, "偏差原因分析", log)
-    trend = _read_sheet(xl, "趋势分析（自然日分组）", log)
+    trend = _read_trend_sheet(xl, log)
 
     for col in ("工厂", "车间", "物料类型", "物料名称", "净偏差金额", "备注"):
         if col not in d.columns:
@@ -381,6 +411,10 @@ def build_report_data(excel_path, log_cb: Optional[Callable[[str], None]] = None
             "sum_calc": wan_signed(q_pos + q_neg),
             "gap": wan(q_total - (q_pos + q_neg)),
             "detail_net": wan(total_net),
+            # v43.256：明细逐行加总 vs 汇总统计合计 的差。v43.254 修正明细金额口径后
+            # （未投料行不再被清零），两者已基本闭合；差值大时报告需保留「哪个数字不能用」的叙事。
+            "gap_detail": wan(total_net - q_total),
+            "closed": bool(abs(total_net - q_total) <= max(1e4, abs(q_total) * 0.01)),
         },
         "food": fd,
         "bev": bd,

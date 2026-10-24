@@ -45,6 +45,18 @@ def _p01(d):
 
 def _p02(d):
     t, q = d["total"], d["quality"]
+    # v43.256：明细口径与汇总统计是否闭合，决定首页口径说明的写法
+    if q["closed"]:
+        _caliber_note = (
+            f'本报告数字与工作簿「汇总统计」页的"总偏差金额"合计({q["sum_total"]} 万)已相互闭合'
+            f'(相差 {q["gap_detail"]} 万);该页自身的正/负分项相加为 {q["sum_calc"]} 万、与合计仍差 '
+            f'{q["gap"]} 万,差额来自价格差异行,属该表设计口径,详见第 04 页。'
+        )
+    else:
+        _caliber_note = (
+            f'工作簿「汇总统计」页的"总偏差金额"合计({q["sum_total"]} 万)与其自身正/负分项相加不符,'
+            f'本报告不采用,详见第 04 页。'
+        )
     return f'''<!-- 02 · 总览 · slide light · KPI Hero + 口径标注 -->
 <section class="slide light" data-animate="progression" data-layout="S03">
   <div class="canvas-card">
@@ -71,7 +83,7 @@ def _p02(d):
         </div>
 
         <div data-anim="note" style="align-self:end;border-left:3px solid var(--accent);padding-left:1.4vw">
-          <div class="body-sm" style="color:var(--text-secondary)"><b>口径说明：</b>本报告全部数字由「完整偏差明细」净偏差金额列逐行加总得出,可逐条复核。工作簿「汇总统计」页的"总偏差金额"合计({q["sum_total"]} 万)与其自身正/负分项相加不符,本报告不采用,详见第 04 页。</div>
+          <div class="body-sm" style="color:var(--text-secondary)"><b>口径说明：</b>本报告全部数字由「完整偏差明细」净偏差金额列逐行加总得出,可逐条复核。{_caliber_note}</div>
         </div>
       </div>
     </div>
@@ -122,14 +134,36 @@ def _p03(d):
 
 def _p04(d):
     q = d["quality"]
+    # v43.256：明细金额口径修正后，明细逐行加总与汇总统计合计已基本闭合。
+    # 叙事按真实差值二选一，避免出现「本报告不采用 X」却把 X 写在自己首页的自相矛盾。
+    if q["closed"]:
+        _kicker = "先说清楚:哪个口径在用"
+        _title = '汇总与明细已经<span style="color:var(--accent-bright)">对上了</span>'
+        _right = (
+            f'偏差报告的价值全在"经得起查"。<br/><br/>'
+            f'明细逐行加总 <b>{q["detail_net"]} 万</b>,与汇总统计合计 <b>{q["sum_total"]} 万</b> '
+            f'相差仅 {q["gap_detail"]} 万,两个口径相互闭合,首页数字可以直接对到工作簿。<br/><br/>'
+            f'仍需留意:汇总统计自身的正/负分项相加为 {q["sum_calc"]} 万,与其合计仍差 {q["gap"]} 万'
+            f'——差额来自价格差异行与半成品口径,属该表设计口径,不影响本报告采用的明细口径。'
+        )
+    else:
+        _kicker = "先说清楚:哪个数字不能用"
+        _title = f'工作簿里那个 <span style="color:var(--accent-bright)">{q["sum_total"]} 万</span> 加不起来'
+        _right = (
+            f'偏差报告的价值全在"经得起查"。<br/><br/>'
+            f'如果首页写 {q["sum_total"]} 万,任何一个人把正负两列加一遍就会得到 {q["sum_calc"]} 万,'
+            f'那一刻整份报告的可信度一起归零。<br/><br/>'
+            f'所以本报告宁可数字小,也要<b>每一个数都能落到具体明细行</b>。'
+        )
+    _sum_verifiable = "是(对明细)" if q["closed"] else "否"
     return f'''<!-- 04 · 数据质量说明 · slide dark · 差异表 -->
 <section class="slide dark" data-animate="field-notes" data-layout="S18">
   <div class="canvas-card">
 {_chrome("数据质量说明 / DATA CAVEAT", 4)}
 
     <div style="flex:1;display:grid;grid-template-rows:auto auto 1fr;gap:0">
-      <div data-anim="kicker" class="kicker accent" style="margin-bottom:1.4vh;color:var(--accent-bright);opacity:1">先说清楚:哪个数字不能用</div>
-      <h2 data-anim="title" class="h-xl-zh" style="max-width:30ch">工作簿里那个 <span style="color:var(--accent-bright)">{q["sum_total"]} 万</span> 加不起来</h2>
+      <div data-anim="kicker" class="kicker accent" style="margin-bottom:1.4vh;color:var(--accent-bright);opacity:1">{_kicker}</div>
+      <h2 data-anim="title" class="h-xl-zh" style="max-width:30ch">{_title}</h2>
 
       <div style="display:grid;grid-template-columns:1.15fr .85fr;gap:3.4vw;margin-top:3.4vh;align-items:start">
         <div data-anim="table">
@@ -139,7 +173,7 @@ def _p04(d):
           <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:1.2vw;padding:1.8vh 0;border-bottom:1px solid rgba(255,255,255,.14);align-items:baseline">
             <div class="body" style="opacity:.92">汇总统计表「总偏差金额」合计</div>
             <div class="body" style="text-align:right;font-family:var(--mono);opacity:.92">{q["sum_total"]} 万</div>
-            <div class="body-sm" style="text-align:right;color:var(--accent-bright)">否</div>
+            <div class="body-sm" style="text-align:right;color:var(--accent-bright)">{_sum_verifiable}</div>
           </div>
           <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:1.2vw;padding:1.8vh 0;border-bottom:1px solid rgba(255,255,255,.14);align-items:baseline">
             <div class="body" style="opacity:.92">该表自身正偏差合计</div>
@@ -161,7 +195,7 @@ def _p04(d):
 
         <div data-anim="right" style="border-left:3px solid var(--accent);padding-left:2vw">
           <div class="t-meta" style="margin-bottom:1.6vh;opacity:.72">为什么这件事值得单开一页</div>
-          <div class="body" style="opacity:.88;line-height:1.75">偏差报告的价值全在"经得起查"。<br/><br/>如果首页写 {q["sum_total"]} 万,任何一个人把正负两列加一遍就会得到 {q["sum_calc"]} 万,那一刻整份报告的可信度一起归零。<br/><br/>所以本报告宁可数字小,也要<b>每一个数都能落到具体明细行</b>。</div>
+          <div class="body" style="opacity:.88;line-height:1.75">{_right}</div>
           <div class="t-meta" style="margin-top:2.6vh;padding-top:1.8vh;border-top:1px solid rgba(255,255,255,.18);opacity:.6">建议:反馈给系统方核查汇总层算法</div>
         </div>
       </div>
