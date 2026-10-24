@@ -10,21 +10,12 @@ from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import QMessageBox, QFileDialog, QProgressDialog, QApplication
 
 from gui_pyside6.save_guard import safe_save, precheck_save_path, friendly_error
+from gui_pyside6.utils.file_launcher import open_path
 
 
 def open_file(filepath):
-    """跨平台打开文件"""
-    import platform
-    system = platform.system()
-    if system == 'Windows':
-        import os
-        os.startfile(filepath)
-    elif system == 'Darwin':  # macOS
-        import subprocess
-        subprocess.run(['open', filepath])
-    else:  # Linux and others
-        import subprocess
-        subprocess.run(['xdg-open', filepath])
+    """跨平台打开文件（唯一实现在 gui_pyside6/utils/file_launcher.py，v43.257 收口 GUI-001b）"""
+    return open_path(filepath)
 
 
 class ExportController(QObject):

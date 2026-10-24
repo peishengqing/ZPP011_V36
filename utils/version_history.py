@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.257",
+        "date": "2026-10-24",
+        "fixes": "**收口 GUI-001 / GUI-001b「os.startfile 跨平台」**：审计提出 os.startfile 只有 Windows 能用。实际代码里三处早就写了平台分发（d676c1b 起：Windows=os.startfile / macOS=open / Linux=xdg-open），但留下四个真问题：① 同一段分发在 **5 处重复**（export_controller.open_file、ppt_controller._open_file、main_window._open_file、main_window 打开源码备份目录内联一份、main_window 变动提醒导出内联一份）；② 只有 main_window 那份有 try/except，另四处打开失败会**把异常直接抛给调用方**——于是「导出成功了但系统打不开」会演变成一个写着「导出失败」的误导性弹窗（GUI-001b 的实质）；③ macOS/Linux 用 subprocess.run 不带 check，打不开时静默无感；④ 没有 xdg-open 的精简 Linux 环境没有任何回退。修法：新建**唯一实现** `gui_pyside6/utils/file_launcher.py::open_path(path, log_cb=None) -> bool` —— 平台分发保持与原 Windows 路径完全一致（os.startfile 仍是首选，零行为变化），补上：异常永不外抛（失败只打 traceback + 记日志 + 返回 False，由调用方决定提示文案）、日志回调三层兜底（(msg,level) → (msg) → 静默，防 TypeError 顶掉原始异常）、无 xdg-open 时回退 Qt QDesktopServices；5 处全部收敛为一行委托，main_window 里随之清掉不再使用的 sys/subprocess import。",
+        "features": "「用系统默认程序打开文件/文件夹」从此只有一个入口：任何地方要打开文件都调 file_launcher.open_path()，不要再各自写平台判断；打开失败不再被误报成「导出失败」。",
+    },
+    {
         "version": "v43.256",
         "date": "2026-10-24",
         "fixes": "**修复归藏报告读取「趋势分析（自然日分组）」直接崩溃（v43.243 版式变更引发的回归，两个风格入口全中）**：sheet10_trend.py 在 v43.243 把该 sheet 版式改为「row1=期间说明行（跨列合并）、row2=表头、row3=空行、row4+=数据」，旧版式是「row1=表头、row2=说明行」。而 core/guizang_report.py:338 一直用 pandas 默认 header=0 读这张表，于是把 row1 的说明行当成了表头 → `trend[\"趋势\"]` 抛 KeyError → build_report_data 整个失败。**影响面：v43.243（10-23 13:59）之后生成的任何分析结果，点「归藏-Magazine / 归藏-Swiss」两个菜单入口都会弹「生成失败」**（10-21 那份预览之所以正常，是因为它用的是 v43.243 之前的旧分析结果文件）。该回归此前未被发现，是因为 v43.243 之后没有人从新分析结果走过一遍归藏流程。修法：新增 `_read_trend_sheet()` —— 先以 header=None 无表头读入，在前 10 行内定位含「趋势」单元格的那一行作表头（新旧两种版式均能正确识别），再丢掉全空行（新版式的 row3）；表头行按原文去空格后作为列名。不改变任何趋势数值与五分类统计逻辑。",

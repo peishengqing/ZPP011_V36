@@ -97,18 +97,10 @@ class PptController:
 
     @staticmethod
     def _open_file(filepath):
-        """跨平台打开文件"""
-        import platform
-        system = platform.system()
-        if system == 'Windows':
-            import os
-            os.startfile(filepath)
-        elif system == 'Darwin':  # macOS
-            import subprocess
-            subprocess.run(['open', filepath])
-        else:  # Linux and others
-            import subprocess
-            subprocess.run(['xdg-open', filepath])
+        """跨平台打开文件（唯一实现在 gui_pyside6/utils/file_launcher.py，v43.257 收口 GUI-001）"""
+        from gui_pyside6.utils.file_launcher import open_path
+
+        return open_path(filepath)
 
     # ═══════════════ 智能 PPT ═══════════════
 

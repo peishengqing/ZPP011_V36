@@ -5,13 +5,11 @@ ZPP011 主窗口 (PySide6 迁移版)
 暗色主题 v43.0 | 裴哥 2026-06-23
 """
 
-import sys
 import os
 import time
 import json
 from datetime import datetime
 import pandas as pd
-import subprocess
 import re
 
 from PySide6.QtWidgets import (
@@ -188,23 +186,10 @@ class _FullCacheWorker(QThread):
 
 
 def _open_file(filepath):
-    """跨平台打开文件（带异常处理）"""
-    import platform
-    import traceback
-    system = platform.system()
-    try:
-        if system == 'Windows':
-            import os
-            os.startfile(filepath)
-        elif system == 'Darwin':  # macOS
-            import subprocess
-            subprocess.run(['open', filepath])
-        else:  # Linux and others
-            import subprocess
-            subprocess.run(['xdg-open', filepath])
-    except Exception as e:
-        print(f"[ERROR] 无法打开文件 {filepath}: {e}")
-        traceback.print_exc()
+    """跨平台打开文件（唯一实现在 gui_pyside6/utils/file_launcher.py，v43.257 收口 GUI-001）"""
+    from gui_pyside6.utils.file_launcher import open_path
+
+    return open_path(filepath)
 
 
 class MainWindow(QMainWindow):
@@ -799,11 +784,8 @@ class MainWindow(QMainWindow):
                             '新值': '' if c.get('new_value') is None else c.get('new_value'),
                         })
                     pd.DataFrame(rows).to_excel(path, index=False)
-                    if os.name == "nt" and os.path.exists(path):
-                        _open_file(path)
-                    else:
-                        opener = 'open' if sys.platform == 'darwin' else 'xdg-open'
-                        subprocess.Popen([opener, path])
+                    # v43.257：内联平台分发收敛到 _open_file（第五份重复实现）
+                    _open_file(path)
                     toast(f"已导出并打开：{path}", parent=dlg)
                 except Exception as e:
                     QMessageBox.warning(dlg, "导出失败", f"导出失败：{e}")
@@ -3040,13 +3022,8 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "提示", f"源码备份目录不存在:\n{backup_dir}\n\n请先运行一次打包脚本以生成备份")
             return
         
-        # 尝试打开文件夹
-        if sys.platform == "win32":
-            _open_file(backup_dir)
-        elif sys.platform == "darwin":
-            subprocess.Popen(["open", backup_dir])
-        else:
-            subprocess.Popen(["xdg-open", backup_dir])
+        # 尝试打开文件夹（v43.257：内联的平台分发收敛到 _open_file，不再重复第四份）
+        _open_file(backup_dir)
         
         QMessageBox.information(self, "已打开", f"已打开源码备份目录:\n{backup_dir}")
 
