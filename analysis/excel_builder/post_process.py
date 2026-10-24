@@ -65,10 +65,32 @@ _DATE_KEYS = ('订单日期', '订单开始日期')
 # 金额字段（千分位）
 _AMOUNT_KEYS = ('金额',)
 # 数量/条数字段
-_COUNT_KEYS = ('条数', '总数量', '数量', '定额', '实际')
+_COUNT_KEYS = ('条数', '总数量', '数量', '定额', '实际',
+               # v43.252：以下四列是**数量**口径，但列名不含上面任一关键词，
+               # 导致 number_format 全是 General（表里显示裸值）：
+               #   多耗 / 少耗   —— 偏差原因分析里的正/负偏差数量合计
+               #   偏差A / 偏差B —— 替代料明细里 A/B 两料各自的偏差数量
+               # ⚠️ '偏差A' 不会误伤 '偏差率A'（'偏差率A' 里 '率' 夹在中间，
+               #    不是子串）；'偏差率A' 仍归比率小数类。
+               '多耗', '少耗', '偏差A', '偏差B')
 
 # 比率字段（这些列在源表里是文本 '19.60%'，需转真数值）
 _RATIO_KEYS = ('率', '占比')
+
+# ---------------------------------------------------------------- 百分点数值列
+#
+# 「百分点数值」与「比率小数」是**两种不同的存储形态**，数字格式必须分开：
+#   比率小数  = 0.143  表示 14.3%  → 套 0.00%    （显示 14.30%）
+#   百分点数值 = 14.57  表示 14.57% → 套 0.00"%"  （显示 14.57%）
+# 套错就是 100 倍误差：
+#   · 百分点列套 0.00%   → 14.57 显示成 1457.00%
+#   · 比率小数列套 0.00"%" → 0.143 显示成 0.14%
+#
+# ⚠️ **绝不能靠「值是否 > 1」判断形态**：比率小数的值域是 (−∞,+∞)，
+#    真实超耗 240% 就是 2.4060、673% 就是 6.736（实测），用它判定会把
+#    240.60% 误判成百分点而显示成 2.41%。**只能靠列名语义**。
+# 判据：列名以 '%' 结尾 → 百分点数值列（当前工作簿里只有「占车间偏差比%」）。
+_FMT_PCT_POINT = '0.00"%"'
 
 _FMT_DATE = 'yyyy-mm-dd'
 _FMT_AMOUNT = '#,##0.00'
@@ -246,6 +268,28 @@ def _count_fmt(v):
     return _FMT_COUNT_INT if float(v).is_integer() else _FMT_COUNT
 
 
+def _is_pct_point_col(name):
+    """列名是否「以 % 结尾」的百分点数值列（值本身已是百分数的数值部分）。"""
+    return isinstance(name, str) and name.strip().endswith('%')
+
+
+def _col_max_abs(ws, hdr_row, last_row, col, sample=200):
+    """采样某列非空数值的最大绝对值（判定百分比列的存储形态时用）。"""
+    map_ = _cells_of(ws)
+    mx = 0.0
+    for r in range(hdr_row + 1, min(last_row, hdr_row + sample) + 1):
+        c = map_.get((r, col))
+        if c is None:
+            continue
+        v = c.value
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            continue
+        a = abs(float(v))
+        if a > mx:
+            mx = a
+    return mx
+
+
 def _apply_number_formats(ws, hdr_row, headers, last_row):
     """按列名套数字格式。只改 number_format，保留字体/填充/边框等其它样式。
 
@@ -261,7 +305,7 @@ def _apply_number_formats(ws, hdr_row, headers, last_row):
     _normalize_ratio_columns 的区别：后者只处理「以 % 结尾的文本」（如 '19.6%'
     → 0.196），处理不了已经是真数值的列；本处按列名补套，两者互补。
     """
-    date_cols, amount_cols, count_cols, ratio_cols = [], [], [], []
+    date_cols, amount_cols, count_cols, ratio_cols, pct_cols = [], [], [], [], []
     for col, name in headers.items():
         if not name:
             continue
@@ -269,11 +313,15 @@ def _apply_number_formats(ws, hdr_row, headers, last_row):
             date_cols.append(col)
         elif any(k in name for k in _AMOUNT_KEYS):
             amount_cols.append(col)
+        elif _is_pct_point_col(name):
+            # 百分点数值列必须**先于**数量/比率判定：它的列名（如「占车间偏差比%」）
+            # 不含「数量/率/占比」，靠后判定会被漏掉。
+            pct_cols.append(col)
         elif any(k in name for k in _COUNT_KEYS):
             count_cols.append(col)
         elif any(k in name for k in _RATIO_KEYS):
             ratio_cols.append(col)
-    if not (date_cols or amount_cols or count_cols or ratio_cols):
+    if not (date_cols or amount_cols or count_cols or ratio_cols or pct_cols):
         return
     map_ = _cells_of(ws)
 
@@ -299,6 +347,14 @@ def _apply_number_formats(ws, hdr_row, headers, last_row):
                 c.number_format = fmt
     for col in ratio_cols:
         _set(col, _FMT_RATIO)
+    for col in pct_cols:
+        # 安全阀：百分点列的值几乎必然 >1（实测「占车间偏差比%」0~97.84）；
+        # 若整列都 ≤1，说明它其实是**比率小数**形态，套字面百分号会错 100 倍
+        # （0.143 会显示成 0.14%），此时改回 0.00%。
+        fmt = (_FMT_PCT_POINT
+               if _col_max_abs(ws, hdr_row, last_row, col) > 1.000001
+               else _FMT_RATIO)
+        _set(col, fmt)
 
 
 def _has_rule(ws, rng, operator):
@@ -845,9 +901,15 @@ def _fact_col_stats(ws, hdr_row, last_row, col):
 
 
 def _fact_numfmt(metric_name):
-    """按度量名给数字格式：金额两位小数千分位；数量最多三位小数。"""
+    """按度量名给数字格式：金额两位小数千分位；数量最多三位小数。
+
+    百分点数值列（列名以 '%' 结尾）用 `0.00"%"`，比率小数用 0.00% —— 与
+    `_apply_number_formats` 同一套判据，两处不能打架（否则事实卡与数据表显示不同值）。
+    """
     if '金额' in metric_name:
         return '#,##0.00'
+    if _is_pct_point_col(metric_name):
+        return _FMT_PCT_POINT
     if '率' in metric_name:
         return '0.00%'
     return '#,##0.###'
