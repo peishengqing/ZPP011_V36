@@ -19,10 +19,12 @@ import requests
 logger = logging.getLogger("AIClient")
 
 # ── Agnes AI 配置 ──────────────────────────────────────
-# 兜底默认值（与 WorkBuddy models.json 中 agnes-2.5-flash 保持一致）。
-# 运行时优先读取 WorkBuddy 的 models.json，使其跟随 WorkBuddy 侧配置。
+# 兜底默认值。运行时优先读取 WorkBuddy 的 models.json，使其跟随 WorkBuddy 侧配置。
+# v43.258：models.json 里的条目已从 agnes-2.5-flash 换成 agnes-3.0-flash
+#（512K 上下文 / 最大输出 65,536，长文与 HTML 生成都够用），解析逻辑同步改优先级，
+#否则会因找不到 2.5-flash 而静默丢失 key → 整个 AI 审核实际在跑 Mock 降级。
 AGNES_BASE_URL = "https://apihub.agnes-ai.cn/v1"
-AGNES_MODEL = "agnes-2.5-flash"
+AGNES_MODEL = "agnes-3.0-flash"
 AGNES_API_KEY = ""  # 不硬编码！优先从 WorkBuddy models.json 读取，其次 'ai.api_key' 配置项或环境变量 AGNES_API_KEY
 
 # RPM 限制：20次/分钟 → 调用间隔至少 3.0 秒
@@ -30,10 +32,11 @@ MIN_CALL_INTERVAL = 3.0
 
 
 def _resolve_agnes_config():
-    """从 WorkBuddy 的 models.json 读取 agnes-2.5-flash 的端点/模型/密钥。
+    """从 WorkBuddy 的 models.json 读取 Agnes 模型的端点/模型/密钥。
 
     返回 dict: {"base_url", "model", "api_key"}。
-    文件不存在或读取失败时回退到上面的模块常量（已更新为 .cn + agnes-2.5-flash）。
+    选取优先级：agnes-3.0-flash > 任意 agnes-* 条目 > 模块常量兜底。
+    文件不存在或读取失败时回退到上面的模块常量。
     """
     fallback = {
         "base_url": AGNES_BASE_URL,
@@ -47,13 +50,24 @@ def _resolve_agnes_config():
         with open(models_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         entries = data if isinstance(data, list) else data.get("models", [])
+        chosen = None
+        # 1) 首选 3.0-flash（大输出，适合长文/HTML 生成）
         for m in entries:
-            if m.get("id") == "agnes-2.5-flash":
-                return {
-                    "base_url": m.get("url") or fallback["base_url"],
-                    "model": m.get("id") or fallback["model"],
-                    "api_key": m.get("apiKey") or m.get("api_key") or "",
-                }
+            if str(m.get("id", "")) == "agnes-3.0-flash":
+                chosen = m
+                break
+        # 2) 退而求其次：任意 agnes-* 条目（防止以后再换型号又静默丢 key）
+        if chosen is None:
+            for m in entries:
+                if str(m.get("id", "")).startswith("agnes-"):
+                    chosen = m
+                    break
+        if chosen is not None:
+            return {
+                "base_url": chosen.get("url") or fallback["base_url"],
+                "model": chosen.get("id") or fallback["model"],
+                "api_key": chosen.get("apiKey") or chosen.get("api_key") or "",
+            }
     except Exception as e:
         logger.warning("读取 WorkBuddy models.json 失败，使用内置缺省配置：%s", e)
     return fallback
@@ -108,7 +122,7 @@ class AIClient:
 
     def _get_api_key(self):
         """获取 API Key：优先 WorkBuddy models.json，其次项目配置，其次环境变量，未配置时降级 Mock"""
-        # 1) WorkBuddy models.json 中 agnes-2.5-flash 的 key
+        # 1) WorkBuddy models.json 中 Agnes 模型（优先 agnes-3.0-flash）的 key
         if self._agnes_api_key:
             return self._agnes_api_key
         # 2) 项目配置文件 ai.api_key
@@ -232,6 +246,64 @@ class AIClient:
         else:
             # 模型没返回 JSON，把原始响应当建议
             return {"result": "需关注", "suggestion": content[:200]}
+
+    def generate_text(self, system_prompt: str, user_prompt: str,
+                      max_tokens: int = 32000, timeout: int = 180) -> str:
+        """通用文本生成（归藏 AI 设计报告用）：返回模型原始输出文本。
+
+        与 _call_agnes 的区别：
+          · 不强制 JSON 输出，原样返回（HTML 由调用方自行提取）；
+          · max_tokens / timeout 都按长输出调（一整份 15 页 HTML 约 2~4 万 token）；
+          · 没有 key 时直接抛异常，**不走 Mock 降级** —— Mock 对「生成设计」毫无意义，
+            静默降级只会让用户以为拿到了 AI 设计，实际是本地兜底（调用方自己决定回退）。
+        """
+        self._rate_limit()
+
+        api_key = self._get_api_key()
+        if not api_key:
+            raise RuntimeError(
+                "未配置 AI API Key：请在 WorkBuddy models.json 配置 agnes-3.0-flash，"
+                "或在项目配置 ai.api_key / 环境变量 AGNES_API_KEY 中提供。"
+            )
+
+        payload = {
+            "model": self._agnes_model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0.7,   # 设计类任务要多样性，比审核的 0.3 高
+            "max_tokens": max_tokens,
+        }
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        url = f"{self._agnes_base_url}/chat/completions"
+
+        def _post():
+            return requests.post(url, headers=headers, json=payload, timeout=timeout)
+
+        response = _post()
+        if response.status_code == 429:
+            logger.warning("Agnes AI 速率限制，等待 10 秒后重试...")
+            time.sleep(10)
+            response = _post()
+            if response.status_code == 429:
+                raise RuntimeError("Agnes AI 速率限制，重试仍失败")
+        # 5xx 瞬时错误（实测 agnes 端偶发 520，一次端到端白丢 4 分钟）：退避 15s 重试一次
+        if 500 <= response.status_code < 600:
+            logger.warning("Agnes AI 服务端错误 %s，等待 15 秒后重试...", response.status_code)
+            time.sleep(15)
+            response = _post()
+
+        response.raise_for_status()
+        data = response.json()
+        content = data["choices"][0]["message"]["content"]
+        if not content or not content.strip():
+            raise RuntimeError("Agnes AI 返回空内容")
+        self._total_calls += 1
+        return content
 
     # ── 构建提示 ────────────────────────────────────
 

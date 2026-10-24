@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QTextBrowser,
+    QMessageBox,
 )
 from PySide6.QtCore import QUrl, QThread, Signal
 
@@ -80,6 +81,55 @@ class _GuizangBuildWorker(QThread):
             self.html_ready.emit(html)
         except Exception as e:  # noqa: BLE001
             self.build_failed.emit(f"生成归藏报告失败：{e}")
+
+
+class _GuizangAiWorker(QThread):
+    """后台线程：AI 现场设计报告（v43.258）。
+
+    流程：build_report_data 算数 → generate_ai_html 让 AI 设计并写 HTML
+    → 数字护栏校验。html_ready 只在护栏通过时发出；violations 信号把越界数字
+    清单交回界面，由用户决定重试 / 用模板版 / 强行使用。
+    """
+
+    html_ready = Signal(str)
+    build_failed = Signal(str)
+    violations = Signal(list)          # [{"number":..,"context":..}, ...]
+    progress = Signal(str)
+
+    def __init__(self, excel_path: str, parent=None):
+        super().__init__(parent)
+        self.excel_path = excel_path
+        self.last_html = ""      # 护栏未通过时也保留，供「仍要使用 AI 版」取用
+
+    def run(self):
+        try:
+            root = str(PROJECT_ROOT)
+            if root not in sys.path:
+                sys.path.insert(0, root)
+            from core.guizang_report import build_report_data
+            from core.guizang_ai import generate_ai_html
+
+            self.progress.emit("正在读取分析结果并计算…")
+            data = build_report_data(self.excel_path)
+            self.progress.emit("AI 正在设计这一期的报告版式（约 1~3 分钟）…")
+            r = generate_ai_html(
+                data,
+                log_cb=lambda m, l="info": self.progress.emit(m),
+            )
+            if r.get("ok") and r.get("html"):
+                self.html_ready.emit(r["html"])
+            elif r.get("violations"):
+                self.last_html = r.get("html") or ""
+                self.violations.emit(r["violations"])
+            else:
+                self.build_failed.emit(
+                    f"AI 设计失败：{r.get('error') or '未知错误'}\n\n"
+                    "可点「刷新」用模板版查看。"
+                )
+        except Exception as e:  # noqa: BLE001
+            import traceback as _tb
+            _tb.print_exc()
+            self.build_failed.emit(f"AI 设计异常：{e}")
 
 
 class GuizangDialog(QDialog):
@@ -128,9 +178,16 @@ class GuizangDialog(QDialog):
         top.addWidget(self._status)
         top.addStretch()
 
-        self._refresh_btn = QPushButton("刷新")
+        self._refresh_btn = QPushButton("刷新（模板版）")
+        self._refresh_btn.setToolTip("用内置模板 + 本期数据重新生成（秒级、数字可逐格审计）")
         self._refresh_btn.clicked.connect(self._start_build)
         top.addWidget(self._refresh_btn)
+
+        # v43.258：AI 每期重新设计（数字护栏硬门校验）
+        self._ai_btn = QPushButton("✨ AI 重新设计")
+        self._ai_btn.setToolTip("让 AI 现场设计一套全新版式；生成后自动核对每个数字，")
+        self._ai_btn.clicked.connect(self._start_ai_build)
+        top.addWidget(self._ai_btn)
 
         self._browser_btn = QPushButton("用系统浏览器打开")
         self._browser_btn.clicked.connect(self._open_in_browser)
@@ -177,6 +234,7 @@ class GuizangDialog(QDialog):
         if self._worker is not None and self._worker.isRunning():
             return
         self._refresh_btn.setEnabled(False)
+        self._ai_btn.setEnabled(False)
         self._browser_btn.setEnabled(False)
         self._status.setText("正在读取分析结果并计算…")
         self._worker = _GuizangBuildWorker(self.style, self.excel_path)
@@ -184,6 +242,60 @@ class GuizangDialog(QDialog):
         self._worker.build_failed.connect(self._on_build_failed)
         self._worker.progress.connect(self._on_progress)
         self._worker.start()
+
+    def _start_ai_build(self):
+        """v43.258：AI 现场设计报告（后台线程 + 数字护栏）。"""
+        if self._worker is not None and self._worker.isRunning():
+            return
+        self._refresh_btn.setEnabled(False)
+        self._ai_btn.setEnabled(False)
+        self._browser_btn.setEnabled(False)
+        self._status.setText("AI 正在设计这一期的报告…")
+        self._worker = _GuizangAiWorker(self.excel_path)
+        self._worker.html_ready.connect(self._on_html_ready)
+        self._worker.build_failed.connect(self._on_build_failed)
+        self._worker.violations.connect(self._on_ai_violations)
+        self._worker.progress.connect(self._on_progress)
+        self._worker.start()
+
+    def _on_ai_violations(self, violations: list):
+        """数字护栏未通过：把越界数字摊开给用户决定，不静默放过、也不静默打死。"""
+        if not self._alive:
+            return
+        self._refresh_btn.setEnabled(True)
+        self._ai_btn.setEnabled(True)
+        self._status.setText("AI 设计被数字护栏拦下")
+        lines = []
+        for v in violations[:20]:
+            num = v.get("number", "?")
+            ctx = (v.get("context", "") or "").strip()
+            lines.append(f"· {num}　…{ctx[:46]}…")
+        more = "" if len(violations) <= 20 else f"\n（另有多 {len(violations) - 20} 项，已截断）"
+        box = QMessageBox(self)
+        box.setWindowTitle("AI 设计的报告未通过数字核对")
+        box.setIcon(QMessageBox.Warning)
+        box.setText(
+            f"AI 写出了 {len(violations)} 个数据字典里不存在的数字"
+            "（可能是抄错，也可能是它自己算了数）。\n\n"
+            "归藏报告的立身之本是「每一个数都能落到明细行」，所以这些数字不能直接放行："
+        )
+        box.setDetailedText("\n".join(lines) + more)
+        retry = box.addButton("重试（让它改）", QMessageBox.AcceptRole)
+        force = box.addButton("仍要使用 AI 版", QMessageBox.DestructiveRole)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked == retry:
+            self._start_ai_build()
+        elif clicked == force:
+            # 强行使用：把 AI 版落盘并加载（用户已知情）
+            _html = getattr(self._worker, "last_html", "") or getattr(self, "_last_ai_html", "")
+            if _html:
+                self._last_ai_html = _html
+                self._on_html_ready(_html)
+            else:
+                self._on_build_failed("没有可用的 AI 版本，请重试或改用模板版。")
+        else:
+            self._start_build()
 
     def _on_progress(self, msg: str):
         if self._alive:
@@ -201,6 +313,7 @@ class GuizangDialog(QDialog):
             self._on_build_failed(f"预览文件写入失败：{e}")
             return
         self._refresh_btn.setEnabled(True)
+        self._ai_btn.setEnabled(True)
         self._browser_btn.setEnabled(True)
         self._status.setText(f"{self._desc} · 数据源：{Path(self.excel_path).name}")
         if self._web_engine_ok:
@@ -216,7 +329,8 @@ class GuizangDialog(QDialog):
         if not self._alive:
             return
         self._refresh_btn.setEnabled(True)
-        self._status.setText("构建失败（可点「刷新」重试）")
+        self._ai_btn.setEnabled(True)
+        self._status.setText("构建失败（可点「刷新」用模板版，或「AI 重新设计」重试）")
         self.web.setHtml(
             "<div style='padding:40px;font-family:sans-serif;color:#b00'>"
             f"<b>{msg}</b><br><br>"
