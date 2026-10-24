@@ -68,6 +68,11 @@ _NUM_RE = re.compile(r"(?<![A-Za-z])[+\-\u2212]?\d[\d,]*(?:\.\d+)?")
 # 完整日期（2026.10.24 / 2026-10-03 / 2026/10/3）不是业务数字，先整段去掉
 _DATE_RE = re.compile(r"\d{4}[.\-/]\d{1,2}(?:[.\-/]\d{1,2})?")
 
+# 没年份的月日（"10-31 前补齐" / "10-23"）也不是业务数字。
+# ⚠️ 只剥连字符与斜杠两种日期写法，**绝不剥点号**——"26.39" 这种小数会被
+# \d{1,2}[.]\d{1,2} 误吞，把真违规（−26.39 被写成 −26.4）放过去，那是护栏的命门。
+_MD_RE = re.compile(r"(?<!\d)\d{1,2}[-\/]\d{1,2}(?!\d)")
+
 # "U+2212" 这类 Unicode 码位说明（AI 常在口径说明里写「负号用 U+2212 表示」）
 # 会被数字正则从 "U+2212" 里切出 "2212"（前一个字符是 + 不是字母，lookbehind 拦不住），
 # 必须整段去掉（第三次实跑就踩到这个坑）
@@ -79,6 +84,10 @@ _PROSE_UNITS = ("小时", "分钟", "秒钟", "秒", "天", "周", "页", "版",
 _PROSE_UNIT_RE = re.compile(
     r"(?<![A-Za-z])[+\-\u2212]?\d[\d,]*(?:\.\d+)?(?:\s*(?:%s))" % "|".join(_PROSE_UNITS)
 )
+
+# 可见文本下限：低于此值说明内容被藏进 <script> 用 JS 注入（v43.259 实测，
+# AI 把整份报告塞进单个 script → 总字符 35,438 但可见文本仅 82 → 护栏真空通过）
+MIN_VISIBLE_TEXT = 3000
 
 # 系统提示词：把「不许自己算数」放到最前，这是全模块的命门
 SYSTEM_PROMPT = """你是一位世界级的编辑设计师 + 前端工程师，专做数据驱动的年度/月度报告。
@@ -96,30 +105,42 @@ SYSTEM_PROMPT = """你是一位世界级的编辑设计师 + 前端工程师，�
    或者直接不写这个数（写「见明细」「以工作簿为准」都可以）。
 3. 金额单位是万元，负数用 −（U+2212，不是 ASCII 连字符）。正=多耗、负=节约。
 4. 数字格式（千分位、小数位数）照抄字典里的格式化字符串，不要自己改。
+5. **行文、结论、建议里同样不许出现字典没有的数字**。以下都是违规（实测踩过）：
+   · 把多行相加（「三条记录合计 −268.84 万」——字典只有各行的数，没有合计）；
+   · 求平均或占比（「单行平均 2.38 万」——字典写 23,800 元就原样写 23,800 元）；
+   · 做单位换算（23,800 元 ≠ 2.38 万，字典是什么单位就照抄）；
+   · 在目标/建议里编数（「收敛至 −300 万以内」——字典里没有这个数）。
+   要强调程度时，改用字典里已有的数字描述，或写「见明细」「以工作簿为准」。
 
 【离线约束】
-5. 单文件 HTML，**零外链**：不许引用任何 http/https 的 CSS/JS/字体/图片/图标库。
+6. 单文件 HTML，**零外链**：不许引用任何 http/https 的 CSS/JS/字体/图片/图标库。
    字体用系统字体栈；图标用内联 SVG 或 Unicode 符号；动效用原生 CSS/JS。
-6. 不许用 <img src="http...">、@import、url(https://...)。
+7. 不许用 <img src="http...">、@import、url(https://...)。
 
 【内容纪律】
-7. 中文。语气专业、客观、可执行，像给管理层看的月度审核报告。
-8. 必须覆盖：封面、总览（头条数字）、口径说明（明细逐行加总 vs 汇总统计）、
-   食品厂、饮料厂、车间排名、重点物料、无备注风险、趋势、结论与建议。
-9. 必须写清两个口径：① 正=多耗 / 负=节约；② 本报告数字来自「完整偏差明细」
+8. 中文。语气专业、客观、可执行，像给管理层看的月度审核报告。
+9. 必须覆盖：封面、总览（头条数字）、口径说明（明细逐行加总 vs 汇总统计）、
+   食品厂、饮料厂、车间排名、重点物料、无备注风险、替代料、趋势、结论与建议。
+   「替代料」一节必须引用数据字典 causes.substitute 里的真实数字（明细条数 /
+   净偏差金额），字典是多少就写多少；本期为 0 条时才可写「本期无替代料」。
+10. 必须写清两个口径：① 正=多耗 / 负=节约；② 本报告数字来自「完整偏差明细」
    净偏差金额逐行加总。若数据字典 quality 里 sum_total 与 detail_net 相差很小
    （见 closed 字段），说明明细与汇总已闭合，就按闭合写；否则按「不采用汇总统计
    那个数、采用明细逐行加总」写。
-10. 结论必须具体到车间/物料，不许只写「建议加强管理」这类空话。
+11. 结论必须具体到车间/物料，不许只写「建议加强管理」这类空话。
 
 【交互】
-11. 键盘 ← → / 空格 / PageUp PageDown 翻页；ESC 出全页总览；按 B 切换静态模式
+12. 键盘 ← → / 空格 / PageUp PageDown 翻页；ESC 出全页总览；按 B 切换静态模式
     （关动效，适合投影录屏）。
-12. 版式自适应窗口，投影不越界；打印友好。
+13. 版式自适应窗口，投影不越界；打印友好。
 
 【输出格式】
-13. 只输出完整 HTML：从 <!DOCTYPE html> 开始，到 </html> 结束。
+14. 只输出完整 HTML：从 <!DOCTYPE html> 开始，到 </html> 结束。
     不要 Markdown 代码围栏，不要任何解释文字。
+15. **所有报告内容（标题/正文/数字/表格/图表标签）必须直接写在 HTML 标签里**
+    （<section>/<div>/<p>/<table>…）。不许把内容或数据字典塞进 <script>、
+    用 JS 字符串或模板字面量注入 DOM——那样数字将无法被核对，整份作废。
+    <script> 只许写交互逻辑（翻页/键盘/静态模式/总览），其中不许出现任何业务数字。
 """
 
 
@@ -191,6 +212,7 @@ def visible_text(html: str) -> str:
 
     只取标签之间的文本节点，CSS 里的 1.2fr / font-size:11.6vw 不会被当成业务数字；
     完整日期（2026.10.24 / 2026-10-03）整段去掉，避免把年月日当成越界数字；
+    没年份的月日（10-31 / 10/23）同样整段去掉（只剥 - 与 /，不剥 .，免得吞小数）；
     "U+2212" 这类码位说明也整段去掉，避免 "2212" 被切出来误报。
     """
     s = re.sub(r"(?is)<(script|style)\b[^>]*>.*?</\1>", " ", html)
@@ -198,6 +220,7 @@ def visible_text(html: str) -> str:
     s = re.sub(r"(?s)<[^>]+>", " ", s)   # 连属性一起剥掉
     s = unescape(s)
     s = _DATE_RE.sub(" ", s)
+    s = _MD_RE.sub(" ", s)
     s = _UNI_ESC_RE.sub(" ", s)
     return s
 
@@ -258,7 +281,13 @@ def extract_html(raw: str) -> Optional[str]:
 
 
 def looks_complete(html: str) -> bool:
-    """粗校验：像一份完整 HTML（首尾标签齐全、有一定体量）。"""
+    """粗校验：像一份完整 HTML（首尾标签齐全、有一定体量、内容真的在标签里）。
+
+    ⚠️ v43.259 新增可见文本下限：实测第 6 次生成 AI 把整份报告（含数据字典）
+    塞进单个 <script> 用 JS 注入 DOM —— 总字符 35,438 但可见文本只有 82，
+    数字护栏只扫可见文本 → **真空通过**。12~16 页中文报告可见文本不可能低于
+    3,000 字符（实测正常生成 15,000~17,000），低于即判定结构不合格。
+    """
     if not html or len(html) < 20000:   # 12+ 页的报告不可能更小
         return False
     low = html.lower()
@@ -267,6 +296,8 @@ def looks_complete(html: str) -> bool:
     if not low.rstrip().endswith("</html>"):
         return False
     if low.count("<section") + low.count("<div") < 20:
+        return False
+    if len(visible_text(html)) < MIN_VISIBLE_TEXT:
         return False
     return True
 
@@ -369,9 +400,27 @@ def generate_ai_html(data: dict, client=None, design_direction: Optional[str] = 
 
         html = extract_html(raw)
         if html is None or not looks_complete(html):
-            result["error"] = "AI 输出不是完整 HTML（可能是代码围栏包裹或被截断）"
-            if log_cb:
-                log_cb(f"第 {attempt} 次：AI 输出不是完整 HTML", "warning")
+            # 区分两种成因给不同修正提示：截断/围栏 vs 内容藏进 script（v43.259 实测）
+            _vis = len(visible_text(html)) if html else 0
+            if html and _vis < MIN_VISIBLE_TEXT:
+                result["error"] = (
+                    f"AI 输出结构不合格：可见文本仅 {_vis} 字符"
+                    "（内容疑似被藏进 <script> 用 JS 注入，数字无法核对）"
+                )
+                if log_cb:
+                    log_cb(f"第 {attempt} 次：内容被藏进 <script>（可见文本 {_vis} 字符），不予采用", "warning")
+                if attempt < max_attempts:
+                    data = dict(data)
+                    data["_fix_hint"] = (
+                        "上一次输出把报告内容（连同数据字典）塞进了 <script> 里用 JS 注入 DOM，"
+                        "这样数字无法被核对，整份作废。请重新输出：所有内容必须直接写在 HTML "
+                        "标签里（<section>/<div>/<p>/<table>…），<script> 只写翻页/键盘等交互逻辑，"
+                        "其中不许出现任何业务数字。"
+                    )
+            else:
+                result["error"] = "AI 输出不是完整 HTML（可能是代码围栏包裹或被截断）"
+                if log_cb:
+                    log_cb(f"第 {attempt} 次：AI 输出不是完整 HTML", "warning")
             continue
 
         violations = verify_numbers(html, allowed)

@@ -495,7 +495,7 @@ def _p11(d):
 
         <div data-anim="note" style="display:grid;grid-template-columns:1fr 1fr;gap:2.4vw;border-top:1px solid var(--border-subtle);padding-top:2.2vh">
           <div class="body-sm" style="color:var(--text-secondary)"><b>结论：</b>「{top["name"]}」只占 {top["rows"]} 条记录,却贡献了 {abs(top["impact_raw"]) / 1e4:.1f} 万的影响量,单条平均超 {abs(top["impact_raw"]) / max(1, int(top["rows"].replace(",", ""))):,.0f} 元。<b>这是全场"少量记录、巨大金额"的首要原因类别</b>——它几乎必然是定额设定或系统换算的问题,而非现场操作问题。</div>
-          <div class="body-sm" style="color:var(--text-secondary)"><b>口径提示：</b>「替代料」类别因数量与金额混列（多耗 {c["substitute"]["over"]} 万 / 少耗 {c["substitute"]["less"]} 万,系计量单位差异）,不计入本页金额统计。其明细共 {c["substitute"]["rows"]} 条,单独见工作簿「替代料明细」页。</div>
+          <div class="body-sm" style="color:var(--text-secondary)"><b>口径提示：</b>「替代料」按 A↔B 配对单列，净数量为混计单位（多耗 {c["substitute"]["over"]} 万 / 少耗 {c["substitute"]["less"]} 万,吨/件/个/KG 相加,系计量单位差异）,不计入本页金额统计。其明细共 {c["substitute"]["rows"]} 条、净偏差金额合计 {c["substitute"]["net"]} 万（金额口径,正=多耗/负=节约）,单独见工作簿「替代料明细」页。</div>
         </div>
       </div>
     </div>

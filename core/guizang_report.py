@@ -349,20 +349,44 @@ def build_report_data(excel_path, log_cb: Optional[Callable[[str], None]] = None
     top_cause = cause_rows[0] if cause_rows else {"name": "—", "rows": "0", "over": "0", "impact": "0"}
 
     # 替代料（数量与金额混列，不计入本页统计；口径提示需引用其多耗/少耗/条数）
+    # ⚠️ v43.259 修复「每期都误报本期无替代料」：旧逻辑以「偏差原因分析」页存在
+    # 备注原因=="替代料" 的行为前提（if len(sub)），但该页自 v43.254 起就把替代料行
+    # 摘去「替代料明细」单列，备注原因里永远不会有这个类别 → len(sub) 恒为 0 →
+    # 已经读到的明细行数被整体丢弃，每期都输出 0/0/0（实测 10-03~10-23 实为 125 条）。
+    # 唯一权威来源改为「替代料明细」页（A↔B 配对级）；旧路径仅在该页缺失时兜底。
     sub = causes[causes["备注原因"].astype(str) == "替代料"]
+    sub_detail = None
     if "替代料明细" in xl.sheet_names:
-        sub_rows = len(pd.read_excel(xl, "替代料明细"))  # 与原文一致：条数取「替代料明细」页
-        log(f"已读取「替代料明细」{sub_rows} 行")
-    else:
-        sub_rows = len(sub)
-    if len(sub):
+        try:
+            sub_detail = pd.read_excel(xl, "替代料明细")
+            log(f"已读取「替代料明细」{len(sub_detail)} 行")
+        except Exception as e:
+            log(f"读取「替代料明细」失败，回退备注原因口径：{e}", "warning")
+            sub_detail = None
+    if sub_detail is not None and len(sub_detail):
+        # 数量口径（吨/件/个/KG 混计，与模板「系计量单位差异」提示一致）；
+        # net 为金额口径净额（元→万元，正=多耗/负=节约），给报告一个能引用的真数。
+        # over/less 一律带符号（wan_signed）：AI 按「负=节约」惯例渲染时照抄即过护栏，
+        # 不会因为「字典存幅值、AI 加负号」被误判（v43.259 实测踩到）。
+        _q = (pd.to_numeric(sub_detail["净偏差数量"], errors="coerce").dropna()
+              if "净偏差数量" in sub_detail.columns else pd.Series(dtype=float))
+        _a = (pd.to_numeric(sub_detail["净偏差金额"], errors="coerce").dropna()
+              if "净偏差金额" in sub_detail.columns else pd.Series(dtype=float))
         substitute = {
-            "rows": int_fmt(sub_rows),
-            "over": f"{abs(float(sub['多耗'].sum())) / W:,.0f}",
-            "less": f"{abs(float(sub['少耗'].sum())) / W:,.0f}",
+            "rows": int_fmt(len(sub_detail)),
+            "over": wan_signed(float(_q[_q > 0].sum()), 2),
+            "less": wan_signed(float(_q[_q < 0].sum()), 2),
+            "net": wan_signed(float(_a.sum()) if len(_a) else 0.0, 2),
+        }
+    elif len(sub):
+        substitute = {
+            "rows": int_fmt(len(sub)),
+            "over": wan_signed(float(sub['多耗'].sum()), 2),
+            "less": wan_signed(-abs(float(sub['少耗'].sum())), 2),
+            "net": "0",
         }
     else:
-        substitute = {"rows": "0", "over": "0", "less": "0"}
+        substitute = {"rows": "0", "over": "0", "less": "0", "net": "0"}
 
     # ---------------- 趋势 ----------------
     tr = trend[trend["趋势"].notna()].copy()
