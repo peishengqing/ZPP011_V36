@@ -1,29 +1,47 @@
 # -*- coding: utf-8 -*-
 """
-审核统计桌面卡片 — 4张卡片显示本批次核心指标
-纯信息展示，不涉及操作入口
+审核统计桌面卡片 — v43.264 网格化重构
+
+旧版 7 张卡挤在一行 QHBoxLayout（窄屏挤爆、宽屏拉长），且 `_make_card` 收了
+7 个颜色参数却一个都没用上（卡片完全无色觉编码）。
+新版：QGridLayout 4+3 两行等宽网格；每卡顶部 3px 品牌色 accent 条（颜色参数
+真正生效，QSS 按 statsAccent 属性着色，零内联样式）；数值列等宽字体
+（tabular figures，与主表数值列统一）；标题行加线性图标。
+纯信息展示，不涉及操作入口。
 """
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QFrame,
-    QLabel, QSizePolicy, QToolButton,
+    QWidget, QHBoxLayout, QVBoxLayout, QGridLayout,
+    QFrame, QLabel, QToolButton,
 )
 from PySide6.QtCore import Qt, Signal, QEvent
-from PySide6.QtGui import QFont
 import pandas as pd
 
+from gui_pyside6.utils.icons import get_icon
 
-def _make_card(parent, value_text, label_text, color: str, tooltip: str) -> QFrame:
-    """创建单张卡片"""
+# accent 键 → 品牌色映射的唯一权威在两套 QSS 的 QFrame[statsAccent="..."] 规则
+# （pass/unread/anomaly/alt/changed/quarantine/deviation 七色），此处只传键。
+
+
+def _make_card(parent, value_text, label_text, accent: str, tooltip: str) -> QFrame:
+    """创建单张卡片（顶部 3px 品牌色 accent 条 + 数值 + 说明）"""
     card = QFrame(parent)
     card.setObjectName("statsCard")
     card.setProperty("class", "statsCard")
     card.setToolTip(tooltip)
     card.setCursor(Qt.PointingHandCursor)
     card.setMinimumWidth(120)
+    card.setMinimumHeight(58)
 
     layout = QVBoxLayout(card)
-    layout.setContentsMargins(8, 6, 8, 6)
+    layout.setContentsMargins(10, 8, 10, 8)
     layout.setSpacing(2)
+
+    # 顶部 accent 条（颜色由 QSS 按 statsAccent 属性给，零内联样式）
+    stripe = QFrame(card)
+    stripe.setObjectName("statsCardAccent")
+    stripe.setProperty("statsAccent", accent)
+    stripe.setFixedHeight(3)
+    layout.addWidget(stripe)
 
     val_label = QLabel(str(value_text))
     val_label.setProperty("class", "statsCardVal")
@@ -39,12 +57,14 @@ def _make_card(parent, value_text, label_text, color: str, tooltip: str) -> QFra
 
 
 class StatsCardsWidget(QWidget):
-    """4 张统计卡片：AI通过率 / 未读 / 真异常 / 替代料"""
+    """7 张统计卡片：AI通过率 / 未读 / 真异常 / 替代料 / 审核后变更 / 隔离区 / 偏差率预警"""
 
     # 点击某张卡片时发出的信号，携带卡片标识
     card_clicked = Signal(str)  # "anomaly" | "unread" | "alt" | "changed" | "quarantine"
     # 面板整体显隐变化（True=显示, False=隐藏）
     visibility_changed = Signal(bool)
+
+    _GRID_COLS = 4  # 每行卡片数（7 张 → 4+3 两行）
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -60,7 +80,12 @@ class StatsCardsWidget(QWidget):
         title_layout = QHBoxLayout()
         title_layout.setContentsMargins(4, 0, 4, 0)
 
-        title = QLabel("📊 本次分析概览")
+        title_icon = QLabel()
+        title_icon.setFixedSize(16, 16)
+        title_icon.setPixmap(get_icon("gauge", 14).pixmap(14, 14))
+        title_layout.addWidget(title_icon)
+
+        title = QLabel("本次分析概览")
         title.setProperty("class", "statsCardTitle")
         title_layout.addWidget(title)
         title_layout.addStretch()
@@ -75,28 +100,27 @@ class StatsCardsWidget(QWidget):
         self.toggle_btn.toggled.connect(self._toggle_cards)
         title_layout.addWidget(self.toggle_btn)
 
-        # ── 卡片区 ──
+        # ── 卡片区（v43.264：网格布局，等宽列） ──
         self.cards_container = QWidget(self)
         self.cards_container.setObjectName("statsCardsContainer")
-        cards_layout = QHBoxLayout(self.cards_container)
+        cards_layout = QGridLayout(self.cards_container)
         cards_layout.setContentsMargins(0, 0, 0, 0)
         cards_layout.setSpacing(8)
-        cards_layout.setAlignment(Qt.AlignLeft)
 
-        # 4 张卡片
-        self.card_pass = _make_card(self, "--", "AI通过", "#4caf50",
+        # 7 张卡片（accent 键 → 卡片）
+        self.card_pass = _make_card(self, "--", "AI通过", "pass",
                                      "AI审核结果为「合格」的占比")
-        self.card_unread = _make_card(self, "--", "未读", "#ff9800",
+        self.card_unread = _make_card(self, "--", "未读", "unread",
                                        "你还没看过的记录数")
-        self.card_anomaly = _make_card(self, "--", "真异常", "#f44336",
+        self.card_anomaly = _make_card(self, "--", "真异常", "anomaly",
                                         "非替代料中偏差率 > 30% 的条数")
-        self.card_alt = _make_card(self, "--", "替代料", "#9c27b0",
+        self.card_alt = _make_card(self, "--", "替代料", "alt",
                                     "替代料配对组数 + 净偏差抵消总金额")
-        self.card_changed = _make_card(self, "--", "审核后变更", "#e53935",
+        self.card_changed = _make_card(self, "--", "审核后变更", "changed",
                                         "已审核记录被私自修改的次数（数量/金额/率变动）")
-        self.card_quarantine = _make_card(self, "--", "隔离区", "#f9a825",
+        self.card_quarantine = _make_card(self, "--", "隔离区", "quarantine",
                                            "疑难待处理、暂存隔离区的数据条数（点击打开隔离区）")
-        self.card_deviation = _make_card(self, "--", "偏差率预警", "#ff7043",
+        self.card_deviation = _make_card(self, "--", "偏差率预警", "deviation",
                                          "偏差率绝对值 ≥ 10% 的记录数（点击打开偏差率预警看板）")
 
         # 给可点击的卡片安装事件过滤器
@@ -111,14 +135,15 @@ class StatsCardsWidget(QWidget):
         self.card_deviation.installEventFilter(self)
         self.card_deviation.setProperty("cardType", "deviation")
 
-        cards_layout.addWidget(self.card_pass)
-        cards_layout.addWidget(self.card_unread)
-        cards_layout.addWidget(self.card_anomaly)
-        cards_layout.addWidget(self.card_alt)
-        cards_layout.addWidget(self.card_changed)
-        cards_layout.addWidget(self.card_quarantine)
-        cards_layout.addWidget(self.card_deviation)
-        cards_layout.addStretch()
+        # 网格排布：第 0 行 4 张，第 1 行 3 张 + 右侧留空（列 stretch 已保证等宽）
+        cards = [self.card_pass, self.card_unread, self.card_anomaly,
+                 self.card_alt, self.card_changed, self.card_quarantine,
+                 self.card_deviation]
+        for i, card in enumerate(cards):
+            cards_layout.addWidget(card, i // self._GRID_COLS, i % self._GRID_COLS)
+        for c in range(self._GRID_COLS):
+            cards_layout.setColumnStretch(c, 1)
+        cards_layout.setRowStretch(1, 1)  # 第二行不满时空隙集中在行尾
 
         # ── 组装 ──
         main_layout = QVBoxLayout(self)
@@ -326,9 +351,12 @@ class StatsCardsWidget(QWidget):
 
     @staticmethod
     def _set_card_value(card: QFrame, text: str):
-        """设置卡片的值文本（第一个 QLabel）"""
+        """设置卡片的值文本（accent 条之后的第一个 QLabel）"""
         layout = card.layout()
         if layout and layout.count() > 0:
-            label = layout.itemAt(0).widget()
-            if isinstance(label, QLabel):
-                label.setText(str(text))
+            # 跳过顶部 accent 条，取第一个 QLabel
+            for i in range(layout.count()):
+                w = layout.itemAt(i).widget()
+                if isinstance(w, QLabel):
+                    w.setText(str(text))
+                    return

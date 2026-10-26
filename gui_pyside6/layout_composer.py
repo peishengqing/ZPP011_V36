@@ -6,6 +6,8 @@ Layout 组装器 (LayoutComposer) - 纯 UI 组装，逻辑下沉
 让 MainWindow 只保留薄壳状态管理。
 
 目标：替 _assemble_layout 瘦身，将 UI 相关的繁杂操作集中到一个类，逻辑往下沉。
+
+v43.264：操作栏/菜单 emoji → 内联 SVG 线性图标（icons.py），按钮文本去 emoji 前缀。
 """
 
 from PySide6.QtWidgets import (
@@ -13,6 +15,17 @@ from PySide6.QtWidgets import (
     QPushButton, QToolButton, QMenu,
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
+
+from gui_pyside6.utils.icons import get_icon
+
+
+def _icon_action(menu: QMenu, icon: str, text: str, handler) -> QAction:
+    """带线性图标的菜单项（v43.264 起统一入口，替掉各处的 emoji addAction）"""
+    act = QAction(get_icon(icon), text, menu)
+    act.triggered.connect(handler)
+    menu.addAction(act)
+    return act
 
 
 class LayoutComposer:
@@ -60,6 +73,7 @@ class LayoutComposer:
         """制作操作栏（按钮组）.
 
         分组顺序：主操作 │ 视图开关 │ 收纳菜单 │ 面板开关/通知 …… 快捷键提示
+        v43.264：图标化（SVG 线性图标 + 文字，ToolButtonTextBesideIcon）。
         """
         action_bar = QWidget()
         action_bar.setObjectName("actionBar")
@@ -71,6 +85,7 @@ class LayoutComposer:
         # ═══ 主操作（高频，平铺 + 强调色）═══
         # 创建分析按钮
         mw.action_btn_analyze = QPushButton("分析")
+        mw.action_btn_analyze.setIcon(get_icon("play", 15, "#FFFFFF"))
         mw.action_btn_analyze.setObjectName("actionBtnAnalyze")
         action_layout.addWidget(mw.action_btn_analyze)
 
@@ -78,21 +93,27 @@ class LayoutComposer:
         # ═══ 视图开关（用户常用，按需求保留在工具栏）═══
         # 创建视图开关按钮
         mw.action_btn_left_panel = QToolButton()
-        mw.action_btn_left_panel.setText("☰ 左侧栏")
+        mw.action_btn_left_panel.setIcon(get_icon("panel-left"))
+        mw.action_btn_left_panel.setText("左侧栏")
+        mw.action_btn_left_panel.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         mw.action_btn_left_panel.setCheckable(True)
         mw.action_btn_left_panel.setToolTip("切换左侧栏显示")
         mw.action_btn_left_panel.setObjectName("toolGhostBtn")
         action_layout.addWidget(mw.action_btn_left_panel)
 
         mw.action_btn_filter = QToolButton()
-        mw.action_btn_filter.setText("🔍 筛选")
+        mw.action_btn_filter.setIcon(get_icon("search"))
+        mw.action_btn_filter.setText("筛选")
+        mw.action_btn_filter.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         mw.action_btn_filter.setCheckable(True)
         mw.action_btn_filter.setToolTip("切换筛选面板")
         mw.action_btn_filter.setObjectName("toolGhostBtn")
         action_layout.addWidget(mw.action_btn_filter)
 
         mw.action_btn_col_filter = QToolButton()
-        mw.action_btn_col_filter.setText("🔽 列头筛选")
+        mw.action_btn_col_filter.setIcon(get_icon("funnel-lines"))
+        mw.action_btn_col_filter.setText("列头筛选")
+        mw.action_btn_col_filter.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         mw.action_btn_col_filter.setCheckable(True)
         mw.action_btn_col_filter.setToolTip("列头取值过滤模式")
         mw.action_btn_col_filter.setObjectName("toolGhostBtn")
@@ -103,45 +124,52 @@ class LayoutComposer:
         # 创建菜单按钮
         mw.action_btn_boards = QToolButton()
         mw.action_btn_boards.setObjectName("actionMenuBtn")
-        mw.action_btn_boards.setText("📊 看板")
+        mw.action_btn_boards.setIcon(get_icon("chart"))
+        mw.action_btn_boards.setText("看板")
+        mw.action_btn_boards.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         mw.action_btn_boards.setToolTip("打开看板")
 
         # 为看板按钮添加下拉菜单
         mw.action_btn_boards.setPopupMode(QToolButton.MenuButtonPopup)
         boards_menu = QMenu(mw)
-        boards_menu.addAction("🔔 替代料看板", lambda: mw._show_alert_dashboard())
-        boards_menu.addAction("⚠️ 偏差率预警", lambda: mw._show_deviation_warning_dialog())
-        boards_menu.addAction("📉 负损看板", lambda: mw._show_neg_loss_dashboard())
-        boards_menu.addAction("📈 正损看板", lambda: mw._show_pos_loss_dashboard())
-        boards_menu.addAction("🔒 隔离区", lambda: mw._open_quarantine_dialog())
-        boards_menu.addAction("📋 数据稳定性", lambda: mw._show_data_stability_dashboard())
-        boards_menu.addAction("🔄 替代料长链", lambda: mw._show_alt_chain_dashboard())
-        boards_menu.addAction("🧵 半成品看板", lambda: mw._show_semi_dashboard())
+        _icon_action(boards_menu, "bell", "替代料看板", lambda: mw._show_alert_dashboard())
+        _icon_action(boards_menu, "alert", "偏差率预警", lambda: mw._show_deviation_warning_dialog())
+        _icon_action(boards_menu, "trending-down", "负损看板", lambda: mw._show_neg_loss_dashboard())
+        _icon_action(boards_menu, "trending-up", "正损看板", lambda: mw._show_pos_loss_dashboard())
+        _icon_action(boards_menu, "lock", "隔离区", lambda: mw._open_quarantine_dialog())
+        _icon_action(boards_menu, "clipboard", "数据稳定性", lambda: mw._show_data_stability_dashboard())
+        _icon_action(boards_menu, "link", "替代料长链", lambda: mw._show_alt_chain_dashboard())
+        _icon_action(boards_menu, "box", "半成品看板", lambda: mw._show_semi_dashboard())
         mw.action_btn_boards.setMenu(boards_menu)
         action_layout.addWidget(mw.action_btn_boards)
 
         mw.action_btn_export = QToolButton()
         mw.action_btn_export.setObjectName("actionMenuBtn")
-        mw.action_btn_export.setText("📤 导出")
+        mw.action_btn_export.setIcon(get_icon("download"))
+        mw.action_btn_export.setText("导出")
+        mw.action_btn_export.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         mw.action_btn_export.setToolTip("导出当前表格")
 
         # 为导出按钮添加下拉菜单
         export_menu = QMenu(mw)
-        export_menu.addAction("📄 导出当前表格", lambda: mw.export_controller.export_current_table(mw.view_model.df, mw))
-        export_menu.addAction("📊 导出完整偏差", lambda: mw._on_export_full_excel())
+        _icon_action(export_menu, "file-text", "导出当前表格",
+                     lambda: mw.export_controller.export_current_table(mw.view_model.df, mw))
+        _icon_action(export_menu, "table", "导出完整偏差", lambda: mw._on_export_full_excel())
         mw.action_btn_export.setMenu(export_menu)
         mw.action_btn_export.setPopupMode(QToolButton.MenuButtonPopup)
         action_layout.addWidget(mw.action_btn_export)
 
         mw.action_btn_maint = QToolButton()
         mw.action_btn_maint.setObjectName("actionMenuBtn")
-        mw.action_btn_maint.setText("🔧 维护")
+        mw.action_btn_maint.setIcon(get_icon("sliders"))
+        mw.action_btn_maint.setText("维护")
+        mw.action_btn_maint.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         mw.action_btn_maint.setToolTip("维护工具")
         # 维护按钮改为下拉菜单（自动隔离规则 + 物料画像）
         mw.action_btn_maint.setPopupMode(QToolButton.MenuButtonPopup)
         maint_menu = QMenu(mw)
-        maint_menu.addAction("🔒 自动隔离规则", lambda: mw._open_auto_quarantine_rule_dialog())
-        maint_menu.addAction("🪪 物料画像", lambda: mw._show_material_profile())
+        _icon_action(maint_menu, "shield", "自动隔离规则", lambda: mw._open_auto_quarantine_rule_dialog())
+        _icon_action(maint_menu, "id-card", "物料画像", lambda: mw._show_material_profile())
         mw.action_btn_maint.setMenu(maint_menu)
         action_layout.addWidget(mw.action_btn_maint)
 
@@ -149,7 +177,9 @@ class LayoutComposer:
         # ═══ 面板开关 + 通知（低频，保留平铺，置于分组尾端）═══
         # 创建面板开关按钮
         mw.action_btn_toggle_stats = QToolButton()
-        mw.action_btn_toggle_stats.setText("📊 概览")
+        mw.action_btn_toggle_stats.setIcon(get_icon("gauge"))
+        mw.action_btn_toggle_stats.setText("概览")
+        mw.action_btn_toggle_stats.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         mw.action_btn_toggle_stats.setCheckable(True)
         mw.action_btn_toggle_stats.setChecked(True)
         mw.action_btn_toggle_stats.setToolTip("切换概览面板")
@@ -157,7 +187,9 @@ class LayoutComposer:
         action_layout.addWidget(mw.action_btn_toggle_stats)
 
         mw.action_btn_toggle_progress = QToolButton()
-        mw.action_btn_toggle_progress.setText("⚡ 进度")
+        mw.action_btn_toggle_progress.setIcon(get_icon("zap"))
+        mw.action_btn_toggle_progress.setText("进度")
+        mw.action_btn_toggle_progress.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         mw.action_btn_toggle_progress.setCheckable(True)
         mw.action_btn_toggle_progress.setChecked(True)
         mw.action_btn_toggle_progress.setToolTip("切换分析进度")
@@ -165,14 +197,18 @@ class LayoutComposer:
         action_layout.addWidget(mw.action_btn_toggle_progress)
 
         mw.action_btn_unread_summary = QToolButton()
-        mw.action_btn_unread_summary.setText("📢 未读")
+        mw.action_btn_unread_summary.setIcon(get_icon("megaphone"))
+        mw.action_btn_unread_summary.setText("未读")
+        mw.action_btn_unread_summary.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         mw.action_btn_unread_summary.setToolTip("未读汇总")
         mw.action_btn_unread_summary.setObjectName("toolGhostBtn")
         action_layout.addWidget(mw.action_btn_unread_summary)
 
         # 自动隔离规则按钮（ARC-003 第七刀，需额外创建）
         mw.action_btn_auto_q = QToolButton()
-        mw.action_btn_auto_q.setText("🔒 自动隔离")
+        mw.action_btn_auto_q.setIcon(get_icon("shield"))
+        mw.action_btn_auto_q.setText("自动隔离")
+        mw.action_btn_auto_q.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         mw.action_btn_auto_q.setToolTip("按规则自动移入隔离区")
         mw.action_btn_auto_q.setObjectName("toolGhostBtn")
         action_layout.addWidget(mw.action_btn_auto_q)
@@ -218,8 +254,8 @@ class LayoutComposer:
         top_layout = QVBoxLayout(top_panel)
         top_layout.setContentsMargins(0, 0, 0, 0)
         top_layout.setSpacing(6)
-        top_layout.addWidget(mw.stats_cards)                # 📊 本次分析概览
-        top_layout.addWidget(mw.main_table.progress_group)  # ⚡ 分析进度
+        top_layout.addWidget(mw.stats_cards)                # 本次分析概览
+        top_layout.addWidget(mw.main_table.progress_group)  # 分析进度
         top_panel.setMaximumHeight(240)                       # 限制最大高度，不抢表格空间
 
         # 将 top_panel 引用保存到主窗口，以便控制器访问

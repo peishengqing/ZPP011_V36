@@ -3,9 +3,9 @@
 ZPP011 微信草稿格式配置窗口
 """
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QGroupBox, QCheckBox,
-    QLabel, QListWidget, QListWidgetItem, QSplitter, QMenu, QMessageBox,
-    QLineEdit, QComboBox
+    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QGroupBox,
+    QLabel, QListWidget, QListWidgetItem, QSplitter, QMessageBox,
+    QLineEdit, QWidget,
 )
 from PySide6.QtCore import Qt
 
@@ -147,7 +147,6 @@ class WechatDraftConfigDialog(QDialog):
                 QMessageBox.warning(self, "提示", "字段名和字段键名不能为空")
                 return
 
-            from gui_pyside6.utils.wechat_draft_config import DEFAULT_FIELDS
             # 检查是否存在同名字段
             for f in self.current_config["fields"]:
                 if f["key"] == key or f["label"] == label:
@@ -218,9 +217,9 @@ def QLineEditdialog(parent, title, default_text, prompt):
     layout.addWidget(line_edit)
     btn_layout = QHBoxLayout()
     btn_ok = QPushButton("确定")
-    btn_ok.clicked_connect(dialog.accept)
+    btn_ok.clicked.connect(dialog.accept)
     btn_cancel = QPushButton("取消")
-    btn_cancel.clicked_connect(dialog.reject)
+    btn_cancel.clicked.connect(dialog.reject)
     btn_layout.addWidget(btn_ok)
     btn_layout.addWidget(btn_cancel)
     layout.addLayout(btn_layout)

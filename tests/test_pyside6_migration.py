@@ -35,8 +35,12 @@ class TestDataFrameModel:
     def test_display_role(self, qapp):
         df = pd.DataFrame({"A": [1, 2]})
         model = DataFrameModel(df)
-        # 第0列是已读状态列（未读显示 🔘），第1列是已读来源；数据列 A 前移 2 位
-        assert model.data(model.index(0, 0)) == "🔘"
+        # 第0列是已读状态列，第1列是已读来源；数据列 A 前移 2 位
+        # v43.264：状态列 emoji（🔘/✅）→ DecorationRole SVG 图标，
+        # DisplayRole 清空（文案语义在 ToolTipRole「已读/未读」）
+        assert model.data(model.index(0, 0)) == ""
+        assert model.data(model.index(0, 0), Qt.DecorationRole) is not None
+        assert model.data(model.index(0, 0), Qt.ToolTipRole) == "未读"
         assert model.data(model.index(0, 2)) == "1"
         assert model.data(model.index(1, 2)) == "2"
 

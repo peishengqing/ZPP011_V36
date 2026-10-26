@@ -16,7 +16,10 @@ _CJK_FONT_OK = False
 - v43.228 裴哥亲手提交「恢复看板与导出的下拉菜单选项」：收纳菜单不带 ▾
   （MenuButtonPopup 模式自带箭头）、看板菜单重建；
 - ARC-003 加「🔒 自动隔离」平铺按钮、物料画像挪进维护菜单。
-  本文件自 v43.228 起假红数日，v43.262 对齐现行设计并补 objectName 定位。
+  本文件自 v43.228 起假红数日，v43.262 对齐现行设计并补 objectName 定位；
+- v43.264 裴哥选「A 全做」UI 现代化：全仓 emoji → 内联 SVG 线性图标
+  （utils/icons.py），按钮/菜单文本去 emoji 前缀（图标承担语义），本文件
+  同步对齐纯文本断言（图标本身由 icons.py 单测与离屏渲染保障）。
 """
 import os
 import shutil
@@ -98,15 +101,15 @@ def test_toolbar_grouped_layout(main_window):
     bar = _action_bar(w)
     assert bar is not None and bar.objectName() == "actionBar"
 
-    # 收纳菜单（v43.262：MenuButtonPopup 自带下拉箭头，按钮文本不带 ▾）
+    # 收纳菜单（v43.262：MenuButtonPopup 自带下拉箭头；v43.264：去 emoji 前缀改 SVG 图标）
     menu_texts = [b.text() for b in bar.findChildren(QToolButton) if b.objectName() == "actionMenuBtn"]
-    assert menu_texts == ["📊 看板", "📤 导出", "🔧 维护"], "收纳菜单异常: %s" % menu_texts
+    assert menu_texts == ["看板", "导出", "维护"], "收纳菜单异常: %s" % menu_texts
 
     # 平铺按钮 = 工具栏直接子级里的 QPushButton + QToolButton（排除三个收纳菜单）
     flat = [b.text() for b in (bar.findChildren(QPushButton) + bar.findChildren(QToolButton))
             if b.parentWidget() is bar and b.objectName() != "actionMenuBtn"]
-    for must in ["分析", "☰ 左侧栏", "🔍 筛选", "🔽 列头筛选",
-                 "📊 概览", "⚡ 进度", "📢 未读", "🔒 自动隔离"]:
+    for must in ["分析", "左侧栏", "筛选", "列头筛选",
+                 "概览", "进度", "未读", "自动隔离"]:
         assert must in flat, "平铺按钮缺失: %s（现有 %s）" % (must, flat)
     for gone in ["管理看板", "隔离区", "变动提醒", "替代料看板", "偏差率预警",
                  "负损看板", "完整报告", "自动整理隔离区", "🤖 AI审核"]:
@@ -130,16 +133,16 @@ def test_menu_contents(main_window):
         m = b.menu()
         menus[b.text()] = [a.text() for a in m.actions() if not a.isSeparator()] if m else []
 
-    assert len(menus.get("📊 看板", [])) == 8, menus.get("📊 看板")
-    assert len(menus.get("📤 导出", [])) == 2, menus.get("📤 导出")
-    assert len(menus.get("🔧 维护", [])) == 2, menus.get("🔧 维护")
-    for must in ["🔔 替代料看板", "⚠️ 偏差率预警", "📉 负损看板", "📈 正损看板",
-                 "🔒 隔离区", "📋 数据稳定性", "🔄 替代料长链", "🧵 半成品看板"]:
-        assert must in menus["📊 看板"], "%s 不在看板菜单（现有 %s）" % (must, menus["📊 看板"])
-    for must in ["📄 导出当前表格", "📊 导出完整偏差"]:
-        assert must in menus["📤 导出"], "%s 不在导出菜单（现有 %s）" % (must, menus["📤 导出"])
-    for must in ["🔒 自动隔离规则", "🪪 物料画像"]:
-        assert must in menus["🔧 维护"], "%s 不在维护菜单（现有 %s）" % (must, menus["🔧 维护"])
+    assert len(menus.get("看板", [])) == 8, menus.get("看板")
+    assert len(menus.get("导出", [])) == 2, menus.get("导出")
+    assert len(menus.get("维护", [])) == 2, menus.get("维护")
+    for must in ["替代料看板", "偏差率预警", "负损看板", "正损看板",
+                 "隔离区", "数据稳定性", "替代料长链", "半成品看板"]:
+        assert must in menus["看板"], "%s 不在看板菜单（现有 %s）" % (must, menus["看板"])
+    for must in ["导出当前表格", "导出完整偏差"]:
+        assert must in menus["导出"], "%s 不在导出菜单（现有 %s）" % (must, menus["导出"])
+    for must in ["自动隔离规则", "物料画像"]:
+        assert must in menus["维护"], "%s 不在维护菜单（现有 %s）" % (must, menus["维护"])
 
 
 def test_window_fits_1366_screen(main_window):

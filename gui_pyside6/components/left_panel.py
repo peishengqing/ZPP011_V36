@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QObject, QEvent
 
+from gui_pyside6.utils.icons import get_icon
+
 
 class LeftPanelComponent:
     """左侧面板组件：创建并返回 self.left_panel"""
@@ -31,24 +33,24 @@ class LeftPanelComponent:
         layout.setContentsMargins(8, 8, 8, 8)
 
         # 1. 文件选择组
-        self.file_group = self._create_card("📁 文件选择", True)
+        self.file_group = self._create_card("文件选择", True, icon="folder")
         self._build_file_selection(self.file_group.body_layout)
         layout.addWidget(self.file_group.container)
 
         # 3. 替代料管理组
-        self.alt_group = self._create_card("🔧 替代料配对", False)  # 默认折叠：低频配置，省出给文件/预览的空间
+        self.alt_group = self._create_card("替代料配对", False, icon="wrench")  # 默认折叠：低频配置，省出给文件/预览的空间
         self._build_alternative_materials(self.alt_group.body_layout)
-        # 「共 N 对」摘要放进卡片头：卡片折叠时依然可见，不必展开就知道当前配对数
-        self.alt_group.container.header_layout.insertWidget(2, self.mw.alt_count_label)
+        # 「共 N 对」摘要放进卡片头（箭头左侧）：卡片折叠时依然可见，不必展开就知道当前配对数
+        self.alt_group.add_header_extra(self.mw.alt_count_label)
         layout.addWidget(self.alt_group.container)
 
         # 3.5 材料半成品分类组
-        self.semi_group = self._create_card("📦 材料半成品", False)
+        self.semi_group = self._create_card("材料半成品", False, icon="layers")
         self._build_semi_materials(self.semi_group.body_layout)
         layout.addWidget(self.semi_group.container)
 
         # 4. 数据预览组（文字统计：显示行数/列数），默认展开
-        self.preview_group = self._create_card("📊 数据预览", True)
+        self.preview_group = self._create_card("数据预览", True, icon="chart")
         self.mw.preview_label = QLabel("")
         self.mw.preview_label.setObjectName("previewLabel")
         self.mw.preview_label.setWordWrap(True)
@@ -58,8 +60,8 @@ class LeftPanelComponent:
         layout.addStretch()
         return panel
 
-    def _create_card(self, title: str, expanded: bool):
-        """创建卡片式分组"""
+    def _create_card(self, title: str, expanded: bool, icon: str = None):
+        """创建卡片式分组（v43.264：卡片头左侧加线性图标，替代 emoji 前缀）"""
         container = QWidget()
         container.setObjectName("cardContainer")
         layout = QVBoxLayout(container)
@@ -77,6 +79,14 @@ class LeftPanelComponent:
         header.setObjectName("cardHeader")
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(12, 10, 12, 10)
+
+        # 卡片图标（v43.264：SVG 线性图标，颜色跟随 cardTitle 文字色）
+        if icon:
+            icon_label = QLabel()
+            icon_label.setObjectName("cardIcon")
+            icon_label.setFixedSize(18, 18)
+            icon_label.setPixmap(get_icon(icon, 15).pixmap(15, 15))
+            header_layout.addWidget(icon_label)
 
         title_label = QLabel(title)
         title_label.setObjectName("cardTitle")
@@ -135,6 +145,8 @@ class LeftPanelComponent:
         group.body = body
         group.arrow_btn = arrow_btn
         group.expand = lambda: (body.setVisible(True), arrow_btn.setText("▼"))
+        # 往卡片头插入额外控件（插在折叠箭头左侧，摘要类标签用）
+        group.add_header_extra = lambda w: header_layout.insertWidget(header_layout.count() - 1, w)
         return group
 
     def _build_file_selection(self, layout: QVBoxLayout):
@@ -144,7 +156,7 @@ class LeftPanelComponent:
         input_row.setSpacing(6)
 
         input_field = QLineEdit(self.mw)
-        input_field.setPlaceholderText("📁 点击'浏览'选文件")
+        input_field.setPlaceholderText("点击「浏览」选择 Excel 文件")
         input_field.setMinimumWidth(150)
         input_field.setObjectName("inputFileEdit")
         input_field.setReadOnly(True)
@@ -242,7 +254,8 @@ class LeftPanelComponent:
 
         # 智能添加：从主表选中 2 行自动提取工厂/编码/名称
         sel_row = QHBoxLayout()
-        sel_btn = QPushButton("📌 从主表选中2行添加")
+        sel_btn = QPushButton("从主表选中2行添加")
+        sel_btn.setIcon(get_icon("pin", 14))
         sel_btn.setObjectName("altActionBtn")
         sel_btn.setToolTip("在主表选中恰好 2 行，自动提取它们的工厂/编码/名称作为替代料配对")
         sel_btn.clicked.connect(self.mw._add_alt_pair_from_selection)

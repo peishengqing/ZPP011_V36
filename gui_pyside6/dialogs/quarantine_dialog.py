@@ -12,6 +12,9 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QPoint, QTimer
 from gui_pyside6.models.data_frame_model import DataFrameModel
+from gui_pyside6.dialogs.col_filter_ui import (
+    make_col_filter_button, make_col_filter_hint_label, set_col_filter_button_on,
+)
 from core.quarantine_manager import (
     remove_quarantine, remove_quarantine_batch, get_quarantine_records, scan_expired_quarantine,
     update_quarantine_reason, set_exempted, is_exempted,
@@ -59,7 +62,7 @@ class QuarantineDialog(QDialog):
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
 
-        info = QLabel("以下数据被标记为「疑难待处理」。修改主表后重新导入，隔离区记录会同步更新（引用模式，仅按 data_id 关联，不存副本）。开启「🔽 列头筛选」后点任意列头弹取值勾选浮层（Excel式筛选，含隔离原因可按原因多选）；Ctrl+点列头仍可排序。")
+        info = QLabel("以下数据被标记为「疑难待处理」。修改主表后重新导入，隔离区记录会同步更新（引用模式，仅按 data_id 关联，不存副本）。开启「列头筛选」后点任意列头弹取值勾选浮层（Excel式筛选，含隔离原因可按原因多选）；Ctrl+点列头仍可排序。")
         info.setWordWrap(True)
         layout.addWidget(info)
 
@@ -98,14 +101,10 @@ class QuarantineDialog(QDialog):
         clear_btn.setFixedWidth(60)
         clear_btn.clicked.connect(lambda: self.edit_list_search.clear())
         sl.addWidget(clear_btn)
-        self.btn_col_filter = QPushButton("🔽 列头筛选")
-        self.btn_col_filter.setCheckable(True)
-        self.btn_col_filter.setCursor(Qt.PointingHandCursor)
-        self.btn_col_filter.setToolTip("开启后点列头弹取值勾选浮层（Excel式筛选）；Ctrl+点列头仍可排序")
-        self.btn_col_filter.clicked.connect(self._on_toggle_col_filter)
+        # v43.264：列头筛选按钮/提示收敛到共用组件 col_filter_ui
+        self.btn_col_filter = make_col_filter_button(self, self._on_toggle_col_filter)
         sl.addWidget(self.btn_col_filter)
-        self._col_filter_hint_label = QLabel("🔽 列头筛选：0 列")
-        self._col_filter_hint_label.setProperty("class", "amberHint")
+        self._col_filter_hint_label = make_col_filter_hint_label()
         sl.addWidget(self._col_filter_hint_label)
         sl.addSpacing(12)
         sl.addWidget(QLabel("是否备注:"))
@@ -196,14 +195,10 @@ class QuarantineDialog(QDialog):
         clear_btn.setFixedWidth(60)
         clear_btn.clicked.connect(lambda: self.edit_expired_search.clear())
         sl.addWidget(clear_btn)
-        self.btn_col_filter_expired = QPushButton("🔽 列头筛选")
-        self.btn_col_filter_expired.setCheckable(True)
-        self.btn_col_filter_expired.setCursor(Qt.PointingHandCursor)
-        self.btn_col_filter_expired.setToolTip("开启后点列头弹取值勾选浮层（Excel式筛选）；Ctrl+点列头仍可排序")
-        self.btn_col_filter_expired.clicked.connect(self._on_toggle_expired_col_filter)
+        # v43.264：列头筛选按钮/提示收敛到共用组件 col_filter_ui
+        self.btn_col_filter_expired = make_col_filter_button(self, self._on_toggle_expired_col_filter, "btn_col_filter_expired")
         sl.addWidget(self.btn_col_filter_expired)
-        self._col_filter_hint_label_expired = QLabel("🔽 列头筛选：0 列")
-        self._col_filter_hint_label_expired.setProperty("class", "amberHint")
+        self._col_filter_hint_label_expired = make_col_filter_hint_label()
         sl.addWidget(self._col_filter_hint_label_expired)
         v.addLayout(sl)
 
@@ -744,7 +739,7 @@ class QuarantineDialog(QDialog):
         col_set = ctrl.filtered_col_set
         display_cols = getattr(source_model, "_display_columns", []) if source_model is not None else []
         if not col_set:
-            label.setText("🔽 列头筛选：0 列")
+            label.setText("列头筛选：0 列")
             return
         names = []
         for c in sorted(col_set):
@@ -754,24 +749,24 @@ class QuarantineDialog(QDialog):
                 names.append(f"列{c}")
         shown = names[:4]
         more = len(names) - len(shown)
-        text = "🔽 列头筛选：%d 列（%s" % (len(names), "、".join(shown))
+        text = "列头筛选：%d 列（%s" % (len(names), "、".join(shown))
         if more > 0:
             text += " …+%d" % more
         text += "）"
         label.setText(text)
 
     def _on_toggle_col_filter(self):
-        """切换隔离区列表（Tab1）的 🔽 列头筛选模式；关闭模式仅停止弹层，取值过滤仍保留。"""
+        """切换隔离区列表（Tab1）的列头筛选模式；关闭模式仅停止弹层，取值过滤仍保留。"""
         on = self.col_filter_ctrl.toggle_mode()
         self.btn_col_filter.setChecked(on)
-        self.btn_col_filter.setText("🔽 列头筛选✓" if on else "🔽 列头筛选")
+        set_col_filter_button_on(self.btn_col_filter, on)
         self._update_col_filter_hint(self.col_filter_ctrl, self._col_filter_hint_label, getattr(self, "source_model", None))
 
     def _on_toggle_expired_col_filter(self):
-        """切换失效复核（Tab2）的 🔽 列头筛选模式；关闭模式仅停止弹层，取值过滤仍保留。"""
+        """切换失效复核（Tab2）的列头筛选模式；关闭模式仅停止弹层，取值过滤仍保留。"""
         on = self.col_filter_ctrl_expired.toggle_mode()
         self.btn_col_filter_expired.setChecked(on)
-        self.btn_col_filter_expired.setText("🔽 列头筛选✓" if on else "🔽 列头筛选")
+        set_col_filter_button_on(self.btn_col_filter_expired, on)
 
     def show_context_menu(self, pos: QPoint):
         index = self.table_view.indexAt(pos)

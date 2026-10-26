@@ -8,10 +8,17 @@ import pandas as pd
 from datetime import datetime
 import hashlib
 from PySide6.QtCore import QAbstractTableModel, QSortFilterProxyModel, Qt, Signal, QModelIndex, QTimer
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QFont
+
+from gui_pyside6.utils.icons import get_icon
 
 # 自定义角色：标记某行是否属于替代料组（代理模型据此跳过预警色覆盖，保证同组视觉一致）
 ALT_GROUP_ROLE = Qt.UserRole + 100
+
+# v43.264：主表数值列等宽字体（tabular figures）。Consolas 数字天然等宽，
+# 中文/单位字符走 Qt 逐字回退，不受影响；找不到 Consolas 的环境自动退化，
+# 不影响数据与对齐逻辑。
+_TABULAR_FONT = QFont("Consolas")
 
 
 def _make_alt_group_color(group_name: str) -> QColor:
@@ -202,11 +209,12 @@ class DataFrameModel(QAbstractTableModel):
         if row < 0 or row >= len(self._data_cache) or col < 0 or col >= len(self._display_columns):
             return None
         
-        # 第一列显示已读/未读图标
+        # 第一列显示已读/未读图标（v43.264：emoji 🔘/✅ → SVG 线性图标，
+        # 文字列清空、图标走 DecorationRole；DisplayRole 行为对既有读取方保持为「有值/空值」）
         if col == 0:
             if role == Qt.DisplayRole:
                 read_val = self._data_cache[row][0]
-                return '✅' if read_val else '🔘'
+                return '' if read_val else ''
             elif role == Qt.EditRole:
                 return None
             elif role == Qt.TextAlignmentRole:
@@ -214,6 +222,11 @@ class DataFrameModel(QAbstractTableModel):
             elif role == Qt.ToolTipRole:
                 read_val = self._data_cache[row][0]
                 return '已读' if read_val else '未读'
+            elif role == Qt.DecorationRole:
+                # v43.264：已读=绿色实心勾，未读=蓝色空心圆（替代 ✅/🔘 emoji）
+                read_val = self._data_cache[row][0]
+                return get_icon("check" if read_val else "circle", 14,
+                                "#4CAF50" if read_val else "#4A90D9")
             elif role == ALT_GROUP_ROLE:
                 if row < len(self._alt_group_color_list):
                     return self._alt_group_color_list[row] is not None
@@ -274,7 +287,16 @@ class DataFrameModel(QAbstractTableModel):
             if isinstance(val, (int, float)):
                 return Qt.AlignRight | Qt.AlignVCenter
             return Qt.AlignLeft | Qt.AlignVCenter
-        
+
+        elif role == Qt.FontRole:
+            # v43.264：数值单元格等宽字体（tabular figures）——千分位/三位小数
+            # 纵向对齐，扫读列不跳眼；字符串列不返回（None=用表格默认字体）。
+            # 注意 bool 是 int 子类，_read/_quarantined 等 0/1 列同样等宽，无害。
+            val = self._data_cache[row][col]
+            if isinstance(val, (int, float)) and not isinstance(val, bool):
+                return _TABULAR_FONT
+            return None
+
         elif role == Qt.ForegroundRole:
             # 偏差数值列着色（2026-09-30）：正值红、负值绿（与看板红绿语言一致，
             # 中间调在暗/亮主题下都清晰）；0 值与空值保持默认色
@@ -1235,15 +1257,18 @@ def build_display_key_list(sm, col_index):
     性能（2026-10-02）：原实现逐行 sm.data()（C++↔Python 桥 + QModelIndex，
     1.7万行 ≈ 0.15s，漏斗确定/弹层打开时的卡顿点）。现直接读 DataFrameModel 的
     _data_cache 列缓存 + 与 data() 完全相同的格式化规则纯 Python 向量化处理
-    （≈ 0.02s）。源模型非 DataFrameModel / 第0列（已读图标）时返回 None，
-    调用方回退原逐行路径。
+    （≈ 0.02s）。源模型非 DataFrameModel 时返回 None，调用方回退原逐行路径；
+    第0列（已读状态）返回「已读/未读」语义键（v43.264 图标化后的筛选取值口径）。
     """
     cache = getattr(sm, "_data_cache", None)
     display_cols = getattr(sm, "_display_columns", None)
     if cache is None or display_cols is None or col_index >= len(display_cols):
         return None
     if col_index == 0:
-        return None  # 第0列是已读图标（✅/🔘），极少作为筛选列，走逐行兜底
+        # v43.264：第0列是已读状态列——单元格已图标化（DecorationRole，DisplayRole
+        # 为空串），列头筛选键取语义文本「已读/未读」（与 ToolTipRole 一致，比原
+        # emoji 键更可读）。弹层收集与 proxy 匹配都走本函数，天然一致。
+        return ['已读' if cache[r][0] else '未读' for r in range(len(cache))]
     n = len(cache)
     col = display_cols[col_index]
     col_vals = [row[col_index] for row in cache]

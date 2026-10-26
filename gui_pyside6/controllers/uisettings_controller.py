@@ -149,13 +149,14 @@ class UISettingsController(QObject):
 
     def on_stats_visibility_changed(self, visible):
         """概览面板显隐变化时同步工具栏按钮文字和顶部容器可见性"""
-        self.main_window.action_btn_toggle_stats.setText("📊 概览" if visible else "📊 显示概览")
+        # v43.264：图标化后按钮文字去 emoji 前缀（图标常驻，文字只表状态）
+        self.main_window.action_btn_toggle_stats.setText("概览" if visible else "显示概览")
         self.main_window.action_btn_toggle_stats.setToolTip("隐藏本次分析概览" if visible else "显示本次分析概览")
         self.main_window._update_top_panel_visibility()
 
     def on_progress_visibility_changed(self, visible):
         """进度面板显隐变化时同步工具栏按钮文字和顶部容器可见性"""
-        self.main_window.action_btn_toggle_progress.setText("⚡ 进度" if visible else "⚡ 显示进度")
+        self.main_window.action_btn_toggle_progress.setText("进度" if visible else "显示进度")
         self.main_window.action_btn_toggle_progress.setToolTip("隐藏分析进度" if visible else "显示分析进度")
 
     def update_top_panel_visibility(self):

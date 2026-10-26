@@ -11,6 +11,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QPoint
 import pandas as pd
 from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_color_keys
+from gui_pyside6.dialogs.col_filter_ui import (
+    make_col_filter_button, make_col_filter_hint_label, set_col_filter_button_on,
+)
 from gui_pyside6.utils.semi_class import (
     SEMI_CLASS_FOOD, SEMI_CLASS_DRINK, merge_semi_class_values, ensure_semi_class_column,
 )
@@ -169,15 +172,11 @@ class AlertDialog(QDialog):
 
         # ---- 列头筛选工具条 ----
         col_filter_bar = QHBoxLayout()
-        self.btn_col_filter = QPushButton("🔽 列头筛选")
-        self.btn_col_filter.setCheckable(True)
-        self.btn_col_filter.setCursor(Qt.PointingHandCursor)
-        self.btn_col_filter.setToolTip("开启后点列头弹取值勾选浮层（Excel式筛选）；Ctrl+点列头仍可排序")
-        self.btn_col_filter.clicked.connect(self._on_toggle_col_filter)
+        # v43.264：列头筛选按钮/提示收敛到共用组件 col_filter_ui
+        self.btn_col_filter = make_col_filter_button(self, self._on_toggle_col_filter)
         col_filter_bar.addWidget(self.btn_col_filter)
         # 状态栏常驻「列头筛选提示」：显示当前已设取值过滤的列（N 列 / 列名）
-        self._col_filter_hint_label = QLabel("🔽 列头筛选：0 列")
-        self._col_filter_hint_label.setProperty("class", "amberHint")
+        self._col_filter_hint_label = make_col_filter_hint_label()
         col_filter_bar.addWidget(self._col_filter_hint_label)
         col_filter_bar.addStretch(1)
         layout.addLayout(col_filter_bar)
@@ -218,10 +217,10 @@ class AlertDialog(QDialog):
         self._apply_filter()
 
     def _on_toggle_col_filter(self):
-        """🔽 列头筛选按钮：切换 Excel 式取值筛选模式。"""
+        """列头筛选按钮：切换 Excel 式取值筛选模式。"""
         on = self.col_filter_ctrl.toggle_mode()
         self.btn_col_filter.setChecked(on)
-        self.btn_col_filter.setText("🔽 列头筛选✓" if on else "🔽 列头筛选")
+        set_col_filter_button_on(self.btn_col_filter, on)
 
     def _update_col_filter_hint(self):
         """刷新「列头筛选提示」：显示已设取值过滤的列（N 列 / 列名）。"""
@@ -229,7 +228,7 @@ class AlertDialog(QDialog):
         sm = getattr(self, "source_model", None)
         display_cols = getattr(sm, "_display_columns", []) if sm is not None else []
         if not col_set:
-            self._col_filter_hint_label.setText("🔽 列头筛选：0 列")
+            self._col_filter_hint_label.setText("列头筛选：0 列")
             return
         names = []
         for c in sorted(col_set):
@@ -239,7 +238,7 @@ class AlertDialog(QDialog):
                 names.append(f"列{c}")
         shown = names[:4]
         more = len(names) - len(shown)
-        text = "🔽 列头筛选：%d 列（%s" % (len(names), "、".join(shown))
+        text = "列头筛选：%d 列（%s" % (len(names), "、".join(shown))
         if more > 0:
             text += " …+%d" % more
         text += "）"

@@ -73,6 +73,13 @@ QMainWindow, QDialog, QWidget {
 }
 #themeBtn:hover { background-color: #3C3489; border-color: #534AB7; color: #CECBF6; }
 
+/* 标题栏品牌块（v43.264：主色圆角方块承托 SVG 工厂标） */
+#titleBrand {
+    background-color: #7F77DD;
+    border-radius: 8px;
+}
+
+
 /* 窗口控制按钮 */
 .windowBtn {
     background-color: transparent;
@@ -156,6 +163,23 @@ QToolButton#toolGhostBtn:checked, .toolGhost:checked {
 }
 QToolButton#toolGhostBtn:disabled, .toolGhost:disabled { color: #55544E; }
 QToolButton#toolGhostBtn::menu-indicator { width: 0; height: 0; }
+
+/* 看板对话框「列头筛选」按钮（v43.264 共用组件 col_filter_ui，幽灵风格） */
+QPushButton#btn_col_filter, QPushButton#btn_col_filter_expired {
+    background-color: transparent;
+    color: #A8A79E;
+    border: 1px solid #3A3936;
+    border-radius: 8px;
+    padding: 4px 12px;
+    font-size: 12px;
+}
+QPushButton#btn_col_filter:hover, QPushButton#btn_col_filter_expired:hover {
+    background-color: #3C3489; border-color: #534AB7; color: #CECBF6;
+}
+QPushButton#btn_col_filter:checked, QPushButton#btn_col_filter_expired:checked {
+    background-color: #3C3489; border-color: #7F77DD; color: #CECBF6; font-weight: 600;
+}
+
 
 /* 工具栏收纳菜单按钮（看板/导出/维护）：与 .actionBtn 同视觉，箭头并入文字 */
 QToolButton#actionMenuBtn {
@@ -406,7 +430,7 @@ QMenu::separator { height: 1px; background-color: #3E3D38; margin: 5px 8px; }
     selection-background-color: #534AB7;
     selection-color: #FFFFFF;
 }
-#tableView::item { padding: 3px 6px; border: none; }
+#tableView::item { padding: 2px 6px; border: none; }
 #tableView::item:selected { background-color: #534AB7; color: #FFFFFF; }
 #tableView::item:selected:!active { background-color: #3C3489; color: #EAE8E4; }
 #tableView QHeaderView::section {
@@ -545,6 +569,16 @@ QToolButton#stepIcon[done="true"] {
     color: #CECBF6;
 }
 
+/* 统计卡 accent 条（v43.264：卡片颜色参数真正生效，品牌色两套主题一致） */
+#statsCardAccent { border: none; }
+QFrame[statsAccent="pass"] { background-color: #4CAF50; border: none; }
+QFrame[statsAccent="unread"] { background-color: #FF9800; border: none; }
+QFrame[statsAccent="anomaly"] { background-color: #F44336; border: none; }
+QFrame[statsAccent="alt"] { background-color: #9C27B0; border: none; }
+QFrame[statsAccent="changed"] { background-color: #E53935; border: none; }
+QFrame[statsAccent="quarantine"] { background-color: #F9A825; border: none; }
+QFrame[statsAccent="deviation"] { background-color: #FF7043; border: none; }
+
 /* ── 统计卡片 ── */
 #statsCard {
     background-color: #232228;
@@ -552,18 +586,18 @@ QToolButton#stepIcon[done="true"] {
     border-radius: 10px;
     padding: 10px;
 }
-#statsCardTitle {
+.statsCardTitle {
     font-size: 12px;
     font-weight: 600;
     color: #9A998F;
 }
-#statsCardVal {
+.statsCardVal {
     font-size: 22px;
     font-weight: 700;
     color: #EAE8E4;
     font-family: 'Consolas', 'Microsoft YaHei';
 }
-#statsCardDesc {
+.statsCardDesc {
     color: #8A8980;
     font-size: 11px;
 }
