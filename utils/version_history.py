@@ -14,10 +14,10 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
-        "version": "v43.267",
+        "version": "v43.268",
         "date": "2026-10-27",
-        "fixes": "**数据驱动筛选 Phase 3 落地**（基于 AppState/EventBus）：① 新增 `FilterController` 统一管筛选规则，支持防抖/级联/预设保存；② 扩展 `EventBus` 增加 `filters_applied/filters_reset` 信号；③ 增强 `AppState` 提供 `apply_filters()/get_filtered_data()`，支持多级筛选规则；④ 集成到 MainWindow：FilterPanel 筛选变化 → FilterController 转换规则 → 应用筛选 → EventBus 广播 → 视图自动更新。实现后，筛选逻辑从 MainWindow 彻底解耦，所有筛选相关操作统一走事件驱动模型，为 Phase 4（筛选可视化/预设一键调用/动态级联）打下基础。",
-        "features": "实现数据驱动筛选架构，筛选逻辑全面响应式化。",
+        "fixes": "**Phase 4 动态级联筛选升级**（裴哥选「A 全做」）：① FilterPanel 新增级联规则定义与 `_apply_cascades()`，工厂/车间/物料类型间建立联动；② `set_data()`自动触发级联，车间下拉框先清空并重建，候选值基于当前工厂筛选；③ 级联后自动重新发射筛选信号，保证视图与筛选状态一致；④ 修复 `Store.set_cascade_filters()` 语法错误（`.py` 换行符异常），移除不影响功能的 `_to_date()` 无用方法；⑤ 升级版本号至 v43.268。",
+        "features": "动态级联筛选：基于当前筛选条件动态计算并刷新相关下拉框选项，避免「死选项」。",
     },
     {
         "version": "v43.266",

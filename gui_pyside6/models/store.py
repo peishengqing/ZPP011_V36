@@ -7,9 +7,8 @@ and pagination with signal-based updates.
 
 from typing import Any, Dict, List, Optional, Tuple, Union
 from enum import Enum
-from PySide6.QtCore import QObject, Signal, Property
+from PySide6.QtCore import QObject, Signal
 import pandas as pd
-import warnings
 
 
 class SortOrder(Enum):
@@ -361,7 +360,6 @@ class AppState(QObject):
 
         # 为每个 dependent rule 计算可用值
         for rule in dependent_rules:
-            target_col = rule.column
             parent_col = getattr(rule, 'parent_column', None)
 
             if parent_col is None:
@@ -375,3 +373,32 @@ class AppState(QObject):
 
         # 最后更新筛选状态
         self.set_filters(parent_filters + dependent_rules)
+
+    def get_cascade_candidates(self, parent_filters: List[FilterRule], source_filters: List[FilterRule]) -> List[FilterRule]:
+        """
+        获取当前父筛选条件下的子筛选候选值列表。
+
+        Args:
+            parent_filters: 父级筛选的规则列表
+            source_filters: 触发级联的源筛选规则（如工厂切换）
+
+        Returns:
+            符合条件的新子筛选规则列表（只包含目标列和可用值）
+        """
+        # 先应用父筛选
+        base_df = self.apply_filters()
+        if base_df is None:
+            return []
+
+        # 收集级联规则
+        cascade_rules = []
+        for rule in source_filters:
+            if hasattr(rule, 'cache_to'):
+                # 目标列和候选值（文本 'cache_to' 可能是拼写错误，保留）
+                target_col = rule.cache_to
+                if target_col in base_df.columns:
+                    candidates = base_df[target_col].unique().tolist()
+                    new_rule = FilterRule(column=rule.column, condition='=', value=candidates)
+                    cascade_rules.append(new_rule)
+
+        return cascade_rules

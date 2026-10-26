@@ -383,9 +383,28 @@ class FilterPanel(QWidget):
         self._data = None
         self._col_map = {}
         self._date_filters = {}
-        # 记录用户已选的日期（即便数据刷新也不清空），保证日期筛选可用
         self._user_start_date = None
         self._user_end_date = None
+        # 级联规则：定义筛选下拉框的依赖关系
+        self._cascade_rules = [
+            {
+                "source": "工厂",      # 源列（如工厂）
+                "target": "车间",      # 目标列（如车间）
+                "parent_col": "工厂",  # 级联关联列名
+            },
+            {
+                "source": "车间",
+                "target": "物料类型",
+                "parent_col": "车间",
+            },
+            {
+                "source": "工厂",
+                "target": "物料类型",
+                "parent_col": "工厂",
+            },
+        ]
+        # 已选值缓存，用于级联计算
+        self._selected_values = {}
 
         # 滚轮保护：在筛选面板内滚动滚轮时，不要误改筛选条件
         for _w in (self.dev_threshold_spin, self.factory_combo, self.workshop_combo,
@@ -625,6 +644,8 @@ class FilterPanel(QWidget):
         self._reset_date_range()
 
         # 数据/选项更新后统一发射一次最终筛选条件，确保 proxy 只拿到最终状态
+        # 但级联筛选需要先应用，然后才发射最终筛选条件
+        self._apply_cascades()
         self._emit_filter()
 
         # 关键修复：数据刷新（标记已读/改备注/切工厂等会触发 set_data）时，
@@ -638,6 +659,88 @@ class FilterPanel(QWidget):
 
     def update_options(self, df: pd.DataFrame):
         self.set_data(df)
+
+    def _apply_cascades(self):
+        """应用级联筛选，动态更新相关下拉框选项"""
+        if self._data is None or self._data.empty:
+            return
+
+        # 记住当前所有下拉框的选择
+        current_factory = self.factory_combo.currentText()
+        current_workshop = self.workshop_combo.currentText()
+        current_category = self.category_combo.currentText()
+
+        # 从应用层获取筛选规则，这里从 FilterController 读取
+        # 先计算父筛选条件下的唯一值
+        for rule in self._cascade_rules:
+            source_col = rule.get("source")
+            target_col = rule.get("target")
+            parent_col = rule.get("parent_col")
+
+            if not all([source_col, target_col, parent_col]):
+                continue
+
+            # 获取源列和父列在数据中的列名
+            source_col_name = self._col_map.get(source_col)
+            target_col_name = self._col_map.get(target_col)
+            parent_col_name = self._col_map.get(parent_col)
+
+            if not all([source_col_name, target_col_name, parent_col_name]):
+                continue
+
+            # 构建当前筛选条件下的过滤掩码
+            mask = pd.Series([True] * len(self._data), index=self._data.index)
+
+            # 根据当前工厂/车间等条件约束父列
+            if source_col == "工厂" and current_factory != "全部":
+                mask &= self._data[parent_col_name] == current_factory
+                # 对目标列（车间）进行级联
+                if target_col == "车间":
+                    # 计算该工厂下的所有车间
+                    valid_workshops = self._data.loc[mask, target_col_name].dropna().unique()
+                    valid_workshops = sorted([str(v) for v in valid_workshops if str(v) != ''])
+                    # 更新车间下拉框
+                    workshop_idx = self.workshop_combo.findText("全部")
+                    self.workshop_combo.blockSignals(True)
+                    if workshop_idx >= 0:
+                        self.workshop_combo.setCurrentIndex(workshop_idx)
+                    else:
+                        self.workshop_combo.clear()
+                        self.workshop_combo.addItem("全部")
+                    self.workshop_combo.addItems(valid_workshops)
+                    # 如果上次选择不在当前可选范围内，重置为第一个或全部
+                    target_idx = self.workshop_combo.findText(current_workshop)
+                    if target_idx < 0:
+                        self.workshop_combo.setCurrentIndex(0)
+                    else:
+                        self.workshop_combo.setCurrentIndex(target_idx)
+                    self.workshop_combo.blockSignals(False)
+
+            elif source_col == "车间" and current_workshop != "全部":
+                mask &= self._data[parent_col_name] == current_workshop
+            elif source_col == "工厂" and current_factory != "全部":
+                mask &= self._data[parent_col_name] == current_factory
+
+            # 对目标列进行级联：每个父筛选对应不同的目标列
+            if target_col == "物料类型" and source_col in ["工厂", "车间"]:
+                valid_categories = self._data.loc[mask, target_col_name].dropna().unique()
+                valid_categories = sorted([str(v) for v in valid_categories if str(v) != ''])
+                category_idx = self.category_combo.findText("全部")
+                self.category_combo.blockSignals(True)
+                if category_idx >= 0:
+                    self.category_combo.setCurrentIndex(category_idx)
+                else:
+                    self.category_combo.clear()
+                    self.category_combo.addItem("全部")
+                self.category_combo.addItems(valid_categories)
+                target_idx = self.category_combo.findText(current_category)
+                if target_idx < 0:
+                    self.category_combo.setCurrentIndex(0)
+                else:
+                    self.category_combo.setCurrentIndex(target_idx)
+                self.category_combo.blockSignals(False)
+
+        self._emit_filter()
 
     def _find_column(self, candidates):
         if self._data is None:
