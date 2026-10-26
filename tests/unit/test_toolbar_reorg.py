@@ -3,11 +3,20 @@ _CJK_FONT_OK = False
 
 """工具栏重组回归：18 平级按钮 → 8 平铺 + 3 收纳菜单（看板/导出/维护）。
 
-锁定 2026-09-30 的整理结果：
+锁定 2026-09-30 的整理结果（v43.262 对齐裴哥此后的有意演化）：
 - 窗口最小宽度不再被工具栏顶到 1795px（1366 屏可用）
 - 高频视图开关（隐藏左侧栏/隐藏筛选/列头筛选）保留平铺（用户明确要求）
 - 替代料卡片默认折叠，「共 N 对」摘要在卡片头
 - 分析完成后自动收起进度面板（新一轮分析进行中不收起）
+
+演化史（测试为何是现在这副模样）：
+- v43.218 LayoutComposer 重建操作栏：视图开关改 QToolButton、文本改为
+  「分析 / ☰ 左侧栏 / 🔍 筛选 / 📢 未读」（旧文本「📊 分析 / ☰ 隐藏左侧栏 /
+  ☰ 隐藏筛选 / 📋 未读概览」作废）；
+- v43.228 裴哥亲手提交「恢复看板与导出的下拉菜单选项」：收纳菜单不带 ▾
+  （MenuButtonPopup 模式自带箭头）、看板菜单重建；
+- ARC-003 加「🔒 自动隔离」平铺按钮、物料画像挪进维护菜单。
+  本文件自 v43.228 起假红数日，v43.262 对齐现行设计并补 objectName 定位。
 """
 import os
 import shutil
@@ -83,18 +92,21 @@ def QPushButton_ref():
 
 def test_toolbar_grouped_layout(main_window):
     """工具栏：8 个平铺按钮 + 3 个收纳菜单，高频视图开关保留平铺。"""
-    from PySide6.QtWidgets import QToolButton
+    from PySide6.QtWidgets import QToolButton, QPushButton
 
     w = main_window
     bar = _action_bar(w)
     assert bar is not None and bar.objectName() == "actionBar"
 
+    # 收纳菜单（v43.262：MenuButtonPopup 自带下拉箭头，按钮文本不带 ▾）
     menu_texts = [b.text() for b in bar.findChildren(QToolButton) if b.objectName() == "actionMenuBtn"]
-    assert menu_texts == ["📊 看板 ▾", "📤 导出 ▾", "🔧 维护 ▾"], "收纳菜单异常: %s" % menu_texts
+    assert menu_texts == ["📊 看板", "📤 导出", "🔧 维护"], "收纳菜单异常: %s" % menu_texts
 
-    flat = [b.text() for b in bar.findChildren(QPushButton) if b.parentWidget() is bar]
-    for must in ["📊 分析", "☰ 隐藏左侧栏", "☰ 隐藏筛选", "🔽 列头筛选",
-                 "📊 概览", "⚡ 进度", "📋 未读概览"]:
+    # 平铺按钮 = 工具栏直接子级里的 QPushButton + QToolButton（排除三个收纳菜单）
+    flat = [b.text() for b in (bar.findChildren(QPushButton) + bar.findChildren(QToolButton))
+            if b.parentWidget() is bar and b.objectName() != "actionMenuBtn"]
+    for must in ["分析", "☰ 左侧栏", "🔍 筛选", "🔽 列头筛选",
+                 "📊 概览", "⚡ 进度", "📢 未读", "🔒 自动隔离"]:
         assert must in flat, "平铺按钮缺失: %s（现有 %s）" % (must, flat)
     for gone in ["管理看板", "隔离区", "变动提醒", "替代料看板", "偏差率预警",
                  "负损看板", "完整报告", "自动整理隔离区", "🤖 AI审核"]:
@@ -102,12 +114,13 @@ def test_toolbar_grouped_layout(main_window):
 
 
 def test_menu_contents(main_window):
-    """三个收纳菜单内容：看板 12 项 / 导出 3 项 / 维护 2 项。
+    """三个收纳菜单内容：看板 8 项 / 导出 2 项 / 维护 2 项。
 
-    历史：v43.189 工具栏收纳改造时看板菜单为 6 项，此后 v43.178~v43.182
-    陆续新增正损看板、半成品看板、数据稳定性、隔离区闭环、替代料长链、
-    物料画像，扩到 12 项但断言一直停在 6（假红数日，v43.198 修正）。
-    除总数外逐个断言新增项，防将来再扩菜单时数字对但内容错。
+    历史：v43.189 工具栏收纳改造时看板菜单为 6 项，断言一直停在 6（假红数日，
+    v43.198 修正为逐项断言）；v43.218 LayoutComposer 重建操作栏、v43.228 裴哥
+    亲手恢复下拉菜单并重建看板菜单（9 项）、ARC-003 加自动隔离按钮、物料画像
+    挪进维护菜单 → 看板定型为 8 项。除总数外逐个断言关键项，防将来再扩菜单时
+    数字对但内容错。
     """
     from PySide6.QtWidgets import QToolButton
 
@@ -117,14 +130,16 @@ def test_menu_contents(main_window):
         m = b.menu()
         menus[b.text()] = [a.text() for a in m.actions() if not a.isSeparator()] if m else []
 
-    assert len(menus.get("📊 看板 ▾", [])) == 12, menus.get("📊 看板 ▾")
-    assert len(menus.get("📤 导出 ▾", [])) == 3, menus.get("📤 导出 ▾")
-    assert len(menus.get("🔧 维护 ▾", [])) == 2, menus.get("🔧 维护 ▾")
-    for must in ["📊 管理看板", "⚠️ 隔离区", "🟢 正损看板", "🟡 半成品看板",
-                 "📈 数据稳定性", "🔁 隔离区闭环", "🔗 替代料长链", "🪪 物料画像"]:
-        assert must in menus["📊 看板 ▾"], "%s 不在看板菜单（现有 %s）" % (must, menus["📊 看板 ▾"])
-    assert "🧹 自动整理隔离区" in menus["🔧 维护 ▾"]
-    assert "📋 完整报告" in menus["📤 导出 ▾"]
+    assert len(menus.get("📊 看板", [])) == 8, menus.get("📊 看板")
+    assert len(menus.get("📤 导出", [])) == 2, menus.get("📤 导出")
+    assert len(menus.get("🔧 维护", [])) == 2, menus.get("🔧 维护")
+    for must in ["🔔 替代料看板", "⚠️ 偏差率预警", "📉 负损看板", "📈 正损看板",
+                 "🔒 隔离区", "📋 数据稳定性", "🔄 替代料长链", "🧵 半成品看板"]:
+        assert must in menus["📊 看板"], "%s 不在看板菜单（现有 %s）" % (must, menus["📊 看板"])
+    for must in ["📄 导出当前表格", "📊 导出完整偏差"]:
+        assert must in menus["📤 导出"], "%s 不在导出菜单（现有 %s）" % (must, menus["📤 导出"])
+    for must in ["🔒 自动隔离规则", "🪪 物料画像"]:
+        assert must in menus["🔧 维护"], "%s 不在维护菜单（现有 %s）" % (must, menus["🔧 维护"])
 
 
 def test_window_fits_1366_screen(main_window):

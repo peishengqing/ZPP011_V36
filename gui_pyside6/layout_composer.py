@@ -125,6 +125,7 @@ class LayoutComposer:
         # ═══ 收纳菜单：看板 / 导出 / 维护 ═══
         # 创建菜单按钮
         mw.action_btn_boards = QToolButton()
+        mw.action_btn_boards.setObjectName("actionMenuBtn")
         mw.action_btn_boards.setText("📊 看板")
         mw.action_btn_boards.setToolTip("打开看板")
         mw.action_btn_boards.setStyleSheet(
@@ -146,6 +147,7 @@ class LayoutComposer:
         action_layout.addWidget(mw.action_btn_boards)
 
         mw.action_btn_export = QToolButton()
+        mw.action_btn_export.setObjectName("actionMenuBtn")
         mw.action_btn_export.setText("📤 导出")
         mw.action_btn_export.setToolTip("导出当前表格")
         mw.action_btn_export.setStyleSheet(
@@ -161,6 +163,7 @@ class LayoutComposer:
         action_layout.addWidget(mw.action_btn_export)
 
         mw.action_btn_maint = QToolButton()
+        mw.action_btn_maint.setObjectName("actionMenuBtn")
         mw.action_btn_maint.setText("🔧 维护")
         mw.action_btn_maint.setToolTip("维护工具")
         mw.action_btn_maint.setStyleSheet(

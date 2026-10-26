@@ -2822,21 +2822,7 @@ class MainWindow(QMainWindow):
     # 双击明细
     # -----------------------------------------------------------
     def _on_cell_double_clicked(self, index):
-        # v43.236 调试增强：log() 目前是空实现（运行日志面板已移除），仅靠它无法确认
-        # 双击信号是否真的到达。这里同时写状态栏 + 打 traceback，保证任何路径（成功/
-        # 越界/异常）都留可见痕迹，便于定位"双击无响应"。
-        try:
-            self.statusBar().showMessage(
-                f"[双击] row={index.row() if index.isValid() else 'invalid'}", 4000)
-        except Exception:
-            pass
-        self.log("双击事件触发：index={}".format(index), "info")
-        try:
-            return self.interaction_controller._on_cell_double_clicked(index)
-        except Exception:
-            import traceback
-            traceback.print_exc()
-            raise
+        return self.interaction_controller._on_cell_double_clicked(index)
 
     def _show_row_detail(self, row_data):
         return self.interaction_controller._show_row_detail(row_data)
