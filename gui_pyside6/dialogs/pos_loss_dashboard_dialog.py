@@ -330,7 +330,7 @@ class PosLossDashboardDialog(QDialog):
         top3.addWidget(self.combo_read)
 
         self.lbl_count = QLabel("共 0 条")
-        self.lbl_count.setStyleSheet("color:#666;")
+        self.lbl_count.setProperty("class", "mutedText")
         top3.addWidget(self.lbl_count)
         self.btn_refresh = QPushButton("重新筛选")
         self.btn_refresh.clicked.connect(self._apply_filter)
@@ -342,7 +342,7 @@ class PosLossDashboardDialog(QDialog):
         self.btn_col_filter.clicked.connect(self._on_toggle_col_filter)
         top3.addWidget(self.btn_col_filter)
         self._col_filter_hint_label = QLabel("🔽 列头筛选：0 列")
-        self._col_filter_hint_label.setStyleSheet("QLabel{padding:2px 8px;font-weight:bold;color:#8a5a00;}")
+        self._col_filter_hint_label.setProperty("class", "amberHint")
         top3.addWidget(self._col_filter_hint_label)
         scroll.setWidget(top_widget)
         layout.addWidget(scroll)

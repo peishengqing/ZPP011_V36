@@ -172,7 +172,7 @@ class DashboardDialog(QDialog):
         # 顶部工具栏
         top = QHBoxLayout()
         hint = QLabel("偏差分析看板（顶部按钮可切换 食品厂 / 饮料厂）")
-        hint.setStyleSheet("color:#656d76;font-size:13px")
+        hint.setProperty("class", "mutedText")
         top.addWidget(hint)
         top.addStretch()
         self.export_btn = QPushButton("导出 HTML")

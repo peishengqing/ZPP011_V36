@@ -112,7 +112,7 @@ class FilterPanel(QWidget):
         param_layout.addRow("分析起始日:", sd_container)
         param_layout.addRow("分析截止日:", ed_container)
         note_label = QLabel("提示：阈值与日期修改后需重新点「分析」生效")
-        note_label.setStyleSheet("color: #888888; font-size: 10px;")
+        note_label.setObjectName("filterNoteLabel")
         param_layout.addRow("", note_label)
         content_layout.addWidget(param_group)
 

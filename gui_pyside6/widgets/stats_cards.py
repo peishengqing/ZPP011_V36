@@ -71,8 +71,7 @@ class StatsCardsWidget(QWidget):
         self.toggle_btn.setChecked(True)
         self.toggle_btn.setText("隐藏")
         self.toggle_btn.setToolTip("隐藏本次分析概览卡片")
-        self.toggle_btn.setStyleSheet("QToolButton { border: none; color: #666; font-size: 12px; padding: 2px 6px; }\n"
-                                      "QToolButton:hover { color: #333; background: #eee; }")
+        self.toggle_btn.setObjectName("toolGhostBtn")
         self.toggle_btn.toggled.connect(self._toggle_cards)
         title_layout.addWidget(self.toggle_btn)
 

@@ -256,11 +256,8 @@ class MainWindow(QMainWindow):
         self._analysis_time_label.setToolTip(
             "最近一次分析的触发方式与时刻：手动=点「分析」按钮/F5；自动=文件夹监控自动读取后自动分析"
         )
-        # 醒目样式：加粗琥珀色字 + 左边框分隔，与蓝字「已读」标签区分
-        self._analysis_time_label.setStyleSheet(
-            "QLabel#analysisTimeLabel{padding:2px 10px;font-weight:bold;color:#8a5a00;"
-            "border-left:1px solid #b8c4d0;}"
-        )
+        # 醒目样式（加粗琥珀色 + 左边框分隔）在 light/dark_theme.qss 的
+        # QLabel#analysisTimeLabel 规则里，代码侧只保留 objectName
         self.statusBar().addPermanentWidget(self._analysis_time_label)
 
         # 状态栏常驻「已读计数」：自动 N / 手动 M（每批数据清零，见 _on_file_loaded）
@@ -269,11 +266,7 @@ class MainWindow(QMainWindow):
         self._read_counter_label = QLabel("📖 已读：自动 0 / 手动 0")
         self._read_counter_label.setObjectName("readCounterLabel")
         self._read_counter_label.setToolTip("本次数据中自动已读 / 手动标记已读的累计条数")
-        # 醒目样式：加粗蓝字 + 左边框分隔，避免用户注意不到
-        self._read_counter_label.setStyleSheet(
-            "QLabel#readCounterLabel{padding:2px 10px;font-weight:bold;color:#15598c;"
-            "border-left:1px solid #b8c4d0;}"
-        )
+        # 醒目样式（加粗蓝字 + 左边框分隔）在两份主题 QSS 的 QLabel#readCounterLabel 里
         self.statusBar().addPermanentWidget(self._read_counter_label)
 
         # 状态栏常驻「列头筛选提示」：显示当前已设取值过滤的列名（N 列）
@@ -282,10 +275,7 @@ class MainWindow(QMainWindow):
         self._col_filter_hint_label = QLabel("🔽 列头筛选：0 列")
         self._col_filter_hint_label.setObjectName("colFilterHintLabel")
         self._col_filter_hint_label.setToolTip("当前已设列头取值过滤的列（橙色三角标记）；点 🔽 列头筛选 按钮后点任意列头弹取值勾选浮层")
-        self._col_filter_hint_label.setStyleSheet(
-            "QLabel#colFilterHintLabel{padding:2px 10px;font-weight:bold;color:#8a5a00;"
-            "border-left:1px solid #b8c4d0;}"
-        )
+        # 样式在两份主题 QSS 的 QLabel#colFilterHintLabel 里，代码侧只保留 objectName
         self._col_filter_hint_label.show()  # 无筛选时显示「0 列」，让用户知道哪些列被筛过
         # v43.143：提示标签改为「可点即清除」入口。此前它只是纯 QLabel，用户想取消筛选
         # 只能开浮层重新勾选一遍，且关掉筛选模式也不清筛选（实测），观感=「无法取消」。
@@ -1753,7 +1743,7 @@ class MainWindow(QMainWindow):
         layout.setSpacing(8)
 
         tip_label = QLabel("双击任意行可筛选该分类。点击「关闭」退出。")
-        tip_label.setStyleSheet("color: #aaa; font-size: 11px;")
+        tip_label.setObjectName("dialogTipLabel")
         layout.addWidget(tip_label)
 
         # 表格：列 = [工厂 · 分类 / 物料数 / 示例物料]
@@ -2930,13 +2920,11 @@ class MainWindow(QMainWindow):
         # 版本日志区
         log_label = QLabel("📜 版本日志")
         log_label.setObjectName("aboutSectionLabel")
-        log_label.setStyleSheet("font-size: 13px; font-weight: bold; padding: 8px 28px 4px;")
         main_layout.addWidget(log_label)
 
         log_browser = QTextBrowser()
         log_browser.setObjectName("versionLogBrowser")
         log_browser.setOpenExternalLinks(False)
-        log_browser.setStyleSheet("border: none; background-color: #fafbfc; padding: 8px;")
         html = self._build_version_log_html()
         log_browser.setHtml(html)
         main_layout.addWidget(log_browser, 1)

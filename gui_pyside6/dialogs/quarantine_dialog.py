@@ -105,7 +105,7 @@ class QuarantineDialog(QDialog):
         self.btn_col_filter.clicked.connect(self._on_toggle_col_filter)
         sl.addWidget(self.btn_col_filter)
         self._col_filter_hint_label = QLabel("🔽 列头筛选：0 列")
-        self._col_filter_hint_label.setStyleSheet("QLabel{padding:2px 8px;font-weight:bold;color:#8a5a00;}")
+        self._col_filter_hint_label.setProperty("class", "amberHint")
         sl.addWidget(self._col_filter_hint_label)
         sl.addSpacing(12)
         sl.addWidget(QLabel("是否备注:"))
@@ -203,7 +203,7 @@ class QuarantineDialog(QDialog):
         self.btn_col_filter_expired.clicked.connect(self._on_toggle_expired_col_filter)
         sl.addWidget(self.btn_col_filter_expired)
         self._col_filter_hint_label_expired = QLabel("🔽 列头筛选：0 列")
-        self._col_filter_hint_label_expired.setStyleSheet("QLabel{padding:2px 8px;font-weight:bold;color:#8a5a00;}")
+        self._col_filter_hint_label_expired.setProperty("class", "amberHint")
         sl.addWidget(self._col_filter_hint_label_expired)
         v.addLayout(sl)
 

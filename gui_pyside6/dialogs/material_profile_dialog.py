@@ -95,7 +95,7 @@ class MaterialProfileDialog(QDialog):
         val = QLabel(str(v))
         val.setWordWrap(True)
         if warn:
-            val.setStyleSheet("color:#c0392b; font-weight:bold;")
+            val.setObjectName("profileWarnValue")
         row.addWidget(val, 1)
         layout.addLayout(row)
 

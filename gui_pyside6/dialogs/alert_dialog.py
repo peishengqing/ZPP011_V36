@@ -177,9 +177,7 @@ class AlertDialog(QDialog):
         col_filter_bar.addWidget(self.btn_col_filter)
         # 状态栏常驻「列头筛选提示」：显示当前已设取值过滤的列（N 列 / 列名）
         self._col_filter_hint_label = QLabel("🔽 列头筛选：0 列")
-        self._col_filter_hint_label.setStyleSheet(
-            "QLabel{padding:2px 8px;font-weight:bold;color:#8a5a00;}"
-        )
+        self._col_filter_hint_label.setProperty("class", "amberHint")
         col_filter_bar.addWidget(self._col_filter_hint_label)
         col_filter_bar.addStretch(1)
         layout.addLayout(col_filter_bar)

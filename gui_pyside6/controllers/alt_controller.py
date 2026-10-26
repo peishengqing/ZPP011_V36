@@ -195,7 +195,7 @@ class AltController(QObject):
         outer = QVBoxLayout(dlg)
 
         tip = QLabel("已自动提取主表选中行的物料信息，请核对后添加到替代料配对。")
-        tip.setStyleSheet("color:#888; font-size:11px;")
+        tip.setObjectName("dialogTipLabel")
         outer.addWidget(tip)
 
         state = {'a': a, 'b': b}
@@ -330,7 +330,7 @@ class AltController(QObject):
         match_idx = [0]
         sort_state = {'col': None, 'asc': True}
         status_label = QLabel("")
-        status_label.setStyleSheet("color: #888; font-size: 11px; padding: 2px 4px;")
+        status_label.setObjectName("dialogTipLabel")
 
         table = QTableWidget()
         table.setColumnCount(3)

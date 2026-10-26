@@ -438,7 +438,7 @@ class ColumnController:
         outer.setSpacing(6)
 
         title = QLabel(f"筛选：{col_name}（共 {n} 行 / {len(order)} 个值）")
-        title.setStyleSheet("font-weight:bold;color:#15598c;")
+        title.setObjectName("columnFilterTitle")
         outer.addWidget(title)
 
         search = QLineEdit()
@@ -582,7 +582,7 @@ class ColumnController:
         outer.setContentsMargins(10, 10, 10, 10)
         outer.setSpacing(8)
         tip = QLabel(f"「{col_name}」当前没有任何可选取值\n（表格已被其它筛选条件筛空）")
-        tip.setStyleSheet("font-weight:bold;color:#15598c;")
+        tip.setObjectName("columnFilterTitle")
         tip.setWordWrap(True)
         outer.addWidget(tip)
 

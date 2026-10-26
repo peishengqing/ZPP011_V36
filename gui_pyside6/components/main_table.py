@@ -71,9 +71,7 @@ class MainTableComponent(QObject):
         self.progress_toggle_btn.setChecked(True)
         self.progress_toggle_btn.setText("隐藏")
         self.progress_toggle_btn.setToolTip("隐藏分析进度")
-        self.progress_toggle_btn.setStyleSheet(
-            "QToolButton { border: none; color: #666; font-size: 12px; padding: 2px 6px; }\n"
-            "QToolButton:hover { color: #333; background: #eee; }")
+        self.progress_toggle_btn.setObjectName("toolGhostBtn")
         self.progress_toggle_btn.toggled.connect(self._toggle_progress)
         progress_title_layout.addWidget(self.progress_toggle_btn)
 
@@ -96,32 +94,7 @@ class MainTableComponent(QObject):
             btn.setToolTip(f"{idx + 1}. {name}")
             btn.setProperty("step_idx", idx)
             btn.setAutoRaise(True)
-            btn.setStyleSheet("""
-                QToolButton {
-                    color: #888780;
-                    background-color: #25242E;
-                    border: 1px solid #3A3847;
-                    border-radius: 4px;
-                    font-size: 10px;
-                    font-weight: 600;
-                    padding: 0px;
-                    min-width: 22px;
-                    max-width: 22px;
-                    min-height: 22px;
-                    max-height: 22px;
-                }
-                QToolButton:hover { background-color: #35334A; }
-                QToolButton[active="true"] {
-                    color: #EAE8E4;
-                    background-color: #7F77DD;
-                    border-color: #7F77DD;
-                }
-                QToolButton[done="true"] {
-                    color: #7F77DD;
-                    background-color: #25242E;
-                    border-color: #7F77DD;
-                }
-            """)
+            btn.setObjectName("stepIcon")
             self.step_icons.append(btn)
             step_row.addWidget(btn)
         step_row.addStretch()
@@ -129,14 +102,12 @@ class MainTableComponent(QObject):
         # 分析进度状态文字（与图标同一行，放在图标与计时器之间）
         self.progress_label = QLabel("就绪")
         self.progress_label.setObjectName("progressLabel")
-        self.progress_label.setStyleSheet("color: #888780; font-size: 12px; font-weight: bold; padding-left: 8px;")
         self.progress_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         step_row.addWidget(self.progress_label)
 
         # 计时器放在步骤图标同一行右侧
         self.timer_lbl = QLabel("⏱ 00:00")
         self.timer_lbl.setObjectName("timerLabel")
-        self.timer_lbl.setStyleSheet("color: #888780; font-family: Consolas; font-size: 12px; font-weight: bold;")
         step_row.addWidget(self.timer_lbl)
 
         progress_layout.addLayout(step_row)
@@ -235,12 +206,6 @@ class MainTableComponent(QObject):
         # 文本由 main_window._update_mark_stats 实时刷新，随筛选/排序/数据变化动态更新
         self.mark_stats_label = QLabel("标记统计：—")
         self.mark_stats_label.setObjectName("markStatsLabel")
-        self.mark_stats_label.setStyleSheet(
-            "QLabel#markStatsLabel{"
-            "padding:3px 8px;border-radius:4px;"
-            "background:#f3f4f6;color:#374151;font-size:12px;"
-            "}"
-        )
         self.mark_stats_label.setFixedHeight(22)
         audit_layout.addWidget(self.mark_stats_label)
 

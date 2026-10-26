@@ -53,8 +53,12 @@ class UnreadSummaryPopup(QWidget):
         # 导致看板关闭后再操作本弹窗抛 "Internal C++ object already deleted"。
         # 改由 close() 仅隐藏/关闭，单例引用由主窗口在 closed 信号里清理。
         self._closed = False
-        self.setFixedWidth(330)
+        # 宽度按内容算：原先写死 setFixedWidth(330)，标题「未读概览（本次分析）」
+        # 在 12pt 加粗下刚好放不下，末尾括号被裁掉。
+        self.setMinimumWidth(360)
         self._setup_ui()
+        self.adjustSize()
+        self.setFixedWidth(max(self.width(), 360))
         self._move_to_bottom_right()
         # 注意：不再有「20 秒盲关」定时器——未清零就一直挂着。
 
@@ -75,7 +79,6 @@ class UnreadSummaryPopup(QWidget):
         self._all_clear_label.setObjectName("unreadAllClear")
         self._all_clear_label.setFont(QFont("Microsoft YaHei", 10, QFont.Bold))
         self._all_clear_label.setAlignment(Qt.AlignCenter)
-        self._all_clear_label.setStyleSheet("color: #2e7d32; padding: 2px 0 4px 0;")
         self._all_clear_label.hide()
         layout.addWidget(self._all_clear_label)
 

@@ -45,10 +45,10 @@ class DashboardController:
         try:
             df = self.mw._get_master_df()  # 与未读弹窗同源，避免两边数对不上
             if df is None or df.empty:
-                QMessageBox.information(self, "提示", "暂无数据，请先分析")
+                QMessageBox.information(self.mw, "提示", "暂无数据，请先分析")
                 return
             if "偏差率(%)" not in df.columns:
-                QMessageBox.information(self, "提示", "当前数据无偏差率列")
+                QMessageBox.information(self.mw, "提示", "当前数据无偏差率列")
                 return
             # 筛选替代料：有差异 或 偏差率超阈值 都进看板
             threshold = getattr(self.mw.alert_monitor, 'threshold', 10)
@@ -57,7 +57,7 @@ class DashboardController:
             else:
                 alerts_df = df[df["偏差率(%)"].abs() > threshold]
             if alerts_df.empty:
-                QMessageBox.information(self, "提示", "没有替代料预警记录")
+                QMessageBox.information(self.mw, "提示", "没有替代料预警记录")
                 return
             # 只保留关键列（含"工厂"以便 dialog 生成正确的 data_id 与主表匹配）
             required_cols = [c for c in [
@@ -75,7 +75,7 @@ class DashboardController:
             dialog = AlertDialog(alerts_df, self.mw)
             dialog.exec()
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开替代料看板失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"打开替代料看板失败: {e}")
 
 
     def _show_deviation_warning_dialog(self):
@@ -83,10 +83,10 @@ class DashboardController:
         try:
             df = self.mw._get_master_df()  # 与未读弹窗同源，避免两边数对不上
             if df is None or df.empty:
-                QMessageBox.information(self, "提示", "暂无数据，请先分析")
+                QMessageBox.information(self.mw, "提示", "暂无数据，请先分析")
                 return
             if "偏差率(%)" not in df.columns:
-                QMessageBox.information(self, "提示", "当前数据无偏差率列")
+                QMessageBox.information(self.mw, "提示", "当前数据无偏差率列")
                 return
             # 偏差率预警：|偏差率| >= 10%，且排除「实际=0 且 定额>0」的行
             # （偏差率恒为 -100%，是未真实投料的机械结果，不是真偏差；与主表橙色高亮、颜色筛选一致）
@@ -107,7 +107,7 @@ class DashboardController:
             # 注入原表行号，供看板双击定位主表使用
             warnings_df["原表行号"] = warnings_df.index
             if warnings_df.empty:
-                QMessageBox.information(self, "提示", "没有偏差率预警记录（|偏差率| ≥ 10%）")
+                QMessageBox.information(self.mw, "提示", "没有偏差率预警记录（|偏差率| ≥ 10%）")
                 return
             # 只保留关键列（含"工厂"保证 data_id 匹配）
             # 注意：不要同时列「组件物料号」和「物料编码」——sheet5_full 已把组件物料号统一映射为物料编码，
@@ -129,7 +129,7 @@ class DashboardController:
             dialog = DeviationWarningDialog(warnings_df, self.mw)
             dialog.exec()
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开偏差率预警看板失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"打开偏差率预警看板失败: {e}")
 
 
     def _show_neg_loss_dashboard(self):
@@ -137,7 +137,7 @@ class DashboardController:
         try:
             df = self.mw._get_master_df()  # 与主表同源，避免两边数对不上
             if df is None or df.empty:
-                QMessageBox.information(self, "提示", "暂无数据，请先分析")
+                QMessageBox.information(self.mw, "提示", "暂无数据，请先分析")
                 return
             # 保留关键列（含数量-实际/数量-定额 供负损计算，备注列供优先展示）
             # 同偏差率预警看板：不列「组件物料号」，统一用「物料编码」，避免两来源列并存打乱列序
@@ -163,7 +163,7 @@ class DashboardController:
             dialog = NegLossDashboardDialog(sub, self.mw)
             dialog.exec()
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开负损看板失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"打开负损看板失败: {e}")
 
 
     def _show_pos_loss_dashboard(self):
@@ -176,7 +176,7 @@ class DashboardController:
         try:
             df = self.mw._get_master_df()  # 与主表同源，避免两边数对不上
             if df is None or df.empty:
-                QMessageBox.information(self, "提示", "暂无数据，请先分析")
+                QMessageBox.information(self.mw, "提示", "暂无数据，请先分析")
                 return
             # 列白名单与负损看板保持一致（正损看板是它的完整复制件），
             # 差别只在对话框内部的口径，故同步维护 v43.176 补的工厂列。
@@ -197,7 +197,7 @@ class DashboardController:
             dialog = PosLossDashboardDialog(sub, self.mw)
             dialog.exec()
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开正损看板失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"打开正损看板失败: {e}")
 
 
     def _show_data_stability_dashboard(self):
@@ -228,7 +228,7 @@ class DashboardController:
             dialog = DataStabilityDialog(self.mw, code_name_map=name_map)
             dialog.exec()
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开数据稳定性看板失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"打开数据稳定性看板失败: {e}")
 
 
     def _show_quarantine_review_dashboard(self):
@@ -237,7 +237,7 @@ class DashboardController:
             dialog = QuarantineReviewDialog(self.mw)
             dialog.exec()
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开隔离区闭环看板失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"打开隔离区闭环看板失败: {e}")
 
 
     def _show_alt_chain_dashboard(self):
@@ -246,7 +246,7 @@ class DashboardController:
             dialog = AltChainDialog(self.mw)
             dialog.exec()
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开替代料长链看板失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"打开替代料长链看板失败: {e}")
 
 
     def _show_material_profile(self, code=None, name=None):
@@ -272,14 +272,14 @@ class DashboardController:
                 pass
         if not code:
             QMessageBox.information(
-                self, "提示",
+                self.mw, "提示",
                 "请先在主表选中一个物料，再点「🪪 查看物料画像」（或右键该行选择）。")
             return
         try:
             dialog = MaterialProfileDialog(code, self.mw, name=name or '')
             dialog.exec()
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开物料画像失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"打开物料画像失败: {e}")
 
 
     def _show_semi_dashboard(self):
@@ -291,7 +291,7 @@ class DashboardController:
         try:
             df = self.mw._get_master_df()
             if df is None or df.empty:
-                QMessageBox.information(self, "提示", "暂无数据，请先分析")
+                QMessageBox.information(self.mw, "提示", "暂无数据，请先分析")
                 return
             # 先筛 400/410 开头：与半成品重分类的排除法口径一致（analyzer ③ 号规则），
             # 只认物料编码前缀，不依赖描述文字/工厂名
@@ -301,7 +301,7 @@ class DashboardController:
             else:
                 sub = df
             if sub.empty:
-                QMessageBox.information(self, "提示", "当前数据无 400/410 开头的物料")
+                QMessageBox.information(self.mw, "提示", "当前数据无 400/410 开头的物料")
                 return
             # 列白名单与负损看板一致（含数量-实际/数量-定额 供投料状态计算）
             # 注意：不要同时列「组件物料号」和「物料编码」——两来源列并存会打乱列顺序
@@ -317,7 +317,7 @@ class DashboardController:
             dialog = SemiDashboardDialog(sub, self.mw)
             dialog.exec()
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开半成品看板失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"打开半成品看板失败: {e}")
 
 
     def _show_semi_detail_window(self, category: str):
@@ -329,17 +329,17 @@ class DashboardController:
 
         df = self.mw._get_master_df()
         if df is None or df.empty:
-            QMessageBox.warning(self, "提示", "主表暂无数据")
+            QMessageBox.warning(self.mw, "提示", "主表暂无数据")
             return
         if '半成品重分类' not in df.columns:
-            QMessageBox.warning(self, "提示", "当前数据无半成品重分类列")
+            QMessageBox.warning(self.mw, "提示", "当前数据无半成品重分类列")
             return
 
         # 筛选该分类的所有物料
         mask = df['半成品重分类'].astype(str) == category
         detail_df = df[mask].copy()
         if detail_df.empty:
-            QMessageBox.information(self, "提示", f"{category}：无匹配记录")
+            QMessageBox.information(self.mw, "提示", f"{category}：无匹配记录")
             return
 
         count = len(detail_df)
@@ -353,7 +353,7 @@ class DashboardController:
 
         # 说明标签
         tip_label = QLabel(f"共 {count} 条物料。双击任意行可定位到主表对应记录。")
-        tip_label.setStyleSheet("color: #888; font-size: 11px;")
+        tip_label.setObjectName("dialogTipLabel")
         layout.addWidget(tip_label)
 
         # 表格
@@ -410,7 +410,7 @@ class DashboardController:
     def _show_dashboard(self):
         audit_df = self.mw.view_model.df
         if audit_df is None or audit_df.empty:
-            QMessageBox.warning(self, "提示", "无数据，请先进行分析")
+            QMessageBox.warning(self.mw, "提示", "无数据，请先进行分析")
             return
         # material_df 暂无独立来源，传 None（DashboardDialog 内部仅预留）
         dialog = DashboardDialog(audit_df, None, parent=self.mw, main_window=self.mw)

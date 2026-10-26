@@ -319,8 +319,7 @@ class AutoReadRuleWidget(QWidget):
         ev.addWidget(QLabel("当前规则预览："))
         self.lbl_summary = QLabel()
         self.lbl_summary.setWordWrap(True)
-        self.lbl_summary.setStyleSheet(
-            "color:#555; padding:6px; background:#f5f5f5; border-radius:4px;")
+        self.lbl_summary.setObjectName("ruleSummaryLabel")
         ev.addWidget(self.lbl_summary)
 
         scroll = QScrollArea()

@@ -42,7 +42,7 @@ class SemiCategoryController:
         title = category
         count = int(mask.sum())
         if count == 0:
-            QMessageBox.information(self, "提示", f"{title}：无匹配记录")
+            QMessageBox.information(self.mw, "提示", f"{title}：无匹配记录")
             return
         rows = [i for i, v in enumerate(mask.values) if v]
         proxy = self.mw.table_view.model()
@@ -270,39 +270,39 @@ class SemiCategoryController:
             return
         item = tree.currentItem()
         if item is None:
-            QMessageBox.warning(self, "提示", "请先选中要删除的分类")
+            QMessageBox.warning(self.mw, "提示", "请先选中要删除的分类")
             return
         # 只有父节点（分类级）可删；子节点是单个物料编码
         if item.childCount() == 0:
-            QMessageBox.warning(self, "提示",
+            QMessageBox.warning(self.mw, "提示",
                                 "请选中分类节点（带展开三角的行），物料编码不能单独删除")
             return
         # 从 UserRole 取分类名，不再依赖行号 —— 树形展开后行号会随子节点错位
         name = item.data(0, Qt.ItemDataRole.UserRole)
         if not name:
-            QMessageBox.warning(self, "提示", "请先选中要删除的分类")
+            QMessageBox.warning(self.mw, "提示", "请先选中要删除的分类")
             return
         # 从映射中删除该分类的所有条目
         self.mw._semi_categories = {k: v for k, v in self.mw._semi_categories.items() if v != name}
         self.mw._save_semi_categories(self.mw._semi_categories)
         self.mw._refresh_semi_list_ui()
-        QMessageBox.information(self, "成功", f"已删除分类「{name}」")
+        QMessageBox.information(self.mw, "成功", f"已删除分类「{name}」")
 
 
     def _reset_semi_categories(self):
         """重置半成品分类为默认值"""
-        if not QMessageBox.question(self, "确认", "确定要重置所有半成品分类吗？",
+        if not QMessageBox.question(self.mw, "确认", "确定要重置所有半成品分类吗？",
                                     QMessageBox.Yes | QMessageBox.No) == QMessageBox.No:
             return
         self.mw._semi_categories = {}
         self.mw._save_semi_categories(self.mw._semi_categories)
         self.mw._refresh_semi_list_ui()
-        QMessageBox.information(self, "成功", "已重置所有半成品分类")
+        QMessageBox.information(self.mw, "成功", "已重置所有半成品分类")
 
 
     def _import_semi_categories(self):
         """从 JSON 文件导入半成品分类"""
-        file_path, _ = QFileDialog.getOpenFileName(self, "导入半成品分类", "", "JSON files (*.json)")
+        file_path, _ = QFileDialog.getOpenFileName(self.mw, "导入半成品分类", "", "JSON files (*.json)")
         if not file_path:
             return
         try:
@@ -324,18 +324,18 @@ class SemiCategoryController:
             self.mw._semi_categories.update(imported)
             self.mw._save_semi_categories(self.mw._semi_categories)
             self.mw._refresh_semi_list_ui()
-            QMessageBox.information(self, "成功", f"已导入 {len(imported)} 个分类")
+            QMessageBox.information(self.mw, "成功", f"已导入 {len(imported)} 个分类")
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"导入失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"导入失败: {e}")
 
 
     def _export_semi_categories(self):
         """导出半成品分类到 JSON 文件"""
-        file_path, _ = QFileDialog.getSaveFileName(self, "导出半成品分类", "semi_categories.json", "JSON (*.json)")
+        file_path, _ = QFileDialog.getSaveFileName(self.mw, "导出半成品分类", "semi_categories.json", "JSON (*.json)")
         if file_path:
             try:
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(self.mw._semi_categories, f, ensure_ascii=False, indent=2)
-                QMessageBox.information(self, "成功", f"已导出到 {file_path}")
+                QMessageBox.information(self.mw, "成功", f"已导出到 {file_path}")
             except Exception as e:
-                QMessageBox.critical(self, "错误", f"导出失败: {e}")
+                QMessageBox.critical(self.mw, "错误", f"导出失败: {e}")

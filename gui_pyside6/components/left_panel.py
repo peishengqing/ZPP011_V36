@@ -51,7 +51,6 @@ class LeftPanelComponent:
         self.preview_group = self._create_card("📊 数据预览", True)
         self.mw.preview_label = QLabel("")
         self.mw.preview_label.setObjectName("previewLabel")
-        self.mw.preview_label.setStyleSheet("font-size: 11px; padding: 8px; line-height: 1.6;")
         self.mw.preview_label.setWordWrap(True)
         self.preview_group.body_layout.addWidget(self.mw.preview_label)
         layout.addWidget(self.preview_group.container)
@@ -335,37 +334,12 @@ class LeftPanelComponent:
         input_field = QLineEdit()
         input_field.setPlaceholderText(placeholder)
         input_field.setObjectName(f"{label_text.lower()}Input")
-        input_field.setStyleSheet("""
-            QLineEdit {
-                background-color: #2C2C2A;
-                color: #EAE8E4;
-                border: 1px solid #444441;
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-size: 11px;
-            }
-            QLineEdit:focus {
-                border-color: #7F77DD;
-            }
-        """)
+        input_field.setProperty("class", "sideInput")
         input_row.addWidget(input_field)
 
         if has_browse:
             browse_btn = QPushButton("浏览")
             browse_btn.setObjectName("browseBtn")
-            browse_btn.setStyleSheet("""
-                QPushButton#browseBtn {
-                    background-color: #7F77DD;
-                    color: white;
-                    border: none;
-                    border-radius: 4px;
-                    padding: 4px 12px;
-                    font-size: 11px;
-                }
-                QPushButton#browseBtn:hover {
-                    background-color: #6B63D5;
-                }
-            """)
             input_row.addWidget(browse_btn)
 
         row_layout.addLayout(input_row)

@@ -179,7 +179,7 @@ class GuizangDialog(QDialog):
         # 顶部工具栏：状态 + 刷新 + 系统浏览器 + 关闭
         top = QHBoxLayout()
         self._status = QLabel(f"{self._desc} · 数据源：{Path(self.excel_path).name}")
-        self._status.setStyleSheet("color:#656d76;font-size:13px")
+        self._status.setProperty("class", "mutedText")
         top.addWidget(self._status)
         top.addStretch()
 
