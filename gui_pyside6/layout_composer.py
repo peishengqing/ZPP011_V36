@@ -256,7 +256,7 @@ class LayoutComposer:
         top_layout.setSpacing(6)
         top_layout.addWidget(mw.stats_cards)                # 本次分析概览
         top_layout.addWidget(mw.main_table.progress_group)  # 分析进度
-        top_panel.setMaximumHeight(240)                       # 限制最大高度，不抢表格空间
+        top_panel.setMaximumHeight(260)                       # 限制最大高度，不抢表格空间
 
         # 将 top_panel 引用保存到主窗口，以便控制器访问
         mw.top_panel = top_panel
@@ -272,7 +272,7 @@ class LayoutComposer:
         _right_v_splitter.setChildrenCollapsible(True)
         _right_v_splitter.addWidget(top_panel)
         _right_v_splitter.addWidget(_v_splitter)
-        _right_v_splitter.setSizes([150, 650])
+        _right_v_splitter.setSizes([175, 625])   # v43.264：顶部给 KPI 条留够高度（否则卡片被压扁）
         _right_v_splitter.setStretchFactor(0, 0)
         _right_v_splitter.setStretchFactor(1, 1)
 

@@ -1956,13 +1956,14 @@ class MainWindow(QMainWindow):
             n_d = 0
 
         return [
-            {"icon": "📦", "label": "隔离区", "count": n_q,
+            # v43.264：icon 传线性图标名（utils/icons.py），弹窗渲染成 SVG 图标
+            {"icon": "box", "label": "隔离区", "count": n_q,
              "callback": self._open_quarantine_dialog},
-            {"icon": "📝", "label": "变动提醒", "count": n_c,
+            {"icon": "edit", "label": "变动提醒", "count": n_c,
              "callback": self._show_audit_changes_dialog},
-            {"icon": "🔄", "label": "替代料", "count": n_a,
+            {"icon": "refresh", "label": "替代料", "count": n_a,
              "callback": self._show_alert_dashboard},
-            {"icon": "⚠️", "label": "偏差率预警", "count": n_d,
+            {"icon": "alert", "label": "偏差率预警", "count": n_d,
              "callback": self._show_deviation_warning_dialog},
         ]
 

@@ -11,7 +11,7 @@
 """
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QGridLayout,
-    QFrame, QLabel, QToolButton,
+    QFrame, QLabel, QToolButton, QSizePolicy,
 )
 from PySide6.QtCore import Qt, Signal, QEvent
 import pandas as pd
@@ -29,8 +29,9 @@ def _make_card(parent, value_text, label_text, accent: str, tooltip: str) -> QFr
     card.setProperty("class", "statsCard")
     card.setToolTip(tooltip)
     card.setCursor(Qt.PointingHandCursor)
-    card.setMinimumWidth(120)
+    card.setMinimumWidth(110)
     card.setMinimumHeight(58)
+    card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
     layout = QVBoxLayout(card)
     layout.setContentsMargins(10, 8, 10, 8)
@@ -46,11 +47,15 @@ def _make_card(parent, value_text, label_text, accent: str, tooltip: str) -> QFr
     val_label = QLabel(str(value_text))
     val_label.setProperty("class", "statsCardVal")
     val_label.setAlignment(Qt.AlignCenter)
+    # v43.264：给数值标签兜底高度——父容器被压缩时 Qt 会按比例压扁子控件，
+    # 22px 数字被压到十几像素就只剩半截（裴哥 10-26 截图「看不清」）。
+    val_label.setMinimumHeight(28)
     layout.addWidget(val_label)
 
     desc_label = QLabel(label_text)
     desc_label.setProperty("class", "statsCardDesc")
     desc_label.setAlignment(Qt.AlignCenter)
+    desc_label.setMinimumHeight(16)
     layout.addWidget(desc_label)
 
     return card
@@ -64,7 +69,7 @@ class StatsCardsWidget(QWidget):
     # 面板整体显隐变化（True=显示, False=隐藏）
     visibility_changed = Signal(bool)
 
-    _GRID_COLS = 4  # 每行卡片数（7 张 → 4+3 两行）
+    _GRID_COLS = 7  # 单行 KPI 条：7 张卡平铺（v43.264，两行会压扁卡片）
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -135,15 +140,16 @@ class StatsCardsWidget(QWidget):
         self.card_deviation.installEventFilter(self)
         self.card_deviation.setProperty("cardType", "deviation")
 
-        # 网格排布：第 0 行 4 张，第 1 行 3 张 + 右侧留空（列 stretch 已保证等宽）
+        # 网格排布（v43.264 修正：1 行 × 7 列 KPI 条）
+        # 原先排 4+3 两行，顶区（top_panel 限高 240）装不下就把卡片压扁、
+        # 数字被裁成半截；改单行后只吃一行高度，7 张卡在宽屏上平铺等宽。
         cards = [self.card_pass, self.card_unread, self.card_anomaly,
                  self.card_alt, self.card_changed, self.card_quarantine,
                  self.card_deviation]
         for i, card in enumerate(cards):
-            cards_layout.addWidget(card, i // self._GRID_COLS, i % self._GRID_COLS)
-        for c in range(self._GRID_COLS):
+            cards_layout.addWidget(card, 0, i)
+        for c in range(len(cards)):
             cards_layout.setColumnStretch(c, 1)
-        cards_layout.setRowStretch(1, 1)  # 第二行不满时空隙集中在行尾
 
         # ── 组装 ──
         main_layout = QVBoxLayout(self)

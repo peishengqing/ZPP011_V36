@@ -13,8 +13,17 @@ from PySide6.QtGui import QFont
 
 import os
 
+from gui_pyside6.utils.icons import get_icon, has_icon
+
 # v43.152：打开看板失败时的运行日志（写失败静默吞掉，日志绝不反噬运行路径）
 _RUNTIME_LOG = os.path.join("logs", "unread_summary.log")
+
+# v43.264：旧调用方传 emoji 图标，这里做兼容映射（emoji → 线性图标名）。
+# 新调用方直接传图标名（如 "box"）；两者都能渲染成 SVG 图标。
+_LEGACY_ICONS = {
+    "📦": "box", "📝": "edit", "🔄": "refresh", "⚠️": "alert",
+    "📋": "clipboard", "🎉": "check", "🔒": "lock", "📊": "chart",
+}
 
 
 class UnreadSummaryPopup(QWidget):
@@ -55,49 +64,83 @@ class UnreadSummaryPopup(QWidget):
         self._closed = False
         # 宽度按内容算：原先写死 setFixedWidth(330)，标题「未读概览（本次分析）」
         # 在 12pt 加粗下刚好放不下，末尾括号被裁掉。
-        self.setMinimumWidth(360)
+        # v43.264：360 也被裴哥判为「太窄」（行内挤、条数与按钮贴边）→
+        # 舒适下限提到 420，并让行内留白与计数列宽度可预期。
+        self.setMinimumWidth(420)
         self._setup_ui()
         self.adjustSize()
-        self.setFixedWidth(max(self.width(), 360))
+        self.setFixedWidth(max(self.width(), 420))
         self._move_to_bottom_right()
         # 注意：不再有「20 秒盲关」定时器——未清零就一直挂着。
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(8)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(10)
 
-        title = QLabel("📋 未读概览（本次分析）")
+        # 标题行（图标 + 文字，整体居中）
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+        title_icon = QLabel()
+        title_icon.setFixedSize(18, 18)
+        title_icon.setPixmap(get_icon("clipboard", 16).pixmap(16, 16))
+        title_row.addStretch()
+        title_row.addWidget(title_icon)
+        title = QLabel("未读概览（本次分析）")
         title.setObjectName("unreadSummaryTitle")
         title.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
+        title_row.addWidget(title)
+        title_row.addStretch()
+        layout.addLayout(title_row)
 
-        # v42.29: 副标题——4 类全部清零时显示「🎉 全清零啦」+ 文字提示，
+        # v42.29: 副标题——4 类全部清零时显示「全清零啦」+ 文字提示，
         # 数据再有未读会自动隐藏（与 mark_all_clear / clear_all_clear 配对）。
-        self._all_clear_label = QLabel("🎉 全清零啦")
+        self._all_clear_row = QHBoxLayout()
+        self._all_clear_row.setSpacing(6)
+        self._all_clear_icon = QLabel()
+        self._all_clear_icon.setFixedSize(16, 16)
+        self._all_clear_icon.setPixmap(get_icon("check", 14, "#1F7A4D").pixmap(14, 14))
+        self._all_clear_row.addStretch()
+        self._all_clear_row.addWidget(self._all_clear_icon)
+        self._all_clear_label = QLabel("全清零啦")
         self._all_clear_label.setObjectName("unreadAllClear")
         self._all_clear_label.setFont(QFont("Microsoft YaHei", 10, QFont.Bold))
         self._all_clear_label.setAlignment(Qt.AlignCenter)
+        self._all_clear_row.addWidget(self._all_clear_label)
+        self._all_clear_row.addStretch()
         self._all_clear_label.hide()
-        layout.addWidget(self._all_clear_label)
+        self._all_clear_icon.hide()
+        layout.addLayout(self._all_clear_row)
 
         for it in self._items:
             row = QFrame(self)
             row.setObjectName("unreadRow")
             rlayout = QHBoxLayout(row)
-            rlayout.setContentsMargins(8, 5, 8, 5)
-            rlayout.setSpacing(6)
+            rlayout.setContentsMargins(10, 7, 10, 7)
+            rlayout.setSpacing(10)
 
-            icon_label = QLabel(it.get("icon", ""))
+            # 图标：传图标名直接渲染；传旧 emoji 做兼容映射
+            raw_icon = str(it.get("icon", "") or "")
+            icon_name = _LEGACY_ICONS.get(raw_icon, raw_icon)
+            icon_label = QLabel()
+            icon_label.setFixedSize(18, 18)
+            if icon_name and has_icon(icon_name):
+                icon_label.setPixmap(get_icon(icon_name, 16).pixmap(16, 16))
+            else:
+                icon_label.setText(raw_icon)
             name_label = QLabel(it["label"])
             name_label.setFont(QFont("Microsoft YaHei", 10))
             count_label = QLabel(f"{it['count']} 条未读")
             count_label.setObjectName("unreadCount")
             count_label.setFont(QFont("Microsoft YaHei", 10, QFont.Bold))
+            # 计数列定宽右对齐：4 行数字上下对齐，不再随名称长度飘
+            count_label.setMinimumWidth(84)
+            count_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
             view_btn = QPushButton("查看")
-            view_btn.setFixedWidth(48)
+            view_btn.setFixedWidth(56)
+            view_btn.setMinimumHeight(26)
             # v43.152：0 条未读的类别直接置灰不可点。原先点了只会弹一个
             # 「暂无记录」提示框，用户以为是程序坏了；从源头消除这种困惑。
             _n = it.get("count", 0)
@@ -137,9 +180,10 @@ class UnreadSummaryPopup(QWidget):
                 lbl.setText(f"{it['count']} 条未读")
 
     def mark_all_clear(self):
-        """4 类未读全部清零时显示「🎉 全清零啦」副标题。"""
+        """4 类未读全部清零时显示「全清零啦」副标题。"""
         try:
             self._all_clear_label.show()
+            self._all_clear_icon.show()
         except RuntimeError:
             pass
 
@@ -147,6 +191,7 @@ class UnreadSummaryPopup(QWidget):
         """有任意未读时（清零状态结束）隐藏「全清零啦」副标题。"""
         try:
             self._all_clear_label.hide()
+            self._all_clear_icon.hide()
         except RuntimeError:
             pass
 
