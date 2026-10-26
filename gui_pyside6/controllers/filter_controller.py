@@ -8,24 +8,98 @@ from typing import Callable, List, Optional, Dict, Any
 from PySide6.QtCore import QObject, QTimer
 import sys
 import os
+import datetime
+import json
+import uuid
+import zipfile
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from gui_pyside6.models.store import AppState, FilterRule
 from gui_pyside6.models.event_bus import EventBus
 
+class FilterPreset:
+    """筛选预设记录，包含使用历史"""
+    def __init__(self, name: str, rules: List[FilterRule], created_at: datetime.datetime = None, preset_id: str = None):
+        self.name = name
+        self.rules = rules.copy()
+        self.created_at = created_at or datetime.datetime.now()
+        self.used_count = 0
+        self.last_used_at = None
+        self.preset_id = preset_id or str(uuid.uuid4())
+
+    def to_dict(self) -> Dict:
+        return {
+            'preset_id': self.preset_id,
+            'name': self.name,
+            'rules': [
+                {'column': r.column, 'condition': r.condition, 'value': r.value}
+                for r in self.rules
+            ],
+            'created_at': self.created_at.isoformat(),
+            'created_by': self._get_user_hint(),
+            'used_count': self.used_count,
+            'last_used_at': self.last_used_at.isoformat() if self.last_used_at else None,
+            'history': getattr(self, 'history', [])  # 使用历史
+        }
+
+    @staticmethod
+    def from_dict(data: Dict) -> 'FilterPreset':
+        rules = [
+            FilterRule(
+                column=r['column'],
+                condition=r['condition'],
+                value=r['value']
+            )
+            for r in data.get('rules', [])
+        ]
+        preset = FilterPreset(
+            name=data['name'],
+            rules=rules,
+            created_at=datetime.datetime.fromisoformat(data['created_at']),
+            preset_id=data.get('preset_id')
+        )
+        preset.used_count = data.get('used_count', 0)
+        if data.get('last_used_at'):
+            preset.last_used_at = datetime.datetime.fromisoformat(data['last_used_at'])
+        if 'history' in data:
+            preset.history = data['history']
+        return preset
+
+    def _get_user_hint(self) -> str:
+        """获取用户提示"""
+        import pwd
+        try:
+            return pwd.getpwuid(os.getuid()).pw_name
+        except:
+            return os.getenv('USERNAME', 'User')
+
+    def add_history_entry(self, applied_at: datetime.datetime = None, reason: str = None):
+        """添加使用历史"""
+        if not hasattr(self, 'history'):
+            self.history = []
+        self.history.append({
+            'applied_at': applied_at,
+            'reason': reason,
+            'timestamp': datetime.datetime.now().isoformat()
+        })
+
+
 
 class FilterController(QObject):
     """筛选状态控制器"""
 
-    def __init__(self, app_state: AppState, event_bus: EventBus):
+    def __init__(self, app_state: AppState, event_bus: EventBus, config_manager):
         super().__init__()
         self.app_state = app_state
         self.event_bus = event_bus
+        self.config_manager = config_manager
         self._debounce_timer = QTimer()
         self._debounce_timer.setSingleShot(True)
         self._debounce_timer.setInterval(300)  # 300ms 防抖
         self._debounce_timer.timeout.connect(self._apply_debounced_filters)
         self._pending_filter_rules: List[FilterRule] = []
+        self._preview_preset: Optional[FilterPreset] = None  # 当前预览的预设
 
     def reset(self) -> None:
         """重置筛选状态"""
@@ -252,3 +326,220 @@ class FilterController(QObject):
     def connect_filtersReset(self, callback: Callable) -> None:
         """连接筛选重置事件"""
         self.event_bus.on_filters_reset(callback)
+
+    # ========== Phase 5 新增：预设管理 ==========
+
+    def save_preset(self, name: str, rules: List[FilterRule]) -> bool:
+        """保存筛选预设到 store"""
+        preset = FilterPreset(name, rules)
+        # 从 App Storage 获取预设列表（可以在 AppState 中扩展）
+        store = self.app_state.get_preset_store()
+        store[name] = preset.to_dict()
+        self.app_state.set_preset_store(store)
+        return True
+
+    def load_preset(self, name: str) -> Optional[FilterPreset]:
+        """加载筛选预设"""
+        store = self.app_state.get_preset_store()
+        data = store.get(name)
+        if data:
+            return FilterPreset.from_dict(data)
+        return None
+
+    def delete_preset(self, name: str) -> bool:
+        """删除筛选预设"""
+        store = self.app_state.get_preset_store()
+        if name in store:
+            del store[name]
+            self.app_state.set_preset_store(store)
+            return True
+        return False
+
+    def list_presets(self) -> List[FilterPreset]:
+        """列出所有筛选预设"""
+        store = self.app_state.get_preset_store()
+        presets = []
+        for name, data in store.items():
+            if name != "___last___":
+                try:
+                    presets.append(FilterPreset.from_dict(data))
+                except Exception:
+                    pass
+        # 按使用次数降序
+        return sorted(presets, key=lambda p: p.used_count, reverse=True)
+
+    def apply_preset(self, preset: FilterPreset) -> None:
+        """应用筛选预设"""
+        self.set_filters(preset.rules)
+        # 更新使用记录
+        preset.used_count += 1
+        preset.last_used_at = datetime.datetime.now()
+        # 保存到 Last Used
+        self._apply_preset_to_last_used(preset)
+        self.apply_filters_immediately()
+
+    def _apply_preset_to_last_used(self, preset: FilterPreset) -> None:
+        """更新「上次使用」预设"""
+        store = self.app_state.get_preset_store()
+        store["___last___"] = preset.to_dict()
+        self.app_state.set_preset_store(store)
+
+    def get_last_used_preset(self) -> Optional[FilterPreset]:
+        """获取「上次使用」预设"""
+        store = self.app_state.get_preset_store()
+        data = store.get("___last___")
+        if data:
+            return FilterPreset.from_dict(data)
+        return None
+
+    def get_preset_store(self) -> Dict:
+        """获取预设存储字典"""
+        # 从 AppState 的扩展中获取
+        if not hasattr(self.app_state, '_preset_store'):
+            self.app_state._preset_store = {}
+        return self.app_state._preset_store
+
+    def set_preset_store(self, store: Dict) -> None:
+        """设置预设存储字典"""
+        self.app_state._preset_store = store
+
+    # ========== Phase 5 增强：导入导出和快速切换 ==========
+
+    def export_presets_to_file(self, file_path: str) -> bool:
+        """导出所有筛选预设到 JSON 文件"""
+        try:
+            presets = self.list_presets()
+            export_data = {
+                'version': '1.0',
+                'export_time': datetime.datetime.now().isoformat(),
+                'presets': [p.to_dict() for p in presets]
+            }
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(export_data, f, ensure_only=False, indent=2)
+            return True
+        except Exception:
+            # 记录日志或显示错误
+            return False
+
+    def import_presets_from_file(self, file_path: str) -> List[str]:
+        """从 JSON 文件导入筛选预设，返回导入的预设名称列表"""
+        imported = []
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                import_data = json.load(f)
+
+            store = self.get_preset_store()
+            for preset_dict in import_data.get('presets', []):
+                try:
+                    preset = FilterPreset.from_dict(preset_dict)
+
+                    # 避免重复（如果同名则按时间追加后缀）
+                    base_name = preset.name
+                    counter = 1
+                    while preset.name in store:
+                        preset.name = f"{base_name}_{counter}"
+                        counter += 1
+
+                    store[preset.name] = preset.to_dict()
+                    imported.append(preset.name)
+                except Exception:
+                    continue
+
+            self.set_preset_store(store)
+            return imported
+        except Exception:
+            return imported
+
+    def create_new_preset_from_dict(self, name: str, rules: List[FilterRule], preset_id: str = None) -> FilterPreset:
+        """创建新的筛选预设实例"""
+        preset = FilterPreset(name, rules, preset_id=preset_id)
+        return preset
+
+    def duplicate_preset(self, source_name: str) -> Optional[FilterPreset]:
+        """复制一个预设"""
+        source = self.load_preset(source_name)
+        if not source:
+            return None
+
+        # 添加时间戳后缀
+        suffix = datetime.datetime.now().strftime("_%H%M%S")
+        new_name = source.name + suffix
+
+        # 创建新的预设实例
+        new_preset = self.create_new_preset_from_dict(
+            name=new_name,
+            rules=source.rules.copy(),
+            preset_id=source.preset_id  # 保留引用但作为副本
+        )
+
+        # 保存到存储
+        store = self.get_preset_store()
+        store[new_name] = new_preset.to_dict()
+        self.set_preset_store(store)
+
+        return new_preset
+
+    def clone_preset_to_current(self, preset_name: str) -> None:
+        """克隆预设到当前筛选（不应用，只复制规则）"""
+        preset = self.load_preset(preset_name)
+        if preset:
+            self.set_filters(preset.rules)
+
+    def get_history_since(self, name: str, since_date: datetime.datetime = None) -> Optional[List[dict]]:
+        """获取预设的指定日期以来的使用历史"""
+        preset = self.load_preset(name)
+        if not preset:
+            return None
+
+        if not since_date:
+            return preset.history
+
+        return [h for h in preset.history if datetime.datetime.fromisoformat(h['timestamp']) >= since_date]
+
+    def export_preset_to_file_v2(self, preset_name: str, file_path: str) -> bool:
+        """导出单个预设到文件"""
+        preset = self.load_preset(preset_name)
+        if not preset:
+            return False
+
+        export_data = {
+            'version': '1.0',
+            'export_time': datetime.datetime.now().isoformat(),
+            'preset': preset.to_dict()
+        }
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(export_data, f, ensure_only=False, indent=2)
+        return True
+
+    def import_presets_from_zip(self, zip_path: str) -> List[str]:
+        """从 ZIP 文件导入全部预设"""
+        imported = []
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                for member in zip_ref.namelist():
+                    if member.endswith('.json'):
+                        try:
+                            with zip_ref.open(member) as f:
+                                content = f.read().decode('utf-8')
+                                import_data = json.loads(content)
+                                # 从 zip 内容导入，而不是传到外部函数
+                                store = self.get_preset_store()
+                                for preset_dict in import_data.get('presets', []):
+                                    try:
+                                        preset = FilterPreset.from_dict(preset_dict)
+                                        # 避免重复
+                                        base_name = preset.name
+                                        counter = 1
+                                        while preset.name in store:
+                                            preset.name = f"{base_name}_{counter}"
+                                            counter += 1
+                                        store[preset.name] = preset.to_dict()
+                                        imported.append(preset.name)
+                                    except Exception:
+                                        continue
+                                self.set_preset_store(store)
+                        except Exception:
+                            continue
+            return imported
+        except Exception:
+            return imported

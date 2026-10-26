@@ -14,6 +14,11 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.269",
+        "date": "2026-10-27",
+        "features": "**Phase 5：筛选可视化与预设管理增强**：① FilterPreset 完善，新增预设使用 history 追踪、导入导出、快速切换功能；② 预设支持真 JSON 导出/ZIP 批导、单个预设文件导出；③ 新增 Clone、Duplicate、GetHistory 等高级管理方法；④ 预设存储使用 AppState 扩展（碾压本地 JSON）。",
+    },
+    {
         "version": "v43.268",
         "date": "2026-10-27",
         "fixes": "**Phase 4 动态级联筛选升级**（裴哥选「A 全做」）：① FilterPanel 新增级联规则定义与 `_apply_cascades()`，工厂/车间/物料类型间建立联动；② `set_data()`自动触发级联，车间下拉框先清空并重建，候选值基于当前工厂筛选；③ 级联后自动重新发射筛选信号，保证视图与筛选状态一致；④ 修复 `Store.set_cascade_filters()` 语法错误（`.py` 换行符异常），移除不影响功能的 `_to_date()` 无用方法；⑤ 升级版本号至 v43.268。",
