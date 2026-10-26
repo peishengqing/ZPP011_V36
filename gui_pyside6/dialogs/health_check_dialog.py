@@ -30,7 +30,7 @@ class HealthCheckDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
 
-        title = QLabel("🔍 ZPP011 系统健康检查")
+        title = QLabel("ZPP011 系统健康检查")
         title.setFont(QFont("Microsoft YaHei", 14, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)

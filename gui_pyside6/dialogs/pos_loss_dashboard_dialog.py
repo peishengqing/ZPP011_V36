@@ -40,6 +40,7 @@ from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
 from gui_pyside6.utils.semi_class import merge_semi_class_values, ensure_semi_class_column  # v43.148 固定分类清单 / v43.210 补列
 from gui_pyside6.widgets.filter_panel import _color_icon
+from gui_pyside6.utils.icons import add_icon_action, make_button
 
 
 class PosLossDashboardDialog(QDialog):
@@ -388,10 +389,10 @@ class PosLossDashboardDialog(QDialog):
 
         # ---- 底部按钮 ----
         btn_layout = QHBoxLayout()
-        self.btn_add_quar = QPushButton("⚠️ 加入隔离区(选中行)")
+        self.btn_add_quar = make_button("⚠️ 加入隔离区(选中行)")
         self.btn_add_quar.clicked.connect(self._add_selected_to_quarantine)
         btn_layout.addWidget(self.btn_add_quar)
-        export_btn = QPushButton("📎 导出 Excel")
+        export_btn = make_button("📎 导出 Excel")
         export_btn.clicked.connect(self.export_excel)
         btn_layout.addWidget(export_btn)
         btn_layout.addStretch()
@@ -1158,15 +1159,15 @@ class PosLossDashboardDialog(QDialog):
             selected_rows = [index.row()]
         menu = QMenu()
         # 标记已读/未读
-        mark_read_action = menu.addAction("✅ 标记为已读（选中行）")
+        mark_read_action = add_icon_action(menu, "✅ 标记为已读（选中行）")
         mark_read_action.triggered.connect(
             lambda: self._mark_selected_rows_read(selected_rows))
-        mark_unread_action = menu.addAction("⭕ 标记为未读（选中行）")
+        mark_unread_action = add_icon_action(menu, "⭕ 标记为未读（选中行）")
         mark_unread_action.triggered.connect(
             lambda: self._mark_selected_rows_unread(selected_rows))
         menu.addSeparator()
         # 隔离区操作
-        add_action = menu.addAction("⚠️ 加入隔离区(选中行)")
+        add_action = add_icon_action(menu, "⚠️ 加入隔离区(选中行)")
         add_action.triggered.connect(lambda: self._add_selected_to_quarantine())
         df = self.source_model.getDataFrame()
         if df is not None and selected_rows and "隔离区" in df.columns:
@@ -1176,7 +1177,7 @@ class PosLossDashboardDialog(QDialog):
             except Exception:
                 all_q = False
             if all_q:
-                cancel_action = menu.addAction("↩ 取消隔离(选中行)")
+                cancel_action = add_icon_action(menu, "↩ 取消隔离(选中行)")
                 cancel_action.triggered.connect(lambda: self._cancel_selected_quarantine())
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
 

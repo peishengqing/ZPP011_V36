@@ -31,6 +31,7 @@ from core.auto_read_rules import (
     load_auto_read_rules_config,
     save_auto_read_rules_config,
 )
+from gui_pyside6.utils.icons import make_button
 
 # 类型 combo 的显示顺序（与 CONDITION_TYPES 注册表一致）
 _TYPE_ORDER = [
@@ -100,7 +101,7 @@ class _ConditionRow(QWidget):
         self.param_layout.setSpacing(6)
         layout.addWidget(self.param_container, 1)
 
-        self.btn_del = QPushButton("✕")
+        self.btn_del = make_button("✕")
         self.btn_del.setFixedWidth(28)
         self.btn_del.setToolTip("删除此条件")
         layout.addWidget(self.btn_del, 0)
@@ -261,8 +262,8 @@ class AutoReadRuleWidget(QWidget):
         head = QHBoxLayout()
         head.addWidget(QLabel("规则列表："))
         head.addStretch()
-        self.btn_add = QPushButton("➕ 新增")
-        self.btn_del = QPushButton("🗑 删除")
+        self.btn_add = make_button("➕ 新增")
+        self.btn_del = make_button("🗑 删除")
         self.btn_up = QPushButton("↑ 上移")
         self.btn_down = QPushButton("↓ 下移")
         for b in (self.btn_add, self.btn_del, self.btn_up, self.btn_down):
@@ -311,7 +312,7 @@ class AutoReadRuleWidget(QWidget):
         ev.addWidget(self.cond_widget)
 
         h_add = QHBoxLayout()
-        self.btn_add_cond = QPushButton("➕ 添加条件")
+        self.btn_add_cond = make_button("➕ 添加条件")
         h_add.addWidget(self.btn_add_cond)
         h_add.addStretch()
         ev.addLayout(h_add)

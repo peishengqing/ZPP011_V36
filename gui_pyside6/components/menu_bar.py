@@ -4,6 +4,7 @@
 """
 from PySide6.QtWidgets import QMenuBar, QMenu
 from PySide6.QtGui import QAction
+from gui_pyside6.utils.icons import get_icon
 
 
 class MenuBarComponent:
@@ -68,11 +69,11 @@ class MenuBarComponent:
 
         audit_menu.addSeparator()
 
-        rule_center_action = QAction("⚙ 规则中心（隔离/已读）", self.mw)
+        rule_center_action = QAction(get_icon("gear", 14), "规则中心（隔离/已读）", self.mw)
         rule_center_action.triggered.connect(self.mw._open_rule_center)
         audit_menu.addAction(rule_center_action)
 
-        alert_action = QAction("🔔 替代料看板", self.mw)
+        alert_action = QAction(get_icon("bell", 14), "替代料看板", self.mw)
         alert_action.triggered.connect(self.mw._show_alert_dashboard)
         audit_menu.addAction(alert_action)
 

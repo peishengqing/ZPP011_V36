@@ -27,6 +27,7 @@ from gui_pyside6.utils.locate import locate_row
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
+from gui_pyside6.utils.icons import add_icon_action, make_button
 
 _HIDDEN_INTERNAL = ['_read', 'data_id', '_quarantined', '_post_audit_changed', 'fingerprint']
 # 注意：'exempt' 不在隐藏列表中，因为我们需要在表格中显示它
@@ -92,12 +93,12 @@ class QuarantineDialog(QDialog):
 
         # 关键字搜索行（与失效复核一致：跨列模糊过滤隔离区列表）
         sl = QHBoxLayout()
-        sl.addWidget(QLabel("🔍 搜索："))
+        sl.addWidget(QLabel("搜索："))
         self.edit_list_search = QLineEdit()
         self.edit_list_search.setPlaceholderText("输入关键字过滤（物料编码/名称/车间/流程订单/状态/隔离原因…），留空显示全部")
         self.edit_list_search.textChanged.connect(self._on_list_search_text_changed)
         sl.addWidget(self.edit_list_search)
-        clear_btn = QPushButton("✕ 清空")
+        clear_btn = make_button("✕ 清空")
         clear_btn.setFixedWidth(60)
         clear_btn.clicked.connect(lambda: self.edit_list_search.clear())
         sl.addWidget(clear_btn)
@@ -160,13 +161,13 @@ class QuarantineDialog(QDialog):
         v.addWidget(self.table_view)
 
         bl = QHBoxLayout()
-        self.btn_restore = QPushButton("↩ 取消隔离（选中行）")
+        self.btn_restore = make_button("↩ 取消隔离（选中行）")
         self.btn_restore.clicked.connect(self.batch_restore)
         bl.addWidget(self.btn_restore)
-        export_btn = QPushButton("📎 导出 Excel")
+        export_btn = make_button("📎 导出 Excel")
         export_btn.clicked.connect(self.export_excel)
         bl.addWidget(export_btn)
-        repair_btn = QPushButton("🔧 修复一致性")
+        repair_btn = make_button("🔧 修复一致性")
         repair_btn.setToolTip("将界面中标记隔离、但 SQLite 库内缺失的行补写进库（救回内存孤儿）")
         repair_btn.clicked.connect(self._repair_consistency)
         bl.addWidget(repair_btn)
@@ -186,12 +187,12 @@ class QuarantineDialog(QDialog):
 
         # 关键字搜索行
         sl = QHBoxLayout()
-        sl.addWidget(QLabel("🔍 搜索："))
+        sl.addWidget(QLabel("搜索："))
         self.edit_expired_search = QLineEdit()
         self.edit_expired_search.setPlaceholderText("输入关键字过滤（物料编码/名称/车间/原因/说明…），留空显示全部")
         self.edit_expired_search.textChanged.connect(self._on_search_text_changed)
         sl.addWidget(self.edit_expired_search)
-        clear_btn = QPushButton("✕ 清空")
+        clear_btn = make_button("✕ 清空")
         clear_btn.setFixedWidth(60)
         clear_btn.clicked.connect(lambda: self.edit_expired_search.clear())
         sl.addWidget(clear_btn)
@@ -236,13 +237,13 @@ class QuarantineDialog(QDialog):
         v.addWidget(self.expired_view)
 
         bl = QHBoxLayout()
-        scan_btn = QPushButton("🔄 扫描失效")
+        scan_btn = make_button("🔄 扫描失效")
         scan_btn.clicked.connect(self._run_expired_scan)
         bl.addWidget(scan_btn)
-        self.btn_mark_read_expired = QPushButton("✓ 设为已读并移出隔离区（选中行）")
+        self.btn_mark_read_expired = make_button("✓ 设为已读并移出隔离区（选中行）")
         self.btn_mark_read_expired.clicked.connect(self._mark_expired_read_selected)
         bl.addWidget(self.btn_mark_read_expired)
-        self.btn_remove_expired = QPushButton("↩ 移出隔离区（选中行）")
+        self.btn_remove_expired = make_button("↩ 移出隔离区（选中行）")
         self.btn_remove_expired.clicked.connect(self._remove_expired_selected)
         bl.addWidget(self.btn_remove_expired)
         bl.addStretch()
@@ -794,20 +795,20 @@ class QuarantineDialog(QDialog):
                     else:
                         any_unread = True
         if any_unread:
-            mark_read_action = menu.addAction("✓ 标记为已读")
+            mark_read_action = add_icon_action(menu, "✓ 标记为已读")
             mark_read_action.triggered.connect(lambda: self._mark_rows_read_state(selected_rows, 1))
         if any_read:
-            mark_unread_action = menu.addAction("🔘 标记为未读")
+            mark_unread_action = add_icon_action(menu, "🔘 标记为未读")
             mark_unread_action.triggered.connect(lambda: self._mark_rows_read_state(selected_rows, 0))
         if any_unread or any_read:
             menu.addSeparator()
-        mark_read_and_remove_action = menu.addAction("✓ 设为已读并移出隔离区")
+        mark_read_and_remove_action = add_icon_action(menu, "✓ 设为已读并移出隔离区")
         mark_read_and_remove_action.triggered.connect(lambda: self._mark_read_and_remove(selected_rows))
         menu.addSeparator()
-        restore_action = menu.addAction("↩ 取消隔离（选中行）")
+        restore_action = add_icon_action(menu, "↩ 取消隔离（选中行）")
         restore_action.triggered.connect(lambda: self._restore_rows(selected_rows))
         menu.addSeparator()
-        edit_reason_action = menu.addAction("✎ 修改隔离原因（选中行）")
+        edit_reason_action = add_icon_action(menu, "✎ 修改隔离原因（选中行）")
         edit_reason_action.triggered.connect(lambda: self._edit_reason_for_rows(selected_rows))
         menu.addSeparator()
         # 豁免功能
@@ -818,7 +819,7 @@ class QuarantineDialog(QDialog):
                 if uid:
                     uid_str = str(uid)
                     is_ex = self._is_row_exempted(uid_str)
-                    exe_action = menu.addAction("✅ 取消豁免" if is_ex else "🔒 标记为已豁免")
+                    exe_action = add_icon_action(menu, "✅ 取消豁免" if is_ex else "🔒 标记为已豁免")
                     exe_action.triggered.connect(lambda _, uid=uid_str: self._toggle_exempted(uid))
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
 

@@ -123,7 +123,7 @@ class UISettingsController(QObject):
         """刷新状态栏常驻的「分析时间」标签。mode 为 '自动' 或 '手动'"""
         try:
             ts = time.strftime("%m-%d %H:%M:%S")
-            self.main_window._analysis_time_label.setText(f"🕒 分析：{mode} {ts}")
+            self.main_window._analysis_time_label.setText(f"分析：{mode} {ts}")
         except RuntimeError:
             pass
 

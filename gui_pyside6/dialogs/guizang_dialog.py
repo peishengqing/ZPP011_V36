@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 from PySide6.QtCore import QUrl, QThread, Signal
+from gui_pyside6.utils.icons import make_button
 
 # 项目根（gui_pyside6/dialogs/xxx.py → parents[2]）
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -190,7 +191,7 @@ class GuizangDialog(QDialog):
 
         # v43.258 / v43.261：AI 每期重新设计（混合外壳：模板动效全保留 +
         # 数字护栏硬门校验）
-        self._ai_btn = QPushButton("✨ AI 重新设计")
+        self._ai_btn = make_button("✨ AI 重新设计")
         self._ai_btn.setToolTip("让 AI 现场设计这一期的幻灯片内容（WebGL 背景/动效/导航"
                                 "保留模板原效果）；生成后自动核对每个数字，")
         self._ai_btn.clicked.connect(self._start_ai_build)

@@ -64,6 +64,32 @@ _ICONS = {
     "close": "M6 6l12 12M18 6L6 18",
     "check": "M5 12l5 5L20 7",
     "circle": "M12 4.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15z",
+    # ── v43.266 补齐：底部工具条 / 菜单 / 状态栏用 ──
+    "maximize": "M4 9V4h5M20 15v5h-5M20 9V4h-5M4 15v5h5",
+    "minimize": "M9 4v5H4M15 20v-5h5M15 4v5h5M9 20v-5H4",
+    "eye": "M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12z"
+           "M12 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z",
+    "unlock": "M6 11V8a6 6 0 0 1 11.5-2M5 11h14v9H5z",
+    "clock": "M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17zM12 7.5V12l3 2",
+    "timer": "M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17zM12 8v4.5M9.5 2h5",
+    "book": "M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 5.5v15",
+    "scroll": "M6 3h9l4 4v14H6zM15 3v4h4M9 12h7M9 16h7",
+    "gear": "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"
+            "M12 2.5l1.3 2.2 2.5-.6.6 2.5 2.2 1.3-1 2.3 1 2.3-2.2 1.3-.6 2.5-2.5-.6L12 21.5l-1.3-2.2-2.5.6-.6-2.5L5.4 16l1-2.3-1-2.3 2.2-1.3.6-2.5 2.5.6z",
+    "exchange": "M4 8h13l-3-3M20 16H7l3 3",
+    "sparkles": "M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6zM18.5 15l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z",
+    "chevron-down": "M6 9.5l6 6 6-6",
+    "chevron-up": "M6 14.5l6-6 6 6",
+    "chevron-left": "M14.5 6l-6 6 6 6",
+    "chevron-right": "M9.5 6l6 6-6 6",
+    "check-circle": "M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17zM8 12.2l2.8 2.8L16 9.5",
+    "close-circle": "M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17zM9 9l6 6M15 9l-6 6",
+    "paperclip": "M20 11.5l-8.2 8.2a5 5 0 0 1-7-7l8.5-8.5a3.5 3.5 0 0 1 5 5L9.7 17.7a2 2 0 0 1-2.8-2.8l7.8-7.8",
+    "folder-open": "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1H3zM3 10h18l-2 8H5z",
+    "undo": "M9 8H4V3M4.5 8.5A8 8 0 1 1 6 18",
+    "menu": "M4 7h16M4 12h16M4 17h16",
+    "tag": "M3 11V4h7l11 11-7 7L3 11zM7.5 7.5h.01",
+    "flag": "M6 21V4M6 4h12l-2.5 4L18 12H6",
 }
 
 _SVG_TMPL = ('<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" '
@@ -109,3 +135,81 @@ def get_icon(name: str, size: int = 16, color: str = None) -> QIcon:
 def has_icon(name: str) -> bool:
     """图标名是否存在（供测试/调用方探测）。"""
     return name in _ICONS
+
+
+# ══════════════════════════════════════════════════════════════════
+# v43.266：emoji → 线性图标 映射 + 按钮/菜单工厂
+# 背景：裴哥截图指出底部工具条的 🔒/⛶/👁 三个「纯符号按钮」在
+# Microsoft YaHei 字体下回退成了怪字形（油漆桶/四点/i）。纯符号按钮
+# 尤其明显——emoji 撑满 32px 按钮，一眼看不出是什么。
+# 做法：按钮/菜单项统一走 make_button / make_tool_button / add_icon_action，
+# 由工厂自动剥掉文本里的 emoji 前缀并挂上对应 SVG 图标。
+# ══════════════════════════════════════════════════════════════════
+EMOJI_TO_ICON = {
+    "➕": "plus", "⭕": "circle", "⛶": "maximize", "🗑": "trash", "✕": "close",
+    "🔍": "search", "✓": "check", "🔧": "wrench", "📋": "clipboard", "🔄": "refresh",
+    "🕒": "clock", "⏱": "timer", "📖": "book", "🔽": "funnel-lines", "🪪": "tag",
+    "📜": "scroll", "⚡": "zap", "🔒": "lock", "👁": "eye", "⚙": "gear",
+    "🔔": "bell", "⇄": "exchange", "✨": "sparkles", "🔘": "circle", "✎": "edit",
+    "✏": "edit", "💾": "save", "❌": "close-circle", "📦": "box", "📂": "folder-open",
+    "✅": "check-circle", "📎": "paperclip", "⚠": "alert", "⚠️": "alert",
+    "↩": "undo", "☰": "menu", "🎉": "check", "🔓": "unlock", "🖨": "print",
+    "🗑️": "trash", "✏️": "edit", "❌": "close-circle",
+}
+
+
+def split_emoji(text: str):
+    """把「emoji 前缀 + 文字」拆成 (图标名, 纯文字)。
+
+    无 emoji 前缀时返回 (None, 原文本)。emoji 不在映射表里时保留原样
+    （宁可留个 emoji，也不要静默丢信息）。
+    """
+    if not text:
+        return None, text
+    stripped = text.lstrip()
+    for ch in stripped:
+        if ch.isspace():
+            continue
+        icon = EMOJI_TO_ICON.get(ch)
+        if icon:
+            return icon, stripped[len(ch):].lstrip()
+        break
+    return None, text
+
+
+def make_button(text: str, size: int = 14, parent=None):
+    """QPushButton 工厂：自动剥 emoji 前缀 + 挂 SVG 图标。
+
+    替代写法：`make_button("📎 导出 Excel")` → `make_button("📎 导出 Excel")`。
+    文本里没有 emoji 时行为与 QPushButton 完全一致（不挂图标）。
+    """
+    from PySide6.QtWidgets import QPushButton
+    icon, clean = split_emoji(text)
+    btn = QPushButton(clean, parent)
+    if icon:
+        btn.setIcon(get_icon(icon, size))
+    return btn
+
+
+def make_tool_button(text: str, size: int = 14, parent=None):
+    """QToolButton 工厂（同 make_button）。"""
+    from PySide6.QtWidgets import QToolButton
+    icon, clean = split_emoji(text)
+    btn = QToolButton(parent)
+    btn.setText(clean)
+    if icon:
+        btn.setIcon(get_icon(icon, size))
+        from PySide6.QtCore import Qt
+        btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+    return btn
+
+
+def add_icon_action(menu, text: str, handler=None, size: int = 14):
+    """菜单项工厂：自动剥 emoji 前缀 + 挂 SVG 图标（v43.266 统一入口）。"""
+    from PySide6.QtGui import QAction
+    icon, clean = split_emoji(text)
+    act = QAction(get_icon(icon, size) if icon else None, clean, menu)
+    if handler is not None:
+        act.triggered.connect(handler)
+    menu.addAction(act)
+    return act

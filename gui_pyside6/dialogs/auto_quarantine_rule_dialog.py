@@ -31,6 +31,7 @@ from core.auto_quarantine import (
     load_auto_quarantine_config,
     save_auto_quarantine_config,
 )
+from gui_pyside6.utils.icons import make_button
 
 
 class AutoQuarantineRuleWidget(QWidget):
@@ -59,8 +60,8 @@ class AutoQuarantineRuleWidget(QWidget):
         head = QHBoxLayout()
         head.addWidget(QLabel("规则列表："))
         head.addStretch()
-        self.btn_add = QPushButton("➕ 新增")
-        self.btn_del = QPushButton("🗑 删除")
+        self.btn_add = make_button("➕ 新增")
+        self.btn_del = make_button("🗑 删除")
         self.btn_up = QPushButton("↑ 上移")
         self.btn_down = QPushButton("↓ 下移")
         for b in (self.btn_add, self.btn_del, self.btn_up, self.btn_down):

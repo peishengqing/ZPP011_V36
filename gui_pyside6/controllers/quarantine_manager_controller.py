@@ -409,12 +409,14 @@ class QuarantineManagerController:
         if not hasattr(self.mw, 'action_btn_quarantine'):
             return
         n = len(expired_list) if expired_list else 0
+        # v43.266：全仓 emoji 去化——旧工具栏隔离区按钮（v43.218 后已不在界面上，
+        # 仅作角标兜底）文字去 emoji 前缀。
         if n > 0:
-            self.mw.action_btn_quarantine.setText(f"⚠️ 隔离区 ({n}失效)")
+            self.mw.action_btn_quarantine.setText(f"隔离区 ({n}失效)")
             self.mw.action_btn_quarantine.setToolTip(
                 f"隔离区：{n} 条记录的入区原因已失效（如负损已补投相符），点击查看")
         else:
-            self.mw.action_btn_quarantine.setText("⚠️ 隔离区")
+            self.mw.action_btn_quarantine.setText("隔离区")
             self.mw.action_btn_quarantine.setToolTip("隔离区：查看/管理疑难记录")
 
     # ═══════════════ 失效扫描/弹窗 ═══════════════

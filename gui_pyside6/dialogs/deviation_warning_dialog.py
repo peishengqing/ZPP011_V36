@@ -32,6 +32,7 @@ from gui_pyside6.utils.semi_class import (
     SEMI_CLASS_FOOD, SEMI_CLASS_DRINK, merge_semi_class_values, ensure_semi_class_column,
 )
 from gui_pyside6.utils.cascade_filter import replace_combo_items, cascade_options
+from gui_pyside6.utils.icons import add_icon_action, make_button
 
 
 
@@ -379,7 +380,7 @@ class DeviationWarningDialog(QDialog):
         self.btn_batch_unread.clicked.connect(self.batch_mark_unread)
         self._row4.addWidget(self.btn_batch_unread)
 
-        self.btn_fullscreen = QPushButton("⛶ 放大")
+        self.btn_fullscreen = make_button("⛶ 放大")
         self.btn_fullscreen.setMinimumWidth(80)
         self.btn_fullscreen.clicked.connect(self.toggle_fullscreen)
         self._row4.addWidget(self.btn_fullscreen)
@@ -447,7 +448,7 @@ class DeviationWarningDialog(QDialog):
 
         # ---- 底部按钮 ----
         btn_layout = QHBoxLayout()
-        export_btn = QPushButton("📎 导出 Excel")
+        export_btn = make_button("📎 导出 Excel")
         export_btn.clicked.connect(self.export_excel)
         close_btn = QPushButton("关闭")
         close_btn.clicked.connect(self.accept)
@@ -1260,11 +1261,11 @@ class DeviationWarningDialog(QDialog):
             selected_rows = [row]
 
         menu = QMenu()
-        mark_read_action = menu.addAction("✅ 标记为已读（选中行）")
+        mark_read_action = add_icon_action(menu, "✅ 标记为已读（选中行）")
         mark_read_action.triggered.connect(
             lambda: self._mark_selected_rows_read(selected_rows)
         )
-        mark_unread_action = menu.addAction("⭕ 标记为未读（选中行）")
+        mark_unread_action = add_icon_action(menu, "⭕ 标记为未读（选中行）")
         mark_unread_action.triggered.connect(
             lambda: self._mark_selected_rows_unread(selected_rows)
         )
@@ -1278,10 +1279,10 @@ class DeviationWarningDialog(QDialog):
             except Exception:
                 first_is_q = False
         if first_is_q:
-            q_action = menu.addAction("↩ 取消隔离（选中行）")
+            q_action = add_icon_action(menu, "↩ 取消隔离（选中行）")
             q_action.triggered.connect(lambda: self._set_quarantine(selected_rows, False))
         else:
-            q_action = menu.addAction("⚠️ 移入隔离区（选中行）")
+            q_action = add_icon_action(menu, "⚠️ 移入隔离区（选中行）")
             q_action.triggered.connect(lambda: self._set_quarantine(selected_rows, True))
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
 
@@ -1661,7 +1662,7 @@ class DeviationWarningDialog(QDialog):
         # showMaximized 是「窗口最大化」，保留任务栏可见，与主窗口行为一致。
         if self.isMaximized():
             self.showNormal()
-            self.btn_fullscreen.setText("⛶ 放大")
+            self.btn_fullscreen.setText("放大")
             self._row2_widget.setVisible(False)
             self._row3_widget.setVisible(False)
             self._row4_widget.setVisible(False)
@@ -1669,7 +1670,7 @@ class DeviationWarningDialog(QDialog):
             self._sync_more_filters_btn(False)
         else:
             self.showMaximized()
-            self.btn_fullscreen.setText("⛶ 还原")
+            self.btn_fullscreen.setText("还原")
             self._row2_widget.setVisible(True)
             self._row3_widget.setVisible(True)
             self._row4_widget.setVisible(True)

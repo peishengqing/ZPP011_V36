@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QWidget,
 )
 from PySide6.QtCore import Qt
+from gui_pyside6.utils.icons import make_button
 
 
 class WechatDraftConfigDialog(QDialog):
@@ -62,17 +63,17 @@ class WechatDraftConfigDialog(QDialog):
         # 按钮区域
         btn_layout = QHBoxLayout()
 
-        btn_add = QPushButton("➕ 添加字段")
+        btn_add = make_button("➕ 添加字段")
         btn_add.clicked.connect(self._add_field)
-        btn_edit = QPushButton("✏️ 编辑字段")
+        btn_edit = make_button("✏️ 编辑字段")
         btn_edit.clicked.connect(self._edit_field)
-        btn_del = QPushButton("🗑️ 删除字段")
+        btn_del = make_button("🗑️ 删除字段")
         btn_del.clicked.connect(self._delete_field)
-        btn_reset = QPushButton("🔄 恢复默认")
+        btn_reset = make_button("🔄 恢复默认")
         btn_reset.clicked.connect(self._reset_default)
-        btn_save = QPushButton("💾 保存配置")
+        btn_save = make_button("💾 保存配置")
         btn_save.clicked.connect(self._save_config)
-        btn_cancel = QPushButton("❌ 取消")
+        btn_cancel = make_button("❌ 取消")
         btn_cancel.clicked.connect(self.reject)
 
         btn_layout.addWidget(btn_add)

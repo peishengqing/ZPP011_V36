@@ -17,6 +17,7 @@ from PySide6.QtCore import Qt
 
 from domain.alt_material.alt_manager import load_alt_pairs, save_alt_pairs, DEFAULT_ALT_PAIRS
 from gui_pyside6.dialogs.import_wizard_dialog import ImportWizard
+from gui_pyside6.utils.icons import make_button
 
 
 class AltController(QObject):
@@ -230,7 +231,7 @@ class AltController(QObject):
         outer.addLayout(row)
 
         btns = QHBoxLayout()
-        swap_btn = QPushButton("⇄ 交换 A/B")
+        swap_btn = make_button("⇄ 交换 A/B")
         add_btn = QPushButton("添加")
         add_btn.setDefault(True)
         cancel_btn = QPushButton("取消")

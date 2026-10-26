@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
 
 from gui_pyside6.models.data_frame_model import build_display_key_list
 from gui_pyside6.widgets.toast import toast
+from gui_pyside6.utils.icons import get_icon
+from gui_pyside6.dialogs.col_filter_ui import set_col_filter_button_on
 
 
 class ColumnController:
@@ -35,11 +37,13 @@ class ColumnController:
         header = self.mw.table_view.horizontalHeader()
         if locked:
             header.setSectionResizeMode(QHeaderView.Fixed)
-            self.mw.lock_btn.setText("🔓")
+            # v43.266：锁按钮已图标化（make_button("🔒")），状态切换改 setIcon，
+            # 原来的 setText("🔓") 会把图标洗回 emoji 字形。
+            self.mw.lock_btn.setIcon(get_icon("unlock", 14))
             self.mw.statusBar().showMessage("列宽已锁定", 2000)
         else:
             header.setSectionResizeMode(QHeaderView.Interactive)
-            self.mw.lock_btn.setText("🔒")
+            self.mw.lock_btn.setIcon(get_icon("lock", 14))
             self.mw.statusBar().showMessage("列宽已解锁，可拖拽调整", 2000)
 
     def _toggle_table_fullscreen(self):
@@ -337,7 +341,7 @@ class ColumnController:
             return
         col_set = getattr(self, "_filtered_col_set", set()) or set()
         if not col_set:
-            label.setText("🔽 列头筛选：0 列")
+            label.setText("列头筛选：0 列")
             label.show()
             return
         # 列号 → 列名（display_columns 与表头逻辑列一致；取不到的显示列号）
@@ -351,7 +355,7 @@ class ColumnController:
                 names.append(f"列{c}")
         shown = names[:5]
         more = len(names) - len(shown)
-        text = "🔽 列头筛选：%d 列（%s" % (len(names), "、".join(shown))
+        text = "列头筛选：%d 列（%s" % (len(names), "、".join(shown))
         if more > 0:
             text += " …+%d" % more
         text += "）"
@@ -368,10 +372,10 @@ class ColumnController:
         self.mw._col_filter_mode = not self.mw._col_filter_mode
         btn = self.mw.action_btn_col_filter
         btn.setChecked(self.mw._col_filter_mode)
-        if self.mw._col_filter_mode:
-            btn.setText("🔽 列头筛选✓")
-        else:
-            btn.setText("🔽 列头筛选")
+        # v43.266：工具栏按钮已图标化（funnel 图标 + 「列头筛选」文字），
+        # 状态切换走共用函数 set_col_filter_button_on（只改文字、不洗掉图标）
+        set_col_filter_button_on(btn, self.mw._col_filter_mode)
+        if not self.mw._col_filter_mode:
             # 关闭模式时顺手关掉可能还开着的浮层
             if self.mw._col_filter_popup is not None:
                 try:

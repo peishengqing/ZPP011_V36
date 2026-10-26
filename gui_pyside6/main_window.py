@@ -78,6 +78,7 @@ from gui_pyside6.controllers.analysis_controller import AnalysisController
 from gui_pyside6.controllers.audit_controller import AuditController
 from gui_pyside6.controllers.export_controller import ExportController
 from gui_pyside6.controllers.alt_controller import AltController
+from gui_pyside6.utils.icons import add_icon_action
 from gui_pyside6.controllers.column_controller import ColumnController
 from gui_pyside6.controllers.filter_preset_controller import FilterPresetController
 from gui_pyside6.controllers.dashboard_controller import DashboardController
@@ -251,7 +252,7 @@ class MainWindow(QMainWindow):
         self.audit_controller.manual_marked.connect(self._on_manual_marked)
         # 状态栏常驻「分析时间」：最近一次分析的触发方式(自动/手动) + 完成时刻
         # （windowed exe 无控制台，自动读取/自动分析后用户无从知晓何时发生，故常驻显示）
-        self._analysis_time_label = QLabel("🕒 分析：—")
+        self._analysis_time_label = QLabel("分析：—")
         self._analysis_time_label.setObjectName("analysisTimeLabel")
         self._analysis_time_label.setToolTip(
             "最近一次分析的触发方式与时刻：手动=点「分析」按钮/F5；自动=文件夹监控自动读取后自动分析"
@@ -263,7 +264,7 @@ class MainWindow(QMainWindow):
         # 状态栏常驻「已读计数」：自动 N / 手动 M（每批数据清零，见 _on_file_loaded）
         self._auto_read_count = 0
         self._manual_read_count = 0
-        self._read_counter_label = QLabel("📖 已读：自动 0 / 手动 0")
+        self._read_counter_label = QLabel("已读：自动 0 / 手动 0")
         self._read_counter_label.setObjectName("readCounterLabel")
         self._read_counter_label.setToolTip("本次数据中自动已读 / 手动标记已读的累计条数")
         # 醒目样式（加粗蓝字 + 左边框分隔）在两份主题 QSS 的 QLabel#readCounterLabel 里
@@ -272,9 +273,9 @@ class MainWindow(QMainWindow):
         # 状态栏常驻「列头筛选提示」：显示当前已设取值过滤的列名（N 列）
         # 修复（2026-10-01）：列头筛选后原本只有表头小漏斗标，无法判断哪些列被筛过；
         # 现常驻显示已筛选列名，_update_col_filter_hint() 在筛选增减/重置/重新分析时同步刷新。
-        self._col_filter_hint_label = QLabel("🔽 列头筛选：0 列")
+        self._col_filter_hint_label = QLabel("列头筛选：0 列")
         self._col_filter_hint_label.setObjectName("colFilterHintLabel")
-        self._col_filter_hint_label.setToolTip("当前已设列头取值过滤的列（橙色三角标记）；点 🔽 列头筛选 按钮后点任意列头弹取值勾选浮层")
+        self._col_filter_hint_label.setToolTip("当前已设列头取值过滤的列（橙色三角标记）；点「列头筛选」按钮后点任意列头弹取值勾选浮层")
         # 样式在两份主题 QSS 的 QLabel#colFilterHintLabel 里，代码侧只保留 objectName
         self._col_filter_hint_label.show()  # 无筛选时显示「0 列」，让用户知道哪些列被筛过
         # v43.143：提示标签改为「可点即清除」入口。此前它只是纯 QLabel，用户想取消筛选
@@ -510,13 +511,13 @@ class MainWindow(QMainWindow):
                 QApplication.instance().setStyleSheet("")
             self._is_dark_theme = False
             self.title_bar.set_theme_light()
-            toast("☀️ 已切换至亮色主题", "info", parent=self)
+            toast("已切换至亮色主题", "info", parent=self)
         else:
             # 切换到暗色主题
             self._load_dark_theme()
             self._is_dark_theme = True
             self.title_bar.set_theme_dark()
-            toast("🌙 已切换至暗色主题", "info", parent=self)
+            toast("已切换至暗色主题", "info", parent=self)
 
     # -----------------------------------------------------------
     # 业务方法
@@ -945,7 +946,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "提示", "分析/报告生成进行中，请稍候")
                 return
             if hasattr(self, 'preview_label') and self.preview_label:
-                self.preview_label.setText("📂 源文件已修改，正在重新读取…")
+                self.preview_label.setText("源文件已修改，正在重新读取…")
             self._pending_analysis_after_reread = True
             self._file_worker = _FileReadWorker(self.current_input_file)
             self._file_worker.loaded.connect(self._on_reread_then_analyze)
@@ -983,11 +984,11 @@ class MainWindow(QMainWindow):
         self._current_step = "准备中"
         self.main_table.reset_step_icons()
         self.main_table.set_progress_visible(True)  # 分析开始自动展开进度面板
-        self.timer_lbl.setText("⏱ 00:00")
+        self.timer_lbl.setText("00:00")
         # 状态栏「分析时间」先显示进行中 + 触发方式（自动=监控触发 / 手动=点按钮）
         try:
             _mode = "自动" if getattr(self, "_monitor_auto_loading", False) else "手动"
-            self._analysis_time_label.setText(f"🕒 分析中…（{_mode}）")
+            self._analysis_time_label.setText(f"分析中…（{_mode}）")
         except RuntimeError:
             pass
 
@@ -1010,7 +1011,7 @@ class MainWindow(QMainWindow):
         self.main_table.update_step_icons(percent, step_name)
         elapsed = int(time.perf_counter() - getattr(self, "_analysis_start_ts", 0))
         m, s = divmod(elapsed, 60)
-        self.timer_lbl.setText(f"⏱ {m:02d}:{s:02d}")
+        self.timer_lbl.setText(f"{m:02d}:{s:02d}")
         self.progress_label.setText(f"{step_name}  {percent}%")
 
     def _on_analysis_finished_ui(self, df):
@@ -1029,8 +1030,8 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         self.start_btn.setEnabled(True)
         elapsed = self._format_elapsed()
-        self.progress_label.setText(f"✅ 完成 ({elapsed})")
-        toast(f"✅ 分析完成，共 {len(df)} 条记录 ({elapsed})", "success", parent=self)
+        self.progress_label.setText(f"完成 ({elapsed})")
+        toast(f"分析完成，共 {len(df)} 条记录 ({elapsed})", "success", parent=self)
         self.statusBar().showMessage("分析完成，正在加载结果...")
         QApplication.processEvents()
 
@@ -1164,7 +1165,7 @@ class MainWindow(QMainWindow):
         计时器由 _countdown_timer 继续走（不再卡住）。
         """
         try:
-            self.progress_label.setText(f"📦 完整报告缓存：{step_name}（{percent}%）")
+            self.progress_label.setText(f"完整报告缓存：{step_name}（{percent}%）")
         except RuntimeError:
             pass  # 窗口已销毁（worker 可能比窗口活得久）
 
@@ -1217,7 +1218,7 @@ class MainWindow(QMainWindow):
         try:
             _analysis_mode = "自动" if getattr(self, "_monitor_auto_loading", False) else "手动"
             self._analysis_time_label.setText(
-                f"🕒 分析失败（{_analysis_mode}）{time.strftime('%m-%d %H:%M:%S')}"
+                f"分析失败（{_analysis_mode}）{time.strftime('%m-%d %H:%M:%S')}"
             )
         except RuntimeError:
             pass
@@ -1225,7 +1226,7 @@ class MainWindow(QMainWindow):
         if getattr(self, "_monitor_auto_loading", False):
             self._monitor_auto_loading = False
             self.start_btn.setEnabled(True)
-            self.progress_label.setText("❌ 监控加载失败")
+            self.progress_label.setText("监控加载失败")
             self.main_table.reset_step_icons()
             # 从已加载指纹中移除，让监控下次扫描继续尝试
             if self._monitor_current_key:
@@ -1234,13 +1235,13 @@ class MainWindow(QMainWindow):
                 self._monitor_current_key = None
             _fn = os.path.basename(self.current_input_file or "新文件")
             if "被占用" in error_msg or "锁文件" in error_msg:
-                toast(f"⚠️ 文件仍被占用，监控将自动重试：{_fn}", "warning", parent=self)
+                toast(f"文件仍被占用，监控将自动重试：{_fn}", "warning", parent=self)
                 self.log(f"监控自动加载失败（将重试）：{error_msg}", "warning")
             else:
-                toast(f"⚠️ 监控自动加载失败：{error_msg}", "warning", parent=self)
+                toast(f"监控自动加载失败：{error_msg}", "warning", parent=self)
                 self.log(f"监控自动加载失败：{error_msg}", "error")
             return
-        self.progress_label.setText("❌ 错误（可重试）")
+        self.progress_label.setText("错误（可重试）")
         self.start_btn.setEnabled(True)
         self.main_table.reset_step_icons()
         QMessageBox.critical(self, "错误", error_msg)
@@ -1251,7 +1252,7 @@ class MainWindow(QMainWindow):
         self._countdown_seconds = 0
         self._analysis_start_ts = time.perf_counter()
         self._current_step = "AI审核"
-        self.timer_lbl.setText("⏱ 00:00")
+        self.timer_lbl.setText("00:00")
         if not hasattr(self, "_countdown_timer"):
             self._countdown_timer = QTimer(self)
             self._countdown_timer.timeout.connect(self._update_countdown)
@@ -1262,7 +1263,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(percent)
         elapsed = int(time.perf_counter() - getattr(self, "_analysis_start_ts", 0))
         m, s = divmod(elapsed, 60)
-        self.timer_lbl.setText(f"⏱ {m:02d}:{s:02d}")
+        self.timer_lbl.setText(f"{m:02d}:{s:02d}")
         self.progress_label.setText(f"AI审核: {current}/{total}")
 
     def _on_ai_finished_ui(self, updated_df):
@@ -1274,7 +1275,7 @@ class MainWindow(QMainWindow):
         self._stop_countdown()
         self.progress_bar.setVisible(False)
         elapsed = self._format_elapsed()
-        self.progress_label.setText(f"✅ 审核完成 ({elapsed})")
+        self.progress_label.setText(f"审核完成 ({elapsed})")
         toast(f"✅ 审核完成 ({elapsed})", "success", parent=self)
 
         total = len(updated_df)
@@ -1324,7 +1325,7 @@ class MainWindow(QMainWindow):
         # 先刷新一次事件队列，避免主线程因前面积压的 UI 更新被 Windows 标记为未响应
         QApplication.processEvents()
         box = QMessageBox(self)
-        box.setWindowTitle("⚠️ 预警通知")
+        box.setWindowTitle("预警通知")
         box.setIcon(QMessageBox.Question)
         box.setText(f"发现 {count} 条新替代料预警（含差异/超阈值），是否查看明细？")
         yes_btn = box.addButton("是", QMessageBox.YesRole)
@@ -1408,7 +1409,7 @@ class MainWindow(QMainWindow):
         self.input_file_edit.setToolTip(file_path)
         # 后台读取，避免大文件阻塞主线程导致"未响应"
         if hasattr(self, 'preview_label') and self.preview_label:
-            self.preview_label.setText("📂 正在读取文件…")
+            self.preview_label.setText("正在读取文件…")
         self._file_worker = _FileReadWorker(file_path)
         self._file_worker.loaded.connect(self._on_file_loaded)
         self._file_worker.failed.connect(self._on_file_failed)
@@ -1463,7 +1464,7 @@ class MainWindow(QMainWindow):
             self._update_read_counter()
             # 新一批数据：分析时间标签重置（上一批的分析结果不再适用）
             if hasattr(self, "_analysis_time_label"):
-                self._analysis_time_label.setText("🕒 分析：—")
+                self._analysis_time_label.setText("分析：—")
             # 缓存 Data sheet DataFrame，点击分析时直接复用，跳过 ~20-30s 重复文件 IO
             self._cached_input_df = df
             # v43.180：连同源文件的修改时间/大小一起记下，供分析前比对
@@ -1688,7 +1689,7 @@ class MainWindow(QMainWindow):
             return
         if self.alt_controller.show_add_from_rows_dialog(self, a, b):
             # add_pair 已 emit data_changed → 刷新替代料列表并重算净偏差
-            toast(f"✅ 已添加替代料配对：{a[1]} ↔ {b[1]}", "success", parent=self)
+            toast(f"已添加替代料配对：{a[1]} ↔ {b[1]}", "success", parent=self)
 
     def _delete_alt_pair(self):
         current_row = self.alt_table.currentRow()
@@ -1978,7 +1979,7 @@ class MainWindow(QMainWindow):
             items = self._count_unread_items()
             if not items:
                 if force:
-                    toast("ℹ️ 主表无任何未读数据可统计", "info", parent=self, duration=4000)
+                    toast("主表无任何未读数据可统计", "info", parent=self, duration=4000)
                 return
             all_zero = all(it["count"] == 0 for it in items)
             if all_zero and not force:
@@ -2079,7 +2080,7 @@ class MainWindow(QMainWindow):
             if rate_col:
                 rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
                 count = int((rates.abs() > 30).sum())
-                self.statusBar().showMessage(f"🔴 真异常 {count} 条（已排除替代料）", 5000)
+                self.statusBar().showMessage(f"真异常 {count} 条（已排除替代料）", 5000)
         elif card_type == 'unread':
             if self.filter_panel.read_status_combo.currentText() == '未读':
                 self.filter_panel.set_read_status_filter('全部')
@@ -2571,12 +2572,12 @@ class MainWindow(QMainWindow):
         copy_action.triggered.connect(
             lambda: self.audit_controller.copy_material_code(row_data, self.statusBar().showMessage)
         )
-        profile_action = menu.addAction("🪪 查看物料画像")
+        profile_action = add_icon_action(menu, "🪪 查看物料画像")
         profile_action.triggered.connect(
             lambda: self._show_material_profile(row_data.get('物料编码', ''))
         )
         menu.addSeparator()
-        add_sel_action = menu.addAction("➕ 添加为替代料配对（选中2行）")
+        add_sel_action = add_icon_action(menu, "➕ 添加为替代料配对（选中2行）")
         add_sel_action.triggered.connect(lambda: self._add_alt_pair_from_selection())
         menu.addSeparator()
         mark_read_action = menu.addAction("标记为已读")
@@ -2602,16 +2603,16 @@ class MainWindow(QMainWindow):
             except Exception:
                 already_q = False
         if already_q:
-            q_action = menu.addAction("↩ 取消隔离（选中行）")
+            q_action = add_icon_action(menu, "↩ 取消隔离（选中行）")
             q_action.triggered.connect(lambda: self._set_quarantine(selected_rows, False))
         else:
-            q_action = menu.addAction("⚠️ 移入隔离区（选中行）")
+            q_action = add_icon_action(menu, "⚠️ 移入隔离区（选中行）")
             q_action.triggered.connect(lambda: self._set_quarantine(selected_rows, True))
         menu.addSeparator()
-        repair_action = menu.addAction("🔧 修复隔离区一致性（补写库内缺失行）")
+        repair_action = add_icon_action(menu, "🔧 修复隔离区一致性（补写库内缺失行）")
         repair_action.triggered.connect(lambda: self._repair_quarantine_consistency())
         # 复制为微信草稿（用于快速沟通）
-        wechat_action = menu.addAction("📋 复制为微信草稿")
+        wechat_action = add_icon_action(menu, "📋 复制为微信草稿")
         wechat_action.triggered.connect(lambda: self._copy_wechat_draft(selected_rows))
         # 复制选中区域（原功能保留）
         copy_region_action = menu.addAction("复制选中区域")
@@ -2742,7 +2743,7 @@ class MainWindow(QMainWindow):
         if dlg.exec_() == QDialog.DialogCode.Accepted:
             cfg = load_auto_quarantine_config()
             self.action_btn_auto_q.setToolTip("按规则自动移入隔离区：" + build_all_summary(cfg))
-            toast("✅ 自动隔离规则已更新", parent=self)
+            toast("自动隔离规则已更新", parent=self)
 
     def _open_rule_center(self, open_tab=0):
         """打开「规则中心」：Tab1 自动隔离区 + Tab2 自动已读，两页共享保存。"""
@@ -2750,7 +2751,7 @@ class MainWindow(QMainWindow):
         from gui_pyside6.dialogs.auto_rules_center_dialog import AutoRulesCenterDialog
         dlg = AutoRulesCenterDialog(self, open_tab=open_tab)
         if dlg.exec_() == QDialog.DialogCode.Accepted:
-            toast("✅ 规则已更新（自动隔离 + 自动已读）", parent=self)
+            toast("规则已更新（自动隔离 + 自动已读）", parent=self)
 
     def _open_quarantine_dialog(self):
         """顶部按钮：打开隔离区弹窗"""
@@ -2827,7 +2828,7 @@ class MainWindow(QMainWindow):
         if elapsed != self._countdown_seconds:
             self._countdown_seconds = elapsed
         m, s = divmod(self._countdown_seconds, 60)
-        self.timer_lbl.setText(f"⏱ {m:02d}:{s:02d}")
+        self.timer_lbl.setText(f"{m:02d}:{s:02d}")
 
     def _stop_countdown(self):
         if hasattr(self, "_countdown_timer") and self._countdown_timer is not None:
@@ -2919,7 +2920,7 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(info_frame)
 
         # 版本日志区
-        log_label = QLabel("📜 版本日志")
+        log_label = QLabel("版本日志")
         log_label.setObjectName("aboutSectionLabel")
         main_layout.addWidget(log_label)
 
@@ -3009,14 +3010,14 @@ class MainWindow(QMainWindow):
             prev_sizes = self.body_splitter.sizes()
             # 将左侧栏宽度让给右侧表格区域
             self.body_splitter.setSizes([0, prev_sizes[1], prev_sizes[2] + prev_sizes[0]])
-            self.action_btn_left_panel.setText("☰ 显示左侧栏")
+            self.action_btn_left_panel.setText("显示左侧栏")
             self.action_btn_left_panel.setChecked(False)
         else:
             self.left_panel.setVisible(True)
             prev_sizes = self.body_splitter.sizes()
             # left_panel | filter_panel | table_area，左侧栏恢复约 360px
             self.body_splitter.setSizes([360, prev_sizes[1], max(prev_sizes[2] - 360, 200)])
-            self.action_btn_left_panel.setText("☰ 隐藏左侧栏")
+            self.action_btn_left_panel.setText("隐藏左侧栏")
             self.action_btn_left_panel.setChecked(True)
 
     def _toggle_filter_panel(self):
@@ -3026,7 +3027,7 @@ class MainWindow(QMainWindow):
             prev_sizes = self.body_splitter.sizes()
             # 将 FilterPanel 的宽度加到右侧表格区域
             self.body_splitter.setSizes([prev_sizes[0], 0, prev_sizes[2] + prev_sizes[1]])
-            self.action_btn_filter.setText("🔍 显示筛选")
+            self.action_btn_filter.setText("显示筛选")
             self.action_btn_filter.setChecked(False)
         else:
             self.filter_panel.setVisible(True)
@@ -3035,7 +3036,7 @@ class MainWindow(QMainWindow):
             prev_sizes = self.body_splitter.sizes()
             # left_panel | filter_panel | table_area
             self.body_splitter.setSizes([prev_sizes[0], 440, prev_sizes[2]])
-            self.action_btn_filter.setText("🔍 隐藏筛选")
+            self.action_btn_filter.setText("隐藏筛选")
             self.action_btn_filter.setChecked(True)
 
     def _toggle_alt_panel(self):

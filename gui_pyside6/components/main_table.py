@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 import re
 
 from PySide6.QtCore import Qt, Signal, QObject
+from gui_pyside6.utils.icons import make_button
 
 # 分析进度步骤图标（沿用 v31 经典布局：一排图标 + 进度条 + 状态文字）
 # 分析进度步骤图标（沿用 v31 经典布局：一排图标 + 进度条 + 状态文字）
@@ -61,7 +62,7 @@ class MainTableComponent(QObject):
         # 标题栏
         progress_title_layout = QHBoxLayout()
         progress_title_layout.setContentsMargins(8, 4, 8, 4)
-        progress_title = QLabel("⚡ 分析进度")
+        progress_title = QLabel("分析进度")
         progress_title.setProperty("class", "statsCardTitle")
         progress_title_layout.addWidget(progress_title)
         progress_title_layout.addStretch()
@@ -106,7 +107,7 @@ class MainTableComponent(QObject):
         step_row.addWidget(self.progress_label)
 
         # 计时器放在步骤图标同一行右侧
-        self.timer_lbl = QLabel("⏱ 00:00")
+        self.timer_lbl = QLabel("00:00")
         self.timer_lbl.setObjectName("timerLabel")
         step_row.addWidget(self.timer_lbl)
 
@@ -167,7 +168,7 @@ class MainTableComponent(QObject):
         self.unit_summary_btn.setMaximumWidth(80)
         summary_layout.addWidget(self.unit_summary_btn)
 
-        self.lock_btn = QPushButton("🔒")
+        self.lock_btn = make_button("🔒")
         self.lock_btn.setCheckable(True)
         self.lock_btn.setObjectName("lockBtn")
         self.lock_btn.setToolTip("锁定/解锁列宽")
@@ -175,7 +176,7 @@ class MainTableComponent(QObject):
         self.lock_btn.clicked.connect(self.mw._toggle_column_lock)
         summary_layout.addWidget(self.lock_btn)
 
-        self.fullscreen_btn = QPushButton("⛶")
+        self.fullscreen_btn = make_button("⛶")
         self.fullscreen_btn.setCheckable(True)
         self.fullscreen_btn.setObjectName("fullscreenBtn")
         self.fullscreen_btn.setToolTip("全屏")
@@ -183,7 +184,7 @@ class MainTableComponent(QObject):
         self.fullscreen_btn.clicked.connect(self.mw._toggle_table_fullscreen)
         summary_layout.addWidget(self.fullscreen_btn)
 
-        self.col_hide_btn = QPushButton("👁")
+        self.col_hide_btn = make_button("👁")
         self.col_hide_btn.setObjectName("colHideBtn")
         self.col_hide_btn.setToolTip("隐藏列")
         self.col_hide_btn.setMaximumWidth(32)

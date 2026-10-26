@@ -25,6 +25,7 @@ from gui_pyside6.widgets.filter_panel import _color_icon
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
+from gui_pyside6.utils.icons import add_icon_action, make_button
 
 
 class AlertDialog(QDialog):
@@ -85,7 +86,7 @@ class AlertDialog(QDialog):
         filter_layout.addWidget(self.btn_batch_unread)
 
         # 放大按钮
-        self.btn_fullscreen = QPushButton("⛶ 放大")
+        self.btn_fullscreen = make_button("⛶ 放大")
         self.btn_fullscreen.setMinimumWidth(80)
         self.btn_fullscreen.clicked.connect(self.toggle_fullscreen)
         filter_layout.addWidget(self.btn_fullscreen)
@@ -188,7 +189,7 @@ class AlertDialog(QDialog):
 
         # ---- 底部按钮 ----
         btn_layout = QHBoxLayout()
-        export_btn = QPushButton("📎 导出 Excel")
+        export_btn = make_button("📎 导出 Excel")
         export_btn.clicked.connect(self.export_excel)
         close_btn = QPushButton("关闭")
         close_btn.clicked.connect(self.accept)
@@ -635,11 +636,11 @@ class AlertDialog(QDialog):
             selected_rows = [row]
 
         menu = QMenu()
-        mark_read_action = menu.addAction("✅ 标记为已读（选中行）")
+        mark_read_action = add_icon_action(menu, "✅ 标记为已读（选中行）")
         mark_read_action.triggered.connect(
             lambda: self._mark_selected_rows_read(selected_rows)
         )
-        mark_unread_action = menu.addAction("⭕ 标记为未读（选中行）")
+        mark_unread_action = add_icon_action(menu, "⭕ 标记为未读（选中行）")
         mark_unread_action.triggered.connect(
             lambda: self._mark_selected_rows_unread(selected_rows)
         )
@@ -1010,10 +1011,10 @@ class AlertDialog(QDialog):
         from PySide6.QtCore import QTimer
         if self.isMaximized():
             self.showNormal()
-            self.btn_fullscreen.setText("⛶ 放大")
+            self.btn_fullscreen.setText("放大")
         else:
             self.showMaximized()
-            self.btn_fullscreen.setText("⛶ 还原")
+            self.btn_fullscreen.setText("还原")
         # 修复：放大/还原后表格列宽未随新窗口宽度重排，导致右侧留白、列显示不全。
         # 延迟到布局更新后再按可见宽度分配列宽（先 content 再等分剩余宽度）。
         QTimer.singleShot(0, self._fit_table_columns)

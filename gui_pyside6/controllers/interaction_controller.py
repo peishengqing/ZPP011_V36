@@ -19,6 +19,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QGroupBox, QMessageBox
 
 from gui_pyside6.widgets.toast import toast
+from gui_pyside6.utils.icons import make_button
 
 
 class InteractionController:
@@ -247,7 +248,7 @@ class InteractionController:
             QMessageBox.critical(self.mw, "错误", f"双击 failed:\n{e}")
 
     def _show_row_detail(self, row_data):
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QDialogButtonBox, QPushButton
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QDialogButtonBox
         from PySide6.QtCore import Qt
 
         def _val(*keys):
@@ -307,7 +308,7 @@ class InteractionController:
         btn_layout.addStretch()
 
         # 复制图片按钮
-        copy_img_btn = QPushButton("📋 复制图片")
+        copy_img_btn = make_button("📋 复制图片")
         def _copy_dialog_as_image():
             # 捕获对话框的屏幕图像
             try:
