@@ -1045,3 +1045,243 @@ QWidget#colFilterPopup {
     background-color: #262521;
     border: 1px solid #55544E;
 }
+
+/* ============================================================
+   筛选面板样式模块 (v43.266) - 暗色主题
+   目标：解决视觉不舒适感，统一间距、配色与布局，提升一致性与用户体验
+   ============================================================ */
+
+/* ── 筛选面板整体 ── */
+#filterPanel {
+    background-color: #2A2A27;
+    color: #EAE8E4;
+    font-family: inherit;
+    font-size: 12px;
+    margin: 0;
+    padding: 0;
+}
+
+/* 内容区域滚动 */
+#filterPanel QScrollArea {
+    border: none;
+    background-color: transparent;
+    padding: 4px;
+}
+#filterPanel QScrollArea::viewport {
+    background-color: transparent;
+}
+
+/* ── 标题栏 ── */
+#filterPanel #title_bar {
+    background-color: #232220;
+    border-bottom: 2px solid #3E3D38;
+    padding: 8px 12px;
+}
+#filterPanel #collapse_btn {
+    background-color: transparent;
+    border: 1px solid #3E3D38;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 10px;
+    min-width: 32px;
+    color: #A8A79E;
+}
+#filterPanel #collapse_btn:hover {
+    background-color: #3C3489;
+    border-color: #534AB7;
+    color: #CECBF6;
+}
+#filterPanel #filterTitleLabel {
+    color: #EAE8E4;
+    font-size: 14px;
+    font-weight: 600;
+    padding-left: 8px;
+}
+#filterPanel #preset_btn {
+    background-color: #2A2A27;
+    border: 1px solid #3E3D38;
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 11px;
+    min-width: 60px;
+    color: #EAE8E4;
+}
+#filterPanel #preset_btn:hover {
+    background-color: #3C3489;
+    border-color: #534AB7;
+    color: #CECBF6;
+}
+
+/* ── 分组框 ── */
+#filterPanel QGroupBox {
+    background-color: #2A2A27;
+    border: 1px solid #3E3D38;
+    border-radius: 6px;
+    margin-top: 12px;
+    padding-top: 16px;
+    font-weight: 600;
+    font-size: 13px;
+    color: #EAE8E4;
+}
+#filterPanel QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 12px;
+    padding: 0 6px;
+    color: #EAE8E4;
+    font-weight: 600;
+}
+#filterPanel QGroupBox QFormLayout {
+    margin: 8px 0;
+    spacing: 10px;
+}
+#filterPanel QGroupBox QFormLayout::label {
+    padding-right: 8px;
+    font-weight: 500;
+    color: #9A998F;
+    min-width: 100px;
+    text-align: right;
+    font-size: 12px;
+}
+
+/* ── 输入框统一样式 ── */
+#filterPanel QLineEdit,
+#filterPanel QComboBox,
+#filterPanel QDoubleSpinBox,
+#filterPanel QDateEdit {
+    background-color: #262521;
+    border: 1px solid #3E3D38;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 12px;
+    min-height: 32px;
+    color: #EAE8E4;
+}
+#filterPanel QLineEdit:hover,
+#filterPanel QComboBox:hover,
+#filterPanel QDoubleSpinBox:hover,
+#filterPanel QDateEdit:hover {
+    border-color: #55544E;
+}
+#filterPanel QLineEdit:focus,
+#filterPanel QComboBox:focus,
+#filterPanel QDoubleSpinBox:focus,
+#filterPanel QDateEdit:focus {
+    border-color: #7F77DD;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(127, 119, 221, 0.1);
+}
+#filterPanel QLineEdit::placeholder {
+    color: #9A998F;
+}
+
+/* ── 下拉框下拉菜单 ── */
+#filterPanel QComboBox QAbstractItemView {
+    background-color: #2A2A27;
+    border: 1px solid #3E3D38;
+    border-radius: 4px;
+    selection-background-color: #3C3489;
+    selection-color: #EAE8E4;
+    padding: 4px 0;
+}
+#filterPanel QComboBox::drop-down {
+    border: none;
+    width: 24px;
+}
+#filterPanel QComboBox::down-arrow {
+    width: 12px;
+    height: 12px;
+}
+
+/* ── 按钮统一样式 ── */
+#filterPanel QPushButton {
+    background-color: #2A2A27;
+    border: 1px solid #3E3D38;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: #EAE8E4;
+    min-width: 70px;
+}
+#filterPanel QPushButton:hover {
+    background-color: #3C3489;
+    border-color: #534AB7;
+    color: #CECBF6;
+}
+#filterPanel QPushButton:pressed {
+    background-color: #4A41A8;
+}
+#filterPanel QPushButton#reset_filters {
+    background-color: #7F77DD;
+    color: #FFFFFF;
+    border: none;
+    font-weight: 600;
+    padding: 8px 20px;
+}
+#filterPanel QPushButton#reset_filters:hover {
+    background-color: #6B63D5;
+}
+
+/* ── 复选框与单选按钮 ── */
+#filterPanel QCheckBox {
+    spacing: 6px;
+    color: #EAE8E4;
+    font-size: 12px;
+}
+#filterPanel QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid #55544E;
+    border-radius: 3px;
+    background-color: #262521;
+}
+#filterPanel QCheckBox::indicator:checked {
+    background-color: #7F77DD;
+    border-color: #7F77DD;
+}
+
+/* ── 摘要与提示信息 ── */
+#filterPanel #filterNoteLabel {
+    background-color: #2A2A27;
+    border: 1px solid #3E3D38;
+    border-radius: 4px;
+    padding: 8px 10px;
+    color: #D9A441;
+    font-size: 11px;
+    margin-top: 8px;
+}
+
+/* ── 折叠动画控制 ── */
+#filterPanel #content_widget {
+    background-color: transparent;
+}
+#filterPanel #content_widget QGroupBox {
+    margin-bottom: 4px;
+}
+
+/* ── 特殊控件 ── */
+#filterPanel #unit_list {
+    max-height: 120px;
+    background-color: #262521;
+    border: 1px solid #3E3D38;
+    border-radius: 4px;
+    padding: 4px;
+}
+#filterPanel #unit_clear_btn {
+    min-width: 60px;
+    background-color: #2A2A27;
+    border: 1px solid #3E3D38;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+    color: #EAE8E4;
+}
+
+/* ── 工具提示样式 ── */
+#filterPanel QToolTip {
+    background-color: #2C3E50;
+    color: #FFFFFF;
+    border: 1px solid #3E3D38;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 11px;
+}
