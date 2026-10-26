@@ -12,6 +12,8 @@ import datetime
 import json
 import uuid
 import zipfile
+import traceback
+import pandas as pd
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -543,3 +545,221 @@ class FilterController(QObject):
             return imported
         except Exception:
             return imported
+
+    # =========================================================
+    # Phase 6: 筛选解释器 —— 为什么这 X 条没显示
+    # =========================================================
+
+    def _compute_rule_mask(self, df, rule) -> pd.Series:
+        """
+        计算一条 FilterRule 在整个 df 上的「通过掩码」（True=该行会被保留）。
+        复用 store.apply_filters 的判定逻辑，返回布尔 Series。
+
+        列不存在或条件不支持 → 视为「全通过」（不影响筛选结果，与 store.py 一致）。
+        """
+        if df is None or len(df) == 0:
+            return pd.Series(dtype=bool)
+
+        col = rule.column
+        if col not in df.columns:
+            return pd.Series(True, index=df.index)
+
+        cond = rule.condition
+        val = rule.value
+
+        # 空值特殊处理
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            if cond == '=':
+                return df[col].isna()
+            if cond == '!=':
+                return df[col].notna()
+            return pd.Series(True, index=df.index)
+
+        try:
+            if cond == '=':
+                return df[col] == val
+            if cond == '!=':
+                return df[col] != val
+            if cond == '>':
+                return df[col] > val
+            if cond == '<':
+                return df[col] < val
+            if cond == '>=':
+                return df[col] >= val
+            if cond == '<=':
+                return df[col] <= val
+            if cond == 'contains':
+                return df[col].astype(str).str.contains(str(val), na=False)
+            if cond == 'not_contains':
+                return ~df[col].astype(str).str.contains(str(val), na=False)
+            if cond == 'start_with':
+                return df[col].astype(str).str.startswith(str(val))
+            if cond == 'end_with':
+                return df[col].astype(str).str.endswith(str(val))
+        except Exception:
+            traceback.print_exc()
+            return pd.Series(True, index=df.index)
+
+        return pd.Series(True, index=df.index)
+
+    @staticmethod
+    def _fmt_cell(v) -> str:
+        """格式化单元格为可读字符串（int 化 + 空值标记 + 长度截断）"""
+        if v is None:
+            return "(空)"
+        try:
+            if pd.isna(v):
+                return "(空)"
+        except (TypeError, ValueError):
+            pass
+        if isinstance(v, float) and v.is_integer():
+            return str(int(v))
+        s = str(v)
+        return s if len(s) <= 60 else s[:57] + "..."
+
+    def explain_rows(self, row_indices) -> List[Dict]:
+        """
+        对指定的原始行索引列表逐条解释每条筛选规则的匹配情况。
+
+        Args:
+            row_indices: list of int，原始 DataFrame 的行索引（0-based 位置索引）
+
+        Returns:
+            list[dict]，每行一个 dict：
+              {
+                'row_index': int,           # 原始行位置
+                'summary': str,             # 行摘要（用于列表显示）
+                'rule_results': [           # 每条规则一条
+                    {
+                        'rule_index': int,
+                        'column': str,
+                        'condition': str,
+                        'expected': str,    # 已格式化
+                        'actual': str,      # 已格式化
+                        'passed': bool,
+                    }
+                ]
+              }
+        """
+        rules = self.get_filters()
+        source_df = self.app_state.get_data()
+        if source_df is None or len(source_df) == 0:
+            return []
+
+        n = len(source_df)
+        # 一次性算出每条规则的通过掩码
+        masks = [self._compute_rule_mask(source_df, r) for r in rules]
+
+        # 用于生成行摘要的字段（按业务常用列挑选，存在哪个用哪个）
+        summary_candidates = [
+            '工厂', '工厂名称', '车间', '流程订单', '订单日期',
+            '物料编码', '物料名称', '偏差金额(含税)', '偏差率', '备注原因',
+        ]
+        summary_cols = [c for c in summary_candidates if c in source_df.columns]
+        if not summary_cols:
+            summary_cols = list(source_df.columns)[:3]
+
+        results = []
+        for idx in row_indices:
+            if not (0 <= idx < n):
+                continue
+            row = source_df.iloc[idx]
+            summary_parts = [f"{c}={self._fmt_cell(row.get(c))}" for c in summary_cols[:5]]
+            summary = " | ".join(summary_parts)
+
+            rule_results = []
+            for i, rule in enumerate(rules):
+                if len(masks[i]) <= idx:
+                    continue
+                passed = bool(masks[i].iloc[idx])
+                actual = self._fmt_cell(row.get(rule.column))
+                rule_results.append({
+                    'rule_index': i,
+                    'column': rule.column,
+                    'condition': rule.condition,
+                    'expected': self._fmt_cell(rule.value),
+                    'actual': actual,
+                    'passed': passed,
+                })
+
+            results.append({
+                'row_index': int(idx),
+                'summary': summary,
+                'rule_results': rule_results,
+            })
+        return results
+
+    def summarize_exclusions(self) -> Dict:
+        """
+        统计当前筛选下的排除分布，供 UI 底部摘要显示。
+
+        Returns:
+          {
+            'total': int,         # 原始总行数
+            'kept': int,          # 保留行数
+            'excluded': int,      # 排除行数
+            'per_rule': [         # 按 fail_count 降序
+                {
+                    'rule_index': int,
+                    'column': str,
+                    'condition': str,
+                    'value': str,
+                    'fail_count': int,   # 单独这条规则会排除多少行
+                    'pass_count': int,
+                },
+                ...
+            ],
+            'top_reason': str or None,   # 排除力最强的那条规则的文字描述
+        }
+        """
+        source_df = self.app_state.get_data()
+        if source_df is None or len(source_df) == 0:
+            return {'total': 0, 'kept': 0, 'excluded': 0, 'per_rule': [], 'top_reason': None}
+
+        total = len(source_df)
+        filtered = self.app_state.get_filtered_data()
+        kept = 0 if filtered is None else len(filtered)
+        excluded = total - kept
+
+        rules = self.get_filters()
+        per_rule = []
+        for i, rule in enumerate(rules):
+            mask = self._compute_rule_mask(source_df, rule)
+            fail_count = int((~mask).sum())
+            per_rule.append({
+                'rule_index': i,
+                'column': rule.column,
+                'condition': rule.condition,
+                'value': self._fmt_cell(rule.value),
+                'fail_count': fail_count,
+                'pass_count': int(mask.sum()),
+            })
+
+        per_rule.sort(key=lambda x: -x['fail_count'])
+
+        top = per_rule[0] if per_rule else None
+        top_reason = None
+        if top and top['fail_count'] > 0:
+            top_reason = f"规则{top['rule_index']+1}({top['column']} {top['condition']} {top['value']}) 排除 {top['fail_count']} 行"
+
+        return {
+            'total': total,
+            'kept': kept,
+            'excluded': excluded,
+            'per_rule': per_rule,
+            'top_reason': top_reason,
+        }
+
+    def get_excluded_row_indices(self) -> List[int]:
+        """
+        返回当前筛选下被排除的原始行位置索引列表（0-based，与 explain_rows 对齐）。
+        """
+        source_df = self.app_state.get_data()
+        if source_df is None or len(source_df) == 0:
+            return []
+        filtered = self.app_state.get_filtered_data()
+        if filtered is None:
+            return list(range(len(source_df)))
+        filtered_set = set(filtered.index.tolist())
+        return [i for i in source_df.index.tolist() if i not in filtered_set]
+

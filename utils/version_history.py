@@ -14,6 +14,11 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.271",
+        "date": "2026-10-27",
+        "features": "**筛选解释器（Phase 6）**：① 新增 FilterExplainerDialog，选中被排除行逐条解释为什么没显示（每条规则的 ✓/✗ + 实际值 vs 期望值）；② FilterController 新增 explain_rows / summarize_exclusions / _compute_rule_mask 三个方法；③ 筛选面板底部显示「已过滤 X 条 · 主要因: Y」实时摘要；④ 快捷键 Ctrl+Shift+E 直接打开解释器。",
+    },
+    {
         "version": "v43.270",
         "date": "2026-10-27",
         "features": "**Phase 5 收尾与集成**：① 新增 FilterPresetManagerDialog（管理对话框）；② 主窗口集成预设管理入口（Alt+M）；③ 添加快速切换快捷键 Ctrl+1~9；④ 显示预设使用次数、最后时间；⑤ 完整导出的 JSON 格式支持版本号和导出时间戳。",

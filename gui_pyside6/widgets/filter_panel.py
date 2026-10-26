@@ -39,6 +39,7 @@ class FilterPanel(QWidget):
     apply_last_requested = Signal()
     delete_preset_requested = Signal(str)
     reset_filters_requested = Signal()  # 重置筛选（main_window 清理 proxy 残留 + 面板归位）
+    explain_requested = Signal()  # 打开筛选解释器（Phase 6）
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -334,6 +335,25 @@ class FilterPanel(QWidget):
         reset_btn = QPushButton("重置筛选")
         reset_btn.clicked.connect(self.reset_filters)
         content_layout.addWidget(reset_btn, alignment=Qt.AlignCenter)
+
+        # 筛选解释器按钮（Phase 6 / v43.271）
+        btn_row2 = QHBoxLayout()
+        btn_row2.setSpacing(6)
+        self.explain_btn = QPushButton("🔍 解释筛选 (Ctrl+Shift+E)")
+        self.explain_btn.setToolTip("查看被排除的行，并逐条解释为什么这 X 条没显示。")
+        self.explain_btn.clicked.connect(lambda: self.explain_requested.emit())
+        btn_row2.addWidget(self.explain_btn)
+        content_layout.addLayout(btn_row2)
+
+        # 排除摘要标签（Phase 6 / v43.271）—— 由 main_window 每次筛选后调用 update_exclusion_summary() 刷新
+        self.exclusion_summary_label = QLabel("尚未筛选")
+        self.exclusion_summary_label.setWordWrap(True)
+        self.exclusion_summary_label.setStyleSheet(
+            "background: #f5f5f5; color: #555; padding: 6px 8px; border-radius: 4px; "
+            "font-size: 11px; border: 1px solid #ddd;"
+        )
+        self.exclusion_summary_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        content_layout.addWidget(self.exclusion_summary_label)
 
         content_layout.addStretch()
 
@@ -1235,6 +1255,33 @@ class FilterPanel(QWidget):
         self._semi_class_filter = set()
         self._emit_filter()
         self.reset_filters_requested.emit()
+
+    def update_exclusion_summary(self, text: str) -> None:
+        """
+        Phase 6 (v43.271)：由 main_window 在每次筛选应用后调用，
+        更新底部"已过滤 X 条 · 主要因: Y"摘要标签。
+
+        传空串或 None 时显示默认提示。
+        """
+        if not getattr(self, 'exclusion_summary_label', None):
+            return
+        if not text:
+            text = "尚未筛选"
+            self.exclusion_summary_label.setStyleSheet(
+                "background: #f5f5f5; color: #555; padding: 6px 8px; "
+                "border-radius: 4px; font-size: 11px; border: 1px solid #ddd;"
+            )
+        elif "排除 0" in text or "已过滤 0" in text or "保留" in text and "排除 0" in text:
+            self.exclusion_summary_label.setStyleSheet(
+                "background: #eef7ee; color: #2f6b2f; padding: 6px 8px; "
+                "border-radius: 4px; font-size: 11px; border: 1px solid #b8d8b8;"
+            )
+        else:
+            self.exclusion_summary_label.setStyleSheet(
+                "background: #fff6e5; color: #8a5b00; padding: 6px 8px; "
+                "border-radius: 4px; font-size: 11px; border: 1px solid #f0d48a;"
+            )
+        self.exclusion_summary_label.setText(text)
 
     # ------------------------------------------------------------------ #
     # 预设：应用（get_filters 的逆操作）与菜单

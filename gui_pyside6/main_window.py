@@ -79,6 +79,7 @@ from gui_pyside6.controllers.audit_controller import AuditController
 from gui_pyside6.controllers.export_controller import ExportController
 from gui_pyside6.controllers.alt_controller import AltController
 from gui_pyside6.dialogs.filter_preset_manager_dialog import FilterPresetManagerDialog
+from gui_pyside6.dialogs.filter_explainer_dialog import FilterExplainerDialog
 from gui_pyside6.utils.icons import add_icon_action
 from gui_pyside6.controllers.column_controller import ColumnController
 from gui_pyside6.controllers.filter_preset_controller import FilterPresetController
@@ -361,6 +362,8 @@ class MainWindow(QMainWindow):
         self.filter_panel.apply_preset_requested.connect(self._apply_filter_preset)
         self.filter_panel.apply_last_requested.connect(lambda: self._apply_filter_preset("___last___"))
         self.filter_panel.delete_preset_requested.connect(self._delete_filter_preset)
+        # Phase 6 (v43.271)：筛选解释器
+        self.filter_panel.explain_requested.connect(self._open_filter_explainer)
 
         # 文件夹监控自动加载（SAP 导出半自动：监控目录有新 Excel 则自动加载）
         self._monitor_dir = r"E:\ZPP011导出文件原数据"
@@ -453,6 +456,8 @@ class MainWindow(QMainWindow):
             QShortcut(QKeySequence(f"Ctrl+{i}"), self).activated.connect(
                 lambda checked, idx=i: self._quick_apply_preset(idx)
             )
+        # Phase 6 (v43.271)：筛选解释器快捷键
+        QShortcut(QKeySequence("Ctrl+Shift+E"), self).activated.connect(self._open_filter_explainer)
 
     def _open_filter_preset_manager(self):
         """打开筛选预设管理对话框"""
@@ -464,6 +469,19 @@ class MainWindow(QMainWindow):
         dialog.preset_loaded.connect(self._apply_filter_preset_by_name)
         dialog.preset_deleted.connect(lambda name: self._refresh_filter_preset_menu())
         dialog.exec_()
+
+    def _open_filter_explainer(self):
+        """Phase 6 (v43.271)：打开筛选解释器对话框"""
+        if not self.filter_controller:
+            toast("FilterController 未初始化", level="error", parent=self)
+            return
+        try:
+            dialog = FilterExplainerDialog(self, self.filter_controller)
+            dialog.exec_()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            toast("打开解释器失败，已记录堆栈", level="error", parent=self)
 
     def _apply_filter_preset_by_name(self, name):
         """从管理对话框应用预设"""
@@ -570,6 +588,31 @@ class MainWindow(QMainWindow):
             self.data_controller.on_data_changed(filtered_df)
         else:
             self.data_controller.on_data_changed(None)
+        # Phase 6 (v43.271)：刷新筛选解释摘要
+        self._update_exclusion_summary()
+
+    def _update_exclusion_summary(self):
+        """刷新筛选面板底部的排除摘要标签（Phase 6）"""
+        if not self.filter_controller or not getattr(self.filter_panel, 'update_exclusion_summary', None):
+            return
+        try:
+            summary = self.filter_controller.summarize_exclusions()
+            total = summary.get('total', 0)
+            kept = summary.get('kept', 0)
+            excluded = summary.get('excluded', 0)
+            top = summary.get('top_reason') or ''
+            if total == 0:
+                text = "尚未加载数据"
+            elif excluded == 0:
+                text = f"✅ 已加载 {total} 行 · 全部保留"
+            else:
+                text = f"已过滤 {total} 行 → 保留 {kept} · 排除 {excluded}"
+                if top:
+                    text += f"\n主要因: {top}"
+            self.filter_panel.update_exclusion_summary(text)
+        except Exception:
+            import traceback
+            traceback.print_exc()
 
     def _on_filters_reset(self):
         """FilterController 重置筛选 → 恢复原表"""
