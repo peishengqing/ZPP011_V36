@@ -5,8 +5,8 @@ Provides a centralized event system for managing application-wide events
 using PySide6's QObject and signal/slot mechanism.
 """
 
-from typing import Callable, Dict, Optional, Type, Any
-from PySide6.QtCore import QObject, Signal, Slot
+from typing import Callable, Dict, Optional, Any
+from PySide6.QtCore import QObject, Signal
 
 
 class EventBus(QObject):
@@ -20,6 +20,8 @@ class EventBus(QObject):
     # Event signals
     data_loaded = Signal()  # Emitted when data is loaded
     filters_changed = Signal()  # Emitted when filters are modified
+    filters_applied = Signal()  # Emitted when filters are fully applied
+    filters_reset = Signal()  # Emitted when filters are reset
     sort_changed = Signal()  # Emitted when sort order changes
     table_refreshed = Signal()  # Emitted when table view is refreshed
     theme_changed = Signal()  # Emitted when theme settings change
@@ -124,6 +126,24 @@ class EventBus(QObject):
             callback: Function to call when filters change
         """
         self.filters_changed.connect(callback)
+
+    def on_filters_applied(self, callback: Callable) -> None:
+        """
+        Connect a callback to the filters_applied signal.
+
+        Args:
+            callback: Function to call when filters are applied
+        """
+        self.filters_applied.connect(callback)
+
+    def on_filters_reset(self, callback: Callable) -> None:
+        """
+        Connect a callback to the filters_reset signal.
+
+        Args:
+            callback: Function to call when filters are reset
+        """
+        self.filters_reset.connect(callback)
 
     def on_sort_changed(self, callback: Callable) -> None:
         """

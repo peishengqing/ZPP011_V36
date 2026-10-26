@@ -88,6 +88,7 @@ from gui_pyside6.controllers.quarantine_manager_controller import QuarantineMana
 from gui_pyside6.controllers.uisettings_controller import UISettingsController
 from gui_pyside6.controllers.ppt_controller import PptController
 from gui_pyside6.controllers.file_monitor_controller import FileMonitorController
+from gui_pyside6.controllers.filter_controller import FilterController
 
 
 class _PptViewShim:
@@ -341,6 +342,25 @@ class MainWindow(QMainWindow):
         self.bottom_bar = BottomBarComponent(self)
         self.filter_panel = FilterPanel(self)
 
+        # 初始化筛选控制器（Phase 3 新增）
+        from gui_pyside6.models.store import AppState
+        from gui_pyside6.models.event_bus import EventBus
+        self.app_state = AppState(self)
+        self.event_bus = EventBus.get()
+        self.filter_controller = FilterController(self.app_state, self.event_bus)
+        self.filter_controller.connect_filtersChanged(self._on_filter_changed)
+        self.filter_controller.connect_filtersApplied(self._on_filters_applied)
+        self.filter_controller.connect_filtersReset(self._on_filters_reset)
+
+        # 将 FilterPanel 的筛选事件转发给 FilterController
+        self.filter_panel.filter_changed.connect(self._on_filter_panel_changed)
+        self.filter_panel.reset_filters_requested.connect(self._on_filter_reset_requested)
+        # 筛选预设（实现预留的 filter_history 配置）+ 看板联动横幅
+        self.filter_panel.save_preset_requested.connect(self._prompt_save_preset)
+        self.filter_panel.apply_preset_requested.connect(self._apply_filter_preset)
+        self.filter_panel.apply_last_requested.connect(lambda: self._apply_filter_preset("___last___"))
+        self.filter_panel.delete_preset_requested.connect(self._delete_filter_preset)
+
         # 文件夹监控自动加载（SAP 导出半自动：监控目录有新 Excel 则自动加载）
         self._monitor_dir = r"E:\ZPP011导出文件原数据"
         self._monitor_enabled = True   # 默认开启
@@ -463,10 +483,10 @@ class MainWindow(QMainWindow):
         self.audit_controller.progress_error.connect(self._on_ai_error_ui)
         self.alt_controller.data_changed.connect(self._on_alt_pairs_changed)
 
-        # 筛选面板信号
-        self.filter_panel.filter_changed.connect(self._on_filter_panel_changed)
-        self.filter_panel.reset_filters_requested.connect(self._on_filter_reset_requested)
-        # 筛选预设（实现预留的 filter_history 配置）+ 看板联动横幅
+        # 筛选面板信号 - 转发给 FilterController
+        self.filter_panel.filter_changed.connect(self.filter_controller._filter_changed)  # 由 FilterController 处理
+        self.filter_panel.reset_filters_requested.connect(self.filter_controller.reset)  # 重置
+        # 预设信号
         self.filter_panel.save_preset_requested.connect(self._prompt_save_preset)
         self.filter_panel.apply_preset_requested.connect(self._apply_filter_preset)
         self.filter_panel.apply_last_requested.connect(lambda: self._apply_filter_preset("___last___"))
@@ -493,7 +513,39 @@ class MainWindow(QMainWindow):
 
 
     def _on_title_factory_selected(self, factory_name):
-        self._on_factory_changed(factory_name)
+        return self.analysis_controller.on_factory_changed(factory_name)
+
+    # Phase 3 数据驱动筛选桥接方法
+    def _on_filter_panel_changed(self, filters: dict):
+        """FilterPanel 筛选变化 → FilterController 规则转换"""
+        rules = self.filter_controller.create_filters_from_dict(filters)
+        self.filter_controller.set_filters(rules)
+
+    def _on_filter_changed(self):
+        """FilterController 筛选变化事件 → 更新表格模型"""
+        # 这是响应 FiltersChanged 信号，但不立即应用，等 filters_applied
+        pass
+
+    def _on_filters_applied(self):
+        """FilterController 已应用筛选 → 更新视图"""
+        filtered_df = self.filter_controller.get_filtered_dataframe()
+        if filtered_df is not None:
+            self.data_controller.on_data_changed(filtered_df)
+        else:
+            self.data_controller.on_data_changed(None)
+
+    def _on_filters_reset(self):
+        """FilterController 重置筛选 → 恢复原表"""
+        if hasattr(self.data_controller, 'get_original_data'):
+            original_df = self.data_controller.get_original_data()
+            filtered_df = self.filter_controller.get_filtered_dataframe()
+            if filtered_df is not None:
+                self.data_controller.on_data_changed(filtered_df)
+            else:
+                self.data_controller.on_data_changed(original_df)
+
+    def _on_filter_reset_requested(self):
+        self.filter_controller.reset()
 
     def _toggle_theme(self):
         """切换亮色/暗色主题"""
@@ -2822,25 +2874,15 @@ class MainWindow(QMainWindow):
     # -----------------------------------------------------------
     # 工具函数
     # -----------------------------------------------------------
+    # ------------------- 通过控制器转发 -------------------
     def _update_countdown(self):
-        # 用真实时间戳差值，比每秒累加更准，也不受 UI 阻塞影响
-        elapsed = int(time.perf_counter() - getattr(self, "_analysis_start_ts", 0))
-        if elapsed != self._countdown_seconds:
-            self._countdown_seconds = elapsed
-        m, s = divmod(self._countdown_seconds, 60)
-        self.timer_lbl.setText(f"{m:02d}:{s:02d}")
+        return self.ui_settings_controller.update_countdown()
 
     def _stop_countdown(self):
-        if hasattr(self, "_countdown_timer") and self._countdown_timer is not None:
-            try:
-                self._countdown_timer.stop()
-            except Exception:
-                pass
+        return self.ui_settings_controller.stop_countdown()
 
     def _format_elapsed(self):
-        elapsed = int(time.perf_counter() - getattr(self, "_analysis_start_ts", 0))
-        m, s = divmod(elapsed, 60)
-        return f"{m:02d}:{s:02d}"
+        return self.ui_settings_controller.format_elapsed()
 
     def _generate_ppt_report(self):
         """薄壳：PPT 生成入口（ARC-003 第九刀切出到 PptController）。"""

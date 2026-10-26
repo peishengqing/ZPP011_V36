@@ -5,6 +5,7 @@
 """
 
 import os
+import pandas as pd
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 from gui_pyside6.workers.report_workers import _FileReadWorker
 
@@ -191,6 +192,31 @@ class DataController:
     def on_factory_changed(self, factory_name):
         """工厂变化回调 - 调用 MainWindow 原有逻辑"""
         self.mw._on_factory_changed(factory_name)
+
+    def on_data_changed(self, df: pd.DataFrame) -> None:
+        """更新显示的数据"""
+        if df is None:
+            self.mw.data_view_model = None
+            self.mw.data_view_model.data_loaded.emit()  # 刷新视图
+            return
+
+        # 应用 DataViewModel 转换
+        from gui_pyside6.models.data_frame_model import DataFrameModel
+        if not hasattr(self.mw, 'data_view_model') or self.mw.data_view_model is None:
+            self.mw.data_view_model = DataFrameModel()
+
+        self.mw.data_view_model.setDataFrame(df)
+        self.mw.table_view.setModel(self.mw.data_view_model)
+
+        # 更新统计卡片
+        if hasattr(self.mw, 'stats_cards'):
+            self.mw.stats_cards.update_stats(df)
+
+    def get_original_data(self) -> pd.DataFrame:
+        """获取原始数据（未筛选）"""
+        if self._cached_input_df is not None:
+            return self._cached_input_df
+        return None
 
     # Additional data-related methods...
 

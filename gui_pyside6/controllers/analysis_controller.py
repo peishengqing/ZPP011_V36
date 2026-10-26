@@ -141,6 +141,60 @@ class AnalysisController(QObject):
             return True
         return False
 
+    def on_factory_changed(self, factory_name):
+        """处理工厂选择变化"""
+        if not factory_name:
+            return None
+        if factory_name == '全部':
+            # 显示全部工厂数据
+            all_data = self.factory_data.get('全部')
+            if all_data is None:
+                # 合并所有工厂数据
+                all_parts = []
+                for f, g in self.factory_data.items():
+                    all_parts.append(g)
+                if all_parts:
+                    import pandas as pd
+                    all_data = pd.concat(all_parts, ignore_index=True)
+                    self.factory_data['全部'] = all_data
+            df = all_data
+        else:
+            df = self.factory_data.get(factory_name)
+
+        return df
+
+    def factory_switch(self, factory_name, data_service, source_model, proxy_model, table_view, apply_visibility, schedule_unread, update_summary, filter_panel_update, show_message):
+        """处理工厂切换的完整逻辑（从 MainWindow 迁移）"""
+        df = self.on_factory_changed(factory_name)
+        if df is not None:
+            # 后台线程已预处理过（带 _read 列）→ 直接复用，避免主线程再跑 31s 卡顿；
+            # 仅在拿到原始 dev_df（无 _read 列）时才在主线程预处理（兜底）。
+            if '_read' in df.columns:
+                processed_df = df
+            else:
+                processed_df = data_service.preprocess_audit_data(df)
+            if source_model is None:
+                source_model = DataFrameModel()
+                proxy_model = AuditProxyModel()
+                proxy_model.setDynamicSortFilter(False)  # 同上，关闭重过滤风暴
+                proxy_model.setSourceModel(source_model)
+                table_view.setModel(proxy_model)
+                proxy_model.layoutChanged.connect(update_mark_stats)
+                source_model.dataChanged.connect(update_mark_stats)
+                source_model.dataRefreshed.connect(update_mark_stats)
+                source_model.modelReset.connect(update_mark_stats)
+            try:
+                source_model.setDataFrame(processed_df)
+            except Exception as _e:
+                import traceback as _tb
+                _tb.print_exc()
+                raise
+            apply_visibility()
+            schedule_unread()
+            return processed_df, filter_panel_update, show_message
+        else:
+            return None, None, show_message
+
 
     def get_analysis_params(self):
         """获取最近一次分析的参数（用于导出完整Excel）"""

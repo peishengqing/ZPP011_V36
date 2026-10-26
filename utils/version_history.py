@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.267",
+        "date": "2026-10-27",
+        "fixes": "**数据驱动筛选 Phase 3 落地**（基于 AppState/EventBus）：① 新增 `FilterController` 统一管筛选规则，支持防抖/级联/预设保存；② 扩展 `EventBus` 增加 `filters_applied/filters_reset` 信号；③ 增强 `AppState` 提供 `apply_filters()/get_filtered_data()`，支持多级筛选规则；④ 集成到 MainWindow：FilterPanel 筛选变化 → FilterController 转换规则 → 应用筛选 → EventBus 广播 → 视图自动更新。实现后，筛选逻辑从 MainWindow 彻底解耦，所有筛选相关操作统一走事件驱动模型，为 Phase 4（筛选可视化/预设一键调用/动态级联）打下基础。",
+        "features": "实现数据驱动筛选架构，筛选逻辑全面响应式化。",
+    },
+    {
         "version": "v43.266",
         "date": "2026-10-26",
         "fixes": "**修掉「全仓 emoji → SVG」漏网的最后一批（裴哥 10-26 截图指正：主表底部工具条的三个按钮显示成怪字形——锁显示成黑白黄油漆桶、全屏显示成四点方阵、隐藏列显示成「i」）**。根因有两层：① v43.264 的「全仓图标化」只盘点了主窗口/看板/侧栏/统计卡这几处显眼界面，**漏了主表底部合计条与各看板对话框的操作按钮**；② 更要命的是这些按钮的文本是**纯符号**（`QPushButton(\"🔒\")`），emoji 撑满 32px 按钮时 Microsoft YaHei 字体回退把它渲染成了毫不相干的字形——这不是「不够好看」，是「看不懂是什么按钮」。**改法**：① `utils/icons.py` 补 23 个新图标（maximize/minimize/eye/unlock/clock/timer/book/scroll/gear/exchange/sparkles/chevron-down/up/left/right/check-circle/close-circle/paperclip/folder-open/undo/menu/tag/flag，图标集 37 → 60 个）并新增 **`EMOJI_TO_ICON` 映射 + `split_emoji()` / `make_button()` / `make_tool_button()` / `add_icon_action()` 四个工厂**——工厂自动剥掉文本里的 emoji 前缀并挂对应 SVG 图标，调用方一行不改语义；② 用迁移脚本把 **67 处按钮/菜单项**（15 个文件）切到工厂：主窗口右键菜单 6 项、隔离区/负损/正损/半成品/偏差率预警看板的「标记为已读/未读/移入隔离区/导出 Excel/放大/修复一致性/扫描失效」等按钮、规则编辑器与自动已读规则对话框的增删按钮、归藏「AI 重新设计」、微信草稿配置 6 个按钮、菜单栏「⚙ 规则中心 / 🔔 替代料看板」；③ **状态栏/进度条/通知文字的 emoji 前缀去掉**（状态栏三件套「分析/已读/列头筛选」、计时器「⏱ 00:00」、进度「✅ 完成 / ❌ 错误 / 📦 缓存」、8 处 toast 通知、系统对话框标题）——这些是纯文本载体，装不了图标，去前缀后语义不变且不再有字体回退风险；④ **状态切换逻辑改图标而非改文字**：列宽锁按钮 `_toggle_column_lock` 原来 `setText(\"🔓\"/\"🔒\")` 会把 v43.264 刚加的图标洗回 emoji，改 `setIcon(get_icon(\"unlock\"/\"lock\"))`；工具栏「左侧栏/筛选/列头筛选」的显隐切换同理只改文字、保留图标；列头筛选提示改用 `col_filter_ui.set_col_filter_button_on` 统一口径。**保留不动**：折叠箭头的 ▼▶◀▲▾（几何符号，Windows 字体渲染正常）、步骤图标的 √（测试锁定）、版本日志正文的 ✦新功能/🔧修复/⚡优化 图例（内容语义标记）。**验证**：新增 emoji 扫描脚本（正则扫 QPushButton/QToolButton/QAction/QLabel/addAction 构造与 setText），全仓可见文本剩余 11 处均为上述保留项；离屏冒烟新增底部三按钮「图标有实际像素 + 文字无 emoji + 锁定态切图标 + 面板显隐切换后图标不被洗掉」共 10 项断言 ALL-PASS；pytest 307 passed / 1 skipped / 2 xfailed 零回归；pyflakes 与 HEAD 基线一致（仅 1 条因迁移而闲置的 QPushButton 导入，已清）。",

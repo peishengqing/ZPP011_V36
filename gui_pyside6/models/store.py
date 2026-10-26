@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from enum import Enum
 from PySide6.QtCore import QObject, Signal, Property
 import pandas as pd
+import warnings
 
 
 class SortOrder(Enum):
@@ -269,3 +270,108 @@ class AppState(QObject):
         }
 
         self.state_changed.emit()
+
+    # 筛选执行扩展
+
+    def apply_filters(self) -> Optional[pd.DataFrame]:
+        """
+        将当前 FilterRule 列表应用到 _data 上，返回筛选后的 DataFrame。
+
+        规则：
+        1. 按列顺序应用（避免列不存在错误）
+        2. 每个条件独立处理
+        3. 空值特殊处理
+
+        Returns:
+            筛选后的 DataFrame，如无数据则返回 None
+        """
+        if self._data is None:
+            return None
+
+        df = self._data.copy()
+        rules = self._filters
+
+        for rule in rules:
+            if rule.column not in df.columns:
+                continue
+
+            col = rule.column
+            cond = rule.condition
+            val = rule.value
+
+            # 处理空值
+            if val is None or pd.isna(val):
+                if cond == '=':
+                    mask = df[col].isna()
+                elif cond == '!=':
+                    mask = df[col].notna()
+                elif cond in ('>', '<', '>=', '<='):
+                    continue
+                else:
+                    continue
+            else:
+                # 数值比较
+                if cond == '=':
+                    mask = df[col] == val
+                elif cond == '!=':
+                    mask = df[col] != val
+                elif cond == '>':
+                    mask = df[col] > val
+                elif cond == '<':
+                    mask = df[col] < val
+                elif cond == '>=':
+                    mask = df[col] >= val
+                elif cond == '<=':
+                    mask = df[col] <= val
+                elif cond == 'contains':
+                    mask = df[col].astype(str).str.contains(str(val), na=False)
+                elif cond == 'not_contains':
+                    mask = df[col].astype(str).str.contains(str(val), na=False)
+                    mask = ~mask
+                elif cond == 'start_with':
+                    mask = df[col].astype(str).str.startswith(str(val))
+                elif cond == 'end_with':
+                    mask = df[col].astype(str).str.endswith(str(val))
+                else:
+                    continue
+
+            df = df[mask]
+
+        return df
+
+    def get_filtered_data(self) -> Optional[pd.DataFrame]:
+        """获取当前应用筛选后的数据（返回副本）"""
+        if self._data is None:
+            return None
+        return self.apply_filters()
+
+    def set_cascade_filters(self, parent_filters: List[FilterRule], dependent_rules: List[FilterRule]) -> None:
+        """
+        设置级联筛选规则。子筛选基于父筛选的条件动态计算选项。
+
+        Args:
+            parent_filters: 基础筛选条件
+            dependent_rules: 依赖筛选的列规则（每个规则包含 target_column 和 valid_values）
+        """
+        # 先应用父筛选
+        base_df = self.apply_filters()
+        if base_df is None:
+            self.set_filters(dependent_rules)
+            return
+
+        # 为每个 dependent rule 计算可用值
+        for rule in dependent_rules:
+            target_col = rule.column
+            parent_col = getattr(rule, 'parent_column', None)
+
+            if parent_col is None:
+                continue
+
+            # 计算该父筛选下的所有唯一值
+            valid_vals = base_df[parent_col].unique().tolist()
+            # 为新规则设置值
+            if hasattr(rule, 'value'):
+                rule.value = valid_vals[0] if valid_vals else None
+
+        # 最后更新筛选状态
+        self.set_filters(parent_filters + dependent_rules)

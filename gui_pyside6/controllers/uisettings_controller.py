@@ -164,3 +164,45 @@ class UISettingsController(QObject):
         stats_visible = not self.main_window.stats_cards._user_hidden
         progress_visible = not self.main_window.main_table._progress_hidden
         self.main_window.top_panel.setVisible(stats_visible or progress_visible)
+
+    # ------------------- 倒计时与计时 -------------------
+    def update_countdown(self):
+        """用真实时间戳差值，比每秒累加更准，也不受 UI 阻塞影响"""
+        elapsed = int(time.perf_counter() - getattr(self.main_window, "_analysis_start_ts", 0))
+        if elapsed != self.main_window._countdown_seconds:
+            self.main_window._countdown_seconds = elapsed
+        m, s = divmod(self.main_window._countdown_seconds, 60)
+        self.main_window.timer_lbl.setText(f"{m:02d}:{s:02d}")
+
+    def stop_countdown(self):
+        """停止倒计时计时器"""
+        if hasattr(self.main_window, "_countdown_timer") and self.main_window._countdown_timer is not None:
+            try:
+                self.main_window._countdown_timer.stop()
+            except Exception:
+                pass
+
+    def format_elapsed(self):
+        """格式化经过的时间，显示为 mm:ss"""
+        elapsed = int(time.perf_counter() - getattr(self.main_window, "_analysis_start_ts", 0))
+        m, s = divmod(elapsed, 60)
+        return f"{m:02d}:{s:02d}"
+
+    # ------------------- 主题切换 -------------------
+    def toggle_theme(self):
+        """切换亮暗主题"""
+        current = self.main_window.styleSheet()
+        if current:
+            self.load_dark_theme()
+        else:
+            self.load_dark_theme()
+
+    def load_dark_theme(self):
+        """加载暗色主题"""
+        from PySide6.QtWidgets import QApplication
+        with open('gui_pyside6/dark_theme.qss', 'r', encoding='utf-8') as f:
+            QApplication.setStyleOverride(f.read())
+
+    def _on_stats_card_clicked(self, index):
+        """统计卡片点击事件（未完全实现，仅占位）"""
+        pass
