@@ -14,6 +14,11 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.270",
+        "date": "2026-10-27",
+        "features": "**Phase 5 收尾与集成**：① 新增 FilterPresetManagerDialog（管理对话框）；② 主窗口集成预设管理入口（Alt+M）；③ 添加快速切换快捷键 Ctrl+1~9；④ 显示预设使用次数、最后时间；⑤ 完整导出的 JSON 格式支持版本号和导出时间戳。",
+    },
+    {
         "version": "v43.269",
         "date": "2026-10-27",
         "features": "**Phase 5：筛选可视化与预设管理增强**：① FilterPreset 完善，新增预设使用 history 追踪、导入导出、快速切换功能；② 预设支持真 JSON 导出/ZIP 批导、单个预设文件导出；③ 新增 Clone、Duplicate、GetHistory 等高级管理方法；④ 预设存储使用 AppState 扩展（碾压本地 JSON）。",

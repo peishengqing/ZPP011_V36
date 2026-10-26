@@ -78,6 +78,7 @@ from gui_pyside6.controllers.analysis_controller import AnalysisController
 from gui_pyside6.controllers.audit_controller import AuditController
 from gui_pyside6.controllers.export_controller import ExportController
 from gui_pyside6.controllers.alt_controller import AltController
+from gui_pyside6.dialogs.filter_preset_manager_dialog import FilterPresetManagerDialog
 from gui_pyside6.utils.icons import add_icon_action
 from gui_pyside6.controllers.column_controller import ColumnController
 from gui_pyside6.controllers.filter_preset_controller import FilterPresetController
@@ -347,7 +348,7 @@ class MainWindow(QMainWindow):
         from gui_pyside6.models.event_bus import EventBus
         self.app_state = AppState(self)
         self.event_bus = EventBus.get()
-        self.filter_controller = FilterController(self.app_state, self.event_bus)
+        self.filter_controller = FilterController(self.app_state, self.event_bus, self.config_manager)
         self.filter_controller.connect_filtersChanged(self._on_filter_changed)
         self.filter_controller.connect_filtersApplied(self._on_filters_applied)
         self.filter_controller.connect_filtersReset(self._on_filters_reset)
@@ -445,6 +446,42 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("F11"), self).activated.connect(
             self._toggle_table_fullscreen
         )
+        # 预设管理快捷键
+        QShortcut(QKeySequence("Alt+M"), self).activated.connect(self._open_filter_preset_manager)
+        # 快速切换预设快捷键 (Ctrl+1~9)
+        for i in range(1, 10):
+            QShortcut(QKeySequence(f"Ctrl+{i}"), self).activated.connect(
+                lambda checked, idx=i: self._quick_apply_preset(idx)
+            )
+
+    def _open_filter_preset_manager(self):
+        """打开筛选预设管理对话框"""
+        if not self.filter_controller:
+            toast("FilterController 未初始化", level="error", parent=self)
+            return
+
+        dialog = FilterPresetManagerDialog(self, self.filter_controller)
+        dialog.preset_loaded.connect(self._apply_filter_preset_by_name)
+        dialog.preset_deleted.connect(lambda name: self._refresh_filter_preset_menu())
+        dialog.exec_()
+
+    def _apply_filter_preset_by_name(self, name):
+        """从管理对话框应用预设"""
+        self._apply_filter_preset(name)
+
+    def _quick_apply_preset(self, idx):
+        """快速应用预设 (Ctrl+1~9)"""
+        fc = self.filter_controller
+        if not fc:
+            return
+
+        presets = fc.list_presets()
+        if idx <= len(presets):
+            preset = presets[idx - 1]
+            fc.apply_preset(preset)
+            toast(f"已应用预设：{preset.name}", level="info", parent=self)
+        else:
+            toast(f"预设不足 {idx} 个", level="warning", parent=self)
 
     def _load_dark_theme(self):
         """加载暗色主题 QSS（app 级别）"""

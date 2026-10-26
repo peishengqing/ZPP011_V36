@@ -16,6 +16,7 @@ import pandas as pd
 import json
 import os
 import shutil
+import datetime
 
 from gui_pyside6.dialogs.material_presets_dialog import MaterialPresetsDialog, MATERIAL_ALL_SENTINEL
 from gui_pyside6.utils.semi_class import (  # noqa: F401
@@ -1248,6 +1249,7 @@ class FilterPanel(QWidget):
             pass
 
     def _rebuild_preset_menu(self):
+        """重建预设菜单，显示使用次数、上次使用时间"""
         m = self._preset_menu
         m.clear()
         act_save = m.addAction("保存当前筛选…")
@@ -1258,12 +1260,54 @@ class FilterPanel(QWidget):
         if self._preset_names:
             m.addSeparator()
         for name in self._preset_names:
-            act = m.addAction(name)
+            # 获取预设详细信息
+            preset_info = self._get_preset_info(name)
+            # 显示文本：预设名称 + 使用说明
+            if preset_info:
+                display_text = f"{name} ({preset_info['used_count']}次 × {self._format_date(preset_info['last_used_at'])})"
+                act = m.addAction(display_text)
+            else:
+                act = m.addAction(name)
+            # 鼠标悬停提示
+            if preset_info:
+                act.setToolTip(f"预设名称：{name}\n使用次数：{preset_info['used_count']}\n上次使用：{self._format_date(preset_info['last_used_at'])}")
+            # 连接触发信号
             act.triggered.connect(lambda _=False, n=name: self.apply_preset_requested.emit(n))
         if self._preset_names:
             m.addSeparator()
             act_del = m.addAction("删除预设…")
             act_del.triggered.connect(self._prompt_delete_preset)
+
+    def _get_preset_info(self, name):
+        """获取预设详细信息，从 main_window 转发"""
+        if hasattr(self, 'mw') and self.mw:
+            try:
+                fc = self.mw.filter_controller
+                if fc:
+                    preset = fc.load_preset(name)
+                    if preset:
+                        return {
+                            'used_count': preset.used_count,
+                            'last_used_at': preset.last_used_at
+                        }
+            except Exception:
+                return None
+        return None
+
+    @staticmethod
+    def _format_date(date_obj):
+        """格式化日期显示"""
+        if date_obj:
+            try:
+                # 尝试消费 datetime 对象
+                if hasattr(date_obj, 'isoformat'):
+                    dt = datetime.datetime.fromisoformat(date_obj.isoformat())
+                else:
+                    dt = date_obj
+                return dt.strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                return str(date_obj)
+        return "未知"
 
     def _prompt_delete_preset(self):
         if not self._preset_names:
