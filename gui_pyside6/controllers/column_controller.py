@@ -429,7 +429,7 @@ class ColumnController:
                 pass
             self.mw._col_filter_popup = None
 
-        popup = QWidget(self, Qt.Popup)
+        popup = QWidget(self.mw, Qt.Popup)
         popup.setObjectName("colFilterPopup")
         # v43.251：Qt.Popup 默认 WA_InputMethodEnabled=False，浮层不参与输入法 →
         # 里面的搜索框拿不到 IME 焦点 → **打不进汉字**（中文输入法唤不起来）。
@@ -577,7 +577,7 @@ class ColumnController:
             except Exception:
                 pass
             self.mw._col_filter_popup = None
-        popup = QWidget(self, Qt.Popup)
+        popup = QWidget(self.mw, Qt.Popup)
         popup.setObjectName("colFilterPopup")
         # v43.251：同主浮层，打开输入法支持（此处无搜索框，但保持浮层约定一致）
         popup.setAttribute(Qt.WA_InputMethodEnabled, True)

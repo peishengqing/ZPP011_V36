@@ -14,6 +14,11 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.280",
+        "date": "2026-10-27",
+        "fixes": "**点击列头打开筛选浮层崩溃：'QWidget.__init__ called with wrong argument types: QWidget(ColumnController, WindowType)'**。根因：v43.193 ARC-003 第一刀把列筛选从 MainWindow 切出到 ColumnController 时，方法体内两处 `QWidget(self, Qt.Popup)` 的 self 从 MainWindow 变成了非 widget 的 controller——parent 参数必须是 QWidget，点「列筛选」浮层一开即抛 TypeError。修法：两处（_open_column_filter 主浮层 + _open_empty_column_filter_popup 兜底浮层）parent 改 self.mw。offscreen 验证：popup 构造成功且 parent() is mw。",
+    },
+    {
         "version": "v43.279",
         "date": "2026-10-27",
         "fixes": "**保存筛选预设报「保存上次使用失败: No module named 'pwd'」**（用户 17:15 截图反馈）。根因：`filter_controller.FilterPreset._get_user_hint` 用 `import pwd` 取 Unix 用户名——pwd 是 Unix 专有模块，Windows 上 import 即抛 ModuleNotFoundError，且发生在 try 之前，兜底的 `os.getenv('USERNAME')` 永远执行不到。修法：删 pwd 路径，改为 Windows 正确的环境变量链 USERNAME → USER → LOGNAME，兜底 'User'。验证：offscreen 实测 _get_user_hint() 返回 'Administrator'。",
