@@ -487,21 +487,20 @@ class FilterPanel(QWidget):
     # 事件过滤（滚轮保护）
     # ------------------------------------------------------------------ #
     def eventFilter(self, obj, event):
-        if event.type() == QEvent.Wheel:
+        et = event.type()
+        if et == QEvent.Wheel:
             if isinstance(obj, (QComboBox, QDoubleSpinBox, QDateEdit)):
                 return True
-        elif event.type() == QEvent.FocusIn:
+        elif et == QEvent.FocusIn:
             if isinstance(obj, QDateEdit):
                 obj.selectAll()
-        elif event.type() == QEvent.ShowPopup:
-            # 拦截 QDateEdit 自带的下拉日历弹窗（QCalendarWidget），
-            # 替换成 v43.275 手画的 QTableWidget 日历对话框。
-            # 覆盖两个位置：
-            #   1) filter_panel.py:309/315 的 start/end_date_edit（setCalendarPopup(True)）
-            #   2) _make_date_field 生成的 QDateEdit（setCalendarPopup(False)，不会触发，但保留兜底）
-            if isinstance(obj, QDateEdit):
-                self._popup_calendar(obj)
-                return True
+        # 注意：这里曾有「拦截弹层 Show 事件兜底弹日历」的分支（v43.275 为防
+        # setCalendarPopup(True) 回潮而加）。v43.277 后全部日期字段都是
+        # _make_date_field（setCalendarPopup(False) + 「选择」按钮直调
+        # _popup_calendar），该兜底已无必要；且 Show/ShowToParent 在**面板显示时**
+        # 会对每个 QDateEdit 子控件触发一次 → 点「显示筛选」连弹多个日历窗
+        # （用户 2026-10-27 反馈）。故整段删除。若未来再引入 setCalendarPopup(True)，
+        # 正确做法是在源头关掉，而不是在 eventFilter 里拦截。
         return super().eventFilter(obj, event)
 
     # ------------------------------------------------------------------ #

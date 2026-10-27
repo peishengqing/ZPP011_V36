@@ -2904,12 +2904,15 @@ class MainWindow(QMainWindow):
     # 表格复制
     # -----------------------------------------------------------
     def _install_table_copy_handler(self):
+        # 故障（v43.276 已修）：把本窗口注册为应用级 eventFilter（app.installEventFilter）后，
+        #       应用级 filter 会收到 ALL 控件递交的事件，其中弹层 Show 事件
+        #       （filter_panel.eventFilter 拦截 QDateEdit / QCalendarWidget 等）在 delivery 期间
+        #       触发窗口级 eventFilter 的再入调用，导致
+        #       "Error calling Python override of QMainWindow::eventFilter()" 无限嵌套、
+        #       启动即崩溃。
+        # 修复：只保留 self.table_view 的控件级过滤器，Ctrl 键状态改由该过滤器的
+        #       KeyPress/KeyRelease 事件流自行维护（见下方 eventFilter）。
         self.table_view.installEventFilter(self)
-        # 同时在应用级安装事件过滤器：跟踪 Ctrl 按下状态（多级排序判定用）。
-        # 关键：从键盘事件流自行维护 _ctrl_down，彻底绕开 Qt「鼠标事件读不到 Ctrl 修饰符」的坑。
-        app = QApplication.instance()
-        if app is not None:
-            app.installEventFilter(self)
 
     @staticmethod
     def _mod_has_ctrl(mods):

@@ -14,6 +14,17 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.278",
+        "date": "2026-10-27",
+        "fixes": "**点「显示筛选」连弹多个日历窗**（用户 16:49 截图反馈）。根因：v43.276 在 filter_panel.eventFilter 加的 `QEvent.ShowPopup` 兜底拦截（后改为 Show/ShowToParent），面板每次显示时 Qt 会对每个 QDateEdit 子控件派发 Show 事件 → 每个日期框各弹一个手画日历窗。而 v43.277 后全部日期字段都是 _make_date_field（setCalendarPopup(False) + 「选择」按钮直调 _popup_calendar），该兜底已无必要，整段删除。附带：修 ShowPopup AttributeError 启动崩溃（PySide6 6.x 枚举无此成员，eventFilter 一被调用即抛错）。",
+        "features": "清理 QSS 告警：light/dark_theme.qss 删除 Qt 不支持的 box-shadow 属性（启动时刷 26 条 'Unknown property box-shadow'），焦点视觉反馈由 border-color 高亮承担。",
+    },
+    {
+        "version": "v43.277",
+        "date": "2026-10-27",
+        "fixes": "**修复 v43.276 引入的启动崩溃（无限 eventFilter 嵌套）**。根因：`_install_table_copy_handler` 把 MainWindow 注册为*应用级* eventFilter，app 级 filter 收到全窗口事件，`filter_panel.eventFilter` 的 `QEvent.ShowPopup` 拦截在 delivery 期间触发窗口级 eventFilter 的再入调用，不断套壳 `Error calling Python override of QMainWindow::eventFilter()`，导致 `showMaximized()` 阶段抱错退出。修法：拆掉 `app.installEventFilter(self)`，只保留 `self.table_view.installEventFilter(self)`（控件级）；`_ctrl_down` 仍由该过滤器的 KeyPress/KeyRelease 事件流自行维护，`column_controller` 通过 getattr('mw', '_ctrl_down', False) 容错读取。`main_window.py` 第 2906-2914 行 `_install_table_copy_handler`。",
+    },
+    {
         "version": "v43.276",
         "date": "2026-10-27",
         "fixes": "**堵住 v43.275 遗漏的第二条 QCalendarWidget 弹窗入口**。用户 10:37 截图仍显示「...」，定位：`filter_panel.py:309/315` 的 `start_date_edit` / `end_date_edit` 是独立的 QDateEdit，`setCalendarPopup(True)` 直接触发 Qt 内置 QCalendarWidget 弹窗——绕开 v43.275 手画的 QTableWidget 日历。之前只改了 `_make_date_field` 生成的 analysis_start/end 日期字段，漏了「日期范围」分组里这一对。修法：把 start/end_date_edit 也改成用 `_make_date_field` 生成（`setCalendarPopup(False)` + 加「选择/清除」按钮），UI 与另一个日期字段组保持一致。同时补一个 eventFilter 拦截 `QEvent.ShowPopup` 作兜底（万一未来哪一天又加回 setCalendarPopup(True) 也不会漏）。验证：4 个 QDateEdit 全部 calPopup=False，4 个「选择」按钮全部弹 QTableWidget 而非 QCalendarWidget，7x7 表格日期 1-31 完整显示（含两位数 10-31）。",

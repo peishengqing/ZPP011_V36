@@ -1167,7 +1167,8 @@ QWidget#colFilterPopup {
 #filterPanel QDateEdit:focus {
     border-color: #7F77DD;
     outline: none;
-    box-shadow: 0 0 0 2px rgba(127, 119, 221, 0.1);
+    /* box-shadow 不被 Qt QSS 支持（会刷 "Unknown property" 告警），焦点视觉
+       反馈改由上方 border-color 高亮承担；如以后要光晕，需用 QPainter 自绘。 */
 }
 #filterPanel QLineEdit::placeholder {
     color: #ADB5BD;
