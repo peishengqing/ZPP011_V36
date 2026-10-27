@@ -14,6 +14,11 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.282",
+        "date": "2026-10-27",
+        "fixes": "**清掉全部 13 个存量测试失败 + 2 个 teardown 错误（全量单测 228 passed 全绿）**。① v43.270「Phase 5」把筛选预设 7 个核心方法改走 FilterController 内存 store，引入两个真实回归：预设存 app_state._preset_store 重启即丢（旧走 config_manager.filter_history 落盘）；应用预设改 fc.apply_preset→app_state（_data 从未填充）→get_filtered_dataframe 返回 None→on_data_changed(None) 崩溃。7 个方法体回退到 v43.195 实现（git 考古 99ab5c6 原文件比对确认），修好 11+2 个测试；Phase 5 导入导出/复制方法保留仍走 fc store。② test_custom_header_sort teardown：setAttribute(2048) 裸 int 改 Qt.WA_DeleteOnClose 枚举（PySide6 6.x 要求），sendPostedEvents(None,4) 笔误改 QEvent.DeferredDelete(52)。③ 生产真 bug×2：filter_controller 导出预设 json.dump(ensure_only=) 参数不存在（应为 ensure_ascii，一处被 except 吞致导出永远失败、一处无 except 直接抛）。",
+    },
+    {
         "version": "v43.281",
         "date": "2026-10-27",
         "fixes": "**状态栏「已读：自动 N / 手动 M」常驻 0/0 不再计算**（用户 17:27 截图反馈）。根因：计数是「本次会话新标记增量」累加，从数据库恢复的历史已读（日志「恢复了 36 条审核结果」）永不计入，且自动已读命中 0 条时连刷新都不触发。修法：update_read_counter 改为对 view_model.df 实时统计（_read==1 按 _read_source 分桶，auto 归自动、其余归手动），并在分析完成 setDataFrame+view_model 赋值后固定刷一次；df 不可用时兜底回会话累加值。",

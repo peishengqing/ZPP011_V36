@@ -423,7 +423,7 @@ class FilterController(QObject):
                 'presets': [p.to_dict() for p in presets]
             }
             with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(export_data, f, ensure_only=False, indent=2)
+                json.dump(export_data, f, ensure_ascii=False, indent=2)
             return True
         except Exception:
             # 记录日志或显示错误
@@ -516,7 +516,7 @@ class FilterController(QObject):
             'preset': preset.to_dict()
         }
         with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(export_data, f, ensure_only=False, indent=2)
+            json.dump(export_data, f, ensure_ascii=False, indent=2)
         return True
 
     def import_presets_from_zip(self, zip_path: str) -> List[str]:

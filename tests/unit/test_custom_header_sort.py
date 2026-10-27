@@ -84,10 +84,11 @@ def main_window(qapp):
                     mon.stop()
             except RuntimeError: pass
         try:
-            mw.setAttribute(2048, True)  # WA_DeleteOnClose
+            from PySide6.QtCore import Qt, QEvent
+            mw.setAttribute(Qt.WA_DeleteOnClose, True)
             mw.deleteLater()
             qapp.processEvents()
-            qapp.sendPostedEvents(None, 4)  # DeferredDelete
+            qapp.sendPostedEvents(None, QEvent.DeferredDelete)  # 52，非 4（4=鼠标双击）
             qapp.processEvents()
         except RuntimeError: pass
         del mw

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""筛选预设控制器（ARC-003 拆分产物，v43.195）
+"""筛选预设控制器（ARC-003 拆分产物，v43.195）。
 
 负责：筛选预设的存取 / 应用 / 删除 / 菜单刷新，以及筛选态 ↔ JSON 互转。
 
@@ -9,9 +9,11 @@
 两个 JSON 互转函数（_filters_to_jsonable / _jsonable_to_filters）保持
 @staticmethod —— 它们是纯函数、不依赖任何实例状态。搬迁后薄壳通过
 `self.mw.<name>` 转发（staticmethod 经实例访问合法）。
-"""
 
-import datetime
+v43.282：7 个核心方法回退到 v43.195 的 filter_history 落盘实现（v43.270
+Phase 5 的 fc 内存 store 引入重启丢预设 + 应用崩溃两个回归，13 个测试钉
+旧契约）；Phase 5 的导入导出/复制方法保留在文件下方，仍走 fc store。
+"""
 
 from PySide6.QtWidgets import QInputDialog, QMessageBox, QFileDialog
 
@@ -27,17 +29,27 @@ class FilterPresetController:
         self.filter_controller = None
 
     def _get_filter_controller(self):
-        """ lazily 获取 filter_controller """
-        if not hasattr(self.mw, 'filter_controller') or self.filter_controller is None:
+        """ lazily 获取 filter_controller（仅 Phase 5 导入导出/复制方法使用）。"""
+        if self.filter_controller is None:
             self.filter_controller = self.mw.filter_controller
         return self.filter_controller
 
+    # ──────────────────────────────────────────────────────────────
+    # 以下 7 个方法体 v43.282 回退到 v43.195 实现（ARC-003 第三刀契约）。
+    # v43.270「Phase 5」把它们改走 FilterController 内存 store，引入三个回归：
+    #   1) 预设存 app_state._preset_store（内存），重启即丢（旧走
+    #      config_manager.filter_history，落盘持久）；
+    #   2) 应用预设不再经 filter_panel.apply_filters 恢复控件，而是
+    #      fc.apply_preset → app_state（_data 从未填充）→ get_filtered_dataframe
+    #      返回 None → data_controller.on_data_changed(None) 崩溃；
+    #   3) 13 个回归测试全红（tests/unit/test_filter_preset_controller.py 11 个
+    #      + test_filter_presets.py 2 个集成），钉的正是旧契约。
+    # Phase 5 的导入导出/复制（export_presets_to_file 等）保留在本文件下方，
+    # 仍走 fc store——该入口后续需要与 filter_history 统一（见 version_history 备注）。
+    # ──────────────────────────────────────────────────────────────
+
     def _filter_preset_store(self):
-        """使用 FilterController 的预设存储 API"""
-        fc = self._get_filter_controller()
-        if fc:
-            return fc.get_preset_store()
-        return {}
+        return dict(self.mw.config_manager.get("filter_history") or {})
 
     @staticmethod
     def _filters_to_jsonable(state):
@@ -68,108 +80,58 @@ class FilterPresetController:
     def _capture_last_used_filter(self):
         """每次发起分析前，把当前筛选记为「上次使用」，预设菜单可一键恢复。"""
         try:
-            fc = self._get_filter_controller()
-            if fc:
-                # 收集当前筛选
-                state = self.mw._filters_to_jsonable(self.mw.filter_panel.get_filters())
-                if not state:
-                    return
-                # 创建预设并应用
-                preset = fc.create_new_preset_from_dict("___last___", [], preset_id="___last___")
-                # 转换为 FilterRule
-                rules = fc.create_filters_from_dict(state)
-                # 设置使用记录
-                preset.rules = rules
-                preset.last_used_at = datetime.datetime.now()
-                # 保存到 Last Used
-                fc._apply_preset_to_last_used(preset)
-                # 刷新菜单
-                self._refresh_filter_preset_menu()
-        except Exception as e:
-            toast(f"保存上次使用失败：{e}", level="error", parent=self.mw)
+            state = self.mw._filters_to_jsonable(self.mw.filter_panel.get_filters())
+            if not state:
+                return
+            store = self.mw._filter_preset_store()
+            store["___last___"] = state
+            self.mw.config_manager.set("filter_history", store)
+            self.mw._refresh_filter_preset_menu()
+        except Exception:
+            pass
 
     def _save_filter_preset(self, name):
-        """保存当前筛选为预设（使用 FilterController API）"""
-        fc = self._get_filter_controller()
-        if fc:
-            rules = fc.create_filters_from_dict(self.mw.filter_panel.get_filters())
-            fc.save_preset(name, rules)
-            toast("筛选预设已保存：%s" % name, level="info", parent=self.mw)
-            self._refresh_filter_preset_menu()
-            return True
-        return False
+        state = self.mw._filters_to_jsonable(self.mw.filter_panel.get_filters())
+        store = self.mw._filter_preset_store()
+        store[name] = state
+        self.mw.config_manager.set("filter_history", store)
+        self.mw._refresh_filter_preset_menu()
+        toast("筛选预设已保存：%s" % name, level="info", parent=self.mw)
 
     def _prompt_save_preset(self):
-        fc = self._get_filter_controller()
-        if fc:
-            # 获取现有预设数量
-            existing = [k for k in self._filter_preset_store() if k != "___last___"]
-            n = len(existing)
-            name, ok = QInputDialog.getText(
-                self.mw, "保存筛选预设", "预设名称：", text=f"预设 {n + 1}"
-            )
-            name = (name or "").strip()
-            if not ok or not name:
-                return
-            if name == "___last___":
-                QMessageBox.warning(self.mw, "保存筛选预设", "名称「___last___」为系统保留，请换一个。")
-                return
-            self._save_filter_preset(name)
+        n = len([k for k in self.mw._filter_preset_store() if k != "___last___"])
+        name, ok = QInputDialog.getText(self.mw, "保存筛选预设", "预设名称：", text="预设 %d" % (n + 1))
+        name = (name or "").strip()
+        if not ok or not name:
+            return
+        if name == "___last___":
+            QMessageBox.warning(self.mw, "保存筛选预设", "名称「___last___」为系统保留，请换一个。")
+            return
+        self.mw._save_filter_preset(name)
 
     def _apply_filter_preset(self, name):
-        """应用筛选预设（支持 last 和具体名）"""
-        fc = self._get_filter_controller()
-        if fc:
-            if name == "___last___":
-                preset = fc.get_last_used_preset()
-            else:
-                preset = fc.load_preset(name)
-            if preset:
-                fc.apply_preset(preset)
-                toast(f"已应用预设：{name}", level="info", parent=self.mw)
-            else:
-                toast(f"没有找到预设：{name}", level="error", parent=self.mw)
-        else:
-            # 后向兼容：使用旧方法
-            store = self._filter_preset_store()
-            state = store.get(name)
-            if state is None:
-                toast(f"暂无{'' if name == '___last___' else '预设「' + name + '」'}记录", level="info", parent=self.mw)
-                return
-            self.mw.filter_panel.apply_filters(self._jsonable_to_filters(state))
-            toast(f"已应用{'' if name == '___last___' else '筛选预设：' + name}", level="info", parent=self.mw)
+        store = self.mw._filter_preset_store()
+        state = store.get(name)
+        if state is None:
+            toast("暂无%s记录" % ("「上次使用」" if name == "___last___" else "预设「%s」" % name), level="info", parent=self.mw)
+            return
+        self.mw.filter_panel.apply_filters(self.mw._jsonable_to_filters(state))
+        toast("已应用%s" % ("「上次使用」筛选" if name == "___last___" else "筛选预设：" + name), level="info", parent=self.mw)
 
     def _delete_filter_preset(self, name):
-        fc = self._get_filter_controller()
-        if fc:
-            result = fc.delete_preset(name)
-            if result:
-                toast(f"已删除预设：{name}", level="info", parent=self.mw)
-                self._refresh_filter_preset_menu()
-            else:
-                toast(f"删除失败：{name}", level="error", parent=self.mw)
-        else:
-            # 后向兼容
-            store = self._filter_preset_store()
-            if name in store:
-                del store[name]
-                self.mw.config_manager.set("filter_history", store)
-                self._refresh_filter_preset_menu()
-                toast("已删除筛选预设：%s" % name, level="info", parent=self.mw)
+        store = self.mw._filter_preset_store()
+        if name in store:
+            del store[name]
+            self.mw.config_manager.set("filter_history", store)
+            self.mw._refresh_filter_preset_menu()
+            toast("已删除筛选预设：%s" % name, level="info", parent=self.mw)
 
     def _refresh_filter_preset_menu(self):
-        fc = self._get_filter_controller()
-        if fc:
-            # 使用 FilterController 的预设管理
-            names = [k for k in self._filter_preset_store() if k != "___last___"]
-            self.mw.filter_panel.set_preset_names(names, fc.get_last_used_preset() is not None)
-        else:
-            # 后向兼容
-            try:
-                names = [k for k in self._filter_preset_store() if k != "___last___"]
-                self.mw.filter_panel.set_preset_names(names, "___last___" in self._filter_preset_store())
-            except Exception:
-                pass
+        try:
+            names = [k for k in self.mw._filter_preset_store() if k != "___last___"]
+            self.mw.filter_panel.set_preset_names(names, "___last___" in self.mw._filter_preset_store())
+        except Exception:
+            pass
 
     # Phase 5 增强功能
     def export_presets_to_file(self, file_path=None):
