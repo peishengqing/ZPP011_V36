@@ -14,6 +14,11 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.274",
+        "date": "2026-10-27",
+        "fixes": "**彻底修复日期选择器日历弹窗日期数字显示为「...」的问题**（推翻 v43.273 的 QSS 方案）。诊断证据：QCalendarWidget 内部有独立的 QTableView + QStyledItemDelegate，外部 QSS 覆盖不到 delegate 层的省略号判定；`setDefaultSectionSize(42)` 被 QCalendarWidget 内部 layout 覆盖成 16px，导致两位数日期被 QStyledItemDelegate 自动省略成「...」。正解：(1) 用 `cal.findChild(QTableView)` 钻到内部表，(2) 装自定义 `QStyledItemDelegate` 强制每格 44×42 sizeHint + 手动 QPainter.draw 深字绕过默认省略号，(3) `dlg.show()` 后用 `verticalHeader().resizeSection(r, 42)` **逐行** 锁定行高（setDefaultSectionSize 被 QCalendarWidget 忽略，只有逐行 resizeSection 生效），(4) 隐藏 verticalHeader 让每个日期单元格横向腾出空间。修复后 offscreen 诊断：tv 实际 416×411（填满 dialog），每行 59px 高，两位数完整显示。附带：QDialog 底部增加「将选择：yyyy-MM-dd」预览标签，选择实时同步。",
+    },
+    {
         "version": "v43.273",
         "date": "2026-10-27",
         "fixes": "**修复日期选择器日历弹窗日期数字显示为「...」的问题**（用户 2026-10-27 09:21 截图反馈）。根因：`light_theme.qss:14` 有 `QMainWindow, QDialog, QWidget { background-color: #F3F3EE; ... }` 规则，`QWidget` 选择器会级联到 `QCalendarWidget` 内部所有子控件，把单元格底盖成米黄底；加之日历默认单元格高度只有 ~20px，日期数字被挤到只剩几个像素宽，看起来像三个点。修法：在 `_popup_calendar` 里给 dialog + calendar 加内联 QSS 覆盖（白底 + 深字 + 13px 字体），并强制 dialog 最小尺寸 360×400、calendar 最小尺寸 320×280，让每个单元格至少 40×36 保证数字完整显示。",
