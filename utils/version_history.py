@@ -14,6 +14,11 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.275",
+        "date": "2026-10-27",
+        "fixes": "**彻底根治日期选择器日历弹窗日期数字显示为「...」的问题**（推翻 v43.273/v43.274 两条路径）。诊断证据：QStyledItemDelegate 内部对 option.rect 有二次省略号判定，即使手动 QPainter.drawText 也挡不住——只要 cell 宽 < QFontMetrics('30').width()=30px 就强制省略。QCalendarWidget 每列默认 ~30px 正好触发。正解：放弃 QCalendarWidget，用 QTableWidget 手画日历——(1) 7 列 × 7 行，第 0 行是「周一~周日」表头，(2) QHeaderView.Stretch 均分列宽彻底解决两位数被省略，(3) QTableWidgetItem 用 foreground 控制「相邻月灰色 / 今天红字加粗 / 选中蓝底白字」，(4) QTableWidgetItem.setData(Qt.UserRole, 'yyyyMMdd') 存真实日期，(5) 顶部 ◀ 年月 ▶ 前后月切换，底部「将选择：yyyy-MM-dd」预览 + 确定/取消，(6) 越界日期（小于 min 或大于 max）禁用点击，(7) Escape 取消、Enter 确定、Double-click 立即接受。验证：offscreen 结构数据 7x7 表格，日期 1-31 全部两位数完整显示。",
+    },
+    {
         "version": "v43.274",
         "date": "2026-10-27",
         "fixes": "**彻底修复日期选择器日历弹窗日期数字显示为「...」的问题**（推翻 v43.273 的 QSS 方案）。诊断证据：QCalendarWidget 内部有独立的 QTableView + QStyledItemDelegate，外部 QSS 覆盖不到 delegate 层的省略号判定；`setDefaultSectionSize(42)` 被 QCalendarWidget 内部 layout 覆盖成 16px，导致两位数日期被 QStyledItemDelegate 自动省略成「...」。正解：(1) 用 `cal.findChild(QTableView)` 钻到内部表，(2) 装自定义 `QStyledItemDelegate` 强制每格 44×42 sizeHint + 手动 QPainter.draw 深字绕过默认省略号，(3) `dlg.show()` 后用 `verticalHeader().resizeSection(r, 42)` **逐行** 锁定行高（setDefaultSectionSize 被 QCalendarWidget 忽略，只有逐行 resizeSection 生效），(4) 隐藏 verticalHeader 让每个日期单元格横向腾出空间。修复后 offscreen 诊断：tv 实际 416×411（填满 dialog），每行 59px 高，两位数完整显示。附带：QDialog 底部增加「将选择：yyyy-MM-dd」预览标签，选择实时同步。",

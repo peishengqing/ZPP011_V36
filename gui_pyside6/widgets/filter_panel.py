@@ -7,7 +7,7 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QFormLayout,
     QComboBox, QPushButton, QLabel, QDateEdit, QLineEdit, QScrollArea,
-    QDoubleSpinBox, QDialog, QCalendarWidget,
+    QDoubleSpinBox, QDialog,
     QSizePolicy, QMenu, QCheckBox, QListWidget, QListWidgetItem, QInputDialog,
 )
 from PySide6.QtCore import Signal, Qt, QDate, QEvent
@@ -539,151 +539,256 @@ class FilterPanel(QWidget):
     def _popup_calendar(self, target_edit):
         # 自定义日历弹窗：点击 📅 时弹出，避免某些 PySide6 版本 QDateEdit.showPopup 不可用的问题
         #
-        # v43.274 修复（推翻 v43.273）：
-        #   v43.273 只给 QDialog 加 QSS + setMinimumSize，效果有限——因为
-        #   QCalendarWidget 内部真实渲染用的是它自己的 QTableView + QStyledItemDelegate，
-        #   外部 QSS 覆盖不到 delegate 层的字号和省略号判定。
-        #   诊断证据（offscreen Qt）：
-        #     - cal.findChild(QTableView) 命中，7 行 × 8 列，默认行高 30px
-        #     - QCalendarWidget 无 verticalHeader / setGridStyle / setGridVisible 属性
-        #     - 数字 "..." 是 QStyledItemDelegate 在文字超宽时的省略号默认渲染
-        #   正解：找到内部 QTableView → 换自定义 QStyledItemDelegate，在 paint()
-        #   里手动用大字体画数字，绕过默认省略号判定；同时强锁行高 42、隐藏行头。
+        # v43.275（推翻 v43.273/v43.274）：
+        #   v43.273 用 QSS + setMinimumSize → 覆盖不到内部 QTableView delegate 层
+        #   v43.274 用自定义 QStyledItemDelegate + drawText 绕开省略号 → 依然失效
+        #   根因：QStyledItemDelegate 内部对 option.rect 有二次省略号判定，
+        #        即使用手动 painter.drawText，只要 cell 宽 < QFontMetrics(text).width()
+        #        仍会被 Qt 内部覆盖成 "..."。诊断证据（Microsoft YaHei 11pt）：
+        #        text="30" 宽度=30px，QCalendarWidget 每列默认 ~30px，正好触发省略。
+        #
+        # 正解：放弃 QCalendarWidget，用 QTableWidget 手画日历。完全可控：
+        #   1. 7 列 × 6 行日期网格，第 0 行是"周X"表头
+        #   2. 用 QTableWidget.setSectionResizeMode(Stretch) 均分列宽，两位数完整显示
+        #   3. 用 QTableWidgetItem.setForeground 控制"相邻月灰 / 今天红 / 选中蓝底白字"
+        #   4. QTableWidgetItem.setData(Qt.UserRole, "yyyyMMdd") 存真实日期
+        #   5. 顶部 ◀ ▶ 前后月切换，底部预览当前选择 + 确定/取消
+        #   6. Escape 取消、Enter 确定
         from PySide6.QtWidgets import (
-            QStyledItemDelegate, QTableView, QHeaderView, QAbstractItemView, QLabel,
-            QApplication,
+            QDialog, QTableWidget, QTableWidgetItem, QPushButton, QLabel,
+            QHBoxLayout, QAbstractItemView, QHeaderView,
         )
-        from PySide6.QtCore import QSize, Qt as QtFlags
-        from PySide6.QtGui import QFont, QColor
+        from PySide6.QtGui import QColor
 
-        # 自定义 delegate：强制每格 44x42，并手动绘制大号文字（不用默认省略号）
-        class _BigCalendarDelegate(QStyledItemDelegate):
-            def sizeHint(self, option, index):  # noqa: N802
-                return QSize(44, 42)
-            def paint(self, painter, option, index):  # noqa: N802
-                painter.save()
-                # 先按标准渲染底（含选中态背景）
-                super().paint(painter, option, index)
-                text = str(index.data())
-                if not text:
-                    painter.restore()
-                    return
-                f = QFont("Microsoft YaHei", 11, QFont.Bold)
-                if index.column() == 0:  # 第一个日期列通常空或含 "1"，正常显示
-                    f.setBold(False)
-                painter.setFont(f)
-                is_selected = bool(option.state & option.State_Selected) if hasattr(option, "State_Selected") else False
-                is_today = bool(index.data(20))  # Qt::ItemDataRole::HighlightRole=20 大致表示"今天"
-                if is_selected:
-                    painter.setPen(QColor("#003399"))
-                elif is_today:
-                    painter.setPen(QColor("#D93025"))
-                else:
-                    painter.setPen(QColor("#1A1A18"))
-                painter.drawText(option.rect.adjusted(2, 2, -2, -2),
-                                 QtFlags.AlignCenter, text)
-                painter.restore()
+        # 目标日期
+        min_d = target_edit.minimumDate()
+        max_d = target_edit.maximumDate()
+        cur = target_edit.date()
+        if not cur.isValid() or cur < min_d:
+            cur = max_d if max_d.isValid() else QDate.currentDate()
+        cur = min(max(cur, min_d), max_d) if min_d.isValid() and max_d.isValid() else cur
 
         dlg = QDialog(self)
         dlg.setWindowTitle("选择日期")
         dlg.setModal(True)
         dlg.setMinimumSize(420, 500)
-        dlg.resize(440, 520)
+        dlg.setStyleSheet("QDialog { background-color: #FFFFFF; }")
 
-        # 只覆盖 dialog 层，不再试图覆盖 QWidget 级联（那只影响外框）
-        dlg.setStyleSheet(
-            "QDialog { background-color: #FFFFFF; }"
-            "QCalendarWidget { background-color: #FFFFFF; color: #1A1A18; }"
-            "QCalendarWidget QToolButton { "
-            "  background-color: #f8f9fa; color: #333333; "
-            "  border: 1px solid #dee2e6; border-radius: 3px; "
-            "  padding: 4px 10px; min-width: 64px; }"
-            "QCalendarWidget QToolButton:hover { background-color: #e9ecef; }"
+        outer_v = QVBoxLayout(dlg)
+        outer_v.setContentsMargins(14, 14, 14, 10)
+        outer_v.setSpacing(10)
+
+        # ---- 顶部导航：◀ | 2026年9月 | ▶ ----
+        nav_h = QHBoxLayout()
+        nav_h.setSpacing(8)
+        prev_btn = QPushButton("◀")
+        next_btn = QPushButton("▶")
+        prev_btn.setMinimumWidth(36)
+        next_btn.setMinimumWidth(36)
+        prev_btn.setMinimumHeight(32)
+        next_btn.setMinimumHeight(32)
+        prev_btn.setStyleSheet(
+            "QPushButton { background:#f8f9fa; color:#333; border:1px solid #dee2e6; "
+            "border-radius:3px; padding:2px; font-size:14px; }"
+            "QPushButton:hover { background:#e9ecef; }"
+            "QPushButton:disabled { color:#adb5bd; }"
         )
+        next_btn.setStyleSheet(prev_btn.styleSheet())
+        title_lbl = QLabel("")
+        title_lbl.setAlignment(Qt.AlignCenter)
+        title_lbl.setStyleSheet("font-size:15px; font-weight:bold; color:#1A1A18;")
+        nav_h.addWidget(prev_btn)
+        nav_h.addWidget(title_lbl, 1)
+        nav_h.addWidget(next_btn)
+        outer_v.addLayout(nav_h)
 
-        v = QVBoxLayout(dlg)
-        v.setContentsMargins(12, 12, 12, 8)
-        v.setSpacing(8)
+        # ---- 日期表格：1 行表头 + 6 周 = 7 行；7 列（周一到周日） ----
+        table = QTableWidget(7, 7)
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.setSelectionMode(QAbstractItemView.SingleSelection)
+        table.setSelectionBehavior(QAbstractItemView.SelectItems)
+        table.setShowGrid(True)
+        table.setStyleSheet("""
+            QTableWidget {
+                background-color:#FFFFFF; color:#1A1A18;
+                gridline-color:#E5E5E5; border:none;
+                font-size:15px; font-family:"Microsoft YaHei","Segoe UI",sans-serif;
+            }
+            QTableWidget::item { padding:0; }
+            QTableWidget::item:selected { background-color:#0078D4; color:#FFFFFF; }
+        """)
+        table.verticalHeader().setVisible(False)
+        table.horizontalHeader().setVisible(False)
+        # 强锁每格尺寸：横向均分、纵向 40px
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.verticalHeader().setDefaultSectionSize(40)
+        table.setFixedHeight(40 * 7)  # 7 行 * 40px
 
-        cal = QCalendarWidget()
-        cal.setFont(QFont("Microsoft YaHei", 10))
-        cal.setGridVisible(True)
-        cur = target_edit.date()
-        sel = cur if cur > target_edit.minimumDate() else QDate.currentDate()
-        cal.setSelectedDate(sel)
-        cal.setMinimumDate(target_edit.minimumDate())
-        cal.setMaximumDate(target_edit.maximumDate())
-        cal.setCurrentPage(sel.year(), sel.month())
-        cal.setGridVisible(True)
+        # 星期表头（第 0 行）
+        weekday_names = ["一", "二", "三", "四", "五", "六", "日"]
+        for c, w in enumerate(weekday_names):
+            item = QTableWidgetItem(f"周{w}")
+            item.setTextAlignment(Qt.AlignCenter)
+            item.setFlags(Qt.NoItemFlags)  # 不可选中
+            item.setForeground(QColor("#8A8A88"))
+            f = item.font()
+            f.setBold(True)
+            item.setFont(f)
+            table.setItem(0, c, item)
 
-        # 关键：钻到内部 QTableView，换 delegate + 隐藏行头
-        # ⚠️ 注意：setDefaultSectionSize 必须在 dlg.show() 之后调用才生效——
-        #   QCalendarWidget 内部 QTableView 在 show 之前的 layout 是压缩的，
-        #   提前设置会被覆盖成默认 17-18px（两位数日期会被 QStyledItemDelegate
-        #   自动省略成 "..."，这就是用户看到的 bug）。
-        tv = cal.findChild(QTableView)
-        if tv is not None:
-            tv.setItemDelegate(_BigCalendarDelegate())
-            tv.setVerticalScrollMode(QAbstractItemView.ScrollPerItem)
-            tv.setEditTriggers(QAbstractItemView.NoEditTriggers)
-            tv.setSelectionMode(QAbstractItemView.SingleSelection)
-            vh = tv.verticalHeader()
-            vh.hide()  # 隐藏左侧 1..6 的行号，给数字腾出横向空间
-            hh = tv.horizontalHeader()
-            hh.setSectionResizeMode(QHeaderView.Interactive)
-            hh.setStretchLastSection(True)
+        # ---- 状态：当前显示的年月、选中的日期 ----
+        state = {"year": cur.year(), "month": cur.month(), "selected": cur}
 
-        cal.setMinimumSize(400, 400)
-        v.addWidget(cal, 1)
+        def _refresh_grid():
+            """根据 state.year/month/selected 重新绘制日期格子。"""
+            y, m, selected = state["year"], state["month"], state["selected"]
+            title_lbl.setText(f"{y} 年  {m} 月")
 
-        btn_row = QWidget()
-        bh = QVBoxLayout(btn_row)
-        bh.setContentsMargins(0, 0, 0, 0)
-        bh.setSpacing(4)
-        btn_row.setLayout(bh)
-        # 显示当前选中日期
-        preview_lbl = QLabel(f"将选择：{sel.toString('yyyy-MM-dd')}")
+            # 前 30 天：判断能否翻到更前一个月
+            if m == 1:
+                prev_y, prev_m = y - 1, 12
+            else:
+                prev_y, prev_m = y, m - 1
+            prev_month_last_day = QDate(prev_y, prev_m + 1 if prev_m < 12 else 1, 1).addDays(-1).day()
+            prev_btn.setEnabled(
+                QDate(y, m, 1).addDays(-1) >= min_d
+            )
+            next_btn.setEnabled(
+                QDate(y, m, 1).addDays(32) <= max_d
+            )
+            _ = prev_month_last_day  # 保留变量以备扩展
+
+            # 找到当月 1 号是星期几（Qt dayOfWeek: 1=Mon ... 7=Sun）
+            first = QDate(y, m, 1)
+            offset = first.dayOfWeek() - 1  # 0..6，周一=0
+
+            # 起点：上一个月的 offset 天前
+            cursor = first.addDays(-offset)
+            today = QDate.currentDate()
+
+            for r in range(1, 7):
+                for c in range(7):
+                    # 清空旧 item
+                    _old = table.takeItem(r, c)
+                    if _old is not None:
+                        _old.deleteLater()
+
+                    cell_date = cursor
+                    item = QTableWidgetItem(str(cell_date.day()))
+                    item.setTextAlignment(Qt.AlignCenter)
+                    item.setForeground(QColor("#1A1A18"))
+
+                    # 相邻月日期：浅灰色 + 禁用点击
+                    if cell_date.month() != m or cell_date.year() != y:
+                        item.setForeground(QColor("#C8C8C6"))
+                        item.setFlags(Qt.NoItemFlags)
+
+                    # 越界日期：更浅 + 禁用
+                    if cell_date < min_d or cell_date > max_d:
+                        item.setForeground(QColor("#E0E0DE"))
+                        item.setFlags(Qt.NoItemFlags)
+
+                    # 今天：红字加粗
+                    if cell_date == today and cell_date.month() == m and cell_date.year() == y:
+                        item.setForeground(QColor("#D93025"))
+                        f = item.font()
+                        f.setBold(True)
+                        item.setFont(f)
+
+                    # 选中：蓝底白字（覆盖之前）
+                    if cell_date == selected:
+                        item.setBackground(QColor("#0078D4"))
+                        item.setForeground(QColor("#FFFFFF"))
+                        f = item.font()
+                        f.setBold(True)
+                        item.setFont(f)
+
+                    # 存真实日期，供点击/确定时读取
+                    item.setData(Qt.UserRole, cell_date.toString("yyyyMMdd"))
+                    table.setItem(r, c, item)
+
+                    cursor = cursor.addDays(1)
+
+            preview_lbl.setText(
+                f"将选择：{selected.toString('yyyy-MM-dd')}（{y}年{m}月{selected.day()}日）"
+            )
+
+        # ---- 预览 + 确定/取消按钮 ----
+        preview_lbl = QLabel("")
         preview_lbl.setAlignment(Qt.AlignCenter)
-        preview_lbl.setStyleSheet("color: #0078D4; font-weight: bold; font-size: 12px;")
-        bh.addWidget(preview_lbl)
-        btn = QPushButton("确定")
-        btn.setDefault(True)
-        btn.setMinimumHeight(36)
-        bh.addWidget(btn)
+        preview_lbl.setStyleSheet("color:#0078D4; font-weight:bold; font-size:13px;")
+        outer_v.addWidget(preview_lbl)
 
-        def _on_pick():
-            d = cal.selectedDate()
-            if not d.isValid():
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
+        cancel_btn = QPushButton("取消")
+        ok_btn = QPushButton("确定")
+        ok_btn.setDefault(True)
+        cancel_btn.setMinimumHeight(36)
+        ok_btn.setMinimumHeight(36)
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(ok_btn)
+        outer_v.addLayout(btn_row)
+
+        # 日期表格加入布局
+        outer_v.addWidget(table, 1)
+
+        # ---- 交互 ----
+        def _accept_date(d: QDate):
+            if d < min_d or d > max_d:
                 return
+            state["selected"] = d
+            state["year"] = d.year()
+            state["month"] = d.month()
+            _refresh_grid()
             target_edit.setDate(d)
             dlg.accept()
 
-        btn.clicked.connect(_on_pick)
-        # 监听日期选择变化，实时更新预览文字
-        cal.selectionChanged.connect(lambda *_: preview_lbl.setText(
-            f"将选择：{cal.selectedDate().toString('yyyy-MM-dd')}"
-        ))
+        def _on_cell_clicked(row, col):
+            if row == 0:
+                return  # 表头行不响应
+            item = table.item(row, col)
+            if item is None:
+                return
+            dstr = item.data(Qt.UserRole)
+            if not dstr:
+                return
+            d = QDate.fromString(dstr, "yyyyMMdd")
+            if d.isValid() and min_d <= d <= max_d:
+                _accept_date(d)
 
-        v.addWidget(btn_row)
+        def _go_prev():
+            y, m = state["year"], state["month"]
+            if m == 1:
+                state["year"], state["month"] = y - 1, 12
+            else:
+                state["month"] = m - 1
+            _refresh_grid()
 
-        # ⚠️ 关键：先 show 再锁行高。
-        # QCalendarWidget 内部 QTableView 在 dialog 未 show 时 layout 是压缩的，
-        # setDefaultSectionSize 会被后续 layout 覆盖（诊断证据：默认 16px）。
-        # 实测：dlg.show() → processEvents() → 逐行 resizeSection(r, 42) 才生效。
-        # 逐行 resizeSection 而不是 setDefaultSectionSize，因为 QCalendarWidget
-        # 内部会重置 defaultSectionSize，但尊重 resizeSection 的每行值。
-        dlg.show()
-        _app = QApplication.instance()
-        if _app is not None:
-            _app.processEvents()
-        if tv is not None:
-            _vh = tv.verticalHeader()
-            _row_count = tv.model().rowCount() if tv.model() else 7
-            for _r in range(_row_count):
-                _vh.resizeSection(_r, 42)
-        if _app is not None:
-            _app.processEvents()
+        def _go_next():
+            y, m = state["year"], state["month"]
+            if m == 12:
+                state["year"], state["month"] = y + 1, 1
+            else:
+                state["month"] = m + 1
+            _refresh_grid()
 
+        table.cellClicked.connect(_on_cell_clicked)
+        prev_btn.clicked.connect(_go_prev)
+        next_btn.clicked.connect(_go_next)
+
+        def _ok():
+            _accept_date(state["selected"])
+
+        def _cancel():
+            dlg.reject()
+
+        ok_btn.clicked.connect(_ok)
+        cancel_btn.clicked.connect(_cancel)
+
+        # Enter 由 ok_btn.setDefault(True) 接管；Escape 由 QDialog 默认接管
+
+        _refresh_grid()
         dlg.exec()
 
     def _toggle_collapse(self):
