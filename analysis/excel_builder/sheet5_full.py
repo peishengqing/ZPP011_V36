@@ -8,6 +8,28 @@ from analysis.excel_builder.write_sheet_util import ensure_numeric_cols, NUMERIC
 import numpy as np
 
 
+# 偏差等级分档（规格 2026-10-27 §2.1 唯一业务例外；阈值单一来源，
+# 业务要调只改这一行。边界语义：10 与 50 含在「一般」档，>50 才「严重」。）
+GRADE_BOUNDS = (10.0, 50.0)
+
+
+def dev_grade(rate_pct):
+    """按 |偏差率(%)|（百分点）分档：>50 严重 / 10~50 一般 / <10 轻微 / 非数值 —。
+    ±100 钳位标记行按绝对值入档=严重（本就是最需要人看的行，不做特判）。"""
+    try:
+        v = abs(float(rate_pct))
+    except (TypeError, ValueError):
+        return "—"
+    if pd.isna(v):
+        return "—"
+    lo, hi = GRADE_BOUNDS
+    if v > hi:
+        return "严重"
+    if v >= lo:
+        return "一般"
+    return "轻微"
+
+
 def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
     """
     构建 Sheet5 完整偏差明细 DataFrame
@@ -72,7 +94,7 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
             '订单日期', '订单类型', '流程订单', '工厂', '车间',
             '原表行号', '产品物料号码', '产品物料描述', '产量', '产量单位', '物料编码', '物料名称',
             '单位', '定额', '实际', '偏差数量', '偏差率', '偏差率(%)',
-            '偏差金额', '备注', '备注来源', '偏差区间',
+            '偏差金额', '备注', '备注来源', '偏差区间', '偏差等级',
             '组件物料类型', '组件物料类型描述', '半成品重分类',
         ])
     else:
@@ -112,6 +134,8 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
         # 消费方（dashboard_html 的 str.contains('正')/('负')、正负堆叠 groupby）对「零偏差」天然不命中，安全。
         _rates5 = pd.to_numeric(has_real_dev[col_p], errors='coerce')
         dev_df['偏差区间'] = np.where(_rates5 > 0, '正偏差', np.where(_rates5 < 0, '负偏差', '零偏差'))
+        # 偏差等级列（v43.283，规格 §2.1）：GUI 主表与完整偏差明细共用（单一事实源）
+        dev_df['偏差等级'] = has_real_dev[col_p].map(dev_grade)
         dev_df['组件物料类型'] = has_real_dev['组件物料类型'].fillna('') if '组件物料类型' in has_real_dev.columns else ''
         dev_df['组件物料类型描述'] = has_real_dev['组件物料类型描述'].fillna('') if '组件物料类型描述' in has_real_dev.columns else ''
         # 半成品重分类：从原始 df 继承，若存在则保留
