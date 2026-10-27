@@ -1033,6 +1033,102 @@ def _upgrade_dashboard(wb):
     return 1
 
 
+# ------------------------------------------------------------ 数据层降噪 v43.283
+
+def _resort_summary(wb):
+    """v43.283 规格 §5：「汇总统计」展示行按 |总偏差金额| 降序整行重排。
+    只搬行（值+样式随行走），数值零改动；序号列随行走（保留原生成序作
+    对账锚点）。放在逐表流水线之后跑，避免重排让条件格式区间指错行——
+    汇总统计页的条件格式按列整区挂（G 列预警等随行换内容不换位），
+    实测其 CF 区间为整列区，重排后语义仍正确。"""
+    name = '汇总统计'
+    if name not in wb.sheetnames:
+        return 0
+    ws = wb[name]
+    h_row, headers = _header_info(ws)
+    last_row = _last_data_row(ws, h_row)
+    c_amt = _find_col(headers, '总偏差金额(含税)')
+    if not c_amt or last_row <= h_row + 1:
+        return 0
+    ncol = ws.max_column
+    map_ = _cells_of(ws)
+    rows = []
+    for r in range(h_row + 1, last_row + 1):
+        cells = []
+        for c in range(1, ncol + 1):
+            src = map_.get((r, c))
+            cells.append((src.value if src is not None else None,
+                          copy(src._style) if src is not None else None))
+        src_amt = map_.get((r, c_amt))
+        amt = src_amt.value if src_amt is not None else None
+        rows.append((abs(amt) if isinstance(amt, (int, float)) else 0.0, cells))
+    rows.sort(key=lambda x: -x[0])
+    for i, (_, cells) in enumerate(rows):
+        for c, (v, st) in enumerate(cells, 1):
+            tgt = ws.cell(h_row + 1 + i, c)
+            tgt.value = v
+            if st is not None:
+                tgt._style = st
+    ws.sheet_properties.tabColor = '9E9E9E'   # 数据层=灰（规格 §6）
+    return 1
+
+
+def _denoise_trend_sheet(wb):
+    """v43.283 规格 §5：趋势分析页降噪。
+    1) R1 区间说明（合并单元格）挪出数据区 → 解合并、清值、挂表头首格批注；
+    2) 偏差率列空白格填 '—'（全空杂行不填）；
+    3) autofilter 重建覆盖数据区。
+    **不删行**：条件格式区间（G3:G1086）不随行移动，删行会整体错位。
+    返回填充 '—' 的格数。"""
+    name = '趋势分析（自然日分组）'
+    if name not in wb.sheetnames:
+        return 0
+    ws = wb[name]
+    h_row, headers = _header_info(ws)
+    last_row = _last_data_row(ws, h_row)
+    # 1) 表头上方杂行挪入批注（数据区不夹文本）
+    stray = []
+    for rng in list(ws.merged_cells.ranges):
+        if rng.min_row < h_row:
+            ws.unmerge_cells(str(rng))
+    for r in range(1, h_row):
+        for c in range(1, ws.max_column + 1):
+            v = ws.cell(r, c).value
+            if v not in (None, ''):
+                stray.append(str(v))
+                ws.cell(r, c).value = None
+    if stray:
+        from openpyxl.comments import Comment
+        note = ws.cell(h_row, 1)
+        note.comment = Comment(' '.join(stray), 'ZPP011', height=80, width=300)
+    # 2) 数值列（表头含 数量/金额/率）空白填 —；整行全空的杂行跳过
+    numeric_cols = [c for c, nm in headers.items()
+                    if nm and any(k in str(nm) for k in ('数量', '金额', '率'))]
+    filled = 0
+    map_ = _cells_of(ws)
+    for r in range(h_row + 1, last_row + 1):
+        row_has_data = any(map_.get((r, c)) is not None
+                           and map_[(r, c)].value not in (None, '')
+                           for c in headers if c <= ws.max_column)
+        if not row_has_data:
+            continue
+        for c in numeric_cols:
+            cell = ws.cell(r, c)
+            if cell.value in (None, ''):
+                cell.value = '—'
+                cell.alignment = Alignment(horizontal='right')
+                filled += 1
+    # 3) autofilter 重建（覆盖旧 ref，含杂行清除后的范围不变——不删行）
+    try:
+        ws.auto_filter.ref = '%s%d:%s%d' % (
+            get_column_letter(1), h_row,
+            get_column_letter(ws.max_column), last_row)
+    except Exception as e:
+        _log('[post_process] 趋势页 autofilter 失败: %s' % e)
+    ws.sheet_properties.tabColor = '9E9E9E'
+    return filled
+
+
 # ---------------------------------------------------------------- 各表事实卡
 
 # 事实卡「关键度量」列的候选优先级：按顺序取第一个能匹配上的列。
@@ -1501,7 +1597,8 @@ def decorate_workbook(wb, add_dashboard=True):
     """
     stats = {'sheets': 0, 'dates': 0, 'ids': 0, 'blanks': 0, 'flags': 0,
              'ratios': 0, 'dups': 0, 'charts': 0, 'cards': 0,
-             'severity': 0, 'afilter': 0, 'unfed': 0, 'extra': 0}
+             'severity': 0, 'afilter': 0, 'unfed': 0, 'extra': 0,
+             'resort': 0, 'trendfill': 0}
     if _is_skipped():
         _log('[post_process] 已按 ZPP011_SKIP_POST_PROCESS 跳过')
         return stats
@@ -1569,6 +1666,14 @@ def decorate_workbook(wb, add_dashboard=True):
                 _upgrade_dashboard(wb)
             except Exception as e:
                 _log('[post_process] 驾驶舱升级失败: %s' % e)
+        # v43.283 规格 §5：数据层降噪（放逐表流水线之后——汇总重排只搬
+        # 值+样式，条件格式按列区间挂不受行序影响；趋势填—在 numfmt 之后
+        # 才不会把 '—' 当数字处理）
+        for _fn, _key in ((_resort_summary, 'resort'), (_denoise_trend_sheet, 'trendfill')):
+            try:
+                stats[_key] = _fn(wb)
+            except Exception as e:
+                _log('[post_process] %s 失败: %s' % (_fn.__name__, e))
         # v43.248：各表事实卡（可对账的统计摘要），写在「📋 分析说明」里
         try:
             stats['cards'] = _add_fact_cards(wb)
