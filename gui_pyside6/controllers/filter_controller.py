@@ -69,12 +69,18 @@ class FilterPreset:
         return preset
 
     def _get_user_hint(self) -> str:
-        """获取用户提示"""
-        import pwd
-        try:
-            return pwd.getpwuid(os.getuid()).pw_name
-        except:
-            return os.getenv('USERNAME', 'User')
+        """获取当前用户名（预设记录 created_by 用）。
+
+        历史坑：原实现 `import pwd`——pwd 是 Unix 专有模块，Windows 上
+        import 本身就抛 ModuleNotFoundError（在 try 之前），导致保存筛选预设
+        报「保存上次使用失败: No module named 'pwd'」。Windows 取用户名的
+        正确姿势是环境变量链：USERNAME → USER → LOGNAME，兜底 'User'。
+        """
+        for var in ('USERNAME', 'USER', 'LOGNAME'):
+            name = os.getenv(var)
+            if name:
+                return name
+        return 'User'
 
     def add_history_entry(self, applied_at: datetime.datetime = None, reason: str = None):
         """添加使用历史"""

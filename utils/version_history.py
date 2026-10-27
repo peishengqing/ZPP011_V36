@@ -14,6 +14,11 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.279",
+        "date": "2026-10-27",
+        "fixes": "**保存筛选预设报「保存上次使用失败: No module named 'pwd'」**（用户 17:15 截图反馈）。根因：`filter_controller.FilterPreset._get_user_hint` 用 `import pwd` 取 Unix 用户名——pwd 是 Unix 专有模块，Windows 上 import 即抛 ModuleNotFoundError，且发生在 try 之前，兜底的 `os.getenv('USERNAME')` 永远执行不到。修法：删 pwd 路径，改为 Windows 正确的环境变量链 USERNAME → USER → LOGNAME，兜底 'User'。验证：offscreen 实测 _get_user_hint() 返回 'Administrator'。",
+    },
+    {
         "version": "v43.278",
         "date": "2026-10-27",
         "fixes": "**点「显示筛选」连弹多个日历窗**（用户 16:49 截图反馈）。根因：v43.276 在 filter_panel.eventFilter 加的 `QEvent.ShowPopup` 兜底拦截（后改为 Show/ShowToParent），面板每次显示时 Qt 会对每个 QDateEdit 子控件派发 Show 事件 → 每个日期框各弹一个手画日历窗。而 v43.277 后全部日期字段都是 _make_date_field（setCalendarPopup(False) + 「选择」按钮直调 _popup_calendar），该兜底已无必要，整段删除。附带：修 ShowPopup AttributeError 启动崩溃（PySide6 6.x 枚举无此成员，eventFilter 一被调用即抛错）。",
