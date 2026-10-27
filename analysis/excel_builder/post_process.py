@@ -848,6 +848,191 @@ def _add_dashboard(wb):
     return charts
 
 
+# ------------------------------------------------------------ 驾驶舱升级 v43.283
+
+# 布局常量：_add_dashboard 的 3 张图占 B8~M72 浮动区；
+# Top 表写在图右侧 P 列区，周趋势写/画在图下方 B76 起。幂等 = 固定区域先清后写。
+_DASH_TBL_COL = 16          # P 列
+_DASH_TBL_TOP = 8
+_DASH_TBL_CLEAR = (8, 46)   # 清理 P8:U46
+_DASH_WK_ROW = 76           # 周趋势数据起始行
+_DASH_WK_CLEAR_ROWS = (76, 140)
+
+
+def _clear_region(ws, r1, r2, c1, c2):
+    """清空固定区域单元格值（幂等重写前置；不动区域外内容/图表）。"""
+    for r in range(r1, r2 + 1):
+        for c in range(c1, c2 + 1):
+            cell = ws.cell(r, c)
+            if cell.value is not None:
+                cell.value = None
+
+
+def _upgrade_dashboard(wb):
+    """v43.283 规格 §3：驾驶舱补 Top5 车间表 / Top10 物料表（帕累托累计占比）
+    / 周趋势线图 + 页签绿。只读「汇总统计」「完整偏差明细」「趋势分析」派生
+    呈现，零口径计算。幂等：重复调用先清固定区域再重写。"""
+    from openpyxl.styles import Border, Font, Side
+    from openpyxl.formatting.rule import DataBarRule
+    name = '📊 驾驶舱'
+    if name not in wb.sheetnames:
+        return 0
+    ws = wb[name]
+    ws.sheet_properties.tabColor = '2E7D32'   # 结论层=绿（规格 §6）
+    _thin = Side(style='thin', color='CCCCCC')
+    _bd = Border(left=_thin, right=_thin, top=_thin, bottom=_thin)
+    P = _DASH_TBL_COL
+    _clear_region(ws, _DASH_TBL_CLEAR[0], _DASH_TBL_CLEAR[1], P, P + 5)
+    for col in range(P, P + 6):
+        ws.column_dimensions[get_column_letter(col)].width = 14
+
+    row = _DASH_TBL_TOP
+    # ── Top 5 车间（|总偏差金额| 降序）──
+    ws.cell(row=row, column=P,
+            value='Top 5 车间（按 |偏差金额| 降序）').font = Font(bold=True, size=11)
+    row += 1
+    for j, h in enumerate(['车间', '总条数', '总偏差金额(含税)', '备注覆盖率']):
+        c = ws.cell(row=row, column=P + j, value=h)
+        c.font = Font(bold=True, size=10)
+        c.border = _bd
+    row += 1
+    top5_start = row
+    if '汇总统计' in wb.sheetnames:
+        src = wb['汇总统计']
+        h_row, hds = _header_info(src)
+        l_row = _last_data_row(src, h_row)
+        c_ws = _find_col(hds, '车间')
+        c_cnt = _find_col(hds, '总条数')
+        c_amt = _find_col(hds, '总偏差金额(含税)')
+        c_cov = _find_col(hds, '备注覆盖率')
+        recs = []
+        for r in range(h_row + 1, l_row + 1):
+            amt = src.cell(r, c_amt).value if c_amt else None
+            if isinstance(amt, (int, float)):
+                recs.append((
+                    src.cell(r, c_ws).value if c_ws else '',
+                    src.cell(r, c_cnt).value if c_cnt else '',
+                    amt,
+                    src.cell(r, c_cov).value if c_cov else ''))
+        recs.sort(key=lambda x: -abs(x[2]))
+        for w, cnt, amt, cov in recs[:5]:
+            ws.cell(row=row, column=P, value=w).border = _bd
+            ws.cell(row=row, column=P + 1, value=cnt).border = _bd
+            ca = ws.cell(row=row, column=P + 2, value=round(amt, 2))
+            ca.number_format = '#,##0.00'
+            ca.border = _bd
+            cc = ws.cell(row=row, column=P + 3, value=cov)
+            if isinstance(cov, (int, float)):
+                cc.number_format = '0%'
+            cc.border = _bd
+            row += 1
+    if row > top5_start:
+        ws.conditional_formatting.add(
+            '%s%d:%s%d' % (get_column_letter(P + 2), top5_start,
+                           get_column_letter(P + 2), row - 1),
+            DataBarRule(start_type='min', end_type='max', color='C62828'))
+    row += 2
+
+    # ── Top 10 物料（帕累托：|偏差金额| 聚合降序 + 累计占比）──
+    ws.cell(row=row, column=P,
+            value='Top 10 物料（按 |偏差金额| 降序，含累计占比）').font = Font(bold=True, size=11)
+    row += 1
+    for j, h in enumerate(['物料编码', '物料名称', '偏差金额', '占总额比', '累计占比']):
+        c = ws.cell(row=row, column=P + j, value=h)
+        c.font = Font(bold=True, size=10)
+        c.border = _bd
+    row += 1
+    m_start = row
+    if '完整偏差明细' in wb.sheetnames:
+        src = wb['完整偏差明细']
+        h_row, hds = _header_info(src)
+        l_row = _last_data_row(src, h_row)
+        c_code = _find_col(hds, '物料编码')
+        c_name = _find_col(hds, '物料名称')
+        c_amt = _find_col(hds, '偏差金额')
+        agg = {}
+        for r in range(h_row + 1, l_row + 1):
+            amt = src.cell(r, c_amt).value if c_amt else None
+            if not isinstance(amt, (int, float)):
+                continue
+            code = str(src.cell(r, c_code).value or '') if c_code else ''
+            if code not in agg:
+                agg[code] = [src.cell(r, c_name).value if c_name else '', 0.0]
+            agg[code][1] += amt
+        total_abs = sum(abs(v[1]) for v in agg.values()) or 1.0
+        top = sorted(agg.items(), key=lambda kv: -abs(kv[1][1]))[:10]
+        cum = 0.0
+        for code, (nm, amt) in top:
+            share = abs(amt) / total_abs
+            cum += share
+            ws.cell(row=row, column=P, value=code).border = _bd
+            ws.cell(row=row, column=P + 1, value=nm).border = _bd
+            ca = ws.cell(row=row, column=P + 2, value=round(amt, 2))
+            ca.number_format = '#,##0.00'
+            ca.border = _bd
+            cs = ws.cell(row=row, column=P + 3, value=round(share, 4))
+            cs.number_format = '0.0%'
+            cs.border = _bd
+            cu = ws.cell(row=row, column=P + 4, value=round(cum, 4))
+            cu.number_format = '0.0%'
+            cu.border = _bd
+            row += 1
+        if top:
+            ws.cell(row=row, column=P,
+                    value='前 10 合计占比 %.1f%%' % (cum * 100)).font = Font(bold=True, size=10)
+            row += 1
+    if row > m_start:
+        ws.conditional_formatting.add(
+            '%s%d:%s%d' % (get_column_letter(P + 2), m_start,
+                           get_column_letter(P + 2), row - 1),
+            DataBarRule(start_type='min', end_type='max', color='C62828'))
+
+    # ── 周趋势（自然周聚合替代日级噪声；数据 B76 起，图画 D76）──
+    try:
+        _clear_region(ws, _DASH_WK_CLEAR_ROWS[0], _DASH_WK_CLEAR_ROWS[1], 2, 14)
+        trend_name = '趋势分析（自然日分组）'
+        if trend_name in wb.sheetnames:
+            src = wb[trend_name]
+            h_row, hds = _header_info(src)
+            l_row = _last_data_row(src, h_row)
+            c_date = _find_col(hds, '订单日期', '日期')
+            c_amt = _find_col(hds, '偏差金额合计', '偏差金额')
+            if c_date and c_amt:
+                import pandas as _pd
+                weeks = {}
+                for r in range(h_row + 1, l_row + 1):
+                    dv = src.cell(r, c_date).value
+                    av = src.cell(r, c_amt).value
+                    if dv is None or not isinstance(av, (int, float)):
+                        continue
+                    try:
+                        iso = _pd.Timestamp(dv).isocalendar()
+                    except Exception:
+                        continue
+                    key = (int(iso[0]), int(iso[1]))
+                    weeks[key] = weeks.get(key, 0.0) + av
+                if weeks:
+                    wr = _DASH_WK_ROW
+                    ws.cell(row=wr - 1, column=2,
+                            value='偏差金额 · 自然周趋势（ISO 周）').font = Font(bold=True, size=11)
+                    keys = sorted(weeks)
+                    for i, k in enumerate(keys):
+                        ws.cell(row=wr + i, column=2, value='%d-W%02d' % k)
+                        ws.cell(row=wr + i, column=3, value=round(weeks[k], 2)).number_format = '#,##0.00'
+                    from openpyxl.chart import LineChart, Reference
+                    ch = LineChart()
+                    ch.title = '偏差金额 · 周趋势'
+                    ch.height, ch.width = 8, 22
+                    data = Reference(ws, min_col=3, min_row=wr, max_row=wr + len(keys) - 1)
+                    cats = Reference(ws, min_col=2, min_row=wr, max_row=wr + len(keys) - 1)
+                    ch.add_data(data, titles_from_data=False)
+                    ch.set_categories(cats)
+                    ws.add_chart(ch, 'E%d' % (wr - 1))
+    except Exception as e:
+        _log('[post_process] 周趋势失败: %s' % e)
+    return 1
+
+
 # ---------------------------------------------------------------- 各表事实卡
 
 # 事实卡「关键度量」列的候选优先级：按顺序取第一个能匹配上的列。
@@ -1378,6 +1563,12 @@ def decorate_workbook(wb, add_dashboard=True):
                 stats['charts'] = _add_dashboard(wb)
             except Exception as e:
                 _log('[post_process] 驾驶舱失败: %s' % e)
+            # v43.283 规格 §3：驾驶舱升级独立于建页（_add_dashboard 幂等短路时
+            # 页已存在，升级仍须执行——Top表/周趋势/页签色不因此缺失）
+            try:
+                _upgrade_dashboard(wb)
+            except Exception as e:
+                _log('[post_process] 驾驶舱升级失败: %s' % e)
         # v43.248：各表事实卡（可对账的统计摘要），写在「📋 分析说明」里
         try:
             stats['cards'] = _add_fact_cards(wb)
