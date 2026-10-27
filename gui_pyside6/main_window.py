@@ -400,10 +400,8 @@ class MainWindow(QMainWindow):
         # self.stat_need_note = ... 已删除
         # self.stat_ok = ... 已删除
         self.table_view = self.main_table.table_view
-        self.summary_quota = self.main_table.summary_quota
-        self.summary_actual = self.main_table.summary_actual
-        self.summary_amount = self.main_table.summary_amount
-        self.summary_qty = self.main_table.summary_qty
+        # v43.281：底部合计标签（配额/实际/偏差金额/偏差量/净偏差率）已按用户要求
+        # 移除，别名不再存在；若有代码误写这些属性会立刻 AttributeError 暴露。
         # self.start_btn 别名在工具栏创建后赋值（见下方 action_bar 构建末尾）
         # self.cancel_btn = self.main_table.cancel_btn  # 底部操作按钮已删除
         self.lock_btn = self.main_table.lock_btn
@@ -1213,6 +1211,10 @@ class MainWindow(QMainWindow):
             QApplication.processEvents()
             self._schedule_unread_summary()
             self.view_model.df = processed_df
+            # v43.281：已读计数改为「从主表实时统计」后，分析完成必须刷一次——
+            # 旧实现只在本次新标记>0 时才刷，从数据库恢复的历史已读永远不上标签。
+            # 必须在 view_model.df 赋值之后（统计读的就是它）。
+            self._update_read_counter()
             self._analysis_params = self.analysis_controller.get_analysis_params()
 
             # 注意：完整报告缓存由后台线程(_FullCacheWorker)生成，主线程绝不等待，

@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.281",
+        "date": "2026-10-27",
+        "fixes": "**状态栏「已读：自动 N / 手动 M」常驻 0/0 不再计算**（用户 17:27 截图反馈）。根因：计数是「本次会话新标记增量」累加，从数据库恢复的历史已读（日志「恢复了 36 条审核结果」）永不计入，且自动已读命中 0 条时连刷新都不触发。修法：update_read_counter 改为对 view_model.df 实时统计（_read==1 按 _read_source 分桶，auto 归自动、其余归手动），并在分析完成 setDataFrame+view_model 赋值后固定刷一次；df 不可用时兜底回会话累加值。",
+        "features": "**移除主表底部 5 个合计标签**（定额/实际/偏差金额/偏差量/净偏差率，用户 17:37 截图圈定「这些合计不要了」）：main_table 不再创建标签，update_summary 改空壳（信号链保留），选中行合计仅走状态栏提示，QSS #summaryLabel 规则清理。",
+    },
+    {
         "version": "v43.280",
         "date": "2026-10-27",
         "fixes": "**点击列头打开筛选浮层崩溃：'QWidget.__init__ called with wrong argument types: QWidget(ColumnController, WindowType)'**。根因：v43.193 ARC-003 第一刀把列筛选从 MainWindow 切出到 ColumnController 时，方法体内两处 `QWidget(self, Qt.Popup)` 的 self 从 MainWindow 变成了非 widget 的 controller——parent 参数必须是 QWidget，点「列筛选」浮层一开即抛 TypeError。修法：两处（_open_column_filter 主浮层 + _open_empty_column_filter_popup 兜底浮层）parent 改 self.mw。offscreen 验证：popup 构造成功且 parent() is mw。",

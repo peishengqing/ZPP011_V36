@@ -105,7 +105,8 @@ class InteractionController:
             self.mw.statusBar().showMessage("")
             return
 
-        # 如果没有选中行，恢复整体合计
+        # 如果选中清空，无需恢复底部合计（v43.281：合计标签已整体移除，
+        # _update_all_summary 现为空壳，保留调用仅为兼容信号链）
         if not selected:
             self.mw._update_all_summary()
             return
@@ -144,7 +145,11 @@ class InteractionController:
             self.mw._clear_selection_summary()
 
     def _update_selection_summary(self, col_sums: dict):
-        """更新选中行合计到底部栏"""
+        """更新选中行合计。
+
+        v43.281：底部合计标签（配额/实际/偏差金额/偏差量）已按用户要求移除，
+        这里只保留状态栏「选中合计：…」提示（选中行时的即时反馈，无落点控件）。
+        """
         # 收集显示的列名和值
         display_map = {}
         for k, v in col_sums.items():
@@ -160,19 +165,7 @@ class InteractionController:
             else:
                 display_map[k] = v
 
-        # 如果有关键数值列，更新底部栏
-        if "配额" in display_map or "实际" in display_map or "偏差金额" in display_map or "偏差数量" in display_map:
-            quota = display_map.get("配额", 0)
-            actual = display_map.get("实际", 0)
-            amount = display_map.get("偏差金额", 0)
-            qty = display_map.get("偏差数量", 0)
-
-            # 更新底部栏
-            self.mw.summary_quota.setText(f"配额: {quota:,.2f}")
-            self.mw.summary_actual.setText(f"实际: {actual:,.2f}")
-            self.mw.summary_amount.setText(f"偏差金额: {amount:,.2f}")
-            self.mw.summary_qty.setText(f"偏差量: {qty:,.2f}")
-
+        if display_map:
             # 状态栏显示详细合计
             parts = []
             for k, v in display_map.items():
@@ -183,11 +176,8 @@ class InteractionController:
             self.mw.statusBar().showMessage("选中合计：" + " | ".join(parts))
 
     def _clear_selection_summary(self):
-        """清空选中合计，恢复默认"""
-        self.mw.summary_quota.setText("配额: 0.00")
-        self.mw.summary_actual.setText("实际: 0.00")
-        self.mw.summary_amount.setText("偏差金额: 0.00")
-        self.mw.summary_qty.setText("偏差量: 0.00")
+        """清空选中合计提示（v43.281：底部标签已移除，仅清状态栏消息）"""
+        self.mw.statusBar().showMessage("", 1)
 
     # ─────────── 复制相关 ───────────
 

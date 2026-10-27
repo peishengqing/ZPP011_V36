@@ -142,24 +142,12 @@ class MainTableComponent(QObject):
         self.table_view.setSelectionBehavior(QTableView.SelectItems)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
 
-        # 合计行（单行）
+        # 合计行（v43.281：按用户要求移除 5 个合计标签——定额/实际/偏差金额/偏差量/
+        # 净偏差率，只保留右侧「单位汇总 / 锁列宽 / 全屏 / 眼睛」按钮行。
+        # 原标签数据链路（_update_summary 等）已同步停用。）
         summary_layout = QHBoxLayout()
         summary_layout.setContentsMargins(4, 0, 4, 0)
         summary_layout.setSpacing(4)
-
-        self.summary_quota = QLabel("定额: 0")
-        self.summary_actual = QLabel("实际: 0")
-        self.summary_amount = QLabel("偏差金额: 0")
-        self.summary_qty = QLabel("偏差量: 0")
-        self.summary_net_rate = QLabel("净偏差率: 0.00%")
-        for lbl in [self.summary_quota, self.summary_actual, self.summary_amount, self.summary_qty, self.summary_net_rate]:
-            lbl.setObjectName("summaryLabel")
-            lbl.setMinimumWidth(0)
-        summary_layout.addWidget(self.summary_quota)
-        summary_layout.addWidget(self.summary_actual)
-        summary_layout.addWidget(self.summary_amount)
-        summary_layout.addWidget(self.summary_qty)
-        summary_layout.addWidget(self.summary_net_rate)
         summary_layout.addStretch()
 
         self.unit_summary_btn = QPushButton("单位汇总")

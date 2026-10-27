@@ -19,63 +19,12 @@ class UISettingsController(QObject):
 
     # ------------------- 统计卡片更新 -------------------
     def update_summary(self):
-        """从主窗口获取数据更新统计标签"""
-        if not hasattr(self.main_window, 'view_model') or self.main_window.view_model.df is None:
-            return
-
-        df = self.main_window.view_model.df
-        if df.empty:
-            self.main_window.summary_quota.setText("配额: 0.00")
-            self.main_window.summary_actual.setText("实际: 0.00")
-            self.main_window.summary_amount.setText("偏差率: 0.00%")
-            self.main_window.summary_qty.setText("偏差量: 0.00")
-            return
-
-        # 配额列
-        quota_col = next((c for c in ["配额", "定额", "数量-定额", "quota"] if c in df.columns), None)
-        actual_col = next((c for c in ["实际", "数量-实际", "actual"] if c in df.columns), None)
-        rate_col = next((c for c in ["偏差率(%)", "偏差率"] if c in df.columns), None)
-        qty_col = next((c for c in ["偏差数量", "数量偏差", "dev_qty"] if c in df.columns), None)
-        net_rate_col = next((c for c in ["净偏差率(%)", "净偏差率"] if c in df.columns), None)
-
-        quota_sum = df[quota_col].fillna(0).sum() if quota_col else 0
-        actual_sum = df[actual_col].fillna(0).sum() if actual_col else 0
-
-        # 偏差率平均值
-        if rate_col:
-            rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
-            avg_rate = rates.mean()
-            rate_str = f"{avg_rate:.2f}%"
-        else:
-            if actual_col and quota_col:
-                avg_rate = ((df[actual_col].fillna(0) - df[quota_col].fillna(0)) / df[quota_col].fillna(0).replace(0, float('nan'))).mean()
-                rate_str = f"{avg_rate:.2f}%"
-            else:
-                rate_str = "0.00%"
-                avg_rate = 0
-
-        # 净偏差率平均值
-        if net_rate_col:
-            net_rates = pd.to_numeric(df[net_rate_col], errors='coerce').fillna(0)
-            net_rate_str = f"{net_rates.mean():.2f}%"
-        else:
-            net_rate_str = ""
-
-        # 偏差量汇总
-        if qty_col:
-            qty_sum = df[qty_col].fillna(0).sum()
-        elif actual_col and quota_col:
-            qty_sum = (df[actual_col].fillna(0) - df[quota_col].fillna(0)).sum()
-        else:
-            qty_sum = 0
-
-        self.main_window.summary_quota.setText(f"配额: {quota_sum:,.2f}")
-        self.main_window.summary_actual.setText(f"实际: {actual_sum:,.2f}")
-        if net_rate_str:
-            self.main_window.summary_amount.setText(f"偏差率: {rate_str} | 净偏差率: {net_rate_str}")
-        else:
-            self.main_window.summary_amount.setText(f"偏差率: {rate_str}")
-        self.main_window.summary_qty.setText(f"偏差量: {qty_sum:,.2f}")
+        """底部合计标签（配额/实际/偏差率/偏差量/净偏差率）已于 v43.281 按用户
+        要求整体移除，本方法保留为空壳：main_window 仍有 ~10 处信号/调用点
+        （dataChanged/layoutChanged/工厂切换/筛选回调等）连向 _update_summary，
+        拆信号面大且易漏，留空壳最稳。选中合计仍走状态栏（interaction_controller）。
+        """
+        return
 
     def update_mark_stats(self):
         """更新主表上方『标记统计』标签"""
@@ -111,10 +60,35 @@ class UISettingsController(QObject):
         )
 
     def update_read_counter(self):
-        """刷新状态栏常驻的「已读计数」标签（自动 N / 手动 M）"""
+        """刷新状态栏常驻的「已读计数」标签（自动 N / 手动 M）。
+
+        口径变更（v43.281）：从「会话增量累加」改为「当前主表实时统计」。
+        旧实现只在本次会话新标记已读时 +=，从数据库恢复的历史已读（如日志
+        「从数据库恢复了 36 条审核结果」）永远不计入，且自动已读命中 0 条时
+        连刷新都不触发——用户看到常驻 0/0，以为功能坏了（2026-10-27 反馈）。
+        现改为直接对 view_model.df 统计 _read==1 并按 _read_source 分桶：
+        'auto' 归自动，其余（'manual'/''，含老数据无来源）归手动。
+        会话累加值（_auto_read_count/_manual_read_count）仅作 df 不可用时的兜底。
+        """
         try:
+            n_auto = n_manual = 0
+            df = None
+            vm = getattr(self.main_window, 'view_model', None)
+            if vm is not None:
+                df = getattr(vm, 'df', None)
+            if df is not None and not df.empty and '_read' in df.columns:
+                read_rows = df[df['_read'] == 1]
+                if '_read_source' in read_rows.columns:
+                    src = read_rows['_read_source'].fillna('').astype(str)
+                    n_auto = int((src == 'auto').sum())
+                    n_manual = int(len(read_rows) - n_auto)
+                else:
+                    n_manual = int(len(read_rows))
+            else:
+                n_auto = int(getattr(self.main_window, '_auto_read_count', 0))
+                n_manual = int(getattr(self.main_window, '_manual_read_count', 0))
             self.main_window._read_counter_label.setText(
-                f"📖 已读：自动 {self.main_window._auto_read_count} / 手动 {self.main_window._manual_read_count}"
+                f"📖 已读：自动 {n_auto} / 手动 {n_manual}"
             )
         except RuntimeError:
             pass  # 标签已被 deleteLater 回收（关窗时序），忽略

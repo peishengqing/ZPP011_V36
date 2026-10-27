@@ -537,16 +537,11 @@ QToolButton#stepIcon[done="true"] {
 #cancelBtn:hover, #openDirBtn:hover, #pptBtn:hover, #excelBtn:hover,
 #exportFullBtn:hover, #refreshNetBtn:hover { background-color: #3C3489; color: #CECBF6; }
 
-/* ── 合计栏 ── */
+/* ── 合计栏（v43.281：合计标签已移除，容器样式保留给右侧按钮行） ── */
 #summaryContainer {
     background-color: #232228;
     border: 1px solid #3E3D38;
     border-radius: 10px;
-}
-#summaryLabel {
-    font-size: 11px;
-    color: #9A998F;
-    font-weight: 600;
 }
 #markStatsLabel {
     padding: 3px 10px;

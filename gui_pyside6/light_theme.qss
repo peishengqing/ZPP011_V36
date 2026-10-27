@@ -537,11 +537,6 @@ QToolButton#stepIcon[done="true"] {
     border: 1px solid #DEDED7;
     border-radius: 10px;
 }
-#summaryLabel {
-    font-size: 11px;
-    color: #6C6C64;
-    font-weight: 600;
-}
 #markStatsLabel {
     padding: 3px 10px;
     border-radius: 7px;
