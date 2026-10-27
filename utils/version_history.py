@@ -14,6 +14,11 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.276",
+        "date": "2026-10-27",
+        "fixes": "**堵住 v43.275 遗漏的第二条 QCalendarWidget 弹窗入口**。用户 10:37 截图仍显示「...」，定位：`filter_panel.py:309/315` 的 `start_date_edit` / `end_date_edit` 是独立的 QDateEdit，`setCalendarPopup(True)` 直接触发 Qt 内置 QCalendarWidget 弹窗——绕开 v43.275 手画的 QTableWidget 日历。之前只改了 `_make_date_field` 生成的 analysis_start/end 日期字段，漏了「日期范围」分组里这一对。修法：把 start/end_date_edit 也改成用 `_make_date_field` 生成（`setCalendarPopup(False)` + 加「选择/清除」按钮），UI 与另一个日期字段组保持一致。同时补一个 eventFilter 拦截 `QEvent.ShowPopup` 作兜底（万一未来哪一天又加回 setCalendarPopup(True) 也不会漏）。验证：4 个 QDateEdit 全部 calPopup=False，4 个「选择」按钮全部弹 QTableWidget 而非 QCalendarWidget，7x7 表格日期 1-31 完整显示（含两位数 10-31）。",
+    },
+    {
         "version": "v43.275",
         "date": "2026-10-27",
         "fixes": "**彻底根治日期选择器日历弹窗日期数字显示为「...」的问题**（推翻 v43.273/v43.274 两条路径）。诊断证据：QStyledItemDelegate 内部对 option.rect 有二次省略号判定，即使手动 QPainter.drawText 也挡不住——只要 cell 宽 < QFontMetrics('30').width()=30px 就强制省略。QCalendarWidget 每列默认 ~30px 正好触发。正解：放弃 QCalendarWidget，用 QTableWidget 手画日历——(1) 7 列 × 7 行，第 0 行是「周一~周日」表头，(2) QHeaderView.Stretch 均分列宽彻底解决两位数被省略，(3) QTableWidgetItem 用 foreground 控制「相邻月灰色 / 今天红字加粗 / 选中蓝底白字」，(4) QTableWidgetItem.setData(Qt.UserRole, 'yyyyMMdd') 存真实日期，(5) 顶部 ◀ 年月 ▶ 前后月切换，底部「将选择：yyyy-MM-dd」预览 + 确定/取消，(6) 越界日期（小于 min 或大于 max）禁用点击，(7) Escape 取消、Enter 确定、Double-click 立即接受。验证：offscreen 结构数据 7x7 表格，日期 1-31 全部两位数完整显示。",

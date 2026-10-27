@@ -301,25 +301,21 @@ class FilterPanel(QWidget):
         content_layout.addWidget(dev_group)
 
         # 日期范围
+        # v43.276：改用 _make_date_field 生成，复用 v43.275 手画的 QTableWidget 日历。
+        # 之前用 QDateEdit.setCalendarPopup(True) 会弹内置 QCalendarWidget，
+        # 内部 QStyledItemDelegate 判定 cell 宽 < 两位数宽度时强制省略成「...」，
+        # 用户一直看到的 10-16/30-36 变省略号就是这个入口。
         date_group = QGroupBox("日期范围")
         date_layout = QFormLayout(date_group)
         date_layout.setSpacing(8)
         date_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         date_layout.setLabelAlignment(Qt.AlignRight)
-        self.start_date_edit = QDateEdit()
-        self.start_date_edit.setCalendarPopup(True)
-        self.start_date_edit.setDisplayFormat("yyyy-MM-dd")
-        self.start_date_edit.setSpecialValueText("未选择")
+        self.start_date_edit, start_container = self._make_date_field("开始日期（点击「选择」打开日历）")
         self.start_date_edit.setDate(QDate.currentDate().addMonths(-1))
-        self.start_date_edit.setEnabled(True)
-        self.end_date_edit = QDateEdit()
-        self.end_date_edit.setCalendarPopup(True)
-        self.end_date_edit.setDisplayFormat("yyyy-MM-dd")
-        self.end_date_edit.setSpecialValueText("未选择")
+        self.end_date_edit, end_container = self._make_date_field("结束日期（点击「选择」打开日历）")
         self.end_date_edit.setDate(QDate.currentDate())
-        self.end_date_edit.setEnabled(True)
-        date_layout.addRow("开始日期:", self.start_date_edit)
-        date_layout.addRow("结束日期:", self.end_date_edit)
+        date_layout.addRow("开始日期:", start_container)
+        date_layout.addRow("结束日期:", end_container)
         self.date_filter_btn = QPushButton("筛选")
         self.date_filter_btn.clicked.connect(self._emit_date_filter)
         self.date_cancel_btn = QPushButton("取消筛选")
@@ -497,6 +493,15 @@ class FilterPanel(QWidget):
         elif event.type() == QEvent.FocusIn:
             if isinstance(obj, QDateEdit):
                 obj.selectAll()
+        elif event.type() == QEvent.ShowPopup:
+            # 拦截 QDateEdit 自带的下拉日历弹窗（QCalendarWidget），
+            # 替换成 v43.275 手画的 QTableWidget 日历对话框。
+            # 覆盖两个位置：
+            #   1) filter_panel.py:309/315 的 start/end_date_edit（setCalendarPopup(True)）
+            #   2) _make_date_field 生成的 QDateEdit（setCalendarPopup(False)，不会触发，但保留兜底）
+            if isinstance(obj, QDateEdit):
+                self._popup_calendar(obj)
+                return True
         return super().eventFilter(obj, event)
 
     # ------------------------------------------------------------------ #
