@@ -14,6 +14,11 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.273",
+        "date": "2026-10-27",
+        "fixes": "**修复日期选择器日历弹窗日期数字显示为「...」的问题**（用户 2026-10-27 09:21 截图反馈）。根因：`light_theme.qss:14` 有 `QMainWindow, QDialog, QWidget { background-color: #F3F3EE; ... }` 规则，`QWidget` 选择器会级联到 `QCalendarWidget` 内部所有子控件，把单元格底盖成米黄底；加之日历默认单元格高度只有 ~20px，日期数字被挤到只剩几个像素宽，看起来像三个点。修法：在 `_popup_calendar` 里给 dialog + calendar 加内联 QSS 覆盖（白底 + 深字 + 13px 字体），并强制 dialog 最小尺寸 360×400、calendar 最小尺寸 320×280，让每个单元格至少 40×36 保证数字完整显示。",
+    },
+    {
         "version": "v43.272",
         "date": "2026-10-27",
         "fixes": "**修复 FilterController.connect_filtersChanged 命名不一致 bug**（Phase 3 遗留隐患）：filter_controller.py:320 定义的是 snake_case `connect_filters_changed`，而 main_window.py:353 调用的是 camelCase `connect_filtersChanged`——Python 运行时才校验方法名，py_compile / pyflakes 均无法发现；此前被上游更早失败掩盖，一旦上游修复到该位置即触发 AttributeError。将方法名统一为 camelCase（与同类的 connect_filtersApplied / connect_filtersReset 保持一致），调用方 main_window.py 无需改动。",

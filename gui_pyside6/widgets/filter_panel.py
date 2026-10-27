@@ -538,15 +538,39 @@ class FilterPanel(QWidget):
 
     def _popup_calendar(self, target_edit):
         # 自定义日历弹窗：点击 📅 时弹出，避免某些 PySide6 版本 QDateEdit.showPopup 不可用的问题
+        #
+        # v43.273 修复：全局 theme.qss 里 QWidget 的 background-color 会级联到
+        # QCalendarWidget 内部所有子控件，把单元格底盖成米黄底、导致日期数字被
+        # 挤成三个点。这里给 dialog + calendar 强制白底 + 稍大字体 + 最小尺寸，
+        # 确保每个单元格能完整显示日期数字。
         dlg = QDialog(self)
         dlg.setWindowTitle("选择日期")
         dlg.setModal(True)
+        dlg.setMinimumSize(360, 400)
+
+        # 内联样式覆盖：白底 + 深字 + 单元格 padding
+        dlg.setStyleSheet(
+            "QDialog { background-color: #FFFFFF; }"
+            "QCalendarWidget, QCalendarWidget QWidget, "
+            "QCalendarWidget QAbstractScrollArea, "
+            "QCalendarWidget QTableView { "
+            "  background-color: #FFFFFF; color: #333333; }"
+            "QCalendarWidget QTableView { "
+            "  font-size: 13px; padding: 3px; }"
+            "QCalendarWidget QToolButton { "
+            "  background-color: #f8f9fa; color: #333333; "
+            "  border: 1px solid #dee2e6; border-radius: 3px; "
+            "  padding: 4px 8px; min-width: 60px; }"
+        )
+
         v = QVBoxLayout(dlg)
         cal = QCalendarWidget()
         cur = target_edit.date()
         cal.setSelectedDate(cur if cur > target_edit.minimumDate() else QDate.currentDate())
         cal.setMinimumDate(target_edit.minimumDate())
         cal.setMaximumDate(target_edit.maximumDate())
+        # 强制最小尺寸，让每个单元格至少 40×36，日期数字不会被截断
+        cal.setMinimumSize(320, 280)
         v.addWidget(cal)
         btn = QPushButton("确定")
         v.addWidget(btn)

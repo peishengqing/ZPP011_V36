@@ -267,6 +267,9 @@ class AppState(QObject):
             "theme_mode": "light",
             "accent_color": "#0078D4"
         }
+        # 清理预设存储
+        if hasattr(self, '_preset_store'):
+            self._preset_store = {}
 
         self.state_changed.emit()
 
