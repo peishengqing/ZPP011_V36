@@ -317,7 +317,7 @@ class FilterController(QObject):
         # 立即应用筛选以触发事件
         self.apply_filters_immediately()
 
-    def connect_filters_changed(self, callback: Callable) -> None:
+    def connect_filtersChanged(self, callback: Callable) -> None:
         """连接筛选变化事件"""
         self.event_bus.on_filters_changed(callback)
 
@@ -335,14 +335,14 @@ class FilterController(QObject):
         """保存筛选预设到 store"""
         preset = FilterPreset(name, rules)
         # 从 App Storage 获取预设列表（可以在 AppState 中扩展）
-        store = self.app_state.get_preset_store()
+        store = self.get_preset_store()
         store[name] = preset.to_dict()
-        self.app_state.set_preset_store(store)
+        self.set_preset_store(store)
         return True
 
     def load_preset(self, name: str) -> Optional[FilterPreset]:
         """加载筛选预设"""
-        store = self.app_state.get_preset_store()
+        store = self.get_preset_store()
         data = store.get(name)
         if data:
             return FilterPreset.from_dict(data)
@@ -350,16 +350,16 @@ class FilterController(QObject):
 
     def delete_preset(self, name: str) -> bool:
         """删除筛选预设"""
-        store = self.app_state.get_preset_store()
+        store = self.get_preset_store()
         if name in store:
             del store[name]
-            self.app_state.set_preset_store(store)
+            self.set_preset_store(store)
             return True
         return False
 
     def list_presets(self) -> List[FilterPreset]:
         """列出所有筛选预设"""
-        store = self.app_state.get_preset_store()
+        store = self.get_preset_store()
         presets = []
         for name, data in store.items():
             if name != "___last___":
@@ -382,13 +382,13 @@ class FilterController(QObject):
 
     def _apply_preset_to_last_used(self, preset: FilterPreset) -> None:
         """更新「上次使用」预设"""
-        store = self.app_state.get_preset_store()
+        store = self.get_preset_store()
         store["___last___"] = preset.to_dict()
-        self.app_state.set_preset_store(store)
+        self.set_preset_store(store)
 
     def get_last_used_preset(self) -> Optional[FilterPreset]:
         """获取「上次使用」预设"""
-        store = self.app_state.get_preset_store()
+        store = self.get_preset_store()
         data = store.get("___last___")
         if data:
             return FilterPreset.from_dict(data)

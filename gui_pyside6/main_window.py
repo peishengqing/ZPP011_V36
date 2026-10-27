@@ -539,7 +539,9 @@ class MainWindow(QMainWindow):
         self.alt_controller.data_changed.connect(self._on_alt_pairs_changed)
 
         # 筛选面板信号 - 转发给 FilterController
-        self.filter_panel.filter_changed.connect(self.filter_controller._filter_changed)  # 由 FilterController 处理
+        # 注：line 358 已把 filter_changed 连到 MainWindow._on_filter_panel_changed 处理。
+        # 此处原有一行 filter_controller._filter_changed（不存在）已删除，属于 Phase 3
+        # 重构遗留的死引用（filter_controller 从未真正实现过 _filter_changed 方法）。
         self.filter_panel.reset_filters_requested.connect(self.filter_controller.reset)  # 重置
         # 预设信号
         self.filter_panel.save_preset_requested.connect(self._prompt_save_preset)

@@ -14,6 +14,11 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.272",
+        "date": "2026-10-27",
+        "fixes": "**修复 FilterController.connect_filtersChanged 命名不一致 bug**（Phase 3 遗留隐患）：filter_controller.py:320 定义的是 snake_case `connect_filters_changed`，而 main_window.py:353 调用的是 camelCase `connect_filtersChanged`——Python 运行时才校验方法名，py_compile / pyflakes 均无法发现；此前被上游更早失败掩盖，一旦上游修复到该位置即触发 AttributeError。将方法名统一为 camelCase（与同类的 connect_filtersApplied / connect_filtersReset 保持一致），调用方 main_window.py 无需改动。",
+    },
+    {
         "version": "v43.271",
         "date": "2026-10-27",
         "features": "**筛选解释器（Phase 6）**：① 新增 FilterExplainerDialog，选中被排除行逐条解释为什么没显示（每条规则的 ✓/✗ + 实际值 vs 期望值）；② FilterController 新增 explain_rows / summarize_exclusions / _compute_rule_mask 三个方法；③ 筛选面板底部显示「已过滤 X 条 · 主要因: Y」实时摘要；④ 快捷键 Ctrl+Shift+E 直接打开解释器。",
