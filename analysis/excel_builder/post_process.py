@@ -1129,6 +1129,29 @@ def _denoise_trend_sheet(wb):
     return filled
 
 
+# ------------------------------------------------------------ 页签分色 v43.283
+
+# 三层分色（规格 §6）：结论层=绿（_upgrade_dashboard 已设）；派活层=橙
+# （二期给 订单级汇总/车间维度 设 E65100——本期**不设灰**，否则"已有色不覆盖"
+# 会挡住二期橙色）；数据层=灰（下列清单 + 汇总统计/趋势已在降噪函数里设）。
+_TAB_GRAY = ('📋 分析说明', '偏差金额分析', '替代料明细', '无备注预警',
+             '中间地带明细', '完整偏差明细', '异常预警', '偏差原因汇总',
+             '偏差原因分析', '备注归类映射',
+             '系统问题与真实超耗', '物料画像')
+
+
+def _apply_tab_colors(wb):
+    """v43.283 规格 §6：全簿页签三层分色收尾（已有色不覆盖，幂等）。"""
+    n = 0
+    for ws in wb.worksheets:
+        if ws.sheet_properties.tabColor not in (None, ''):
+            continue
+        if ws.title in _TAB_GRAY:
+            ws.sheet_properties.tabColor = '9E9E9E'
+            n += 1
+    return n
+
+
 # ---------------------------------------------------------------- 各表事实卡
 
 # 事实卡「关键度量」列的候选优先级：按顺序取第一个能匹配上的列。
@@ -1598,7 +1621,7 @@ def decorate_workbook(wb, add_dashboard=True):
     stats = {'sheets': 0, 'dates': 0, 'ids': 0, 'blanks': 0, 'flags': 0,
              'ratios': 0, 'dups': 0, 'charts': 0, 'cards': 0,
              'severity': 0, 'afilter': 0, 'unfed': 0, 'extra': 0,
-             'resort': 0, 'trendfill': 0}
+             'resort': 0, 'trendfill': 0, 'tabcolor': 0}
     if _is_skipped():
         _log('[post_process] 已按 ZPP011_SKIP_POST_PROCESS 跳过')
         return stats
@@ -1674,6 +1697,11 @@ def decorate_workbook(wb, add_dashboard=True):
                 stats[_key] = _fn(wb)
             except Exception as e:
                 _log('[post_process] %s 失败: %s' % (_fn.__name__, e))
+        # v43.283 规格 §6：页签三层分色收尾（放最后，绿/灰各自就位后补灰）
+        try:
+            stats['tabcolor'] = _apply_tab_colors(wb)
+        except Exception as e:
+            _log('[post_process] 页签分色失败: %s' % e)
         # v43.248：各表事实卡（可对账的统计摘要），写在「📋 分析说明」里
         try:
             stats['cards'] = _add_fact_cards(wb)

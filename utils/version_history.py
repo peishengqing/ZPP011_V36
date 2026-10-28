@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.283",
+        "date": "2026-10-27",
+        "features": "导出报表分层改造一期（规格 docs/superpowers/specs/2026-10-27-export-report-layered-design.md）：① 完整偏差明细/GUI 主表新增「偏差等级」列（|偏差率|>50% 严重 / 10~50% 一般 / <10% 轻微 / 非数值—，阈值 GRADE_BOUNDS 单一来源，±100 钳位行归严重）；② 驾驶舱升级：Top5 车间表（|金额|降序+数据条）、Top10 物料表（帕累托累计占比）、偏差金额自然周趋势线图，绿页签；③ 数据层降噪：汇总统计按|金额|降序整行重排（行集合一致=零改值）、趋势页 R1 说明挪入表头批注+空白率格填—+autofilter，灰页签；④ 全簿页签三层分色（结论绿/数据灰/派活页留待二期橙）。回归铁律验证：改动前后逐格 diff 仅落在预期页（驾驶舱/汇总/趋势/明细尾列/说明文案），其余数值零改动。",
+        "fixes": "主界面列头排序失效（v43.283d）：main_window._init_table_model 中唯一有效的 sectionClicked connect 曾被以「与 main_table:136 重复」为由注释删除——实际 main_table 那条连的是被 setHorizontalHeader(self._sort_header) 替换掉的旧表头，随对象作废；删后点列头排序全失效（三态循环实测恢复：升→降→取消）。",
+    },
+    {
         "version": "v43.282",
         "date": "2026-10-27",
         "fixes": "**清掉全部 13 个存量测试失败 + 2 个 teardown 错误（全量单测 228 passed 全绿）**。① v43.270「Phase 5」把筛选预设 7 个核心方法改走 FilterController 内存 store，引入两个真实回归：预设存 app_state._preset_store 重启即丢（旧走 config_manager.filter_history 落盘）；应用预设改 fc.apply_preset→app_state（_data 从未填充）→get_filtered_dataframe 返回 None→on_data_changed(None) 崩溃。7 个方法体回退到 v43.195 实现（git 考古 99ab5c6 原文件比对确认），修好 11+2 个测试；Phase 5 导入导出/复制方法保留仍走 fc store。② test_custom_header_sort teardown：setAttribute(2048) 裸 int 改 Qt.WA_DeleteOnClose 枚举（PySide6 6.x 要求），sendPostedEvents(None,4) 笔误改 QEvent.DeferredDelete(52)。③ 生产真 bug×2：filter_controller 导出预设 json.dump(ensure_only=) 参数不存在（应为 ensure_ascii，一处被 except 吞致导出永远失败、一处无 except 直接抛）。",
