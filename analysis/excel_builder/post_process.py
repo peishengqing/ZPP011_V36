@@ -851,10 +851,11 @@ def _add_dashboard(wb):
 # ------------------------------------------------------------ 驾驶舱升级 v43.283
 
 # 布局常量：_add_dashboard 的 3 张图占 B8~M72 浮动区；
-# Top 表写在图右侧 P 列区，周趋势写/画在图下方 B76 起。幂等 = 固定区域先清后写。
+# Top 表写在图右侧 P 列区（按工厂分块），周趋势写/画在图下方 B76 起。
+# 幂等 = 固定区域先清后写。
 _DASH_TBL_COL = 16          # P 列
 _DASH_TBL_TOP = 8
-_DASH_TBL_CLEAR = (8, 46)   # 清理 P8:U46
+_DASH_TBL_CLEAR = (8, 60)   # 清理 P8:U60（两工厂 × 车间/物料 四块）
 _DASH_WK_ROW = 76           # 周趋势数据起始行
 _DASH_WK_CLEAR_ROWS = (76, 140)
 
@@ -868,10 +869,51 @@ def _clear_region(ws, r1, r2, c1, c2):
                 cell.value = None
 
 
+def _dash_scan_detail(wb):
+    """读「完整偏差明细」→ 行记录（工厂/车间/编码/名称/金额/有备注/日期）。
+    驾驶舱分厂块与周趋势共用这一份扫描（明细页有「工厂」列，汇总统计的工厂
+    是 1101/1102 编码，映射麻烦，统一从明细取）。"""
+    if '完整偏差明细' not in wb.sheetnames:
+        return []
+    src = wb['完整偏差明细']
+    h_row, hds = _header_info(src)
+    l_row = _last_data_row(src, h_row)
+    c_date = _find_col(hds, '订单日期')
+    c_fac = _find_col(hds, '工厂')
+    c_ws = _find_col(hds, '车间')
+    c_code = _find_col(hds, '物料编码')
+    c_name = _find_col(hds, '物料名称')
+    c_amt = _find_col(hds, '偏差金额')
+    c_note = _find_col(hds, '备注')
+    rows = []
+    for r in range(h_row + 1, l_row + 1):
+        amt = src.cell(r, c_amt).value if c_amt else None
+        note = src.cell(r, c_note).value if c_note else None
+        rows.append({
+            'date': src.cell(r, c_date).value if c_date else None,
+            'fac': str(src.cell(r, c_fac).value or '').strip() if c_fac else '',
+            'ws': str(src.cell(r, c_ws).value or '').strip() if c_ws else '',
+            'code': str(src.cell(r, c_code).value or '').strip() if c_code else '',
+            'name': str(src.cell(r, c_name).value or '').strip() if c_name else '',
+            'amt': amt if isinstance(amt, (int, float)) else None,
+            'has_note': bool(str(note or '').strip()),
+        })
+    return rows
+
+
+def _dash_fac_label(fac):
+    """工厂显示名：去掉「云南达利-」前缀（食品厂/饮料厂）。"""
+    return fac.replace('云南达利-', '') or fac or '未知工厂'
+
+
 def _upgrade_dashboard(wb):
-    """v43.283 规格 §3：驾驶舱补 Top5 车间表 / Top10 物料表（帕累托累计占比）
-    / 周趋势线图 + 页签绿。只读「汇总统计」「完整偏差明细」「趋势分析」派生
-    呈现，零口径计算。幂等：重复调用先清固定区域再重写。"""
+    """v43.283 规格 §3（v43.284 按工厂分块）：驾驶舱补 食品/饮料 各自的
+    Top5 车间表、Top10 物料表（帕累托累计占比），以及 食品 vs 饮料 双线
+    周趋势图 + 页签绿。只读「完整偏差明细」派生呈现，零口径计算。
+    幂等：重复调用先清固定区域再重写。
+
+    车间聚合改从明细按 (工厂,车间) 分组——原从「汇总统计」取行会把
+    同车间的多个物料分类行重复列出（每行本是 车间×分类 组）。"""
     from openpyxl.styles import Border, Font, Side
     from openpyxl.formatting.rule import DataBarRule
     name = '📊 驾驶舱'
@@ -886,79 +928,70 @@ def _upgrade_dashboard(wb):
     for col in range(P, P + 6):
         ws.column_dimensions[get_column_letter(col)].width = 14
 
-    row = _DASH_TBL_TOP
-    # ── Top 5 车间（|总偏差金额| 降序）──
-    ws.cell(row=row, column=P,
-            value='Top 5 车间（按 |偏差金额| 降序）').font = Font(bold=True, size=11)
-    row += 1
-    for j, h in enumerate(['车间', '总条数', '总偏差金额(含税)', '备注覆盖率']):
-        c = ws.cell(row=row, column=P + j, value=h)
-        c.font = Font(bold=True, size=10)
-        c.border = _bd
-    row += 1
-    top5_start = row
-    if '汇总统计' in wb.sheetnames:
-        src = wb['汇总统计']
-        h_row, hds = _header_info(src)
-        l_row = _last_data_row(src, h_row)
-        c_ws = _find_col(hds, '车间')
-        c_cnt = _find_col(hds, '总条数')
-        c_amt = _find_col(hds, '总偏差金额(含税)')
-        c_cov = _find_col(hds, '备注覆盖率')
-        recs = []
-        for r in range(h_row + 1, l_row + 1):
-            amt = src.cell(r, c_amt).value if c_amt else None
-            if isinstance(amt, (int, float)):
-                recs.append((
-                    src.cell(r, c_ws).value if c_ws else '',
-                    src.cell(r, c_cnt).value if c_cnt else '',
-                    amt,
-                    src.cell(r, c_cov).value if c_cov else ''))
-        recs.sort(key=lambda x: -abs(x[2]))
-        for w, cnt, amt, cov in recs[:5]:
+    rows = _dash_scan_detail(wb)
+    factories = sorted({r['fac'] for r in rows if r['fac']})
+    if not factories:
+        # 明细缺失/无工厂列：退回单块（不分组），保证驾驶舱不空
+        factories = ['']
+
+    def _write_ws_block(fac, row):
+        """Top 5 车间（|偏差金额| 降序）。返回下一可用行。"""
+        sub = [r for r in rows if r['fac'] == fac and r['amt'] is not None]
+        label = _dash_fac_label(fac) if fac else '全厂'
+        total = sum(r['amt'] for r in sub)
+        ws.cell(row=row, column=P,
+                value='%s · Top 5 车间（合计 %s）' % (label, format(total, ',.0f'))
+                ).font = Font(bold=True, size=11, color='1B5E20')
+        row += 1
+        for j, h in enumerate(['车间', '偏差条数', '偏差金额', '备注覆盖率']):
+            c = ws.cell(row=row, column=P + j, value=h)
+            c.font = Font(bold=True, size=10)
+            c.border = _bd
+        row += 1
+        start = row
+        groups = {}
+        for r in sub:
+            g = groups.setdefault(r['ws'], [0, 0.0, 0])
+            g[0] += 1
+            g[1] += r['amt']
+            if r['has_note']:
+                g[2] += 1
+        top = sorted(groups.items(), key=lambda kv: -abs(kv[1][1]))[:5]
+        for w, (n, amt, noted) in top:
             ws.cell(row=row, column=P, value=w).border = _bd
-            ws.cell(row=row, column=P + 1, value=cnt).border = _bd
+            ws.cell(row=row, column=P + 1, value=n).border = _bd
             ca = ws.cell(row=row, column=P + 2, value=round(amt, 2))
             ca.number_format = '#,##0.00'
             ca.border = _bd
-            cc = ws.cell(row=row, column=P + 3, value=cov)
-            if isinstance(cov, (int, float)):
-                cc.number_format = '0%'
+            cc = ws.cell(row=row, column=P + 3, value=(noted / n) if n else '')
+            cc.number_format = '0%'
             cc.border = _bd
             row += 1
-    if row > top5_start:
-        ws.conditional_formatting.add(
-            '%s%d:%s%d' % (get_column_letter(P + 2), top5_start,
-                           get_column_letter(P + 2), row - 1),
-            DataBarRule(start_type='min', end_type='max', color='C62828'))
-    row += 2
+        if row > start:
+            ws.conditional_formatting.add(
+                '%s%d:%s%d' % (get_column_letter(P + 2), start,
+                               get_column_letter(P + 2), row - 1),
+                DataBarRule(start_type='min', end_type='max', color='C62828'))
+        return row + 2
 
-    # ── Top 10 物料（帕累托：|偏差金额| 聚合降序 + 累计占比）──
-    ws.cell(row=row, column=P,
-            value='Top 10 物料（按 |偏差金额| 降序，含累计占比）').font = Font(bold=True, size=11)
-    row += 1
-    for j, h in enumerate(['物料编码', '物料名称', '偏差金额', '占总额比', '累计占比']):
-        c = ws.cell(row=row, column=P + j, value=h)
-        c.font = Font(bold=True, size=10)
-        c.border = _bd
-    row += 1
-    m_start = row
-    if '完整偏差明细' in wb.sheetnames:
-        src = wb['完整偏差明细']
-        h_row, hds = _header_info(src)
-        l_row = _last_data_row(src, h_row)
-        c_code = _find_col(hds, '物料编码')
-        c_name = _find_col(hds, '物料名称')
-        c_amt = _find_col(hds, '偏差金额')
+    def _write_mat_block(fac, row):
+        """Top 10 物料（帕累托累计占比）。返回下一可用行。"""
+        sub = [r for r in rows if r['fac'] == fac and r['amt'] is not None]
+        label = _dash_fac_label(fac) if fac else '全厂'
+        ws.cell(row=row, column=P,
+                value='%s · Top 10 物料（按 |偏差金额| 降序，含累计占比）' % label
+                ).font = Font(bold=True, size=11, color='1B5E20')
+        row += 1
+        for j, h in enumerate(['物料编码', '物料名称', '偏差金额', '占本厂总额比', '累计占比']):
+            c = ws.cell(row=row, column=P + j, value=h)
+            c.font = Font(bold=True, size=10)
+            c.border = _bd
+        row += 1
+        start = row
         agg = {}
-        for r in range(h_row + 1, l_row + 1):
-            amt = src.cell(r, c_amt).value if c_amt else None
-            if not isinstance(amt, (int, float)):
-                continue
-            code = str(src.cell(r, c_code).value or '') if c_code else ''
-            if code not in agg:
-                agg[code] = [src.cell(r, c_name).value if c_name else '', 0.0]
-            agg[code][1] += amt
+        for r in sub:
+            g = agg.setdefault(r['code'], [r['name'], 0.0])
+            g[1] += r['amt']
         total_abs = sum(abs(v[1]) for v in agg.values()) or 1.0
         top = sorted(agg.items(), key=lambda kv: -abs(kv[1][1]))[:10]
         cum = 0.0
@@ -981,53 +1014,59 @@ def _upgrade_dashboard(wb):
             ws.cell(row=row, column=P,
                     value='前 10 合计占比 %.1f%%' % (cum * 100)).font = Font(bold=True, size=10)
             row += 1
-    if row > m_start:
-        ws.conditional_formatting.add(
-            '%s%d:%s%d' % (get_column_letter(P + 2), m_start,
-                           get_column_letter(P + 2), row - 1),
-            DataBarRule(start_type='min', end_type='max', color='C62828'))
+        if row > start:
+            ws.conditional_formatting.add(
+                '%s%d:%s%d' % (get_column_letter(P + 2), start,
+                               get_column_letter(P + 2), row - 1),
+                DataBarRule(start_type='min', end_type='max', color='C62828'))
+        return row + 3
 
-    # ── 周趋势（自然周聚合替代日级噪声；数据 B76 起，图画 D76）──
+    row = _DASH_TBL_TOP
+    for fac in factories:
+        row = _write_ws_block(fac, row)
+        row = _write_mat_block(fac, row)
+
+    # ── 周趋势：食品 vs 饮料 双线（数据源=明细 订单日期+偏差金额，按 ISO 周聚合；
+    #    原从「趋势分析」页取金额列——该页根本没有金额列，图一直没画出来）──
     try:
         _clear_region(ws, _DASH_WK_CLEAR_ROWS[0], _DASH_WK_CLEAR_ROWS[1], 2, 14)
-        trend_name = '趋势分析（自然日分组）'
-        if trend_name in wb.sheetnames:
-            src = wb[trend_name]
-            h_row, hds = _header_info(src)
-            l_row = _last_data_row(src, h_row)
-            c_date = _find_col(hds, '订单日期', '日期')
-            c_amt = _find_col(hds, '偏差金额合计', '偏差金额')
-            if c_date and c_amt:
-                import pandas as _pd
-                weeks = {}
-                for r in range(h_row + 1, l_row + 1):
-                    dv = src.cell(r, c_date).value
-                    av = src.cell(r, c_amt).value
-                    if dv is None or not isinstance(av, (int, float)):
-                        continue
-                    try:
-                        iso = _pd.Timestamp(dv).isocalendar()
-                    except Exception:
-                        continue
-                    key = (int(iso[0]), int(iso[1]))
-                    weeks[key] = weeks.get(key, 0.0) + av
-                if weeks:
-                    wr = _DASH_WK_ROW
-                    ws.cell(row=wr - 1, column=2,
-                            value='偏差金额 · 自然周趋势（ISO 周）').font = Font(bold=True, size=11)
-                    keys = sorted(weeks)
-                    for i, k in enumerate(keys):
-                        ws.cell(row=wr + i, column=2, value='%d-W%02d' % k)
-                        ws.cell(row=wr + i, column=3, value=round(weeks[k], 2)).number_format = '#,##0.00'
-                    from openpyxl.chart import LineChart, Reference
-                    ch = LineChart()
-                    ch.title = '偏差金额 · 周趋势'
-                    ch.height, ch.width = 8, 22
-                    data = Reference(ws, min_col=3, min_row=wr, max_row=wr + len(keys) - 1)
-                    cats = Reference(ws, min_col=2, min_row=wr, max_row=wr + len(keys) - 1)
-                    ch.add_data(data, titles_from_data=False)
-                    ch.set_categories(cats)
-                    ws.add_chart(ch, 'E%d' % (wr - 1))
+        import pandas as _pd
+        weeks = {}          # fac -> {(y,w): sum}
+        for r in rows:
+            if r['amt'] is None or r['date'] in (None, ''):
+                continue
+            try:
+                iso = _pd.Timestamp(r['date']).isocalendar()
+            except Exception:
+                continue
+            weeks.setdefault(r['fac'], {})[(int(iso[0]), int(iso[1]))] = \
+                weeks.setdefault(r['fac'], {}).get((int(iso[0]), int(iso[1])), 0.0) + r['amt']
+        all_keys = sorted({k for d in weeks.values() for k in d})
+        if all_keys:
+            wr = _DASH_WK_ROW
+            ws.cell(row=wr - 1, column=2,
+                    value='偏差金额 · 自然周趋势（ISO 周，按工厂）').font = Font(bold=True, size=11)
+            col_labels = [_dash_fac_label(f) for f in factories]
+            ws.cell(row=wr, column=2, value='周次').font = Font(bold=True, size=10)
+            for j, lab in enumerate(col_labels):
+                ws.cell(row=wr, column=3 + j, value=lab).font = Font(bold=True, size=10)
+            for i, k in enumerate(all_keys):
+                ws.cell(row=wr + 1 + i, column=2, value='%d-W%02d' % k)
+                for j, fac in enumerate(factories):
+                    v = weeks.get(fac, {}).get(k)
+                    cell = ws.cell(row=wr + 1 + i, column=3 + j,
+                                   value=round(v, 2) if v is not None else 0.0)
+                    cell.number_format = '#,##0.00'
+            from openpyxl.chart import LineChart, Reference
+            ch = LineChart()
+            ch.title = '偏差金额 · 周趋势（按工厂）'
+            ch.height, ch.width = 8, 22
+            data = Reference(ws, min_col=3, max_col=2 + len(factories),
+                             min_row=wr, max_row=wr + len(all_keys))
+            cats = Reference(ws, min_col=2, min_row=wr + 1, max_row=wr + len(all_keys))
+            ch.add_data(data, titles_from_data=True)
+            ch.set_categories(cats)
+            ws.add_chart(ch, '%s%d' % (get_column_letter(4 + len(factories)), wr - 1))
     except Exception as e:
         _log('[post_process] 周趋势失败: %s' % e)
     return 1
