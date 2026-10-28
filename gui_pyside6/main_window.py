@@ -1982,6 +1982,11 @@ class MainWindow(QMainWindow):
         # 排序状态完全自绘（SortBadgeHeader.paintEvent 画「层级数字+▲▼」角标），不依赖原生
         # sortIndicator（setSortingEnabled(False) 下原生箭头不可靠）。原生自动排序仍由
         # setSortingEnabled(False) 关闭，不会双排序，排序只走我们自己的 handler。
+        # ⚠️ 这条 connect 是**唯一有效**的排序连接，勿删（v43.283 曾被误删导致
+        # 点列头排序全失效）：main_table.py:136 那条连的是**旧原生 header**，而
+        # _init_table_model 上方 setHorizontalHeader(self._sort_header) 已把表头
+        # 整个替换 → 旧连接随旧对象作废（实测 receivers('sectionClicked(int)')==0）。
+        # 不存在"双重连接压扁三态"——死的那条不会触发。
         self.table_view.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
         self._natural_df = None          # 原始（加载时）顺序，供"取消排序"恢复
         self._in_sort = False            # 排序过程中的 setDataFrame 不刷新 _natural_df
