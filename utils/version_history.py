@@ -14,6 +14,12 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.285",
+        "date": "2026-10-29",
+        "features": "AI 审核模型自动路由闭环：新增 model_router.py（优先级决策树——视觉→商汤日日新 / 工具生成→Agnes 3.0 Flash / 翻译→Sage-A1.5 / 多语言→Ling-3.1-flash / 轻量→Atria-Dawn / 推理→GLM-4.5，默认 GLM-4.5），core/ai_client.py 的 AIClient 与 AuditBatch 调用前先经 select_model() 语义选模型，再按 models.json 配置直连对应厂商端点（视觉/翻译/多语言/轻量走各自 base_url+api_key，Agnes 走原解析逻辑兜底），失败自动降级 Mock。6 个路由用例全过（分析→GLM-4.5、截图→商汤、生成Excel→Agnes、英文报告→Ling、快速总结→Atria、翻译→Sage）。",
+        "fixes": "修复 10-28 方案A「全自动化」只落地一半的隐患：当时只写了 ai_client.py 的 import 与调用（try/except 兜底 Agnes），model_router.py 实际从未创建，导致路由层永远走 except 分支、所有 AI 审核仍固定打 Agnes——本次把 model_router.py 补齐落盘并提交 git，路由首次真正生效。",
+    },
+    {
         "version": "v43.284",
         "date": "2026-10-28",
         "features": "驾驶舱按工厂分块（用户要求食品饮料分开）：食品厂/饮料厂 各自的「Top5 车间（含本厂合计金额、备注覆盖率）」+「Top10 物料（占本厂总额比帕累托）」四块，块内按 |偏差金额| 降序互不混排；周趋势图升级双线（食品 vs 饮料 两条线）。车间聚合数据源从「汇总统计」改用「完整偏差明细」按 (工厂,车间) 分组——原表每行是 车间×物料分类 组，直取会把同车间重复列多次。",

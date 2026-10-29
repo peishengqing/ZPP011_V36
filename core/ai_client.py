@@ -18,7 +18,46 @@ import requests
 
 logger = logging.getLogger("AIClient")
 
-# ── Agnes AI 配置 ──────────────────────────────────────
+# 导入本地模型路由
+try:
+    from model_router import select_model
+except Exception:
+    # 如果 project 目录下没有 model_router，使用默认选择（Agnes）
+    def select_model(question, force_image=False):
+        return "agnes-3.0-flash", "Agnes 3.0 Flash", "默认模型"
+
+# ── 模型配置管理 ──────────────────────────────────────
+# 从 WorkBuddy 的 models.json 读取所有模型的配置
+def _get_all_models_config():
+    """读取 WorkBuddy models.json 中所有模型的配置。
+
+    返回 dict: {model_id: {"base_url", "model", "api_key"}}
+    """
+    fallback = {}
+    try:
+        models_path = os.path.join(os.path.expanduser("~"), ".workbuddy", "models.json")
+        if not os.path.exists(models_path):
+            return fallback
+        with open(models_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        entries = data if isinstance(data, list) else data.get("models", [])
+        models_config = {}
+        for m in entries:
+            model_id = str(m.get("id", ""))
+            if model_id:
+                models_config[model_id] = {
+                    "base_url": m.get("url", ""),
+                    "model": model_id,
+                    "api_key": m.get("apiKey") or m.get("api_key", ""),
+                }
+        return models_config
+    except Exception as e:
+        logger.warning("读取 WorkBuddy models.json 失败：%s", e)
+        return fallback
+
+MODELS_CONFIG = _get_all_models_config()
+
+# ── Agnes AI 配置（向后兼容） ──────────────────────────
 # 兜底默认值。运行时优先读取 WorkBuddy 的 models.json，使其跟随 WorkBuddy 侧配置。
 # v43.258：models.json 里的条目已从 agnes-2.5-flash 换成 agnes-3.0-flash
 #（512K 上下文 / 最大输出 65,536，长文与 HTML 生成都够用），解析逻辑同步改优先级，
@@ -102,6 +141,8 @@ class AIClient:
         self._last_call_time = 0          # 速率控制
         self._total_calls = 0             # 统计
         self._mock_calls = 0
+        self._models_config = MODELS_CONFIG.copy()
+
         # 解析 Agnes 端点/模型/密钥：优先跟随 WorkBuddy 的 models.json
         ag = _resolve_agnes_config()
         self._agnes_base_url = ag["base_url"]
@@ -176,19 +217,131 @@ class AIClient:
             return {"result": "需改进", "suggestion": "备注过短（小于5个字），建议补充详细原因"}
         return {"result": "需改进", "suggestion": "建议明确偏差原因（如超耗/少耗/替代/变更）"}
 
-    # ── 真实 AI 调用 ────────────────────────────────
+    # ── 模型路由与统一调用 ──────────────────────────
 
-    def _rate_limit(self):
-        """速率控制：首次调用不等待，后续调用间隔 ≥ MIN_CALL_INTERVAL 秒"""
-        if self._last_call_time == 0:
-            self._last_call_time = time.time()
-            return
-        elapsed = time.time() - self._last_call_time
-        if elapsed < MIN_CALL_INTERVAL:
-            time.sleep(MIN_CALL_INTERVAL - elapsed)
-        self._last_call_time = time.time()
+    def _get_model_config(self, model_id: str) -> dict:
+        """获取指定模型的配置。"""
+        if model_id in self._models_config:
+            cfg = self._models_config[model_id]
+            if cfg["api_key"]:
+                return cfg
+
+        # 对于 Agnes 模型，使用自己的配置
+        if model_id == "agnes-3.0-flash":
+            return {
+                "base_url": self._agnes_base_url,
+                "model": self._agnes_model,
+                "api_key": self._agnes_api_key,
+            }
+
+        # 兜底：找不到配置也返回一个（可能调用失败）
+        return {"base_url": "", "model": model_id, "api_key": ""}
+
+    def _call_model(self, model_id: str, messages: list, system_prompt: str,
+                    temperature: float = 0.3, max_tokens: int = 300) -> dict:
+        """
+        调用指定模型，返回结果。
+        用于审核场景，返回 JSON 格式结果。
+        """
+        # 获取模型配置
+        cfg = self._get_model_config(model_id)
+        if not cfg["base_url"] or not cfg["api_key"]:
+            raise RuntimeError(f"模型 {model_id} 未配置 API Key 或 Base URL")
+
+        # 构造消息
+        payload = {
+            "model": cfg["model"],
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": messages[-1]["content"]},  # 只取最后一条用户消息
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+
+        api_key = cfg["api_key"]
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        def _post():
+            return requests.post(
+                f"{cfg['base_url']}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=10,
+            )
+
+        for attempt in range(2):
+            try:
+                response = _post()
+                if response.status_code == 429:
+                    time.sleep(10)
+                    continue
+                if response.status_code == 500:
+                    time.sleep(15)
+                    continue
+                break
+            except Exception as e:
+                if "connection" in str(e).lower() or "timeout" in str(e).lower():
+                    time.sleep(10)
+                    continue
+                raise
+
+        if response.status_code == 429 or response.status_code == 500:
+            raise RuntimeError(f"模型 {model_id} 请求失败，状态码 {response.status_code}")
+
+        response.raise_for_status()
+        data = response.json()
+        content = data["choices"][0]["message"]["content"].strip()
+
+        # 尝试提取 JSON
+        json_start = content.find("{")
+        json_end = content.rfind("}") + 1
+        if json_start >= 0 and json_end > json_start:
+            result = json.loads(content[json_start:json_end])
+            return {
+                "result": result.get("result", "需关注"),
+                "suggestion": result.get("suggestion", content),
+            }
+        else:
+            return {"result": "需关注", "suggestion": content[:200]}
 
     def _call_agnes(self, user_message: str) -> dict:
+        """
+        调用 AI 模型（基于路由自动选择）
+        返回 {"result": "...", "suggestion": "..."} 或抛异常
+        """
+        self._rate_limit()
+
+        # 1. 自动路由选择模型
+        model_id, model_name, reason = select_model(user_message)
+        logger.info(f"AIClient 模型路由: {reason} → {model_name} ({model_id})")
+
+        # 2. 构建提示词
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ]
+
+        try:
+            # 3. 使用路由后的模型调用
+            result = self._call_model(
+                model_id=model_id,
+                messages=messages,
+                system_prompt=SYSTEM_PROMPT,
+                temperature=0.3,
+                max_tokens=300,
+            )
+            logger.debug(f"AI 审核结果: {result['result']} | {result['suggestion'][:50]}...")
+            return result
+
+        except Exception as e:
+            logger.warning(f"AI 调用失败 ({e})，降级 Mock")
+            remark = str(user_message[:200])
+            return self._get_mock_result(remark, dev_rate=0)
+
         """
         调用 Agnes AI Chat Completions API
         返回 {"result": "...", "suggestion": "..."} 或抛异常
@@ -405,7 +558,7 @@ class AIClient:
 
     def audit_batch(self, items: list) -> list:
         """
-        批量审核多条记录（一次 API 调用处理多条，大幅提速）。
+        批量审核多条记录（一次 API 调用处理多条，大幅提速，使用路由模型）。
 
         参数：
             items: [{"context": dict, "dev_rate": float}, ...]
@@ -467,15 +620,23 @@ class AIClient:
             user_msg = "\n".join(lines)
             self._rate_limit()
 
-            api_key = self._get_api_key()
+            # 使用路由后的模型
+            model_id, model_name, reason = select_model(f"审核{len(items)}条偏差记录")
+            logger.info(f"AuditBatch 模型路由: {reason} → {model_name} ({model_id})")
+
+            cfg = self._get_model_config(model_id)
+
+            if not cfg["base_url"] or not cfg["api_key"]:
+                raise RuntimeError(f"模型 {model_id} 未配置")
+
             response = requests.post(
-                f"{self._agnes_base_url}/chat/completions",
+                f"{cfg['base_url']}/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {api_key}",
+                    "Authorization": f"Bearer {cfg['api_key']}",
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": self._agnes_model,
+                    "model": cfg["model"],
                     "messages": [
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": user_msg},
@@ -487,16 +648,16 @@ class AIClient:
             )
 
             if response.status_code == 429:
-                logger.warning("Agnes AI 速率限制，等待 10 秒后重试...")
+                logger.warning(f"{model_name} 速率限制，等待 10 秒后重试...")
                 time.sleep(10)
                 response = requests.post(
-                    f"{self._agnes_base_url}/chat/completions",
+                    f"{cfg['base_url']}/chat/completions",
                     headers={
-                        "Authorization": f"Bearer {api_key}",
+                        "Authorization": f"Bearer {cfg['api_key']}",
                         "Content-Type": "application/json",
                     },
                     json={
-                        "model": self._agnes_model,
+                        "model": cfg["model"],
                         "messages": [
                             {"role": "system", "content": SYSTEM_PROMPT},
                             {"role": "user", "content": user_msg},
@@ -507,7 +668,7 @@ class AIClient:
                     timeout=45,
                 )
                 if response.status_code == 429:
-                    raise RuntimeError("Agnes AI 速率限制，重试仍失败")
+                    raise RuntimeError(f"{model_name} 速率限制，重试仍失败")
 
             response.raise_for_status()
             content = response.json()["choices"][0]["message"]["content"].strip()
