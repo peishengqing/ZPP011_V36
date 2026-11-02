@@ -144,13 +144,41 @@ def main():
     win = MainWindow()
     win.showMaximized()
 
-    # 初始界面最大化：窗口在 Qt 中完成初始布局约 50-150ms（表格/侧边栏自适应），
-    # Qt 可能把窗口修正到 sizeHint 尺寸（如 1833x851），桌面显示就是"正常窗口"而非最大化。
-    # 在事件循环启动后延迟确认一次，是最高可靠的做法。
-    try:
-        QTimer.singleShot(250, win.showMaximized)
-    except Exception:
-        pass  # 不影响退出
+    # 初始界面最大化（v43.288 恢复 v43.26 硬兜底链，v43.286 误砍成单一 QTimer 致潜在回归）：
+    # Qt 完成初始布局约 50-150ms 后可能把窗口修正到 sizeHint（如 1833x851）→ 显示为"正常窗口"。
+    # 本机 Win10 实测 showMaximized 单独不生效，需 Win32 ShowWindow(SW_RESTORE+SW_MAXIMIZE)+SetWindowPos
+    # 多时点硬兜底，绕过 Qt 层所有 resize/setGeometry 覆盖。
+    if sys.platform == 'win32':
+        def _force_maximize():
+            try:
+                _hwnd = int(win.winId())
+                if not _hwnd:
+                    return
+                # 先 RESTORE 再 MAXIMIZE：绕过 Windows「已是 MAXIMIZED 则 ShowWindow 无操作」的坑
+                # （数据加载后 Qt 按 sizeHint 自动 resize，showCmd 仍为 MAXIMIZED，单调 MAXIMIZE 不重执行）
+                ctypes.windll.user32.ShowWindow(_hwnd, 9)   # SW_RESTORE = 9
+                ctypes.windll.user32.ShowWindow(_hwnd, 3)   # SW_MAXIMIZE = 3
+                SWP_FRAMECHANGED = 0x0020
+                SWP_NOZORDER = 0x0004
+                SWP_NOMOVE = 0x0002
+                SWP_NOSIZE = 0x0001
+                ctypes.windll.user32.SetWindowPos(
+                    _hwnd, None, 0, 0, 0, 0,
+                    SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOMOVE | SWP_NOSIZE
+                )
+            except Exception:
+                pass
+        _force_maximize()
+        QTimer.singleShot(100, _force_maximize)
+        QTimer.singleShot(250, _force_maximize)
+        QTimer.singleShot(500, _force_maximize)
+        QTimer.singleShot(1000, _force_maximize)
+        QTimer.singleShot(2000, _force_maximize)
+    else:
+        try:
+            QTimer.singleShot(250, win.showMaximized)
+        except Exception:
+            pass
 
     sys.exit(app.exec())
 

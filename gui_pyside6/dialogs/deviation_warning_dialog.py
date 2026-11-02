@@ -9,6 +9,8 @@
 
 import functools
 import re
+import sys
+import traceback
 
 import pandas as pd
 from PySide6.QtWidgets import (
@@ -73,6 +75,38 @@ class DeviationWarningDialog(QDialog):
         self._mtd_col = None          # 组件物料类型描述列名（set_data 时探测）
         self.setup_ui()
         self.set_data(warnings_df)
+        # v43.288: 默认最大化打开（裴哥 11-02 反馈截图：默认浮动 resize(1280,640) 不最大化）
+        self.open_maximized()
+
+    def open_maximized(self):
+        """默认最大化打开：showMaximized + 同步「还原」态 UI + Win32 硬兜底（同主窗口，防 Qt 修正回浮动）。
+        构造后即最大化，exec() 前无需再调。"""
+        try:
+            self.showMaximized()
+            self.btn_fullscreen.setText("还原")
+            self._row2_widget.setVisible(True)
+            self._row3_widget.setVisible(True)
+            self._row4_widget.setVisible(True)
+            self._sync_more_filters_btn(True)
+            QTimer.singleShot(100, lambda: self.table_view.resizeColumnsToContents())
+            if sys.platform == 'win32':
+                QTimer.singleShot(0, self._force_win32_maximize)
+                QTimer.singleShot(200, self._force_win32_maximize)
+                QTimer.singleShot(600, self._force_win32_maximize)
+        except Exception:
+            traceback.print_exc()
+
+    def _force_win32_maximize(self):
+        """Win32 ShowWindow(SW_RESTORE+SW_MAXIMIZE) 硬兜底：绕过 Qt 层 resize/setGeometry 覆盖（主窗口同款）。"""
+        try:
+            import ctypes
+            _hwnd = int(self.winId())
+            if not _hwnd:
+                return
+            ctypes.windll.user32.ShowWindow(_hwnd, 9)   # SW_RESTORE = 9
+            ctypes.windll.user32.ShowWindow(_hwnd, 3)   # SW_MAXIMIZE = 3
+        except Exception:
+            pass
 
     def _bind(self, signal, method, *args):
         """Connect a partial slot and keep a reference to it.

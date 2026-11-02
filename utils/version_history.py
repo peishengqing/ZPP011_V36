@@ -14,6 +14,17 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.288",
+        "date": "2026-11-02",
+        "features": (
+            "界面默认最大化双通道（裴哥 11-02 反馈截图：偏差率预警看板默认浮动 resize(1280,640) 不最大化）："
+            "① 偏差率预警看板对话框新增 open_maximized()（showMaximized + 同步「还原」态 UI（显示筛选第2/3/4行 + 按钮文案）"
+            "+ Win32 ShowWindow(SW_RESTORE+SW_MAXIMIZE) 硬兜底），构造后即默认最大化打开；"
+            "② 主窗口恢复 v43.26 的 Win32 RESTORE+MAXIMIZE+SetWindowPos 硬兜底链（v43.286 重构误砍成单一 QTimer(250ms) 潜在回归），"
+            "多时点 100/250/500/1000/2000ms 强制最大化，绕过 Qt 层 resize/setGeometry 覆盖（本机 Win10 实测 showMaximized 单独不生效）。"
+        ),
+    },
+    {
         "version": "v43.287",
         "date": "2026-11-02",
         "fixes": "**日历弹窗切换月份崩溃（用户 11-02 报『程序发生未捕获的异常: QTableWidgetItem object has no attribute deleteLater』）**。"
