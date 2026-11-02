@@ -673,9 +673,10 @@ class FilterPanel(QWidget):
             for r in range(1, 7):
                 for c in range(7):
                     # 清空旧 item
-                    _old = table.takeItem(r, c)
-                    if _old is not None:
-                        _old.deleteLater()
+                    # QTableWidgetItem 不是 QObject，没有 deleteLater 方法（调用会
+                    # AttributeError 崩溃）；takeItem 解除 C++ 所有权后由 Python GC
+                    # 自动回收，直接丢弃即可，不能 deleteLater。
+                    table.takeItem(r, c)
 
                     cell_date = cursor
                     item = QTableWidgetItem(str(cell_date.day()))

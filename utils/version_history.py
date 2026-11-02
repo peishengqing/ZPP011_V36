@@ -14,6 +14,16 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.287",
+        "date": "2026-11-02",
+        "fixes": "**日历弹窗切换月份崩溃（用户 11-02 报『程序发生未捕获的异常: QTableWidgetItem object has no attribute deleteLater』）**。"
+            "根因：filter_panel.py 自定义日历弹窗 _refresh_grid 二次刷新时，用 `_old = table.takeItem(r,c)` 取出旧 QTableWidgetItem 后调 `_old.deleteLater()`——"
+            "QTableWidgetItem 不是 QObject，没有 deleteLater 方法，切换月份（◀▶）即 AttributeError 未捕获崩溃。"
+            "修法：takeItem 解除 C++ 所有权后由 Python GC 自动回收，直接丢弃不调 deleteLater。"
+            "反证验证：临时恢复旧逻辑 → 点击 ▶ 复现完全一致的 AttributeError；修复后 probe 实测 prev/next 二次刷新 PASS，"
+            "py_compile + pyflakes 全绿，filter 相关单测 58 passed。",
+    },
+    {
         "version": "v43.286",
         "date": "2026-10-31",
         "features": (
