@@ -5,8 +5,12 @@ Provides a centralized event system for managing application-wide events
 using PySide6's QObject and signal/slot mechanism.
 """
 
+import logging
 from typing import Callable, Dict, Optional, Any
+
 from PySide6.QtCore import QObject, Signal
+
+logger = logging.getLogger(__name__)
 
 
 class EventBus(QObject):
@@ -181,27 +185,23 @@ class EventBus(QObject):
                      Otherwise disconnect all callbacks.
         """
         if callback:
-            # Disconnect the specific callback from all relevant signals
-            try:
-                self.data_loaded.disconnect(callback)
-            except:
-                pass
-            try:
-                self.filters_changed.disconnect(callback)
-            except:
-                pass
-            try:
-                self.sort_changed.disconnect(callback)
-            except:
-                pass
-            try:
-                self.table_refreshed.disconnect(callback)
-            except:
-                pass
-            try:
-                self.theme_changed.disconnect(callback)
-            except:
-                pass
+            # Disconnect the specific callback from all relevant signals.
+            # A signal with no connected slots raises TypeError when
+            # disconnected; that is expected here, so we log it rather
+            # than silently swallowing it (which hides leaked callbacks).
+            for signal in (self.data_loaded, self.filters_changed,
+                           self.sort_changed, self.table_refreshed,
+                           self.theme_changed):
+                try:
+                    signal.disconnect(callback)
+                except TypeError:
+                    logger.debug(
+                        "Callback %s not connected to signal %s",
+                        callback, signal.name)
+                except Exception as e:  # noqa: BLE001 - intentional broad catch
+                    logger.warning(
+                        "Failed to disconnect callback from signal %s: %s",
+                        signal.name, e)
         else:
             # Disconnect all callbacks
             self.data_loaded.disconnect()

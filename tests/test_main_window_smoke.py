@@ -954,3 +954,48 @@ class TestIsolation:
             # 沙箱里允许出现 config.json 等，但真实用户目录不应被本次测试写入
             # 这里只做存在性记录，不断言内容（真实目录由外部 D 段校验比对）
             assert isinstance(names, set)
+
+
+class TestL3_StartupWindowState:
+    """主窗口必须在初始界面最大化显示（v43.286 回归）。
+
+    截图反馈：开始时出现的是 1833x851 的非全屏窗口。根因：启动入口先
+    `ShowWindow(SW_RESTORE)` 再 `SW_MAXIMIZE`（v43.23~v43.26 遗留的实验代码），
+    Qt 画布排列后把窗口尺寸还给 sizeHint，出现 "showCmd=MAXIMIZED 但窗口实际
+    只有 1833x851" 的分裂状态。
+    """
+
+    def test_init_calls_show_maximized(self):
+        """__init__ 末尾有 showMaximized()。"""
+        import inspect
+
+        from gui_pyside6.main_window import MainWindow
+        assert "showMaximized()" in inspect.getsource(MainWindow.__init__), (
+            "MainWindow.__init__ 没有调用 showMaximized()"
+        )
+
+    def test_state_after_show_maximized(self, main_window):
+        """offscreen 下 showMaximized() 设为 WindowMaximized。"""
+        mw = main_window
+        assert mw.windowState() & Qt.WindowState.WindowMaximized, (
+            f"主窗口初始化后不是最大化：{mw.windowState()}"
+        )
+
+
+class TestL1_ContextMenuIcons:
+    """右键菜单里不允许用未注册的图标名——v43.285 的 '未知图标: file' 就是从这来的。"""
+
+    def test_context_menu_uses_whitelisted_icons(self):
+        """菜单里所有 get_icon("x") 参数都必须在白名单里。"""
+        import inspect
+        import re
+
+        from gui_pyside6.main_window import MainWindow
+        from gui_pyside6.utils import icons
+
+        NAMES = set(icons._ICONS.keys())
+        src = inspect.getsource(MainWindow._show_context_menu)
+        found = re.findall(r'get_icon\(\s*["\']([^"\']+)["\']', src)
+        for name in found:
+            i = f"菜单里未注册的图标名 {name}（可用: {sorted(NAMES)[:12]}）"
+            assert name in NAMES, i

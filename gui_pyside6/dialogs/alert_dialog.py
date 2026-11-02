@@ -1041,28 +1041,5 @@ class AlertDialog(QDialog):
         return super().eventFilter(obj, event)
 
     def _copy_selected_cells(self):
-        from PySide6.QtWidgets import QApplication
-        selection = self.table_view.selectionModel()
-        if not selection or not selection.hasSelection():
-            return
-        indexes = selection.selectedIndexes()
-        cells = {}
-        min_row, max_row = float('inf'), -1
-        min_col, max_col = float('inf'), -1
-        for idx in indexes:
-            r, c = idx.row(), idx.column()
-            val = idx.data(Qt.DisplayRole) or ""
-            cells[(r, c)] = str(val).replace("\n", " ").replace("\r", "")
-            min_row = min(min_row, r)
-            max_row = max(max_row, r)
-            min_col = min(min_col, c)
-            max_col = max(max_col, c)
-        if max_row < 0:
-            return
-        lines = []
-        for r in range(min_row, max_row + 1):
-            row_vals = []
-            for c in range(min_col, max_col + 1):
-                row_vals.append(cells.get((r, c), ""))
-            lines.append("\t".join(row_vals))
-        QApplication.clipboard().setText("\n".join(lines))
+        from gui_pyside6.utils.table_copy import copy_table_cells
+        copy_table_cells(self.table_view)

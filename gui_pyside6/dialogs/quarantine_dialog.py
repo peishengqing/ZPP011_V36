@@ -4,6 +4,8 @@
 v42.37 新增：Tab2「失效复核」——监控隔离区旧数据改动（如负损→补投相符），
 可手动扫描并一键移出已失效记录。
 """
+import functools
+
 import pandas as pd
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView, QTabWidget,
@@ -100,7 +102,7 @@ class QuarantineDialog(QDialog):
         sl.addWidget(self.edit_list_search)
         clear_btn = make_button("✕ 清空")
         clear_btn.setFixedWidth(60)
-        clear_btn.clicked.connect(lambda: self.edit_list_search.clear())
+        clear_btn.clicked.connect(self.edit_list_search.clear)
         sl.addWidget(clear_btn)
         # v43.264：列头筛选按钮/提示收敛到共用组件 col_filter_ui
         self.btn_col_filter = make_col_filter_button(self, self._on_toggle_col_filter)
@@ -148,7 +150,12 @@ class QuarantineDialog(QDialog):
         self.table_view.horizontalHeader().setStretchLastSection(True)
         self.table_view.verticalHeader().setVisible(False)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
-        self.col_filter_ctrl.filtered_cols_changed.connect(lambda: self._update_col_filter_hint(self.col_filter_ctrl, self._col_filter_hint_label, getattr(self, "source_model", None)))
+        self.col_filter_ctrl.filtered_cols_changed.connect(
+            functools.partial(
+                self._update_col_filter_hint, self.col_filter_ctrl,
+                self._col_filter_hint_label, getattr(self, "source_model", None)
+            )
+        )
 
         # v43.143：提示标签右键 → 清除菜单（逐列 / 全部），此前纯 QLabel 无任何取消入口
         self.col_filter_ctrl.attach_clear_menu(self._col_filter_hint_label)
@@ -194,7 +201,7 @@ class QuarantineDialog(QDialog):
         sl.addWidget(self.edit_expired_search)
         clear_btn = make_button("✕ 清空")
         clear_btn.setFixedWidth(60)
-        clear_btn.clicked.connect(lambda: self.edit_expired_search.clear())
+        clear_btn.clicked.connect(self.edit_expired_search.clear)
         sl.addWidget(clear_btn)
         # v43.264：列头筛选按钮/提示收敛到共用组件 col_filter_ui
         self.btn_col_filter_expired = make_col_filter_button(self, self._on_toggle_expired_col_filter, "btn_col_filter_expired")
@@ -1100,23 +1107,5 @@ class QuarantineDialog(QDialog):
         return super().eventFilter(obj, event)
 
     def _copy_selected_cells(self):
-        from PySide6.QtWidgets import QApplication
-        selection = self.table_view.selectionModel()
-        if not selection or not selection.hasSelection():
-            return
-        indexes = selection.selectedIndexes()
-        cells = {}
-        min_row, max_row = float('inf'), -1
-        min_col, max_col = float('inf'), -1
-        for idx in indexes:
-            r, c = idx.row(), idx.column()
-            val = idx.data(Qt.DisplayRole) or ""
-            cells[(r, c)] = str(val).replace("\n", " ").replace("\r", "")
-            min_row = min(min_row, r); max_row = max(max_row, r)
-            min_col = min(min_col, c); max_col = max(max_col, c)
-        if max_row < 0:
-            return
-        lines = []
-        for r in range(min_row, max_row + 1):
-            lines.append("\t".join(cells.get((r, c), "") for c in range(min_col, max_col + 1)))
-        QApplication.clipboard().setText("\n".join(lines))
+        from gui_pyside6.utils.table_copy import copy_table_cells
+        copy_table_cells(self.table_view)

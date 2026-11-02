@@ -144,76 +144,13 @@ def main():
     win = MainWindow()
     win.showMaximized()
 
-    # --- DEBUG 诊断：七连败后用数据定位根因（v43.25） ---
-    # 打印每个关键节点的窗口实际尺寸和状态，从控制台输出定位覆盖源。
-    if sys.platform == 'win32':
-        import ctypes.wintypes as wintypes
-
-        class RECT(ctypes.Structure):
-            _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
-                        ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
-
-        WINDOWPLACEMENT = ctypes.Structure.__class__(
-            "WINDOWPLACEMENT", (ctypes.Structure,), {
-                "_fields_": [
-                    ("length", ctypes.c_uint),
-                    ("flags", ctypes.c_uint),
-                    ("showCmd", ctypes.c_uint),
-                    ("ptMinPosition", wintypes.POINT),
-                    ("ptMaxPosition", wintypes.POINT),
-                    ("rcNormalPosition", RECT),
-                ]
-            }
-        )
-        wp = WINDOWPLACEMENT()
-        wp.length = ctypes.sizeof(WINDOWPLACEMENT)
-
-        def _debug_window_state(tag):
-            try:
-                hwnd = int(win.winId())
-                # GetWindowPlacement 获取 showCmd: 1=Normal, 3=Maximized
-                ctypes.windll.user32.GetWindowPlacement(hwnd, ctypes.byref(wp))
-                # GetWindowRect 获取屏幕坐标
-                rc = RECT()
-                ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rc))
-                w = rc.right - rc.left
-                h = rc.bottom - rc.top
-                state_name = {1: "NORMAL", 2: "MINIMIZED", 3: "MAXIMIZED"}.get(wp.showCmd, f"UNKNOWN({wp.showCmd})")
-                # DEBUG: print(f"[MAXIMIZE-DEBUG] {tag}: showCmd={state_name}, "
-                #       f"rect=({rc.left},{rc.top},{rc.right},{rc.bottom}), size={w}x{h}")
-            except Exception as e:
-                # DEBUG: print(f"[MAXIMIZE-DEBUG] {tag}: ERROR - {e}")
-                pass
-
-        _debug_window_state("1-showMaximized()之后")
-
-        def _force_maximize():
-            try:
-                _hwnd = int(win.winId())
-                if not _hwnd:
-                    return
-                # 先 RESTORE 再 MAXIMIZE：绕过 Windows "已是MAXIMIZED状态则ShowWindow无操作"的坑。
-                # （数据加载后 Qt 按 sizeHint 自动 resize 主窗口，实际显示区缩成 1833x851，
-                #   但 showCmd 仍为 MAXIMIZED，单调 ShowWindow(MAXIMIZE) 不重新执行）
-                ctypes.windll.user32.ShowWindow(_hwnd, 9)   # SW_RESTORE = 9
-                ctypes.windll.user32.ShowWindow(_hwnd, 3)   # SW_MAXIMIZE = 3
-                SWP_FRAMECHANGED = 0x0020
-                SWP_NOZORDER = 0x0004
-                SWP_NOMOVE = 0x0002
-                SWP_NOSIZE = 0x0001
-                ctypes.windll.user32.SetWindowPos(
-                    _hwnd, None, 0, 0, 0, 0,
-                    SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOMOVE | SWP_NOSIZE
-                )
-                _debug_window_state("Win32_RESTORE+MAXIMIZE之后")
-            except Exception as e:
-                print(f"[MAXIMIZE-DEBUG] Win32调用异常: {e}")
-
-        _force_maximize()
-        QTimer.singleShot(100, lambda: (_force_maximize(), _debug_window_state("QTimer-100ms")))
-        QTimer.singleShot(500, lambda: (_force_maximize(), _debug_window_state("QTimer-500ms")))
-        QTimer.singleShot(1000, lambda: (_force_maximize(), _debug_window_state("QTimer-1000ms")))
-        QTimer.singleShot(2000, lambda: (_force_maximize(), _debug_window_state("QTimer-2000ms(最终)")))
+    # 初始界面最大化：窗口在 Qt 中完成初始布局约 50-150ms（表格/侧边栏自适应），
+    # Qt 可能把窗口修正到 sizeHint 尺寸（如 1833x851），桌面显示就是"正常窗口"而非最大化。
+    # 在事件循环启动后延迟确认一次，是最高可靠的做法。
+    try:
+        QTimer.singleShot(250, win.showMaximized)
+    except Exception:
+        pass  # 不影响退出
 
     sys.exit(app.exec())
 

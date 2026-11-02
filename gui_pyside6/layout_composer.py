@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
-
+from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.icons import get_icon
 
 
@@ -26,6 +26,37 @@ def _icon_action(menu: QMenu, icon: str, text: str, handler) -> QAction:
     act.triggered.connect(handler)
     menu.addAction(act)
     return act
+
+
+def _on_audit_action(mw):
+    """处理审核按钮点击事件"""
+    # 获取选中的行
+    selected_rows = list({idx.row() for idx in mw.table_view.selectionModel().selectedIndexes()})
+    if not selected_rows and mw.source_model and mw.source_model.getDataFrame() and 'data_id' in mw.source_model.getDataFrame().columns:
+        # 如果没有选中行，选择第一行
+        selected_rows = [0]
+    
+    if selected_rows:
+        # 打开审核对话框进行单个审核
+        row = selected_rows[0]
+        row_data = mw.source_model.getDataFrame().iloc[row]
+        data_id = row_data.get('data_id')
+        if data_id:
+            from gui_pyside6.dialogs.audit_dialog import AuditDialog
+            dialog = AuditDialog(data_id, mw)
+            if dialog.exec_() == 1:
+                result = dialog.get_audit_result()
+                # 更新数据
+                if 'new_value' in result:
+                    # 找到对应的列（实际、quantity等）
+                    col = next((c for c in ['实际', '数量-实际', 'actual'] if c in mw.view_model.df.columns), None)
+                    if col:
+                        mw.view_model.df.loc[row, col] = result['new_value']
+                        mw.source_model.setDataFrame(mw.view_model.df)
+                        mw.proxy_model.invalidate()
+                toast("审核完成", level="success", parent=mw)
+    else:
+        toast("请先选择要审核的行", level="warning", parent=mw)
 
 
 class LayoutComposer:
@@ -195,6 +226,17 @@ class LayoutComposer:
         mw.action_btn_toggle_progress.setToolTip("切换分析进度")
         mw.action_btn_toggle_progress.setObjectName("toolGhostBtn")
         action_layout.addWidget(mw.action_btn_toggle_progress)
+
+        # 添加审核按钮
+        mw.action_btn_audit = QToolButton()
+        mw.action_btn_audit.setIcon(get_icon("wrench"))
+        mw.action_btn_audit.setText("审核")
+        mw.action_btn_audit.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        mw.action_btn_audit.setToolTip("执行审核")
+        mw.action_btn_audit.setObjectName("toolGhostBtn")
+        # 设置点击事件
+        mw.action_btn_audit.clicked.connect(lambda: self._on_audit_action(mw))
+        action_layout.addWidget(mw.action_btn_audit)
 
         mw.action_btn_unread_summary = QToolButton()
         mw.action_btn_unread_summary.setIcon(get_icon("megaphone"))

@@ -55,18 +55,18 @@ class TestDataService:
         assert '|' in str(result['fingerprint'].iloc[0])
 
     def test_normalize_alt_flag(self, service):
-        """_normalize_alt_flag 标准化替代料标记"""
+        """normalize_alt_flag 标准化替代料标记（v43.286 服务层重构后走 DataPreprocessor）"""
         df = pd.DataFrame({
             '物料编码': ['A', 'B', 'C', 'D'],
             '是否替代料': ['是', None, '替代', '否'],
         })
-        result = service._normalize_alt_flag(df)
+        result = service.preprocessor.normalize_alt_flag(df)
         assert result['是否替代料'].tolist() == ['是', '否', '是', '否']
 
     def test_normalize_alt_flag_fills_missing(self, service):
         """没有是否替代料列时填充默认值'否'"""
         df = pd.DataFrame({'物料编码': ['A']})
-        result = service._normalize_alt_flag(df)
+        result = service.preprocessor.normalize_alt_flag(df)
         assert '是否替代料' in result.columns
         assert result['是否替代料'].iloc[0] == '否'
 

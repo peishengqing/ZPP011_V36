@@ -6,6 +6,7 @@
 
 from typing import Callable, List, Optional, Dict, Any
 from PySide6.QtCore import QObject, QTimer
+import logging
 import sys
 import os
 import datetime
@@ -250,8 +251,10 @@ class FilterController(QObject):
                         y, m, d = map(int, value.split('-'))
                         qdate = date(y, m, d)
                         filters.append(FilterRule(key, '==', qdate))
-                    except:
-                        pass
+                    except (ValueError, TypeError) as e:
+                        logger.warning(
+                            "Invalid date value %r for filter %s: %s",
+                            value, key, e)
             elif key in ('_semi_class_set',):
                 # 半成品分类集
                 if value:

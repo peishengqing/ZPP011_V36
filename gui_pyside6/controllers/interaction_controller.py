@@ -185,31 +185,10 @@ class InteractionController:
         """复制选中区域到剪贴板（Excel 式：按选中矩形输出，空洞填空）。
 
         原先 main_window 有两份实现：菜单连这份、Ctrl+C 连 _copy_selected_cells，
-        两者行为不一致；现统一为本实现，两条入口共用。
+        两者行为不一致；现统一调用 gui_pyside6.utils.table_copy 工具函数。
         """
-        tv = self.mw.table_view
-        selection = tv.selectionModel()
-        indexes = selection.selectedIndexes()
-        if not indexes:
-            return
-        cells = {}
-        min_row, max_row = float('inf'), -1
-        min_col, max_col = float('inf'), -1
-        for idx in indexes:
-            r, c = idx.row(), idx.column()
-            cells[(r, c)] = idx.data(Qt.DisplayRole) or ""
-            min_row = min(min_row, r)
-            max_row = max(max_row, r)
-            min_col = min(min_col, c)
-            max_col = max(max_col, c)
-        lines = []
-        for r in range(min_row, max_row + 1):
-            row_vals = []
-            for c in range(min_col, max_col + 1):
-                row_vals.append(str(cells.get((r, c), "")))
-            lines.append("\t".join(row_vals))
-        QApplication.clipboard().setText("\n".join(lines))
-        self.mw.statusBar().showMessage(f"已复制 {max_row - min_row + 1} 行 × {max_col - min_col + 1} 列", 2000)
+        from gui_pyside6.utils.table_copy import copy_selected_cells
+        copy_selected_cells(self.mw.table_view, self.mw.statusBar())
 
     def _on_cell_double_clicked(self, index: Any):
         import logging

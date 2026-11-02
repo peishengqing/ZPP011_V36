@@ -142,6 +142,12 @@ class MainTableComponent(QObject):
         self.table_view.setSelectionBehavior(QTableView.SelectItems)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
 
+        # 空态提示（无数据时居中显示，v43.285 新增）
+        self.empty_hint = QLabel("暂无数据，请导入 ZPP011 导出文件后点击「开始分析」")
+        self.empty_hint.setObjectName("emptyHint")
+        self.empty_hint.setAlignment(Qt.AlignCenter)
+        self.empty_hint.setVisible(False)
+
         # 合计行（v43.281：按用户要求移除 5 个合计标签——定额/实际/偏差金额/偏差量/
         # 净偏差率，只保留右侧「单位汇总 / 锁列宽 / 全屏 / 眼睛」按钮行。
         # 原标签数据链路（_update_summary 等）已同步停用。）
@@ -219,6 +225,7 @@ class MainTableComponent(QObject):
         main_layout.insertWidget(0, self.link_banner)
 
         main_layout.addWidget(self.table_view, 1)
+        main_layout.addWidget(self.empty_hint, alignment=Qt.AlignCenter)
 
         audit_layout.addLayout(main_layout, 1)
 
@@ -247,6 +254,10 @@ class MainTableComponent(QObject):
 
     def clear_link_banner(self):
         self.link_banner.setVisible(False)
+
+    def set_empty_hint_visible(self, visible):
+        """显示/隐藏空态提示（无数据时居中提示）"""
+        self.empty_hint.setVisible(visible)
 
     def set_progress_visible(self, visible: bool):
         """外部（如开始分析时）强制展开/折叠进度面板，并同步按钮状态"""

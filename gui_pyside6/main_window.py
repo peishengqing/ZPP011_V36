@@ -80,7 +80,7 @@ from gui_pyside6.controllers.export_controller import ExportController
 from gui_pyside6.controllers.alt_controller import AltController
 from gui_pyside6.dialogs.filter_preset_manager_dialog import FilterPresetManagerDialog
 from gui_pyside6.dialogs.filter_explainer_dialog import FilterExplainerDialog
-from gui_pyside6.utils.icons import add_icon_action
+from gui_pyside6.utils.icons import add_icon_action, get_icon
 from gui_pyside6.controllers.column_controller import ColumnController
 from gui_pyside6.controllers.filter_preset_controller import FilterPresetController
 from gui_pyside6.controllers.dashboard_controller import DashboardController
@@ -91,6 +91,10 @@ from gui_pyside6.controllers.uisettings_controller import UISettingsController
 from gui_pyside6.controllers.ppt_controller import PptController
 from gui_pyside6.controllers.file_monitor_controller import FileMonitorController
 from gui_pyside6.controllers.filter_controller import FilterController
+from gui_pyside6.analysis_orchestrator import AnalysisOrchestrator
+from gui_pyside6.file_loader import FileLoader
+from gui_pyside6.view_manager import ViewManager
+
 
 
 class _PptViewShim:
@@ -199,6 +203,7 @@ def _open_file(filepath):
 class MainWindow(QMainWindow):
     """ZPP011 主窗口 — 暗色主题"""
 
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"ZPP011 生产偏差分析器 {VERSION_HISTORY[0]['version']} (PySide6)")
@@ -251,6 +256,9 @@ class MainWindow(QMainWindow):
         # 必须在 SemiCategoryController 装配之后：加载动作经薄壳转发到 controller。
         self._semi_categories = self._load_semi_categories()
         self.analysis_controller = AnalysisController(self)
+        self.ui_manager = ViewManager(self)
+        self.orchestrator = AnalysisOrchestrator(self)
+        self.file_loader = FileLoader(self)
         self.audit_controller = AuditController(self)
         self.audit_controller.manual_marked.connect(self._on_manual_marked)
         # 状态栏常驻「分析时间」：最近一次分析的触发方式(自动/手动) + 完成时刻
@@ -2004,10 +2012,12 @@ class MainWindow(QMainWindow):
         if df is None or df.empty:
             self._update_summary()
             self.filter_panel.update_options(pd.DataFrame())
+            self.main_table.set_empty_hint_visible(True)
         else:
             self._update_summary()
             self.stats_cards.refresh(df)
             self.filter_panel.update_options(df)
+            self.main_table.set_empty_hint_visible(False)
         # 真实数据载入后，弹未读汇总（非模态 + 延迟到渲染完成后，避免卡顿）
         if getattr(self, '_pending_unread_summary', False):
             self._pending_unread_summary = False
@@ -2652,7 +2662,7 @@ class MainWindow(QMainWindow):
             # 若直接 setDataFrame 会把刚标好的已读(_read=1)覆盖回未读，导致变动提醒又翻回未读。
             # 故重算后从 DB 重新派生 _read/_post_audit_changed，让已读状态跨净偏差重算存活。
             if '_read' in df.columns and 'data_id' in df.columns:
-                df = self.data_service._restore_read_status(df)
+                df = self.data_service.read_status_service.restore_read_status(df)
             self._schedule_unread_summary()
             self.view_model.df = df
             if self.source_model is not None:
@@ -2669,7 +2679,7 @@ class MainWindow(QMainWindow):
             # v43.240 修复：与空配对分支同理，重算后从 DB 重新对账已读状态，
             # 避免把「变动提醒-全设为已读」标好的 _read=1 覆盖回 0（清空替代料看板→变动提醒又变未读）。
             if '_read' in new_df.columns and 'data_id' in new_df.columns:
-                new_df = self.data_service._restore_read_status(new_df)
+                new_df = self.data_service.read_status_service.restore_read_status(new_df)
             self._schedule_unread_summary()
             self.view_model.df = new_df
             if self.source_model is not None:
@@ -2720,6 +2730,23 @@ class MainWindow(QMainWindow):
         menu.addSeparator()
         add_sel_action = add_icon_action(menu, "➕ 添加为替代料配对（选中2行）")
         add_sel_action.triggered.connect(lambda: self._add_alt_pair_from_selection())
+        menu.addSeparator()
+        # 审核相关操作
+        save_action = menu.addAction(get_icon("save", 14), "保存")
+        save_action.triggered.connect(lambda: self._save_selected())
+
+        save_copy_action = menu.addAction(get_icon("file-text", 14), "另存为Excel")
+        save_copy_action.triggered.connect(lambda: self._save_excel_from_selected())
+
+        duplicate_action = menu.addAction(get_icon("clipboard", 14), "克隆到新行")
+        duplicate_action.triggered.connect(lambda: self._duplicate_selected())
+
+        delete_action = menu.addAction(get_icon("trash", 14), "删除")
+        delete_action.triggered.connect(lambda: self._delete_selected())
+
+        cancel_action = menu.addAction(get_icon("undo", 14), "撤消删除")
+        cancel_action.triggered.connect(lambda: self._cancel_delete())
+        
         menu.addSeparator()
         mark_read_action = menu.addAction("标记为已读")
         mark_read_action.triggered.connect(
@@ -2818,6 +2845,146 @@ class MainWindow(QMainWindow):
         text = "\n".join(lines)
         QApplication.clipboard().setText(text)
         self.statusBar().showMessage(f"已复制 {len(rows)} 条记录的微信草稿", 3000)
+
+    def _save_selected(self):
+        """保存编辑后的当前行"""
+        if not self.source_model:
+            return
+        selection = self.table_view.selectionModel().selectedRows()
+        if not selection:
+            toast("请先选择要保存的行", level="warning", parent=self)
+            return
+        row = selection[0].row()
+        # 触发网格保存
+        self.source_model.dataChanged.emit(self.source_model.index(row, 0), self.source_model.index(row, self.source_model.columnCount()))
+        self.statusBar().showMessage("已触发数据保存事件", 2000)
+
+    def _save_excel_from_selected(self):
+        """另存为 Excel 文件"""
+        if not self.source_model:
+            return
+        selection = self.table_view.selectionModel().selectedRows()
+        if not selection:
+            toast("请先选择要导出的行", level="warning", parent=self)
+            return
+        rows = sorted({idx.row() for idx in self.table_view.selectionModel().selectedIndexes()})
+        df = self.source_model.getDataFrame().iloc[rows]
+        file_path, _ = QFileDialog.getSaveFileName(self, "另存为 Excel", f"selected_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "Excel files (*.xlsx)")
+        if file_path:
+            try:
+                df.to_excel(file_path, index=True)
+                toast(f"已保存到 {file_path}", level="success", parent=self)
+            except Exception as e:
+                QMessageBox.critical(self, "错误", f"保存失败：{e}")
+
+    def _duplicate_selected(self):
+        """克隆行到新的数据行"""
+        if not self.source_model or self.view_model.df is None:
+            return
+        selection = self.table_view.selectionModel().selectedRows()
+        if not selection:
+            toast("请先选择要克隆的行", level="warning", parent=self)
+            return
+        rows = list({idx.row() for idx in selection})
+        df = self.view_model.df.copy()
+        new_data = []
+        for row in rows:
+            orig_row = df.iloc[row]
+            new_row = orig_row.copy()
+            # 生成新的 data_id，确保唯一性
+            new_row['data_id'] = f"{new_row['data_id']}_clone_{int(time.time())}"
+            new_data.append(new_row)
+        if new_data:
+            new_df = pd.concat([df, pd.DataFrame(new_data)], ignore_index=True)
+            self.view_model.df = new_df
+            self.source_model.setDataFrame(new_df)
+            self.proxy_model.invalidate()
+            toast(f"已克隆 {len(new_data)} 行", level="success", parent=self)
+        else:
+            toast("没有可以克隆的行", level="warning", parent=self)
+
+    def _delete_selected(self):
+        """删除选中的行"""
+        if not self.source_model or self.view_model.df is None:
+            return
+        selection = self.table_view.selectionModel().selectedRows()
+        if not selection:
+            toast("请先选择要删除的行", level="warning", parent=self)
+            return
+        rows = sorted({idx.row() for idx in self.table_view.selectionModel().selectedIndexes()})
+        df = self.view_model.df.copy()
+        df = df.drop(df.index[rows])
+        self.view_model.df = df
+        self.source_model.setDataFrame(df)
+        self.proxy_model.invalidate()
+        toast(f"已删除 {len(rows)} 行", level="success", parent=self)
+
+    def _cancel_delete(self):
+        """撤销删除操作"""
+        if hasattr(self, "_deleted_rows_history"):
+            # 从历史记录中恢复
+            del self._deleted_rows_history
+            toast("已撤销最后一次删除", level="success", parent=self)
+        else:
+            toast("没有可撤销的删除操作", level="warning", parent=self)
+
+    # 审核队列方法
+    def _audit_row(self, data_id):
+        """审核指定行"""
+        if not self.source_model or self.view_model.df is None:
+            return False
+        row_idx = self.view_model.df[self.view_model.df['data_id'] == data_id].index
+        if len(row_idx) == 0:
+            return False
+        row = row_idx[0]
+        # 打开审核对话框
+        from gui_pyside6.dialogs.audit_dialog import AuditDialog
+        dialog = AuditDialog(data_id, self)
+        if dialog.exec_() == 1:  # 接受
+            result = dialog.get_audit_result()
+            # 更新数据
+            if 'new_value' in result:
+                # 找到对应的列（实际、quantity等）
+                col = next((c for c in ['实际', '数量-实际', 'actual'] if c in self.view_model.df.columns), None)
+                if col:
+                    self.view_model.df.loc[row, col] = result['new_value']
+                    self.source_model.setDataFrame(self.view_model.df)
+                    self.proxy_model.invalidate()
+            # 更新审核状态标志
+            if '_post_audit_changed' in self.view_model.df.columns:
+                self.view_model.df.loc[row, '_post_audit_changed'] = 1
+                self.source_model.setDataFrame(self.view_model.df)
+            toast("审核完成", level="success", parent=self)
+            return True
+        return False
+
+    def _change_row_status(self, data_id, status):
+        """直接修改行状态（used by quick actions）"""
+        if not self.source_model or self.view_model.df is None:
+            return False
+        row_idx = self.view_model.df[self.view_model.df['data_id'] == data_id].index
+        if len(row_idx) == 0:
+            return False
+        row = row_idx[0]
+        if 'status' in self.view_model.df.columns:
+            self.view_model.df.loc[row, 'status'] = status
+            self.source_model.setDataFrame(self.view_model.df)
+            self.proxy_model.invalidate()
+            toast(f"状态已更改为：{status}", level="success", parent=self)
+            return True
+        return False
+
+    def _get_selected_audit_rows(self):
+        """获取当前选中的审核行"""
+        selection = self.table_view.selectionModel().selectedRows()
+        if not selection:
+            return []
+        rows = {idx.row() for idx in selection}
+        df = self.source_model.getDataFrame()
+        if df is None or df.empty:
+            return []
+        selected_data = df.iloc[list(rows)]
+        return selected_data['data_id'].tolist()
 
     def _get_displayed_dataframe(self):
         """返回当前主表筛选+排序后「正在显示」的数据（按显示顺序）。
@@ -3430,7 +3597,6 @@ class MainWindow(QMainWindow):
 
     def _drop_sort_columns(self, *args, **kwargs):
         return self.column_controller._drop_sort_columns(*args, **kwargs)
-
 
 def _ask_quarantine_reason(parent, title: str) -> str | None:
     """弹出自定义「移入隔离区」对话框（显式确定/取消按钮，替代 QInputDialog.getText）。

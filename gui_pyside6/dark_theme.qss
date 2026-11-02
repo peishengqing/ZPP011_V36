@@ -1035,6 +1035,16 @@ QLabel#unreadCount {
     font-weight: 600;
 }
 
+/* ── 空态提示（v43.285 新增） ── */
+QLabel#emptyHint {
+    color: #9A998F;
+    font-size: 13px;
+    padding: 12px 20px;
+    background-color: #232220;
+    border-radius: 8px;
+    border: 1px dashed #3E3D38;
+}
+
 /* 列头取值筛选浮层（Qt.Popup 顶层控件：只描边界，不加圆角，避免出现毛角） */
 QWidget#colFilterPopup {
     background-color: #262521;

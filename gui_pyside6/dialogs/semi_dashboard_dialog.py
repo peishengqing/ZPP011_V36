@@ -1117,23 +1117,8 @@ class SemiDashboardDialog(QDialog):
         return super().eventFilter(obj, event)
 
     def _copy_selected_cells(self):
-        from PySide6.QtWidgets import QApplication
-        selection = self.table_view.selectionModel()
-        if not selection or not selection.hasSelection():
-            return
-        indexes = selection.selectedIndexes()
-        cells = {}
-        min_r, max_r, min_c, max_c = float('inf'), -1, float('inf'), -1
-        for idx in indexes:
-            r, c = idx.row(), idx.column()
-            cells[(r, c)] = str(idx.data(Qt.DisplayRole) or "").replace("\n", " ").replace("\r", "")
-            min_r, max_r = min(min_r, r), max(max_r, r)
-            min_c, max_c = min(min_c, c), max(max_c, c)
-        if max_r < 0:
-            return
-        lines = ["\t".join(cells.get((r, c), "") for c in range(min_c, max_c + 1))
-                 for r in range(min_r, max_r + 1)]
-        QApplication.clipboard().setText("\n".join(lines))
+        from gui_pyside6.utils.table_copy import copy_table_cells
+        copy_table_cells(self.table_view)
 
     # ------------------------------------------------------------------ 右键菜单
     def show_context_menu(self, pos):

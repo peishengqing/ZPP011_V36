@@ -36,7 +36,15 @@ class _FakeStatusBar:
 
 
 class _FakeDataService:
-    """复刻 data_service 的列探测与数值工具（与真实实现同候选集）。"""
+    """复刻 data_service 的列探测与数值工具（与真实实现同候选集）。
+
+    v43.286 服务层重构后，DataService 改为协调器，列探测/数值工具
+    （_find_real_qty_col/_safe_qty/_norm_note 等）经 read_status_service
+    子服务暴露；fake 以自指属性兼容新调用路径。
+    """
+
+    def __init__(self):
+        self.read_status_service = self
 
     @staticmethod
     def _find_real_qty_col(df):

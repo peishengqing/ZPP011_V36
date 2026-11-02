@@ -7,7 +7,9 @@
 交互与「替代料看板」(alert_dialog.AlertDialog) 保持一致，仅列宽策略改为可拖拽。
 """
 
+import functools
 import re
+
 import pandas as pd
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
@@ -47,6 +49,11 @@ class DeviationWarningDialog(QDialog):
         self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.main_window = main_window
         self.original_df = warnings_df.copy()
+        # Slots are stored as functools.partial objects in
+        # self._handlers so they can be disconnected later.
+        # Plain lambdas are unreferencable and would leak the dialog
+        # (see A-06).
+        self._handlers = []
         self.filter_mode = "all"
         self.mat_filter = "all"   # 料别筛选：all / raw(原料) / pkg(包材)，与已读状态筛选独立叠加
         self._mat_col = None      # 料别列名（物料类型 / 物料大类），set_data 时探测
@@ -66,6 +73,31 @@ class DeviationWarningDialog(QDialog):
         self._mtd_col = None          # 组件物料类型描述列名（set_data 时探测）
         self.setup_ui()
         self.set_data(warnings_df)
+
+    def _bind(self, signal, method, *args):
+        """Connect a partial slot and keep a reference to it.
+
+        The ``(signal, slot)`` pair is recorded so that the slot can be
+        disconnected in ``closeEvent``.
+        """
+        slot = functools.partial(method, *args)
+        signal.connect(slot)
+        self._handlers.append((signal, slot))
+        return slot
+
+    def closeEvent(self, event):
+        """Disconnect all registered handlers before the dialog is destroyed.
+
+        Without this, lambdas kept only by Qt's signal registry hold a
+        reference to ``self`` and the dialog never gets garbage collected
+        (A-06).
+        """
+        for signal, slot in self._handlers:
+            try:
+                signal.disconnect(slot)
+            except (TypeError, RuntimeError):
+                pass
+        super().closeEvent(event)
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -91,24 +123,32 @@ class DeviationWarningDialog(QDialog):
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(300)
         self._search_timer.timeout.connect(self._on_search_changed)
-        self.search_edit.textChanged.connect(lambda _t: self._search_timer.start())
+        self.search_edit.textChanged.connect(
+            self._bind(self.search_edit.textChanged, lambda _t: self._search_timer.start())
+        )
 
         self.btn_all = QPushButton("全部")
         self.btn_all.setCheckable(True)
         self.btn_all.setMinimumWidth(70)
-        self.btn_all.clicked.connect(lambda: self._set_filter("all"))
+        self.btn_all.clicked.connect(
+            self._bind(self.btn_all.clicked, lambda: self._set_filter("all"))
+        )
         row1.addWidget(self.btn_all)
 
         self.btn_unread = QPushButton("未读")
         self.btn_unread.setCheckable(True)
         self.btn_unread.setMinimumWidth(70)
-        self.btn_unread.clicked.connect(lambda: self._set_filter("unread"))
+        self.btn_unread.clicked.connect(
+            self._bind(self.btn_unread.clicked, lambda: self._set_filter("unread"))
+        )
         row1.addWidget(self.btn_unread)
 
         self.btn_read = QPushButton("已读")
         self.btn_read.setCheckable(True)
         self.btn_read.setMinimumWidth(70)
-        self.btn_read.clicked.connect(lambda: self._set_filter("read"))
+        self.btn_read.clicked.connect(
+            self._bind(self.btn_read.clicked, lambda: self._set_filter("read"))
+        )
         row1.addWidget(self.btn_read)
 
         # 工厂筛选（始终可见，放在第1行末尾）
@@ -134,17 +174,17 @@ class DeviationWarningDialog(QDialog):
         self.btn_quar_all = QPushButton("全部")
         self.btn_quar_all.setCheckable(True)
         self.btn_quar_all.setMinimumWidth(70)
-        self.btn_quar_all.clicked.connect(lambda: self._set_quar_filter("all"))
+        self.btn_quar_all.clicked.connect(self._bind(self.btn_quar_all.clicked, lambda: self._set_quar_filter("all")))
         row1.addWidget(self.btn_quar_all)
         self.btn_quar_yes = QPushButton("是")
         self.btn_quar_yes.setCheckable(True)
         self.btn_quar_yes.setMinimumWidth(70)
-        self.btn_quar_yes.clicked.connect(lambda: self._set_quar_filter("yes"))
+        self.btn_quar_yes.clicked.connect(self._bind(self.btn_quar_yes.clicked, lambda: self._set_quar_filter("yes")))
         row1.addWidget(self.btn_quar_yes)
         self.btn_quar_no = QPushButton("否")
         self.btn_quar_no.setCheckable(True)
         self.btn_quar_no.setMinimumWidth(70)
-        self.btn_quar_no.clicked.connect(lambda: self._set_quar_filter("no"))
+        self.btn_quar_no.clicked.connect(self._bind(self.btn_quar_no.clicked, lambda: self._set_quar_filter("no")))
         row1.addWidget(self.btn_quar_no)
 
         # 偏差方向筛选（正偏差=偏差数量>0 / 负偏差=偏差数量<0，v43.93 新增）
@@ -159,17 +199,17 @@ class DeviationWarningDialog(QDialog):
         self.btn_devdir_all = QPushButton("全部")
         self.btn_devdir_all.setCheckable(True)
         self.btn_devdir_all.setMinimumWidth(70)
-        self.btn_devdir_all.clicked.connect(lambda: self._set_devdir_filter("all"))
+        self.btn_devdir_all.clicked.connect(self._bind(self.btn_devdir_all.clicked, lambda: self._set_devdir_filter("all")))
         row1.addWidget(self.btn_devdir_all)
         self.btn_devdir_pos = QPushButton("正偏差")
         self.btn_devdir_pos.setCheckable(True)
         self.btn_devdir_pos.setMinimumWidth(70)
-        self.btn_devdir_pos.clicked.connect(lambda: self._set_devdir_filter("pos"))
+        self.btn_devdir_pos.clicked.connect(self._bind(self.btn_devdir_pos.clicked, lambda: self._set_devdir_filter("pos")))
         row1.addWidget(self.btn_devdir_pos)
         self.btn_devdir_neg = QPushButton("负偏差")
         self.btn_devdir_neg.setCheckable(True)
         self.btn_devdir_neg.setMinimumWidth(70)
-        self.btn_devdir_neg.clicked.connect(lambda: self._set_devdir_filter("neg"))
+        self.btn_devdir_neg.clicked.connect(self._bind(self.btn_devdir_neg.clicked, lambda: self._set_devdir_filter("neg")))
         row1.addWidget(self.btn_devdir_neg)
 
         # 车间筛选（始终可见，放第1行隔离区之后，与工厂/隔离区并列）
@@ -260,25 +300,25 @@ class DeviationWarningDialog(QDialog):
         self.btn_mat_all = QPushButton("全部")
         self.btn_mat_all.setCheckable(True)
         self.btn_mat_all.setMinimumWidth(70)
-        self.btn_mat_all.clicked.connect(lambda: self._set_mat_filter("all"))
+        self.btn_mat_all.clicked.connect(self._bind(self.btn_mat_all.clicked, lambda: self._set_mat_filter("all")))
         self._row2.addWidget(self.btn_mat_all)
 
         self.btn_mat_raw = QPushButton("原料")
         self.btn_mat_raw.setCheckable(True)
         self.btn_mat_raw.setMinimumWidth(70)
-        self.btn_mat_raw.clicked.connect(lambda: self._set_mat_filter("raw"))
+        self.btn_mat_raw.clicked.connect(self._bind(self.btn_mat_raw.clicked, lambda: self._set_mat_filter("raw")))
         self._row2.addWidget(self.btn_mat_raw)
 
         self.btn_mat_pkg = QPushButton("包材")
         self.btn_mat_pkg.setCheckable(True)
         self.btn_mat_pkg.setMinimumWidth(70)
-        self.btn_mat_pkg.clicked.connect(lambda: self._set_mat_filter("pkg"))
+        self.btn_mat_pkg.clicked.connect(self._bind(self.btn_mat_pkg.clicked, lambda: self._set_mat_filter("pkg")))
         self._row2.addWidget(self.btn_mat_pkg)
 
         self.btn_mat_semi = QPushButton("半成品")
         self.btn_mat_semi.setCheckable(True)
         self.btn_mat_semi.setMinimumWidth(70)
-        self.btn_mat_semi.clicked.connect(lambda: self._set_mat_filter("semi"))
+        self.btn_mat_semi.clicked.connect(self._bind(self.btn_mat_semi.clicked, lambda: self._set_mat_filter("semi")))
         self._row2.addWidget(self.btn_mat_semi)
 
         # 半成品分类
@@ -320,19 +360,19 @@ class DeviationWarningDialog(QDialog):
         self.btn_alt_all = QPushButton("全部")
         self.btn_alt_all.setCheckable(True)
         self.btn_alt_all.setMinimumWidth(70)
-        self.btn_alt_all.clicked.connect(lambda: self._set_alt_filter("all"))
+        self.btn_alt_all.clicked.connect(self._bind(self.btn_alt_all.clicked, lambda: self._set_alt_filter("all")))
         self._row3.addWidget(self.btn_alt_all)
 
         self.btn_alt_yes = QPushButton("是")
         self.btn_alt_yes.setCheckable(True)
         self.btn_alt_yes.setMinimumWidth(70)
-        self.btn_alt_yes.clicked.connect(lambda: self._set_alt_filter("yes"))
+        self.btn_alt_yes.clicked.connect(self._bind(self.btn_alt_yes.clicked, lambda: self._set_alt_filter("yes")))
         self._row3.addWidget(self.btn_alt_yes)
 
         self.btn_alt_no = QPushButton("否")
         self.btn_alt_no.setCheckable(True)
         self.btn_alt_no.setMinimumWidth(70)
-        self.btn_alt_no.clicked.connect(lambda: self._set_alt_filter("no"))
+        self.btn_alt_no.clicked.connect(self._bind(self.btn_alt_no.clicked, lambda: self._set_alt_filter("no")))
         self._row3.addWidget(self.btn_alt_no)
 
         # 是否备注
@@ -348,19 +388,19 @@ class DeviationWarningDialog(QDialog):
         self.btn_remark_all = QPushButton("全部")
         self.btn_remark_all.setCheckable(True)
         self.btn_remark_all.setMinimumWidth(70)
-        self.btn_remark_all.clicked.connect(lambda: self._set_remark_filter("all"))
+        self.btn_remark_all.clicked.connect(self._bind(self.btn_remark_all.clicked, lambda: self._set_remark_filter("all")))
         self._row3.addWidget(self.btn_remark_all)
 
         self.btn_remark_has = QPushButton("有")
         self.btn_remark_has.setCheckable(True)
         self.btn_remark_has.setMinimumWidth(70)
-        self.btn_remark_has.clicked.connect(lambda: self._set_remark_filter("has"))
+        self.btn_remark_has.clicked.connect(self._bind(self.btn_remark_has.clicked, lambda: self._set_remark_filter("has")))
         self._row3.addWidget(self.btn_remark_has)
 
         self.btn_remark_none = QPushButton("无")
         self.btn_remark_none.setCheckable(True)
         self.btn_remark_none.setMinimumWidth(70)
-        self.btn_remark_none.clicked.connect(lambda: self._set_remark_filter("none"))
+        self.btn_remark_none.clicked.connect(self._bind(self.btn_remark_none.clicked, lambda: self._set_remark_filter("none")))
         self._row3.addWidget(self.btn_remark_none)
 
         self._row3.addStretch()
@@ -1280,10 +1320,14 @@ class DeviationWarningDialog(QDialog):
                 first_is_q = False
         if first_is_q:
             q_action = add_icon_action(menu, "↩ 取消隔离（选中行）")
-            q_action.triggered.connect(lambda: self._set_quarantine(selected_rows, False))
+            q_action.triggered.connect(
+                functools.partial(self._set_quarantine, selected_rows, False)
+            )
         else:
             q_action = add_icon_action(menu, "⚠️ 移入隔离区（选中行）")
-            q_action.triggered.connect(lambda: self._set_quarantine(selected_rows, True))
+            q_action.triggered.connect(
+                functools.partial(self._set_quarantine, selected_rows, True)
+            )
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
 
     def _mark_selected_rows_read(self, rows):
@@ -1701,31 +1745,8 @@ class DeviationWarningDialog(QDialog):
         return super().eventFilter(obj, event)
 
     def _copy_selected_cells(self):
-        from PySide6.QtWidgets import QApplication
-        selection = self.table_view.selectionModel()
-        if not selection or not selection.hasSelection():
-            return
-        indexes = selection.selectedIndexes()
-        cells = {}
-        min_row, max_row = float('inf'), -1
-        min_col, max_col = float('inf'), -1
-        for idx in indexes:
-            r, c = idx.row(), idx.column()
-            val = idx.data(Qt.DisplayRole) or ""
-            cells[(r, c)] = str(val).replace("\n", " ").replace("\r", "")
-            min_row = min(min_row, r)
-            max_row = max(max_row, r)
-            min_col = min(min_col, c)
-            max_col = max(max_col, c)
-        if max_row < 0:
-            return
-        lines = []
-        for r in range(min_row, max_row + 1):
-            row_vals = []
-            for c in range(min_col, max_col + 1):
-                row_vals.append(cells.get((r, c), ""))
-            lines.append("\t".join(row_vals))
-        QApplication.clipboard().setText("\n".join(lines))
+        from gui_pyside6.utils.table_copy import copy_table_cells
+        copy_table_cells(self.table_view)
 
 
 def _ask_quarantine_reason(parent, title: str) -> str | None:

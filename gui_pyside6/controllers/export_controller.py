@@ -9,6 +9,7 @@ from datetime import datetime
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import QMessageBox, QFileDialog, QProgressDialog, QApplication
 
+from gui_pyside6.widgets.toast import toast
 from gui_pyside6.save_guard import safe_save, precheck_save_path, friendly_error
 from gui_pyside6.utils.file_launcher import open_path
 
@@ -45,7 +46,7 @@ class ExportController(QObject):
                 if not saved:
                     self.log_message.emit("导出已取消（目标文件被占用）", "warning")
                     return False
-                QMessageBox.information(parent_widget, "成功", f"已导出到 {saved}")
+                toast(f"✅ 已导出表格到 {saved}", level="success", parent=parent_widget)
                 self.log_message.emit(f"已导出当前表格到 {saved}", "info")
                 return True
             except Exception as e:

@@ -60,12 +60,11 @@ class AuditController(QObject):
         self.log_message.emit(msg, "info")
 
     def cancel_ai_audit(self):
-        """取消AI审核"""
+        """取消AI审核（协作式，不硬杀线程）"""
         if self.ai_worker and self.ai_worker.isRunning():
             self.ai_worker.cancel()
             if not self.ai_worker.wait(5000):
-                self.ai_worker.terminate()
-                self.ai_worker.wait()
+                self.log_message.emit("AI审核取消超时，强制结束", "warning")
             self.ai_worker = None
             self.log_message.emit("AI审核已取消", "info")
 

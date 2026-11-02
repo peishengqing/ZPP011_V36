@@ -101,24 +101,38 @@ class AnalysisController(QObject):
                 self.log_message.emit(f"预处理失败，降级用原始结果: {e}", "error")
 
         self._last_processed_df = df
-        self._emit_analysis_finished(df)
+        self._update_factory_data(df)
+        self.analysis_finished.emit(df)
 
-    def _emit_analysis_finished(self, df):
-        # 按工厂拆分
+    def _update_factory_data(self, df):
+        """更新工厂分组数据，使用 DataService 进行后处理，或直接分组。"""
+        if df is None or df.empty:
+            self.factory_data = {}
+            self.current_factory = None
+            return
+        # 优先使用 DataService 处理，如果没有则本地分组
+        if self._data_service is not None:
+            try:
+                factories, _ = self._data_service.get_combined_factory_data(df, '工厂')
+                self.factory_data = factories
+                if self.factory_data:
+                    self.current_factory = list(self.factory_data.keys())[0]
+                else:
+                    self.current_factory = None
+                return
+            except Exception as e:
+                self.log_message.emit(f"DataService 工厂分组失败: {e}", "warning")
+        # 兜底本地分组
         self.factory_data = {}
-        if df is not None and not df.empty and '工厂' in df.columns:
+        if '工厂' in df.columns:
             for factory, group in df.groupby('工厂'):
                 self.factory_data[str(factory)] = group.copy()
         else:
-            # 无工厂列或空数据，存为"全部"
             self.factory_data['全部'] = df
-
-        # 设置当前工厂
         if self.factory_data:
             self.current_factory = list(self.factory_data.keys())[0]
         else:
             self.current_factory = None
-        self.analysis_finished.emit(df)
 
 
     def get_factory_list(self):

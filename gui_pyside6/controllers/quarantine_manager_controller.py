@@ -97,9 +97,9 @@ class QuarantineManagerController:
 
             # —— 建立变更检测基线（向量化 dict(zip)，避免逐行 df.loc 的 O(n²)）——
             from core.read_status import mark_read_batch
-            qty_col = self.mw.data_service._find_real_qty_col(df)
-            note_col = self.mw.data_service._find_remark_col(df)
-            yield_col = self.mw.data_service._find_yield_col(df)
+            qty_col = self.mw.data_service.read_status_service._find_real_qty_col(df)
+            note_col = self.mw.data_service.read_status_service._find_remark_col(df)
+            yield_col = self.mw.data_service.read_status_service._find_yield_col(df)
             qty_lookup = {str(k): v for k, v in zip(df['data_id'], df[qty_col])} if qty_col else {}
             note_lookup = {str(k): str(v) for k, v in zip(df['data_id'], df[note_col].astype(str))} if note_col else {}
             yield_lookup = {str(k): v for k, v in zip(df['data_id'], df[yield_col])} if yield_col else {}
@@ -111,9 +111,9 @@ class QuarantineManagerController:
                 n = note_lookup.get(did, '')
                 y = yield_lookup.get(did)
                 snapshot_map[did] = (
-                    self.mw.data_service._safe_qty(q) if qty_col else None,
-                    self.mw.data_service._norm_note(n) if note_col else '',
-                    self.mw.data_service._safe_qty(y) if yield_col else None,
+                    self.mw.data_service.read_status_service._safe_qty(q) if qty_col else None,
+                    self.mw.data_service.read_status_service._norm_note(n) if note_col else '',
+                    self.mw.data_service.read_status_service._safe_qty(y) if yield_col else None,
                 )
             if dids:
                 mark_read_batch(dids, snapshot_map, read_source='auto')
@@ -166,7 +166,7 @@ class QuarantineManagerController:
                 return
 
             # 实际 / 定额 / 备注 / 产量 列（与 scan_expired_quarantine、_auto_read_by_rules 同源）
-            actual_col = self.mw.data_service._find_real_qty_col(df)
+            actual_col = self.mw.data_service.read_status_service._find_real_qty_col(df)
             quota_col = None
             for c in ('数量-定额', '定额', '定额数量', '数量 - 定额', 'quota'):
                 if c in df.columns:
@@ -174,8 +174,8 @@ class QuarantineManagerController:
                     break
             if not actual_col or not quota_col:
                 return
-            note_col = self.mw.data_service._find_remark_col(df)
-            yield_col = self.mw.data_service._find_yield_col(df)
+            note_col = self.mw.data_service.read_status_service._find_remark_col(df)
+            yield_col = self.mw.data_service.read_status_service._find_yield_col(df)
 
             qty_lookup = {str(k): v for k, v in zip(df['data_id'], df[actual_col])} if actual_col else {}
             note_lookup = {str(k): str(v) for k, v in zip(df['data_id'], df[note_col].astype(str))} if note_col else {}
@@ -204,8 +204,8 @@ class QuarantineManagerController:
                         if sub.empty:
                             continue
                         row = sub.iloc[0]
-                    actual = self.mw.data_service._safe_qty(row.get(actual_col))
-                    quota = self.mw.data_service._safe_qty(row.get(quota_col))
+                    actual = self.mw.data_service.read_status_service._safe_qty(row.get(actual_col))
+                    quota = self.mw.data_service.read_status_service._safe_qty(row.get(quota_col))
                     if actual is None or quota is None:
                         continue
                     # 与 neg_loss 口径一致：0<实际<定额 仍负损；其余（≥定额/≤0）视为已解决
@@ -221,9 +221,9 @@ class QuarantineManagerController:
                             n = note_lookup.get(uid_s, '')
                             y = yield_lookup.get(uid_s)
                             snap_map[uid_s] = (
-                                self.mw.data_service._safe_qty(q) if actual_col else None,
-                                self.mw.data_service._norm_note(n) if note_col else '',
-                                self.mw.data_service._safe_qty(y) if yield_col else None,
+                                self.mw.data_service.read_status_service._safe_qty(q) if actual_col else None,
+                                self.mw.data_service.read_status_service._norm_note(n) if note_col else '',
+                                self.mw.data_service.read_status_service._safe_qty(y) if yield_col else None,
                             )
                     else:
                         # 仍负损：仅把「自动已读」翻回未读，手动已读保留

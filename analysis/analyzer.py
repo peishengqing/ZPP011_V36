@@ -5,6 +5,10 @@ ZPP011 偏差分析核心逻辑（v36 抽取）
 ⚠️ 本文件从 main.py 原样抽取，未修改任何分析逻辑
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import pandas as pd
 import numpy as np
 from openpyxl import Workbook, load_workbook
@@ -42,7 +46,9 @@ from analysis.excel_builder.sheet7_amount import build_sheet7
 from analysis.excel_builder.sheet8_reason_summary import build_sheet8
 from analysis.excel_builder.sheet9_reason_detail import build_sheet9
 from analysis.excel_builder.sheet10_trend import build_sheet10
-from analysis.excel_builder.write_sheet_util import write_sheet
+from analysis.excel_builder.write_sheet_util import (
+    NUMERIC_COLS, ensure_numeric_cols, get_default_styles, write_sheet,
+)
 from analysis.net_offset import apply_net_offset
 
 # 缓存最近一次分析的中间结果（worker 快速路径写入），供后台缓存线程复用，避免 Sheet1~5 重算
@@ -130,7 +136,6 @@ def do_analysis_v2(
             progress_callback(step_idx, step_name, percent)
             time.sleep(0.01)
 
-    from analysis.excel_builder.write_sheet_util import get_default_styles
     _styles = get_default_styles()
     pos_fill = _styles['pos_fill']
     neg_fill = _styles['neg_fill']
@@ -511,12 +516,15 @@ def do_analysis_v2(
         # 方法1：直接相减（推荐，最准确）
         df['偏差金额(含税)'] = (df['金额-实际(含税)'] - df['金额-定额(含税)']).round(2)
         report_progress(3, "3/5 正在计算偏差金额和偏差率", 25)
-        print(f"[偏差金额计算] 使用含税金额直接相减，非零偏差行数: {(df['偏差金额(含税)'] != 0).sum()}")
+        logger.info(
+            "[偏差金额计算] 使用含税金额直接相减，非零偏差行数: %d",
+            (df['偏差金额(含税)'] != 0).sum())
     else:
         # 方法2：降级使用材料偏差 × 单价（兼容旧格式）
         for col in ['金额-实际(含税)', '金额-定额(含税)']:
             if col not in df.columns:
-                print(f"⚠️ 当前文件缺少[{col}]列，相关计算将按0处理")
+                logger.warning(
+                    "⚠️ 当前文件缺少[%s]列，相关计算将按0处理", col)
                 df[col] = 0.0
         df['_unit_price_tax'] = 0.0
         valid_mask_actual = (df['数量-实际'] > 0) & (df['金额-实际(含税)'] > 0)
@@ -531,12 +539,13 @@ def do_analysis_v2(
             df.loc[missing_mask, '数量-定额']
         )
         df['偏差金额(含税)'] = (df['材料偏差'] * df['_unit_price_tax']).round(2)
-        print(f"[偏差金额计算] 使用单价计算，成功计算 {(df['_unit_price_tax'] > 0).sum()}/{len(df)} 行的单价")
+        logger.info(
+            "[偏差金额计算] 使用单价计算，成功计算 %d/%d 行的单价",
+            (df['_unit_price_tax'] > 0).sum(), len(df))
 
     check_cancel()
     # 统一数值列转换（2026-10-01）：在主流程进入 sheet 构建前做一次，
     # 各 sheet builder 内的 ensure_numeric_cols 退化为幂等检查（已是数值 dtype 即跳过）。
-    from analysis.excel_builder.write_sheet_util import ensure_numeric_cols, NUMERIC_COLS
     ensure_numeric_cols(df, NUMERIC_COLS)
     # Sheet1（第五步抽取 → analysis/sheets/sheet1_summary.py）
     summary_df = build_sheet1(df, _ranged_progress(report_progress, 25, 35))
@@ -820,7 +829,6 @@ def export_full_report_from_intermediates(intermediates, output_path=None, outpu
                 time.sleep(0.01)
             _last_progress_state[0] = (step_idx, percent)
 
-    from analysis.excel_builder.write_sheet_util import get_default_styles
     _styles = get_default_styles()
     pos_fill = _styles['pos_fill']
     neg_fill = _styles['neg_fill']

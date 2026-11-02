@@ -39,6 +39,13 @@ class ConfigManager:
         "theme": "default",
         "analysis": {
             "net_offset_enabled": True  # 替代料净偏差自动抵消（默认开启）
+        },
+        "scheduled_reports": {
+            "enabled": False,
+            "schedule_type": "daily",  # daily, weekly, monthly
+            "schedule_time": "08:00",
+            "output_dir": "",
+            "include_ppt": False
         }
     }
 

@@ -14,6 +14,34 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.286",
+        "date": "2026-10-31",
+        "features": (
+            "服务层架构重构收尾（ARC-003 系列 + 审核/视图/文件加载集成，本批未提交改动汇总）："
+            "① 数据服务层 DataService 从单体类改为协调器，拆出 DataPreprocessor（脏列清理/替代料规范化/DataID+指纹/列重排）、"
+            "ReadStatusService（已读恢复/变动检测/变更标记）、AuditResultService（审核结果恢复）、QuarantineService（隔离标记恢复）"
+            "四个子服务，公开方法保留 preprocess_audit_data/get_audit_changes/mark_changes_as_read/get_factory_data/get_combined_factory_data 并桥接；"
+            "② 审核集成：审核对话框（audit_dialog）、AI 原因面板（ai_reason_panel）、审核状态徽章/委托（audit_status_badge/audit_status_delegate）、"
+            "批量操作（batch_operation_dialog/batch_operations_service）、撤销重做（undo_redo_service）、AI 原因分析（core/ai_reason_analyzer）；"
+            "③ 视图管理：view_manager（UI 管理器 ARC-003，进度/表格/按钮状态封装）；④ 文件加载器 file_loader（纯数据逻辑不触 UI）；"
+            "⑤ 分析编排 analysis_orchestrator（分析启动/缓存/结果处理/UI 更新）；⑥ 数据分组 data_grouping + 智能搜索 smart_search_service；"
+            "⑦ 主题：modern_dark_theme.qss 新增 + dark_theme.qss 更新；⑧ 初始界面加满屏幕（run_pyside6.py 用 QTimer.singleShot(250, win.showMaximized) 事件循环启动后再确认最大化）；"
+            "⑨ 清理 320 个 _dbg_* 调试脚本（_dbg_ppt/_dbg_v145~v152 等）出库。"
+        ),
+        "fixes": (
+            "修复偏差率看板打开空白（用户 11-01 截图反馈『看板就这样』）：deviation_warning_dialog.py 的 __init__ 在 "
+            "self.filter_mode='all' 后意外结束，18 行筛选状态初始化 + setup_ui() + set_data() 三个关键调用被错误遗留到 _bind 方法"
+            " return slot 之后成为永不可达死代码，导致窗口只有标题、内容区全空；已把 _bind 挪回 __init__ 之后并恢复两个调用。"
+            "修复服务层重构遗留的旧调用断裂：quarantine_manager_controller.py 11 处 data_service._find_*_col/_safe_qty/_norm_note "
+            "改走 data_service.read_status_service，main_window.py 2 处 _restore_read_status 改走 read_status_service.restore_read_status；"
+            "全局扫描残留旧调用 0 命中。修复本次重构引入的 4 组方法重复定义（后定义覆盖前定义导致薄壳失效）："
+            "_auto_move_to_quarantine/_scan_expired_quarantine_after_analysis/_capture_last_used_filter/_set_column_widths 类体中各被重复定义，"
+            "类尾部 pass 空壳覆盖了正确转发薄壳，导致过滤预设捕获、隔离区失效扫描、列宽设置静默失效；已去重为单处转发。"
+            "同步更新测试适配新接口：test_data_service 的 _normalize_alt_flag 改走 preprocessor.normalize_alt_flag、"
+            "test_quarantine_read_reconcile 的 _FakeDataService 补 read_status_service 自指属性。"
+        ),
+    },
+    {
         "version": "v43.285",
         "date": "2026-10-29",
         "features": "AI 审核模型自动路由闭环：新增 model_router.py（优先级决策树——视觉→商汤日日新 / 工具生成→Agnes 3.0 Flash / 翻译→Sage-A1.5 / 多语言→Ling-3.1-flash / 轻量→Atria-Dawn / 推理→GLM-4.5，默认 GLM-4.5），core/ai_client.py 的 AIClient 与 AuditBatch 调用前先经 select_model() 语义选模型，再按 models.json 配置直连对应厂商端点（视觉/翻译/多语言/轻量走各自 base_url+api_key，Agnes 走原解析逻辑兜底），失败自动降级 Mock。6 个路由用例全过（分析→GLM-4.5、截图→商汤、生成Excel→Agnes、英文报告→Ling、快速总结→Atria、翻译→Sage）。",
