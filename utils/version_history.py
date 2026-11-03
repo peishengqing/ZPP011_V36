@@ -14,6 +14,18 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.293",
+        "date": "2026-11-03",
+        "fixes": (
+            "AI 生成 PPT/设计失败『AIClient object has no attribute _rate_limit』（裴哥 11-03 报『AI生成ppt用不了了』）："
+            "b4c1cf6（v43.258 归藏报告 AI 每期重新设计）重构时，`AIClient._rate_limit` 方法定义被误删，"
+            "但 4 处调用残留（`_call_agnes` 316 / `generate_text` 413 / `audit_batch` 621 / 死代码 349），"
+            "导致任何走 AI 的调用（AI 设计、AI 审核）都在第一行 `self._rate_limit()` 抛 AttributeError。"
+            "修法：加回 `_rate_limit` 方法定义（复用原实现：基于 `_last_call_time` + `MIN_CALL_INTERVAL=3.0` 的节流，"
+            "依赖 time / MIN_CALL_INTERVAL / self._last_call_time 均已在文件中）。"
+        ),
+    },
+    {
         "version": "v43.292",
         "date": "2026-11-03",
         "features": (

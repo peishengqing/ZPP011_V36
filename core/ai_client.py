@@ -217,6 +217,24 @@ class AIClient:
             return {"result": "需改进", "suggestion": "备注过短（小于5个字），建议补充详细原因"}
         return {"result": "需改进", "suggestion": "建议明确偏差原因（如超耗/少耗/替代/变更）"}
 
+    # ── 速率控制 ────────────────────────────────────
+
+    def _rate_limit(self):
+        """速率控制：首次调用不等待，后续调用间隔 ≥ MIN_CALL_INTERVAL 秒。
+
+        v43.293 修复：b4c1cf6（v43.258）重构时本方法定义被误删，但 4 处调用残留
+        （_call_agnes / generate_text / audit_batch），导致
+        `'AIClient' object has no attribute '_rate_limit'`（AI 设计/审核崩溃）。
+        依赖 time / MIN_CALL_INTERVAL / self._last_call_time（__init__ 均初始化）。
+        """
+        if self._last_call_time == 0:
+            self._last_call_time = time.time()
+            return
+        elapsed = time.time() - self._last_call_time
+        if elapsed < MIN_CALL_INTERVAL:
+            time.sleep(MIN_CALL_INTERVAL - elapsed)
+        self._last_call_time = time.time()
+
     # ── 模型路由与统一调用 ──────────────────────────
 
     def _get_model_config(self, model_id: str) -> dict:
