@@ -176,6 +176,7 @@ def _scan_source(ws):
         'quota': _find_col(headers, '定额'),
         'actual': _find_col(headers, '实际'),
         'devqty': _find_col(headers, '偏差数量'),
+        'netdevqty': _find_col(headers, '净偏差数量'),
         'rate': _find_col(headers, '偏差率'),
         'amount': _find_col(headers, '偏差金额'),
         'note': _find_col(headers, '备注'),
@@ -199,6 +200,7 @@ def _scan_source(ws):
         quota = _num(_cell_value(cells, r, col['quota']))
         actual = _num(_cell_value(cells, r, col['actual']))
         devqty = _num(_cell_value(cells, r, col['devqty']))
+        netdevqty = _num(_cell_value(cells, r, col['netdevqty']))
         amount = _num(_cell_value(cells, r, col['amount']))
         note = _cell_value(cells, r, col['note'])
         rows.append({
@@ -217,6 +219,7 @@ def _scan_source(ws):
             'quota': 0.0 if quota is None else quota,
             'actual': 0.0 if actual is None else actual,
             'devqty': 0.0 if devqty is None else devqty,
+            'netdevqty': 0.0 if netdevqty is None else netdevqty,
             'amount': 0.0 if amount is None else amount,
             # 偏差率统一成比率小数（见 _rate_ratio 的说明）
             'rate': _rate_ratio(_cell_value(cells, r, col['rate']),
@@ -508,7 +511,7 @@ def _build_material(rows):
         if g is None:
             g = groups[key] = {
                 'first': r, 'rows': 0, 'orders': set(), 'dev_rows': 0,
-                'devqty': 0.0, 'amount': 0.0, 'max_rate': 0.0,
+                'devqty': 0.0, 'netdevqty': 0.0, 'amount': 0.0, 'max_rate': 0.0,
                 'has_note': 0, 'alt': False,
             }
         g['rows'] += 1
@@ -516,6 +519,7 @@ def _build_material(rows):
         if abs(r['devqty']) > 1e-9:
             g['dev_rows'] += 1
         g['devqty'] += r['devqty']
+        g['netdevqty'] += r['netdevqty']
         g['amount'] += r['amount']
         if r['rate'] is not None:
             g['max_rate'] = max(g['max_rate'], abs(r['rate']))
@@ -536,16 +540,17 @@ def _build_material(rows):
             len(g['orders']),
             g['dev_rows'],
             round(g['devqty'], 3),
+            round(g['netdevqty'], 3),
             round(g['amount'], 2),
             round(g['max_rate'], _RATE_ROUND),
             round(coverage, _RATIO_ROUND),
             '是' if g['alt'] else '否',
         ])
-    out.sort(key=lambda x: -abs(x[7]))
+    out.sort(key=lambda x: -abs(x[8]))
     headers = ['物料编码', '物料名称', '物料类型', '单位', '涉及订单数', '偏差条数',
-               '偏差数量合计', '偏差金额(含税)合计', '最大偏差率绝对值',
+               '偏差数量合计', '净偏差数量合计', '偏差金额(含税)合计', '最大偏差率绝对值',
                '备注覆盖率', '含替代料']
-    widths = [14, 30, 10, 8, 12, 10, 14, 18, 16, 12, 10]
+    widths = [14, 30, 10, 8, 12, 10, 14, 16, 18, 16, 12, 10]
     return headers, out, widths
 
 
