@@ -179,6 +179,7 @@ def _scan_source(ws):
         'netdevqty': _find_col(headers, '净偏差数量'),
         'rate': _find_col(headers, '偏差率'),
         'amount': _find_col(headers, '偏差金额'),
+        'netamount': _find_col(headers, '净偏差金额'),
         'note': _find_col(headers, '备注'),
         'alt': _find_col(headers, '是否替代料'),
     }
@@ -202,6 +203,9 @@ def _scan_source(ws):
         devqty = _num(_cell_value(cells, r, col['devqty']))
         netdevqty = _num(_cell_value(cells, r, col['netdevqty']))
         amount = _num(_cell_value(cells, r, col['amount']))
+        # 净偏差金额：源表缺失该列时降级 = 偏差金额（无替代料时两者相等，仅防御，正常源必有此列）
+        _ncol = col['netamount']
+        netamount = (_num(_cell_value(cells, r, _ncol)) if _ncol is not None else amount)
         note = _cell_value(cells, r, col['note'])
         rows.append({
             'ord': _id_str(_cell_value(cells, r, col['ord'])),
@@ -221,6 +225,7 @@ def _scan_source(ws):
             'devqty': 0.0 if devqty is None else devqty,
             'netdevqty': 0.0 if netdevqty is None else netdevqty,
             'amount': 0.0 if amount is None else amount,
+            'netamount': 0.0 if netamount is None else netamount,
             # 偏差率统一成比率小数（见 _rate_ratio 的说明）
             'rate': _rate_ratio(_cell_value(cells, r, col['rate']),
                                 _cell_fmt(cells, r, col['rate'])),
@@ -504,7 +509,9 @@ def _build_material(rows):
         口径独立 —— 同一物料在不同车间的偏差差异显著（产线工艺、替代料使用均不同）；
       · 物料名称/物料类型/单位取该组**第一行**的值（同料不同行的描述以首次出现为准）；
       · 含替代料 = 该组**任一行**是否替代料 == '是'（物料级标记，不是行级）；
-      · 备注覆盖率 = 该组有备注行数 ÷ 该组总行数。
+      · 备注覆盖率 = 该组有备注行数 ÷ 该组总行数；
+      · 净偏差金额(含税)合计 = 该组所有明细行「净偏差金额」之和（与「偏差金额(含税)合计」同源，
+        两者差异 = 该组替代料抵扣合计；源表缺「净偏差金额」列时降级 = 偏差金额）。
     """
     groups = {}
     for r in rows:
@@ -513,7 +520,7 @@ def _build_material(rows):
         if g is None:
             g = groups[key] = {
                 'first': r, 'rows': 0, 'orders': set(), 'dev_rows': 0,
-                'devqty': 0.0, 'netdevqty': 0.0, 'amount': 0.0, 'max_rate': 0.0,
+                'devqty': 0.0, 'netdevqty': 0.0, 'amount': 0.0, 'netamount': 0.0, 'max_rate': 0.0,
                 'has_note': 0, 'alt': False,
             }
         g['rows'] += 1
@@ -523,6 +530,7 @@ def _build_material(rows):
         g['devqty'] += r['devqty']
         g['netdevqty'] += r['netdevqty']
         g['amount'] += r['amount']
+        g['netamount'] += r['netamount']
         if r['rate'] is not None:
             g['max_rate'] = max(g['max_rate'], abs(r['rate']))
         if r['note']:
@@ -546,15 +554,16 @@ def _build_material(rows):
             round(g['devqty'], 3),
             round(g['netdevqty'], 3),
             round(g['amount'], 2),
+            round(g['netamount'], 2),
             round(g['max_rate'], _RATE_ROUND),
             round(coverage, _RATIO_ROUND),
             '是' if g['alt'] else '否',
         ])
     out.sort(key=lambda x: -abs(x[10]))
     headers = ['工厂', '车间', '物料编码', '物料名称', '物料类型', '单位', '涉及订单数', '偏差条数',
-               '偏差数量合计', '净偏差数量合计', '偏差金额(含税)合计', '最大偏差率绝对值',
-               '备注覆盖率', '含替代料']
-    widths = [22, 18, 14, 30, 10, 8, 12, 10, 14, 16, 18, 16, 12, 10]
+               '偏差数量合计', '净偏差数量合计', '偏差金额(含税)合计', '净偏差金额(含税)合计',
+               '最大偏差率绝对值', '备注覆盖率', '含替代料']
+    widths = [22, 18, 14, 30, 10, 8, 12, 10, 14, 16, 18, 18, 16, 12, 10]
     return headers, out, widths
 
 
