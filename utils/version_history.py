@@ -14,6 +14,16 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.294",
+        "date": "2026-11-03",
+        "optimizations": (
+            "清理 `core/ai_client.py` `_call_agnes` 内 57 行不可达死代码（裴哥 11-03『顺手清掉』）："
+            "b4c1cf6（v43.258）重构 `_call_agnes` 改写为「自动路由 + 降级 Mock」后，"
+            "旧「Agnes AI Chat Completions」实现残留在 return 之后（悬空 docstring + 旧请求/429 重试/响应解析），"
+            "不可达、不影响功能但污染可读性。删除 363-419 行，`_call_agnes` 的 return 后直接接 `generate_text`。"
+        ),
+    },
+    {
         "version": "v43.293",
         "date": "2026-11-03",
         "fixes": (

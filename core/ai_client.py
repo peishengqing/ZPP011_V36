@@ -360,64 +360,6 @@ class AIClient:
             remark = str(user_message[:200])
             return self._get_mock_result(remark, dev_rate=0)
 
-        """
-        调用 Agnes AI Chat Completions API
-        返回 {"result": "...", "suggestion": "..."} 或抛异常
-        """
-        self._rate_limit()
-
-        api_key = self._get_api_key()
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": self._agnes_model,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_message},
-            ],
-            "temperature": 0.3,
-            "max_tokens": 300,
-        }
-
-        response = requests.post(
-            f"{self._agnes_base_url}/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=5,
-        )
-
-        if response.status_code == 429:
-            # 触发速率限制，等待后重试一次
-            logger.warning("Agnes AI 速率限制，等待 10 秒后重试...")
-            time.sleep(10)
-            response = requests.post(
-                f"{self._agnes_base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=5,
-            )
-            if response.status_code == 429:
-                raise RuntimeError("Agnes AI 速率限制，重试仍失败")
-
-        response.raise_for_status()
-        data = response.json()
-
-        # 解析响应
-        content = data["choices"][0]["message"]["content"].strip()
-
-        # 尝试提取 JSON（模型可能在 JSON 前后加了文字）
-        json_start = content.find("{")
-        json_end = content.rfind("}") + 1
-        if json_start >= 0 and json_end > json_start:
-            result = json.loads(content[json_start:json_end])
-            return {"result": result.get("result", "需关注"),
-                    "suggestion": result.get("suggestion", content)}
-        else:
-            # 模型没返回 JSON，把原始响应当建议
-            return {"result": "需关注", "suggestion": content[:200]}
-
     def generate_text(self, system_prompt: str, user_prompt: str,
                       max_tokens: int = 32000, timeout: int = 180) -> str:
         """通用文本生成（归藏 AI 设计报告用）：返回模型原始输出文本。
