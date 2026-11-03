@@ -9,6 +9,7 @@ analysis_extra_sheets.py — 偏差分析扩展表（5 张）
     ③ 备注归类映射        —— 原始备注写法 → 标准原因：人到底是怎么写的
     ④ 系统问题与真实超耗  —— 把「该谁负责」拆开：系统问题 / 真实超耗 / 其他
     ⑤ 物料画像            —— 一个物料一行：哪些物料是问题物料
+    ⑥ 产品维度            —— 一个产品一行：每个产品的偏差/净偏差双口径
 
 设计约束（改本文件前先读）
 ------------------------------------
@@ -57,12 +58,13 @@ from utils.helpers import standardize_remark
 # 唯一源表
 _SRC_SHEET = '完整偏差明细'
 
-# 5 张表的表名（**必须精确**：post_process 的事实卡按 sheet 名对账）
+# 6 张表的表名（**必须精确**：post_process 的事实卡按 sheet 名对账）
 SHEET_ORDER = '订单级汇总'
 SHEET_WORKSHOP = '车间维度'
 SHEET_REMARK = '备注归类映射'
 SHEET_SYSTEM = '系统问题与真实超耗'
 SHEET_MATERIAL = '物料画像'
+SHEET_PRODUCT = '产品维度'
 
 # 「实际用量为 0」的容差：与 post_process 的「完全未投料订单」表保持同一口径，
 # 否则同一批订单在两张表里会给出不同的「完全未投料」结论。
@@ -567,6 +569,75 @@ def _build_material(rows):
     return headers, out, widths
 
 
+# ---------------------------------------------------------------- ⑥ 产品维度
+
+
+def _build_product(rows):
+    """⑥ 产品维度：一个【产品物料号码】一行（裴哥 11-03 需求『产品级的偏差和净偏差』）。
+
+    口径要点（与物料画像 _build_material 同源对齐，仅分组键由物料改为产品）：
+      · 分组键 = 产品物料号码（实测 487 个产品均不跨厂/车间，纯产品分组即可，
+        工厂/车间取组内第一行作展示字段）；
+      · 涉及物料数 = 该产品所有明细行去重的物料编码数；
+      · 偏差条数 = 该产品中 |偏差数量| > 1e-9 的明细行数（数量口径）；
+      · 偏差金额(含税)合计 / 净偏差金额(含税)合计 = 该产品所有明细行偏差金额 / 净偏差金额之和，
+        两者同源（差异 = 该产品替代料抵扣合计）；
+      · 备注覆盖率 = 该产品有备注明细行数 ÷ 明细行数；含替代料 = 任一行是否替代料 == '是'。
+    """
+    groups = {}
+    for r in rows:
+        key = r['pno']
+        g = groups.get(key)
+        if g is None:
+            g = groups[key] = {
+                'first': r, 'rows': 0, 'orders': set(), 'materials': set(), 'dev_rows': 0,
+                'devqty': 0.0, 'netdevqty': 0.0, 'amount': 0.0, 'netamount': 0.0,
+                'max_rate': 0.0, 'has_note': 0, 'alt': False,
+            }
+        g['rows'] += 1
+        g['orders'].add(r['ord'])
+        g['materials'].add(r['mcode'])
+        if abs(r['devqty']) > 1e-9:
+            g['dev_rows'] += 1
+        g['devqty'] += r['devqty']
+        g['netdevqty'] += r['netdevqty']
+        g['amount'] += r['amount']
+        g['netamount'] += r['netamount']
+        if r['rate'] is not None:
+            g['max_rate'] = max(g['max_rate'], abs(r['rate']))
+        if r['note']:
+            g['has_note'] += 1
+        if r['alt'] == '是':
+            g['alt'] = True
+
+    out = []
+    for g in groups.values():
+        f = g['first']
+        coverage = (g['has_note'] / g['rows']) if g['rows'] else 0.0
+        out.append([
+            f['fac'],
+            f['ws'],
+            f['pno'],
+            f['pdesc'],
+            len(g['orders']),
+            len(g['materials']),
+            g['dev_rows'],
+            round(g['devqty'], 3),
+            round(g['netdevqty'], 3),
+            round(g['amount'], 2),
+            round(g['netamount'], 2),
+            round(g['max_rate'], _RATE_ROUND),
+            round(coverage, _RATIO_ROUND),
+            '是' if g['alt'] else '否',
+        ])
+    out.sort(key=lambda x: -abs(x[9]))
+    headers = ['工厂', '车间', '产品物料号码', '产品物料描述', '涉及订单数', '涉及物料数',
+               '偏差条数', '偏差数量合计', '净偏差数量合计', '偏差金额(含税)合计',
+               '净偏差金额(含税)合计', '最大偏差率绝对值', '备注覆盖率', '含替代料']
+    widths = [22, 18, 15, 32, 12, 12, 10, 14, 16, 18, 18, 16, 12, 10]
+    return headers, out, widths
+
+
 # ---------------------------------------------------------------- 写表
 
 
@@ -592,20 +663,20 @@ def _write_sheet(wb, name, headers, data, widths):
 
 
 def build_extra_sheets(wb):
-    """生成 5 张偏差分析扩展表。返回 {表名: 写入行数}；源表缺失时返回 {}。
+    """生成 6 张偏差分析扩展表。返回 {表名: 写入行数}；源表缺失时返回 {}。
 
     任何一张表失败都不影响其它表（逐表 try/except + print 诊断），
     整体绝不抛异常 —— 附加分析表出问题不该让整个导出失败。
     """
     result = {}
     if _SRC_SHEET not in wb.sheetnames:
-        _log('源表「%s」不存在，跳过 5 张扩展表' % _SRC_SHEET)
+        _log('源表「%s」不存在，跳过 6 张扩展表' % _SRC_SHEET)
         return result
 
     try:
         rows = _scan_source(wb[_SRC_SHEET])
     except Exception as e:
-        _log('扫描源表失败，5 张扩展表全部跳过: %s' % e)
+        _log('扫描源表失败，6 张扩展表全部跳过: %s' % e)
         return result
 
     builders = (
@@ -614,6 +685,7 @@ def build_extra_sheets(wb):
         (SHEET_REMARK, _build_remark_map),
         (SHEET_SYSTEM, _build_system_issue),
         (SHEET_MATERIAL, _build_material),
+        (SHEET_PRODUCT, _build_product),
     )
     for name, builder in builders:
         try:
