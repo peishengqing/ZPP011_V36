@@ -634,7 +634,10 @@ class ColumnController:
     def _apply_multi_sort(self):
         """按 self.mw.sort_columns 重排主表（基于原始顺序，避免多次排序叠加）。
         空列表时恢复加载时的原始顺序（取消排序）。"""
-        if not hasattr(self, "source_model") or self.mw.source_model is None:
+        # v43.289 修复：v43.286 迁移时误把 self.source_model 留成 controller 属性，
+        # 但 source_model 是 MainWindow 的 → hasattr(self,...) 恒 False → 排序静默失效。
+        # 反证：恢复旧逻辑 hasattr(self,...) 实测复现 FAIL（sort_columns 更新但数据不重排）。
+        if getattr(self.mw, "source_model", None) is None:
             return
         if not self.mw.sort_columns:
             # 取消排序：恢复原始（加载时）顺序

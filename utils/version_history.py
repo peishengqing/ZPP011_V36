@@ -14,6 +14,20 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.289",
+        "date": "2026-11-03",
+        "fixes": (
+            "主面板排序功能丢失（裴哥 11-03 报『主面板排序功能丢失』）："
+            "`_apply_multi_sort` 首行 `if not hasattr(self, \"source_model\") or self.mw.source_model is None: return`——"
+            "v43.286 重构把该方法从 MainWindow 迁到 ColumnController 时，`self.source_model` 未同步改为 `self.mw.source_model`，"
+            "而 ColumnController 没有 source_model 属性 → `hasattr(self, ...)` 恒为 False → 排序静默 return"
+            "（点列头 sort_columns 正常更新，但数据不重排，表现为『排序功能丢失』）。"
+            "修法：改为 `getattr(self.mw, \"source_model\", None) is None`。"
+            "反证：临时恢复旧逻辑 `hasattr(self,...)` 实测复现 FAIL（sort_columns=[(3,True)] 但物料名称列 ['e','d','c','b','a'] 不重排）；"
+            "修复后实测 PASS（点击物料名称列 → ['a','b','c','d','e'] 升序重排）。"
+        ),
+    },
+    {
         "version": "v43.288",
         "date": "2026-11-02",
         "features": (
