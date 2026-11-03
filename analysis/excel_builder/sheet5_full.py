@@ -95,7 +95,7 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
             '原表行号', '产品物料号码', '产品物料描述', '产量', '产量单位', '物料编码', '物料名称',
             '单位', '定额', '实际', '偏差数量', '偏差率', '偏差率(%)',
             '偏差金额', '备注', '备注来源', '偏差区间', '偏差等级',
-            '组件物料类型', '组件物料类型描述', '半成品重分类',
+            '组件物料类型', '组件物料类型描述', '半成品重分类', '物料分类',
         ])
     else:
         dev_df = pd.DataFrame(index=has_real_dev.index)
@@ -143,6 +143,10 @@ def build_sheet5(df, report_progress, progress_idx=5, threshold=1.0):
             dev_df['半成品重分类'] = has_real_dev['半成品重分类'].fillna('')
         else:
             dev_df['半成品重分类'] = ''
+        # 物料分类列（v43.295）：完整偏差明细与汇总统计对齐（裴哥 11-03 要求补物料分类列）。
+        # 值 = 原始「物料分类」（与「物料类型」同源，见 110 行 has_real_dev['物料分类']）；
+        # 追加末尾避免破坏现有列序（下游 post_process/analysis_extra_sheets 均按表头名找列）。
+        dev_df['物料分类'] = has_real_dev['物料分类']
         dev_df = dev_df.reset_index(drop=True)
 
     report_progress(progress_idx, "Sheet5-完整偏差明细", 100)
