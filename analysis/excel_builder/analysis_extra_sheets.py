@@ -497,17 +497,18 @@ def _build_system_issue(rows):
 
 
 def _build_material(rows):
-    """⑤ 物料画像：一个【工厂×物料编码】一行（v43.291 区分食品/饮料两厂）。
+    """⑤ 物料画像：一个【工厂×车间×物料编码】一行（v43.292 增加车间维度）。
 
     口径要点：
-      · 分组键 = (工厂, 物料编码)，同一物料在两厂各一行，口径独立（食品/饮料不同生产线、不同车间）；
+      · 分组键 = (工厂, 车间, 物料编码)，同一物料在不同厂/不同车间各一行，
+        口径独立 —— 同一物料在不同车间的偏差差异显著（产线工艺、替代料使用均不同）；
       · 物料名称/物料类型/单位取该组**第一行**的值（同料不同行的描述以首次出现为准）；
       · 含替代料 = 该组**任一行**是否替代料 == '是'（物料级标记，不是行级）；
       · 备注覆盖率 = 该组有备注行数 ÷ 该组总行数。
     """
     groups = {}
     for r in rows:
-        key = (r['fac'], r['mcode'])
+        key = (r['fac'], r['ws'], r['mcode'])
         g = groups.get(key)
         if g is None:
             g = groups[key] = {
@@ -535,6 +536,7 @@ def _build_material(rows):
         coverage = (g['has_note'] / g['rows']) if g['rows'] else 0.0
         out.append([
             f['fac'],
+            f['ws'],
             f['mcode'],
             f['mname'],
             f['mtype'],
@@ -548,11 +550,11 @@ def _build_material(rows):
             round(coverage, _RATIO_ROUND),
             '是' if g['alt'] else '否',
         ])
-    out.sort(key=lambda x: -abs(x[9]))
-    headers = ['工厂', '物料编码', '物料名称', '物料类型', '单位', '涉及订单数', '偏差条数',
+    out.sort(key=lambda x: -abs(x[10]))
+    headers = ['工厂', '车间', '物料编码', '物料名称', '物料类型', '单位', '涉及订单数', '偏差条数',
                '偏差数量合计', '净偏差数量合计', '偏差金额(含税)合计', '最大偏差率绝对值',
                '备注覆盖率', '含替代料']
-    widths = [22, 14, 30, 10, 8, 12, 10, 14, 16, 18, 16, 12, 10]
+    widths = [22, 18, 14, 30, 10, 8, 12, 10, 14, 16, 18, 16, 12, 10]
     return headers, out, widths
 
 
