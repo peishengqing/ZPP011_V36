@@ -27,6 +27,7 @@ from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
 from gui_pyside6.utils.icons import add_icon_action, make_button
 from gui_pyside6.widgets.board_visual import apply_board_visual  # v43.299 方案C
+from gui_pyside6.utils.snapshot_action import attach_snapshot_bar
 
 
 class AlertDialog(QDialog):
@@ -50,6 +51,7 @@ class AlertDialog(QDialog):
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
+        attach_snapshot_bar(self)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
 
