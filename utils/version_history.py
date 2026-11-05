@@ -14,6 +14,16 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.298",
+        "date": "2026-11-05",
+        "features": (
+            "HTML 看板新增 2 图：瀑布图（正/负/净构成）+ 箱线图（车间偏差分布）："
+            "`dashboard_html.py` 新增 `chart_waterfall` 与 `chart_boxplot`，"
+            "在右下角添加「新增图表」分组，整合进入 14 图看板。"
+            "瀑布图展示正偏差→负偏差→净偏差的累计效果，箱线图展示各车间偏差金额的分布特征与离群点。"
+        ),
+    },
+    {
         "version": "v43.297",
         "date": "2026-11-03",
         "features": (

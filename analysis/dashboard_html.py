@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-dashboard_html.py — ZPP011 偏差分析 12 图 HTML 看板（可视化核心）
+dashboard_html.py — ZPP011 偏差分析 14 图 HTML 看板（可视化核心）
 ================================================================
 把 dev_df（偏差明细）渲染成单个自包含 HTML（base64 内嵌图片，无外部依赖）。
 
@@ -24,7 +24,9 @@ from urllib.parse import quote
 
 import numpy as np
 import pandas as pd
+import matplotlib
 import matplotlib.pyplot as plt
+from matplotlib import font_manager
 
 # ---------- 中文显示 ----------
 try:
@@ -310,7 +312,7 @@ def _bar_labels(ax, bars, values, vmax):
 
 
 # =====================================================================
-#  12 张图
+#  14 张图（新增：瀑布图、箱线图）
 # =====================================================================
 def chart_daily_trend(df):
     """①-1 每日偏差金额趋势：哪天最乱。"""
@@ -518,7 +520,86 @@ def chart_remark_coverage(df):
     return fig_to_b64(fig)
 
 
-# ---------- 12 图登记表（顺序即展示顺序） ----------
+def chart_waterfall(df):
+    """⑤-1 瀑布图：正偏差 → 负偏差 → 净偏差（带累计效果）。
+    展示偏差金额的三大构成：正偏差总额（多耗）、负偏差总额（少耗），
+    最终得到净偏差。其中正偏差贡献增加值，负偏差贡献减少值。
+    """
+    g = df.groupby("偏差区间")["偏差金额"].sum()
+    pos = g.get("正偏差", 0.0)
+    neg = g.get("负偏差", 0.0)
+    net = pos + neg
+
+    fig, ax = plt.subplots(figsize=(6.2, 3.6))
+    categories = ['正偏差（多耗）', '负偏差（少耗）', '净偏差']
+    values = [pos, neg, net]
+    # 用颜色区分：正=红，负=绿，最终=蓝
+    colors = [C_POS, C_NEG, C_ACCENT]
+    # 构建瀑布图：在基础柱状上叠加
+    cursor = 0
+    for i, (cat, val, col) in enumerate(zip(categories, values, colors)):
+        bar = ax.bar(i, val, bottom=cursor, color=col, alpha=0.9)
+        # 在柱上方标注数值
+        ax.text(i, cursor + val / 2, f'{val:,.0f}', ha='center', va='center', fontsize=9, color='white')
+        # 如果是负值，文字白色；如果是正值，根据背景调整
+        if val < 0:
+            ax.text(i, cursor + val / 2, f'{val:,.0f}', ha='center', va='center', fontsize=9, color='white')
+        cursor += val
+    ax.set_title("偏差金额瀑布图（构成与累计）", fontsize=11, fontweight="bold", color="#0f172a", loc="left", pad=10)
+    ax.set_xlim(-0.5, 2.5)
+    ax.set_ylim(0, net + abs(net) * 0.1 + pos + abs(pos) * 0.15)  # 确保包含所有柱
+    ax.set_yticks([])  # 隐藏 Y 轴刻度
+    # 添加中间线标注
+    if net != 0:
+        ax.axhline(net, color=C_ACCENT, linestyle='--', linewidth=0.8)
+        ax.text(2.2, net, f'净偏差 {net:,.0f}', color=C_ACCENT, fontsize=9)
+    # 底部标签
+    ax.set_xticks(list(range(len(categories))))
+    ax.set_xticklabels(categories, fontsize=9)
+
+    fig.tight_layout()
+    return fig_to_b64(fig)
+
+
+def chart_boxplot(df):
+    """⑤-2 车间偏差箱线图：分布与离群点。
+    展示每个车间的偏差金额分布特征：中位数、四分位距、离群点。
+    帮助识别哪些车间的偏差分布离散度大，存在极端值。
+    """
+    has_workshop = "车间" in df.columns
+    if not has_workshop:
+        return None
+    data_list = []
+    workshop_names = []
+    for workshop, group in df.groupby("车间"):
+        vals = group["偏差金额"].abs().dropna()
+        if len(vals) > 0:
+            data_list.append(vals.values)
+            workshop_names.append(workshop)
+
+    if not data_list or len(data_list) == 0:
+        return None
+
+    fig, ax = plt.subplots(figsize=(6.2, 3.6))
+    # 生成颜色
+    colors = ['#0969da', '#d4392f', '#2e8b57', '#bf8700', '#8250df']
+    bp = ax.boxplot(data_list, whis=1.5, patch_artist=True, boxprops=dict(linewidth=1.2),
+                   medianprops=dict(linewidth=2.2, color='#d4392f'),
+                   flierprops=dict(marker='o', markersize=2.5, markerfacecolor='#d4392f', markeredgecolor='none'))
+    # 设置箱体颜色
+    for i, p in enumerate(bp['boxes']):
+        p.set_color(colors[i % len(colors)])
+        p.set_alpha(0.7)
+    # 设置标题和标签
+    ax.set_title("车间偏差箱线图", fontsize=11, fontweight="bold", color="#0f172a", loc="left", pad=10)
+    ax.set_ylabel("|偏差金额|（含税）", fontsize=9, color="#475569")
+    ax.set_xticklabels(workshop_names, rotation=45, ha="right", fontsize=8)
+    ax.tick_params(axis="y", labelsize=8)
+    ax.grid(True, axis="y", color=GRID, linewidth=0.6, alpha=0.75)
+    return fig_to_b64(fig)
+
+
+# ---------- 14 图登记表（顺序即展示顺序） ----------
 # 第 4 项 link_key：卡片「到主表」芯片的钻取类型（None = 不挂芯片）
 CHARTS = [
     ("偏差规模与分布", [
@@ -540,6 +621,10 @@ CHARTS = [
         ("chart_material_3phase", "物料偏差率 早/中/近期", "Top5 物料是否在持续变差", None, "Top5 物料按每10天一段偏差率"),
         ("chart_workshop_posneg_stack", "各车间正/负偏差构成", "各车间正负偏差双高吗", None, "各车间正/负偏差金额(含税)"),
         ("chart_remark_coverage", "备注覆盖率 by 车间", "管理盲区在哪", "lowest_coverage_workshop", "备注非空条数 / 总条数"),
+    ]),
+    ("新增图表", [
+        ("chart_waterfall", "瀑布图：正/负/净构成", "偏差金额的三大构成与累计", None, "正偏差、负偏差、净偏差变化"),
+        ("chart_boxplot", "车间偏差箱线图", "分布特征与离群点", None, "按车间 |偏差金额|），离群点用红点"),
     ]),
 ]
 
@@ -641,10 +726,6 @@ def _cards_html(metrics):
     )
 
 
-
-
-
-
 def _charts_html(dev_df, factory=""):
     """12 图按 CHARTS 登记顺序渲染，全部用 matplotlib PNG（无外部依赖）。
     单图失败显示占位；带 link_key 的卡片挂「到主表」芯片（自定义 scheme，
@@ -681,9 +762,6 @@ def _charts_html(dev_df, factory=""):
             f'<div class="grid">{"".join(figs)}</div></details>'
         )
     return sections
-
-
-
 
 
 def _focus_lines(df, m):
