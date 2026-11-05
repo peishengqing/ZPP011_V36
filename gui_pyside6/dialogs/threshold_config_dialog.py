@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, Qt
 
 from core.config_manager import ConfigManager
+from gui_pyside6.utils.table_autofit import install_adaptive
 
 
 class ThresholdConfigDialog(QDialog):
@@ -49,6 +50,8 @@ class ThresholdConfigDialog(QDialog):
         self.threshold_table.setColumnCount(4)
         self.threshold_table.setHorizontalHeaderLabels(["类型", "名称", "阈值(%)", "提醒方式"])
         self.threshold_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        # v43.300：阈值配置表列宽自适应（全部 Stretch 精算布局，mode='off' 保留原布局）。
+        install_adaptive(self.threshold_table, mode='off', key='threshold_cfg')
         material_layout.addWidget(self.threshold_table)
 
         # 添加按钮

@@ -230,6 +230,10 @@ def apply_board_visual(dialog, main_window, board_label="偏差看板"):
         apply_board_visual(self, main_window, board_label="负损看板")
 
     返回悬浮按钮对象，便于 offscreen 测试断言。
+
+    v43.300：同时在 ``dialog.table_view`` 上装一个 AdaptiveTable 控制器，并保活为
+    ``dialog._board_col_autofit``。列宽自适应由它统一接管（这是 5 个看板 __init__
+    末尾唯一的共用落点，各看板无需各自写安装代码）。
     """
     dialog.setObjectName("zppBoardDialog")
     # 合并已有的 dialog 级 stylesheet（若未来有人加过），本主题放最后以生效
@@ -259,4 +263,15 @@ def apply_board_visual(dialog, main_window, board_label="偏差看板"):
     dialog._board_visual_watcher = watcher
     dialog._board_visual_btn = btn
     QTimer.singleShot(0, watcher.place)
+
+    # v43.300：统一列宽自适应（5 个看板共用落点）
+    try:
+        from gui_pyside6.utils.table_autofit import install_adaptive
+        view = getattr(dialog, 'table_view', None)
+        if view is not None:
+            ctrl = install_adaptive(view, mode='content', key=board_label)
+            dialog._board_col_autofit = ctrl      # 显式保活
+            ctrl.schedule_initial()               # 延迟到下一轮事件循环，避免首帧卡死
+    except Exception:
+        traceback.print_exc()   # 用户可见链路禁止静默 pass
     return btn

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QObject, QEvent
 
 from gui_pyside6.utils.icons import get_icon
+from gui_pyside6.utils.table_autofit import install_adaptive
 
 
 class LeftPanelComponent:
@@ -224,6 +225,10 @@ class LeftPanelComponent:
         self.mw.alt_table.setMinimumHeight(100)
         self.mw.alt_table.setMaximumHeight(150)
         layout.addWidget(self.mw.alt_table)
+
+        # v43.300：替代料表格列宽自适应（列0/2 Stretch、列1 Fixed 的精算布局，
+        # 故 mode='off' 仅注册控制器、保留原布局，避免破坏 ↔ 中间列 30px 固定宽）。
+        install_adaptive(self.mw.alt_table, mode='off', key='alt_table')
 
         # 操作按钮
         btn_layout = QHBoxLayout()

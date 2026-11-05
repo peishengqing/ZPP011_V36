@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal, QThread
 
+from gui_pyside6.utils.table_autofit import install_adaptive, get_adaptive
+
 # 尝试导入相关模块，如果失败则提供桩位实现
 try:
     from core.import_handlers import import_alt_pairs_from_excel, import_rules_from_excel
@@ -120,6 +122,9 @@ class PreviewPage(QWizardPage):
         layout = QVBoxLayout()
         self.preview_table = QTableWidget()
         layout.addWidget(self.preview_table)
+        # v43.300：导入预览表自适应（内容+视口余量）
+        install_adaptive(self.preview_table, mode='content', key='wizard_preview')
+        get_adaptive(self.preview_table).schedule_initial()
         self.preview_info = QLabel()
         layout.addWidget(self.preview_info)
         layout.addWidget(QLabel("导入模式："))
@@ -309,7 +314,11 @@ class ImportWizard(QWizard):
         for i, row in enumerate(rows):
             for j, val in enumerate(row):
                 self.page_preview.preview_table.setItem(i, j, QTableWidgetItem(str(val)))
-        self.page_preview.preview_table.resizeColumnsToContents()
+        _wctrl = get_adaptive(self.page_preview.preview_table)
+        if _wctrl is not None:
+            _wctrl.request_refit(0)
+        else:
+            self.page_preview.preview_table.resizeColumnsToContents()
         self.page_preview.preview_info.setText(f"共解析到 {len(self.parsed_data)} 条记录（仅显示前20条）")
         self.page_preview.parsed_data = self.parsed_data
         self.page_preview.completeChanged.emit()

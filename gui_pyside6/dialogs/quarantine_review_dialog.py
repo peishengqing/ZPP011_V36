@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+from gui_pyside6.utils.table_autofit import install_adaptive, get_adaptive
+
 _DB_PATH = os.path.join(os.path.expanduser("~"), ".zpp011_audit", "audit.db")
 
 
@@ -49,14 +51,17 @@ class QuarantineReviewDialog(QDialog):
         self._t_repeat.setHorizontalHeaderLabels(
             ["data_id(uid)", "进隔离次数", "最近进隔离", "最近原因"])
         self._tabs.addTab(self._t_repeat, "反复进隔离榜")
+        install_adaptive(self._t_repeat, mode='content', key='qr_repeat')
         self._t_hang = QTableWidget()
         self._t_hang.setColumnCount(3)
         self._t_hang.setHorizontalHeaderLabels(["data_id(uid)", "进隔离时间", "原因"])
         self._tabs.addTab(self._t_hang, "悬挂未放回")
+        install_adaptive(self._t_hang, mode='content', key='qr_hang')
         self._t_dur = QTableWidget()
         self._t_dur.setColumnCount(3)
         self._t_dur.setHorizontalHeaderLabels(["data_id(uid)", "隔离时长(小时)", "原因"])
         self._tabs.addTab(self._t_dur, "放回时长TOP")
+        install_adaptive(self._t_dur, mode='content', key='qr_dur')
         lay.addWidget(self._tabs, 1)
 
     def _load(self):
@@ -105,14 +110,22 @@ class QuarantineReviewDialog(QDialog):
                 if j == 1:
                     it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self._t_repeat.setItem(i, j, it)
-        self._t_repeat.resizeColumnsToContents()
+        ctrl = get_adaptive(self._t_repeat)
+        if ctrl is not None:
+            ctrl.request_refit(0)
+        else:
+            self._t_repeat.resizeColumnsToContents()
 
     def _fill_hang(self, rows):
         self._t_hang.setRowCount(len(rows))
         for i, (uid, qa, reason) in enumerate(rows):
             for j, v in enumerate([uid, str(qa), str(reason)]):
                 self._t_hang.setItem(i, j, QTableWidgetItem(v))
-        self._t_hang.resizeColumnsToContents()
+        ctrl = get_adaptive(self._t_hang)
+        if ctrl is not None:
+            ctrl.request_refit(0)
+        else:
+            self._t_hang.resizeColumnsToContents()
 
     def _fill_dur(self, rows):
         self._t_dur.setRowCount(len(rows))
@@ -122,4 +135,8 @@ class QuarantineReviewDialog(QDialog):
                 if j == 1:
                     it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self._t_dur.setItem(i, j, it)
-        self._t_dur.resizeColumnsToContents()
+        ctrl = get_adaptive(self._t_dur)
+        if ctrl is not None:
+            ctrl.request_refit(0)
+        else:
+            self._t_dur.resizeColumnsToContents()

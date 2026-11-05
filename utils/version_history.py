@@ -14,6 +14,31 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
     {
+        "version": "v43.300",
+        "date": "2026-11-05",
+        "features": (
+            "全项目表格列宽统一自适应（裴哥 11-05 选方案C全项目收编 + 全部表格）："
+            "新增 `gui_pyside6/utils/table_autofit.py` 唯一实现，"
+            "提供 `install_adaptive(view, mode='content'|'distribute'|'off')` 与 `AdaptiveTable` 控制器，"
+            "统一 Interactive + 50/420 限幅 + StretchLastSection(False)、"
+            "按表头 sizeHint + 限量 120 行采样估内容宽（绝不调用 resizeColumnsToContents）、"
+            "按列名权重分配视口余量消除放大后右侧留白、"
+            "300ms 单发 QTimer 防抖的 Resize/Show 重算、"
+            "sectionResized 用户拖拽标记（拖过即停止自动覆盖，提供重置入口）。"
+            "主表走 distribute 模式：只分余量不测内容，保留历史万行性能红线、"
+            "column_widths.json 持久化与列宽锁；五个表格看板走 content 模式，"
+            "收敛偏差率预警看板散落的 4 处 QTimer 重算、替代料看板私有 _fit_table_columns、"
+            "负/正/半成品看板 3 处一次性 QTimer(0)，"
+            "并修复替代料/隔离区 ResizeToContents 与 setColumnWidth 语义冲突。"
+            "其余 QTableWidget 结果表一并接入，历史逐像素精算的 Fixed 布局用 respect_fixed 保留。"
+        ),
+        "fixes": (
+            "修复窗口最大化/resize 后主表与三个看板列宽完全不重算导致的右侧留白；"
+            "修复用户手动拖好的列宽被每次刷新/最大化覆盖；"
+            "修复主表列宽仅关窗落盘、异常退出丢失（改为拖拽防抖实时落盘）。"
+        ),
+    },
+    {
         "version": "v43.299",
         "date": "2026-11-05",
         "features": (

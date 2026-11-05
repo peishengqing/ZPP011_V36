@@ -91,7 +91,15 @@ class DeviationWarningDialog(QDialog):
             self._row3_widget.setVisible(True)
             self._row4_widget.setVisible(True)
             self._sync_more_filters_btn(True)
-            QTimer.singleShot(100, lambda: self.table_view.resizeColumnsToContents())
+            # v43.300：列宽自适应由 AdaptiveTable 控制器接管（不再同步 resizeColumnsToContents，
+            # 历史「同步逐行测宽卡死主线程」）。此处 showMaximized 发生在控制器安装之前
+            # （apply_board_visual 稍后执行），首帧重算由 schedule_initial() 统一兜底；
+            # 控制器随后监听 window Resize/Show 自动防抖重算，并保留「最大化不覆盖用户
+            # 手动调过的列宽」语义（user_touched）。若控制器已装（复调）则请求一次重算。
+            from gui_pyside6.utils.table_autofit import get_adaptive
+            _ctrl = get_adaptive(self.table_view)
+            if _ctrl is not None:
+                _ctrl.request_refit(0)
             if sys.platform == 'win32':
                 QTimer.singleShot(0, self._force_win32_maximize)
                 QTimer.singleShot(200, self._force_win32_maximize)
@@ -644,8 +652,16 @@ class DeviationWarningDialog(QDialog):
         self.btn_more_filters.setText("筛选 ▲" if expanded else "筛选 ▾")
         if expanded:
             # 展开后才有足够高度给表格；最大化时不要覆盖用户手动调过的列宽
+            # （v43.300：该语义由 AdaptiveTable.user_touched 精确承担，request_refit
+            #  在用户拖过任一列后会自动停止覆盖；不再同步 resizeColumnsToContents）
             if not self.isMaximized():
-                QTimer.singleShot(100, lambda: self.table_view.resizeColumnsToContents())
+                try:
+                    from gui_pyside6.utils.table_autofit import get_adaptive
+                    _ctrl = get_adaptive(self.table_view)
+                    if _ctrl is not None:
+                        _ctrl.request_refit(0)
+                except Exception:
+                    traceback.print_exc()
 
     def _sync_more_filters_btn(self, expanded):
         """供 toggle_fullscreen 同步按钮文案/勾选态（不重复切行可见性）。"""
@@ -1188,10 +1204,17 @@ class DeviationWarningDialog(QDialog):
         self.table_view.setModel(self.source_model)
 
         # 初始按内容自适应，之后用户可拖拽调整（Interactive 模式）。
-        # ⚠️ 必须在下一轮事件循环再 resizeColumnsToContents：set_data 在 __init__ 中调用
-        # 同步执行该方法会逐行测宽，万行级数据直接卡死主线程、整窗变黑且「未响应」。
-        # 延迟后弹窗先渲染、用户立即可见，再后台测宽不阻塞交互。
-        QTimer.singleShot(0, lambda: self.table_view.resizeColumnsToContents())
+        # ⚠️ 历史踩坑：set_data 在 __init__ 中调用，若在此同步 resizeColumnsToContents
+        # 逐行测宽，万行级数据会卡死主线程、整窗变黑且「未响应」。v43.300 起列宽统一
+        # 交给 AdaptiveTable 控制器：schedule_initial() 延迟到下一轮事件循环限量采样重算，
+        # 绝不扫全表；初始化期控制器尚未安装时此处不做事，运行时刷新则请求防抖重算。
+        try:
+            from gui_pyside6.utils.table_autofit import get_adaptive
+            _ctrl = get_adaptive(self.table_view)
+            if _ctrl is not None:
+                _ctrl.request_refit(0)
+        except Exception:
+            traceback.print_exc()
         self.table_view.verticalHeader().setDefaultSectionSize(28)
 
         if '_read' in df.columns:
@@ -1757,8 +1780,16 @@ class DeviationWarningDialog(QDialog):
             self._row4_widget.setVisible(True)
             # 放大必然显示全部隐藏区，按钮同步为「已展开」态（v43.162）
             self._sync_more_filters_btn(True)
-            # 最大化后重新调整列宽
-            QTimer.singleShot(100, lambda: self.table_view.resizeColumnsToContents())
+            # 最大化后重新调整列宽（v43.300：交给 AdaptiveTable 控制器，监听 window
+            # Resize/Show 自动防抖重算；不再同步 resizeColumnsToContents「卡死主线程」，
+            # 且保留「不覆盖用户手动调过的列宽」语义）
+            try:
+                from gui_pyside6.utils.table_autofit import get_adaptive
+                _ctrl = get_adaptive(self.table_view)
+                if _ctrl is not None:
+                    _ctrl.request_refit(0)
+            except Exception:
+                traceback.print_exc()
 
     def on_double_click(self, index):
         """双击看板行 → 定位主表对应行（原表行号优先，data_id 兜底）。"""

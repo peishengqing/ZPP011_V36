@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from gui_pyside6.controllers.filter_controller import FilterController
 from gui_pyside6.models.store import AppState
+from gui_pyside6.utils.table_autofit import install_adaptive
 
 
 # 被排除行最多显示多少条（性能保护）
@@ -103,6 +104,8 @@ class FilterExplainerDialog(QDialog):
         self.list_table.setSortingEnabled(False)
         self.list_table.itemSelectionChanged.connect(self._on_selection_changed)
         left_v.addWidget(self.list_table, 1)
+        # v43.300：排除行列表自适应（该表用 ResizeToContents 逐列精算，mode='off' 保留）。
+        install_adaptive(self.list_table, mode='off', key='filter_list')
 
         left_footer = QLabel("提示：只展示前 %d 行（性能保护），如需更多请先减少筛选条件。" % MAX_EXCLUDED_ROWS)
         left_footer.setStyleSheet("color: #999; font-size: 10px; padding-left: 4px;")
@@ -128,6 +131,8 @@ class FilterExplainerDialog(QDialog):
         self.explain_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.explain_table.verticalHeader().setVisible(False)
         right_v.addWidget(self.explain_table, 1)
+        # v43.300：逐条解释表列0 Stretch + 显式宽度精算，mode='off' 保留原布局。
+        install_adaptive(self.explain_table, mode='off', key='filter_explain')
 
         splitter.addWidget(right_wrap)
 

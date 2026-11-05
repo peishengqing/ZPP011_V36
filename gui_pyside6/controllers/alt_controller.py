@@ -18,6 +18,7 @@ from PySide6.QtCore import Qt
 from domain.alt_material.alt_manager import load_alt_pairs, save_alt_pairs, DEFAULT_ALT_PAIRS
 from gui_pyside6.dialogs.import_wizard_dialog import ImportWizard
 from gui_pyside6.utils.icons import make_button
+from gui_pyside6.utils.table_autofit import install_adaptive, get_adaptive
 
 
 class AltController(QObject):
@@ -401,11 +402,19 @@ class AltController(QObject):
                     item_b.setToolTip(b_tip)
                     item_b.setData(Qt.UserRole, idx)
                     table.setItem(row, 2, item_b)
-            table.resizeColumnsToContents()
+            _ctrl = get_adaptive(table)
+            if _ctrl is not None:
+                _ctrl.request_refit(0)
+            else:
+                table.resizeColumnsToContents()
             table.setColumnWidth(0, max(80, table.columnWidth(0)))
             table.setColumnWidth(2, max(80, table.columnWidth(2)))
 
         refresh_zoom_table()
+
+        # v43.300：放大/还原窗口时按内容+视口余量自适应（替代原 resizeColumnsToContents 兜底）
+        install_adaptive(table, mode='content', key='alt_zoom_table')
+        get_adaptive(table).schedule_initial()
 
         # ---- 组内排序：点列头（物料A/物料B）按编码排序，标题行固定 ----
         def on_header_clicked(col):

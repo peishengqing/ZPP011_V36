@@ -584,7 +584,10 @@ class AlertDialog(QDialog):
         self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
 
-        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        # v43.300：必须切回 Interactive —— ResizeToContents 模式下 setColumnWidth() 语义
+        # 冲突（且 StretchLastSection 会让最后一列独吞余量）。列宽由 AdaptiveTable 控制器
+        # 统一接管，控制器同样会幂等设成 Interactive + 补 min50/max420。
+        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
 
         if '_read' in df.columns:
@@ -973,15 +976,26 @@ class AlertDialog(QDialog):
         toast(f"⭕ 已批量标记 {count} 条为未读", parent=self)
 
     def _fit_table_columns(self):
-        """按当前表格可见宽度重新分配列宽。
+        """按当前表格可见宽度重新分配列宽（v43.300：优先转交 AdaptiveTable 控制器）。
 
-        修复（2026-10-01）：原来 setSectionResizeMode(ResizeToContents) + StretchLastSection，
+        历史（2026-10-01）：原来 setSectionResizeMode(ResizeToContents) + StretchLastSection，
         窗口放大后多出来的宽度全部堆到最后一列，业务列（物料名称、备注、审核结果等）不变宽，
-        表现为「放大后右边大片空白、左侧列显示不完整」。改为：
-          1. 先按内容宽度算每列最小宽度（ResizeToContents 基准）；
-          2. 将「表格可用宽度 - 各列最小宽度之和」的剩余量按列数均摊；
-          3. 设置固定宽度，避免最后一列独吞剩余空间。
+        表现为「放大后右边大片空白、左侧列显示不完整」，故曾用「按 viewport 均摊列宽」兜底。
+        v43.300 起统一收编到 utils/table_autofit.py：控制器按列名限量采样估宽、再按列名
+        权重把视口余量分给可见列，并尊重用户手动拖拽过的列宽。此处保留为薄封装：
+        控制器已装 → request_refit(0) 后立即返回；未装（异常降级）→ 保留原均摊算法兜底。
         """
+        # ---- 优先路径：列宽自适应已由统一控制器接管 ----
+        try:
+            from gui_pyside6.utils.table_autofit import get_adaptive
+            ctrl = get_adaptive(self.table_view)
+            if ctrl is not None:
+                ctrl.request_refit(0)
+                return
+        except Exception:
+            import traceback
+            traceback.print_exc()
+        # ---- 兜底：控制器未安装时保留历史「按 viewport 均摊列宽」算法 ----
         header = self.table_view.horizontalHeader()
         model = self.source_model
         if model is None:
@@ -1019,7 +1033,8 @@ class AlertDialog(QDialog):
             self.showMaximized()
             self.btn_fullscreen.setText("还原")
         # 修复：放大/还原后表格列宽未随新窗口宽度重排，导致右侧留白、列显示不全。
-        # 延迟到布局更新后再按可见宽度分配列宽（先 content 再等分剩余宽度）。
+        # v43.300：延迟到布局更新后调用 _fit_table_columns（薄封装，已转交 AdaptiveTable
+        # 控制器防抖重算）；控制器本身也会监听 window Resize/Show 自动重算，二者合并。
         QTimer.singleShot(0, self._fit_table_columns)
 
     def on_double_click(self, index):

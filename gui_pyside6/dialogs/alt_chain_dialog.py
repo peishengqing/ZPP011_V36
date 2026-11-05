@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+from gui_pyside6.utils.table_autofit import install_adaptive, get_adaptive
+
 _CFG_PATH = os.path.join(
     os.environ.get("APPDATA", ""), "ZPP011", "config", "alt_pairs.json")
 
@@ -35,6 +37,9 @@ class AltChainDialog(QDialog):
         self._tbl.setHorizontalHeaderLabels(
             ["物料编码", "物料名称", "出现组数", "关联物料"])
         lay.addWidget(self._tbl, 1)
+        # v43.300：长链物料表自适应（内容+视口余量）
+        install_adaptive(self._tbl, mode='content', key='alt_chain')
+        get_adaptive(self._tbl).schedule_initial()
 
     def _load(self):
         if not os.path.exists(_CFG_PATH):
@@ -70,7 +75,11 @@ class AltChainDialog(QDialog):
                     if j == 2:
                         it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                     self._tbl.setItem(i, j, it)
-            self._tbl.resizeColumnsToContents()
+            ctrl = get_adaptive(self._tbl)
+            if ctrl is not None:
+                ctrl.request_refit(0)
+            else:
+                self._tbl.resizeColumnsToContents()
             self._info.setText(
                 "alt_pairs.json 共 %d 组；长链物料（出现>1组）%d 个"
                 % (len(d), len(chains)))

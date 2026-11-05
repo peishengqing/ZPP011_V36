@@ -81,6 +81,7 @@ from gui_pyside6.controllers.alt_controller import AltController
 from gui_pyside6.dialogs.filter_preset_manager_dialog import FilterPresetManagerDialog
 from gui_pyside6.dialogs.filter_explainer_dialog import FilterExplainerDialog
 from gui_pyside6.utils.icons import add_icon_action, get_icon
+from gui_pyside6.utils.table_autofit import install_adaptive, get_adaptive
 from gui_pyside6.controllers.column_controller import ColumnController
 from gui_pyside6.controllers.filter_preset_controller import FilterPresetController
 from gui_pyside6.controllers.dashboard_controller import DashboardController
@@ -244,6 +245,7 @@ class MainWindow(QMainWindow):
         # 按"列名"记录需要隐藏的列（避免 setDataFrame 重排列后索引错位导致列丢失）
         self._hidden_column_names = {
             '_post_audit_changed', 'data_id', 'fingerprint', '_quarantined',
+            '验证列',  # 技术列：验证量差+价差=偏差金额，用户无需看到
         }  # 内部技术列默认隐藏（用户无需看到）
 
         # 控制器
@@ -734,6 +736,14 @@ class MainWindow(QMainWindow):
             table.setSelectionMode(QAbstractItemView.ExtendedSelection)  # 支持 Ctrl/Shift 多选，点击行即高亮选中
             table.verticalHeader().setVisible(False)
             layout.addWidget(table)
+            # v43.300：形式收编（mode='off' 不启用自动重算）。本表列 0-5 为 Fixed
+            # 精算宽度、列 6/7 为 Stretch 自动填满，本身已随窗口变宽消留白；若挂
+            # distribute，_distribute_extra 以「视口全宽」为预算却只累加非 Fixed
+            # 列宽，会算出虚高余量并对 Stretch 列 setColumnWidth（语义冲突，可能
+            # 撑出横向滚动条破坏布局）。按「别破坏 Stretch」红线只做保活、保留手动能力。
+            # 置于 _populate 外（只执行一次），避免表格刷新时重复安装控制器。
+            install_adaptive(table, mode='off', respect_fixed=True,
+                             key='audit_change_detail')
 
             # 待处理变动列表（标记已读后从此移除并刷新表格）；行内 UserRole 存 remaining 索引，排序/部分标记后仍可正确映射
             remaining = list(changes)
@@ -1919,6 +1929,10 @@ class MainWindow(QMainWindow):
             table.setItem(r, 2, ex_item)
 
         layout.addWidget(table)
+        # v43.300：保守收编（mode='off' 不自动重算）。列 0/1 ResizeToContents、
+        # 列 2 Stretch 为历史精算布局，禁用自动重算以「别破坏 Stretch」。
+        install_adaptive(table, mode='off', respect_fixed=True,
+                         key='semi_category_detail')
 
         # 双击筛选（_filter_semi_materials 按"分类名"匹配，不是"工厂·分类"全标签）
         def _on_double_click(row_idx, _col):
@@ -2001,6 +2015,19 @@ class MainWindow(QMainWindow):
         self.source_model.modelReset.connect(self._capture_natural_df)
         self._set_column_widths()
         self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        # v43.300：主表列宽统一自适应（方案 C 全项目收编）。distribute 只把
+        # 「视口宽 − 已设列宽总和」的余量按列名权重分给可见列，绝不测内容、
+        # 绝不调用 resizeColumnsToContents()（万行红线）。表头已在 1966 行被
+        # SortBadgeHeader 整个替换，main_table.py 对原生 header 的设置早已作废，
+        # 勿依赖。showMaximized() 在本方法返回后才执行，控制器通过 window 的
+        # Resize 事件自动重算；这里再补一次 schedule_initial，确保首帧渲染完也算一次余量。
+        self._col_autofit = install_adaptive(
+            self.table_view, mode='distribute', key='main_table')
+        self._col_autofit.schedule_initial()
+        # v43.300：用户手动拖拽列宽实时落盘（原先只在 closeEvent 保存，异常退出会丢）。
+        # 防抖 + user_touched 守卫，避免程序自身批量设宽导致疯狂写盘。
+        self.table_view.horizontalHeader().sectionResized.connect(
+            self._schedule_save_column_widths)
         # 表头2行显示：自动换行
         self.table_view.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)
         self.table_view.setWordWrap(True)
@@ -3561,6 +3588,21 @@ class MainWindow(QMainWindow):
 
     def _save_column_widths(self, *args, **kwargs):
         return self.column_controller._save_column_widths(*args, **kwargs)
+
+    def _schedule_save_column_widths(self, *_args):
+        """用户手动拖拽列宽后防抖落盘（约 500ms）。仅当自适应控制器确认
+        user_touched（用户真拖过）才排程，避免程序自身批量设宽疯狂写盘。
+        绑定在 horizontalHeader().sectionResized 上，信号参数用 *_args 忽略。"""
+        ctrl = get_adaptive(self.table_view)
+        if ctrl is None or not ctrl.user_touched:
+            return
+        timer = getattr(self, '_col_width_save_timer', None)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self._save_column_widths)
+            self._col_width_save_timer = timer
+        timer.start(500)
 
     def _load_column_widths(self, *args, **kwargs):
         return self.column_controller._load_column_widths(*args, **kwargs)

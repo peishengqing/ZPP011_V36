@@ -787,7 +787,18 @@ class PosLossDashboardDialog(QDialog):
         self.source_model = DataFrameModel()
         self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
-        QTimer.singleShot(0, lambda: self.table_view.resizeColumnsToContents())
+        # v43.300：列宽自适应统一交给 AdaptiveTable 控制器（不再同步 resizeColumnsToContents，
+        # 历史「同步逐行测宽卡死主线程」）。初始化期控制器尚未安装 → 由 apply_board_visual
+        # 的 schedule_initial() 延迟首帧重算；运行时刷新（已装）→ 请求一次防抖重算。
+        # 控制器按列名识别、尊重用户手动拖拽过的列宽。
+        try:
+            from gui_pyside6.utils.table_autofit import get_adaptive
+            _ctrl = get_adaptive(self.table_view)
+            if _ctrl is not None:
+                _ctrl.request_refit(0)
+        except Exception:
+            import traceback
+            traceback.print_exc()
         self.table_view.verticalHeader().setDefaultSectionSize(28)
         if "data_id" in df.columns:
             self.table_view.setColumnHidden(df.columns.get_loc("data_id"), True)

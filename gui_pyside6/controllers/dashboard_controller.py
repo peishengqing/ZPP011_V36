@@ -19,6 +19,8 @@ import pandas as pd
 
 from PySide6.QtWidgets import QMessageBox
 
+from gui_pyside6.utils.table_autofit import install_adaptive
+
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.alt_chain_dialog import AltChainDialog
 from gui_pyside6.dialogs.dashboard_dialog import DashboardDialog
@@ -395,6 +397,9 @@ class DashboardController:
 
         table.cellDoubleClicked.connect(_on_double_click)
         layout.addWidget(table)
+
+        # v43.300：明细表列0-3 Fixed、列4 Stretch 的精算布局，mode='off' 保留原布局。
+        install_adaptive(table, mode='off', key='detail_table')
 
         # 按钮区
         btn_row = QHBoxLayout()

@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from gui_pyside6.models.data_frame_model import build_display_key_list
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.icons import get_icon
+from gui_pyside6.utils.table_autofit import get_adaptive
 from gui_pyside6.dialogs.col_filter_ui import set_col_filter_button_on
 
 
@@ -33,6 +34,8 @@ class ColumnController:
     def __init__(self, mw):
         self.mw = mw
     def _toggle_column_lock(self):
+        # v43.300：整表切 Fixed 即「列宽锁」，自适应控制器会自动检测整表
+        # QHeaderView.Fixed 并跳过重算，此处无需额外联动。
         locked = self.mw.lock_btn.isChecked()
         header = self.mw.table_view.horizontalHeader()
         if locked:
@@ -96,8 +99,10 @@ class ColumnController:
         btn_row = QHBoxLayout()
         btn_show_all = QPushButton("恢复全部显示")
         btn_hide_all = QPushButton("全部隐藏")
+        btn_reset_width = QPushButton("重置列宽")  # v43.300
         btn_row.addWidget(btn_show_all)
         btn_row.addWidget(btn_hide_all)
+        btn_row.addWidget(btn_reset_width)
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
@@ -130,6 +135,14 @@ class ColumnController:
         # 快捷按钮：恢复全部显示 / 全部隐藏（按列名清空/填满隐藏集合）
         btn_show_all.clicked.connect(lambda: [cb.setChecked(True) for _, _, cb in checkboxes])
         btn_hide_all.clicked.connect(lambda: [cb.setChecked(False) for _, _, cb in checkboxes])
+        # v43.300：「重置列宽」——清掉用户拖拽标记后重新自适应，并把结果落盘
+        def do_reset_width():
+            ctrl = get_adaptive(self.mw.table_view)
+            if ctrl is not None:
+                ctrl.reset_and_refit()
+            self.mw._save_column_widths()
+            self.mw.statusBar().showMessage("列宽已重置为自适应", 2000)
+        btn_reset_width.clicked.connect(do_reset_width)
 
         if dialog.exec() == QDialog.Accepted:
             # 记录被取消勾选（即要隐藏）的列名
@@ -180,6 +193,12 @@ class ColumnController:
         if not model:
             return
 
+        # v43.300：程序批量恢复列宽期间屏蔽 header 信号。否则每次 setColumnWidth
+        # emit 的 sectionResized 会被自适应控制器误判为「用户拖拽」（user_touched
+        # =True），进而 (1) 使下方 request_refit(0) 被忽略、(2) 永久关闭之后窗口
+        # 缩放时的自动重算；同时也会误触发 MainWindow 的拖拽落盘排程。
+        header.blockSignals(True)
+
         # 优先从配置文件恢复用户保存的列宽与隐藏状态
         saved_widths, saved_hidden = self.mw._load_column_widths()
         # 恢复隐藏集合（按列名），再按名应用显隐
@@ -196,6 +215,8 @@ class ColumnController:
                         continue
                 # 没有保存过的列用默认逻辑
                 self.mw._apply_default_width(col, col_name)
+            header.blockSignals(False)
+            self._request_autofit_refit()
             return
 
         # 无配置文件时用默认逻辑。
@@ -205,6 +226,16 @@ class ColumnController:
         for col in range(1, model.columnCount()):
             col_name = model.headerData(col, Qt.Horizontal) if hasattr(model, 'headerData') else ''
             self.mw._apply_default_width(col, col_name)
+        header.blockSignals(False)
+        self._request_autofit_refit()
+
+    def _request_autofit_refit(self):
+        """v43.300：列宽恢复 / 默认布局落定后，请求自适应控制器补一次视口余量
+        分配（分析完成 / setDataFrame 重排场景）。get_adaptive 自带 getattr 守卫，
+        控制器未安装（如首次 _init_table_model）时返回 None，静默跳过。"""
+        ctrl = get_adaptive(self.mw.table_view)
+        if ctrl is not None:
+            ctrl.request_refit(0)
 
     def _apply_default_width(self, col, col_name):
         """对单列应用默认宽度逻辑（按列名给最小宽度，避免 ResizeToContents 扫描全表）"""

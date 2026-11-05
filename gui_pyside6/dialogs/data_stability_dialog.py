@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+from gui_pyside6.utils.table_autofit import install_adaptive, get_adaptive
+
 from gui_pyside6.dialogs.material_profile_dialog import normalize_text
 
 _DB_PATH = os.path.join(os.path.expanduser("~"), ".zpp011_audit", "audit.db")
@@ -66,17 +68,20 @@ class DataStabilityDialog(QDialog):
         self._tbl_freq.setHorizontalHeaderLabels(
             ["工厂", "订单日期", "流程订单", "物料编码", "物料名称", "修改次数"])
         self._tabs.addTab(self._tbl_freq, "反复修改榜")
+        install_adaptive(self._tbl_freq, mode='content', key='stab_freq')
         # Tab2：归因漂移榜（备注原因被改）
         self._tbl_note = QTableWidget()
         self._tbl_note.setColumnCount(6)
         self._tbl_note.setHorizontalHeaderLabels(
             ["工厂", "订单日期", "流程订单", "物料编码", "物料名称", "备注原因改动次数"])
         self._tabs.addTab(self._tbl_note, "归因漂移榜")
+        install_adaptive(self._tbl_note, mode='content', key='stab_note')
         # Tab3：按天趋势
         self._tbl_day = QTableWidget()
         self._tbl_day.setColumnCount(2)
         self._tbl_day.setHorizontalHeaderLabels(["日期", "改动次数"])
         self._tabs.addTab(self._tbl_day, "按天趋势")
+        install_adaptive(self._tbl_day, mode='content', key='stab_day')
         lay.addWidget(self._tabs, 1)
 
     def _load(self):
@@ -118,7 +123,11 @@ class DataStabilityDialog(QDialog):
                 if j == 5:
                     it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 tbl.setItem(i, j, it)
-        tbl.resizeColumnsToContents()
+        ctrl = get_adaptive(tbl)
+        if ctrl is not None:
+            ctrl.request_refit(0)
+        else:
+            tbl.resizeColumnsToContents()
 
     def _fill_day(self, rows):
         self._tbl_day.setRowCount(len(rows))
@@ -127,4 +136,8 @@ class DataStabilityDialog(QDialog):
             it = QTableWidgetItem(str(cnt))
             it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self._tbl_day.setItem(i, 1, it)
-        self._tbl_day.resizeColumnsToContents()
+        ctrl = get_adaptive(self._tbl_day)
+        if ctrl is not None:
+            ctrl.request_refit(0)
+        else:
+            self._tbl_day.resizeColumnsToContents()

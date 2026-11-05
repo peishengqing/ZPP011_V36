@@ -8,11 +8,12 @@ import functools
 
 import pandas as pd
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView, QTabWidget,
+    QDialog, QVBoxLayout, QHBoxLayout, QTableView, QTabWidget,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QWidget,
-    QLineEdit, QComboBox, QInputDialog,
+    QLineEdit, QComboBox, QInputDialog, QHeaderView,
 )
 from PySide6.QtCore import Qt, QPoint, QTimer
+from gui_pyside6.utils.table_autofit import install_adaptive, get_adaptive
 from gui_pyside6.models.data_frame_model import DataFrameModel
 from gui_pyside6.dialogs.col_filter_ui import (
     make_col_filter_button, make_col_filter_hint_label, set_col_filter_button_on,
@@ -147,7 +148,8 @@ class QuarantineDialog(QDialog):
         except Exception:
             pass
         self.header.sectionClicked.connect(self.col_filter_ctrl.on_header_clicked)
-        self.table_view.horizontalHeader().setStretchLastSection(True)
+        # v43.300：取消末列独吞余量，由自适应控制器接管列宽
+        self.table_view.horizontalHeader().setStretchLastSection(False)
         self.table_view.verticalHeader().setVisible(False)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
         self.col_filter_ctrl.filtered_cols_changed.connect(
@@ -440,7 +442,13 @@ class QuarantineDialog(QDialog):
         self.source_model = DataFrameModel()
         self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
-        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        # v43.300：列宽自适应收编到统一控制器（替代 ResizeToContents + StretchLastSection）
+        _ctrl = get_adaptive(self.table_view)
+        if _ctrl is None:
+            install_adaptive(self.table_view, mode='content', key='quarantine')
+            get_adaptive(self.table_view).schedule_initial()
+        else:
+            _ctrl.request_refit(0)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
         for col in _HIDDEN_INTERNAL:
             if col in df.columns:
@@ -527,7 +535,13 @@ class QuarantineDialog(QDialog):
         self.expired_model = DataFrameModel()
         self.expired_model.setDataFrame(edf)
         self.expired_view.setModel(self.expired_model)
-        self.expired_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        # v43.300：失效复核表同样收编到自适应控制器
+        _ectrl = get_adaptive(self.expired_view)
+        if _ectrl is None:
+            install_adaptive(self.expired_view, mode='content', key='quarantine_expired')
+            get_adaptive(self.expired_view).schedule_initial()
+        else:
+            _ectrl.request_refit(0)
         self.expired_count_label.setText("失效记录：%d 条" % len(edf))
         # 同步 Tab 标题角标
         idx = self.tabs.indexOf(self.tab_expired)
@@ -566,7 +580,14 @@ class QuarantineDialog(QDialog):
         self.expired_model = DataFrameModel()
         self.expired_model.setDataFrame(filtered)
         self.expired_view.setModel(self.expired_model)
-        self.expired_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        # v43.300：失效复核表列宽由自适应控制器接管（重复渲染时仅重算，不重置用户拖拽）
+        _ectrl = get_adaptive(self.expired_view)
+        if _ectrl is not None:
+            _ectrl.request_refit(0)
+        else:
+            self.expired_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+            install_adaptive(self.expired_view, mode='content', key='quarantine_expired')
+            get_adaptive(self.expired_view).schedule_initial()
         # P2-9 修复：搜索后恢复用户排序状态
         if hasattr(self, "_sort_ctrl_expired"):
             if self._sort_ctrl_expired.active:
