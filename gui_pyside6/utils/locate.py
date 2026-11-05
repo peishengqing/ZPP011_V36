@@ -80,3 +80,62 @@ def locate_row(main_window, record, parent=None, link_source=""):
         toast("未在主表中找到该记录（可能已被筛选或隔离）", level="warning", parent=parent)
 
     return ok
+
+
+def drill_to_workshop(main_window, record, link_source=""):
+    """右键「下钻该车间」：主表按 工厂+车间 聚焦（可撤销，复用联动横幅机制）。
+
+    record 为看板行 pandas Series。各看板工厂字段名不统一：
+    负损/正损用「工厂名称」，偏差率/替代料用「工厂」，半成品无工厂列 → 工厂留空仅按车间筛。
+    """
+    if main_window is None or record is None:
+        return
+    try:
+        ws = record.get("车间")
+        if ws is None:
+            return
+        ws = str(ws).strip()
+        if not ws or ws.lower() in ("nan", "none"):
+            return
+        fac = record.get("工厂名称")
+        if fac is None or str(fac).strip() in ("", "nan", "none"):
+            fac = record.get("工厂")
+        fac = str(fac).strip() if fac is not None else ""
+        fn = getattr(main_window, "_filter_main_table_to_workshop", None)
+        if callable(fn):
+            fn(fac, ws, link_source or "看板")
+    except Exception:
+        import traceback
+        traceback.print_exc()
+
+
+def compute_mom_badge(df):
+    """从看板 df 的「订单日期」派生本期期段与环比角标文本。
+    返回 (period_text, badge_text, has_prev)。
+    仅单月/无订单日期 → has_prev=False，badge 灰显「无上期」。
+    """
+    import pandas as pd
+    if df is None or "订单日期" not in df.columns or len(df) == 0:
+        return "", "环比：无数据", False
+    try:
+        s = pd.to_datetime(df["订单日期"], errors="coerce")
+    except Exception:
+        return "", "环比：无数据", False
+    s = s.dropna()
+    if s.empty:
+        return "", "环比：无数据", False
+    months = s.dt.to_period("M")
+    cur = months.max()
+    prev = months[months < cur]
+    period_text = "%s ~ %s" % (s.min().strftime("%Y-%m-%d"), s.max().strftime("%Y-%m-%d"))
+    if prev.empty:
+        return period_text, "环比：无上期", False
+    cur_n = int((months == cur).sum())
+    prev_n = int((months == prev.max()).sum())
+    if prev_n == 0:
+        return period_text, "环比：无上期", False
+    diff = cur_n - prev_n
+    pct = diff / prev_n * 100.0
+    arrow = "↑" if diff > 0 else ("↓" if diff < 0 else "→")
+    badge = "环比 %s%d 条 (%+.1f%%)" % (arrow, diff, pct)
+    return period_text, badge, True

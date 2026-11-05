@@ -2512,6 +2512,33 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def _filter_main_table_to_workshop(self, factory, workshop, source_label="车间批量筛选"):
+        """按 工厂+车间 聚焦主表（可撤销，复用联动钻取快照/横幅机制）。
+
+        factory/workshop 任一为空则忽略该条件；都为空返回 False。
+        调用方：看板右键「下钻该车间」。
+        """
+        if self.proxy_model is None:
+            return False
+        factory = (factory or "").strip()
+        workshop = (workshop or "").strip()
+        if not factory and not workshop:
+            return False
+        keys = {}
+        if factory:
+            keys["工厂"] = factory
+        if workshop:
+            keys["车间"] = workshop
+        label = "工厂 %s · 车间 %s" % (factory or "*", workshop or "*")
+        if source_label:
+            label += "（%s）" % source_label
+        try:
+            self._apply_focus_filters(keys, label)
+            return True
+        except Exception as e:
+            self.log("[车间下钻] 失败: %s" % e, "error")
+            return False
+
     # ------------------------------------------------------------------ #
     def _capture_natural_df(self):
         """数据（重新）加载时记录原始顺序，供"取消排序"恢复；排序过程中的 setDataFrame 忽略。"""

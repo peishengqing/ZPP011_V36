@@ -20,7 +20,7 @@ from gui_pyside6.utils.semi_class import (
 from core.read_status import save_read_status, save_read_status_batch
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for, build_data_id
 from gui_pyside6.widgets.toast import toast
-from gui_pyside6.utils.locate import locate_row
+from gui_pyside6.utils.locate import locate_row, drill_to_workshop, compute_mom_badge
 from gui_pyside6.widgets.filter_panel import _color_icon
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
@@ -76,6 +76,10 @@ class AlertDialog(QDialog):
         filter_layout.addWidget(self.btn_read)
 
         filter_layout.addStretch()
+
+        # ---- B.2 环比角标（v43.301）----
+        self._mom_label = QLabel()
+        filter_layout.addWidget(self._mom_label)
 
         # 批量操作
         self.btn_batch_read = QPushButton("批量标记已读")
@@ -613,6 +617,17 @@ class AlertDialog(QDialog):
         # 必须在 source_model.setDataFrame() 之后 —— 见 _apply_default_filter 注释
         self._apply_default_filter()
 
+        # ---- B.2 环比角标（v43.301）----
+        if hasattr(self, "_mom_label"):
+            _period, _badge, _has = compute_mom_badge(
+                self.source_model.getDataFrame() if hasattr(self, "source_model") else None)
+            self._mom_label.setText(
+                "期段 %s ｜ %s" % (_period, _badge) if _period else _badge)
+            if _has and _badge.startswith("环比 ↑"):
+                self._mom_label.setStyleSheet("color:#FF0000;font-weight:bold;")
+            else:
+                self._mom_label.setStyleSheet("")
+
     def export_excel(self):
         path, _ = QFileDialog.getSaveFileName(
             self, "导出预警列表", "替代料预警.xlsx", "Excel files (*.xlsx)")
@@ -650,6 +665,16 @@ class AlertDialog(QDialog):
         mark_unread_action.triggered.connect(
             lambda: self._mark_selected_rows_unread(selected_rows)
         )
+        menu.addSeparator()
+        _df_drill = self.source_model.getDataFrame()
+        if _df_drill is not None and selected_rows:
+            try:
+                _rec = _df_drill.iloc[selected_rows[0]]
+                _drill = add_icon_action(menu, "🔍 下钻该车间（主表筛选）")
+                _drill.triggered.connect(
+                    lambda: drill_to_workshop(self.main_window, _rec, "替代料看板"))
+            except Exception:
+                pass
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
 
     def _mark_selected_rows_read(self, rows):

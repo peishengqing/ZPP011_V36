@@ -28,7 +28,7 @@ from core.read_status import save_read_status, save_read_status_batch
 from core.quarantine_manager import add_quarantine_batch, remove_quarantine
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for, build_data_id
 from gui_pyside6.widgets.toast import toast
-from gui_pyside6.utils.locate import locate_row
+from gui_pyside6.utils.locate import locate_row, drill_to_workshop, compute_mom_badge
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
@@ -273,6 +273,10 @@ class DeviationWarningDialog(QDialog):
         self.combo_workshop.addItem("全部")
         self.combo_workshop.currentTextChanged.connect(self._on_workshop_changed)
         row1.addWidget(self.combo_workshop)
+
+        # ---- B.2 环比角标（v43.301）----
+        self._mom_label = QLabel()
+        row1.addWidget(self._mom_label)
 
         row1.addStretch()
         self._main_filter_vlayout.addLayout(row1)
@@ -1309,6 +1313,17 @@ class DeviationWarningDialog(QDialog):
         # 默认打开时显示未读
         self._set_filter("unread")
 
+        # ---- B.2 环比角标（v43.301）----
+        if hasattr(self, "_mom_label"):
+            _period, _badge, _has = compute_mom_badge(
+                self.source_model.getDataFrame() if hasattr(self, "source_model") else None)
+            self._mom_label.setText(
+                "期段 %s ｜ %s" % (_period, _badge) if _period else _badge)
+            if _has and _badge.startswith("环比 ↑"):
+                self._mom_label.setStyleSheet("color:#FF0000;font-weight:bold;")
+            else:
+                self._mom_label.setStyleSheet("")
+
     def _filter_desc(self):
         """当前筛选条件的中文描述，用于默认文件名与提示语"""
         state = {"all": "全部", "unread": "未读", "read": "已读"}.get(self.filter_mode, "全部")
@@ -1388,6 +1403,16 @@ class DeviationWarningDialog(QDialog):
             q_action.triggered.connect(
                 functools.partial(self._set_quarantine, selected_rows, True)
             )
+        menu.addSeparator()
+        _df_drill = self.source_model.getDataFrame()
+        if _df_drill is not None and selected_rows:
+            try:
+                _rec = _df_drill.iloc[selected_rows[0]]
+                _drill = add_icon_action(menu, "🔍 下钻该车间（主表筛选）")
+                _drill.triggered.connect(
+                    lambda: drill_to_workshop(self.main_window, _rec, "偏差率预警"))
+            except Exception:
+                pass
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
 
     def _mark_selected_rows_read(self, rows):

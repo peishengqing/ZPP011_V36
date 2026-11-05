@@ -27,7 +27,7 @@ from core.quarantine_manager import add_quarantine_batch, remove_quarantine, get
 from core.read_status import save_read_status_batch
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for, build_data_id
 from gui_pyside6.widgets.toast import toast
-from gui_pyside6.utils.locate import locate_row
+from gui_pyside6.utils.locate import locate_row, drill_to_workshop, compute_mom_badge
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
@@ -280,6 +280,11 @@ class SemiDashboardDialog(QDialog):
         self.combo_workshop.addItem("全部")
         self.combo_workshop.currentTextChanged.connect(self._on_workshop_changed)
         top.addWidget(self.combo_workshop)
+
+        # ---- B.2 环比角标（v43.301）----
+        self._mom_label = QLabel()
+        top.addStretch()
+        top.addWidget(self._mom_label)
 
         # ---- row3：颜色标记 + 已读 + 右侧操作（约 1000px）----
         top3 = QHBoxLayout()
@@ -949,6 +954,17 @@ class SemiDashboardDialog(QDialog):
         self._initializing = False
         self._apply_filter()
 
+        # ---- B.2 环比角标（v43.301）----
+        if hasattr(self, "_mom_label"):
+            _period, _badge, _has = compute_mom_badge(
+                self.source_model.getDataFrame() if hasattr(self, "source_model") else None)
+            self._mom_label.setText(
+                "期段 %s ｜ %s" % (_period, _badge) if _period else _badge)
+            if _has and _badge.startswith("环比 ↑"):
+                self._mom_label.setStyleSheet("color:#FF0000;font-weight:bold;")
+            else:
+                self._mom_label.setStyleSheet("")
+
     def _update_col_filter_hint(self):
         """刷新「列头筛选提示」：显示已设取值过滤的列（N 列 / 列名）。"""
         col_set = self.col_filter_ctrl.filtered_col_set
@@ -1167,6 +1183,16 @@ class SemiDashboardDialog(QDialog):
             if all_q:
                 cancel_action = add_icon_action(menu, "↩ 取消隔离(选中行)")
                 cancel_action.triggered.connect(lambda: self._cancel_selected_quarantine())
+        menu.addSeparator()
+        _df_drill = self.source_model.getDataFrame()
+        if _df_drill is not None and selected_rows:
+            try:
+                _rec = _df_drill.iloc[selected_rows[0]]
+                _drill = add_icon_action(menu, "🔍 下钻该车间（主表筛选）")
+                _drill.triggered.connect(
+                    lambda: drill_to_workshop(self.main_window, _rec, "半成品看板"))
+            except Exception:
+                pass
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
 
     def _mark_selected_rows_read(self, rows):

@@ -10,7 +10,7 @@ import sqlite3
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
-    QTabWidget, QSpinBox, QMessageBox,
+    QTabWidget, QSpinBox, QMessageBox, QWidget,
 )
 from PySide6.QtCore import Qt
 
@@ -34,6 +34,9 @@ def _split_data_id(did):
 class DataStabilityDialog(QDialog):
     def __init__(self, parent=None, code_name_map=None):
         super().__init__(parent)
+        # 调用方（dashboard_manager/dashboard_controller）传入 MainWindow 作为 parent，
+        # 故 parent 即 MainWindow 实例；用于取主表 DataFrame 计算备注覆盖率。
+        self._mw = parent
         # v43.185：物料名称不在 audit.db，由主表当前数据带一份「编码→名称」映射进来。
         self._name_map = dict(code_name_map) if code_name_map else {}
         self.setWindowTitle("📈 数据稳定性看板")
@@ -82,6 +85,18 @@ class DataStabilityDialog(QDialog):
         self._tbl_day.setHorizontalHeaderLabels(["日期", "改动次数"])
         self._tabs.addTab(self._tbl_day, "按天趋势")
         install_adaptive(self._tbl_day, mode='content', key='stab_day')
+        # Tab4：数据质量评分卡
+        self._score_widget = QWidget()
+        s_lay = QVBoxLayout(self._score_widget)
+        self._tbl_score = QTableWidget()
+        self._tbl_score.setColumnCount(3)
+        self._tbl_score.setHorizontalHeaderLabels(["指标", "数值", "说明"])
+        install_adaptive(self._tbl_score, mode='content', key='stab_score')
+        s_lay.addWidget(self._tbl_score, 1)
+        self._score_concl = QLabel()
+        self._score_concl.setWordWrap(True)
+        s_lay.addWidget(self._score_concl)
+        self._tabs.addTab(self._score_widget, "数据质量评分卡")
         lay.addWidget(self._tabs, 1)
 
     def _load(self):
@@ -106,6 +121,7 @@ class DataStabilityDialog(QDialog):
                 "select substr(change_time,1,10) d, count(*) from deviation_history "
                 "group by d order by d").fetchall()
             self._fill_day(rows3)
+            self._fill_score(c)
             tot = c.execute("select count(*) from deviation_history").fetchone()[0]
             c.close()
             self._info.setText(
@@ -141,3 +157,115 @@ class DataStabilityDialog(QDialog):
             ctrl.request_refit(0)
         else:
             self._tbl_day.resizeColumnsToContents()
+
+    @staticmethod
+    def _count_alt_chains():
+        """统计替代料长链数（出现于 >1 个组的物料编码数）。
+
+        读 %APPDATA%\\ZPP011\\config\\alt_pairs.json（外层 list 是「组」，
+        每组是 2+ 个 [工厂, 编码, 名称] 三元组）。复用 alt_chain_dialog 的算法，
+        在本文件内联复制，不改 alt_chain_dialog.py。
+
+        返回 (chains_count, total_materials)；文件不存在/解析失败/格式异常
+        → 返回 (0, 0) 且不抛未捕获异常。
+        """
+        import json
+        from collections import defaultdict
+        cfg = os.path.join(
+            os.environ.get("APPDATA", ""), "ZPP011", "config", "alt_pairs.json")
+        try:
+            if not os.path.exists(cfg):
+                return (0, 0)
+            with open(cfg, encoding="utf-8") as f:
+                d = json.load(f)
+            cnt = defaultdict(int)
+            for grp in d:
+                if not isinstance(grp, list):
+                    continue
+                for s in grp:
+                    if not isinstance(s, (list, tuple)) or len(s) < 3:
+                        continue
+                    code = str(s[1])
+                    cnt[code] += 1
+            chains = [(code, c) for code, c in cnt.items() if c > 1]
+            return (len(chains), len(cnt))
+        except Exception:
+            return (0, 0)
+
+    def _fill_score(self, c):
+        """数据质量评分卡：聚合三个既有指标 → 0–100 总评分并填充 Tab4。
+
+        权重：备注覆盖率 50% / 归因漂移率 30% / 替代料长链数 20%。
+        """
+        # 1) 归因漂移率（audit.db：deviation_history 中 field='备注原因' 占比）
+        cnt_note = c.execute(
+            "select count(*) from deviation_history "
+            "where data_id<>'X' and data_id is not null and field='备注原因'"
+        ).fetchone()[0]
+        tot_dev = c.execute(
+            "select count(*) from deviation_history "
+            "where data_id<>'X' and data_id is not null"
+        ).fetchone()[0]
+        drift_rate = (cnt_note / tot_dev) if tot_dev else 0.0
+
+        # 2) 替代料长链数
+        chains_count, total_materials = self._count_alt_chains()
+
+        # 3) 备注覆盖率（主表当前 DataFrame）
+        coverage = None
+        try:
+            if self._mw is not None and hasattr(self._mw, "source_model"):
+                _mdf = self._mw.source_model.getDataFrame()
+                if _mdf is not None and "备注原因" in _mdf.columns and len(_mdf) > 0:
+                    _has = _mdf["备注原因"].notna() & (
+                        _mdf["备注原因"].astype(str).str.strip() != "")
+                    coverage = float(_has.sum()) / len(_mdf)
+        except Exception:
+            coverage = None
+
+        # 三项子分（0–100）
+        coverage_sub = coverage * 100.0 if coverage is not None else None
+        drift_sub = 100.0 * (1.0 - min(drift_rate, 1.0))
+        if total_materials > 0:
+            chain_ratio = chains_count / total_materials
+        else:
+            chain_ratio = 0.0
+        chain_sub = 100.0 * (1.0 - min(chain_ratio, 1.0))
+
+        # 总评分（加权综合）
+        if coverage_sub is not None:
+            final = 0.5 * coverage_sub + 0.3 * drift_sub + 0.2 * chain_sub
+        else:
+            # 备注覆盖率缺失，按其余两项加权归一（0.3+0.2=0.5）
+            final = (0.3 * drift_sub + 0.2 * chain_sub) / 0.5
+
+        # 填充评分表
+        self._tbl_score.setRowCount(4)
+        rows_data = [
+            ("备注覆盖率", ("%.1f%%" % (coverage * 100)) if coverage is not None else "主表未加载", "权重 50%"),
+            ("归因漂移率", "%.1f%%" % (drift_rate * 100), "权重 30%（越低越好）"),
+            ("替代料长链数", "%d 个（共 %d 物料）" % (chains_count, total_materials), "权重 20%（越少越好）"),
+            ("总评分", "%.1f / 100" % final, "加权综合"),
+        ]
+        for i, (k, v, note) in enumerate(rows_data):
+            self._tbl_score.setItem(i, 0, QTableWidgetItem(k))
+            self._tbl_score.setItem(i, 1, QTableWidgetItem(v))
+            self._tbl_score.setItem(i, 2, QTableWidgetItem(note))
+        ctrl = get_adaptive(self._tbl_score)
+        if ctrl is not None:
+            ctrl.request_refit(0)
+        else:
+            self._tbl_score.resizeColumnsToContents()
+
+        # 一句话结论（按最差子项给建议）
+        concl = []
+        if coverage is not None and coverage < 0.5:
+            concl.append("备注覆盖率偏低，建议补全偏差备注原因")
+        if drift_rate > 0.3:
+            concl.append("归因漂移偏高，建议复核 TOP 反复修改物料")
+        if chains_count > 10:
+            concl.append("替代料长链较多，建议复核替代料配对")
+        if not concl:
+            concl.append("数据质量良好")
+        note_suffix = "" if coverage_sub is not None else "；备注覆盖率缺失，按其余两项加权"
+        self._score_concl.setText("；".join(concl) + note_suffix)
