@@ -81,7 +81,10 @@ QDialog#zppBoardDialog QPushButton:disabled {
 
 QDialog#zppBoardDialog QCheckBox { color: #334155; }
 QDialog#zppBoardDialog QGroupBox { background-color: #f8fbff; }
-QDialog#zppBoardDialog QFrame { color: #dbe3ec; }
+/* 🔴 禁止写裸 `QFrame { color: ... }`：QTableView / QLabel / QScrollArea 全是
+   QFrame 子类，且此规则排在它们之后（同特异性后者胜），会把表格数据与标签
+   文字一并冲成浅色。v43.299 量化对照实测：深色像素占比 7.27% → 0.00%。
+   分隔线（VLine）保持原生配色即可，不值得为此误伤可读性。 */
 
 /* 表格不在筛选栏内，可安全用圆角/边框 */
 QDialog#zppBoardDialog QTableView {
@@ -118,8 +121,13 @@ QDialog#zppBoardDialog QScrollBar::sub-line:vertical { height: 0; }
 QDialog#zppBoardDialog QScrollBar::add-page:vertical,
 QDialog#zppBoardDialog QScrollBar::sub-page:vertical { background: transparent; }
 
-/* 悬浮按钮：独立 child，不进任何 layout，可安全用渐变/圆角/内边距 + 投影 */
-QPushButton#zppVisualBtn {
+/* 悬浮按钮：独立 child，不进任何 layout，可安全用渐变/圆角/内边距 + 投影。
+   🔴 选择器必须带 QDialog#zppBoardDialog 前缀：Qt QSS 特异性按
+   ID数/类数/元素数比较，裸 `QPushButton#zppVisualBtn`（1 ID + 1 元素）会输给
+   上面的 `QDialog#zppBoardDialog QPushButton`（1 ID + 2 元素），
+   结果白底规则盖掉蓝色渐变（v43.299 首版截图实测按钮是白的）。
+   加前缀后 2 ID + 2 元素，稳定胜出。 */
+QDialog#zppBoardDialog QPushButton#zppVisualBtn {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                                 stop:0 #0969da, stop:1 #3b8ff0);
     color: #ffffff;
@@ -128,11 +136,19 @@ QPushButton#zppVisualBtn {
     padding: 8px 18px;
     font-weight: bold;
 }
-QPushButton#zppVisualBtn:hover {
+QDialog#zppBoardDialog QPushButton#zppVisualBtn:hover {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                                 stop:0 #0550ae, stop:1 #2f7fe0);
 }
-QPushButton#zppVisualBtn:pressed { background-color: #04428f; }
+QDialog#zppBoardDialog QPushButton#zppVisualBtn:pressed {
+    background-color: #04428f;
+}
+/* checked/disabled 通用规则也会命中悬浮按钮，这里显式覆盖回蓝底白字 */
+QDialog#zppBoardDialog QPushButton#zppVisualBtn:disabled {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                stop:0 #0969da, stop:1 #3b8ff0);
+    color: #ffffff;
+}
 """
 
 FLOAT_BTN_TEXT = "📊 可视化看板"
