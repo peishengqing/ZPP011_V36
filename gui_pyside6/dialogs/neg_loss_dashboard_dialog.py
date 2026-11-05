@@ -34,6 +34,7 @@ from gui_pyside6.utils.column_filter import ColumnFilterController
 from gui_pyside6.utils.semi_class import merge_semi_class_values, ensure_semi_class_column  # v43.148 固定分类清单 / v43.210 补列
 from gui_pyside6.widgets.filter_panel import _color_icon
 from gui_pyside6.utils.icons import add_icon_action, make_button
+from gui_pyside6.widgets.board_visual import apply_board_visual  # v43.299 方案C
 
 
 class NegLossDashboardDialog(QDialog):
@@ -66,6 +67,8 @@ class NegLossDashboardDialog(QDialog):
         self._kw_timer = None
         self.setup_ui()
         self.set_data(df)
+        # v43.299 方案C：统一看板美化 + 悬浮「📊 可视化看板」入口
+        apply_board_visual(self, main_window, board_label="负损看板")
 
     # ------------------------------------------------------------------ UI
     def setup_ui(self):

@@ -24,9 +24,7 @@ from urllib.parse import quote
 
 import numpy as np
 import pandas as pd
-import matplotlib
 import matplotlib.pyplot as plt
-from matplotlib import font_manager
 
 # ---------- 中文显示 ----------
 try:
@@ -532,32 +530,45 @@ def chart_waterfall(df):
 
     fig, ax = plt.subplots(figsize=(6.2, 3.6))
     categories = ['正偏差（多耗）', '负偏差（少耗）', '净偏差']
-    values = [pos, neg, net]
-    # 用颜色区分：正=红，负=绿，最终=蓝
+    # 标准瀑布：前两根是「增量浮动块」，第三根是「总计柱」（从 0 起）
+    steps = [pos, neg]          # 前两段的增量
     colors = [C_POS, C_NEG, C_ACCENT]
-    # 构建瀑布图：在基础柱状上叠加
-    cursor = 0
-    for i, (cat, val, col) in enumerate(zip(categories, values, colors)):
-        bar = ax.bar(i, val, bottom=cursor, color=col, alpha=0.9)
-        # 在柱上方标注数值
-        ax.text(i, cursor + val / 2, f'{val:,.0f}', ha='center', va='center', fontsize=9, color='white')
-        # 如果是负值，文字白色；如果是正值，根据背景调整
-        if val < 0:
-            ax.text(i, cursor + val / 2, f'{val:,.0f}', ha='center', va='center', fontsize=9, color='white')
-        cursor += val
-    ax.set_title("偏差金额瀑布图（构成与累计）", fontsize=11, fontweight="bold", color="#0f172a", loc="left", pad=10)
+    cursor = 0.0
+    for i, (val, col) in enumerate(zip(steps, colors)):
+        start, end = cursor, cursor + val
+        ax.bar(i, abs(val), bottom=min(start, end), width=0.6,
+               color=col, alpha=0.92, edgecolor='none')
+        ax.text(i, max(start, end) + abs(pos + neg + 1) * 0.02, f'{val:+,.0f}',
+                ha='center', va='bottom', fontsize=9, color=col, fontweight='bold')
+        # 段间连接虚线：上一段终点 → 下一段起点（同一高度）
+        if i > 0:
+            ax.plot([i - 1 + 0.3, i - 0.3], [start, start],
+                    color=C_GRAY, linestyle='--', linewidth=0.9)
+        cursor = end
+    # 总计柱：从 0 到净偏差
+    ax.bar(2, abs(net), bottom=min(0, net), width=0.6,
+           color=C_ACCENT, alpha=0.92, edgecolor='none')
+    ax.text(2, max(0, net) + abs(pos + neg + 1) * 0.02, f'{net:+,.0f}',
+            ha='center', va='bottom', fontsize=9, color=C_ACCENT, fontweight='bold')
+    # 累计线：pos → net
+    ax.plot([0.3, 1.7], [pos, pos], color=C_GRAY, linestyle='--', linewidth=0.9)
+    ax.plot([1.3, 1.7], [net, net], color=C_GRAY, linestyle='--', linewidth=0.9)
+
+    ax.set_title("偏差金额瀑布图（正/负 → 净）", fontsize=11, fontweight="bold",
+                 color="#0f172a", loc="left", pad=10)
     ax.set_xlim(-0.5, 2.5)
-    ax.set_ylim(0, net + abs(net) * 0.1 + pos + abs(pos) * 0.15)  # 确保包含所有柱
-    ax.set_yticks([])  # 隐藏 Y 轴刻度
-    # 添加中间线标注
-    if net != 0:
-        ax.axhline(net, color=C_ACCENT, linestyle='--', linewidth=0.8)
-        ax.text(2.2, net, f'净偏差 {net:,.0f}', color=C_ACCENT, fontsize=9)
-    # 底部标签
+    lo = min(0.0, neg, net, pos + neg)
+    hi = max(0.0, pos, net)
+    pad = (hi - lo) * 0.18 or 1.0
+    ax.set_ylim(lo - pad, hi + pad)
+    ax.axhline(0, color=C_GRAY, linewidth=1, linestyle='-')
+    ax.set_yticks([])  # 隐藏 Y 轴刻度，靠柱端数值读数
     ax.set_xticks(list(range(len(categories))))
     ax.set_xticklabels(categories, fontsize=9)
-
-    fig.tight_layout()
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    ax.grid(False)
     return fig_to_b64(fig)
 
 

@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 import hashlib
-from PySide6.QtCore import QAbstractTableModel, QSortFilterProxyModel, Qt, Signal, QModelIndex, QTimer
+from PySide6.QtCore import QAbstractTableModel, QSortFilterProxyModel, Qt, Signal, QModelIndex
 from PySide6.QtGui import QColor, QFont
 
 from gui_pyside6.utils.icons import get_icon
@@ -56,9 +56,31 @@ class DataFrameModel(QAbstractTableModel):
         # 确保 _read 列存在（用于已读/未读状态）
         if '_read' not in self._data.columns:
             self._data['_read'] = 0  # 默认未读
-        # 确保 _read_source 列存在（已读来源：auto/manual/''）
         if '_read_source' not in self._data.columns:
             self._data['_read_source'] = ''
+
+        # 引入新列：标准单价、量差、价差、验证列（若不存在则计算）
+        # 依赖的原始列：数量-定额、数量-实际、金额-定额(含税)、偏差金额。
+        # 🔴 v43.299：5 个表格看板（负损/正损/替代料/偏差率/半成品）传入的是
+        # dashboard_controller 裁过列的子表，往往没有「金额-定额(含税)」，
+        # 早期无守卫版本会直接 KeyError 导致看板一打开就崩。
+        # 口径：4 个依赖列齐全才派生；缺任意一个 -> 整组跳过，保持原列不变
+        #（派生列只在完整主表/增强版 Excel 里出现，看板不需要它们）。
+        _need = ('数量-定额', '数量-实际', '金额-定额(含税)', '偏差金额')
+        if all(c in self._data.columns for c in _need):
+            if '标准单价' not in self._data.columns:
+                # 标准单价 = 金额定额 / 数量定额，避免除零
+                self._data['标准单价'] = np.where(
+                    self._data['数量-定额'] != 0,
+                    self._data['金额-定额(含税)'] / self._data['数量-定额'],
+                    0.0
+                )
+            if '量差' not in self._data.columns:
+                self._data['量差'] = (self._data['数量-实际'] - self._data['数量-定额']) * self._data['标准单价']
+            if '价差' not in self._data.columns:
+                self._data['价差'] = self._data['偏差金额'] - self._data['量差']
+            if '验证列' not in self._data.columns:
+                self._data['验证列'] = self._data['量差'] + self._data['价差'] - self._data['偏差金额']
 
         # 将 _read / _read_source 列移到最前（第0列状态、第1列已读来源）
         cols = ['_read', '_read_source'] + [c for c in self._data.columns if c not in ('_read', '_read_source')]
@@ -301,7 +323,8 @@ class DataFrameModel(QAbstractTableModel):
             # 偏差数值列着色（2026-09-30）：正值红、负值绿（与看板红绿语言一致，
             # 中间调在暗/亮主题下都清晰）；0 值与空值保持默认色
             col_name = self._display_columns[col]
-            if col_name in ("偏差数量", "偏差率(%)", "偏差金额", "净偏差金额"):
+            if col_name in ("偏差数量", "偏差率(%)", "偏差金额", "净偏差金额",
+                            "标准单价", "量差", "价差", "验证列"):
                 try:
                     _fv = float(self._data_cache[row][col])
                 except (ValueError, TypeError):
@@ -1269,7 +1292,6 @@ def build_display_key_list(sm, col_index):
         # 为空串），列头筛选键取语义文本「已读/未读」（与 ToolTipRole 一致，比原
         # emoji 键更可读）。弹层收集与 proxy 匹配都走本函数，天然一致。
         return ['已读' if cache[r][0] else '未读' for r in range(len(cache))]
-    n = len(cache)
     col = display_cols[col_index]
     col_vals = [row[col_index] for row in cache]
     if col == '_read_source':

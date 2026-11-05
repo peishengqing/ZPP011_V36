@@ -47,6 +47,7 @@ from gui_pyside6.utils.semi_class import (  # noqa: F401
     ensure_semi_class_column,
 )
 from gui_pyside6.utils.icons import add_icon_action, make_button
+from gui_pyside6.widgets.board_visual import apply_board_visual  # v43.299 方案C
 
 
 class SemiDashboardDialog(QDialog):
@@ -81,6 +82,8 @@ class SemiDashboardDialog(QDialog):
         self._kw_timer = None
         self.setup_ui()
         self.set_data(df)
+        # v43.299 方案C：统一看板美化 + 悬浮「📊 可视化看板」入口
+        apply_board_visual(self, main_window, board_label="半成品看板")
 
     # ------------------------------------------------------------------ UI
     def setup_ui(self):

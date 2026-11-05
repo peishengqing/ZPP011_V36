@@ -26,6 +26,7 @@ from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
 from gui_pyside6.utils.icons import add_icon_action, make_button
+from gui_pyside6.widgets.board_visual import apply_board_visual  # v43.299 方案C
 
 
 class AlertDialog(QDialog):
@@ -44,6 +45,8 @@ class AlertDialog(QDialog):
         self._initializing = False  # 初始化守卫
         self.setup_ui()
         self.set_data(alerts_df)
+        # v43.299 方案C：统一看板美化 + 悬浮「📊 可视化看板」入口
+        apply_board_visual(self, main_window, board_label="替代料看板")
 
     def setup_ui(self):
         layout = QVBoxLayout(self)

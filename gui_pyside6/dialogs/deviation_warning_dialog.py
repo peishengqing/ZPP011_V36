@@ -37,6 +37,7 @@ from gui_pyside6.utils.semi_class import (
 )
 from gui_pyside6.utils.cascade_filter import replace_combo_items, cascade_options
 from gui_pyside6.utils.icons import add_icon_action, make_button
+from gui_pyside6.widgets.board_visual import apply_board_visual  # v43.299 方案C
 
 
 
@@ -77,6 +78,8 @@ class DeviationWarningDialog(QDialog):
         self.set_data(warnings_df)
         # v43.288: 默认最大化打开（裴哥 11-02 反馈截图：默认浮动 resize(1280,640) 不最大化）
         self.open_maximized()
+        # v43.299 方案C：统一看板美化 + 悬浮「📊 可视化看板」入口
+        apply_board_visual(self, main_window, board_label="偏差率预警看板")
 
     def open_maximized(self):
         """默认最大化打开：showMaximized + 同步「还原」态 UI + Win32 硬兜底（同主窗口，防 Qt 修正回浮动）。
