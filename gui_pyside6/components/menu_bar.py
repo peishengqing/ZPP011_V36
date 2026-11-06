@@ -77,6 +77,12 @@ class MenuBarComponent:
         alert_action.triggered.connect(self.mw._show_alert_dashboard)
         audit_menu.addAction(alert_action)
 
+        audit_menu.addSeparator()
+
+        summary_action = QAction(get_icon("chart", 14), "审核证据汇总（F1）", self.mw)
+        summary_action.triggered.connect(self.mw._show_audit_summary)
+        audit_menu.addAction(summary_action)
+
         # 工具菜单
         tools_menu = menubar.addMenu("工具")
         import_action = QAction("模板导入向导", self.mw)

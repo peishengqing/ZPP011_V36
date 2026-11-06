@@ -2781,6 +2781,11 @@ class MainWindow(QMainWindow):
         profile_action.triggered.connect(
             lambda: self._show_material_profile(row_data.get('物料编码', ''))
         )
+        # F1 审核证据卡
+        evid_action = add_icon_action(menu, "📋 查看审核证据卡")
+        evid_action.triggered.connect(
+            lambda: self._show_evidence_card(row_data.get('data_id', ''))
+        )
         menu.addSeparator()
         add_sel_action = add_icon_action(menu, "➕ 添加为替代料配对（选中2行）")
         add_sel_action.triggered.connect(lambda: self._add_alt_pair_from_selection())
@@ -3528,6 +3533,22 @@ class MainWindow(QMainWindow):
 
     def _show_material_profile(self, code=None, name=None):
         return self.dashboard_controller._show_material_profile(code, name)
+
+    def _show_evidence_card(self, data_id=None):
+        """F1：打开单笔审核证据卡。data_id 为空时给出提示。"""
+        if not data_id:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(self, "审核证据卡", "当前行没有 data_id，无法定位审核证据。")
+            return
+        from gui_pyside6.dialogs.evidence_card_dialog import EvidenceCardDialog
+        dlg = EvidenceCardDialog(data_id, parent=self)
+        dlg.exec()
+
+    def _show_audit_summary(self):
+        """F1：打开期间审核证据汇总报告。"""
+        from gui_pyside6.dialogs.audit_summary_dialog import AuditSummaryDialog
+        dlg = AuditSummaryDialog(parent=self)
+        dlg.exec()
 
     def _show_semi_dashboard(self):
         return self.dashboard_controller._show_semi_dashboard()

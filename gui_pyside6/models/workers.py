@@ -11,6 +11,9 @@ from analysis.analyzer import do_analysis_v2
 from core.rule_engine import RuleEngine
 from core.ai_client import AIClient
 from core.config_manager import ConfigManager
+from core.snapshot import compute_unfinished
+import core.audit_evidence as ae
+from core.read_status import DB_PATH
 
 
 class AnalysisWorker(QThread):
@@ -99,6 +102,7 @@ class AIAuditWorker(QThread):
         self.rule_engine = rule_engine
         self.ai_client = ai_client
         self._cancel = threading.Event()
+        self._audit_records = []          # F1：每条审核的判定+证据，落库用
 
     def cancel(self):
         self._cancel.set()
@@ -129,6 +133,22 @@ class AIAuditWorker(QThread):
             if records:
                 save_audit_results_batch(records)
                 self.log.emit(f"已保存 {len(records)} 条审核结果到数据库")
+
+            # ── F1 证据落地 ──
+            if self._audit_records:
+                rv = ae._app_version()
+                mv = ae.DEFAULT_MODEL_VERSION
+                for rec in self._audit_records:
+                    try:
+                        ae.write_audit(
+                            data_id=rec["data_id"], verdict=rec["verdict"],
+                            confidence=rec["confidence"], needs_human=rec["needs_human"],
+                            suggestion=rec["suggestion"], evidence_list=rec["evidence"],
+                            rule_version=rv, model_version=mv)
+                    except Exception as e:
+                        self.log.emit(f"写入审核证据失败（跳过该条）: {e}")
+                self.log.emit(f"已写入 {len(self._audit_records)} 条审核证据到 audit_evidence/audit_report")
+
             # ── 同步更新历史频率库 ──
             try:
                 from core.history_freq import batch_update
@@ -137,6 +157,140 @@ class AIAuditWorker(QThread):
                 pass  # 频率更新失败不影响主流程
         except Exception as e:
             self.log.emit(f"保存审核结果失败: {e}")
+
+    # ------------------------------------------------------------------
+    # F1 证据采集
+    # ------------------------------------------------------------------
+    def _ev(self, etype, content, rv, mv):
+        return {"evidence_type": etype, "content": content,
+                "rule_version": rv, "model_version": mv}
+
+    def _record_decision(self, idx, row, dev_rate, remark, did, is_unfinished, rv, mv):
+        """按现有本地分级逻辑推导 verdict/confidence/needs_human，并采集证据链。"""
+        result_col = '审核结果' if '审核结果' in self.audit_data.columns else 'audit_result'
+        kw = ['替代料', '系统无定额', '已核实']
+        evidence = []
+
+        if is_unfinished:
+            verdict, confidence, needs_human = "不确定(数据未完结)", "低", True
+            suggestion = "数据未完结（分批入库），建议暂缓判定，待入库完成后复核"
+            self.audit_data.at[idx, result_col] = verdict
+            self.audit_data.at[idx, '备注来源'] = 'AI审核'
+            evidence.append(self._ev(ae.EV_UNFINISHED,
+                                    {"status": "未完结", "suggestion": "暂缓判定"}, rv, mv))
+        elif remark and any(k in remark for k in kw):
+            verdict, confidence, needs_human = "合格", "高", False
+            suggestion = "备注含明确原因关键词，建议维持"
+            self.audit_data.at[idx, result_col] = verdict
+            self.audit_data.at[idx, '备注来源'] = remark
+            hit = [k for k in kw if k in remark]
+            evidence.append(self._ev(ae.EV_RULE_HIT,
+                                    {"branch": "keyword_hit", "keyword": hit}, rv, mv))
+        elif remark:
+            if len(remark) < 5:
+                verdict, confidence, needs_human = "需改进", "中", True
+                suggestion = "备注过短（<5字），建议补充详细原因"
+            else:
+                verdict, confidence, needs_human = "合格", "中", False
+                suggestion = "备注清晰，建议维持"
+            self.audit_data.at[idx, result_col] = verdict
+            self.audit_data.at[idx, '备注来源'] = '人工填写'
+            evidence.append(self._ev(ae.EV_RULE_HIT,
+                                    {"branch": "remark_present", "remark_len": len(remark)}, rv, mv))
+        else:
+            abs_rate = abs(dev_rate)
+            if abs_rate < 5:
+                verdict, confidence, needs_human = "合格", "中", False
+                suggestion = "偏差率<5%，可接受"
+            elif abs_rate < 10:
+                verdict, confidence, needs_human = "需关注", "中", False
+                suggestion = "偏差率居中，建议确认原因"
+            else:
+                verdict, confidence, needs_human = "需补备注", "低", True
+                suggestion = "偏差率≥10%且无备注，建议补备注原因"
+            self.audit_data.at[idx, result_col] = verdict
+            self.audit_data.at[idx, '备注来源'] = 'AI审核'
+            evidence.append(self._ev(ae.EV_RULE_HIT,
+                                    {"branch": "dev_rate_band", "abs_rate": round(abs_rate, 2)}, rv, mv))
+
+        # 公共证据：偏差率 + 备注覆盖
+        evidence.append(self._ev(ae.EV_DEV_RATE, {
+            "dev_rate": round(dev_rate, 2),
+            "direction": "超耗" if dev_rate > 0 else ("少耗" if dev_rate < 0 else "持平"),
+        }, rv, mv))
+        evidence.append(self._ev(ae.EV_REMARK, {
+            "remark_len": len(remark), "has_remark": bool(remark),
+        }, rv, mv))
+
+        # 仅 needs_human 时附加较重证据（替代料长链 / 历史相似），限制开销
+        if needs_human:
+            alt = self._alt_chain_evidence(row, rv, mv)
+            if alt is not None:
+                evidence.append(alt)
+            hist = self._history_evidence(row, rv, mv)
+            if hist is not None:
+                evidence.append(hist)
+
+        self._audit_records.append({
+            "data_id": str(did), "verdict": verdict, "confidence": confidence,
+            "needs_human": needs_human, "suggestion": suggestion, "evidence": evidence,
+        })
+
+    def _alt_chain_evidence(self, row, rv, mv):
+        """best-effort：判断物料是否身处替代料长链。失败返回 None。"""
+        try:
+            import os
+            mat = str(row.get("物料编码", "")).strip()
+            if not mat:
+                return None
+            cfg = os.path.join(os.environ.get("APPDATA", ""), "ZPP011", "config", "alt_pairs.json")
+            if not os.path.exists(cfg):
+                return None
+            with open(cfg, "r", encoding="utf-8") as f:
+                data = __import__("json").load(f)
+            nodes = set()
+            if isinstance(data, list):
+                for pair in data:
+                    if isinstance(pair, (list, tuple)) and len(pair) >= 2:
+                        nodes.add(str(pair[0])); nodes.add(str(pair[1]))
+            elif isinstance(data, dict):
+                for k, v in data.items():
+                    nodes.add(str(k))
+                    if isinstance(v, (list, tuple, set)):
+                        nodes.update(str(x) for x in v)
+                    else:
+                        nodes.add(str(v))
+            if mat in nodes:
+                return self._ev(ae.EV_ALT_CHAIN, {"material": mat, "in_alt_chain": True}, rv, mv)
+        except Exception:
+            pass
+        return None
+
+    def _history_evidence(self, row, rv, mv):
+        """best-effort：同物料+同厂的历史备注原因 Top3（deviation_history）。失败返回 None。"""
+        try:
+            import sqlite3
+            mat = str(row.get("物料编码", "")).strip()
+            fac = str(row.get("工厂", "")).strip()
+            if not mat:
+                return None
+            conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+            cur = conn.execute(
+                "SELECT 备注原因 FROM deviation_history "
+                "WHERE 物料编码=? AND 工厂=? LIMIT 50", (mat, fac))
+            from collections import Counter
+            cnt = Counter()
+            for (r,) in cur.fetchall():
+                rs = str(r or "").strip()
+                if rs and rs not in ("nan", "None", ""):
+                    cnt[rs] += 1
+            conn.close()
+            top = [{"remark": k, "count": v} for k, v in cnt.most_common(3)]
+            if top:
+                return self._ev(ae.EV_HISTORY, {"top_remarks": top}, rv, mv)
+        except Exception:
+            pass
+        return None
 
     def run(self):
         try:
@@ -158,7 +312,17 @@ class AIAuditWorker(QThread):
             if remark_col is None:
                 raise ValueError("找不到备注列")
 
+            # F1：未完结集合（分批入库场景下，未完结订单要先标「数据未完结，建议暂缓判定」）
+            try:
+                unf = compute_unfinished(self.audit_data)
+                unfinished_ids = {d.get("data_id") for d in unf.get("details", []) if d.get("data_id")}
+            except Exception:
+                unfinished_ids = set()
+            rv = ae._app_version()
+            mv = ae.DEFAULT_MODEL_VERSION
+
             # 第一轮本地分类只写「审核结果 / 备注来源」；AI建议已停用，不再进入 ai_queue。
+            # 同时采集 F1 证据链（verdict/confidence/needs_human/evidence）。
 
             for idx, row in self.audit_data.iterrows():
                 if self._cancel.is_set():
@@ -168,27 +332,8 @@ class AIAuditWorker(QThread):
                 remark = str(row.get(remark_col, '')).strip()
                 if remark in ('nan', 'None', ''):
                     remark = ''
-
-                # 关键词优先 → 本地判定
-                if remark and any(kw in remark for kw in ['替代料', '系统无定额', '已核实']):
-                    self.audit_data.at[idx, 'audit_result'] = '合格'
-                    self.audit_data.at[idx, '备注来源'] = remark
-                elif remark:
-                    if len(remark) < 5:
-                        self.audit_data.at[idx, 'audit_result'] = '需改进'
-                        self.audit_data.at[idx, '备注来源'] = '人工填写'
-                    else:
-                        self.audit_data.at[idx, 'audit_result'] = '合格'
-                        self.audit_data.at[idx, '备注来源'] = '人工填写'
-                else:
-                    abs_rate = abs(dev_rate)
-                    if abs_rate < 5:
-                        self.audit_data.at[idx, 'audit_result'] = '合格'
-                    elif abs_rate < 10:
-                        self.audit_data.at[idx, 'audit_result'] = '需关注'
-                    else:
-                        self.audit_data.at[idx, 'audit_result'] = '需补备注'
-                    self.audit_data.at[idx, '备注来源'] = 'AI审核'
+                did = row.get('data_id', '')
+                self._record_decision(idx, row, dev_rate, remark, did, did in unfinished_ids, rv, mv)
 
             # AI建议已停用：第一轮本地分类完成后直接结束，不再调用 AI、不生成任何建议文案。
             self.progress.emit(total, total)

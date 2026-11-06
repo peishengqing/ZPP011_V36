@@ -14,6 +14,21 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.306",
+            "date": "2026-11-07",
+            "features": (
+                "F1 审核结果可解释报告（全量）：新增 core/audit_evidence.py（audit_report / audit_evidence 两表 + 6 类证据链，"
+                "每条审核落真实 verdict + 置信度[高|中|低] + needs_human + 建议动作 + 证据链 + 可追溯 data_id，report_version 按 data_id 自增、事务批量写）。"
+                "AIAuditWorker 审核循环改为采证据链：未完结订单标「数据未完结·建议暂缓判定」+ 低置信度 + 需人工；"
+                "仅 needs_human 时附加替代料长链 / 历史相似案例证据，限制开销。右键菜单新增「📋 查看审核证据卡」（单笔证据卡弹窗），"
+                "审核菜单新增「📊 审核证据汇总（F1）」（期间分布：结论/置信度/需人工/规则·模型版本/Top 误判原因；人工采纳率标注 F3 未上线）。"
+                "只建议不自动改、结论带版本+置信度、不动数据。"
+            ),
+            "fixes": (
+                "无",
+            ),
+        },
+        {
             "version": "v43.305",
             "date": "2026-11-07",
             "features": (
