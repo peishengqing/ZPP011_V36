@@ -14,6 +14,19 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.303",
+            "date": "2026-11-06",
+            "features": (
+                "D2 本地变更摘要面板（替代原 Bot 推送）：新增 core/scorecard.py（纯逻辑数据质量评分卡，复用 C 口径）、"
+                "core/change_summary.py（对比最近快照基线算变更摘要 + matplotlib 离屏渲染三张静态图：未完结阶梯图/进度条拼图/评分趋势线）；"
+                "五个看板对话框新增可折叠「📊 变更摘要」面板（默认收起、点「刷新摘要」按需渲染、不推送不自动刷新无动画）。"
+                "回填 D1 历史库评分：snapshot_action._collect_score 改调 core.scorecard.compute_scorecard，此后趋势线才有数据。"
+            ),
+            "fixes": (
+                "修复 D1 历史库评分字段恒为 NULL 的问题（原 _collect_score 调用的 current_score 方法不存在，已改为纯逻辑评分卡）。"
+            ),
+        },
+        {
             "version": "v43.302",
             "date": "2026-11-06",
             "features": (

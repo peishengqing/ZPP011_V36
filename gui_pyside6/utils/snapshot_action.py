@@ -67,11 +67,17 @@ def _collect_filter_context(mw):
 
 
 def _collect_score(mw):
-    """best-effort 收集评分卡快照（D2 趋势线用）。无可用来源返回 None。"""
+    """best-effort 收集评分卡快照（D2 趋势线用）。无可用来源返回 None。
+
+    v43.303 起改用纯逻辑 core.scorecard.compute_scorecard（原 current_score 方法不存在，
+    导致历史库评分字段恒为 NULL）。
+    """
     try:
-        ds = getattr(mw, "data_stability", None)
-        if ds is not None and hasattr(ds, "current_score"):
-            return ds.current_score()
+        vm = getattr(mw, "view_model", None)
+        df = vm.df if vm is not None else None
+        if df is not None and len(df):
+            from core.scorecard import compute_scorecard
+            return compute_scorecard(df)
     except Exception:
         pass
     return None
