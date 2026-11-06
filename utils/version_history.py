@@ -14,6 +14,20 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.305",
+            "date": "2026-11-07",
+            "features": (
+                "D4 月报关账草稿（本地只读、不主动外发）：新增 core/closing.py（按月粒度关账状态机，落 audit.db closing_status 表），"
+                "复用 D1 compute_unfinished 口径——未完结清零才允许关账。"
+                "三个状态：draft（草稿 v1/v2/v3…，标「数据未关账可能变动」）/ closed（定稿）/ revised（定稿后再导出走修订版 vN，原定稿保留）。"
+                "变更摘要面板新增「月报月份」下拉（默认最新月）+「📅 关账」按钮；导出 PDF 按月份 filter 主表，"
+                "封面与页脚标注报告状态（草稿/定稿/修订版），文件名带月份与状态便于归档。关账人=裴盛清（手动）。"
+            ),
+            "fixes": (
+                "无",
+            ),
+        },
+        {
             "version": "v43.304",
             "date": "2026-11-06",
             "features": (
