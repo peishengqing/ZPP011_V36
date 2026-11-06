@@ -5,13 +5,16 @@
 """
 import os
 import tempfile
+import datetime
 
 from PySide6.QtWidgets import (QGroupBox, QVBoxLayout, QPushButton, QLabel,
-                               QTextBrowser, QHBoxLayout, QFrame)
+                               QTextBrowser, QHBoxLayout, QFrame, QFileDialog,
+                               QMessageBox)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 
 import core.change_summary as change_summary
+import core.report_pdf as report_pdf
 
 
 def attach_change_summary(dialog) -> None:
@@ -23,6 +26,13 @@ def attach_change_summary(dialog) -> None:
 
     btn = QPushButton("刷新摘要（按需渲染图表）")
     inner.addWidget(btn)
+
+    btn_row = QHBoxLayout()
+    btn_pdf = QPushButton("📄 导出 PDF（本地只读）")
+    btn_pdf.setToolTip("导出为本地只读 PDF，系统不推送、不外发")
+    btn_row.addWidget(btn_pdf)
+    btn_row.addStretch(1)
+    inner.addLayout(btn_row)
 
     info = QTextBrowser()
     info.setMaximumHeight(170)
@@ -42,6 +52,7 @@ def attach_change_summary(dialog) -> None:
 
     box.setLayout(inner)
     btn.clicked.connect(lambda: _on_refresh(dialog, info, labels))
+    btn_pdf.clicked.connect(lambda: _on_export(dialog, info, labels))
 
     layout = dialog.layout()
     if layout is not None:
@@ -83,6 +94,51 @@ def _on_refresh(dialog, info, labels):
         else:
             lab.setPixmap(QPixmap())
             lab.setText("（暂无数据）")
+
+
+def _on_export(dialog, info, labels):
+    """D3 一键 PDF：弹出文件选择框，生成本地只读 PDF（拒绝覆盖已存在文件）。"""
+    mw = getattr(dialog, "main_window", None)
+    if mw is None:
+        QMessageBox.warning(dialog, "提示", "无法获取主窗口数据，无法导出 PDF。")
+        return
+    vm = getattr(mw, "view_model", None)
+    df = vm.df if vm is not None else None
+    if df is None or len(df) == 0:
+        QMessageBox.warning(dialog, "提示", "当前主表无数据，无法导出 PDF。")
+        return
+
+    # 口径与快照条保持一致（若存在）
+    cal = "期间累计"
+    snap = getattr(dialog, "_snap_caliber", None)
+    if snap is not None and hasattr(snap, "currentText"):
+        cal = snap.currentText()
+
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    default_name = f"ZPP011_偏差变更摘要_{ts}.pdf"
+    path, _ = QFileDialog.getSaveFileName(
+        dialog, "导出 PDF（本地只读）", default_name, "PDF 文件 (*.pdf)")
+    if not path:
+        return  # 用户取消
+
+    # 拒绝覆盖已存在文件：D 红线——系统不主动外发、不静默改写
+    if os.path.exists(path):
+        QMessageBox.warning(
+            dialog, "未覆盖",
+            f"该文件已存在，未予覆盖：\n{path}\n请换一个文件名或另选路径。")
+        return
+
+    try:
+        saved = report_pdf.build_pdf(df, caliber=cal, internal=True, save_path=path)
+    except Exception as e:  # noqa: BLE001 — 用户可见链路必须暴露错误
+        QMessageBox.critical(dialog, "导出失败", f"生成 PDF 出错：\n{e}")
+        return
+
+    QMessageBox.information(
+        dialog, "PDF 已生成",
+        f"已生成本地只读 PDF：\n{saved}\n\n"
+        f"口径：{cal}\n系统未推送、未外发，请自行取用。",
+    )
 
 
 def _fmt_delta(v):

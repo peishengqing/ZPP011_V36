@@ -14,6 +14,19 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.304",
+            "date": "2026-11-06",
+            "features": (
+                "D3 一键 PDF（本地只读、系统不推送不外发）：新增 core/report_pdf.py（matplotlib PdfPages 多页 A4，无新依赖），"
+                "封面+评分卡 / 看板摘要+Top15异常 / 趋势三图 / 变更摘要附录 四页，每页页脚标「只读快照，数据截至 XX · 系统未推送未外发」。"
+                "五个看板的「📊 变更摘要」面板新增「📄 导出 PDF」按钮：QFileDialog 选路径、拒绝覆盖已存在文件、口径与快照条联动。"
+                "internal 参数切换外发隐藏物料编码。"
+            ),
+            "fixes": (
+                "build_pdf 用完后清理临时 _charts_* 目录，避免 %APPDATA%/ZPP011/reports 堆积残留。"
+            ),
+        },
+        {
             "version": "v43.303",
             "date": "2026-11-06",
             "features": (
