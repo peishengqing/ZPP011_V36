@@ -73,6 +73,7 @@ class EvidenceCardDialog(QDialog):
             return
 
         evidences = ae.get_evidence(rep["audit_id"])
+        suggestions = ae.get_suggestions(self.data_id)
 
         # 结论条：低置信度 / needs_human 标红
         warn = (rep["confidence"] == "低") or rep["needs_human"]
@@ -91,6 +92,24 @@ class EvidenceCardDialog(QDialog):
         lines.append(f"**规则版本**：{rep['rule_version']}　|　**模型版本**：{rep['model_version']}")
         lines.append(f"**报告版本**：v{rep['report_version']}　|　**生成时间**：{rep['created_at']}")
         lines.append("")
+
+        # F2 归因建议段
+        if suggestions:
+            latest = suggestions[0]
+            lines.append("### 归因建议（F2）")
+            if latest.get("root_cause"):
+                lines.append(f"- **归因**：{latest['root_cause']}")
+            if latest.get("action"):
+                lines.append(f"- **建议动作**：{latest['action']}")
+            if latest.get("precedent"):
+                prec = "；".join(latest["precedent"][:3])
+                lines.append(f"- **历史参考**：{prec}")
+            if latest.get("candidates"):
+                cand = " / ".join(c.get("text", "") for c in latest["candidates"] if c.get("text"))
+                if cand:
+                    lines.append(f"- **候选建议**：{cand}")
+            lines.append("")
+
         lines.append("---")
         lines.append("")
         lines.append("### 证据链")

@@ -3550,6 +3550,12 @@ class MainWindow(QMainWindow):
         dlg = AuditSummaryDialog(parent=self)
         dlg.exec()
 
+    def _show_attribution_list(self):
+        """F2：打开归因建议清单（待办 / 需关注）。"""
+        from gui_pyside6.dialogs.attribution_list_dialog import AttributionListDialog
+        dlg = AttributionListDialog(parent=self)
+        dlg.exec()
+
     def _show_semi_dashboard(self):
         return self.dashboard_controller._show_semi_dashboard()
 

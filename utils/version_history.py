@@ -14,6 +14,19 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.307",
+            "date": "2026-11-07",
+            "features": (
+                "F2 归因建议（全量）：新增 core/attribution.py（build_attribution 规则归因模板 + retrieve_precedent 历史相似检索 best-effort）。"
+                "每条审核在 F1 证据链基础上生成「归因 + 建议动作 + 历史参考 + 多候选」，落新表 audit_suggestion（branch/root_cause/action/precedent_json/candidates_json + 索引）。"
+                "worker._record_decision 计算 branch 并调 build_attribution；证据卡新增「归因建议（F2）」段；审核菜单新增「📋 归因建议清单（F2）」"
+                "（按 needs_human / 重点 verdict 聚合待办，支持复制清单 + 导出 CSV）。只建议不自动改，结论带规则/检索双置信度来源。"
+            ),
+            "fixes": (
+                "无",
+            ),
+        },
+        {
             "version": "v43.306",
             "date": "2026-11-07",
             "features": (

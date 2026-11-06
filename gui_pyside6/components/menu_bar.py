@@ -83,6 +83,10 @@ class MenuBarComponent:
         summary_action.triggered.connect(self.mw._show_audit_summary)
         audit_menu.addAction(summary_action)
 
+        attrib_action = QAction(get_icon("clipboard", 14), "归因建议清单（F2）", self.mw)
+        attrib_action.triggered.connect(self.mw._show_attribution_list)
+        audit_menu.addAction(attrib_action)
+
         # 工具菜单
         tools_menu = menubar.addMenu("工具")
         import_action = QAction("模板导入向导", self.mw)

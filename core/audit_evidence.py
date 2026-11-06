@@ -71,6 +71,23 @@ def ensure_audit_tables() -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_report_time ON audit_report(created_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_evid_audit ON audit_evidence(audit_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_evid_data ON audit_evidence(data_id)")
+    # F2 归因建议：每条审核可有多条候选建议（规则/历史检索/替代料长链）
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS audit_suggestion ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " audit_id TEXT NOT NULL,"
+        " data_id TEXT NOT NULL,"
+        " branch TEXT DEFAULT '',"
+        " root_cause TEXT DEFAULT '',"
+        " action TEXT DEFAULT '',"
+        " precedent_json TEXT DEFAULT '[]',"
+        " candidates_json TEXT DEFAULT '[]',"
+        " rule_version TEXT DEFAULT '',"
+        " model_version TEXT DEFAULT '',"
+        " created_at TEXT NOT NULL"
+        ")")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sugg_audit ON audit_suggestion(audit_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sugg_data ON audit_suggestion(data_id)")
     conn.commit()
     conn.close()
 
@@ -192,6 +209,80 @@ def get_evidence(audit_id: str) -> List[Dict]:
             "rule_version": r[2],
             "model_version": r[3],
             "created_at": r[4],
+        })
+    return out
+
+
+# ---------------------------------------------------------------------------
+# F2 归因建议读写
+# ---------------------------------------------------------------------------
+def write_suggestion(audit_id: str, data_id: str, branch: str, root_cause: str,
+                     action: str, precedent: List, candidates: List,
+                     rule_version: Optional[str] = None,
+                     model_version: Optional[str] = None) -> None:
+    """写入一次审核的归因建议（root_cause / action / 历史参考 / 多候选）。"""
+    ensure_audit_tables()
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    rv = rule_version or _app_version()
+    mv = model_version or DEFAULT_MODEL_VERSION
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    try:
+        conn.execute(
+            "INSERT INTO audit_suggestion "
+            "(audit_id, data_id, branch, root_cause, action, precedent_json, "
+            " candidates_json, rule_version, model_version, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (audit_id, str(data_id), branch or "", root_cause or "", action or "",
+             json.dumps(precedent or [], ensure_ascii=False),
+             json.dumps(candidates or [], ensure_ascii=False),
+             rv, mv, now))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_suggestions(data_id: str) -> List[Dict]:
+    """某 data_id 的归因建议（按写入顺序，最新在后）。"""
+    conn = _connect()
+    rows = conn.execute(
+        "SELECT branch, root_cause, action, precedent_json, candidates_json, created_at "
+        "FROM audit_suggestion WHERE data_id=? ORDER BY id DESC",
+        (str(data_id),)).fetchall()
+    conn.close()
+    out = []
+    for r in rows:
+        try:
+            precedent = json.loads(r[3])
+        except Exception:
+            precedent = []
+        try:
+            candidates = json.loads(r[4])
+        except Exception:
+            candidates = []
+        out.append({
+            "branch": r[0], "root_cause": r[1], "action": r[2],
+            "precedent": precedent, "candidates": candidates, "created_at": r[5],
+        })
+    return out
+
+
+def get_pending_suggestions(limit: int = 500) -> List[Dict]:
+    """归因建议清单用：返回最近 N 条报告中 needs_human 或重点 verdict 的待办建议。"""
+    reports = get_all_reports(limit)
+    focus = {"不确定(数据未完结)", "需改进", "需补备注", "需关注"}
+    out = []
+    for r in reports:
+        if not (r["needs_human"] or r["verdict"] in focus):
+            continue
+        sugg = get_suggestions(r["data_id"])
+        latest = sugg[0] if sugg else None
+        out.append({
+            "data_id": r["data_id"], "verdict": r["verdict"],
+            "confidence": r["confidence"], "needs_human": r["needs_human"],
+            "branch": latest["branch"] if latest else "",
+            "root_cause": latest["root_cause"] if latest else "",
+            "action": latest["action"] if latest else (r.get("suggestion") or ""),
+            "precedent": latest["precedent"] if latest else [],
         })
     return out
 
