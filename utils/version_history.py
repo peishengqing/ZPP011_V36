@@ -14,6 +14,22 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.309",
+            "date": "2026-11-07",
+            "features": (
+                "B/C/D/F 链路联动回归清单（tests/integration/test_bcdf_linkage.py，可复跑 pytest）。"
+                "以同一 data_id + 同一隔离 audit.db 串起 B钻取定位 → C评分卡(备注覆盖率+归因漂移率) → "
+                "D变更摘要/快照(未完结订单+变更记录) → F审核证据/归因/时间线 → 关账状态 全链路，7 个用例全 PASS。"
+                "钉死联动命门：read_status._get_conn 单例连接缓存（patch DB_PATH 后须重置 _CONN）+ "
+                "scorecard/closing/audit_evidence 顶层按值拷贝 DB_PATH 须逐一 patch，"
+                "漏一个即打到真实 ~/.zpp011_audit/audit.db（反证 demo 已验证两库割裂危害）。"
+                "只写隔离临时库、不碰真实表，测完即弃。"
+            ),
+            "fixes": (
+                "无",
+            ),
+        },
+        {
             "version": "v43.308",
             "date": "2026-11-07",
             "features": (
