@@ -14,6 +14,17 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.318",
+            "date": "2026-11-07",
+            "fixes": (
+                "修复 v43.316 引入的运行时崩溃（'MainWindow' object has no attribute "
+                "'data_controller'）：DataController 是历史孤儿 controller，文件/方法一直在但 "
+                "MainWindow 从没 import/实例化接线；v43.316 把工厂切换真身迁入后第一次走到该属性即崩。"
+                "补 import + 实例化接线 self.data_controller = DataController(self)，"
+                "一并修好 596/598/627/628/631/633 那几个同样引用 data_controller 却一直潜伏的坏调用点。"
+            ),
+        },
+        {
             "version": "v43.317",
             "date": "2026-11-07",
             "features": (

@@ -88,6 +88,7 @@ from gui_pyside6.controllers.dashboard_controller import DashboardController
 from gui_pyside6.controllers.semi_category_controller import SemiCategoryController
 from gui_pyside6.controllers.interaction_controller import InteractionController
 from gui_pyside6.controllers.quarantine_manager_controller import QuarantineManagerController
+from gui_pyside6.controllers.data_controller import DataController
 from gui_pyside6.controllers.uisettings_controller import UISettingsController
 from gui_pyside6.controllers.ppt_controller import PptController
 from gui_pyside6.controllers.file_monitor_controller import FileMonitorController
@@ -310,6 +311,10 @@ class MainWindow(QMainWindow):
         self.filter_preset_controller = FilterPresetController(self)
         # ARC-003 第四刀：11 个看板/弹窗展示职责已切出到 DashboardController
         self.dashboard_controller = DashboardController(self)
+        # v43.318 修复：DataController 此前是历史孤儿（文件在但从未实例化），
+        # v43.316 把工厂切换真身迁入后第一次走到 data_controller 即 AttributeError 崩溃。
+        # 补接线；同时修好下方 596/598/627/628/631/633 那几个一直潜伏的坏调用点。
+        self.data_controller = DataController(self)
         # ARC-003 第六刀：交互职责（定位/选中/复制）已切出到 InteractionController
         self.interaction_controller = InteractionController(self)
         # ARC-003 第七刀：隔离区管理职责（自动已读/读写/失效复核/自动移入）已切出到 QuarantineManagerController
