@@ -49,11 +49,11 @@ def _build_html():
 
 
 def test_details_folding_key_risk_open():
-    """C：4 组 details 折叠，仅「重点风险」默认展开。"""
+    """C：5 组 details 折叠，仅「重点风险」默认展开。"""
     html, _ = _build_html()
-    assert html.count("<details class=\"group\"") == 4
+    assert html.count("<details class=\"group\"") == 5
     assert "<details class=\"group\" open><summary class=\"grp\">重点风险" in html
-    for grp in ("偏差规模与分布", "结构拆解", "趋势与归因"):
+    for grp in ("偏差规模与分布", "结构拆解", "趋势与归因", "新增图表"):
         assert f'<details class="group"><summary class="grp">{grp}' in html, grp
 
 

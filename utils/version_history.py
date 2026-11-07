@@ -14,6 +14,22 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.311",
+            "date": "2026-11-07",
+            "fixes": (
+                "回归安全网修复（两项，全套跑绿 330 passed / 0 failed）："
+                "①test_details_folding_key_risk_open 断言滞后——dashboard_html.CHARTS 已从 4 组扩到 5 组"
+                "（新增第 5 组「新增图表」：瀑布图 chart_waterfall + 车间偏差箱线图 chart_boxplot），"
+                "测试仍断言 4 组致 FAILED(5≠4)，同步到 5 组并补「新增图表」展开断言。"
+                "②test_main_window_smoke 两个 TestIsolation 沙箱自检跨文件误报——smoke 与 "
+                "test_custom_header_sort 都在模块顶层 chdir 到各自 zpp011_* 沙箱 + 改 HOME 且互不还原，"
+                "pytest 先 import 完所有模块再跑测试，后 import 的覆盖前者 CWD/HOME，"
+                "致单独跑绿、一起跑红。把保安断言从「查特定沙箱名」放宽为「查隔离本质」"
+                "（在 TEMP 下 zpp011_* 沙箱 + 不是真实 home），守卫强度不减、真漏到真实目录仍报警。"
+                "纯测试改动，不碰任何业务逻辑/红线区。"
+            ),
+        },
+        {
             "version": "v43.310",
             "date": "2026-11-07",
             "features": (

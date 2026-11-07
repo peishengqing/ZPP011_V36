@@ -931,20 +931,31 @@ class TestIsolation:
     """守卫"绝不污染裴哥的真实审核数据"这条硬性要求。"""
 
     def test_sandbox_home_is_not_real_home(self):
-        """守契约：HOME 已被重定向到沙箱，测试不可能写到真实 ~/.zpp011_audit。"""
+        """守契约：HOME 已被重定向到某个临时沙箱，测试不可能写到真实 ~/.zpp011_audit。
+
+        放宽为「隔离本质」而非特定沙箱名：smoke / sort 等多个测试文件都会在模块顶层
+        chdir 到各自的 zpp011_* 沙箱，全套跑时后 import 的会覆盖前者的 CWD/HOME。
+        真正要守的是「绝不落到真实用户目录」，不是「必须落在哪个具体沙箱」。
+        """
         effective = pathlib.Path(os.path.expanduser("~"))
         assert str(effective) != str(pathlib.Path(_real_home)), (
             f"HOME 未隔离，测试会写真实用户目录：{effective}"
         )
-        assert str(_SANDBOX) in str(effective), (
-            f"expanduser('~') 未指向沙箱：{effective}"
+        # 沙箱根 = TEMP 下的 zpp011_* 目录（smoke_sandbox / sort_test 等都算合规）
+        tmp_root = pathlib.Path(os.environ.get("TEMP", "/tmp")).resolve()
+        eff_resolved = effective.resolve()
+        assert eff_resolved.parent == tmp_root and eff_resolved.name.startswith("zpp011_"), (
+            f"expanduser('~') 未指向 TEMP 下的 zpp011_* 沙箱：{effective}"
         )
 
     def test_cwd_is_sandbox(self):
-        """守契约：CWD 已切到沙箱，core/logger.py 的相对 "logs" 不会落到 H 盘。"""
-        assert str(pathlib.Path(os.getcwd()).resolve()).startswith(
-            str(_SANDBOX.resolve())
-        ), f"CWD 未隔离：{os.getcwd()}"
+        """守契约：CWD 已切到某个 TEMP 下的 zpp011_* 沙箱，core/logger.py 的相对 "logs"
+        不会落到真实目录（同 test_sandbox_home_is_not_real_home 的放宽口径）。"""
+        cwd = pathlib.Path(os.getcwd()).resolve()
+        tmp_root = pathlib.Path(os.environ.get("TEMP", "/tmp")).resolve()
+        assert cwd.parent == tmp_root and cwd.name.startswith("zpp011_"), (
+            f"CWD 未隔离到 TEMP 下的 zpp011_* 沙箱：{os.getcwd()}"
+        )
 
     def test_writes_landed_in_sandbox_not_user_dir(self):
         """守契约：跑完这些测试后，新增产物只出现在沙箱目录里。"""
