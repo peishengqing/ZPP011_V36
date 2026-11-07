@@ -14,6 +14,22 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.310",
+            "date": "2026-11-07",
+            "features": (
+                "评分卡「为什么分低」证据解释层（方案 A：新增不改核心）。"
+                "新增 core/scorecard_explain.py（纯逻辑 build_explanation）：把 compute_scorecard 的三个维度"
+                "从笼统结论落到 Top-N 具体证据——备注缺失按车间/物料聚合 Top5、归因漂移按反复改备注的物料 Top5"
+                "（读 deviation_history field='备注原因'）、替代料长链列出具体物料编码。"
+                "新增 gui_pyside6/dialogs/scorecard_explain_dialog.py 竖向解释弹窗（三维度分段 + Top-N 明细）。"
+                "数据稳定性弹窗 Tab4 评分卡表下方新增「🔍 查看扣分证据」按钮入口。"
+                "compute_scorecard 一行不改，不影响 change_summary/report_pdf/snapshot 三个调用方。只读不改任何表。"
+            ),
+            "fixes": (
+                "无",
+            ),
+        },
+        {
             "version": "v43.309",
             "date": "2026-11-07",
             "features": (

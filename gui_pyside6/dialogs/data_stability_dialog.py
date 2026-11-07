@@ -10,7 +10,7 @@ import sqlite3
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
-    QTabWidget, QSpinBox, QMessageBox, QWidget,
+    QTabWidget, QSpinBox, QMessageBox, QWidget, QPushButton,
 )
 from PySide6.QtCore import Qt
 
@@ -96,6 +96,10 @@ class DataStabilityDialog(QDialog):
         self._score_concl = QLabel()
         self._score_concl.setWordWrap(True)
         s_lay.addWidget(self._score_concl)
+        # v43.310 扣分证据入口：把三维度笼统结论落到 Top-N 具体证据
+        self._btn_explain = QPushButton("🔍 查看扣分证据")
+        self._btn_explain.clicked.connect(self._show_score_explain)
+        s_lay.addWidget(self._btn_explain)
         self._tabs.addTab(self._score_widget, "数据质量评分卡")
         lay.addWidget(self._tabs, 1)
 
@@ -269,3 +273,15 @@ class DataStabilityDialog(QDialog):
             concl.append("数据质量良好")
         note_suffix = "" if coverage_sub is not None else "；备注覆盖率缺失，按其余两项加权"
         self._score_concl.setText("；".join(concl) + note_suffix)
+
+    def _show_score_explain(self):
+        """v43.310 打开「为什么分低」扣分证据弹窗（方案 A：不改 compute_scorecard）。"""
+        mdf = None
+        try:
+            if self._mw is not None and hasattr(self._mw, "source_model"):
+                mdf = self._mw.source_model.getDataFrame()
+        except Exception:
+            mdf = None
+        from gui_pyside6.dialogs.scorecard_explain_dialog import ScorecardExplainDialog
+        dlg = ScorecardExplainDialog(mdf, parent=self)
+        dlg.exec()
