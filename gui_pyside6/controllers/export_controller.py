@@ -457,3 +457,134 @@ class ExportController(QObject):
                 pass
         parent._full_analysis_cache_path = None
 
+    def on_export_full_excel_from_mw(self):
+        """点击「导出完整Excel」（v43.312 自 MainWindow._on_export_full_excel 迁入）"""
+        parent = getattr(self, 'parent', None)
+        if parent is None:
+            return
+        audit_data = parent.view_model.df
+        if audit_data is None or audit_data.empty:
+            QMessageBox.warning(parent, "提示", "无数据，请先进行分析")
+            return
+
+        if parent._heavy_busy:
+            QMessageBox.information(parent, "提示", "分析/报告生成进行中，请稍候再导出")
+            return
+
+        _ap = getattr(parent, '_analysis_params', None) or {}
+        _sd = str(_ap.get('start_date') or '').strip()
+        _ed = str(_ap.get('end_date') or '').strip()
+        if _sd and _ed:
+            _rng = f"{_sd.replace('-', '')}-{_ed.replace('-', '')}"
+            default_name = f"ZPP011偏差分析最终版_{_rng}_（{_rng}）.xlsx"
+        else:
+            default_name = f"ZPP011偏差分析最终版_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+
+        save_path, _ = QFileDialog.getSaveFileName(
+            parent, "保存完整Excel文件", default_name, "Excel files (*.xlsx)"
+        )
+        if not save_path:
+            return
+
+        analysis_params = parent._analysis_params
+        current_input_file = parent.current_input_file
+        cache_path = parent._full_analysis_cache_path
+
+        has_valid_params = (
+            analysis_params
+            and isinstance(analysis_params, dict)
+            and analysis_params.get('input_file')
+            and current_input_file
+        )
+
+        if has_valid_params:
+            reply = QMessageBox.question(
+                parent, "导出选项",
+                "是否生成完整多Sheet分析报告（含汇总统计、预警颜色等）？\n\n"
+                "点击「是」→ 生成完整多Sheet Excel（缓存命中则秒传，否则重新分析）\n"
+                "点击「否」→ 仅导出当前表格数据（快速）",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes
+            )
+            if reply == QMessageBox.Yes:
+                self.export_full_analysis_inline(
+                    save_path, analysis_params, cache_path, parent
+                )
+                return
+
+        try:
+            saved = safe_save(
+                parent, save_path,
+                lambda p: audit_data.to_excel(p, sheet_name='完整偏差明细', index=False),
+                what="表格",
+            )
+            if not saved:
+                parent.log("导出已取消（目标文件被占用）", "warning")
+                return
+            save_path = saved
+            if QMessageBox.question(
+                parent, "导出成功", f"文件已导出到：\n{save_path}\n是否打开？"
+            ) == QMessageBox.Yes:
+                open_file(save_path)
+            parent.log(f"已导出完整Excel到 {save_path}", "info")
+        except Exception as e:
+            traceback.print_exc()
+            QMessageBox.critical(parent, "错误", f"导出失败: {e}")
+            parent.log(f"导出失败: {e}", "error")
+
+    def recalculate_net_offset(self, silent=False):
+        """重算净偏差（v43.312 自 MainWindow._recalculate_net_offset 迁入）"""
+        parent = getattr(self, 'parent', None)
+        if parent is None:
+            return
+        df = parent.view_model.df
+        if df is None or df.empty:
+            if not silent:
+                QMessageBox.warning(parent, "提示", "无数据")
+            return
+        from analysis.net_offset import apply_net_offset
+        alt_pairs = parent.alt_controller.get_pairs()
+        if not alt_pairs:
+            if not silent:
+                QMessageBox.information(parent, "提示", "没有替代料配对，已删除所有配对")
+            df = df.copy()
+            df["净偏差数量"] = df.get("偏差数量", 0)
+            df["是否替代料"] = "否"
+            # v43.240 修复：净偏差重算不改变被变更检测比对的「实际数量/备注原因/产量」，
+            # 但本函数读的是 view_model.df——其 _read 副本未被「变动提醒-全设为已读」更新（仍是 0），
+            # 若直接 setDataFrame 会把刚标好的已读(_read=1)覆盖回未读，导致变动提醒又翻回未读。
+            # 故重算后从 DB 重新派生 _read/_post_audit_changed，让已读状态跨净偏差重算存活。
+            if '_read' in df.columns and 'data_id' in df.columns:
+                df = parent.data_service.read_status_service.restore_read_status(df)
+            parent._schedule_unread_summary()
+            parent.view_model.df = df
+            if parent.source_model is not None:
+                parent.source_model.setDataFrame(df)
+                parent._apply_column_visibility_by_name()
+                parent.proxy_model.invalidate()
+            parent._on_view_model_data_changed()
+            parent._sync_alt_pairs_for_full_report()
+            if not silent:
+                parent.statusBar().showMessage("净偏差已重置为原始值", 2000)
+            return
+        try:
+            new_df = apply_net_offset(df, alt_pairs, group_key=["订单日期", "流程订单"])
+            # v43.240 修复：与空配对分支同理，重算后从 DB 重新对账已读状态，
+            # 避免把「变动提醒-全设为已读」标好的 _read=1 覆盖回 0（清空替代料看板→变动提醒又变未读）。
+            if '_read' in new_df.columns and 'data_id' in new_df.columns:
+                new_df = parent.data_service.read_status_service.restore_read_status(new_df)
+            parent._schedule_unread_summary()
+            parent.view_model.df = new_df
+            if parent.source_model is not None:
+                parent.source_model.setDataFrame(new_df)
+                parent._apply_column_visibility_by_name()
+                parent.proxy_model.invalidate()
+            parent._on_view_model_data_changed()
+            parent._sync_alt_pairs_for_full_report()
+            if not silent:
+                parent.statusBar().showMessage("净偏差已重新计算", 2000)
+        except Exception as e:
+            if not silent:
+                QMessageBox.critical(parent, "错误", f"重算净偏差失败: {e}")
+            else:
+                parent.log(f"重算净偏差失败: {e}", "error")
+

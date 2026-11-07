@@ -14,6 +14,16 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.312",
+            "date": "2026-11-07",
+            "features": (
+                "导出域打样迁移：_on_export_full_excel/_recalculate_net_offset 方法体迁入 "
+                "ExportController（重命名为 on_export_full_excel_from_mw / recalculate_net_offset，"
+                "照 sync_alt_pairs_for_full_report 的 parent 模式访问 mw 成员），"
+                "MainWindow 两个原方法改为一行薄委托，保持外部调用点不变。"
+            ),
+        },
+        {
             "version": "v43.311",
             "date": "2026-11-07",
             "fixes": (
