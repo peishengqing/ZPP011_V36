@@ -14,6 +14,16 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.314",
+            "date": "2026-11-07",
+            "fixes": (
+                "清理死代码：删除 gui_pyside6/controllers/analysis_controller_v2.py"
+                "（101 行零引用半成品，早期 God Object 重构试点未完成、全项目除自身外零引用，"
+                "还会误导'分析域已 controller 化'）。删除前已备份到 _backup_deadcode/。"
+                "分析收尾域（_populate/_on_analysis_finished_ui/_init_table_model）确认为雷区留守不迁。"
+            ),
+        },
+        {
             "version": "v43.313",
             "date": "2026-11-07",
             "features": (
