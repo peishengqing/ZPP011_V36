@@ -14,6 +14,15 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.315",
+            "date": "2026-11-07",
+            "features": (
+                "MainWindow 瘦身第 4 轮：半成品放大窗口 _zoom_semi_table(76行) 迁入 "
+                "DashboardController（与 _show_semi_detail_window 同族），MainWindow 改薄委托，"
+                "left_panel:319 放大按钮调用点零改动。"
+            ),
+        },
+        {
             "version": "v43.314",
             "date": "2026-11-07",
             "fixes": (
