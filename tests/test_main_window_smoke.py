@@ -85,6 +85,7 @@ from PySide6.QtGui import QShortcut  # noqa: E402  (与 main_window.py:29 同源
 from PySide6.QtCore import QThread, Qt, QEvent  # noqa: E402
 
 MAIN_WINDOW_PY = _ROOT / "gui_pyside6" / "main_window.py"
+DATA_CONTROLLER_PY = _ROOT / "gui_pyside6" / "controllers" / "data_controller.py"
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +101,19 @@ def _parse_main_window():
 def _main_window_class(tree):
     for node in tree.body:
         if isinstance(node, ast.ClassDef) and node.name == "MainWindow":
+            return node
+    return None
+
+
+def _parse_data_controller():
+    """解析 data_controller.py 的 AST（v43.316 起 _on_factory_changed 真身在此）。"""
+    src = DATA_CONTROLLER_PY.read_text(encoding="utf-8")
+    return ast.parse(src), src
+
+
+def _data_controller_class(tree):
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == "DataController":
             return node
     return None
 
@@ -852,12 +866,14 @@ class TestC_BugProbes:
           connect**；``_on_title_factory_selected``（692）是没人调的孤儿方法
           → 标题栏的工厂切换入口疑似死按钮。运行时 ``receivers`` 实测为 0。
         """
-        _, src = _parse_main_window()
+        # v43.316 起 _on_factory_changed 真身从 MainWindow 迁入 DataController
+        # （MainWindow 只剩薄委托），故静态 AST 检查改查 DataController 源码。
+        _, dc_src = _parse_data_controller()
         import re as _re
-        tree = ast.parse(src)
-        cls = _main_window_class(tree)
+        dc_tree = ast.parse(dc_src)
+        dc_cls = _data_controller_class(dc_tree)
         foc = next(
-            n for n in cls.body
+            n for n in dc_cls.body
             if isinstance(n, ast.FunctionDef) and n.name == "_on_factory_changed"
         )
 
@@ -877,7 +893,7 @@ class TestC_BugProbes:
         guard = next(
             (n for n in ast.walk(foc)
              if isinstance(n, ast.If)
-             and "source_model is None" in (ast.get_source_segment(src, n.test) or "")),
+             and "source_model is None" in (ast.get_source_segment(dc_src, n.test) or "")),
             None,
         )
         assert guard is not None, (
@@ -917,7 +933,9 @@ class TestC_BugProbes:
             f"title_bar.factory_selected 已有 {n_title} 个接收者——"
             f"孤儿槽已接线，请更新探针结论并复查是否存在重复连接"
         )
-        assert not _re.search(r"\.connect\([^)]*_on_title_factory_selected", src), (
+        # 孤儿方法 _on_title_factory_selected 原在 MainWindow，查 MainWindow 源码无 connect 指向它
+        _, mw_src = _parse_main_window()
+        assert not _re.search(r"\.connect\([^)]*_on_title_factory_selected", mw_src), (
             "_on_title_factory_selected 已无任何 connect 指向它，"
             "标题栏工厂选择器无响应"
         )

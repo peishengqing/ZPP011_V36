@@ -577,9 +577,6 @@ class MainWindow(QMainWindow):
 
 
 
-    def _on_title_factory_selected(self, factory_name):
-        return self.analysis_controller.on_factory_changed(factory_name)
-
     # Phase 3 数据驱动筛选桥接方法
     def _on_filter_panel_changed(self, filters: dict):
         """FilterPanel 筛选变化 → FilterController 规则转换"""
@@ -2477,54 +2474,8 @@ class MainWindow(QMainWindow):
                 self._natural_df = df.copy()
 
     def _on_factory_changed(self, factory_name):
-        if not factory_name:
-            return
-        if factory_name == '全部':
-            # 显示全部工厂数据
-            all_data = self.analysis_controller.factory_data.get('全部')
-            if all_data is None:
-                # 合并所有工厂数据
-                all_parts = []
-                for f, g in self.analysis_controller.factory_data.items():
-                    all_parts.append(g)
-                if all_parts:
-                    import pandas as pd
-                    all_data = pd.concat(all_parts, ignore_index=True)
-                    self.analysis_controller.factory_data['全部'] = all_data
-            df = all_data
-        else:
-            df = self.analysis_controller.factory_data.get(factory_name)
-        if df is not None:
-            # 后台线程已预处理过（带 _read 列）→ 直接复用，避免主线程再跑 31s 卡顿；
-            # 仅在拿到原始 dev_df（无 _read 列）时才在主线程预处理（兜底）。
-            if '_read' in df.columns:
-                processed_df = df
-            else:
-                processed_df = self.data_service.preprocess_audit_data(df)
-            if self.source_model is None:
-                self.source_model = DataFrameModel()
-                self.proxy_model = AuditProxyModel()
-                self.proxy_model.setDynamicSortFilter(False)  # 同上，关闭重过滤风暴
-                self.proxy_model.setSourceModel(self.source_model)
-                self.table_view.setModel(self.proxy_model)
-                self.proxy_model.layoutChanged.connect(self._update_mark_stats)
-                self.source_model.dataChanged.connect(self._update_mark_stats)
-                self.source_model.dataRefreshed.connect(self._update_mark_stats)
-                self.source_model.modelReset.connect(self._update_mark_stats)
-            try:
-                self.source_model.setDataFrame(processed_df)
-            except Exception as _e:
-                import traceback as _tb
-                _tb.print_exc()
-                raise
-            self._apply_column_visibility_by_name()
-            self._schedule_unread_summary()
-            self.view_model.df = processed_df
-            self._update_summary()
-            self.filter_panel.update_options(processed_df)
-            self.statusBar().showMessage(f"已切换到工厂：{factory_name}", 2000)
-        else:
-            self.statusBar().showMessage(f"工厂 {factory_name} 数据为空", 2000)
+        """工厂切换（v43.316 真身迁入 DataController._on_factory_changed，此处薄委托）。"""
+        return self.data_controller._on_factory_changed(factory_name)
 
     # -----------------------------------------------------------
     # 统计与合计

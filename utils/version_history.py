@@ -14,6 +14,16 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.316",
+            "date": "2026-11-07",
+            "features": (
+                "MainWindow 瘦身第 5 轮（工厂切换接半成品）：_on_factory_changed 真身(49行) "
+                "迁入 DataController 并补 DataFrameModel/AuditProxyModel import，MainWindow 改薄委托；"
+                "顺手拆 3 个零引用死代码：AnalysisController.factory_switch(有 NameError bug 的半成品)/"
+                "on_factory_changed、MainWindow._on_title_factory_selected。"
+            ),
+        },
+        {
             "version": "v43.315",
             "date": "2026-11-07",
             "features": (

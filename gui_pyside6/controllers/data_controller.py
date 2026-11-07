@@ -8,6 +8,7 @@ import os
 import pandas as pd
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 from gui_pyside6.workers.report_workers import _FileReadWorker
+from gui_pyside6.models.data_frame_model import DataFrameModel, AuditProxyModel
 
 class DataController:
     """数据操作控制器"""
@@ -189,9 +190,55 @@ class DataController:
             pass
         return True
 
-    def on_factory_changed(self, factory_name):
-        """工厂变化回调 - 调用 MainWindow 原有逻辑"""
-        self.mw._on_factory_changed(factory_name)
+    def _on_factory_changed(self, factory_name):
+        """工厂切换：应用选中工厂的数据到主表（v43.316 真身自 MainWindow 迁入）。"""
+        if not factory_name:
+            return
+        if factory_name == '全部':
+            # 显示全部工厂数据
+            all_data = self.mw.analysis_controller.factory_data.get('全部')
+            if all_data is None:
+                # 合并所有工厂数据
+                all_parts = []
+                for f, g in self.mw.analysis_controller.factory_data.items():
+                    all_parts.append(g)
+                if all_parts:
+                    all_data = pd.concat(all_parts, ignore_index=True)
+                    self.mw.analysis_controller.factory_data['全部'] = all_data
+            df = all_data
+        else:
+            df = self.mw.analysis_controller.factory_data.get(factory_name)
+        if df is not None:
+            # 后台线程已预处理过（带 _read 列）→ 直接复用，避免主线程再跑 31s 卡顿；
+            # 仅在拿到原始 dev_df（无 _read 列）时才在主线程预处理（兜底）。
+            if '_read' in df.columns:
+                processed_df = df
+            else:
+                processed_df = self.mw.data_service.preprocess_audit_data(df)
+            if self.mw.source_model is None:
+                self.mw.source_model = DataFrameModel()
+                self.mw.proxy_model = AuditProxyModel()
+                self.mw.proxy_model.setDynamicSortFilter(False)  # 同上，关闭重过滤风暴
+                self.mw.proxy_model.setSourceModel(self.mw.source_model)
+                self.mw.table_view.setModel(self.mw.proxy_model)
+                self.mw.proxy_model.layoutChanged.connect(self.mw._update_mark_stats)
+                self.mw.source_model.dataChanged.connect(self.mw._update_mark_stats)
+                self.mw.source_model.dataRefreshed.connect(self.mw._update_mark_stats)
+                self.mw.source_model.modelReset.connect(self.mw._update_mark_stats)
+            try:
+                self.mw.source_model.setDataFrame(processed_df)
+            except Exception as _e:
+                import traceback as _tb
+                _tb.print_exc()
+                raise
+            self.mw._apply_column_visibility_by_name()
+            self.mw._schedule_unread_summary()
+            self.mw.view_model.df = processed_df
+            self.mw._update_summary()
+            self.mw.filter_panel.update_options(processed_df)
+            self.mw.statusBar().showMessage(f"已切换到工厂：{factory_name}", 2000)
+        else:
+            self.mw.statusBar().showMessage(f"工厂 {factory_name} 数据为空", 2000)
 
     def on_data_changed(self, df: pd.DataFrame) -> None:
         """更新显示的数据"""
