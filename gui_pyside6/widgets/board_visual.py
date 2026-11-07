@@ -222,14 +222,18 @@ def _open_visual_board(parent, main_window, board_label):
         QMessageBox.warning(parent, "可视化看板", f"打开失败：{e}")
 
 
-def apply_board_visual(dialog, main_window, board_label="偏差看板"):
-    """给一个表格看板对话框套主题 + 挂悬浮「可视化看板」按钮。
+def apply_board_visual(dialog, main_window, board_label="偏差看板", show_float_btn=False):
+    """给一个表格看板对话框套主题 + （可选）挂悬浮「可视化看板」按钮。
 
     用法（在 __init__ 的 setup_ui()/set_data() 之后加一行）：
         from gui_pyside6.widgets.board_visual import apply_board_visual
         apply_board_visual(self, main_window, board_label="负损看板")
 
-    返回悬浮按钮对象，便于 offscreen 测试断言。
+    v43.319：悬浮「可视化看板」按钮默认**不再创建**（show_float_btn=False）。
+    原因：点开要走 Chromium + 12 图，首次卡死；且用户有网页版看板，桌面端这入口多余。
+    表格美化主题 + 列宽自适应照常生效。需要按钮时显式传 show_float_btn=True。
+
+    返回悬浮按钮对象（未创建时返回 None），便于 offscreen 测试断言。
 
     v43.300：同时在 ``dialog.table_view`` 上装一个 AdaptiveTable 控制器，并保活为
     ``dialog._board_col_autofit``。列宽自适应由它统一接管（这是 5 个看板 __init__
@@ -240,29 +244,32 @@ def apply_board_visual(dialog, main_window, board_label="偏差看板"):
     prev = dialog.styleSheet() or ""
     dialog.setStyleSheet(prev + "\n" + BOARD_QSS)
 
-    btn = QPushButton(FLOAT_BTN_TEXT, dialog)
-    btn.setObjectName("zppVisualBtn")
-    btn.setToolTip(FLOAT_BTN_TIP)
-    btn.setCursor(Qt.PointingHandCursor)
-    btn.setMinimumWidth(148)   # 独立 child，不进布局，改宽度不影响筛选栏
-    try:
-        shadow = QGraphicsDropShadowEffect(btn)
-        shadow.setBlurRadius(14)
-        shadow.setOffset(0, 3)
-        shadow.setColor(Qt.GlobalColor.gray)
-        btn.setGraphicsEffect(shadow)
-    except Exception:
-        pass  # 个别平台不支持，按钮本身仍可用
-    btn.clicked.connect(
-        lambda checked=False: _open_visual_board(dialog, main_window, board_label)
-    )
+    btn = None
+    watcher = None
+    if show_float_btn:
+        btn = QPushButton(FLOAT_BTN_TEXT, dialog)
+        btn.setObjectName("zppVisualBtn")
+        btn.setToolTip(FLOAT_BTN_TIP)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setMinimumWidth(148)   # 独立 child，不进布局，改宽度不影响筛选栏
+        try:
+            shadow = QGraphicsDropShadowEffect(btn)
+            shadow.setBlurRadius(14)
+            shadow.setOffset(0, 3)
+            shadow.setColor(Qt.GlobalColor.gray)
+            btn.setGraphicsEffect(shadow)
+        except Exception:
+            pass  # 个别平台不支持，按钮本身仍可用
+        btn.clicked.connect(
+            lambda checked=False: _open_visual_board(dialog, main_window, board_label)
+        )
 
-    watcher = _FloatPosWatcher(dialog, btn)
-    dialog.installEventFilter(watcher)
-    # 保活：watcher/btn 都是 dialog 的 QObject 子对象，这里再显式挂引用，双保险
-    dialog._board_visual_watcher = watcher
-    dialog._board_visual_btn = btn
-    QTimer.singleShot(0, watcher.place)
+        watcher = _FloatPosWatcher(dialog, btn)
+        dialog.installEventFilter(watcher)
+        # 保活：watcher/btn 都是 dialog 的 QObject 子对象，这里再显式挂引用，双保险
+        dialog._board_visual_watcher = watcher
+        dialog._board_visual_btn = btn
+        QTimer.singleShot(0, watcher.place)
 
     # v43.300：统一列宽自适应（5 个看板共用落点）
     try:
