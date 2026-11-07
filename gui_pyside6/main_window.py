@@ -2734,145 +2734,28 @@ class MainWindow(QMainWindow):
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
 
     def _copy_wechat_draft(self, rows):
-        """将选中行整理成微信沟通草稿，复制到剪贴板"""
-        if not rows or self.source_model is None:
-            return
-        df = self.source_model.getDataFrame()
-        if df is None or df.empty:
-            return
-        lines = ["【偏差沟通】"]
-        for row in rows[:10]:
-            if row >= len(df):
-                continue
-            r = df.iloc[row]
-            # 兼容多种列名
-            def get_col(*keys):
-                for k in keys:
-                    if k in df.columns:
-                        v = r.get(k, '')
-                        if v is None:
-                            v = ''
-                        return str(v).strip()
-                return ''
-            order = get_col('流程订单', 'order', 'SAP订单', '订单号')
-            # 日期使用订单号，或者获取订单中的日期部分，如果没有则显示今天
-            from datetime import datetime
-            date_val = get_col('订单日期', 'order_date', 'date')
-            if not date_val:
-                # 尝试从流程订单中提取 (比如 "SAP20260512001" -> 2026-05-12)
-                import re
-                match = re.search(r'\d{8}', order)
-                if match:
-                    d = match.group()
-                    date_val = f"{d[:4]}-{d[4:6]}-{d[6:]}"
-                else:
-                    date_val = datetime.now().strftime("%Y-%m-%d")
-            code = get_col('物料编码', '物料号', 'code', '组件物料号')
-            name = get_col('物料名称', '物料描述', 'name', '组件物料描述')[:20]
-            quota = get_col('定额', '标准用量')
-            actual = get_col('实际', '实际用量')
-            dev_qty = get_col('偏差数量', 'dev_qty')
-            dev_rate = get_col('偏差率(%)', 'deviation_rate', '偏差率') or get_col('偏差率', '')
-            dev_amt = get_col('偏差金额(含税)', '偏差金额')
-            remark = get_col('备注', '备注原因')
-            lines.append(f"订单日期：{date_val}")
-            lines.append(f"订单号：{order}")
-            lines.append(f"物料：{code} {name}")
-            lines.append(f"定额：{quota}，实际：{actual}，偏差数量：{dev_qty}")
-            if dev_rate:
-                lines.append(f"偏差率：{dev_rate}%")
-            if dev_amt:
-                lines.append(f"偏差金额：¥{dev_amt}")
-            lines.append(f"备注：{remark or '无'}")
-            lines.append("")
-        if len(rows) > 10:
-            lines.append(f"... 共 {len(rows)} 条，仅显示前10条")
-        lines.append("请核实处理，谢谢！")
-        text = "\n".join(lines)
-        QApplication.clipboard().setText(text)
-        self.statusBar().showMessage(f"已复制 {len(rows)} 条记录的微信草稿", 3000)
+        """将选中行整理成微信沟通草稿，复制到剪贴板（已迁入 InteractionController）"""
+        self.interaction_controller._copy_wechat_draft(rows)
 
     def _save_selected(self):
-        """保存编辑后的当前行"""
-        if not self.source_model:
-            return
-        selection = self.table_view.selectionModel().selectedRows()
-        if not selection:
-            toast("请先选择要保存的行", level="warning", parent=self)
-            return
-        row = selection[0].row()
-        # 触发网格保存
-        self.source_model.dataChanged.emit(self.source_model.index(row, 0), self.source_model.index(row, self.source_model.columnCount()))
-        self.statusBar().showMessage("已触发数据保存事件", 2000)
+        """保存编辑后的当前行（已迁入 InteractionController）"""
+        self.interaction_controller._save_selected()
 
     def _save_excel_from_selected(self):
-        """另存为 Excel 文件"""
-        if not self.source_model:
-            return
-        selection = self.table_view.selectionModel().selectedRows()
-        if not selection:
-            toast("请先选择要导出的行", level="warning", parent=self)
-            return
-        rows = sorted({idx.row() for idx in self.table_view.selectionModel().selectedIndexes()})
-        df = self.source_model.getDataFrame().iloc[rows]
-        file_path, _ = QFileDialog.getSaveFileName(self, "另存为 Excel", f"selected_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "Excel files (*.xlsx)")
-        if file_path:
-            try:
-                df.to_excel(file_path, index=True)
-                toast(f"已保存到 {file_path}", level="success", parent=self)
-            except Exception as e:
-                QMessageBox.critical(self, "错误", f"保存失败：{e}")
+        """另存为 Excel 文件（已迁入 InteractionController）"""
+        self.interaction_controller._save_excel_from_selected()
 
     def _duplicate_selected(self):
-        """克隆行到新的数据行"""
-        if not self.source_model or self.view_model.df is None:
-            return
-        selection = self.table_view.selectionModel().selectedRows()
-        if not selection:
-            toast("请先选择要克隆的行", level="warning", parent=self)
-            return
-        rows = list({idx.row() for idx in selection})
-        df = self.view_model.df.copy()
-        new_data = []
-        for row in rows:
-            orig_row = df.iloc[row]
-            new_row = orig_row.copy()
-            # 生成新的 data_id，确保唯一性
-            new_row['data_id'] = f"{new_row['data_id']}_clone_{int(time.time())}"
-            new_data.append(new_row)
-        if new_data:
-            new_df = pd.concat([df, pd.DataFrame(new_data)], ignore_index=True)
-            self.view_model.df = new_df
-            self.source_model.setDataFrame(new_df)
-            self.proxy_model.invalidate()
-            toast(f"已克隆 {len(new_data)} 行", level="success", parent=self)
-        else:
-            toast("没有可以克隆的行", level="warning", parent=self)
+        """克隆行到新的数据行（已迁入 InteractionController）"""
+        self.interaction_controller._duplicate_selected()
 
     def _delete_selected(self):
-        """删除选中的行"""
-        if not self.source_model or self.view_model.df is None:
-            return
-        selection = self.table_view.selectionModel().selectedRows()
-        if not selection:
-            toast("请先选择要删除的行", level="warning", parent=self)
-            return
-        rows = sorted({idx.row() for idx in self.table_view.selectionModel().selectedIndexes()})
-        df = self.view_model.df.copy()
-        df = df.drop(df.index[rows])
-        self.view_model.df = df
-        self.source_model.setDataFrame(df)
-        self.proxy_model.invalidate()
-        toast(f"已删除 {len(rows)} 行", level="success", parent=self)
+        """删除选中的行（已迁入 InteractionController）"""
+        self.interaction_controller._delete_selected()
 
     def _cancel_delete(self):
-        """撤销删除操作"""
-        if hasattr(self, "_deleted_rows_history"):
-            # 从历史记录中恢复
-            del self._deleted_rows_history
-            toast("已撤销最后一次删除", level="success", parent=self)
-        else:
-            toast("没有可撤销的删除操作", level="warning", parent=self)
+        """撤销删除操作（已迁入 InteractionController）"""
+        self.interaction_controller._cancel_delete()
 
     # 审核队列方法
     def _audit_row(self, data_id):

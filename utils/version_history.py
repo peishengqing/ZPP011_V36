@@ -14,6 +14,15 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.313",
+            "date": "2026-11-07",
+            "features": (
+                "交互域打样迁移：6 个行操作方法(_copy_wechat_draft/_save_selected/"
+                "_save_excel_from_selected/_duplicate_selected/_delete_selected/_cancel_delete)"
+                "迁入 InteractionController，_show_context_menu 菜单组装器留守。"
+            ),
+        },
+        {
             "version": "v43.312",
             "date": "2026-11-07",
             "features": (
