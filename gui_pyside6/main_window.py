@@ -2786,6 +2786,11 @@ class MainWindow(QMainWindow):
         evid_action.triggered.connect(
             lambda: self._show_evidence_card(row_data.get('data_id', ''))
         )
+        # 时间线（B/C/D/F1/F2 整合收口）
+        tl_action = add_icon_action(menu, "🕐 查看偏差时间线")
+        tl_action.triggered.connect(
+            lambda: self._show_deviation_timeline(row_data.get('data_id', ''))
+        )
         menu.addSeparator()
         add_sel_action = add_icon_action(menu, "➕ 添加为替代料配对（选中2行）")
         add_sel_action.triggered.connect(lambda: self._add_alt_pair_from_selection())
@@ -3542,6 +3547,16 @@ class MainWindow(QMainWindow):
             return
         from gui_pyside6.dialogs.evidence_card_dialog import EvidenceCardDialog
         dlg = EvidenceCardDialog(data_id, parent=self)
+        dlg.exec()
+
+    def _show_deviation_timeline(self, data_id=None):
+        """时间线：单笔偏差全生命周期（变更/审核/证据/归因/状态）。data_id 为空时提示。"""
+        if not data_id:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(self, "偏差时间线", "当前行没有 data_id，无法定位时间线。")
+            return
+        from gui_pyside6.dialogs.deviation_timeline_dialog import DeviationTimelineDialog
+        dlg = DeviationTimelineDialog(data_id, parent=self)
         dlg.exec()
 
     def _show_audit_summary(self):

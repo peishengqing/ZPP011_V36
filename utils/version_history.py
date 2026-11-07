@@ -14,6 +14,25 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.308",
+            "date": "2026-11-07",
+            "features": (
+                "单笔偏差全生命周期时间线（B钻取/C评分卡/D变更摘要/F1证据链/F2归因建议 的整合收口）。"
+                "新增 core/deviation_timeline.py（纯逻辑可 offscreen 单测）：以 data_id 为轴，把"
+                "变更历史(deviation_history) + 审核结论/证据(audit_report/audit_evidence) + "
+                "归因建议(audit_suggestion) + 当前状态(read_status快照+closing关账) 按时间升序串成事件流。"
+                "新增 gui_pyside6/dialogs/deviation_timeline_dialog.py 竖向时间线弹窗（顶部当前状态条 + "
+                "逐事件 🕒时间·类型·标题·明细 + 底部「人工反馈 F3 待落地」占位 + 复制 data_id）。"
+                "主表右键新增「🕐 查看偏差时间线」入口，与审核证据卡并列；点节点即可回溯"
+                "「这笔偏差被改了几手·谁改·为什么改·审核怎么判」。全部查询走 data_id 索引"
+                "（deviation_history/audit_report/audit_evidence/audit_suggestion 四表均已建 data_id 索引），"
+                "单笔拉取不全表扫描。只读不改任何表。"
+            ),
+            "fixes": (
+                "无",
+            ),
+        },
+        {
             "version": "v43.307",
             "date": "2026-11-07",
             "features": (
