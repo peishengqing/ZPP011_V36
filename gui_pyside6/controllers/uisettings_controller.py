@@ -9,6 +9,8 @@ import time
 from PySide6.QtCore import QObject, Signal, QTimer
 from PySide6.QtWidgets import QLabel, QProgressBar
 
+from utils.version_history import VERSION_HISTORY, APP_NAME, AUTHOR
+
 
 class UISettingsController(QObject):
     """UI 状态更新控制器"""
@@ -180,3 +182,100 @@ class UISettingsController(QObject):
     def _on_stats_card_clicked(self, index):
         """统计卡片点击事件（未完全实现，仅占位）"""
         pass
+
+    def _show_about(self):
+        """「关于」弹窗（v43.317 真身自 MainWindow 迁入）。"""
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QPushButton, QFrame, QTextBrowser
+        dialog = QDialog(self.main_window)
+        dialog.setWindowTitle(f"关于 - ZPP011 v{VERSION_HISTORY[0]['version']}")
+        dialog.setMinimumSize(680, 560)
+        dialog.setObjectName("aboutDialog")
+        main_layout = QVBoxLayout(dialog)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # 顶部信息区
+        info_frame = QFrame()
+        info_frame.setObjectName("aboutInfoFrame")
+        info_layout = QVBoxLayout(info_frame)
+        info_layout.setContentsMargins(28, 24, 28, 16)
+        title_row = QHBoxLayout()
+        icon_label = QLabel("\U0001F3ED")
+        title_label = QLabel(f"{APP_NAME} v{VERSION_HISTORY[0]['version']}")
+        title_label.setObjectName("aboutTitle")
+        title_row.addWidget(icon_label)
+        title_row.addWidget(title_label)
+        info_layout.addLayout(title_row)
+        desc_label = QLabel("功能：偏差分析 · AI审核 · 批量操作")
+        desc_label.setObjectName("aboutDesc")
+        info_layout.addWidget(desc_label)
+        author_label = QLabel(f"制作人：{AUTHOR} | 云南达利食品")
+        author_label.setObjectName("aboutAuthor")
+        info_layout.addWidget(author_label)
+        main_layout.addWidget(info_frame)
+
+        # 版本日志区
+        log_label = QLabel("版本日志")
+        log_label.setObjectName("aboutSectionLabel")
+        main_layout.addWidget(log_label)
+
+        log_browser = QTextBrowser()
+        log_browser.setObjectName("versionLogBrowser")
+        log_browser.setOpenExternalLinks(False)
+        html = self._build_version_log_html()
+        log_browser.setHtml(html)
+        main_layout.addWidget(log_browser, 1)
+
+        # 底部按钮
+        btn_frame = QFrame()
+        btn_frame.setObjectName("aboutBtnFrame")
+        btn_layout = QHBoxLayout(btn_frame)
+        btn_layout.addStretch()
+        close_btn = QPushButton("关闭")
+        close_btn.setFixedSize(88, 34)
+        close_btn.setObjectName("aboutCloseBtn")
+        close_btn.clicked.connect(dialog.close)
+        btn_layout.addWidget(close_btn)
+        main_layout.addWidget(btn_frame)
+        dialog.exec()
+
+    def _build_version_log_html(self):
+        """生成版本日志 HTML"""
+        html_parts = ["<style>"
+                      "body { font-family: 'Microsoft YaHei', sans-serif; font-size: 12px; color: #1f2328; }"
+                      ".ver { font-weight: bold; color: #0969da; font-size: 13px; margin-top: 12px; }"
+                      ".date { color: #656d76; font-size: 11px; margin-left: 8px; }"
+                      ".section { color: #1f2328; font-weight: 600; margin-top: 6px; }"
+                      "ul { margin: 2px 0 6px 0; padding-left: 20px; }"
+                      "li { margin: 2px 0; }"
+                      "</style>"]
+        for i, v in enumerate(VERSION_HISTORY):
+            ver = v.get("version", "")
+            date = v.get("date", "")
+            html_parts.append(f'<div class="ver">{ver}<span class="date">{date}</span></div>')
+            for section_key, section_title in [("features", "✦ 新功能"), ("fixes", "🔧 修复"), ("optimizations", "⚡ 优化"), ("lessons", "⚠ 教训"), ("notes", "📌 说明")]:
+                items = v.get(section_key, [])
+                # ⚠ 兼容 str 与 list 两种写法（v43.166）。
+                #   version_history 里 features/fixes 历来写成**字符串**，而下面
+                #   `for item in items` 对字符串是**逐字符迭代** —— 每个汉字各包一个
+                #   <li>，整段被拆成几百行单列，就是「版本日志文字竖排成一列单字」。
+                #   实测 v43.165 修复前 features 生成 265 个 <li>、fixes 301 个；
+                #   v43.163 的 fixes 更夸张（451 个）。短文案时不明显，长文案即暴露。
+                #   归一化：str 视作单个列表项（保留其内部换行语义）。
+                if isinstance(items, str):
+                    items = [items]
+                elif not isinstance(items, (list, tuple)):
+                    items = [str(items)]
+                if items:
+                    html_parts.append(f'<div class="section">{section_title}</div><ul>')
+                    for item in items:
+                        # ⚠ 转义 < 与 >：版本日志正文里可能引用 HTML 标签名
+                        #   （如 v43.166 自己的 fixes 里就写了 `<li>`），不转义会被
+                        #   QTextBrowser 当成未知标签 —— 要么吞掉、要么把后面的文本吃掉。
+                        #   只转这两个字符，**加粗** 等 Markdown 记号保持原样（它们本就
+                        #   是给日志窗口看的字面文本，不是真Markdown）。
+                        _txt = (str(item).replace('&', '&amp;')
+                                .replace('<', '&lt;').replace('>', '&gt;'))
+                        html_parts.append(f'<li>{_txt}</li>')
+                    html_parts.append('</ul>')
+        return "".join(html_parts)

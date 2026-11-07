@@ -14,6 +14,15 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.317",
+            "date": "2026-11-07",
+            "features": (
+                "MainWindow 瘦身第 6 轮：「关于」弹窗域迁入 UISettingsController——"
+                "_show_about(54行)+_build_version_log_html(40行) 共 94 行，"
+                "方法体 self→self.main_window，MainWindow 改薄委托，menu_bar:145 调用点零改动。"
+            ),
+        },
+        {
             "version": "v43.316",
             "date": "2026-11-07",
             "features": (
