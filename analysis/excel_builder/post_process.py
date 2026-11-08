@@ -1058,6 +1058,15 @@ def _upgrade_dashboard(wb):
                                    value=round(v, 2) if v is not None else 0.0)
                     cell.number_format = '#,##0.00'
             from openpyxl.chart import LineChart, Reference
+            # v43.322 幂等修复：周趋势 LineChart 是本函数每次调用都新建的，
+            # 而 _add_dashboard 建的 3 张都是 BarChart（B8/B28/B54）。先清掉
+            # 本页所有 LineChart 再重建，否则重复 decorate 图数会 5→6→7 累加。
+            # 只动图表对象，零业务数值影响。
+            try:
+                ws._charts = [c for c in ws._charts
+                              if not isinstance(c, LineChart)]
+            except Exception as _e:
+                _log('[post_process] 周趋势旧图清理失败: %s' % _e)
             ch = LineChart()
             ch.title = '偏差金额 · 周趋势（按工厂）'
             ch.height, ch.width = 8, 22
@@ -1665,7 +1674,8 @@ def decorate_workbook(wb, add_dashboard=True):
     stats = {'sheets': 0, 'dates': 0, 'ids': 0, 'blanks': 0, 'flags': 0,
              'ratios': 0, 'dups': 0, 'charts': 0, 'cards': 0,
              'severity': 0, 'afilter': 0, 'unfed': 0, 'extra': 0,
-             'resort': 0, 'trendfill': 0, 'tabcolor': 0, 'flip': 0}
+             'resort': 0, 'trendfill': 0, 'tabcolor': 0, 'flip': 0,
+             'split': 0, 'toc': 0, 'back': 0}
     if _is_skipped():
         _log('[post_process] 已按 ZPP011_SKIP_POST_PROCESS 跳过')
         return stats
@@ -1753,11 +1763,38 @@ def decorate_workbook(wb, add_dashboard=True):
             stats['tabcolor'] = _apply_tab_colors(wb)
         except Exception as e:
             _log('[post_process] 页签分色失败: %s' % e)
+        # v43.322 规格 §2：分厂左右分栏 + 就地嵌图。放在事实卡**之前**，
+        # 让事实卡统计的是分栏后的最终形态。单厂数据自动跳过（不画空右栏）。
+        # 延迟 import：新模块顶层 import 本模块工具函数，函数体内 import 才不循环。
+        try:
+            from analysis.excel_builder.report_enhance import build_factory_views
+            _sv = build_factory_views(wb) or {}
+            stats['split'] = _sv.get('split', 0)
+            stats['charts'] += _sv.get('charts', 0)
+        except Exception as e:
+            _log('[post_process] 分厂分栏失败: %s' % e)
+        # v43.322 规格 §4 回链：必须在事实卡**之前**。回链新增一列，若放在
+        # 事实卡之后，第二次 decorate 时事实卡统计的列数会比第一次多 2（幂等漂移）。
+        try:
+            from analysis.excel_builder.report_enhance import build_backlinks
+            _bk = build_backlinks(wb) or {}
+            stats['back'] = _bk.get('back', 0)
+        except Exception as e:
+            _log('[post_process] 回链失败: %s' % e)
         # v43.248：各表事实卡（可对账的统计摘要），写在「📋 分析说明」里
         try:
             stats['cards'] = _add_fact_cards(wb)
         except Exception as e:
             _log('[post_process] 事实卡失败: %s' % e)
+        # v43.322 规格 §4 目录：放**最后**，此时所有建表阶段与事实卡全部就位，
+        # 扫描到的 sheet 清单才是最终态。原生内部超链接（非公式）→
+        # 「各Sheet说明」A 列仍是纯文本，不破坏事实卡口径。
+        try:
+            from analysis.excel_builder.report_enhance import build_toc
+            _tc = build_toc(wb) or {}
+            stats['toc'] = _tc.get('toc', 0)
+        except Exception as e:
+            _log('[post_process] 目录失败: %s' % e)
     except Exception as e:
         _log('[post_process] 整体失败（已吞掉，不影响导出）: %s' % e)
     _log('[post_process] 完成 %s' % stats)

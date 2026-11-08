@@ -14,6 +14,37 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.322",
+            "date": "2026-11-08",
+            "features": (
+                "补做 10-28 已批准规格（docs/superpowers/specs/2026-10-28-export-factory-split-toc-design.md）"
+                "的报表导航与分厂视图，裴哥 11-08 选方案 C 全做。新增独立模块 "
+                "analysis/excel_builder/report_enhance.py，post_process.decorate_workbook 只接两次调用："
+                "① 可点击目录：分析说明页追加「📑 可点击目录」区块，动态扫描全部 sheet（19 张，"
+                "无硬编码清单）、按结论/派活/数据三层分色、带说明文案与数据行数；同时给既有"
+                "「各Sheet说明」区 11 行表名加超链接；② 每页表头右侧加「⬆ 目录」回链；"
+                "③ 有工厂列的窄表按食品/饮料左右分栏 + 每块一张 BarChart（每页 2 图）。"
+                "分栏按实际工厂数自动启用，工厂数<2 时整块跳过（单厂绝不画空右栏）。"
+            ),
+            "fixes": (
+                "避开设计规格原定 =HYPERLINK() 公式方案的连锁坑：公式会把「各Sheet说明」A 列"
+                "纯表名变成公式文本，而 _add_fact_cards 靠 `a in wb.sheetnames` 读口径文案，"
+                "会导致事实卡「口径」列整片空掉。改用 openpyxl 原生内部超链接"
+                "（cell.hyperlink = Hyperlink(location=...)），cell.value 保持纯文本 → "
+                "单元格可点、事实卡零影响、重复 decorate 天然幂等。"
+                "另按「核心计算零改动」铁律，规格里需从完整偏差明细重聚合业务口径的两张页"
+                "（偏差金额分析/趋势分析）明确不做分栏，保留原样；无工厂列的替代料明细同样跳过。"
+                "分栏写入前做整表快照，中途异常自动还原，最坏情况=原表一字不变。"
+                "双厂验收又收掉三个幂等问题：① 分栏页第 1 行由「两个块头」改为「一整条合并"
+                "绿底横幅」，使 _header_info 只见到 1 个非空格、表头自然落回第 2 行，"
+                "连带修正回链落点、事实卡列名与目录数据行统计；② _already_split 改认横幅"
+                "前缀标记（不再靠表头行重复名判断），挡住第 2 次 decorate 重复分栏 4 张表；"
+                "③ 顺带修 v43.283 遗留缺陷：_upgrade_dashboard 每次都 add_chart 一张周趋势"
+                "LineChart 却从不删旧的，重复 decorate 驾驶舱图数 5→6→7 累加；现先清本页"
+                "LineChart 再重建（_add_dashboard 的 3 张 BarChart 不受影响），零数值影响。"
+            ),
+        },
+        {
             "version": "v43.321",
             "date": "2026-11-08",
             "features": (
