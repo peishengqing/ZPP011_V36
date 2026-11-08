@@ -1250,6 +1250,19 @@ _EXTRA_CALIBER = {
         '涉及订单数/涉及物料数/偏差条数/偏差数量与金额/净偏差数量与金额/最大偏差率绝对值/'
         '备注覆盖率/是否含替代料 —— 用于看每个产品整体的偏差/净偏差**双口径**，'
         '与物料画像（物料级）互补：物料级看「哪颗料最烧钱」，产品级看「哪个产品整体偏差最大」。'),
+    # v43.325 F01/F05：两张新增自检/审计页的口径文案（事实卡「口径」列复用此处）。
+    '口径自检': (
+        '每期动态重算的金额口径自检：CHECK-1 主闭合（汇总统计.总偏差金额(含税) = '
+        '偏差金额分析.总偏差金额(含税) = 完整偏差明细.偏差金额，容差 0.01）为唯一必过项；'
+        'CHECK-2 净偏差抵扣差值只记录并标「需人工核对」（无独立抵扣列，不拿替代料明细'
+        '净偏差金额当代扣）；CHECK-3 正+负对总残差为 INFO，汇总统计那两列是已知禁用列，'
+        '不闭合属正常。FAIL 行红字，另承载 F06 静默失败哨兵告警行。所有金额按当前工作簿'
+        '逐列重算，绝不写死任何期别常量。'),
+    '未判定原因分布': (
+        '饮料翻箱「待人工确认」单的原因码分布（单一来源 core/unresolved_reason.classify）：'
+        '规格解析失败 / 投入侧无有效成品耗用行 / 跨容器形式 三类归系统健康度，'
+        '业务待核归人工队列。用于把自由文本原因规范化成可派活的枚举，'
+        '不改动饮料主表 17 列与明细 16 列契约。'),
 }
 
 
@@ -1675,7 +1688,8 @@ def decorate_workbook(wb, add_dashboard=True):
              'ratios': 0, 'dups': 0, 'charts': 0, 'cards': 0,
              'severity': 0, 'afilter': 0, 'unfed': 0, 'extra': 0,
              'resort': 0, 'trendfill': 0, 'tabcolor': 0, 'flip': 0,
-             'split': 0, 'toc': 0, 'back': 0}
+             'split': 0, 'toc': 0, 'back': 0,
+             'metric': 0, 'snapshot': 0}
     if _is_skipped():
         _log('[post_process] 已按 ZPP011_SKIP_POST_PROCESS 跳过')
         return stats
@@ -1696,6 +1710,23 @@ def decorate_workbook(wb, add_dashboard=True):
             stats['flip'] = len(build_flip_sheets(wb) or {})
         except Exception as e:
             _log('[post_process] 翻箱守恒预警表失败: %s' % e)
+        # v43.325 F01：三表口径自检（+ F06 静默失败哨兵告警行）。放在逐表流水线
+        # **之前**，这样它也自动获得数字格式/冻结/自动筛选，并进事实卡与目录。
+        # F06 收集器是可选模块：尚未部署时降级为空告警，绝不阻断自检表。
+        try:
+            from analysis.excel_builder.analysis_metric_check import (
+                build_metric_check_sheet)
+            try:
+                from core.rule_hit_monitor import collect_alerts
+                _alerts = collect_alerts()
+            except Exception as _ae:
+                _log('[post_process] 哨兵收集器不可用（降级为空告警）: %s' % _ae)
+                _alerts = []
+            stats['metric'] = build_metric_check_sheet(wb, alerts=_alerts)
+        except Exception as e:
+            import traceback
+            _log('[post_process] 口径自检表失败: %s' % e)
+            traceback.print_exc()
         for ws in list(wb.worksheets):
             stats['sheets'] += 1
             try:
@@ -1795,6 +1826,13 @@ def decorate_workbook(wb, add_dashboard=True):
             stats['toc'] = _tc.get('toc', 0)
         except Exception as e:
             _log('[post_process] 目录失败: %s' % e)
+        # v43.325 F07：规则版本快照只写 wb.properties（description/keywords），
+        # 不新增 sheet → 表数不变、目录与幂等零影响。模块未部署时静默跳过。
+        try:
+            from core.rule_snapshot import write_snapshot
+            stats['snapshot'] = 1 if write_snapshot(wb) else 0
+        except Exception as e:
+            _log('[post_process] 规则版本快照失败（不影响导出）: %s' % e)
     except Exception as e:
         _log('[post_process] 整体失败（已吞掉，不影响导出）: %s' % e)
     _log('[post_process] 完成 %s' % stats)

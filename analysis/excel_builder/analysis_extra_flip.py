@@ -332,6 +332,13 @@ def build_flip_sheets(wb):
 
     if not rows:
         _log('本期无翻箱（%s）订单，跳过翻箱守恒表' % _FLIP_ORDER_TYPE)
+        # v43.325 F06：零命中也要留痕，否则静默失败不可见
+        try:
+            from core.rule_hit_monitor import record_hit
+            record_hit('ZPFX翻箱守恒', 0)
+        except Exception:
+            import traceback
+            traceback.print_exc()
         return result
 
     # v43.324：按工厂分流（纯判定；失败也绝不把饮料行塞进食品表）。
@@ -389,6 +396,23 @@ def build_flip_sheets(wb):
             import traceback
             _log('生成「%s」失败: %s' % (SHEET_DRINK_DETAIL, e))
             traceback.print_exc()
+        # v43.325 F05：未判定原因四类枚举分布（独立 sheet，零列契约变动）。
+        # 按订单分组复用 check_drink_order 的 verdict/why，判别单一来源
+        # core/unresolved_reason.classify；明细侧由分布模块读已生成明细表，
+        # 主表与明细共用同一 classify()。
+        try:
+            from core.unresolved_reason import (
+                build_distribution_sheet, SHEET_UNRESOLVED)
+            _groups = {}
+            for _r in drink_rows:
+                _groups.setdefault(_r['ord'], []).append(_r)
+            _order_results = [check_drink_order(g) for g in _groups.values()]
+            result[SHEET_UNRESOLVED] = build_distribution_sheet(
+                wb, _order_results)
+        except Exception as e:
+            import traceback
+            _log('生成「未判定原因分布」失败: %s' % e)
+            traceback.print_exc()
     else:
         # 无饮料 ZPFX：若工作簿里残留上一轮的饮料表，删掉，保证「不生成」且幂等。
         for _nm in (SHEET_DRINK_CHECK, SHEET_DRINK_DETAIL):
@@ -400,6 +424,15 @@ def build_flip_sheets(wb):
                     import traceback
                     _log('删除残留表「%s」失败: %s' % (_nm, e))
                     traceback.print_exc()
+    # v43.325 F06：记录本期命中行数 + 结论分布（纯读已生成表，不改计算）
+    try:
+        from core.rule_hit_monitor import record_hit
+        record_hit('ZPFX翻箱守恒', len(rows), wb=wb,
+                   check_sheets=(SHEET_FLIP_CHECK, SHEET_DRINK_CHECK))
+    except Exception:
+        import traceback
+        _log('[flip] 规则命中埋点失败（不影响导出）')
+        traceback.print_exc()
     return result
 
 

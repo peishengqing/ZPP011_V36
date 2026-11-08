@@ -151,7 +151,11 @@ def do_analysis_v2(
     check_cancel()
 
     src_file = input_file
-    
+    # v43.325 F07：登记源文件路径（规则版本快照用；读表前，零计算改动，
+    # 覆盖 input_df 复用分支，保证每次导出都能溯源到真实源文件）
+    from core.rule_snapshot import set_source
+    set_source(src_file)
+
     # 检查文件是否存在
     if not os.path.exists(src_file):
         error_msg = f"文件不存在: {src_file}"
@@ -191,6 +195,9 @@ def do_analysis_v2(
             df = input_df.copy()
             _dprint(f"[DEBUG do_analysis_v2] 复用已读 DataFrame，{len(df)} 行")
         else:
+            # v43.325 F04：读表前预检，拦截错发 ZMM062 收发存表（计算逻辑零改动）
+            from core.source_guard import validate_source
+            validate_source(src_file)
             # 容错：优先读 'Data' 工作表，不存在则取第一个
             from utils.excel_io import open_excel_book  # calamine 优先（快 5x），openpyxl 兜底
             xl = open_excel_book(src_file)
@@ -293,6 +300,10 @@ def do_analysis_v2(
     except OSError:
         pass
     if _real_rows is None:
+        # v43.325 F04：读表前二次预检（覆盖 input_df 复用分支）。刻意放在 try
+        # **之外**，异常绝不被下方 `except Exception: _real_rows = None` 静默吞掉。
+        from core.source_guard import validate_source
+        validate_source(src_file)
         try:
             from openpyxl import load_workbook
             _wb = load_workbook(src_file, read_only=True, data_only=True)
