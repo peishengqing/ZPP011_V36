@@ -77,6 +77,11 @@ class MenuBarComponent:
         alert_action.triggered.connect(self.mw._show_alert_dashboard)
         audit_menu.addAction(alert_action)
 
+        # v43.320：翻箱守恒预警看板（ZPFX 净含量守恒，产出>投入=拆包投入漏记）
+        flip_action = QAction(get_icon("box", 14), "翻箱守恒预警看板", self.mw)
+        flip_action.triggered.connect(self.mw._show_flip_check_dashboard)
+        audit_menu.addAction(flip_action)
+
         audit_menu.addSeparator()
 
         summary_action = QAction(get_icon("chart", 14), "审核证据汇总（F1）", self.mw)

@@ -3134,6 +3134,9 @@ class MainWindow(QMainWindow):
     def _show_semi_dashboard(self):
         return self.dashboard_controller._show_semi_dashboard()
 
+    def _show_flip_check_dashboard(self):
+        return self.dashboard_controller._show_flip_check_dashboard()
+
     def _show_semi_detail_window(self, category):
         return self.dashboard_controller._show_semi_detail_window(category)
 

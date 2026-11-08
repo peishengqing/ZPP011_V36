@@ -14,6 +14,20 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.321",
+            "date": "2026-11-08",
+            "features": (
+                "翻箱守恒预警看板（第二阶段·GUI）：新增「翻箱守恒预警看板」，菜单【审核→翻箱守恒预警看板】。"
+                "从主表同源 df 筛 ZPFX 翻箱单，按流程订单分组做净含量守恒校验（产出KG vs 投入食物KG），"
+                "逐单标出产出>投入的疑似漏记单（标红）并支持结论/工厂/车间筛选+导出当前视图。"
+                "复用 analysis_extra_flip 的 parse_net_kg/_check_order，与导出「翻箱守恒预警」sheet 同口径。"
+                "入口接线：menu_bar 菜单项 + main_window 薄包装 + dashboard_controller._show_flip_check_dashboard。"
+                "修一个真 bug：看板筛选初始值误用英文 'all'，与 _apply_filter 比较的中文「全部」不匹配，"
+                "导致首屏把全部行滤空（共0单），用户须动一下筛选才出数据；改初始值为中文「全部」修复。"
+                "offscreen 实测：首屏正确显示11单/疑似漏记2单（500004593=+2.06/+2.0%、500004595=+3.68/+15.8%），筛选正常。"
+            ),
+        },
+        {
             "version": "v43.320",
             "date": "2026-11-08",
             "features": (

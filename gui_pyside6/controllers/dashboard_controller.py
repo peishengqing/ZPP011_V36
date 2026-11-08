@@ -26,6 +26,7 @@ from gui_pyside6.dialogs.alt_chain_dialog import AltChainDialog
 from gui_pyside6.dialogs.dashboard_dialog import DashboardDialog
 from gui_pyside6.dialogs.data_stability_dialog import DataStabilityDialog
 from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
+from gui_pyside6.dialogs.flip_check_dashboard_dialog import FlipCheckDashboardDialog
 from gui_pyside6.dialogs.material_profile_dialog import MaterialProfileDialog
 from gui_pyside6.dialogs.neg_loss_dashboard_dialog import NegLossDashboardDialog
 from gui_pyside6.dialogs.pos_loss_dashboard_dialog import PosLossDashboardDialog
@@ -320,6 +321,32 @@ class DashboardController:
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self.mw, "错误", f"打开半成品看板失败: {e}")
+
+    def _show_flip_check_dashboard(self):
+        """手动打开翻箱守恒预警看板：订单类型 ZPFX 的净含量守恒校验（产出KG vs 投入食物KG）。
+
+        翻箱=拆A规格成品重装成B规格，应净含量守恒；产出>投入=拆包投入漏记。
+        复用 analysis_extra_flip 的 _check_order，与导出「翻箱守恒预警」sheet 同口径。
+        看板内部自己筛 ZPFX 行并按订单分组算守恒，这里只裁列 + 传入主表同源 df。
+        """
+        try:
+            df = self.mw._get_master_df()
+            if df is None or df.empty:
+                QMessageBox.information(self.mw, "提示", "暂无数据，请先分析")
+                return
+            # 翻箱守恒所需列（看板内 _load 会再校验，这里尽量保留全，缺列由看板兜底提示）
+            candidates = [
+                "订单日期", "订单类型", "流程订单", "工厂", "工厂名称", "车间",
+                "产品物料号码", "产品物料描述", "产量", "产量单位",
+                "物料编码", "物料名称", "单位", "实际",
+                "组件物料类型", "组件物料类型描述", "备注", "备注来源",
+            ]
+            keep = [c for c in candidates if c in df.columns]
+            sub = df[keep].copy() if keep else df.copy()
+            dialog = FlipCheckDashboardDialog(sub, self.mw)
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.critical(self.mw, "错误", f"打开翻箱守恒看板失败: {e}")
 
 
     def _show_semi_detail_window(self, category: str):
