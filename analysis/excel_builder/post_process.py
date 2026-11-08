@@ -1665,7 +1665,7 @@ def decorate_workbook(wb, add_dashboard=True):
     stats = {'sheets': 0, 'dates': 0, 'ids': 0, 'blanks': 0, 'flags': 0,
              'ratios': 0, 'dups': 0, 'charts': 0, 'cards': 0,
              'severity': 0, 'afilter': 0, 'unfed': 0, 'extra': 0,
-             'resort': 0, 'trendfill': 0, 'tabcolor': 0}
+             'resort': 0, 'trendfill': 0, 'tabcolor': 0, 'flip': 0}
     if _is_skipped():
         _log('[post_process] 已按 ZPP011_SKIP_POST_PROCESS 跳过')
         return stats
@@ -1679,6 +1679,13 @@ def decorate_workbook(wb, add_dashboard=True):
             stats['extra'] = len(build_extra_sheets(wb) or {})
         except Exception as e:
             _log('[post_process] 偏差分析扩展表失败: %s' % e)
+        # v43.320：翻箱（ZPFX）净含量守恒预警表。同样放在逐表流水线之前，自动获得
+        # 标准待遇并进事实卡。无翻箱单时安静跳过，绝不阻断导出。
+        try:
+            from analysis.excel_builder.analysis_extra_flip import build_flip_sheets
+            stats['flip'] = len(build_flip_sheets(wb) or {})
+        except Exception as e:
+            _log('[post_process] 翻箱守恒预警表失败: %s' % e)
         for ws in list(wb.worksheets):
             stats['sheets'] += 1
             try:
