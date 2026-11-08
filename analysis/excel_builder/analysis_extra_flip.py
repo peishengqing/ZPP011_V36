@@ -27,6 +27,8 @@ analysis_extra_flip.py — 翻箱净含量守恒预警表
 - 表现层（数字格式/冻结/自动筛选）交给 post_process 逐表流水线，本模块只写数据。
 - 数据区下方不加说明行（会被当成数据行，污染事实卡的行数）。
 - 幂等：同名 sheet 先删再写。
+- v43.323 起输出两张表：「翻箱守恒预警」（一单一行结论）+「翻箱组件明细」
+  （一行一组件，全组件含包材，带「是否计入食物投入」标记）。
 - 任何一步失败都不许阻断导出，且禁止裸 except: pass，必须 print 诊断。
 """
 import re
@@ -50,6 +52,7 @@ from analysis.excel_builder.analysis_extra_sheets import (
 
 _SRC_SHEET = '完整偏差明细'
 SHEET_FLIP_CHECK = '翻箱守恒预警'
+SHEET_FLIP_DETAIL = '翻箱组件明细'
 
 # 翻箱订单类型关键词（订单类型列含 ZPFX 即翻箱单）
 _FLIP_ORDER_TYPE = 'ZPFX'
@@ -170,6 +173,29 @@ def _scan_flip_source(ws):
 
 # ---------------------------------------------------------------- 守恒校验
 
+def _food_kg_of(r):
+    """单个组件行「是否计入食物投入」+ 折算 KG。
+
+    ⚠️ 单一口径来源：_check_order（守恒主表）与 _build_flip_detail（组件明细表）
+    共用本函数，绝不两处各写一套判别 —— 否则明细页会跟主表数字对不上。
+    返回 (标记, KG)：标记 ∈ {'是', '否', '否(规格解析失败)'}。
+    """
+    mtype = r['mtype'].upper()
+    mname = r['mname']
+    act = r['actual']
+    if mtype == 'Z007':
+        # 成品件：实际件数 × 单件净含量（从组件规格名解析）
+        each = parse_net_kg(mname)
+        if each is not None:
+            return '是', act * each
+        return '否(规格解析失败)', 0.0
+    # 非 Z007（多为 Z002 包材类）：只认「散货食物且单位 KG」
+    if _FOOD_KG.search(mname) and not _PKG.search(mname) \
+            and r['unit'].upper() == 'KG':
+        return '是', act
+    return '否', 0.0
+
+
 def _check_order(rows_of_order):
     """对一个翻箱订单（同流程订单的多组件行）做净含量守恒校验。
 
@@ -186,23 +212,16 @@ def _check_order(rows_of_order):
     if net_each is not None:
         out_kg = round(yield_qty * net_each, 4)
 
-    # 投入侧：逐组件行累加食物净含量
+    # 投入侧：逐组件行累加食物净含量。判别统一走 _food_kg_of，
+    # 与「翻箱组件明细」共用同一口径，避免两套逻辑打架。
     in_finished_kg = 0.0   # Z007 成品件投入
     in_loose_kg = 0.0      # Z002 散货食物投入
     for r in rows_of_order:
-        mtype = r['mtype'].upper()
-        mname = r['mname']
-        act = r['actual']
-        if mtype == 'Z007':
-            # 成品件：实际件数 × 单件净含量
-            each = parse_net_kg(mname)
-            if each is not None:
-                in_finished_kg += act * each
-        else:
-            # 非 Z007（多为 Z002 包材类）：只认「散货食物且单位 KG」
-            desc = mname
-            if _FOOD_KG.search(desc) and not _PKG.search(desc) and r['unit'].upper() == 'KG':
-                in_loose_kg += act
+        flag, kg = _food_kg_of(r)
+        if r['mtype'].upper() == 'Z007':
+            in_finished_kg += kg
+        elif flag == '是':
+            in_loose_kg += kg
     in_food_kg = round(in_finished_kg + in_loose_kg, 4)
 
     if out_kg is None:
@@ -234,7 +253,7 @@ def _build_flip_check(rows):
             order_keys.append(k)
         groups[k].append(r)
 
-    headers = ['订单日期', '流程订单', '工厂', '车间', '产品物料描述',
+    headers = ['订单日期', '流程订单', '工厂', '车间', '产品物料编码', '产品物料描述',
                '产量(件)', '单件净含量(KG)', '产出总净含量(KG)',
                '投入成品件折KG', '投入散货食物KG', '投入食物合计KG',
                '差额KG(产出-投入)', '偏差率', '结论', '备注']
@@ -248,14 +267,40 @@ def _build_flip_check(rows):
         out_txt = res['out_kg'] if res['out_kg'] is not None else '待解析'
         diff_txt = res['diff'] if res['diff'] is not None else '—'
         data.append([
-            first['date'], k, first['fac'], first['ws'], first['pdesc'],
+            first['date'], k, first['fac'], first['ws'], first['pno'], first['pdesc'],
             first['yield'],
             net_each if net_each is not None else '解析失败',
             out_txt,
             res['in_fin'], res['in_loose'], res['in_food'],
             diff_txt, rate_txt, res['verdict'], first['note'],
         ])
-    widths = [12, 14, 8, 14, 30, 10, 14, 16, 14, 14, 14, 16, 10, 12, 24]
+    widths = [12, 14, 8, 14, 14, 30, 10, 14, 16, 14, 14, 14, 16, 10, 12, 24]
+    return headers, data, widths
+
+
+def _build_flip_detail(rows):
+    """一行一组件的翻箱明细：产品/组件编码名称 + 是否计入食物投入。
+
+    v43.323：全组件都列（含包材、实际=0 的 Z004），不丢信息；另用
+    「是否计入食物投入」+「计入KG(参考)」标出哪些行真正参与守恒计算，
+    便于与主表逐单对账。判别统一走 _food_kg_of，与主表同源。
+    """
+    headers = ['订单日期', '流程订单', '工厂', '车间',
+               '产品物料编码', '产品物料描述',
+               '组件物料编码', '组件物料名称', '组件物料类型', '组件物料类型描述',
+               '单位', '实际', '是否计入食物投入', '计入KG(参考)', '备注']
+    data = []
+    for r in rows:
+        flag, kg = _food_kg_of(r)
+        data.append([
+            r['date'], r['ord'], r['fac'], r['ws'],
+            r['pno'], r['pdesc'],
+            r['mcode'], r['mname'], r['mtype'], r['mtdesc'],
+            # 6 位而非 4 位：逐单汇总要能对回主表 round(sum,4)，
+            # 每行先砍到 4 位会让 57 行累积误差超过 1e-3 的对账容差。
+            r['unit'], r['actual'], flag, round(kg, 6), r['note'],
+        ])
+    widths = [12, 14, 8, 14, 14, 30, 14, 34, 12, 16, 8, 12, 16, 14, 24]
     return headers, data, widths
 
 
@@ -288,5 +333,13 @@ def build_flip_sheets(wb):
     except Exception as e:
         import traceback
         _log('生成「%s」失败: %s' % (SHEET_FLIP_CHECK, e))
+        traceback.print_exc()
+    # v43.323：一行一组件的明细页。单独 try —— 明细页失败绝不拖累主结论页。
+    try:
+        dh, dd, dw = _build_flip_detail(rows)
+        result[SHEET_FLIP_DETAIL] = _write_sheet(wb, SHEET_FLIP_DETAIL, dh, dd, dw)
+    except Exception as e:
+        import traceback
+        _log('生成「%s」失败: %s' % (SHEET_FLIP_DETAIL, e))
         traceback.print_exc()
     return result

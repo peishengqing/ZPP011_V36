@@ -17,11 +17,11 @@ import os
 import sys
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QDialog, QHBoxLayout, QHeaderView,
+    QAbstractItemView, QComboBox, QDialog, QHBoxLayout, QHeaderView,
     QLabel, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QVBoxLayout,
 )
 
 # 复用导出表的守恒逻辑（单一口径来源）
@@ -40,10 +40,13 @@ _RED = QColor(255, 205, 210)
 _GREEN = QColor(220, 245, 225)
 
 # 表头（与导出「翻箱守恒预警」sheet 对齐）
+# ⚠️ v43.323 新列一律追加在**表尾**：_refresh_table 里数值列 5~12、结论列 13
+# 都是行号索引，插在中间会让这些索引整体失效（历史坑：换列必查索引）。
 _HEADERS = ['订单日期', '流程订单', '工厂', '车间', '产品物料描述',
             '产量(件)', '单件净含量(KG)', '产出总净含量(KG)',
             '投入成品件折KG', '投入散货食物KG', '投入食物合计KG',
-            '差额KG(产出-投入)', '偏差率', '结论', '备注']
+            '差额KG(产出-投入)', '偏差率', '结论', '备注',
+            '产品物料编码', '组件物料编码', '组件物料名称']
 
 
 class FlipCheckDashboardDialog(QDialog):
@@ -122,7 +125,8 @@ class FlipCheckDashboardDialog(QDialog):
         hh.setSectionResizeMode(QHeaderView.Interactive)
         hh.setStretchLastSection(True)
         # 列宽
-        widths = [90, 100, 90, 70, 240, 70, 110, 120, 110, 110, 110, 130, 80, 90, 140]
+        widths = [90, 100, 90, 70, 240, 70, 110, 120, 110, 110, 110, 130, 80, 90, 140,
+                  120, 240, 280]
         for j, w in enumerate(widths):
             self.table.setColumnWidth(j, w)
         layout.addWidget(self.table, 1)
@@ -135,8 +139,8 @@ class FlipCheckDashboardDialog(QDialog):
             self._rows = []
             self._refresh_table()
             return
-        need = ['订单类型', '流程订单', '产品物料描述', '产量',
-                '组件物料类型', '物料名称', '单位', '实际']
+        need = ['订单类型', '流程订单', '产品物料号码', '产品物料描述', '产量',
+                '组件物料类型', '物料编码', '物料名称', '单位', '实际']
         miss = [c for c in need if c not in df.columns]
         if miss:
             QMessageBox.warning(self, "列缺失", "主表缺少翻箱守恒必要列: %s" % ", ".join(miss))
@@ -183,9 +187,11 @@ class FlipCheckDashboardDialog(QDialog):
                 'date': g(row, '订单日期'),
                 'fac': g(row, '工厂名称') or g(row, '工厂'),
                 'ws': g(row, '车间'),
+                'pno': g(row, '产品物料号码'),
                 'pdesc': g(row, '产品物料描述'),
                 'yield': gnum(row, '产量'),
                 'mtype': g(row, '组件物料类型').upper(),
+                'mcode': g(row, '物料编码'),
                 'mname': g(row, '物料名称'),
                 'unit': g(row, '单位').upper(),
                 'actual': gnum(row, '实际'),
@@ -206,6 +212,11 @@ class FlipCheckDashboardDialog(QDialog):
                 'in_loose': res['in_loose'], 'in_food': res['in_food'],
                 'diff': res['diff'], 'rate': res['rate'],
                 'verdict': res['verdict'], 'note': first['note'],
+                # v43.323：产品编码一单一值；组件编码/名称按单拼全部组件（含包材），
+                # 鼠标悬停 tooltip 里按换行展开，便于核对而不撑爆行高。
+                'pno': first['pno'],
+                'mcodes': '；'.join(x['mcode'] for x in groups[k] if x['mcode']),
+                'mnames': '；'.join(x['mname'] for x in groups[k] if x['mname']),
             })
         self._rows = rows
         # 先建 rows 再初始化筛选下拉：combo.addItem 会触发 currentTextChanged→_apply_filter，
@@ -268,12 +279,15 @@ class FlipCheckDashboardDialog(QDialog):
             vals = [r['date'], r['ord'], r['fac'], r['ws'], r['pdesc'],
                     '%g' % r['yield'], net_each_txt, out_txt,
                     '%.3f' % r['in_fin'], '%.3f' % r['in_loose'], '%.3f' % r['in_food'],
-                    diff_txt, rate_txt, r['verdict'], r['note']]
+                    diff_txt, rate_txt, r['verdict'], r['note'],
+                    r['pno'], r['mcodes'], r['mnames']]
             is_alert = (r['verdict'] == '疑似漏记')
             bg = _RED if is_alert else _GREEN
             for j, v in enumerate(vals):
                 it = QTableWidgetItem(str(v))
                 it.setBackground(bg)
+                if j >= 15:   # 编码/名称拼接列：悬停展开全组件
+                    it.setToolTip(str(v).replace('；', '\n'))
                 # 数值列右对齐
                 if j in (5, 6, 7, 8, 9, 10, 11, 12):
                     it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -309,6 +323,8 @@ class FlipCheckDashboardDialog(QDialog):
                     '投入成品件折KG': r['in_fin'], '投入散货食物KG': r['in_loose'],
                     '投入食物合计KG': r['in_food'], '差额KG(产出-投入)': r['diff'],
                     '偏差率': r['rate'], '结论': r['verdict'], '备注': r['note'],
+                    '产品物料编码': r['pno'], '组件物料编码': r['mcodes'],
+                    '组件物料名称': r['mnames'],
                 })
             pd.DataFrame(out, columns=_HEADERS).to_excel(path, index=False)
             QMessageBox.information(self, "已导出", "已导出 %d 行到:\n%s" % (len(out), path))

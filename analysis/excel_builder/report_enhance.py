@@ -70,7 +70,7 @@ _SPLIT_MAX_COLS = 18
 _SPLIT_MAX_ROWS = 2000
 _SPLIT_SKIP_KEYS = ('完整偏差明细', '驾驶舱', '分析说明', '中间地带',
                     '异常预警', '无备注预警', '替代料明细', '备注归类映射',
-                    '翻箱守恒预警', '趋势分析', '偏差金额分析')
+                    '翻箱守恒预警', '翻箱组件明细', '趋势分析', '偏差金额分析')
 _FACTORY_COLS = ('工厂名称', '工厂')
 _FOOD_KEYS = ('食品', '1101')
 _BEVERAGE_KEYS = ('饮料', '1102')
@@ -192,6 +192,10 @@ def build_toc(wb):
         caliber.setdefault('翻箱守恒预警',
                            'ZPFX 翻箱单净含量守恒校验：产出KG vs 投入食物KG，'
                            '差额为正=疑似拆包投入漏记。')
+        caliber.setdefault('翻箱组件明细',
+                           'ZPFX 翻箱单一行一组件（含包材/零用量组件），列齐产品物料编码、'
+                           '组件物料编码与名称；「是否计入食物投入」+「计入KG(参考)」可逐单'
+                           '对账到「翻箱守恒预警」的投入食物合计KG。')
         caliber.setdefault('📊 驾驶舱', '全期 KPI 与分厂 Top 榜、周趋势双线图。')
 
         names = [nm for nm in wb.sheetnames if nm != ws_info.title]
