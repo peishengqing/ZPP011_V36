@@ -41,6 +41,7 @@ from core.auto_quarantine import (
 from core.quarantine_manager import (
     add_quarantine_batch,
     get_quarantined_ids,
+    is_overfeed_needs_review,
     remove_quarantine,
     scan_expired_quarantine,
 )
@@ -147,10 +148,14 @@ class QuarantineManagerController:
         """分析完成后：按隔离区记录当前偏差，对账其已读状态（v43.200 新功能）。
 
         隔离区记录由本函数专门管理，与「自动已读规则中心」互斥（规则中心不再碰隔离区）：
+        - v43.327 超额投料（(实际-定额)/定额 > 10%）→ 必须人工复核：
+          不自动已读；此前被自动已读的翻回未读；手动已读不动（尊重人工判断）。
+          判据与 scan_expired_quarantine 共用 core.quarantine_manager.is_overfeed_needs_review。
         - 已解决（实际≥定额，或实际≤0 已归零）→ 自动标已读（仅当当前未读；已读的手动/自动均不动，保留来源）
         - 仍负损（0<实际<定额）→ 若此前是「自动已读」则翻回未读；手动已读不动（尊重人工判断）
 
-        这样「补投后偏差归零/转正」的隔离记录自动收口为已读，仍负损的重新回到未读待复核。
+        这样「补投后偏差归零/小幅转正」的隔离记录自动收口为已读，仍负损的重新回到未读待复核；
+        但「补投超过定额 10%」属于超额投料，需裴哥手动复核，绝不自动收口。
         偏差口径与 scan_expired_quarantine 的 neg_loss 判定同源（actual vs quota），保证一致。
         落库复用 mark_read_batch / save_read_status_batch，并同步内存 _read / _read_source 供 UI 刷新。
         """
@@ -189,7 +194,7 @@ class QuarantineManagerController:
 
             cur_map = load_read_status(list(uids))
 
-            auto_read, rolled_back = [], []
+            auto_read, rolled_back, overfeed_review = [], [], []
             snap_map = {}
             for uid in uids:
                 try:
@@ -208,11 +213,19 @@ class QuarantineManagerController:
                     quota = self.mw.data_service.read_status_service._safe_qty(row.get(quota_col))
                     if actual is None or quota is None:
                         continue
-                    # 与 neg_loss 口径一致：0<实际<定额 仍负损；其余（≥定额/≤0）视为已解决
-                    still_neg = (actual > 0) and (actual < quota)
                     cur = cur_map.get(uid_s)  # (is_read, fp, sq, sn, sy, src)
                     is_read = int(cur[0]) if cur else 0
                     src = (cur[5] if cur else '') or ''
+                    # v43.327：超额投料（(实际-定额)/定额 > 10%）必须人工复核。
+                    # 不自动已读；此前被「自动已读」的翻回未读（手动已读保留）。
+                    # 放在 still_neg 判定之前短路，避免落入「已解决→自动已读」分支。
+                    if is_overfeed_needs_review(actual, quota):
+                        overfeed_review.append(uid_s)
+                        if is_read == 1 and src == 'auto':
+                            rolled_back.append(uid_s)
+                        continue
+                    # 与 neg_loss 口径一致：0<实际<定额 仍负损；其余（≥定额/≤0）视为已解决
+                    still_neg = (actual > 0) and (actual < quota)
                     if not still_neg:
                         # 已解决：当前未读才自动标已读（已读的手动/自动均保留来源）
                         if is_read == 0:
@@ -259,12 +272,14 @@ class QuarantineManagerController:
                 except Exception as _e:
                     print(f"[WARN] 隔离区已读对账内存同步失败: {_e}", flush=True)
 
-            if auto_read or rolled_back:
+            if auto_read or rolled_back or overfeed_review:
                 parts = []
                 if auto_read:
                     parts.append("已解决自动已读 %d 条" % len(auto_read))
                 if rolled_back:
-                    parts.append("仍负损翻回未读 %d 条" % len(rolled_back))
+                    parts.append("翻回未读 %d 条" % len(rolled_back))
+                if overfeed_review:
+                    parts.append("超额投料待人工复核 %d 条（不自动已读）" % len(overfeed_review))
                 toast("🧊 隔离区已读对账：" + "｜".join(parts), "success", parent=self.mw, duration=6000)
                 self.mw.statusBar().showMessage("隔离区已读对账：" + "；".join(parts), 6000)
                 if auto_read:

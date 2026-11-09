@@ -10,6 +10,7 @@
 """
 import sqlite3
 import os
+import math
 from datetime import datetime
 from typing import List, Dict, Set
 
@@ -167,6 +168,34 @@ INVALID_QUARANTINE_STATUSES = {
     "manual_over_quota",
 }
 
+# v43.327 超额投料待人工复核阈值（百分点）。裴哥 2026-11-09 确认口径：
+#   (实际 - 定额) / 定额 × 100 > 10%  → 属于超额投料，必须留在隔离区人工复核，
+#   既不算失效（不进失效复核列表），也不能自动已读。
+OVERFEED_REVIEW_THRESHOLD_PCT = 10.0
+
+
+def is_overfeed_needs_review(actual, quota,
+                             threshold_pct=OVERFEED_REVIEW_THRESHOLD_PCT) -> bool:
+    """隔离区「超额投料待人工复核」唯一判据（失效复核 + 已读对账共用）。
+
+    口径：定额 > 0 且 (实际 - 定额) / 定额 * 100 > threshold_pct（严格大于）。
+
+    为什么排除定额<=0：源表对「定额=0、实际>0」恒给 +100% 的 SAP 除零钳位假值，
+    本期约 1093 行；若不排除会把整批误判为「超额投料待复核」。
+    NaN / None / 非数值一律返回 False（保守，沿用旧逻辑，不新增失效路径）。
+    负损（实际<定额）与相符（实际=定额）均不命中。
+    """
+    try:
+        a = float(actual)
+        q = float(quota)
+    except (TypeError, ValueError):
+        return False
+    if math.isnan(a) or math.isnan(q) or math.isinf(a) or math.isinf(q):
+        return False
+    if q <= 0 or a <= q:
+        return False
+    return (a - q) / q * 100.0 > float(threshold_pct)
+
 
 def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
     """扫描隔离区中「仍存在于主表」的记录，判定其入区依据是否因数据变动而失效。
@@ -179,6 +208,9 @@ def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
     注意：
     - 主表中已找不到该 uid 的行（如订单被新导出删除）→ 不翻标，返回结果不包含。
     - 手动隔离 + 原因非负损（basis 以「手动:」开头且无负损关键词）→ 无数据可复核依据，不翻标。
+    - v43.327：超额投料（(实际-定额)/定额 > 10%）一律不判失效，保留在隔离区
+      由人工复核；该规则不区分当初入区原因，也不受 basis 影响（见
+      is_overfeed_needs_review）。
     """
     try:
         import pandas as pd
@@ -239,6 +271,12 @@ def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
         if quota_col:
             quota = pd.to_numeric(row.get(quota_col), errors="coerce")
             quota = None if pd.isna(quota) else float(quota)
+
+        # v43.327：超额投料必须人工复核 —— 在一切失效判定之前短路。
+        # 覆盖三类入区来源（负损类 / 自动规则类 / 手动类），不受 basis 影响；
+        # 命中即 continue，既不进失效列表，也不会被「一键移出隔离区」波及。
+        if is_overfeed_needs_review(actual, quota):
+            continue
 
         is_neg_loss_now = None
         if actual is not None and quota is not None:

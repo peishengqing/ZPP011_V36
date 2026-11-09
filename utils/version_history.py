@@ -14,6 +14,30 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.327",
+            "date": "2026-11-09",
+            "features": (
+                "隔离区失效复核新增「超额投料待人工复核」例外（裴哥 11-09 定论）。"
+                "**业务口径**：凡在隔离区、且 (实际-定额)/定额×100 严格 > 10%，"
+                "即属超额投料，必须留在隔离区由人工复核——不算失效、不进失效复核列表、"
+                "不被一键移出、不能自动已读；此前被自动已读的翻回未读（手动已读保留）。"
+                "10% 指「实际-定额的偏差率」，不是绝对量；不区分当初入区原因，"
+                "凡在隔离区均适用；定额<=0 一律排除（SAP 除零钳位恒给 +100% 的假值，"
+                "本期约 1093 行，不排除会整批误判）。"
+                "**修法**：core/quarantine_manager.py 新增唯一判据 "
+                "is_overfeed_needs_review(actual, quota, threshold_pct=10.0)，"
+                "scan_expired_quarantine 在一切失效判定之前短路 continue；"
+                "gui_pyside6/controllers/quarantine_manager_controller.py 的 "
+                "_reconcile_quarantine_read_status 在 still_neg 之前短路，"
+                "命中则不自动已读 + auto 已读翻回未读，toast 增「超额投料待人工复核 N 条」；"
+                "quarantine_dialog.py 失效复核页提示文案同步。"
+                "自动已读规则中心（_auto_read_by_rules）原已排除隔离区，零改动。"
+                "**验收**：py_compile + pyflakes 双关全绿；新增单测覆盖 >10%/=10%/<10%、"
+                "定额=0/NaN/负损、失效扫描不列入、对账不自动已读、auto 翻回未读、"
+                "反证（阈值调高后恢复旧行为）；全量 pytest 零新增失败。"
+            ),
+        },
+        {
             "version": "v43.326",
             "date": "2026-11-09",
             "fixes": (
