@@ -1722,7 +1722,16 @@ def decorate_workbook(wb, add_dashboard=True):
             except Exception as _ae:
                 _log('[post_process] 哨兵收集器不可用（降级为空告警）: %s' % _ae)
                 _alerts = []
-            stats['metric'] = build_metric_check_sheet(wb, alerts=_alerts)
+            # v43.329 F04：输入预检温和提示（放行但需留痕）追加为 INFO 行。
+            # 未部署 / 预检未跑时降级为空，绝不阻断自检表。
+            try:
+                from core.source_guard import collect_warnings
+                _guard_infos = collect_warnings()
+            except Exception as _ge:
+                _log('[post_process] 输入预检收集器不可用（降级为空）: %s' % _ge)
+                _guard_infos = []
+            stats['metric'] = build_metric_check_sheet(
+                wb, alerts=_alerts, guard_infos=_guard_infos)
         except Exception as e:
             import traceback
             _log('[post_process] 口径自检表失败: %s' % e)

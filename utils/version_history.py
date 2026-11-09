@@ -14,6 +14,30 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.329",
+            "date": "2026-11-09",
+            "features": (
+                "收尾两件挂账：F04 输入预检判据修复 + 看板「下钻该车间」可用性。"
+                "**① F04（core/source_guard.py）**：恢复「三核心列必含、缺一即拒」"
+                "（v43.325 曾退化成「一个都没有才拒」，带 1~2 列的错表会放行）；"
+                "订单类型 ZPxx 改为全表扫描（旧版只扫前 200 行，ZPFX 集中在表尾会漏）；"
+                "文件头文档/告警文案同步新口径、删 _MAX_SCAN 改 _SAMPLE_MAX 只限空行抽样；"
+                "温和提示进模块级收集器，导出时 F01「口径自检」sheet 追加 "
+                "SOURCE_GUARD INFO 行（analysis_metric_check / post_process 各加可选参数，"
+                "不改 analyzer.py 签名，避免上午那次 log_cb NameError）。"
+                "**② 下钻该车间**：drill_to_workshop 返回 bool 且失败给可见 toast；"
+                "5 个看板（替代料/偏差率预警/负损/正损/半成品）成功后 self.accept() "
+                "关闭模态窗口，让主表可见；_apply_focus_filters 新增 drop_keys，"
+                "_filter_main_table_to_workshop 联动时临时放开 _read_status（避免与"
+                "「未读」叠加成 0 行），清除联动横幅由 _link_snapshot 恢复；"
+                "补成功 toast「已聚焦 X · Y（N 行）」。筛选面板状态机零改动。"
+                "**验收**：新增 tests/unit/test_source_guard.py（R1–R6 反证 + 收集器 + "
+                "F01 写入）与 tests/unit/test_drill_workshop.py（drop_keys 语义/反证、"
+                "端到端非 0 行、bool 返回、5 看板结构护栏）共 18 项全绿；"
+                "py_compile + pyflakes 双关全绿；全量 pytest 零新增失败。"
+            ),
+        },
+        {
             "version": "v43.328",
             "date": "2026-11-09",
             "fixes": (

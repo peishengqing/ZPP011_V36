@@ -241,10 +241,13 @@ def check_metric_closure(wb):
     }
 
 
-def build_metric_check_sheet(wb, alerts=None):
+def build_metric_check_sheet(wb, alerts=None, guard_infos=None):
     """生成「口径自检」sheet。返回写入数据行数。
 
     alerts: F06 静默失败哨兵的告警文本列表（可选），追加为 WARN 行。
+    guard_infos: F04 输入预检温和提示列表（可选），追加为 INFO 行，
+                 让「Data 表缺失 / 订单类型未命中 ZPxx / 列名疑似被改」等
+                 放行但需留痕的情况能在导出结果里被看见（v43.329）。
     FAIL 行整行红字。任何一步失败都不抛异常（调用方已包 try），
     但异常必须能被看见 —— 由调用方 print 诊断，本函数不裸吞。
     """
@@ -255,6 +258,9 @@ def build_metric_check_sheet(wb, alerts=None):
     for msg in (alerts or []):
         data.append(['SENTINEL 静默失败哨兵', '规则应有命中且结论不应全落待确认',
                      msg, '—', 'WARN'])
+    for msg in (guard_infos or []):
+        data.append(['SOURCE_GUARD 输入预检', '源表为 SAP 生产明细（放行但留痕）',
+                     msg, '—', 'INFO'])
 
     if SHEET_METRIC_CHECK in wb.sheetnames:
         del wb[SHEET_METRIC_CHECK]

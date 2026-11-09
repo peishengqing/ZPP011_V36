@@ -1192,7 +1192,7 @@ class SemiDashboardDialog(QDialog):
                 _rec = _df_drill.iloc[selected_rows[0]]
                 _drill = add_icon_action(menu, "🔍 下钻该车间（主表筛选）")
                 _drill.triggered.connect(
-                    lambda: drill_to_workshop(self.main_window, _rec, "半成品看板"))
+                    lambda: self.accept() if drill_to_workshop(self.main_window, _rec, "半成品看板") else None)
             except Exception:
                 pass
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))

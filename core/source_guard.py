@@ -9,26 +9,24 @@ do_analysis_v2 读表时「优先读 'Data'，不存在则取第一个」的容�
 「订单开始日期 / 数量-定额 / 数量-实际」三列，不足以区分生产明细与收发存，
 于是静默取第一张表继续跑，产出一份**看似正常实则全假**的分析报告。
 
-设计铁律
+设计铁律（v43.329 收尾，修复 v43.325 的判据退化）
 ------------------------------------
 1. **只在读表前校验**：do_analysis_v2 之后任何计算逻辑一个字节不改。
-2. 硬拒绝判据 = **三个生产明细核心列一个都没有**（流程订单 / 组件物料类型 /
-   数量-实际，精确列名、注意连字符）。实测 ZMM062 对照表 24 列全是库存/结存
-   列（公司代码/库存地点/开始数量/入库总数量/结束数量/周转天/仓库分类…），
-   这三列一列都没有；微信版真表 27 列齐全，既有测试构造表也齐全。故这足以
-   精准区分，且不会把「合法但简化」的生产明细误判成错发表。
+2. 硬拒绝判据 = **三个生产明细核心列必须全部存在，缺任意一列即拒绝**
+   （流程订单 / 组件物料类型 / 数量-实际，精确列名、注意连字符）。
+   ⚠️ v43.325 曾被退化成「三列一个都没有才拒」，实测带 1 列或 2 列的错表
+   会直接放行（反证 R1–R6 见 tests/unit/test_source_guard.py）。生产明细的
+   最小身份判据不能减到零，本版恢复为「缺一即拒」。
 3. 硬拒绝必须抛明确异常并**点名**「这像 ZMM062 收发存表，不是 ZPP011 生产明细」。
 4. 其余一律温和提示（print + log_cb）、**不阻断**：Data sheet 缺失（沿用旧容错
-   取第一张表）、订单类型列缺失、订单类型未命中 ZPxx（ZPFX 翻箱本期无数据，
-   主偏差分析不依赖）、核心列缺部分、列名被改、格式异常、空行过多。
-   ⚠️ 原规划是「四列必含 + Data sheet 必存在 + 订单类型必命中 ZPxx」，但实测
-   既有测试构造的是合法简化表（缺订单类型 / 订单类型值非 ZPxx / 用 Sheet1
-   命名），严格版会让全量 pytest 引入 10 个回归。故按 spec「先说明偏离与理由
-   再改」收窄为上述正向识别：偏离的是**字面校验项**，不是「拦截错发表」的
-   目标（验收两条：喂 ZMM062 拒绝并点名、喂微信真表通过，均不变）。
+   取第一张表）、订单类型列缺失、订单类型全表未命中 ZPxx、列名被改、格式异常、
+   空行过多。订单类型扫描**全表**（不限前 N 行），避免 ZPFX 集中在表尾时误报。
+   「必含三列」与真表/既有测试的合法简化表均兼容（它们三列齐全）。
 5. log_cb 一律走 `_safe_log(cb, msg, level)` 三层兜底
    （正规 2 参 → 降级 1 参 → 静默），绝不因日志回调把原始异常顶掉。
-6. 禁裸 `except Exception: pass`；意外读取异常要 traceback.print_exc() + 诊断输出。
+6. 温和提示同时写入模块级收集器，供导出时 F01「口径自检」sheet 追加 INFO 行
+   （collect_warnings / reset_warnings，纯收集、不改任何业务数值）。
+7. 禁裸 `except Exception: pass`；意外读取异常要 traceback.print_exc() + 诊断输出。
 """
 import os
 import re
@@ -42,13 +40,27 @@ _CORE_COLS = ('流程订单', '组件物料类型', '数量-实际')
 _REQUIRED = ('订单类型',) + _CORE_COLS
 # ZPxx：ZP + 至少 2 位字母/数字（ZP01 / ZP02 / ZP03 / ZPFX …）
 _ZP_RE = re.compile(r'ZP[0-9A-Z]{2,}', re.IGNORECASE)
-_MAX_SCAN = 200          # 只采样前 200 行，避免整表扫描
+_SAMPLE_MAX = 200        # 仅用于「空行占比」抽样的行数上限（订单类型仍全表扫描）
 _EMPTY_RATIO = 0.3       # 空行占比超过此值才温和提示
 
 _ZMM_HINT = (
     '这像 ZMM062 收发存表（或分析报告），不是 ZPP011 生产明细；'
     '请选择 SAP 原始导出文件（如 ZPP011_YYYYMMDD.xlsx / 微信版 9 月源表），'
     '生产明细核心列为 流程订单 / 组件物料类型 / 数量-实际（精确列名）。')
+
+# 温和提示收集器：只存文本，供导出时 F01「口径自检」sheet 追加 INFO 行。
+# 纯收集、幂等（每次 validate_source 开头 reset），绝不反向影响校验结果。
+_WARNINGS = []
+
+
+def reset_warnings():
+    """清空本轮预检告警（每次 validate_source 开头调用，避免跨文件累积）。"""
+    _WARNINGS.clear()
+
+
+def collect_warnings():
+    """返回本轮预检温和提示副本（供 F01 口径自检 sheet 展示）。"""
+    return list(_WARNINGS)
 
 
 def _safe_log(log_cb, msg, level="info"):
@@ -72,9 +84,15 @@ def _safe_log(log_cb, msg, level="info"):
 
 
 def _warn(msg, log_cb=None):
-    """温和提示：既走 _safe_log，也 print 一份确保诊断可见（不阻断）。"""
-    _safe_log(log_cb, '[source_guard] 温和提示：%s' % msg, 'warning')
-    print('[source_guard] 温和提示：%s' % msg)
+    """温和提示：既走 _safe_log，也 print 一份确保诊断可见（不阻断）。
+
+    v43.329：同时进收集器，导出时由 F01「口径自检」sheet 追加 INFO 行。
+    """
+    text = '[source_guard] 温和提示：%s' % msg
+    _safe_log(log_cb, text, 'warning')
+    print(text)
+    if text not in _WARNINGS:
+        _WARNINGS.append(text)
 
 
 def _fail(src_file, why, hdr):
@@ -109,6 +127,7 @@ def validate_source(src_file, log_cb=None):
     src_file : 源 xlsx 路径
     log_cb   : 可选日志回调，签名 (msg, level) 或 (msg)；一律走 _safe_log 兜底
     """
+    reset_warnings()
     if not src_file or not os.path.isfile(src_file):
         raise ValueError('[source_guard] 源文件不存在或未指定：%r' % src_file)
     try:
@@ -136,26 +155,22 @@ def validate_source(src_file, log_cb=None):
             raise ValueError(_fail(src_file, '工作表为空（无表头行）', []))
         hdr = ['' if v is None else str(v).strip() for v in first]
 
-        # 硬拒绝：三个生产明细核心列一个都没有 → ZMM062 收发存表
-        if not any(c in hdr for c in _CORE_COLS):
-            raise ValueError(_fail(
-                src_file,
-                '未命中任何生产明细核心列（%s）' % ' / '.join(_CORE_COLS), hdr))
-
+        # 硬拒绝：三核心列必须全部存在，缺任意一列即拒绝
         missing_core = [c for c in _CORE_COLS if c not in hdr]
         if missing_core:
-            _warn('缺少部分生产明细核心列：%s（疑似列名被改，未阻断）'
-                  % ', '.join(missing_core), log_cb)
+            raise ValueError(_fail(
+                src_file,
+                '缺少生产明细核心列：%s（这像 ZMM062 收发存表，不是 ZPP011 生产明细）' % ', '.join(sorted(missing_core)), hdr))
 
-        # 采样前 200 行：订单类型 ZPxx 只记 info/温和提示，不阻断
+        # 订单类型 ZPxx 全表扫描（不限前 N 行，防 ZPFX 集中在表尾被漏判）；
+        # 空行占比抽样只保留前 _SAMPLE_MAX 行，避免整表常驻内存。
         sample = []
         zp_hit = None
         has_type = '订单类型' in hdr
         i_type = hdr.index('订单类型') if has_type else None
-        for i, row in enumerate(it):
-            if i >= _MAX_SCAN:
-                break
-            sample.append(row)
+        for row in it:
+            if len(sample) < _SAMPLE_MAX:
+                sample.append(row)
             if has_type and zp_hit is None:
                 v = row[i_type] if i_type < len(row) else None
                 m = _ZP_RE.search(str(v or ''))
@@ -165,8 +180,8 @@ def validate_source(src_file, log_cb=None):
             _warn('缺少「订单类型」列：ZPFX 翻箱分流本期将无数据，'
                   '主偏差分析不依赖该列，预检不阻断', log_cb)
         elif not zp_hit:
-            _warn('订单类型列前 %d 行未命中 ZPxx：ZPFX 翻箱分流本期将无数据，'
-                  '预检不阻断' % _MAX_SCAN, log_cb)
+            _warn('订单类型列全表未命中 ZPxx：ZPFX 翻箱分流本期将无数据，'
+                  '预检不阻断', log_cb)
 
         _gentle_warnings(hdr, sample, log_cb)
         _safe_log(log_cb,

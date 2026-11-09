@@ -87,26 +87,39 @@ def drill_to_workshop(main_window, record, link_source=""):
 
     record 为看板行 pandas Series。各看板工厂字段名不统一：
     负损/正损用「工厂名称」，偏差率/替代料用「工厂」，半成品无工厂列 → 工厂留空仅按车间筛。
+
+    v43.329：返回 bool（是否成功聚焦）。看板是模态 exec()，成功后由调用方
+    accept() 自行关闭，否则主表虽已筛选却被看板窗口挡住，用户以为「没反应」。
+    失败时给可见 toast，不再静默 return。
     """
     if main_window is None or record is None:
-        return
+        return False
     try:
         ws = record.get("车间")
         if ws is None:
-            return
+            toast("该行没有「车间」列，无法下钻", level="warning", parent=main_window)
+            return False
         ws = str(ws).strip()
         if not ws or ws.lower() in ("nan", "none"):
-            return
+            toast("该行车间为空，无法下钻", level="warning", parent=main_window)
+            return False
         fac = record.get("工厂名称")
         if fac is None or str(fac).strip() in ("", "nan", "none"):
             fac = record.get("工厂")
         fac = str(fac).strip() if fac is not None else ""
         fn = getattr(main_window, "_filter_main_table_to_workshop", None)
-        if callable(fn):
-            fn(fac, ws, link_source or "看板")
+        if not callable(fn):
+            toast("主表不支持车间下钻", level="warning", parent=main_window)
+            return False
+        return bool(fn(fac, ws, link_source or "看板"))
     except Exception:
         import traceback
         traceback.print_exc()
+        try:
+            toast("车间下钻失败（详情见日志）", level="warning", parent=main_window)
+        except Exception:
+            pass
+        return False
 
 
 def compute_mom_badge(df):

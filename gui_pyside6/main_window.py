@@ -2383,7 +2383,8 @@ class MainWindow(QMainWindow):
         self._link_snapshot = None
         self.main_table.clear_link_banner()
 
-    def _apply_focus_filters(self, filter_keys, label, replace=False, base=None):
+    def _apply_focus_filters(self, filter_keys, label, replace=False, base=None,
+                             drop_keys=()):
         """通用焦点钻取：在现有筛选上叠加 filter_keys 并显示联动横幅（可撤销）。
 
         filter_keys 与 AuditProxyModel._custom_filters 同构：
@@ -2393,6 +2394,8 @@ class MainWindow(QMainWindow):
         replace=True 时不再叠加当前条件，而是以 base（缺省取联动前快照）为基底重建。
         v43.153 必需：0 行兜底回退时若仍走叠加语义，刚失败的 _material_code 会
         留在条件里 → 回退后依旧 0 行（死循环空表）。
+        drop_keys: v43.329 车间下钻专用，合并前从基底剔除这些键（如 _read_status），
+                  避免「未读」筛选与工厂/车间叠加成 0 行。不影响其它调用方。
         """
         if self.proxy_model is None:
             return
@@ -2404,6 +2407,8 @@ class MainWindow(QMainWindow):
             if self._link_snapshot is None:
                 self._link_snapshot = base
         merged = dict(base or {})
+        for _k in (drop_keys or ()):
+            merged.pop(_k, None)
         merged.update(filter_keys)
         self.proxy_model.setCustomFilters(merged)
         self._update_summary()
@@ -2461,8 +2466,26 @@ class MainWindow(QMainWindow):
         label = "工厂 %s · 车间 %s" % (factory or "*", workshop or "*")
         if source_label:
             label += "（%s）" % source_label
+        # v43.329：下钻意在「看这批数据」，不能被面板当前挂着的「未读」筛选
+        # 叠加成 0 行（用户实测现象：点了没反应/主表空白）。仅本次联动放开
+        # _read_status，不动筛选面板状态机；清除联动横幅时由 _link_snapshot
+        # 自动恢复原条件。
+        drop = ()
         try:
-            self._apply_focus_filters(keys, label)
+            cur = self.proxy_model.getCustomFilters() or {}
+            if cur.get('_read_status') not in (None, '', '全部'):
+                drop = ('_read_status',)
+        except Exception:
+            pass
+        try:
+            self._apply_focus_filters(keys, label, drop_keys=drop)
+            rows = self.proxy_model.rowCount()
+            try:
+                from gui_pyside6.widgets.toast import toast
+                toast("🔍 已聚焦 %s · %s（%d 行）" % (factory or "全部工厂", workshop, rows),
+                      "success", parent=self, duration=6000)
+            except Exception:
+                pass
             return True
         except Exception as e:
             self.log("[车间下钻] 失败: %s" % e, "error")
