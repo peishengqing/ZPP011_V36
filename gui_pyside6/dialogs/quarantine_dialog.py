@@ -848,7 +848,7 @@ class QuarantineDialog(QDialog):
                     uid_str = str(uid)
                     is_ex = self._is_row_exempted(uid_str)
                     exe_action = add_icon_action(menu, "✅ 取消豁免" if is_ex else "🔒 标记为已豁免")
-                    exe_action.triggered.connect(lambda _, uid=uid_str: self._toggle_exempted(uid))
+                    exe_action.triggered.connect(lambda: self._toggle_exempted(uid_str))
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
 
     def _toggle_exempted(self, uid: str):

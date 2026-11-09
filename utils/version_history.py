@@ -14,6 +14,25 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.326",
+            "date": "2026-11-09",
+            "fixes": (
+                "修复隔离区右键「标记豁免 / 取消豁免」点击即崩溃。"
+                "**根因**：gui_pyside6/dialogs/quarantine_dialog.py:851 原写 "
+                "exe_action.triggered.connect(lambda _, uid=uid_str: ...)，"
+                "lambda 带默认参数 uid 时 PySide6 将其判定为无参槽、用 0 个参数调用，"
+                "必填形参 _ 缺失 → TypeError: <lambda>() missing 1 required "
+                "positional argument: '_'。同文件另外 5 个菜单项均为无参 lambda，"
+                "故只有本项受影响。**修法**：改为与其余菜单项同构的 "
+                "connect(lambda: self._toggle_exempted(uid_str))，"
+                "uid_str 由闭包捕获（单次选中时赋值，无循环变量陷阱）。"
+                "**验收**：offscreen Qt 最小复现实测旧写法 OLD_OK=False 且抛出同一 "
+                "TypeError、新写法 NEW_OK=True；py_compile + pyflakes 双关全绿。"
+                "仅改 1 行，_toggle_exempted / set_exempted / is_exempted 零改动；"
+                "全量 pytest 336 passed / 1 skipped / 2 xfailed，coverage 32.01%。"
+            ),
+        },
+        {
             "version": "v43.325",
             "date": "2026-11-09",
             "features": (
