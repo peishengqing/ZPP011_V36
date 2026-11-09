@@ -14,6 +14,30 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.328",
+            "date": "2026-11-09",
+            "fixes": (
+                "修复主面板点列头排序时「程序发生未捕获的异常: SortBadgeHeader.update() "
+                "takes exactly one argument (0 given)」。"
+                "**根因**：PySide6 6.6.3 下 QHeaderView 继承 QAbstractItemView，"
+                "其 ``update(index: QModelIndex)`` 槽遮蔽了 QWidget 的 ``update()`` 无参重载；"
+                "项目里 11 处 ``header.update()``（column_controller / main_window / "
+                "view_manager / analysis_orchestrator / utils.column_filter，用于触发"
+                "自绘多级排序角标与漏斗重画）全部抛 TypeError，点列头排序必现。"
+                "**修法**：gui_pyside6/widgets/sort_badge_header.py 的 SortBadgeHeader "
+                "新增 ``update(self, *args)`` 重写——无参显式转 ``QWidget.update(self)``"
+                "（只刷表头本体、不碰 viewport，自绘语义零改动），带 "
+                "QModelIndex/QPersistentModelIndex 交父类槽，其余 QWidget 重载"
+                "（QRect/QRegion/x,y,w,h）转 ``QWidget.update(self, *args)``。"
+                "一处修复覆盖全部调用点，排序业务逻辑零改动。"
+                "**验收**：offscreen 实测修复前无参调用复现同一 TypeError、修复后 OK；"
+                "新增 tests/unit/test_sort_badge_header_update.py 6 项"
+                "（无参不抛 / 转发 QWidget / QRect 重载 / index 走父类 / 调用点结构护栏）；"
+                "既有 test_sort_manual.py 排序冒烟同跑全绿；py_compile + pyflakes 双关全绿；"
+                "全量 pytest 零新增失败。"
+            ),
+        },
+        {
             "version": "v43.327",
             "date": "2026-11-09",
             "features": (

@@ -15,9 +15,9 @@ paintEvent 仅 override：先 super().paintEvent 画出原生表头（外观完�
   不需要先开启“列头筛选”模式；未命中漏斗时保持原有排序/筛选路由不变。
 """
 
-from PySide6.QtCore import Qt, QRect, QPoint
+from PySide6.QtCore import Qt, QRect, QPoint, QModelIndex, QPersistentModelIndex
 from PySide6.QtGui import QPainter, QColor, QPen, QPolygon, QFont, QFontMetrics
-from PySide6.QtWidgets import QHeaderView
+from PySide6.QtWidgets import QHeaderView, QWidget
 from gui_pyside6.utils.click_debug import click_log
 
 
@@ -36,6 +36,28 @@ class SortBadgeHeader(QHeaderView):
         self._ctrl_held = False  # mousePressEvent 捕获 Ctrl 修饰符，供点击路由可靠读取
         self._on_funnel_clicked = None  # 注入：点击漏斗图标回调（直接打开该列筛选）
         self._funnel_rects = {}  # logical_index -> QRect（漏斗命中区域，供 mouseRelease 判定）
+
+    def update(self, *args):
+        """修复 v43.328：恢复被 QAbstractItemView 遮蔽的 QWidget.update() 无参重载。
+
+        PySide6 6.6.3 下 QHeaderView 继承链中，QAbstractItemView 的
+        ``update(index: QModelIndex)`` 槽遮蔽了 QWidget 的 ``update()`` 无参重载，
+        导致项目里 11 处 ``header.update()``（用于触发自绘排序角标 / 漏斗重画）
+        统一抛 ``TypeError: SortBadgeHeader.update() takes exactly one argument (0 given)``，
+        表现即「点主面板列头排序 → 程序未捕获异常」。
+
+        - 无参调用 → 显式转 ``QWidget.update(self)``，等价于原生"排入重绘事件"，
+          仍只刷表头本体（不碰 viewport），自绘角标语义零改动；
+        - 带 QModelIndex / QPersistentModelIndex → 交给父类（QAbstractItemView 槽）；
+        - 其余 QWidget 重载（QRect / QRegion / x,y,w,h）→ 转 QWidget.update(self, *args)。
+        """
+        if not args:
+            QWidget.update(self)
+            return
+        if isinstance(args[0], (QModelIndex, QPersistentModelIndex)):
+            super().update(*args)
+            return
+        QWidget.update(self, *args)
 
     def set_sort_columns_getter(self, getter):
         self._get_sort_columns = getter
