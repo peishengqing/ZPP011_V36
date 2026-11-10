@@ -2,9 +2,9 @@
 
 import re
 import pandas as pd
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QCheckBox, QComboBox, QFrame, QPushButton, QHeaderView, QAbstractItemView, QMenu, QFileDialog, QScrollArea, QGroupBox, QDialogButtonBox, QTableView, QInputDialog, QDialog
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QCheckBox, QComboBox, QFrame, QPushButton, QHeaderView, QAbstractItemView, QMenu, QFileDialog, QScrollArea, QGroupBox, QDialogButtonBox, QTableView, QInputDialog, QDialog, QShortcut
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QKeySequence
 from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_color_keys
 from gui_pyside6.dialogs.col_filter_ui import make_col_filter_button, make_col_filter_hint_label, set_col_filter_button_on
 from core.quarantine_manager import add_quarantine_batch, remove_quarantine, get_quarantined_ids
@@ -362,14 +362,21 @@ class NegLossContent(QWidget):
         self.btn_add_quar = QPushButton("⚠️ 加入隔离区(选中行)")
         self.btn_add_quar.clicked.connect(self._add_selected_to_quarantine)
         btn_layout.addWidget(self.btn_add_quar)
-        export_btn = QPushButton("📎 导出 Excel")
-        export_btn.clicked.connect(self.export_excel)
-        btn_layout.addWidget(export_btn)
+        self.btn_export = QPushButton("📎 导出 Excel (Alt+V)")
+        self.btn_export.clicked.connect(self.export_excel)
+        btn_layout.addWidget(self.btn_export)
         btn_layout.addStretch()
         close_btn = QPushButton("关闭")
         close_btn.clicked.connect(self.close)
         btn_layout.addWidget(close_btn)
         layout.addLayout(btn_layout)
+
+        # 键盘快捷键
+        self._sc_export = QShortcut(QKeySequence("Alt+V"), self)
+        self._sc_export.activated.connect(self.export_excel)
+        self._sc_refresh = QShortcut(QKeySequence("F5"), self)
+        self._sc_refresh.activated.connect(self._apply_filter)
+        self.btn_refresh.setText("重新筛选 (F5)")
 
     def _apply_default_filter(self):
         self._read_filter = "未读"
@@ -639,7 +646,7 @@ class NegLossContent(QWidget):
             self.lbl_count.setText("共 0 条")
             # 更新状态条
             if self.shell is not None:
-                self.shell.set_status(f"0 条记录")
+                self.shell.set_status("0 条记录")
             return
 
         self._refresh_cascade_combos('apply')

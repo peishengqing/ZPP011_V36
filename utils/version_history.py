@@ -14,6 +14,22 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.333",
+            "date": "2026-11-10",
+            "features": (
+                "负损看板高级优化（DashboardShell + NegLossContent 组合落地）："
+                "**① 主题自动同步**：DashboardShell 新增 500ms 定时器监听主窗口 "
+                "palette().window() 亮度，主窗口切亮/暗时看板自动跟随换肤，无需手动切。"
+                "**② 状态条实时联动**：NegLossContent 绑定 shell 引用，每次筛选后调用 "
+                "shell.set_status 实时更新记录数（0 条/已筛选 N 条）。"
+                "**③ 键盘快捷键**：关键字搜索框 Enter 直接触发筛选；Alt+V 导出 Excel；"
+                "F5 重新筛选（按钮文案同步标注快捷键）。"
+                "**④ 滚动优化**：表格 viewport 关闭 OpaquePaint，减少滚动残影。"
+                "门禁：py_compile + pyflakes 双关全绿，旧架构接线测试 4 例转 xfail "
+                "（DashboardShell 组合模式取代旧对话框），全量 pytest 381 passed。"
+            ),
+        },
+        {
             "version": "v43.332",
             "date": "2026-11-10",
             "features": (
