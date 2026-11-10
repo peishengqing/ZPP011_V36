@@ -2,9 +2,9 @@
 
 import re
 import pandas as pd
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QCheckBox, QComboBox, QFrame, QPushButton, QHeaderView, QAbstractItemView, QMenu, QFileDialog, QScrollArea, QGroupBox, QDialogButtonBox, QTableView, QInputDialog, QDialog, QShortcut
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QCheckBox, QComboBox, QFrame, QPushButton, QHeaderView, QAbstractItemView, QMenu, QFileDialog, QScrollArea, QGroupBox, QDialogButtonBox, QTableView, QInputDialog, QDialog
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QFont, QKeySequence
+from PySide6.QtGui import QFont, QKeySequence, QShortcut
 from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_color_keys
 from gui_pyside6.dialogs.col_filter_ui import make_col_filter_button, make_col_filter_hint_label, set_col_filter_button_on
 from core.quarantine_manager import add_quarantine_batch, remove_quarantine, get_quarantined_ids
