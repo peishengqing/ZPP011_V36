@@ -2,11 +2,13 @@
 """
 tools/pre_push_gate.py — F03 提交前门禁（v43.325）
 
-串四个环节，EXIT 码明确（0=PASS，非0=FAIL）：
+串五个环节，EXIT 码明确（0=PASS，非0=FAIL）：
   ① py_compile            本次所有改动/新增 .py 语法编译
   ② pyflakes              动态基线 + 消息归一化（见下）
   ③ pytest                全量（pytest.ini 默认 addopts，含 --cov-fail-under=18）
   ④ F01 闭合自检          对仓库真实成品动态重算三表闭合 + 引擎双向反证
+  ⑤ GUI 冒烟（offscreen） 真实构建 MainWindow + 事件循环 + 主界面6项 + 三看板，
+                            并断言列宽自适应真装上、set_data 无吞异常（v43.339）
 
 pyflakes 动态基线（team-lead 11-09 05:34 拍板，替代「硬编码 30 条 issue 文本」）
 --------------------------------------------------------------------------
@@ -26,7 +28,8 @@ pyflakes 动态基线（team-lead 11-09 05:34 拍板，替代「硬编码 30 条
 开关
 ----
 · ZPP011_SKIP_GATE=1   全跳过，EXIT=0（spec 要求，确保 push 不被门禁自锁）
-· ZPP011_GATE_FAST=1   跳过 pytest 环节（反证/快速验证用，其余三环节照跑）
+· ZPP011_GATE_FAST=1   跳过 pytest 环节（反证/快速验证用，其余四环节照跑，
+                        含 GUI 冒烟；如需连冒烟一起跳，用 ZPP011_SKIP_GATE=1）
 · ZPP011_GATE_BASELINE 覆盖基线锚点（默认自动：优先 origin/main，退回 HEAD）
 · ZPP011_PYFLAKES_PY / ZPP011_TEST_PY 覆盖两个解释器路径
 · 位置参数 1：repo 根目录（默认取本文件父目录的父目录）
@@ -256,6 +259,34 @@ def check_pytest(repo, report):
     return r.returncode == 0
 
 
+def check_gui_smoke(repo, report):
+    """⑤ GUI offscreen 冒烟（v43.339）。
+
+    真实构建 MainWindow 并跑事件循环，验证主界面结构与三看板外壳，
+    重点断言「列宽自适应真装上 + set_data 无吞异常」，堵住
+    v43.338 那种 pytest 全过却功能被 try/except 吞掉的漏网回归。
+    """
+    script = Path(repo) / 'tools' / 'gui_smoke_offscreen.py'
+    if not script.is_file():
+        report.append('  [FAIL] GUI 冒烟脚本缺失: %s' % script)
+        return False
+    env = dict(os.environ)
+    env['QT_QPA_PLATFORM'] = 'offscreen'
+    r = subprocess.run([TEST_PY, str(script)], cwd=str(repo), env=env,
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                       encoding='utf-8', errors='replace')
+    tail = [ln for ln in (r.stdout or '').splitlines()
+            if ln.strip() and ('[PASS]' in ln or '[FAIL]' in ln
+                               or 'TOTAL:' in ln or 'GUI SMOKE RESULT' in ln)][-16:]
+    report.append('  [PASS] GUI 冒烟 EXIT=0' if r.returncode == 0
+                  else '  [FAIL] GUI 冒烟 EXIT=%d' % r.returncode)
+    for ln in tail:
+        report.append('    ' + ln)
+    if r.returncode != 0:
+        report.append('    （完整输出可复现：%s %s）' % (TEST_PY, script))
+    return r.returncode == 0
+
+
 # F01 自检探针（由 TEST_PY 子进程执行：需要 openpyxl，且要能 import 项目模块）
 _F01_PROBE = r'''
 # -*- coding: utf-8 -*-
@@ -340,16 +371,17 @@ def main():
          lambda rep: check_pyflakes(REPO, targets, baseline, rep)),
         ('③ pytest', lambda rep: check_pytest(REPO, rep)),
         ('④ F01 闭合自检', lambda rep: check_f01(REPO, rep)),
+        ('⑤ GUI 冒烟（offscreen）', lambda rep: check_gui_smoke(REPO, rep)),
     ):
         print('\n[GATE] === %s ===' % title)
         rep = []
         ok = fn(rep)
         print('\n'.join(rep))
         results.append(ok)
-    a, b, c, d = results
+    a, b, c, d, e = results
     passed = all(results)
-    print('\n[GATE] 汇总：py_compile=%s pyflakes=%s pytest=%s F01=%s → %s'
-          % (a, b, c, d, 'PASS' if passed else 'FAIL'))
+    print('\n[GATE] 汇总：py_compile=%s pyflakes=%s pytest=%s F01=%s GUI冒烟=%s → %s'
+          % (a, b, c, d, e, 'PASS' if passed else 'FAIL'))
     print('[GATE] EXIT=%d' % (0 if passed else 1))
     return 0 if passed else 1
 

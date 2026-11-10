@@ -14,6 +14,22 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.339",
+            "date": "2026-11-10",
+            "features": (
+                "GUI offscreen 冒烟固化进推送门禁（第⑤步），堵住「pytest 全过但功能被 try/except 吞掉」类漏网。\n"
+                "①新增 `tools/gui_smoke_offscreen.py`：真实构建 MainWindow + 1.5s 事件循环 + 灌 3 行数据，"
+                "12 项检查（主界面6项/数据联动/全选选中行数/三看板 Content+Shell+亮暗主题/"
+                "三看板列宽自适应真装上 + set_data 无吞异常）；路径按 __file__ 推导，可独立运行，退出码 0/1。\n"
+                "②`tools/pre_push_gate.py` 新增 check_gui_smoke 作为第⑤步（用 TEST_PY 跑，QT_QPA_PLATFORM=offscreen），"
+                "汇总输出与 a,b,c,d,e 解包同步扩展；FAST 模式跳过 pytest 但照跑冒烟。\n"
+                "③反向验证（真注入 v43.338 的局部 import 遮蔽 bug 再还原）："
+                "py_compile / pyflakes / F01 全部 PASS 放行，仅 ⑤ 抓到 "
+                "「负损(自适应=True,吞异常=有)」并令门禁 EXIT=1 —— 证明前四步对此类回归无感，第⑤步确有防护力。\n"
+                "两个新/改文件 pyflakes 0 issues（门禁对新增文件要求 0）；冒烟 12/12 PASS。"
+            ),
+        },
+        {
             "version": "v43.338",
             "date": "2026-11-10",
             "features": (
