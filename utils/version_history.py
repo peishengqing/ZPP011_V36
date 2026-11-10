@@ -14,6 +14,36 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.344",
+            "date": "2026-11-11",
+            "features": (
+                "暗色主题全链路跑通并修复三处错配（裴哥 11-11「暗色的也跑一遍」）。"
+                "真实走 MainWindow._toggle_theme() 切暗色后渲染主界面 + 三看板 + "
+                "规则中心 + 两重型弹窗，逐张目视确认。\n"
+                "①主题不跟随：controller 三处与桥接器一处都创建无 parent 的 "
+                "DashboardShell()，_init_theme_sync() 不启动，五个外壳永远停在 light。"
+                "实测暗色主窗口 palette 亮度 27，而孤立 shell 仍是 light，"
+                "截图呈「深色筛选区 + 白色表格」撕裂。修法：传 parent 让既有 "
+                "palette 自动同步真正跑起来（三看板传 self.mw）。\n"
+                "②重型弹窗的 Qt parent 实为 None，且 apply_board_visual 给它挂了亮色 "
+                "BOARD_QSS，dialog 自身 palette 亮度 238（亮）——传 dialog 当 parent 会误判，"
+                "等 700ms 定时器仍为 light。修法：主题源改取 dialog.main_window。\n"
+                "③暗色下 dialog 级 BOARD_QSS 的 "
+                "QDialog#zppBoardDialog QTableView{background:#ffffff} 向下级联且选择器"
+                "更具体，把表格刷成白底 + 浅色字（白色横条、文字几乎不可读）。"
+                "修法：桥接器按主题分支 —— 亮色仍把 BOARD_QSS 追加到 shell（原有视觉零改动），"
+                "暗色则清空 dialog 级 QSS 且不合并，交给 app 级 dark_theme.qss + "
+                "shell 级 dark_dashboard.qss 接管。只动 dialog 的样式挂载，不碰五个看板共用的 "
+                "board_visual.py，也不动 DataFrameModel 的行标记口径。\n"
+                "④GUI 冒烟扩到 20 项，新增 ⑮：真实切暗色后断言五个外壳全为 dark、"
+                "两重型弹窗无残留亮色 QSS、亮色基线（dialog QSS 保留）不受影响、"
+                "切回亮色正常。\n"
+                "验证：亮色路径 shell=light / dialog QSS 保留 / BOARD_QSS 仍合并；"
+                "暗色路径五外壳=dark、白条与白底下沉框消失、表格文字清晰。"
+                "业务口径零改动。"
+            ),
+        },
+        {
             "version": "v43.343",
             "date": "2026-11-11",
             "features": (

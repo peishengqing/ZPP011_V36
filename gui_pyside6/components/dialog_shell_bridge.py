@@ -24,17 +24,32 @@ def install_dialog_shell(dialog, host, title, status=None):
 
     返回 shell，并挂到 ``dialog.dashboard_shell`` 供后续状态更新。
     """
-    shell = DashboardShell()
+    # v43.344：主题源必须是 main_window，不能用 dialog。
+    # 重型弹窗的 Qt parent 其实是 None（main_window 只是普通属性），且
+    # apply_board_visual 给 dialog 套了亮色 BOARD_QSS，dialog 自身 palette
+    # 亮度实测 238（亮），传 dialog 会让 _sync_theme_with_window() 误判成 light。
+    # 主窗口切暗色后 palette 亮度 27，用它才能正确同步。
+    theme_source = getattr(dialog, 'main_window', None) or dialog.parent() or dialog
+    shell = DashboardShell(theme_source)
     shell.set_title(title)
     shell.set_content(host)
     shell.set_status(status or "")
 
-    # apply_board_visual 把看板表格主题设在 dialog 级；shell 自带 QSS 会
-    # 覆盖其所有子 widget，故把 dialog 级规则追加在后面以保住表格视觉。
+    # apply_board_visual 在 install 之前就把「亮色」BOARD_QSS 挂在 dialog 级
+    # （含 QDialog#zppBoardDialog QTableView{background:#ffffff}）。它会向下级联到
+    # 所有子控件，且选择器比 shell 的裸 QTableView 更具体，暗色下会把表格刷成
+    # 白底 + 浅色字，实测出现白色横条、文字几乎不可读。
+    #   · 亮色：把 dialog 级规则追加到 shell 后面，保住原有表格视觉；
+    #   · 暗色：清空 dialog 级 QSS，也不合并 —— 交给 app 级 dark_theme.qss
+    #     与 shell 级 dark_dashboard.qss 接管。
+    # 只动 dialog 的样式挂载，不碰 board_visual.py（五个看板共用，影响面大）。
     try:
         prev = dialog.styleSheet() or ""
-        if prev:
-            shell.setStyleSheet(shell.styleSheet() + "\n" + prev)
+        if shell.get_theme() == 'light':
+            if prev:
+                shell.setStyleSheet(shell.styleSheet() + "\n" + prev)
+        elif prev:
+            dialog.setStyleSheet("")
     except Exception:
         pass
 

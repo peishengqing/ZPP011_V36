@@ -557,6 +557,85 @@ def main():
         return ok, " ".join(detail)
     check("⑭ QSS 尺寸纪律：四条路径零 sizeHint 变更", _qss_discipline)
 
+    # ⑮ v43.344：暗色全链路跟随（真实走 _toggle_theme，不是手动 set_theme）
+    def _dark_chain():
+        from gui_pyside6.dialogs.alert_dialog import AlertDialog
+        from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
+        heavy = pd.DataFrame({
+            "物料编码": ["400001", "410002", "M003"],
+            "物料名称": ["A", "B", "C"],
+            "数量-定额": [100.0, 200.0, 300.0],
+            "数量-实际": [90.0, 210.0, 300.0],
+            "偏差率(%)": [12.0, -15.0, 20.0],
+            "净偏差金额": [-1000.0, 500.0, 0.0],
+            "_read": [0, 1, 0],
+            "data_id": ["d1", "d2", "d3"],
+            "备注": ["", "", ""],
+            "车间": ["X", "Y", "X"],
+            "工厂": ["F1", "F1", "F1"],
+            "物料类型": ["原料", "包材", "原料"],
+            "半成品重分类": ["", "", ""],
+            "是否替代料": ["否", "是", "否"],
+        })
+        # 亮色基线：重型弹窗应保留 dialog 级 BOARD_QSS
+        light_alert = AlertDialog(heavy, win)
+        light_shell = light_alert.findChildren(DashboardShell)[0]
+        light_ok = (light_shell.get_theme() == 'light'
+                    and len(light_alert.styleSheet()) > 0
+                    and 'zppBoardDialog' in light_shell.styleSheet())
+        light_alert.close()
+
+        # 真实切暗色
+        win._toggle_theme()
+        app.processEvents()
+        for _ in range(10):
+            app.processEvents()
+        dark_active = bool(getattr(win, '_is_dark_theme', False))
+
+        ctrl = win.dashboard_controller
+        ctrl._show_neg_loss_dashboard()
+        ctrl._show_pos_loss_dashboard()
+        ctrl._show_semi_dashboard()
+        for _ in range(10):
+            app.processEvents()
+        board_themes = {}
+        for key in ("neg_loss", "pos_loss", "semi"):
+            d = ctrl._board_windows.get(key)
+            shells = d.findChildren(DashboardShell) if d is not None else []
+            board_themes[key] = shells[0].get_theme() if shells else "NONE"
+        boards_ok = all(v == 'dark' for v in board_themes.values())
+
+        dark_alert = AlertDialog(heavy, win)
+        dark_devi = DeviationWarningDialog(heavy, win)
+        heavy_ok = True
+        for dlg in (dark_alert, dark_devi):
+            shells = dlg.findChildren(DashboardShell)
+            theme = shells[0].get_theme() if shells else "NONE"
+            # 暗色下 dialog 级亮色 BOARD_QSS 必须已被清空
+            clean = len(dlg.styleSheet()) == 0
+            heavy_ok = heavy_ok and theme == 'dark' and clean
+        dark_alert.close()
+        dark_devi.close()
+
+        for d in list(ctrl._board_windows.values()):
+            try:
+                d.close()
+            except RuntimeError:
+                pass
+        for _ in range(6):
+            app.processEvents()
+
+        # 切回亮色，避免污染后续/本进程其它断言
+        win._toggle_theme()
+        for _ in range(8):
+            app.processEvents()
+        restored = not bool(getattr(win, '_is_dark_theme', True))
+
+        ok = dark_active and light_ok and boards_ok and heavy_ok and restored
+        return ok, ("切换=%s 亮色基线=%s 三看板=%s 两重型弹窗(暗色且无亮QSS)=%s 切回亮色=%s"
+                    % (dark_active, light_ok, board_themes, heavy_ok, restored))
+    check("⑮ 暗色全链路：五外壳跟随 + 亮色路径不受影响", _dark_chain)
+
     return report()
 
 
