@@ -151,11 +151,12 @@ class QuarantineManagerController:
         - v43.327 超额投料（(实际-定额)/定额 > 10%）→ 必须人工复核：
           不自动已读；此前被自动已读的翻回未读；手动已读不动（尊重人工判断）。
           判据与 scan_expired_quarantine 共用 core.quarantine_manager.is_overfeed_needs_review。
-        - 已解决（实际≥定额，或实际≤0 已归零）→ 自动标已读（仅当当前未读；已读的手动/自动均不动，保留来源）
+        - 已解决（实际≥定额，补投相符/过量）→ 自动标已读（仅当当前未读；已读的手动/自动均不动，保留来源）
         - 仍负损（0<实际<定额）→ 若此前是「自动已读」则翻回未读；手动已读不动（尊重人工判断）
+        - 实际≤0（未投料/非耗用）属异常，须人工审计：绝不自动已读，也不自动翻回，保持现状
 
         这样「补投后偏差归零/小幅转正」的隔离记录自动收口为已读，仍负损的重新回到未读待复核；
-        但「补投超过定额 10%」属于超额投料，需裴哥手动复核，绝不自动收口。
+        但「补投超过定额 10%」属于超额投料、以及「实际=0（未投料/非耗用）」均须裴哥手动复核，绝不自动收口。
         偏差口径与 scan_expired_quarantine 的 neg_loss 判定同源（actual vs quota），保证一致。
         落库复用 mark_read_batch / save_read_status_batch，并同步内存 _read / _read_source 供 UI 刷新。
         """
@@ -224,9 +225,11 @@ class QuarantineManagerController:
                         if is_read == 1 and src == 'auto':
                             rolled_back.append(uid_s)
                         continue
-                    # 与 neg_loss 口径一致：0<实际<定额 仍负损；其余（≥定额/≤0）视为已解决
-                    still_neg = (actual > 0) and (actual < quota)
-                    if not still_neg:
+                    # v43.330：与 scan_expired_quarantine 口径统一。
+                    # 实际=0（未投料/非耗用）属异常须人工审计，绝不自动已读、也不自动翻回，保持现状；
+                    # 仅「实际≥定额（补投相符/过量，已解决）」才自动标已读；
+                    # 「0<实际<定额（仍负损）」仅把此前「自动已读」翻回未读（手动已读保留）。
+                    if actual is not None and quota is not None and actual >= quota:
                         # 已解决：当前未读才自动标已读（已读的手动/自动均保留来源）
                         if is_read == 0:
                             auto_read.append(uid_s)
@@ -238,10 +241,13 @@ class QuarantineManagerController:
                                 self.mw.data_service.read_status_service._norm_note(n) if note_col else '',
                                 self.mw.data_service.read_status_service._safe_qty(y) if yield_col else None,
                             )
-                    else:
+                    elif actual is not None and quota is not None and (0 < actual < quota):
                         # 仍负损：仅把「自动已读」翻回未读，手动已读保留
                         if is_read == 1 and src == 'auto':
                             rolled_back.append(uid_s)
+                    else:
+                        # actual≤0（未投料/非耗用）或数值缺失 → 保持现状，不自动已读、不自动翻回
+                        pass
                 except Exception as _e:
                     print(f"[WARN] 隔离区已读对账单行失败(uid={uid}): {_e}", flush=True)
 

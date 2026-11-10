@@ -14,6 +14,27 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.330",
+            "date": "2026-11-10",
+            "fixes": (
+                "修复隔离区对「实际=0（未投料/非耗用）」记录的错误处理（裴哥 11-10 定论："
+                "实际=0 须人工审计，绝不自动已读、绝不判为已解决）。"
+                "**① core/quarantine_manager.py**：失效复核 `scan_expired_quarantine` 删掉 "
+                "`neg_loss_zeroed`（实际已归零/非耗用）这一失效判定分支——实际≤0 不再被建议"
+                "移出隔离区，改为留在隔离区待审计；同步从 `INVALID_QUARANTINE_STATUSES` 移除该状态。"
+                "**② quarantine_manager_controller.py**：已读对账 `_reconcile_quarantine_read_status` "
+                "去掉「actual≤0 视为已解决→自动已读」逻辑，改为仅 actual≥定额（补投相符/过量）才自动已读；"
+                "actual≤0（未投料/非耗用）保持现状，绝不自动已读、也不自动翻回。"
+                "**③ quarantine_dialog.py**：失效复核说明文案删除「或实际归零」错误表述。"
+                "**④ 一次性回滚脚本 tools/rollback_auto_read_zero_quarantine.py**：把活库 audit.db 中"
+                "「is_read=1 且 read_source=auto 且 snapshot_qty<=0 且仍在隔离区」的 35 条脏记录翻回未读"
+                "（呼应用户「回到昨天状态」诉求）。"
+                "**验收**：tests/unit/test_quarantine_overfeed_review.py 新增 "
+                "test_scan_expired_actual_zero_not_expired / test_reconcile_actual_zero_not_auto_read "
+                "两反证钉死；py_compile + pyflakes 双关全绿；回滚脚本执行前自动备份 audit.db。"
+            ),
+        },
+        {
             "version": "v43.329",
             "date": "2026-11-09",
             "features": (

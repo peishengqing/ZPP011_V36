@@ -164,7 +164,7 @@ def _col(df, *candidates):
 
 # 失效复核：理由已不成立、建议移出隔离区的状态集合
 INVALID_QUARANTINE_STATUSES = {
-    "neg_loss_resolved", "neg_loss_over", "neg_loss_zeroed", "rule_no_match",
+    "neg_loss_resolved", "neg_loss_over", "rule_no_match",
     "manual_over_quota",
 }
 
@@ -202,7 +202,7 @@ def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
 
     仅返回「已失效」的记录（理由已不成立、建议移出隔离区），每条含：
         uid, reason, basis, detail, actual, quota, status
-    status ∈ {'neg_loss_resolved', 'neg_loss_zeroed', 'neg_loss_over', 'rule_no_match'}
+    status ∈ {'neg_loss_resolved', 'neg_loss_over', 'rule_no_match'}
     basis 为空（旧行）时降级按 reason 文本是否含「负损」/「自动规则」判断。
 
     注意：
@@ -310,7 +310,9 @@ def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
                     else:
                         status, detail = "neg_loss_over", "补投过量，实际>定额（多耗用）"
                 elif actual is not None and actual <= 0:
-                    status, detail = "neg_loss_zeroed", "实际已归零（非耗用）"
+                    # v43.330：实际=0（未投料/非耗用）属异常，须人工审计：
+                    # 不是「已解决」、也不判失效，保留在隔离区等待确认，不进失效列表。
+                    continue
                 else:
                     status, detail = "neg_loss_resolved", "负损条件已不满足"
                 result.append({

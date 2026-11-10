@@ -243,3 +243,22 @@ def test_reconcile_small_overfeed_still_auto_read():
     captured = {}
     _reconcile(df, {'U_SMALL': (0, 'fp', None, None, None, '')}, ['U_SMALL'], captured)
     assert captured.get('read') == ['U_SMALL']
+
+
+# ---------------------------------------------------------------- 实际=0（未投料/非耗用）
+def test_scan_expired_actual_zero_not_expired():
+    """反证：实际=0（未投料/非耗用）负损入区记录绝不判失效（不进失效列表，留隔离区待审计）。"""
+    df = _df([('U_ZERO', 0, 5000, 0)])
+    recs = _records('U_ZERO', '自动规则[第3条:食品半成品负损]',
+                    '负损:实际>0 且 实际<定额')
+    out = _scan(df, recs)
+    assert out == [], "实际=0 的负损记录被误判为失效（应留在隔离区审计）"
+
+
+def test_reconcile_actual_zero_not_auto_read():
+    """反证：实际=0（未投料/非耗用）负损记录绝不自动已读，也不自动翻回。"""
+    df = _df([('U_ZERO', 0, 5000, 0)])
+    captured = {}
+    _reconcile(df, {'U_ZERO': (0, 'fp', None, None, None, '')}, ['U_ZERO'], captured)
+    assert captured.get('read', []) == [], "实际=0 记录被自动已读"
+    assert 'rollback' not in captured, "实际=0 记录被自动翻回未读"
