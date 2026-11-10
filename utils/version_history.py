@@ -14,6 +14,15 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.331",
+            "date": "2026-11-10",
+            "features": (
+                "UI 主题主色升级：亮色与暗色主题主色由靛紫 #6B63D5/#7F77DD 统一换为专业靛蓝 "
+                "#3B5BDB 体系（亮色）/#5C7CFA 体系（暗色），配套 hover/pressed/浅底/选中/边框/"
+                "文字色阶同步替换，保持 light/dark_theme.qss 一一对应；灰边框与绿/橙/红语义色不动。"
+            ),
+        },
+        {
             "version": "v43.330",
             "date": "2026-11-10",
             "fixes": (
