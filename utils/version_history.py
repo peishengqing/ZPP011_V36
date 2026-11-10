@@ -14,6 +14,28 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.341",
+            "date": "2026-11-11",
+            "features": (
+                "设计稿剩余四块一次性落地（看板·弹窗·规则·主界面），业务口径零改动。\n"
+                "①操作栏 13→8：概览/进度/审核/未读/自动隔离 5 个低频按钮收进「更多」"
+                "QWidgetAction 弹出面板；按钮对象、clicked/toggled 连接、外部 setChecked 同步全部保留，"
+                "只换 parent；菜单内附「紧凑左栏」开关。\n"
+                "②左栏 236px 纯导航双模式：set_compact(True) 四张卡片只留头部作导航条并同步 splitter 首值，"
+                "点开某卡片时互斥展开、临时拉回 360px 保证表单不挤，再点收起回 236；"
+                "折叠判定改 isHidden()（窗口未 show 时 isVisible() 恒 False 会导致无法收起）。\n"
+                "③规则中心第四期：新增 RulePreviewWidget 第三页「命中预览（影子）」，"
+                "条件卡组内 OR / 组间 AND，对当前主表（_get_master_df 唯一口径）算布尔掩码，"
+                "预览命中前 50 行；只读——不写 rules.json、不改数据、不触发自动隔离/已读、不参与保存。\n"
+                "④重型弹窗统一外壳：AlertDialog / DeviationWarningDialog 内容布局重定向到 host，"
+                "__init__ 末尾经 install_dialog_shell 包 DashboardShell（标题栏/状态条/亮暗主题），"
+                "closeEvent 断连、open_maximized Win32 硬兜底、mark_row_read、批量已读、筛选/导出全部原样保留；"
+                "attach_snapshot_bar 增加向后兼容的可选 layout 参数供包壳后使用。\n"
+                "质量门禁：GUI offscreen 冒烟扩到 17 项（新增 ⑨⑩⑪⑫ 四块端到端断言）全部 PASS；"
+                "py_compile/pyflakes(F821/F822) 全绿、新文件 0 issues；pytest 全量无回归。"
+            ),
+        },
+        {
             "version": "v43.340",
             "date": "2026-11-10",
             "features": (

@@ -81,6 +81,12 @@ class DeviationWarningDialog(QDialog):
         self.open_maximized()
         # v43.299 方案C：统一看板美化 + 悬浮「📊 可视化看板」入口
         apply_board_visual(self, main_window, board_label="偏差率预警看板")
+        # v43.341：最后包统一外壳（必须在 apply_board_visual 之后以合并其 QSS）；
+        # closeEvent 断连 / open_maximized Win32 硬兜底 / 批量已读 全部原样保留
+        from gui_pyside6.components.dialog_shell_bridge import install_dialog_shell
+        install_dialog_shell(
+            self, self._shell_host, "偏差率预警看板 · |偏差率| ≥ 10%",
+            "已加载 %d 条预警记录" % len(self.original_df))
 
     def open_maximized(self):
         """默认最大化打开：showMaximized + 同步「还原」态 UI + Win32 硬兜底（同主窗口，防 Qt 修正回浮动）。
@@ -146,8 +152,11 @@ class DeviationWarningDialog(QDialog):
         super().closeEvent(event)
 
     def setup_ui(self):
-        layout = QVBoxLayout(self)
-        attach_snapshot_bar(self)
+        # v43.341：内容先装在 host 上，__init__ 末尾再包 DashboardShell；
+        # 后面几百行 layout.addWidget(...) 全部零改动。
+        self._shell_host = QWidget()
+        layout = QVBoxLayout(self._shell_host)
+        attach_snapshot_bar(self, layout)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
 

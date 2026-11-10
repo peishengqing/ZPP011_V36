@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 _CJK_FONT_OK = False
 
-"""工具栏重组回归：18 平级按钮 → 8 平铺 + 3 收纳菜单（看板/导出/维护）。
+"""工具栏重组回归：18 平级按钮 → 8 平铺 + 3 收纳菜单（看板/导出/维护）+「更多」低频面板。
 
 锁定 2026-09-30 的整理结果（v43.262 对齐裴哥此后的有意演化）：
 - 窗口最小宽度不再被工具栏顶到 1795px（1366 屏可用）
@@ -20,6 +20,10 @@ _CJK_FONT_OK = False
 - v43.264 裴哥选「A 全做」UI 现代化：全仓 emoji → 内联 SVG 线性图标
   （utils/icons.py），按钮/菜单文本去 emoji 前缀（图标承担语义），本文件
   同步对齐纯文本断言（图标本身由 icons.py 单测与离屏渲染保障）。
+- v43.341 设计稿第2项「13→8」：概览/进度/审核/未读/自动隔离 5 个低频按钮
+  收进「更多」QWidgetAction 弹出面板（按钮对象与连接全部保留，只换 parent），
+  收纳菜单随之变为 4 个；本文件改为断言「高频仍平铺 + 低频已收拢且对象仍在」，
+  并新增「紧凑左栏（236px 导航）」开关所在的菜单项。
 """
 import os
 import shutil
@@ -94,26 +98,40 @@ def QPushButton_ref():
 
 
 def test_toolbar_grouped_layout(main_window):
-    """工具栏：8 个平铺按钮 + 3 个收纳菜单，高频视图开关保留平铺。"""
-    from PySide6.QtWidgets import QToolButton, QPushButton
+    """工具栏：高频平铺 + 3 收纳菜单 +「更多」低频面板（v43.341）。"""
+    from PySide6.QtWidgets import QToolButton, QPushButton, QWidgetAction
 
     w = main_window
     bar = _action_bar(w)
     assert bar is not None and bar.objectName() == "actionBar"
 
-    # 收纳菜单（v43.262：MenuButtonPopup 自带下拉箭头；v43.264：去 emoji 前缀改 SVG 图标）
+    # 收纳菜单（v43.341 新增「更多」；v43.264 去 emoji 前缀改 SVG 图标）
     menu_texts = [b.text() for b in bar.findChildren(QToolButton) if b.objectName() == "actionMenuBtn"]
-    assert menu_texts == ["看板", "导出", "维护"], "收纳菜单异常: %s" % menu_texts
+    assert menu_texts == ["看板", "导出", "维护", "更多"], "收纳菜单异常: %s" % menu_texts
 
-    # 平铺按钮 = 工具栏直接子级里的 QPushButton + QToolButton（排除三个收纳菜单）
+    # 平铺按钮 = 工具栏直接子级里的 QPushButton + QToolButton（排除收纳菜单按钮）
     flat = [b.text() for b in (bar.findChildren(QPushButton) + bar.findChildren(QToolButton))
             if b.parentWidget() is bar and b.objectName() != "actionMenuBtn"]
-    for must in ["分析", "左侧栏", "筛选", "列头筛选",
-                 "概览", "进度", "未读", "自动隔离"]:
-        assert must in flat, "平铺按钮缺失: %s（现有 %s）" % (must, flat)
+    for must in ["分析", "左侧栏", "筛选", "列头筛选"]:
+        assert must in flat, "高频平铺按钮缺失: %s（现有 %s）" % (must, flat)
+    # v43.341：低频 5 个已收进「更多」面板，不再平铺
+    for moved in ["概览", "进度", "审核", "未读", "自动隔离"]:
+        assert moved not in flat, "%s 应收进「更多」菜单（现有 %s）" % (moved, flat)
     for gone in ["管理看板", "隔离区", "变动提醒", "替代料看板", "偏差率预警",
                  "负损看板", "完整报告", "自动整理隔离区", "🤖 AI审核"]:
         assert gone not in flat, "%s 不应再平铺（应收进菜单或已移除）" % gone
+
+    # 「更多」面板里 5 个按钮对象仍在（连接 / setChecked 同步不断链）
+    more = w.action_btn_more
+    widget_actions = [a for a in more.menu().actions()
+                      if isinstance(a, QWidgetAction)]
+    assert widget_actions, "「更多」菜单缺少 QWidgetAction 弹出面板"
+    panel_texts = [b.text() for b in
+                   widget_actions[0].defaultWidget().findChildren(QToolButton)]
+    for must in ["概览", "进度", "审核", "未读", "自动隔离"]:
+        assert must in panel_texts, "「更多」面板缺失: %s（现有 %s）" % (must, panel_texts)
+    assert any(a.text() == "紧凑左栏（236px 导航）"
+               for a in more.menu().actions()), "「更多」菜单缺少紧凑左栏开关"
 
 
 def test_menu_contents(main_window):

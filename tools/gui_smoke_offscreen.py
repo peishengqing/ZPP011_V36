@@ -307,6 +307,163 @@ def main():
                     app.processEvents()
     check("⑧ 看板多开：三看板非模态并存/复用/清理", _multi_board)
 
+    # ⑨ 操作栏 13→8（v43.341 设计稿第2项）
+    def _action_bar():
+        from PySide6.QtWidgets import QToolButton, QPushButton
+        more = getattr(win, 'action_btn_more', None)
+        assert more is not None, '「更多」按钮未创建'
+        bar = more.parent()
+        lay = bar.layout()
+        direct = [lay.itemAt(i).widget() for i in range(lay.count())]
+        visible_btns = [w for w in direct
+                        if isinstance(w, (QToolButton, QPushButton))]
+        names = ('action_btn_toggle_stats', 'action_btn_toggle_progress',
+                 'action_btn_audit', 'action_btn_unread_summary',
+                 'action_btn_auto_q')
+        low = [getattr(win, n, None) for n in names]
+        kept = all(b is not None for b in low)
+        moved = all(b.parent() is not bar for b in low if b is not None)
+        # 按钮对象没被重建：checkable 状态仍可切换（外部 setChecked 同步不断链）
+        togglable = False
+        if low[0] is not None:
+            old = low[0].isChecked()
+            low[0].setChecked(not old)
+            togglable = low[0].isChecked() == (not old)
+            low[0].setChecked(old)
+        compact_act = getattr(win, 'action_compact_left', None)
+        act_ok = compact_act is not None and compact_act.isCheckable()
+        menu_ok = more.menu() is not None and len(more.menu().actions()) >= 2
+        ok = (len(visible_btns) == 8 and kept and moved and togglable
+              and act_ok and menu_ok)
+        return ok, ("可见按钮=%d(期望8) 5对象保留=%s 已搬入菜单=%s 可切换=%s "
+                    "紧凑开关=%s 菜单项=%s" % (len(visible_btns), kept, moved,
+                                       togglable, act_ok, menu_ok))
+    check("⑨ 操作栏 13→8 收拢进「更多」", _action_bar)
+
+    # ⑩ 左栏 236px 紧凑纯导航（v43.341 设计稿第4项）
+    def _left_compact():
+        lp = win.left_panel_component
+        bodies = [lp.file_group.body, lp.alt_group.body,
+                  lp.semi_group.body, lp.preview_group.body]
+        sp = win.body_splitter
+        lp.set_compact(True)
+        w236, s236 = lp.left_panel.width(), sp.sizes()[0]
+        hidden = all(b.isHidden() for b in bodies)
+        # 模拟点开第一张卡片头：互斥展开 + 临时拉回 360 保证表单不挤
+        lp._compact_toggle(lp.file_group.body, lp.file_group.arrow_btn)
+        w360 = lp.left_panel.width()
+        opened = (not lp.file_group.body.isHidden()) and all(
+            b.isHidden() for b in bodies[1:])
+        lp._compact_toggle(lp.file_group.body, lp.file_group.arrow_btn)
+        back236 = lp.left_panel.width()
+        lp.set_compact(False)
+        w_restore, s_restore = lp.left_panel.width(), sp.sizes()[0]
+        ok = (w236 == 236 and s236 == 236 and hidden and w360 == 360
+              and opened and back236 == 236 and w_restore == 360
+              and s_restore == 360)
+        return ok, ("紧凑=%d/split%d 全收=%s 展开=%d 互斥=%s 收起=%d 还原=%d/split%d"
+                    % (w236, s236, hidden, w360, opened, back236,
+                       w_restore, s_restore))
+    check("⑩ 左栏 236px 紧凑导航双模式", _left_compact)
+
+    # ⑪ 规则中心：组间 AND / 组内 OR + 只读命中预览（第四期）
+    def _rule_preview():
+        import os
+        from gui_pyside6.dialogs.auto_rules_center_dialog import AutoRulesCenterDialog
+        rules_path = os.path.join(REPO, 'config', 'system', 'rules.json')
+        try:
+            with open(rules_path, 'rb') as fh:
+                before_rules = fh.read()
+        except OSError:
+            before_rules = b''
+        dlg = AutoRulesCenterDialog(win, df=df)
+        tabs_ok = dlg.tabs.count() == 3
+        p = dlg.tab_preview
+        g1 = p._groups[0]
+        r1 = g1._rows[0]
+        r1.col.setCurrentText('物料编码')
+        r1.op.setCurrentText('包含')
+        r1.val.setText('400')
+        p.evaluate()
+        hit1 = p.result.text()
+        # 组内 OR：再加「物料编码 等于 M003」→ 命中 2 行
+        g1.add_row()
+        r2 = g1._rows[1]
+        r2.col.setCurrentText('物料编码')
+        r2.op.setCurrentText('等于')
+        r2.val.setText('M003')
+        p.evaluate()
+        hit2 = p.result.text()
+        # 组间 AND：第二组「净偏差金额 大于 0」只命中 410001 → 交集为空
+        g2 = p.add_group()
+        r3 = g2._rows[0]
+        r3.col.setCurrentText('净偏差金额')
+        r3.op.setCurrentText('大于')
+        r3.val.setText('0')
+        p.evaluate()
+        hit3 = p.result.text()
+        try:
+            with open(rules_path, 'rb') as fh:
+                after_rules = fh.read()
+        except OSError:
+            after_rules = before_rules
+        readonly = (p.df is df and len(df) == 3
+                    and before_rules == after_rules
+                    and p.table.model() is p._model)
+        dlg.close()
+        ok = (tabs_ok and '命中 1 / 共 3 条' in hit1
+              and '命中 2 / 共 3 条' in hit2
+              and '命中 0 / 共 3 条' in hit3 and readonly)
+        return ok, ("tabs=%d 单条件='%s' 组内OR='%s' 组间AND='%s' 只读=%s"
+                    % (dlg.tabs.count(), hit1, hit2, hit3, readonly))
+    check("⑪ 规则中心 组间AND/组内OR 只读命中预览", _rule_preview)
+
+    # ⑫ 重型弹窗统一外壳（v43.341：不剥壳，原窗口钩子全保留）
+    def _heavy_shell():
+        from gui_pyside6.dialogs.alert_dialog import AlertDialog
+        from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
+        heavy = pd.DataFrame({
+            "物料编码": ["400001", "410001", "M003"],
+            "物料名称": ["原料A", "原料B", "原料C"],
+            "数量-定额": [100.0, 200.0, 300.0],
+            "数量-实际": [90.0, 210.0, 300.0],
+            "偏差率(%)": [12.0, -15.0, 20.0],
+            "净偏差金额": [-1000.0, 500.0, 0.0],
+            "_read": [0, 1, 0],
+            "data_id": ["d1", "d2", "d3"],
+            "备注": ["", "", ""],
+            "车间": ["A", "B", "A"],
+            "工厂": ["F1", "F1", "F1"],
+            "物料类型": ["原料", "包材", "原料"],
+            "半成品重分类": ["", "", ""],
+            "是否替代料": ["否", "是", "否"],
+        })
+        detail = []
+        ok = True
+        cases = (
+            ("替代料看板", AlertDialog, ("mark_row_read", "batch_mark_read")),
+            ("偏差率预警", DeviationWarningDialog,
+             ("open_maximized", "_bind", "closeEvent")),
+        )
+        for label, cls, required in cases:
+            dlg = cls(heavy, win)
+            shell = getattr(dlg, 'dashboard_shell', None)
+            root_ok = dlg.layout() is not None and dlg.layout().count() == 1
+            shell_ok = shell is not None and shell.get_theme() in ('light', 'dark')
+            status_ok = (shell is not None
+                         and '已加载' in shell._status_label.text())
+            host_ok = getattr(dlg, 'shell_host', None) is not None
+            table_ok = getattr(dlg, 'table_view', None) is not None
+            hooks_ok = all(hasattr(dlg, m) for m in required)
+            detail.append("%s(shell=%s,根=%s,状态=%s,host=%s,表=%s,钩子=%s)"
+                          % (label, shell_ok, root_ok, status_ok,
+                             host_ok, table_ok, hooks_ok))
+            ok = ok and all((shell_ok, root_ok, status_ok,
+                             host_ok, table_ok, hooks_ok))
+            dlg.close()
+        return ok, " ".join(detail)
+    check("⑫ 重型弹窗统一外壳（原窗口逻辑保留）", _heavy_shell)
+
     return report()
 
 

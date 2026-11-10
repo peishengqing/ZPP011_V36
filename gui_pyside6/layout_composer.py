@@ -12,7 +12,7 @@ v43.264：操作栏/菜单 emoji → 内联 SVG 线性图标（icons.py），按
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QLabel,
-    QPushButton, QToolButton, QMenu,
+    QPushButton, QToolButton, QMenu, QWidgetAction,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
@@ -208,8 +208,9 @@ class LayoutComposer:
         action_layout.addWidget(mw.action_btn_maint)
 
         action_layout.addWidget(self._make_separator())
-        # ═══ 面板开关 + 通知（低频，保留平铺，置于分组尾端）═══
-        # 创建面板开关按钮
+        # ═══ v43.341 设计稿第2项：低频 5 按钮收进「更多」弹出面板（可见控件 13→8）═══
+        # 关键：按钮对象本身不删、clicked/toggled 连接不删、外部 setChecked 同步不断，
+        # 只把 parent 从工具栏搬进弹出面板，避免 main_window 挂在它们身上的逻辑失效。
         mw.action_btn_toggle_stats = QToolButton()
         mw.action_btn_toggle_stats.setIcon(get_icon("gauge"))
         mw.action_btn_toggle_stats.setText("概览")
@@ -218,7 +219,6 @@ class LayoutComposer:
         mw.action_btn_toggle_stats.setChecked(True)
         mw.action_btn_toggle_stats.setToolTip("切换概览面板")
         mw.action_btn_toggle_stats.setObjectName("toolGhostBtn")
-        action_layout.addWidget(mw.action_btn_toggle_stats)
 
         mw.action_btn_toggle_progress = QToolButton()
         mw.action_btn_toggle_progress.setIcon(get_icon("zap"))
@@ -228,7 +228,6 @@ class LayoutComposer:
         mw.action_btn_toggle_progress.setChecked(True)
         mw.action_btn_toggle_progress.setToolTip("切换分析进度")
         mw.action_btn_toggle_progress.setObjectName("toolGhostBtn")
-        action_layout.addWidget(mw.action_btn_toggle_progress)
 
         # 添加审核按钮
         mw.action_btn_audit = QToolButton()
@@ -239,7 +238,6 @@ class LayoutComposer:
         mw.action_btn_audit.setObjectName("toolGhostBtn")
         # 设置点击事件
         mw.action_btn_audit.clicked.connect(lambda: self._on_audit_action(mw))
-        action_layout.addWidget(mw.action_btn_audit)
 
         mw.action_btn_unread_summary = QToolButton()
         mw.action_btn_unread_summary.setIcon(get_icon("megaphone"))
@@ -247,7 +245,6 @@ class LayoutComposer:
         mw.action_btn_unread_summary.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         mw.action_btn_unread_summary.setToolTip("未读汇总")
         mw.action_btn_unread_summary.setObjectName("toolGhostBtn")
-        action_layout.addWidget(mw.action_btn_unread_summary)
 
         # 自动隔离规则按钮（ARC-003 第七刀，需额外创建）
         mw.action_btn_auto_q = QToolButton()
@@ -256,7 +253,45 @@ class LayoutComposer:
         mw.action_btn_auto_q.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         mw.action_btn_auto_q.setToolTip("按规则自动移入隔离区")
         mw.action_btn_auto_q.setObjectName("toolGhostBtn")
-        action_layout.addWidget(mw.action_btn_auto_q)
+
+        more_panel = QWidget()
+        more_layout = QVBoxLayout(more_panel)
+        more_layout.setContentsMargins(10, 10, 10, 10)
+        more_layout.setSpacing(4)
+        for _btn in (
+            mw.action_btn_toggle_stats, mw.action_btn_toggle_progress,
+            mw.action_btn_audit, mw.action_btn_unread_summary,
+            mw.action_btn_auto_q,
+        ):
+            _btn.setMinimumWidth(150)
+            more_layout.addWidget(_btn)
+        more_layout.addStretch(1)
+
+        mw.action_btn_more = QToolButton()
+        mw.action_btn_more.setObjectName("actionMenuBtn")
+        mw.action_btn_more.setIcon(get_icon("menu"))
+        mw.action_btn_more.setText("更多")
+        mw.action_btn_more.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        mw.action_btn_more.setToolTip("概览 / 进度 / 审核 / 未读 / 自动隔离 / 紧凑左栏")
+        mw.action_btn_more.setPopupMode(QToolButton.InstantPopup)
+        more_menu = QMenu(mw)
+        _more_widget_action = QWidgetAction(more_menu)
+        _more_widget_action.setDefaultWidget(more_panel)
+        more_menu.addAction(_more_widget_action)
+        more_menu.addSeparator()
+        _compact_act = QAction("紧凑左栏（236px 导航）", more_menu)
+        _compact_act.setCheckable(True)
+        _compact_act.toggled.connect(
+            lambda on: mw.left_panel_component.set_compact(on))
+        more_menu.addAction(_compact_act)
+        mw.action_btn_more.setMenu(more_menu)
+        mw.action_compact_left = _compact_act
+        action_layout.addWidget(mw.action_btn_more)
+
+        # 一次性按钮点完收起菜单，避免遮住主界面（checkable 两个不收，方便连点）
+        for _once in (mw.action_btn_audit, mw.action_btn_unread_summary,
+                      mw.action_btn_auto_q):
+            _once.clicked.connect(lambda _c=False, m=more_menu: m.close())
 
         action_layout.addStretch()
         shortcut_hint = QLabel("F5:分析 | F6:导出 | F7:效益 | F11:全屏")

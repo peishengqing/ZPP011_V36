@@ -23,7 +23,52 @@ class LeftPanelComponent:
 
     def __init__(self, main_window):
         self.mw = main_window
+        self.compact = False  # v43.341：默认 360px 卡片表单态
         self.left_panel = self._create_panel()
+
+    # ── v43.341 设计稿第4项：236px 纯导航 / 360px 卡片表单 双模式 ──
+    def _card_groups(self):
+        return [g for g in (
+            getattr(self, 'file_group', None), getattr(self, 'alt_group', None),
+            getattr(self, 'semi_group', None), getattr(self, 'preview_group', None),
+        ) if g is not None]
+
+    def _apply_width(self, width):
+        """改左栏固定宽并同步 splitter 首值，避免两者约束打架。"""
+        self.left_panel.setFixedWidth(width)
+        sp = getattr(self.mw, 'body_splitter', None)
+        if sp is not None:
+            try:
+                sizes = sp.sizes()
+                if len(sizes) >= 3:
+                    sizes[0] = width
+                    sp.setSizes(sizes)
+            except Exception:
+                pass
+
+    def _compact_toggle(self, body, arrow_btn):
+        """紧凑模式下只允许一张卡片展开；展开时临时回到 360px，表单永不被挤。"""
+        # 用 isHidden() 而非 isVisible()：窗口尚未 show 时后者恒为 False，
+        # 会导致每次点击都判定成「展开」而无法收起（offscreen 场景尤其明显）。
+        expanding = body.isHidden()
+        for g in self._card_groups():
+            g.body.setVisible(False)
+            g.arrow_btn.setText("▶")
+        if expanding:
+            body.setVisible(True)
+            arrow_btn.setText("▼")
+            self._apply_width(360)
+        else:
+            self._apply_width(236)
+
+    def set_compact(self, enabled):
+        """切换紧凑纯导航(236px) / 原卡片表单(360px)。返回当前状态。"""
+        self.compact = bool(enabled)
+        for g in self._card_groups():
+            g.body.setVisible(not self.compact)
+            g.arrow_btn.setText("▶" if self.compact else "▼")
+        self._apply_width(236 if self.compact else 360)
+        return self.compact
 
     def _create_panel(self):
         panel = QWidget()
@@ -114,6 +159,10 @@ class LeftPanelComponent:
 
         # 连接折叠逻辑：箭头按钮点击 + header 区域点击
         def toggle_state():
+            if getattr(self, 'compact', False):
+                # v43.341 紧凑导航态：走互斥展开 + 临时拉宽逻辑
+                self._compact_toggle(body, arrow_btn)
+                return
             is_visible = body.isVisible()
             body.setVisible(not is_visible)
             arrow_btn.setText("▶" if is_visible else "▼")

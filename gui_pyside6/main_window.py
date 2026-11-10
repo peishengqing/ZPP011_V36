@@ -2813,7 +2813,9 @@ class MainWindow(QMainWindow):
         """打开「规则中心」：Tab1 自动隔离区 + Tab2 自动已读，两页共享保存。"""
         from PySide6.QtWidgets import QDialog
         from gui_pyside6.dialogs.auto_rules_center_dialog import AutoRulesCenterDialog
-        dlg = AutoRulesCenterDialog(self, open_tab=open_tab)
+        # v43.341：把主表数据按唯一口径喂给③命中预览页（只读，不改变保存行为）
+        _master = self._get_master_df()
+        dlg = AutoRulesCenterDialog(self, open_tab=open_tab, df=_master)
         if dlg.exec_() == QDialog.DialogCode.Accepted:
             toast("规则已更新（自动隔离 + 自动已读）", parent=self)
 

@@ -8,8 +8,13 @@ from PySide6.QtWidgets import QHBoxLayout, QPushButton, QLabel, QComboBox, QMess
 import core.snapshot as snapshot
 
 
-def attach_snapshot_bar(dialog) -> None:
-    """在对话框顶部插入快照工具条。dialog 需具备 self.main_window 属性。"""
+def attach_snapshot_bar(dialog, layout=None) -> None:
+    """在对话框顶部插入快照工具条。dialog 需具备 self.main_window 属性。
+
+    v43.341：新增可选 ``layout`` 参数。重型弹窗接入 DashboardShell 后，
+    内容布局挂在独立 host 上、``dialog.layout()`` 为空，由调用方显式传入；
+    不传时行为与旧版完全一致（取 dialog.layout()），其余 4 个调用点零改动。
+    """
     bar = QHBoxLayout()
     bar.addWidget(QLabel("口径:"))
     caliber = QComboBox()
@@ -21,7 +26,8 @@ def attach_snapshot_bar(dialog) -> None:
     bar.addWidget(btn)
     bar.addStretch(1)
 
-    layout = dialog.layout()
+    if layout is None:
+        layout = dialog.layout()
     if layout is not None:
         layout.insertLayout(0, bar)
     dialog._snap_caliber = caliber

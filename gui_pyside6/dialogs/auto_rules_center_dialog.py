@@ -13,14 +13,15 @@ from PySide6.QtWidgets import (
 
 from gui_pyside6.dialogs.auto_quarantine_rule_dialog import AutoQuarantineRuleWidget
 from gui_pyside6.dialogs.auto_read_rule_dialog import AutoReadRuleWidget
+from gui_pyside6.widgets.rule_preview_widget import RulePreviewWidget
 from PySide6.QtCore import Qt
 
 
 class AutoRulesCenterDialog(QDialog):
-    def __init__(self, parent=None, open_tab=0):
+    def __init__(self, parent=None, open_tab=0, df=None):
         super().__init__(parent)
         self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
-        self.setWindowTitle("⚙ 规则中心（自动隔离 / 自动已读）")
+        self.setWindowTitle("⚙ 规则中心（自动隔离 / 自动已读 / 命中预览）")
         self.setMinimumWidth(620)
         self.setMinimumHeight(620)
 
@@ -33,6 +34,9 @@ class AutoRulesCenterDialog(QDialog):
         self.tab_read = AutoReadRuleWidget(self)
         self.tabs.addTab(self.tab_quarantine, "① 自动隔离区")
         self.tabs.addTab(self.tab_read, "② 自动已读")
+        # v43.341 第四期：影子模式命中预览（只读，不参与保存）
+        self.tab_preview = RulePreviewWidget(df, self)
+        self.tabs.addTab(self.tab_preview, "③ 命中预览（影子）")
         if 0 <= open_tab < self.tabs.count():
             self.tabs.setCurrentIndex(open_tab)
         layout.addWidget(self.tabs, 1)
@@ -46,6 +50,7 @@ class AutoRulesCenterDialog(QDialog):
         layout.addWidget(self.btn_box)
 
     def _on_accept(self):
+        # 只保存前两页；③ 命中预览是纯只读影子模式，没有任何可保存状态
         ok_q = self.tab_quarantine.save()
         ok_r = self.tab_read.save()
         if ok_q and ok_r:

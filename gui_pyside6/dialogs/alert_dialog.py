@@ -6,7 +6,7 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QCheckBox,
-    QGroupBox,
+    QGroupBox, QWidget,
 )
 from PySide6.QtCore import Qt, QPoint
 import pandas as pd
@@ -49,10 +49,19 @@ class AlertDialog(QDialog):
         self.set_data(alerts_df)
         # v43.299 方案C：统一看板美化 + 悬浮「📊 可视化看板」入口
         apply_board_visual(self, main_window, board_label="替代料看板")
+        # v43.341：最后包统一外壳（必须在 apply_board_visual 之后以合并其 QSS）；
+        # 原窗口逻辑（closeEvent / 最大化 / 批量已读 / 筛选 / 导出）零改动
+        from gui_pyside6.components.dialog_shell_bridge import install_dialog_shell
+        install_dialog_shell(
+            self, self._shell_host, "实时替代料看板 · 替代料偏差预警",
+            "已加载 %d 条预警记录" % len(self.original_df))
 
     def setup_ui(self):
-        layout = QVBoxLayout(self)
-        attach_snapshot_bar(self)
+        # v43.341：内容先装在 host 上，__init__ 末尾再包 DashboardShell；
+        # 后面几百行 layout.addWidget(...) 全部零改动。
+        self._shell_host = QWidget()
+        layout = QVBoxLayout(self._shell_host)
+        attach_snapshot_bar(self, layout)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
 
