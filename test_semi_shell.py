@@ -10,7 +10,6 @@ import os
 sys.path.insert(0, 'E:/zpp011_v2')
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 
-import pandas as pd
 from PySide6.QtWidgets import QApplication
 
 app = QApplication.instance() or QApplication([])
