@@ -4,10 +4,8 @@ UI 设置控制器
 负责：统计卡片更新、进度/状态标签管理、视图可见性控制
 """
 
-import pandas as pd
 import time
-from PySide6.QtCore import QObject, Signal, QTimer
-from PySide6.QtWidgets import QLabel, QProgressBar
+from PySide6.QtCore import QObject
 
 from utils.version_history import VERSION_HISTORY, APP_NAME, AUTHOR
 
@@ -185,9 +183,11 @@ class UISettingsController(QObject):
 
     def _show_about(self):
         """「关于」弹窗（v43.317 真身自 MainWindow 迁入）。"""
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QPushButton, QFrame, QTextBrowser
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QTextBrowser
+        from PySide6.QtCore import Qt
         dialog = QDialog(self.main_window)
-        dialog.setWindowTitle(f"关于 - ZPP011 v{VERSION_HISTORY[0]['version']}")
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowMinMaxButtonsHint)
+        dialog.setWindowTitle(f"关于 - ZPP011 {VERSION_HISTORY[0]['version']}")
         dialog.setMinimumSize(680, 560)
         dialog.setObjectName("aboutDialog")
         main_layout = QVBoxLayout(dialog)
@@ -201,7 +201,7 @@ class UISettingsController(QObject):
         info_layout.setContentsMargins(28, 24, 28, 16)
         title_row = QHBoxLayout()
         icon_label = QLabel("\U0001F3ED")
-        title_label = QLabel(f"{APP_NAME} v{VERSION_HISTORY[0]['version']}")
+        title_label = QLabel(f"{APP_NAME} {VERSION_HISTORY[0]['version']}")
         title_label.setObjectName("aboutTitle")
         title_row.addWidget(icon_label)
         title_row.addWidget(title_label)

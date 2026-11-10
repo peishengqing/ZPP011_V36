@@ -14,6 +14,14 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.332",
+            "date": "2026-11-10",
+            "features": (
+                "「关于」弹窗新增最大化/最小化按钮：_show_about 补 Qt.WindowMinMaxButtonsHint，"
+                "标题栏可最大化铺满查看版本日志（对齐 deviation_warning_dialog 等既有对话框写法）。"
+            ),
+        },
+        {
             "version": "v43.331",
             "date": "2026-11-10",
             "features": (
