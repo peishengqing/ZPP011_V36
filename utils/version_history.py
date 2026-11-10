@@ -14,6 +14,21 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.334",
+            "date": "2026-11-10",
+            "features": (
+                "正损(超投)看板迁入 DashboardShell 统一外壳（落地路线第二期）："
+                "新增 `gui_pyside6/widgets/pos_loss_content.py`（由负损组件模板生成），"
+                "DashboardController._show_pos_loss_dashboard 改用 "
+                "DashboardShell + PosLossContent 组合，与负损看板共享标题栏/操作条/状态条/"
+                "亮暗自动同步/状态条实时联动/Enter·Alt+V·F5 快捷键/滚动优化。"
+                "**口径不变**：仍为 实际>定额 且 定额>0（超投），定额 0 属疑似投错、"
+                "实际 0 属未投料、a==q 持平，均不进本看板；「含未投料」勾选框在正损下禁用。"
+                "导出默认名改 正损超投看板.xlsx，定位/下钻来源标 正损看板。"
+                "验收：test_posloss_shell.py 六项冒烟全过（含 5 种数据情形口径反证）。"
+            ),
+        },
+        {
             "version": "v43.333",
             "date": "2026-11-10",
             "features": (

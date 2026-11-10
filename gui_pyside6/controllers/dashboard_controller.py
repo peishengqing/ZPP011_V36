@@ -18,11 +18,13 @@
 import pandas as pd
 
 from PySide6.QtWidgets import QMessageBox, QDialog, QVBoxLayout
+from PySide6.QtCore import Qt
 
 from gui_pyside6.utils.table_autofit import install_adaptive
 
 from gui_pyside6.components.dashboard_shell import DashboardShell
 from gui_pyside6.widgets.neg_loss_content import NegLossContent
+from gui_pyside6.widgets.pos_loss_content import PosLossContent
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.alt_chain_dialog import AltChainDialog
 from gui_pyside6.dialogs.dashboard_dialog import DashboardDialog
@@ -30,7 +32,6 @@ from gui_pyside6.dialogs.data_stability_dialog import DataStabilityDialog
 from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
 from gui_pyside6.dialogs.flip_check_dashboard_dialog import FlipCheckDashboardDialog
 from gui_pyside6.dialogs.material_profile_dialog import MaterialProfileDialog
-from gui_pyside6.dialogs.pos_loss_dashboard_dialog import PosLossDashboardDialog
 from gui_pyside6.dialogs.quarantine_review_dialog import QuarantineReviewDialog
 from gui_pyside6.dialogs.semi_dashboard_dialog import SemiDashboardDialog
 from core.alert_monitor import filter_alt_alerts
@@ -188,7 +189,8 @@ class DashboardController:
 
         与负损看板「0<=实际<定额（含未投料）」互补：本看板看的是**超投**那一侧，
         实测 2026-10-10 数据正损子集 614 行（负损 785 / 未投料 131 / 疑似投错 238
-        / 持平 397）。判定在 `PosLossDashboardDialog._pos_loss_mask` 内，本方法只负责取数。
+        / 持平 397）。判定在 `PosLossContent._pos_loss_mask` 内，本方法只负责取数。
+        v43.334：迁至 DashboardShell + PosLossContent 组合，与负损看板统一外壳。
         """
         try:
             df = self.mw._get_master_df()  # 与主表同源，避免两边数对不上
@@ -211,7 +213,27 @@ class DashboardController:
             #（其 `_semi_class_mask` 有 v43.148 三层兜底，不靠该列也筛得出来）
             if "半成品重分类" not in sub.columns:
                 sub["半成品重分类"] = ""
-            dialog = PosLossDashboardDialog(sub, self.mw)
+
+            # --- v43.334：DashboardShell + PosLossContent 组合（与负损看板统一外壳）---
+            content = PosLossContent(self.mw)
+            content.set_data(sub)
+
+            shell = DashboardShell()
+            shell.set_title("正损(超投)看板")
+            shell.set_content(content)
+            shell.set_status("已加载正损数据 · 共 {} 条记录".format(len(sub)))
+            content.shell = shell
+
+            dialog = QDialog(self.mw)
+            dialog.setModal(True)
+            dialog.setWindowTitle("正损(超投).看板 - ZPP011 v43.334")
+            dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowMinMaxButtonsHint)
+            layout = QVBoxLayout(dialog)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(shell)
+            dialog.setMinimumSize(1400, 800)
+            dialog.resize(1400, 800)
+
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self.mw, "错误", f"打开正损看板失败: {e}")
