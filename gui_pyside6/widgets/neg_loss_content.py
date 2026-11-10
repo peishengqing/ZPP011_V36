@@ -18,7 +18,7 @@ from gui_pyside6.utils.column_filter import ColumnFilterController
 from gui_pyside6.utils.semi_class import merge_semi_class_values, ensure_semi_class_column
 from gui_pyside6.widgets.filter_panel import _color_icon
 from gui_pyside6.utils.icons import add_icon_action
-from gui_pyside6.utils.table_autofit import get_adaptive
+from gui_pyside6.utils.table_autofit import get_adaptive, install_adaptive
 
 
 class NegLossContent(QWidget):
@@ -581,7 +581,8 @@ class NegLossContent(QWidget):
         # 剥壳时该动作被一并移除，导致 get_adaptive() 恒 None、列宽退化成 Qt 等宽。
         # 幂等：重复 set_data 不重装，避免两套控制器打架。
         try:
-            from gui_pyside6.utils.table_autofit import install_adaptive, get_adaptive
+            # v43.338：改用模块级导入。函数内局部 import 会把 get_adaptive 判为
+            # set_data 的局部变量，导致本函数开头(489行)先调用时抛 UnboundLocalError。
             if get_adaptive(self.table_view) is None:
                 _auto = install_adaptive(self.table_view, mode='content', key='负损看板')
                 _auto.schedule_initial()

@@ -104,9 +104,13 @@ class InteractionController:
     def _on_selection_changed(self, selected: Any, deselected: Any):
         """选中变化时，显示选中合计"""
         # v43.337：底部状态条选中行数（置于最前，任何提前 return 前都先更新，清空时归零）
+        # v43.338：主表为 SelectItems 模式，selectedRows() 在 Ctrl+A/框选单元格时
+        # 恒返回空 → 底部永远显示 0。改为按行号去重统计，与项目既有
+        # selectedIndexes() 语义（layout_composer._on_audit_action 等）保持一致。
         try:
-            self.mw.bottom_bar.set_selected(
-                len(self.mw.table_view.selectionModel().selectedRows()))
+            _sm = self.mw.table_view.selectionModel()
+            _rows = len({idx.row() for idx in _sm.selectedIndexes()}) if _sm is not None else 0
+            self.mw.bottom_bar.set_selected(_rows)
         except Exception:
             pass
         if self.mw.proxy_model is None or self.mw.view_model.df is None:

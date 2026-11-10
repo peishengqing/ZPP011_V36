@@ -14,6 +14,24 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.338",
+            "date": "2026-11-10",
+            "features": (
+                "GUI offscreen 实跑冒烟（QT_QPA_PLATFORM=offscreen，真实构建 MainWindow + 1.5s 事件循环 + 灌 3 行数据）"
+                "抓出并修复两处 pytest 未覆盖的真问题：\n"
+                "①负损/正损看板 `set_data()` 列宽自适应实际失效：v43.335 补回 install_adaptive 时把"
+                "`from ...table_autofit import install_adaptive, get_adaptive` 写在 set_data 函数体后段，"
+                "编译期令 get_adaptive 成为该函数局部变量，函数开头(_ctrl = get_adaptive(...))先访问即抛"
+                "UnboundLocalError，且被内部 try/except 吞掉只打印堆栈 —— 表面能开、列宽却永远退化成 Qt 等宽。"
+                "修法：模块顶层统一导入 get_adaptive + install_adaptive，删除函数内局部 import。\n"
+                "②底部状态条选中行数在 Ctrl+A/框选时恒为 0：主表是 SelectItems 模式，"
+                "selectedRows() 仅在整行选中时才有值。改为按 selectedIndexes() 行号去重统计，"
+                "与项目既有语义(layout_composer._on_audit_action)一致。\n"
+                "冒烟结果：11/11 PASS（主窗口构建、标题栏48px+动态副标题、底部状态条、三开关icon-only、"
+                "KPI 52px×7、左栏360+splitter、数据联动记录/偏差/未读、全选选中行数、三看板 Content+Shell+亮暗主题）。"
+            ),
+        },
+        {
             "version": "v43.337",
             "date": "2026-11-10",
             "features": (
