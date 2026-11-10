@@ -464,6 +464,45 @@ def main():
         return ok, " ".join(detail)
     check("⑫ 重型弹窗统一外壳（原窗口逻辑保留）", _heavy_shell)
 
+    # ⑬ v43.342：重复标题清理 + 空操作条按需（裴哥 11-11 反馈）
+    def _title_cleanup():
+        from PySide6.QtWidgets import QScrollArea, QLabel as _QLabel
+        detail = []
+        ok = True
+        for label, cls, board_title in (
+            ("负损", NegLossContent, "负损(含未投料)看板"),
+            ("正损", PosLossContent, "正损(超投)看板"),
+        ):
+            c = cls(win)
+            c.set_data(df)
+            # ① Content 内不得再画同名标题（旧剥壳残留）
+            dup = [l for l in c.findChildren(_QLabel)
+                   if l.text().strip() == board_title]
+            no_attr = not hasattr(c, '_title_label')
+            # ② 筛选区必须是主布局第一项 —— 控件确实顶到最上，不再隔一行标题
+            first = c.layout().itemAt(0)
+            first_scroll = (first is not None and
+                            isinstance(first.widget(), QScrollArea))
+            # ③ 组合后整窗里该标题只出现一次（只由外壳标题栏提供）
+            s = DashboardShell()
+            s.set_title(board_title)
+            s.set_content(c)
+            shell_titles = [l for l in s.findChildren(_QLabel)
+                            if l.text().strip() == board_title]
+            one_title = len(shell_titles) == 1
+            # ④ 空操作条默认隐藏，放入控件后才展开
+            hidden = s._action_bar.isHidden()
+            s.set_action_widget(_QLabel("操作"))
+            expanded = not s._action_bar.isHidden()
+            good = (not dup and no_attr and first_scroll and one_title
+                    and hidden and expanded)
+            ok = ok and good
+            detail.append("%s(重复=%d,首项筛选=%s,唯一标题=%s,空条隐藏=%s,放入展开=%s)"
+                          % (label, len(dup), first_scroll, one_title,
+                             hidden, expanded))
+        return ok, " ".join(detail)
+    check("⑬ 重复标题清理 + 控件上移 + 空条不占位", _title_cleanup)
+
     return report()
 
 

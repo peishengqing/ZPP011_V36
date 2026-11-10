@@ -43,6 +43,10 @@ class DashboardShell(QWidget):
         title_layout.addWidget(self._title_label, 1)
         self._action_bar = QFrame()
         self._action_bar.setFixedHeight(36)
+        # v43.342：set_action_widget() 全项目零调用，这条 36px 空带原本无条件占位，
+        # 是「外壳标题与内容标题之间一大块留白」的主因。默认隐藏（隐藏后不占布局
+        # 高度），只有真正放入操作控件时才展开。
+        self._action_bar.setVisible(False)
         layout.addWidget(self._title_bar)
         layout.addWidget(self._action_bar)
 
@@ -121,6 +125,8 @@ class DashboardShell(QWidget):
         self.title_changed.emit(text)
 
     def set_action_widget(self, widget):
+        # v43.342：真正放入操作控件时才把 36px 操作条展开
+        self._action_bar.setVisible(True)
         layout = QHBoxLayout(self._action_bar)
         layout.setContentsMargins(16, 8, 16, 8)
         layout.addWidget(widget)

@@ -14,6 +14,26 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.342",
+            "date": "2026-11-11",
+            "features": (
+                "修看板重复标题 + 顶部留白浪费（裴哥 11-11 截图反馈「为什么这两个标题是重复的」）。\n"
+                "根因：v43.334/335 剥壳时把旧对话框自带的标题行（QLabel + Segoe UI 14 Bold）"
+                "整段搬进 NegLossContent / PosLossContent，外层 DashboardShell 又由 controller "
+                "set_title() 画了同名标题栏；同时 shell 的 36px _action_bar 因 set_action_widget() "
+                "全项目零调用而无条件占位。实测两标题全局 y=8/90，标题到筛选区 82px。\n"
+                "①删除两个 Content 的旧标题行（_title_label 全局零引用，删除安全），"
+                "QVBoxLayout 自动把筛选区顶到第一项；顺带清掉因此变成孤儿的 QFont 导入。\n"
+                "②DashboardShell._action_bar 默认 setVisible(False)（隐藏后不占布局高度），"
+                "仅在 set_action_widget() 真正放入控件时展开 —— 兼容未来扩展，现有调用点零改动。\n"
+                "③实测改后：标题数 1、空操作条隐藏、筛选区全局 y 从 122 顶到 54（上移 68px），"
+                "标题到筛选区间距 82px → 46px，表格多拿约 68px 高度。\n"
+                "④GUI 冒烟扩到 18 项，新增 ⑬：Content 内同名标题为 0、主布局首项是筛选 QScrollArea、"
+                "组合后整窗标题唯一、空操作条默认隐藏且放入控件后展开。\n"
+                "业务口径零改动；半成品看板本就无内层标题，未动。"
+            ),
+        },
+        {
             "version": "v43.341",
             "date": "2026-11-11",
             "features": (

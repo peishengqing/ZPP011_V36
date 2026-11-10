@@ -4,7 +4,7 @@ import re
 import pandas as pd
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QCheckBox, QComboBox, QFrame, QPushButton, QHeaderView, QAbstractItemView, QMenu, QFileDialog, QScrollArea, QGroupBox, QDialogButtonBox, QTableView, QInputDialog, QDialog
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QFont, QKeySequence, QShortcut
+from PySide6.QtGui import QKeySequence, QShortcut
 from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_color_keys
 from gui_pyside6.dialogs.col_filter_ui import make_col_filter_button, make_col_filter_hint_label, set_col_filter_button_on
 from core.quarantine_manager import add_quarantine_batch, remove_quarantine, get_quarantined_ids
@@ -62,13 +62,9 @@ class NegLossContent(QWidget):
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
 
-        # 标题行
-        title_row = QHBoxLayout()
-        self._title_label = QLabel("负损(含未投料)看板")
-        self._title_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        title_row.addWidget(self._title_label)
-        title_row.addStretch()
-        layout.addLayout(title_row)
+        # v43.342：删掉剥壳时带进来的旧标题行 —— 外层 DashboardShell 已有标题栏，
+        # 两处同名 14pt 粗体重复。移除后筛选区由 QVBoxLayout 自动顶到最上方，
+        # 表格多拿一整行空间（裴哥 11-11 反馈「重复标题 + 上方留白浪费」）。
 
         # 顶部筛选栏（滚动区域）
         scroll = QScrollArea()
