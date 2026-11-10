@@ -22,6 +22,7 @@ class BatchOperationDialog(QDialog):
     
     def __init__(self, df, selected_indices, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.df = df
         self.selected_indices = selected_indices
         

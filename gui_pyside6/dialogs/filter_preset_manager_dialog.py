@@ -3,9 +3,11 @@
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QPushButton, QLabel, QFileDialog, QInputDialog, QMessageBox, QMenu
+    QPushButton, QLabel, QFileDialog, QInputDialog, QMessageBox, QMenu,
+    QComboBox,
 )
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont
 import datetime
 import os
 
@@ -20,6 +22,7 @@ class FilterPresetManagerDialog(QDialog):
 
     def __init__(self, parent=None, filter_controller=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.filter_controller = filter_controller
         self.setWindowTitle("筛选预设管理")
         self.setMinimumWidth(600)

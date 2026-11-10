@@ -22,6 +22,7 @@ _CFG_PATH = os.path.join(
 class AltChainDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.setWindowTitle("🔗 替代料长链预警")
         self.resize(900, 600)
         self._build_ui()

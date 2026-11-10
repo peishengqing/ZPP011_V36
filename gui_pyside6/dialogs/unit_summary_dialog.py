@@ -4,11 +4,13 @@
 """
 import pandas as pd
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QPushButton, QMessageBox
+from PySide6.QtCore import Qt
 
 
 class UnitSummaryDialog(QDialog):
     def __init__(self, parent, df):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.setWindowTitle("按单位汇总")
         self.resize(600, 400)
         self.setModal(True)

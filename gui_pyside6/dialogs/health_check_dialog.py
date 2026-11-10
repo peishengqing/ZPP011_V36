@@ -22,6 +22,7 @@ class HealthCheckDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.setWindowTitle("系统健康检查")
         self.setMinimumSize(700, 500)
         self._setup_ui()

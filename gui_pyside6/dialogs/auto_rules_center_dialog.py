@@ -13,11 +13,13 @@ from PySide6.QtWidgets import (
 
 from gui_pyside6.dialogs.auto_quarantine_rule_dialog import AutoQuarantineRuleWidget
 from gui_pyside6.dialogs.auto_read_rule_dialog import AutoReadRuleWidget
+from PySide6.QtCore import Qt
 
 
 class AutoRulesCenterDialog(QDialog):
     def __init__(self, parent=None, open_tab=0):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.setWindowTitle("⚙ 规则中心（自动隔离 / 自动已读）")
         self.setMinimumWidth(620)
         self.setMinimumHeight(620)

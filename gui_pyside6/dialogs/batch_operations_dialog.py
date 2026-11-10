@@ -7,11 +7,13 @@ from PySide6.QtWidgets import (
     QPushButton, QProgressBar, QFileDialog, QMessageBox
 )
 from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import Qt
 
 
 class BatchChangeStatusDialog(QDialog):
     def __init__(self, parent, row_indices, audit_data, on_finished):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.setWindowTitle("批量改状态")
         self.resize(400, 200)
         self.row_indices = row_indices
@@ -86,6 +88,7 @@ class BatchExportWorker(QThread):
 class BatchExportDialog(QDialog):
     def __init__(self, parent, df):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.setWindowTitle("批量导出")
         self.resize(400, 150)
         self.df = df

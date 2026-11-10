@@ -39,6 +39,7 @@ class MaterialPresetsDialog(QDialog):
 
     def __init__(self, parent=None, presets=None, preset_path=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.preset_path = preset_path
         self._presets = list(presets or [])
         self.setWindowTitle("物料名称预设管理")

@@ -21,6 +21,7 @@ class AIReasonPanel(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.analyzer = AIReasonAnalyzer()
         self.setWindowTitle("AI 归因摘要")
         self.setMinimumSize(400, 500)

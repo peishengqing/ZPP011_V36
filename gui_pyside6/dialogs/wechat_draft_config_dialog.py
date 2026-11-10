@@ -14,6 +14,7 @@ from gui_pyside6.utils.icons import make_button
 class WechatDraftConfigDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.setWindowTitle("配置微信草稿格式")
         self.resize(600, 500)
         self.current_config = None

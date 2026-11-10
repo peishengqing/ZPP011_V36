@@ -11,11 +11,13 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QTextBrowser,
                                QPushButton, QHBoxLayout, QFileDialog, QMessageBox)
 
 import core.audit_evidence as ae
+from PySide6.QtCore import Qt
 
 
 class AttributionListDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.setWindowTitle("归因建议清单（F2）")
         self.resize(720, 560)
         self._items = []

@@ -20,6 +20,7 @@ class ThresholdConfigDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.config = ConfigManager()
         self.setWindowTitle("阈值与提醒配置")
         self.setMinimumSize(600, 500)

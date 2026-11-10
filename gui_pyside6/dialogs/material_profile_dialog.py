@@ -15,6 +15,7 @@
 import os
 import sqlite3
 from collections import Counter
+from PySide6.QtCore import Qt
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QGroupBox, QFrame, QScrollArea,
@@ -64,6 +65,7 @@ def normalize_text(v):
 class MaterialProfileDialog(QDialog):
     def __init__(self, code, parent=None, name=''):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self._code = normalize_text(code)   # v43.184 修：兼容 numpy.int64/float，勿直接 .strip()
         self._name = normalize_text(name)
         self.setWindowTitle("🪪 物料画像 — %s" % self._code)

@@ -32,6 +32,7 @@ from core.auto_read_rules import (
     save_auto_read_rules_config,
 )
 from gui_pyside6.utils.icons import make_button
+from PySide6.QtCore import Qt
 
 # 类型 combo 的显示顺序（与 CONDITION_TYPES 注册表一致）
 _TYPE_ORDER = [
@@ -501,6 +502,7 @@ class AutoReadRuleDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.setWindowTitle("⚙ 自动已读规则")
         self.setMinimumWidth(620)
         self.setMinimumHeight(600)

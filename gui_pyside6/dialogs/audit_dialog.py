@@ -23,6 +23,7 @@ class AuditDialog(QDialog):
     
     def __init__(self, df, data_id, from_status="待审核", parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.df = df
         self.data_id = data_id
         self.from_status = from_status

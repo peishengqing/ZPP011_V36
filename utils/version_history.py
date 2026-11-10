@@ -14,6 +14,21 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.336",
+            "date": "2026-11-10",
+            "features": (
+                "UI 窗口统一收尾（落地路线第三期 · 弹窗/规则/管理看板补齐最大化）。"
+                "为全部 26 个顶层 QDialog 弹窗统一追加 `WindowMinMaxButtonsHint`"
+                "（含替代料看板、规则中心、管理看板、偏差时间线、归因清单、审核类弹窗等），"
+                "与主窗口及负损·正损·半成品看板「可最大化/最小化」体验一致；"
+                "缺失 `Qt` 导入的文件自动补齐 `from PySide6.QtCore import Qt`。\n"
+                "**顺手修复一处既有 F821**：`filter_preset_manager_dialog.py` 使用 "
+                "`QFont`/`QComboBox` 却从未导入（提交前 pyflakes 抓出），补入 QtWidgets/QtGui 导入。\n"
+                "质量门禁：全部 26 个弹窗文件 `py_compile` + pyflakes（F821/F822）全绿；"
+                "`pytest` 381 passed / 1 skipped / 2 xfailed / 4 xpassed，无回归。"
+            ),
+        },
+        {
             "version": "v43.335",
             "date": "2026-11-10",
             "features": (

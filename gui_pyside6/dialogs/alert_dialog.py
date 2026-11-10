@@ -35,6 +35,7 @@ class AlertDialog(QDialog):
 
     def __init__(self, alerts_df, main_window, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.setWindowTitle("实时替代料看板 - 替代料偏差预警")
         self.resize(1200, 600)
         self.main_window = main_window

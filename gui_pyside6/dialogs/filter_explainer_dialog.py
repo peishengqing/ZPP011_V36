@@ -38,6 +38,7 @@ class FilterExplainerDialog(QDialog):
 
     def __init__(self, parent, filter_controller: FilterController):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.controller = filter_controller
         self.app_state: Optional[AppState] = filter_controller.app_state
 

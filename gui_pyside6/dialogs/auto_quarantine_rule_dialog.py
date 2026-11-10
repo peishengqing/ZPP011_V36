@@ -32,6 +32,7 @@ from core.auto_quarantine import (
     save_auto_quarantine_config,
 )
 from gui_pyside6.utils.icons import make_button
+from PySide6.QtCore import Qt
 
 
 class AutoQuarantineRuleWidget(QWidget):
@@ -508,6 +509,7 @@ class AutoQuarantineRuleDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.setWindowTitle("⚙ 自动隔离规则")
         self.setMinimumWidth(580)
         self.setMinimumHeight(680)

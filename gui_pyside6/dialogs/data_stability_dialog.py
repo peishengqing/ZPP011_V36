@@ -34,6 +34,7 @@ def _split_data_id(did):
 class DataStabilityDialog(QDialog):
     def __init__(self, parent=None, code_name_map=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         # 调用方（dashboard_manager/dashboard_controller）传入 MainWindow 作为 parent，
         # 故 parent 即 MainWindow 实例；用于取主表 DataFrame 计算备注覆盖率。
         self._mw = parent

@@ -37,6 +37,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from analysis.dashboard_html import compute_metrics  # noqa: E402
+from PySide6.QtCore import Qt
 
 # 说明：本模块故意不在文件顶部 import PySide6.QtWebEngine*，
 # 因为 main_window.py 在模块级（顶部）就 `from .dialogs.dashboard_dialog import DashboardDialog`，
@@ -154,6 +155,7 @@ class DashboardDialog(QDialog):
             self._web_engine_err = str(e)
 
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.main_window = main_window
         self.audit_df = audit_df
         self.material_df = material_df

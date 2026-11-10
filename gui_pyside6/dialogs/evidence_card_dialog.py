@@ -27,6 +27,7 @@ _EV_LABEL = {
 class EvidenceCardDialog(QDialog):
     def __init__(self, data_id: str, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.data_id = data_id or ""
         self.setWindowTitle(f"审核证据卡 · {self.data_id or '（无 data_id）'}")
         self.resize(620, 520)
