@@ -25,6 +25,7 @@ from gui_pyside6.utils.table_autofit import install_adaptive
 from gui_pyside6.components.dashboard_shell import DashboardShell
 from gui_pyside6.widgets.neg_loss_content import NegLossContent
 from gui_pyside6.widgets.pos_loss_content import PosLossContent
+from gui_pyside6.widgets.semi_content import SemiContent
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.alt_chain_dialog import AltChainDialog
 from gui_pyside6.dialogs.dashboard_dialog import DashboardDialog
@@ -33,7 +34,6 @@ from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
 from gui_pyside6.dialogs.flip_check_dashboard_dialog import FlipCheckDashboardDialog
 from gui_pyside6.dialogs.material_profile_dialog import MaterialProfileDialog
 from gui_pyside6.dialogs.quarantine_review_dialog import QuarantineReviewDialog
-from gui_pyside6.dialogs.semi_dashboard_dialog import SemiDashboardDialog
 from core.alert_monitor import filter_alt_alerts
 from core.read_status import get_material_names
 from gui_pyside6.dialogs.material_profile_dialog import normalize_text
@@ -326,6 +326,7 @@ class DashboardController:
 
         与隔离区/负损看板完全解耦：半成品量大（400/410 约占全表 19%），
         走自动隔离会淹没隔离区，故只做只读查询 + 手动逐条加入隔离区。
+        v43.335：迁至 DashboardShell + SemiContent 组合，与负损·正损看板统一外壳。
         """
         try:
             df = self.mw._get_master_df()
@@ -353,7 +354,29 @@ class DashboardController:
             ]
             keep = [c for c in candidates if c in sub.columns]
             sub = sub[keep].copy() if keep else sub.copy()
-            dialog = SemiDashboardDialog(sub, self.mw)
+
+            # --- v43.335：DashboardShell + SemiContent 组合（与负损·正损统一外壳）---
+            content = SemiContent(self.mw)
+            content.set_data(sub)
+
+            shell = DashboardShell()
+            shell.set_title("半成品看板")
+            shell.set_content(content)
+            shell.set_status("已加载半成品数据 · 共 {} 条记录".format(len(sub)))
+            content.shell = shell
+
+            dialog = QDialog(self.mw)
+            dialog.setModal(True)
+            dialog.setWindowTitle("半成品.看板 - ZPP011 v43.335")
+            dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowMinMaxButtonsHint)
+            layout = QVBoxLayout(dialog)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(shell)
+            dialog.setMinimumSize(1400, 800)
+            dialog.resize(1400, 800)
+            # 内容组件的关闭/下钻请求统一交给外层 QDialog
+            content.close_requested.connect(dialog.close)
+
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self.mw, "错误", f"打开半成品看板失败: {e}")

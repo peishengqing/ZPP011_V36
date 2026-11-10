@@ -6,7 +6,7 @@ sys.path.insert(0, 'E:/zpp011_v2')
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 
 from PySide6.QtWidgets import QApplication, QDialog, QVBoxLayout, QLabel
-from PySide6.QtCore import QSysInfo
+# QSysInfo 未使用
 
 app = QApplication.instance() or QApplication([])
 app.setStyle('Fusion')

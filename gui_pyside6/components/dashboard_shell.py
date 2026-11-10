@@ -1,8 +1,12 @@
 """DashboardShell - 看板统一容器组件"""
 
+import os
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame
 from PySide6.QtCore import Signal, QTimer
 from PySide6.QtGui import QFont, QPalette
+
+# v43.335：QSS 用模块相对定位，不再写死 E:/zpp011_v2（换机器/换盘即读不到，静默退化成兜底样式）
+_THEME_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "themes")
 
 
 class DashboardShell(QWidget):
@@ -63,18 +67,13 @@ class DashboardShell(QWidget):
         """加载亮/暗主题 QSS"""
         self._current_theme = theme
         qss_content = ""
-        if theme == "light":
-            try:
-                with open("E:/zpp011_v2/gui_pyside6/themes/light_dashboard.qss", "r", encoding="utf-8") as f:
-                    qss_content = f.read()
-            except Exception:
-                qss_content = self._default_light_qss()
-        else:
-            try:
-                with open("E:/zpp011_v2/gui_pyside6/themes/dark_dashboard.qss", "r", encoding="utf-8") as f:
-                    qss_content = f.read()
-            except Exception:
-                qss_content = self._default_dark_qss()
+        qss_name = "light_dashboard.qss" if theme == "light" else "dark_dashboard.qss"
+        try:
+            with open(os.path.join(_THEME_DIR, qss_name), "r", encoding="utf-8") as f:
+                qss_content = f.read()
+        except Exception:
+            qss_content = (self._default_light_qss() if theme == "light"
+                            else self._default_dark_qss())
         self.setStyleSheet(qss_content)
 
     def _default_light_qss(self):

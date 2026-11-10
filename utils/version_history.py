@@ -14,6 +14,35 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.335",
+            "date": "2026-11-10",
+            "features": (
+                "半成品看板迁入 DashboardShell 统一外壳（落地路线第二期 · 第二个明细型看板）。"
+                "**采用剥壳法而非模板生成法**：以 `gui_pyside6/dialogs/semi_dashboard_dialog.py` "
+                "原样复制为 `gui_pyside6/widgets/semi_content.py`，仅替换外壳层（QDialog→QWidget、"
+                "去窗口标题/resize/flags、去 `apply_board_visual` 旧视觉壳、三处 `self.accept()` "
+                "改 `close_requested` 信号、加 shell 状态条联动与 Enter·Alt+V·F5 快捷键），"
+                "**投料状态四档 / 400·410 前缀兜底 / 半成品重分类固定清单 / 环比角标 / "
+                "隔离区 / 已读联动 / 级联筛选等口径代码一行不动**（该看板有独有能力，"
+                "套负损模板会丢口径）。保留 `attach_snapshot_bar`（只依赖 layout()/main_window，"
+                "QWidget 兼容）。`DashboardController._show_semi_dashboard` 改用 "
+                "QDialog + DashboardShell + SemiContent 组合，标题栏/状态条/亮暗自动同步与"
+                "负损·正损看板一致；移除 `SemiDashboardDialog` 导入。\n"
+                "**顺带修复前两轮迁移的隐性回归**：旧 `apply_board_visual` 末尾负责 "
+                "`install_adaptive + schedule_initial()`，v43.333/v43.334 剥壳时该动作被"
+                "一并移除，负损·正损内容组件只留 `get_adaptive()` 恒返回 None → 表格列宽"
+                "退化成 Qt 等宽。本版在三个内容组件 `set_data` 末尾各自幂等安装一次"
+                "（mode='content'、按看板名分 key），恢复原行为且不重复装控制器。"
+                "验收：`test_semi_shell.py` 七项冒烟全过（含四档口径反证、400/410 前缀"
+                "兜底、列宽控制器确实安装、close_requested 信号、状态条、快捷键、主题）。\n"
+                "**补齐两处交付遗漏**：① `gui_pyside6/themes/light_dashboard.qss` 与 "
+                "`dark_dashboard.qss` 此前一直未入库（DashboardShell 要用）；"
+                "② `dashboard_shell.py:_load_theme_qss` 原把路径写死 "
+                "`E:/zpp011_v2/...`，换机器/换盘即读不到并静默退化成内置兜底样式，"
+                "改为按 `__file__` 相对定位 `_THEME_DIR`，并验证亮/暗 QSS 与文件内容逐字一致。"
+            ),
+        },
+        {
             "version": "v43.334",
             "date": "2026-11-10",
             "features": (

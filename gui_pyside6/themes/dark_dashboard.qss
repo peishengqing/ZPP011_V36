@@ -1,0 +1,65 @@
+/* 暗色主题 - Dashboard Shell */
+#DashboardShell { background: #1E1E24; }
+#title_bar { background: #25262B; border-bottom: 1px solid #2C2E33; }
+#action_bar { background: #25262B; padding: 8px; border-bottom: 1px solid #2C2E33; }
+#content { background: #25262B; }
+#status_bar { background: #2C2E33; border-top: 1px solid #35334A; }
+
+/* 主色 #5C7CFA (暗色版靛蓝) */
+QPushButton {
+    background-color: #5C7CFA;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+QPushButton:hover { background-color: #4C6EF5; }
+QPushButton:pressed { background-color: #3B5BDB; }
+
+/* 其他常见控件 */
+QLabel { color: #E9ECEF; }
+QComboBox {
+    background-color: #2C2E33;
+    border: 1px solid #35334A;
+    border-radius: 4px;
+    padding: 6px 12px;
+    min-width: 120px;
+}
+QComboBox:hover { border-color: #5C7CFA; }
+QComboBox::drop-down { border: none; width: 30px; }
+QComboBox QAbstractItemView {
+    background-color: #2C2E33;
+    border: 1px solid #35334A;
+    selection-background-color: #3B5BDB;
+    selection-color: white;
+}
+
+/* 表格 */
+QTableWidget {
+    background-color: #25262B;
+    border: 1px solid #35334A;
+    border-radius: 4px;
+}
+QTableWidget::item { padding: 8px; border-bottom: 1px solid #2C2E33; }
+QTableWidget::item:selected { background-color: #3B5BDB; color: white; }
+QHeaderView::section {
+    background-color: #2C2E33;
+    padding: 8px;
+    border: 1px solid #35334A;
+    font-weight: bold;
+    color: #E9ECEF;
+}
+
+/* 滚动条 */
+QScrollBar:vertical {
+    background: #2C2E33;
+    width: 12px;
+    border-radius: 6px;
+}
+QScrollBar::handle:vertical {
+    background: #4C4389;
+    border-radius: 6px;
+    min-height: 30px;
+}
+QScrollBar::handle:vertical:hover { background: #5B53C4; }

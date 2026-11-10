@@ -577,6 +577,17 @@ class NegLossContent(QWidget):
         self._initializing = False
         # 应用默认筛选过滤
         self._apply_default_filter()
+        # v43.335：补回列宽自适应。旧 apply_board_visual 末尾负责 install_adaptive，
+        # 剥壳时该动作被一并移除，导致 get_adaptive() 恒 None、列宽退化成 Qt 等宽。
+        # 幂等：重复 set_data 不重装，避免两套控制器打架。
+        try:
+            from gui_pyside6.utils.table_autofit import install_adaptive, get_adaptive
+            if get_adaptive(self.table_view) is None:
+                _auto = install_adaptive(self.table_view, mode='content', key='负损看板')
+                _auto.schedule_initial()
+        except Exception:
+            import traceback
+            traceback.print_exc()
 
     def _refresh_cascade_combos(self, changed):
         if getattr(self, '_initializing', False):
