@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QMessageBox, QDialog, QVBoxLayout
 from PySide6.QtCore import Qt
 
 from gui_pyside6.utils.table_autofit import install_adaptive
+from utils.version_history import VERSION_HISTORY
 
 from gui_pyside6.components.dashboard_shell import DashboardShell
 from gui_pyside6.widgets.neg_loss_content import NegLossContent
@@ -44,6 +45,52 @@ class DashboardController:
 
     def __init__(self, mw):
         self.mw = mw
+        # v43.340 看板多开：按 key 持有非模态窗口引用防 GC，关闭时由 destroyed 移除
+        self._board_windows = {}
+
+    def _present_board(self, key, title, shell, content=None, size=(1400, 800)):
+        """v43.340 统一承载三个看板窗口（非模态、可多开）。
+
+        旧实现每个看板各自 `QDialog(...); setModal(True); exec()`，一次只能开一个，
+        且模态阻塞主窗口无法对照。本方法：
+          · 按 board key 各持一个窗口 → 负损/正损/半成品可同时对照；
+          · 重复打开同一 key → 只 raise_/activateWindow 复用，不重复吃内存；
+          · WA_DeleteOnClose + destroyed → 关闭后自动从字典移除，防悬空引用；
+          · 统一补最大化按钮，标题版本号由 VERSION_HISTORY 动态取。
+        业务取数与 Content 口径不在此处，完全零改动。
+        """
+        existing = self._board_windows.get(key)
+        if existing is not None:
+            try:
+                existing.show()
+                existing.raise_()
+                existing.activateWindow()
+                return existing
+            except RuntimeError:
+                # C++ 侧已销毁但字典尚未清理（destroyed 信号未到），直接重建
+                self._board_windows.pop(key, None)
+
+        dialog = QDialog(self.mw)
+        dialog.setModal(False)
+        dialog.setAttribute(Qt.WA_DeleteOnClose, True)
+        dialog.setWindowTitle(title)
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowMinMaxButtonsHint)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(shell)
+        dialog.setMinimumSize(*size)
+        dialog.resize(*size)
+
+        # SemiContent 有 close_requested（关闭/下钻后关看板）；负损/正损没有此信号
+        if content is not None and hasattr(content, 'close_requested'):
+            content.close_requested.connect(dialog.close)
+
+        self._board_windows[key] = dialog
+        dialog.destroyed.connect(lambda *_a, k=key: self._board_windows.pop(k, None))
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+        return dialog
 
     def _show_alert_dashboard(self):
         """手动打开替代料看板"""
@@ -170,16 +217,11 @@ class DashboardController:
             # 建立内容组件与 shell 的链接，便于状态同步
             content.shell = shell
 
-            dialog = QDialog(self.mw)
-            dialog.setModal(True)
-            dialog.setWindowTitle("负损(含未投料).看板 - ZPP011 v43.332")
-            layout = QVBoxLayout(dialog)
-            layout.setContentsMargins(0, 0, 0, 0)
-            layout.addWidget(shell)
-            dialog.setMinimumSize(1400, 800)
-            dialog.resize(1400, 800)
-
-            dialog.exec()
+            # v43.340：非模态多开，三个看板可同时对照（取数/口径零改动）
+            self._present_board(
+                "neg_loss",
+                "负损(含未投料).看板 - ZPP011 %s" % VERSION_HISTORY[0]['version'],
+                shell, content=content)
         except Exception as e:
             QMessageBox.critical(self.mw, "错误", f"打开负损看板失败: {e}")
 
@@ -224,17 +266,11 @@ class DashboardController:
             shell.set_status("已加载正损数据 · 共 {} 条记录".format(len(sub)))
             content.shell = shell
 
-            dialog = QDialog(self.mw)
-            dialog.setModal(True)
-            dialog.setWindowTitle("正损(超投).看板 - ZPP011 v43.334")
-            dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowMinMaxButtonsHint)
-            layout = QVBoxLayout(dialog)
-            layout.setContentsMargins(0, 0, 0, 0)
-            layout.addWidget(shell)
-            dialog.setMinimumSize(1400, 800)
-            dialog.resize(1400, 800)
-
-            dialog.exec()
+            # v43.340：非模态多开，三个看板可同时对照（取数/口径零改动）
+            self._present_board(
+                "pos_loss",
+                "正损(超投).看板 - ZPP011 %s" % VERSION_HISTORY[0]['version'],
+                shell, content=content)
         except Exception as e:
             QMessageBox.critical(self.mw, "错误", f"打开正损看板失败: {e}")
 
@@ -365,19 +401,11 @@ class DashboardController:
             shell.set_status("已加载半成品数据 · 共 {} 条记录".format(len(sub)))
             content.shell = shell
 
-            dialog = QDialog(self.mw)
-            dialog.setModal(True)
-            dialog.setWindowTitle("半成品.看板 - ZPP011 v43.335")
-            dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowMinMaxButtonsHint)
-            layout = QVBoxLayout(dialog)
-            layout.setContentsMargins(0, 0, 0, 0)
-            layout.addWidget(shell)
-            dialog.setMinimumSize(1400, 800)
-            dialog.resize(1400, 800)
-            # 内容组件的关闭/下钻请求统一交给外层 QDialog
-            content.close_requested.connect(dialog.close)
-
-            dialog.exec()
+            # v43.340：非模态多开；close_requested 关闭链接由 _present_board 统一接管
+            self._present_board(
+                "semi",
+                "半成品.看板 - ZPP011 %s" % VERSION_HISTORY[0]['version'],
+                shell, content=content)
         except Exception as e:
             QMessageBox.critical(self.mw, "错误", f"打开半成品看板失败: {e}")
 

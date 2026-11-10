@@ -14,6 +14,22 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.340",
+            "date": "2026-11-10",
+            "features": (
+                "看板多开落地（设计稿「看板多开」能力，此前三个看板均为模态 exec 一次只能开一个）。\n"
+                "①`DashboardController` 新增 `_present_board()` 统一窗口生命周期：非模态、"
+                "WA_DeleteOnClose、WindowMinMaxButtonsHint、按 board key 持有引用防 GC；"
+                "重复打开同一看板只 raise_/activateWindow 复用不新增实例，窗口销毁自动从字典移除。\n"
+                "②负损/正损/半成品三个 `_show_*` 各自重复的 QDialog 创建段收敛为一行调用，"
+                "标题版本号改为动态取 VERSION_HISTORY[0]['version']（不再硬编码 v43.332/334/335）；"
+                "半成品 close_requested 关闭链接由 _present_board 统一接管（负损/正损无此信号，hasattr 判断）。\n"
+                "③业务取数、列白名单、三个 Content 口径全部零改动，只换窗口打开方式。\n"
+                "④GUI offscreen 冒烟新增第 13 项端到端验证：三个看板同时非模态并存、重复打开不新增、"
+                "关闭后引用清理；纳入推送门禁第⑤步。"
+            ),
+        },
+        {
             "version": "v43.339",
             "date": "2026-11-10",
             "features": (

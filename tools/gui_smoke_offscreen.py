@@ -55,7 +55,8 @@ def build_app():
 
 def sample_df():
     return pd.DataFrame({
-        "物料编码": ["M001", "M002", "M003"],
+        # 400/410 开头：保证 _show_semi_dashboard 的 400/410 子集非空（v43.340 多开验证）
+        "物料编码": ["400001", "410001", "M003"],
         "数量-定额": [100.0, 200.0, 300.0],
         "数量-实际": [90.0, 210.0, 300.0],
         "净偏差金额": [-1000.0, 500.0, 0.0],
@@ -238,6 +239,73 @@ def main():
                           (label, ctrl_ok, "有" if not clean else "无"))
         return ok, " ".join(detail)
     check("⑦b 三看板列宽自适应真装上 + 无吞异常", _adaptive)
+
+    # ⑧ 看板多开（v43.340）：端到端走三个真实菜单入口，
+    # 验证非模态并存、重复打开复用、关闭后引用清理。
+    def _multi_board():
+        import gui_pyside6.controllers.dashboard_controller as dc_mod
+
+        # _get_master_df 优先 source_model；先喂数据，三个入口才都能取到
+        win.source_model.setDataFrame(df)
+        app.processEvents()
+
+        # offscreen 下模态 QMessageBox 会阻塞，临时替换为记录器
+        msgs = []
+
+        class _FakeMB:
+            @staticmethod
+            def information(*a, **k):
+                msgs.append(("info", a[-1] if a else ""))
+
+            @staticmethod
+            def critical(*a, **k):
+                msgs.append(("crit", a[-1] if a else ""))
+
+        orig = dc_mod.QMessageBox
+        dc_mod.QMessageBox = _FakeMB
+        try:
+            ctrl = win.dashboard_controller
+            ctrl._show_neg_loss_dashboard()
+            ctrl._show_pos_loss_dashboard()
+            ctrl._show_semi_dashboard()
+            app.processEvents()
+            windows = dict(ctrl._board_windows)
+            keys_ok = set(windows) == {"neg_loss", "pos_loss", "semi"}
+            nonmodal = all(not d.isModal() for d in windows.values())
+            distinct = len({id(d) for d in windows.values()}) == 3
+            titles = [d.windowTitle() for d in windows.values()]
+            ver_ok = bool(titles) and all("v43." in t for t in titles)
+            # 重复打开同一看板 → 复用同一实例，不新增
+            before = dict(windows)
+            ctrl._show_neg_loss_dashboard()
+            app.processEvents()
+            reused = (len(ctrl._board_windows) == 3 and
+                      ctrl._board_windows.get("neg_loss") is before.get("neg_loss"))
+            # 关闭一个 → destroyed 信号清理字典引用
+            closing = ctrl._board_windows.get("semi")
+            if closing is not None:
+                closing.close()
+                for _ in range(6):
+                    app.processEvents()
+            cleaned = "semi" not in ctrl._board_windows
+            no_error = not any(m[0] == "crit" for m in msgs)
+            ok = (keys_ok and nonmodal and distinct and ver_ok and
+                  reused and cleaned and no_error)
+            return ok, ("keys=%s 非模态=%s 独立=%s 动态版本=%s 复用=%s 关闭清理=%s 提示=%s"
+                        % (sorted(windows), nonmodal, distinct, ver_ok,
+                           reused, cleaned, msgs))
+        finally:
+            dc_mod.QMessageBox = orig
+            leftover = getattr(win, 'dashboard_controller', None)
+            if leftover is not None:
+                for d in list(leftover._board_windows.values()):
+                    try:
+                        d.close()
+                    except RuntimeError:
+                        pass
+                for _ in range(6):
+                    app.processEvents()
+    check("⑧ 看板多开：三看板非模态并存/复用/清理", _multi_board)
 
     return report()
 

@@ -94,12 +94,15 @@ content.close_requested.emit()
 assert fired == [1]
 print('   close_requested 信号 OK（关闭/下钻/双击三处共用）')
 
-# ⑥ 控制器接线：新组合 + 关闭信号绑定
+# ⑥ 控制器接线：新组合 + 非模态多开（v43.340 起窗口统一由 _present_board 承载）
 src = inspect.getsource(DashboardController._show_semi_dashboard)
 assert 'SemiContent' in src and 'DashboardShell' in src
 assert 'SemiDashboardDialog' not in src
-assert 'content.close_requested.connect(dialog.close)' in src
-print('⑥ DashboardController 已切到新组合 OK')
+assert '_present_board' in src and 'dialog.exec()' not in src
+present_src = inspect.getsource(DashboardController._present_board)
+assert 'close_requested.connect(dialog.close)' in present_src
+assert 'setModal(False)' in present_src and 'WA_DeleteOnClose' in present_src
+print('⑥ DashboardController 新组合 + 非模态多开接线 OK')
 
 # ⑦ 主题切换
 shell.set_theme('dark')
