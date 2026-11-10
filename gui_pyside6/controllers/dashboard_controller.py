@@ -17,10 +17,12 @@
 
 import pandas as pd
 
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QMessageBox, QDialog, QVBoxLayout
 
 from gui_pyside6.utils.table_autofit import install_adaptive
 
+from gui_pyside6.components.dashboard_shell import DashboardShell
+from gui_pyside6.widgets.neg_loss_content import NegLossContent
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.alt_chain_dialog import AltChainDialog
 from gui_pyside6.dialogs.dashboard_dialog import DashboardDialog
@@ -28,7 +30,6 @@ from gui_pyside6.dialogs.data_stability_dialog import DataStabilityDialog
 from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
 from gui_pyside6.dialogs.flip_check_dashboard_dialog import FlipCheckDashboardDialog
 from gui_pyside6.dialogs.material_profile_dialog import MaterialProfileDialog
-from gui_pyside6.dialogs.neg_loss_dashboard_dialog import NegLossDashboardDialog
 from gui_pyside6.dialogs.pos_loss_dashboard_dialog import PosLossDashboardDialog
 from gui_pyside6.dialogs.quarantine_review_dialog import QuarantineReviewDialog
 from gui_pyside6.dialogs.semi_dashboard_dialog import SemiDashboardDialog
@@ -138,18 +139,14 @@ class DashboardController:
     def _show_neg_loss_dashboard(self):
         """手动打开负损(含未投料)看板：名称含关键词 且 负损(含未投料)，独立于隔离区。"""
         try:
-            df = self.mw._get_master_df()  # 与主表同源，避免两边数对不上
+            df = self.mw._get_master_df()
             if df is None or df.empty:
                 QMessageBox.information(self.mw, "提示", "暂无数据，请先分析")
                 return
+
             # 保留关键列（含数量-实际/数量-定额 供负损计算，备注列供优先展示）
-            # 同偏差率预警看板：不列「组件物料号」，统一用「物料编码」，避免两来源列并存打乱列序
             candidates = [
                 "订单日期", "订单类型", "流程订单", "物料编码", "物料名称", "物料描述",
-                # 🔴 工厂筛选必需（v43.176）：v43.169 在负损看板加了「工厂:」下拉，
-                # 但白名单里既无「工厂」也无「工厂名称」，真实入口裁列后工厂列被整条丢掉
-                # → 看板走「无该列」分支把控件隐藏，表现为「加了工厂筛选却看不见」。
-                # 两个都带上：看板优先用可读的「工厂名称」，无则回退「工厂」编码列。
                 "工厂", "工厂名称",
                 "车间", "组件物料类型", "组件物料类型描述", "单位",
                 "数量-定额", "定额", "数量-实际", "实际", "偏差数量", "偏差率(%)",
@@ -158,12 +155,29 @@ class DashboardController:
             ]
             keep = [c for c in candidates if c in df.columns]
             sub = df[keep].copy() if keep else df.copy()
-            # v43.148：若主表列名与看板期望不一致（如「组件物料类型」在、「半成品重分类」不在），
-            # 看板会走「无该列」分支。负损看板已支持缺列兜底（物料编码前缀推断），故此处
-            # 仅在完全缺列时补一个空列，保证看板能识别到列存在并正常初始化筛选器。
             if "半成品重分类" not in sub.columns:
                 sub["半成品重分类"] = ""
-            dialog = NegLossDashboardDialog(sub, self.mw)
+
+            # --- 新版：使用 DashboardShell + NegLossContent ---
+            content = NegLossContent(self.mw)
+            content.set_data(sub)
+
+            shell = DashboardShell()
+            shell.set_title("负损(含未投料)看板")
+            shell.set_content(content)
+            shell.set_status("已加载负损数据 · 共 {} 条记录".format(len(sub)))
+            # 建立内容组件与 shell 的链接，便于状态同步
+            content.shell = shell
+
+            dialog = QDialog(self.mw)
+            dialog.setModal(True)
+            dialog.setWindowTitle("负损(含未投料).看板 - ZPP011 v43.332")
+            layout = QVBoxLayout(dialog)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(shell)
+            dialog.setMinimumSize(1400, 800)
+            dialog.resize(1400, 800)
+
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self.mw, "错误", f"打开负损看板失败: {e}")
