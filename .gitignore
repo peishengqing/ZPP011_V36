@@ -46,3 +46,12 @@ build/
 
 # SAP pull secrets (含生产凭证，切勿提交)
 tools/sap_pull_secret.json
+
+# WorkBuddy workspace internals (会话级 memory / 配置，本地管理不入库)
+.workbuddy/
+
+# Agent run artifacts (其他 agent 的运行日志/计划产物，纯垃圾)
+.super-agent/runs/
+
+# 本地归档（实验死文件 / 历史残留，本地保留不入库，避免污染质量门禁）
+_archive/
