@@ -97,6 +97,9 @@ class LayoutComposer:
         # 将 body_splitter 引用保存到主窗口，供控制器和外部的 _toggle_left_panel/_toggle_filter_panel 访问
         mw.body_splitter = body_area
 
+        # v43.337：复活底部状态条（设计稿第6项），常驻显示记录/选中/偏差合计/未读
+        main_layout.addWidget(mw.bottom_bar)
+
         self.compiled = True
         return central
 
@@ -126,7 +129,7 @@ class LayoutComposer:
         mw.action_btn_left_panel = QToolButton()
         mw.action_btn_left_panel.setIcon(get_icon("panel-left"))
         mw.action_btn_left_panel.setText("左侧栏")
-        mw.action_btn_left_panel.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        mw.action_btn_left_panel.setToolButtonStyle(Qt.ToolButtonIconOnly)
         mw.action_btn_left_panel.setCheckable(True)
         mw.action_btn_left_panel.setToolTip("切换左侧栏显示")
         mw.action_btn_left_panel.setObjectName("toolGhostBtn")
@@ -135,7 +138,7 @@ class LayoutComposer:
         mw.action_btn_filter = QToolButton()
         mw.action_btn_filter.setIcon(get_icon("search"))
         mw.action_btn_filter.setText("筛选")
-        mw.action_btn_filter.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        mw.action_btn_filter.setToolButtonStyle(Qt.ToolButtonIconOnly)
         mw.action_btn_filter.setCheckable(True)
         mw.action_btn_filter.setToolTip("切换筛选面板")
         mw.action_btn_filter.setObjectName("toolGhostBtn")
@@ -144,7 +147,7 @@ class LayoutComposer:
         mw.action_btn_col_filter = QToolButton()
         mw.action_btn_col_filter.setIcon(get_icon("funnel-lines"))
         mw.action_btn_col_filter.setText("列头筛选")
-        mw.action_btn_col_filter.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        mw.action_btn_col_filter.setToolButtonStyle(Qt.ToolButtonIconOnly)
         mw.action_btn_col_filter.setCheckable(True)
         mw.action_btn_col_filter.setToolTip("列头取值过滤模式")
         mw.action_btn_col_filter.setObjectName("toolGhostBtn")
@@ -298,7 +301,7 @@ class LayoutComposer:
         top_layout.setSpacing(6)
         top_layout.addWidget(mw.stats_cards)                # 本次分析概览
         top_layout.addWidget(mw.main_table.progress_group)  # 分析进度
-        top_panel.setMaximumHeight(260)                       # 限制最大高度，不抢表格空间
+        top_panel.setMaximumHeight(235)                       # v43.337：概览更扁，多给表格空间
 
         # 将 top_panel 引用保存到主窗口，以便控制器访问
         mw.top_panel = top_panel
@@ -314,7 +317,7 @@ class LayoutComposer:
         _right_v_splitter.setChildrenCollapsible(True)
         _right_v_splitter.addWidget(top_panel)
         _right_v_splitter.addWidget(_v_splitter)
-        _right_v_splitter.setSizes([175, 625])   # v43.264：顶部给 KPI 条留够高度（否则卡片被压扁）
+        _right_v_splitter.setSizes([150, 650])   # v43.337：概览更扁，多给表格空间
         _right_v_splitter.setStretchFactor(0, 0)
         _right_v_splitter.setStretchFactor(1, 1)
 
@@ -322,6 +325,7 @@ class LayoutComposer:
         right_layout.addWidget(mw.main_table.summary_container, 0)
 
         body_splitter.addWidget(right_container)
-        body_splitter.setSizes([260, 440, 860])
+        # v43.337：左栏实际 setFixedWidth(360)，此处首值须与之匹配，避免 splitter 约束冲突
+        body_splitter.setSizes([360, 440, 860])
 
         return body_splitter

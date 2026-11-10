@@ -21,8 +21,9 @@ class TitleBarWidget(QWidget):
 
     def __init__(self, version: str = "", parent=None):
         super().__init__(parent)
-        self.setFixedHeight(56)
+        self.setFixedHeight(48)  # v43.337：设计稿 56→48，给表格腾出空间
         self.setObjectName("titleBar")
+        self._version = version
         self._setup_ui(version)
 
     def _setup_ui(self, version: str):
@@ -56,8 +57,11 @@ class TitleBarWidget(QWidget):
         main_title.setObjectName("titleMain")
         title_box.addWidget(main_title)
 
-        sub_title = QLabel(f"制作人：裴盛清 | {version}")
+        # v43.337：副标题改为「数据源 + 分析时间」动态信息（设计稿第1项）。
+        # 初始占位，分析/加载完成后由 MainWindow.set_title_subtitle() 刷新。
+        sub_title = QLabel("数据未加载")
         sub_title.setObjectName("titleSub")
+        self.sub_title = sub_title
         title_box.addWidget(sub_title)
 
         layout.addLayout(title_box, 0)
@@ -70,6 +74,11 @@ class TitleBarWidget(QWidget):
         self.theme_btn.setObjectName("themeBtn")
         self.theme_btn.clicked.connect(self.theme_toggled.emit)
         layout.addWidget(self.theme_btn, 0, Qt.AlignVCenter)
+
+    def set_subtitle(self, text: str):
+        """v43.337：动态刷新副标题（数据源 + 分析时间），设计稿第1项。"""
+        if hasattr(self, "sub_title"):
+            self.sub_title.setText(text)
 
     def set_theme_light(self):
         """当前是亮色主题，按钮显示'暗色'（月亮图标）"""

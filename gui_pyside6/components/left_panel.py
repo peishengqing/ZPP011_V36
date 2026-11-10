@@ -269,10 +269,10 @@ class LeftPanelComponent:
 
     def _build_semi_materials(self, layout: QVBoxLayout):
         """构建材料半成品分类卡片 — QTableWidget 模仿替代料配对样式，带工厂编码列"""
-        # 计数标签
+        # 计数标签（v43.337：挂到卡片头，折叠时也能看到待办数，对应设计稿「待办徽标」）
         self.mw.semi_count_label = QLabel("共 0 项")
         self.mw.semi_count_label.setObjectName("semiCountLabel")
-        layout.addWidget(self.mw.semi_count_label)
+        self.semi_group.add_header_extra(self.mw.semi_count_label)
 
         # 树形（v43.165 由 QTableWidget 改QTreeWidget）
         # 两级结构：父节点 = 「工厂 · 分类」，子节点 = 该分类下的物料编码。

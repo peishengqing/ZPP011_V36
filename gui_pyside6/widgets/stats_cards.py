@@ -30,7 +30,7 @@ def _make_card(parent, value_text, label_text, accent: str, tooltip: str) -> QFr
     card.setToolTip(tooltip)
     card.setCursor(Qt.PointingHandCursor)
     card.setMinimumWidth(110)
-    card.setMinimumHeight(58)
+    card.setMinimumHeight(52)  # v43.337：更扁的 KPI 带（设计稿 54px 行高）
     card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
     layout = QVBoxLayout(card)
@@ -49,13 +49,13 @@ def _make_card(parent, value_text, label_text, accent: str, tooltip: str) -> QFr
     val_label.setAlignment(Qt.AlignCenter)
     # v43.264：给数值标签兜底高度——父容器被压缩时 Qt 会按比例压扁子控件，
     # 22px 数字被压到十几像素就只剩半截（裴哥 10-26 截图「看不清」）。
-    val_label.setMinimumHeight(28)
+    val_label.setMinimumHeight(24)  # v43.337：数值行更扁
     layout.addWidget(val_label)
 
     desc_label = QLabel(label_text)
     desc_label.setProperty("class", "statsCardDesc")
     desc_label.setAlignment(Qt.AlignCenter)
-    desc_label.setMinimumHeight(16)
+    desc_label.setMinimumHeight(14)  # v43.337：说明行更扁
     layout.addWidget(desc_label)
 
     return card

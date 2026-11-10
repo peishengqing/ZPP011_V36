@@ -103,6 +103,12 @@ class InteractionController:
 
     def _on_selection_changed(self, selected: Any, deselected: Any):
         """选中变化时，显示选中合计"""
+        # v43.337：底部状态条选中行数（置于最前，任何提前 return 前都先更新，清空时归零）
+        try:
+            self.mw.bottom_bar.set_selected(
+                len(self.mw.table_view.selectionModel().selectedRows()))
+        except Exception:
+            pass
         if self.mw.proxy_model is None or self.mw.view_model.df is None:
             self.mw.statusBar().showMessage("")
             return

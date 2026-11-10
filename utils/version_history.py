@@ -14,6 +14,24 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.337",
+            "date": "2026-11-10",
+            "features": (
+                "主界面 6 项结构改动落地（设计稿 v43.332 后那份「主界面重设计」，此前仅设计未动代码）。\n"
+                "①标题栏：副标题从「制作人：裴盛清」改为动态「数据源 + 分析时间」，"
+                "分析/加载完成后由 MainWindow 刷新；标题栏高度 56→48，给表格腾空间。\n"
+                "②底部状态条复活（设计稿第6项）：重建 `BottomBarComponent` 为常驻 30px 状态条，"
+                "常驻显示「记录总数 / 选中行数 / 偏差合计 / 未读」，接 selectionChanged + 数据变化 + 标记已读，"
+                "与 QMainWindow 原生 statusBar（瞬态提示）并存互不干扰；两套 QSS 各加 `bottomStatusBar` 样式。\n"
+                "③操作栏：左侧栏/筛选/列头筛选三开关改 icon-only（去文字，仅留图标 + toolTip），减少横向噪音。\n"
+                "④概览 KPI：7 张卡高度 58→52、数值/说明行更扁，更贴近设计稿 54px KPI 带；"
+                "顶区限高 260→235、垂直 splitter 初值 [175,625]→[150,650]，给表格多让空间。\n"
+                "⑤左栏：修正 `body_splitter.setSizes` 首值(260) 与 `left_panel` 固定宽(360) 的约束冲突（改 360 匹配），"
+                "并把半成品「共 N 项」待办数从卡片体移到卡片头（折叠也可见，对应设计稿「待办徽标」）。\n"
+                "质量门禁：py_compile + pyflakes(F821/F822) 全绿；pytest 381 passed / 1 skipped / 2 xfailed / 4 xpassed，无回归。"
+            ),
+        },
+        {
             "version": "v43.336",
             "date": "2026-11-10",
             "features": (

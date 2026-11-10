@@ -1279,3 +1279,13 @@ QWidget#colFilterPopup {
     padding: 6px 10px;
     font-size: 11px;
 }
+
+/* ── 底部状态条 (v43.337, 设计稿第6项) ── */
+QWidget#bottomStatusBar {
+    background-color: #F1F4F9;
+    border-top: 1px solid #DBE2EC;
+}
+QLabel#bottomStatusLabel {
+    color: #5A6B82;
+    font-size: 12px;
+}

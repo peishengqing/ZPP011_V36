@@ -1237,6 +1237,15 @@ class MainWindow(QMainWindow):
             self._update_read_counter()
             self._analysis_params = self.analysis_controller.get_analysis_params()
 
+            # v43.337：刷新标题栏副标题（数据源 + 分析时间），设计稿第1项
+            try:
+                from datetime import datetime as _dt
+                _src = os.path.basename(getattr(self, "input_file", "") or "")
+                self.title_bar.set_subtitle(
+                    f"数据源：{_src or '未知文件'}  |  分析时间：{_dt.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            except Exception:
+                pass
+
             # 注意：完整报告缓存由后台线程(_FullCacheWorker)生成，主线程绝不等待，
             # 否则分析完成后标题栏会显示「未响应」。导出完整报告时优先复制该缓存。
 
@@ -1356,6 +1365,13 @@ class MainWindow(QMainWindow):
 
     def _update_read_counter(self):
         self.ui_settings_controller.update_read_counter()
+        # v43.337：标记已读后立即刷新底部状态条未读数（避免延迟到下次数据变化才更新）
+        try:
+            df = self.view_model.df
+            if df is not None and not getattr(df, "empty", True) and "_read" in df.columns:
+                self.bottom_bar.set_unread(int((df["_read"] == 0).sum()))
+        except Exception:
+            pass
 
     def _update_analysis_time_label(self, mode):
         self.ui_settings_controller.update_analysis_time_label(mode)
@@ -1518,7 +1534,7 @@ class MainWindow(QMainWindow):
         self._update_summary()
 
     def _on_selection_changed(self, selected, deselected):
-        """选中变化时，显示选中合计"""
+        """选中变化时，显示选中合计（薄壳：委托交互控制器；底部状态条选中数由控制器同步）"""
         return self.interaction_controller._on_selection_changed(selected, deselected)
 
     def _cancel_analysis(self):
@@ -1974,6 +1990,11 @@ class MainWindow(QMainWindow):
             self.stats_cards.refresh(df)
             self.filter_panel.update_options(df)
             self.main_table.set_empty_hint_visible(False)
+        # v43.337：底部状态条随数据变化刷新（记录总数 / 偏差合计 / 未读）
+        try:
+            self.bottom_bar.refresh_from_df(df)
+        except Exception:
+            pass
         # 真实数据载入后，弹未读汇总（非模态 + 延迟到渲染完成后，避免卡顿）
         if getattr(self, '_pending_unread_summary', False):
             self._pending_unread_summary = False
