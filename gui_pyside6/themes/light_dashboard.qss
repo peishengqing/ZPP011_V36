@@ -1,51 +1,58 @@
-/* 亮色主题 - Dashboard Shell */
+/* 亮色主题 - Dashboard Shell
+ *
+ * v43.343 尺寸纪律（对齐 board_visual.py v43.299 红线）：
+ *   筛选栏里的 QPushButton / QComboBox / QLineEdit 只写颜色类属性，绝不写
+ *   padding / border / border-radius / min-width / font-size —— Qt 会改走
+ *   stylesheet 路径重算 sizeHint（offscreen 实测：按钮 80x20→58x29、
+ *   下拉 54x22→178x30），而顶部筛选栏宽度是逐像素精算的，一变就挤压重叠。
+ *   表格 / 表头 / 滚动条不在筛选栏内，可安全用边框与圆角。
+ */
 #DashboardShell { background: #F5F6FA; }
 #title_bar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
-#action_bar { background: #FFFFFF; padding: 8px; border-bottom: 1px solid #E2E8F0; }
+#action_bar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
 #content { background: #FFFFFF; }
 #status_bar { background: #F8F9FA; border-top: 1px solid #E2E8F0; }
 
-/* 主色 #1E40AF */
+/* 按钮：轻量幽灵风格，只写颜色。筛选区是 checkable 按钮，
+   :checked 用主色实底标出当前档位（旧版缺这条，选中态看不出来）。 */
 QPushButton {
-    background-color: #1E40AF;
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 4px;
-    font-size: 13px;
+    background-color: #FFFFFF;
+    color: #334155;
 }
-QPushButton:hover { background-color: #1E3A8A; }
-QPushButton:pressed { background-color: #152466; }
+QPushButton:hover    { background-color: #E8F2FF; color: #0969DA; }
+QPushButton:pressed  { background-color: #D3E6FF; }
+QPushButton:checked  { background-color: #0969DA; color: #FFFFFF; }
+QPushButton:disabled { background-color: #F1F5F9; color: #9AA7B6; }
 
-/* 其他常见控件 */
+/* 标签 */
 QLabel { color: #1F2937; }
+
+/* 下拉：只写颜色；去掉 min-width / padding / border 后 sizeHint 保持原生。
+   弹出列表 QAbstractItemView 不占筛选栏布局，可保留边框。 */
 QComboBox {
-    background-color: white;
-    border: 1px solid #E2E8F0;
-    border-radius: 4px;
-    padding: 6px 12px;
-    min-width: 120px;
+    background-color: #FFFFFF;
+    color: #1F2937;
+    selection-background-color: #EFF6FF;
+    selection-color: #1E40AF;
 }
-QComboBox:hover { border-color: #1E40AF; }
-QComboBox::drop-down { border: none; width: 30px; }
+QComboBox:hover { background-color: #F2F8FF; }
 QComboBox QAbstractItemView {
-    background-color: white;
+    background-color: #FFFFFF;
     border: 1px solid #E2E8F0;
     selection-background-color: #EFF6FF;
     selection-color: #1E40AF;
 }
 
-/* 表格 */
-QTableWidget {
-    background-color: white;
+/* 表格：看板实际用 QTableView + DataFrameModel，旧 QTableWidget 选择器从未命中。
+   不在筛选栏内，可用边框圆角；但 ::item 不写 padding 以免改变行高。 */
+QTableView {
+    background-color: #FFFFFF;
     border: 1px solid #E2E8F0;
     border-radius: 4px;
 }
-QTableWidget::item { padding: 8px; border-bottom: 1px solid #F3F4F6; }
-QTableWidget::item:selected { background-color: #EFF6FF; color: #1E40AF; }
+QTableView::item:selected { background-color: #EFF6FF; color: #1E40AF; }
 QHeaderView::section {
     background-color: #F9FAFB;
-    padding: 8px;
     border: 1px solid #E2E8F0;
     font-weight: bold;
     color: #374151;

@@ -35,6 +35,10 @@ class DashboardShell(QWidget):
 
         # 标题栏 48px
         self._title_bar = QFrame()
+        # v43.343：补 objectName —— 两套 QSS 里的 #title_bar / #action_bar /
+        # #content / #status_bar 是 ID 选择器，之前四个 QFrame 都没设名字，
+        # 导致这四条背景/分隔线规则从未命中（写了等于没写）。
+        self._title_bar.setObjectName("title_bar")
         self._title_bar.setFixedHeight(48)
         title_layout = QHBoxLayout(self._title_bar)
         title_layout.setContentsMargins(16, 8, 16, 8)
@@ -42,6 +46,7 @@ class DashboardShell(QWidget):
         self._title_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         title_layout.addWidget(self._title_label, 1)
         self._action_bar = QFrame()
+        self._action_bar.setObjectName("action_bar")
         self._action_bar.setFixedHeight(36)
         # v43.342：set_action_widget() 全项目零调用，这条 36px 空带原本无条件占位，
         # 是「外壳标题与内容标题之间一大块留白」的主因。默认隐藏（隐藏后不占布局
@@ -52,6 +57,7 @@ class DashboardShell(QWidget):
 
         # 内容区
         self._content = QWidget()
+        self._content.setObjectName("content")
         self._content_layout = QVBoxLayout(self._content)
         self._content_layout.setContentsMargins(0, 0, 0, 0)
         self._content_layout.setSpacing(0)
@@ -59,6 +65,7 @@ class DashboardShell(QWidget):
 
         # 状态条 30px
         self._status_bar = QFrame()
+        self._status_bar.setObjectName("status_bar")
         self._status_bar.setFixedHeight(30)
         self._status_label = QLabel()
         self._status_label.setFont(QFont("Segoe UI", 9))
@@ -81,43 +88,40 @@ class DashboardShell(QWidget):
         self.setStyleSheet(qss_content)
 
     def _default_light_qss(self):
+        # v43.343：与 themes/light_dashboard.qss 同纪律 —— 筛选控件只写颜色，
+        # 不写 padding/border/font-size（会重算 sizeHint 撑爆逐像素精算的筛选栏）。
         return """
             #DashboardShell { background: #F5F6FA; }
             #title_bar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
-            #action_bar { background: #FFFFFF; padding: 8px; border-bottom: 1px solid #E2E8F0; }
+            #action_bar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
             #content { background: #FFFFFF; }
             #status_bar { background: #F8F9FA; border-top: 1px solid #E2E8F0; }
-            QPushButton {
-                background-color: #1E40AF;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-size: 13px;
-            }
-            QPushButton:hover { background-color: #1E3A8A; }
-            QPushButton:pressed { background-color: #152466; }
+            QPushButton { background-color: #FFFFFF; color: #334155; }
+            QPushButton:hover { background-color: #E8F2FF; color: #0969DA; }
+            QPushButton:pressed { background-color: #D3E6FF; }
+            QPushButton:checked { background-color: #0969DA; color: #FFFFFF; }
+            QPushButton:disabled { background-color: #F1F5F9; color: #9AA7B6; }
             QLabel { color: #1F2937; }
+            QComboBox { background-color: #FFFFFF; color: #1F2937; }
+            QTableView { background-color: #FFFFFF; }
         """
 
     def _default_dark_qss(self):
+        # v43.343：与 themes/dark_dashboard.qss 同纪律
         return """
             #DashboardShell { background: #1E1E24; }
             #title_bar { background: #25262B; border-bottom: 1px solid #2C2E33; }
-            #action_bar { background: #25262B; padding: 8px; border-bottom: 1px solid #2C2E33; }
+            #action_bar { background: #25262B; border-bottom: 1px solid #2C2E33; }
             #content { background: #25262B; }
             #status_bar { background: #2C2E33; border-top: 1px solid #35334A; }
-            QPushButton {
-                background-color: #5C7CFA;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-size: 13px;
-            }
-            QPushButton:hover { background-color: #4C6EF5; }
-            QPushButton:pressed { background-color: #3B5BDB; }
+            QPushButton { background-color: #2C2E33; color: #E9ECEF; }
+            QPushButton:hover { background-color: #3A4050; color: #FFFFFF; }
+            QPushButton:pressed { background-color: #454D60; }
+            QPushButton:checked { background-color: #5C7CFA; color: #FFFFFF; }
+            QPushButton:disabled { background-color: #25262B; color: #7A7F8A; }
             QLabel { color: #E9ECEF; }
+            QComboBox { background-color: #2C2E33; color: #E9ECEF; }
+            QTableView { background-color: #25262B; }
         """
 
     def set_title(self, text):

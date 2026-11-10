@@ -14,6 +14,32 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.343",
+            "date": "2026-11-11",
+            "features": (
+                "修看板筛选按钮「格格不入/太大」，并主动查齐同类的外壳样式与内容层约定错配"
+                "（裴哥 11-11「你自己找」授权自主定位）。\n"
+                "①根因量化：themes/light|dark_dashboard.qss 的裸 QPushButton 规则写了 "
+                "padding:8px 16px / border-radius / font-size:13px / border:none，"
+                "裸类型选择器命中 DashboardShell 全部后代，把内容组件筛选区 checkable 按钮"
+                "刷成主色实心大块；offscreen 实测按钮 80x20→58x29、QComboBox 54x22→178x30"
+                "（min-width:120px + padding 撑爆）。这违反 board_visual.py v43.299 尺寸红线"
+                "（顶部筛选栏宽度逐像素精算，QSS 写尺寸属性会让 Qt 重算 sizeHint 导致挤压重叠）。\n"
+                "②两套文件版 QSS 重写：筛选控件只写颜色类属性，补 QPushButton:checked 主色实底"
+                "（旧版缺此规则，checkable 按钮选中态看不出来），QComboBox 去掉 padding/border/"
+                "min-width；把从未命中的 QTableWidget 选择器改成实际使用的 QTableView；"
+                "表格/表头/滚动条保留边框圆角（不在筛选栏内，安全）。\n"
+                "③DashboardShell 四个 QFrame 补 objectName，令 #title_bar / #action_bar / "
+                "#content / #status_bar 四条 ID 选择器真正生效（此前写了从未命中）。\n"
+                "④代码内兜底 QSS（_default_light_qss / _default_dark_qss）同步对齐，"
+                "换机器读不到主题文件时不会退回大蓝按钮；四条路径一次对齐。\n"
+                "⑤GUI 冒烟扩到 19 项，新增 ⑭：四条 QSS 路径下 QPushButton/QComboBox/QLineEdit "
+                "套样式前后 sizeHint 零变更、均含 :checked 规则、表格选择器为 QTableView、"
+                "四个 objectName 齐备 —— 把尺寸红线固化成回归断言。\n"
+                "实测改后 4 条路径零 sizeHint 变更；业务口径零改动。"
+            ),
+        },
+        {
             "version": "v43.342",
             "date": "2026-11-11",
             "features": (

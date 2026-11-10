@@ -503,6 +503,60 @@ def main():
         return ok, " ".join(detail)
     check("⑬ 重复标题清理 + 控件上移 + 空条不占位", _title_cleanup)
 
+    # ⑭ v43.343：QSS 尺寸纪律（对齐 board_visual.py v43.299 红线）
+    def _qss_discipline():
+        from PySide6.QtWidgets import (QPushButton as _QPushButton,
+                                      QComboBox as _QComboBox,
+                                      QLineEdit as _QLineEdit)
+        theme_dir = os.path.join(REPO, 'gui_pyside6', 'themes')
+        probe = DashboardShell()
+        sources = []
+        for label, fname in (("亮色文件", "light_dashboard.qss"),
+                             ("暗色文件", "dark_dashboard.qss")):
+            with open(os.path.join(theme_dir, fname), encoding='utf-8') as fh:
+                sources.append((label, fh.read()))
+        sources.append(("兜底亮", probe._default_light_qss()))
+        sources.append(("兜底暗", probe._default_dark_qss()))
+
+        def _size(w):
+            s = w.sizeHint()
+            return (s.width(), s.height())
+
+        def _make(kind):
+            if kind == 'btn':
+                return _QPushButton("全部")
+            if kind == 'combo':
+                w = _QComboBox()
+                w.addItems(["全部", "是", "否"])
+                return w
+            return _QLineEdit("关键字")
+
+        detail = []
+        ok = True
+        for label, qss in sources:
+            changed = []
+            for kind in ('btn', 'combo', 'edit'):
+                bare = _size(_make(kind))
+                w = _make(kind)
+                w.setStyleSheet(qss)
+                if _size(w) != bare:
+                    changed.append("%s %s→%s" % (kind, bare, _size(w)))
+            checked_ok = 'QPushButton:checked' in qss
+            table_ok = ('QTableView {' in qss) and ('QTableWidget {' not in qss)
+            detail.append("%s(尺寸变更=%s,选中态=%s,表格选择器=%s)"
+                          % (label, changed or '无', checked_ok, table_ok))
+            ok = ok and not changed and checked_ok and table_ok
+
+        # 四个 ID 选择器要有对应的 objectName，否则规则写了也不命中
+        pairs = (("_title_bar", "title_bar"), ("_action_bar", "action_bar"),
+                 ("_content", "content"), ("_status_bar", "status_bar"))
+        names_ok = all(getattr(probe, attr).objectName() == name
+                       for attr, name in pairs)
+        detail.append("objectName=%s" % names_ok)
+        ok = ok and names_ok
+        return ok, " ".join(detail)
+    check("⑭ QSS 尺寸纪律：四条路径零 sizeHint 变更", _qss_discipline)
+
     return report()
 
 

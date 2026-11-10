@@ -1,51 +1,54 @@
-/* 暗色主题 - Dashboard Shell */
+/* 暗色主题 - Dashboard Shell
+ *
+ * v43.343 尺寸纪律（对齐 board_visual.py v43.299 红线）：
+ *   筛选栏里的 QPushButton / QComboBox / QLineEdit 只写颜色类属性，绝不写
+ *   padding / border / border-radius / min-width / font-size —— Qt 会改走
+ *   stylesheet 路径重算 sizeHint，而顶部筛选栏宽度是逐像素精算的。
+ *   表格 / 表头 / 滚动条不在筛选栏内，可安全用边框与圆角。
+ */
 #DashboardShell { background: #1E1E24; }
 #title_bar { background: #25262B; border-bottom: 1px solid #2C2E33; }
-#action_bar { background: #25262B; padding: 8px; border-bottom: 1px solid #2C2E33; }
+#action_bar { background: #25262B; border-bottom: 1px solid #2C2E33; }
 #content { background: #25262B; }
 #status_bar { background: #2C2E33; border-top: 1px solid #35334A; }
 
-/* 主色 #5C7CFA (暗色版靛蓝) */
+/* 按钮：暗色轻量风格，只写颜色；:checked 用主色实底标出当前档位。 */
 QPushButton {
-    background-color: #5C7CFA;
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 4px;
-    font-size: 13px;
+    background-color: #2C2E33;
+    color: #E9ECEF;
 }
-QPushButton:hover { background-color: #4C6EF5; }
-QPushButton:pressed { background-color: #3B5BDB; }
+QPushButton:hover    { background-color: #3A4050; color: #FFFFFF; }
+QPushButton:pressed  { background-color: #454D60; }
+QPushButton:checked  { background-color: #5C7CFA; color: #FFFFFF; }
+QPushButton:disabled { background-color: #25262B; color: #7A7F8A; }
 
-/* 其他常见控件 */
+/* 标签 */
 QLabel { color: #E9ECEF; }
+
+/* 下拉：只写颜色，保持原生 sizeHint */
 QComboBox {
     background-color: #2C2E33;
-    border: 1px solid #35334A;
-    border-radius: 4px;
-    padding: 6px 12px;
-    min-width: 120px;
+    color: #E9ECEF;
+    selection-background-color: #3B5BDB;
+    selection-color: #FFFFFF;
 }
-QComboBox:hover { border-color: #5C7CFA; }
-QComboBox::drop-down { border: none; width: 30px; }
+QComboBox:hover { background-color: #353B4A; }
 QComboBox QAbstractItemView {
     background-color: #2C2E33;
     border: 1px solid #35334A;
     selection-background-color: #3B5BDB;
-    selection-color: white;
+    selection-color: #FFFFFF;
 }
 
-/* 表格 */
-QTableWidget {
+/* 表格：看板实际用 QTableView + DataFrameModel */
+QTableView {
     background-color: #25262B;
     border: 1px solid #35334A;
     border-radius: 4px;
 }
-QTableWidget::item { padding: 8px; border-bottom: 1px solid #2C2E33; }
-QTableWidget::item:selected { background-color: #3B5BDB; color: white; }
+QTableView::item:selected { background-color: #3B5BDB; color: #FFFFFF; }
 QHeaderView::section {
     background-color: #2C2E33;
-    padding: 8px;
     border: 1px solid #35334A;
     font-weight: bold;
     color: #E9ECEF;
