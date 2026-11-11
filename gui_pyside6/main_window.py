@@ -2858,7 +2858,7 @@ class MainWindow(QMainWindow):
         """打开自动隔离规则配置对话框（独立入口，保留兼容）。保存成功后提示。"""
         from PySide6.QtWidgets import QDialog
         from gui_pyside6.dialogs.auto_quarantine_rule_dialog import AutoQuarantineRuleDialog
-        dlg = AutoQuarantineRuleDialog(self)
+        dlg = AutoQuarantineRuleDialog(self, df=self._get_master_df())
         if dlg.exec_() == QDialog.DialogCode.Accepted:
             cfg = load_auto_quarantine_config()
             self.action_btn_auto_q.setToolTip("按规则自动移入隔离区：" + build_all_summary(cfg))

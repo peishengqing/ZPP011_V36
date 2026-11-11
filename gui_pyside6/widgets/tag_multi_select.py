@@ -23,7 +23,7 @@
    圆角/字号走 ``SIZE_PX`` / ``FONT_PT`` 档位，不在控件里就地写数字。
 3. **主题回调不持有控件**：``style_with_tokens`` 内部走弱引用，控件销毁时自动摘除。
 """
-from PySide6.QtCore import QRect, QSize, Qt, Signal
+from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLineEdit,
@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -131,7 +132,12 @@ class _ChipFlow(QLayout):
 
     def setGeometry(self, rect):
         super().setGeometry(rect)
-        self._arrange(rect, commit=True)
+        need = self._arrange(rect, commit=True).height()
+        host = self.parentWidget()
+        if need > rect.height() + 1 and hasattr(host, "_request_height_resync"):
+            # 宿主给的矩形比真正需要的还矮 —— 标签会被裁掉整行（QScrollArea 里
+            # 实测就是这样）。这里就地自救：请控件按当前宽度重新定高。
+            host._request_height_resync()
 
     def sizeHint(self):
         """按设计稿正文行宽给建议尺寸（高度随行宽流式算，避免「一列到底」的虚高）。"""
@@ -143,7 +149,10 @@ class _ChipFlow(QLayout):
         if not self._items:
             return QSize(0, 0)
         widest = max(i.sizeHint().width() for i in self._items)
-        return QSize(widest, _TAG_H)
+        # 高度只报一行：多行高度由 TagMultiSelect 自己定高（见 _sync_height）。
+        # 在这里报多行反而有害 —— 宿主把控件调窄一点时，控件会被这个最小值顶住，
+        # 换行减少后缩不回来。
+        return QSize(max(widest, _MIN_ROW_W), _TAG_H)
 
     def _arrange(self, rect, commit):
         x, y, row_h = rect.x(), rect.y(), 0
@@ -177,6 +186,7 @@ class TagMultiSelect(QWidget):
         self._values = [str(v).strip() for v in values if str(v).strip()]
         self._selected = []
         self._popup = None
+        self._resync_pending = False
         self.setMinimumWidth(_MIN_ROW_W)
         self._host = _ChipFlow(_CHIPS_GAP, self)
         self._host.setContentsMargins(0, 0, 0, 0)
@@ -252,6 +262,7 @@ class TagMultiSelect(QWidget):
             empty = QLabel("（无可选取值）")
             empty.setObjectName("tagMultiEmpty")
             self._host.addWidget(empty)
+            self._notify_rows_changed()
             return
 
         for v in self._selected:
@@ -268,6 +279,80 @@ class TagMultiSelect(QWidget):
             self._chip("搜索…", "search",
                        "打开可搜索多选（共 %d 个取值）" % len(candidates),
                        self._open_popup))
+        self._notify_rows_changed()
+
+    def _notify_rows_changed(self):
+        """标签行数变了要主动通知父布局重问 sizeHint，并把当前行宽下的行数写进自身高度。
+
+        不通知的话，父布局仍按旧行数给高度：多选到第二行时，下一行字段会被压在
+        标签下面（规则中心 Tab① 实截到的重叠就是这个）。
+        """
+        self.updateGeometry()
+        self._sync_height()
+
+    def _sync_height(self):
+        """按「当前行宽真正要几行」给自己定高。
+
+        Qt 的 heightForWidth 只在顶层布局兑现：一旦控件嵌进 QHBoxLayout（字段行）
+        再套 QScrollArea，父布局就只按 minimumSize 分配高度，实测三行标签被压成
+        49px，第三行和下一个字段叠在一起。固定高度属于控件自己的最小尺寸，
+        宿主再怎么压也压不掉，这是这条链上唯一稳妥的兑现方式。
+        """
+        flow = self._host
+        if flow is None or not flow.count():
+            return
+        height = flow.heightForWidth(max(self.width(), _MIN_ROW_W))
+        if height > 0 and height != self.height():
+            self.setFixedHeight(height)
+            self._ask_scroll_host_to_remeasure()
+
+    def _ask_scroll_host_to_remeasure(self):
+        """长高之后，请最近的 QScrollArea 宿主重算一次内容尺寸。
+
+        ``widgetResizable`` 的内容高度只在 viewport 变化时才重问，控件自己长高
+        它不知道（实测：内容停在 640，而布局已经需要 655，缺的 27px 正好是从
+        标签第三行身上抠走的）。这里按 QScrollArea 的口径补一次：
+        内容 = max(viewport, 布局需要)。先 ``invalidate()`` 是必须的 —— 直接读
+        ``sizeHint()`` 拿到的是这一轮布局还没重算前的旧值（实测 640 而非 667）。
+        """
+        host = self.parentWidget()
+        while host is not None and not isinstance(host, QScrollArea):
+            host = host.parentWidget()
+        if host is None:
+            return
+        content = host.widget()
+        if content is None:
+            return
+        lay = content.layout()
+        view = host.viewport().size()
+        if lay is None:
+            need = content.sizeHint().expandedTo(content.minimumSize())
+        else:
+            lay.invalidate()
+            need = lay.totalSizeHint().expandedTo(lay.totalMinimumSize())
+        content.resize(QSize(max(view.width(), need.width()),
+                             max(view.height(), need.height())))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._sync_height()
+
+    def _request_height_resync(self):
+        """被宿主压矮时的自救入口（延后一拍，布局激活回调里不能直接改尺寸）。
+
+        必须延后还有一个原因：控件第一次 show 时 QSS 的 ``padding`` 才生效，
+        标签比构造时量到的更宽，所需行数会多出整整一行（单位标签实测 49px →
+        75px）。只在「算出来的高度比给到的高」时才补救，正常运行一次都不触发。
+        """
+        if self._resync_pending:
+            return
+        self._resync_pending = True
+        QTimer.singleShot(0, self._resync_height)
+
+    def _resync_height(self):
+        self._resync_pending = False
+        self._sync_height()
+        self.updateGeometry()
 
     def _clear_host(self):
         while self._host.count():
