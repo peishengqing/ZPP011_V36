@@ -385,12 +385,13 @@ def test_center_passes_master_df_to_read_tab(qapp, monkeypatch):
 
     monkeypatch.setattr(center, "AutoQuarantineRuleWidget", _StubTab)
     monkeypatch.setattr(center, "AutoReadRuleWidget", _StubTab)
+    monkeypatch.setattr(center, "ThresholdConfigWidget", _StubTab)
     monkeypatch.setattr(center, "RulePreviewWidget",
                         lambda df, parent=None: _StubTab(parent, df))
     dlg = center.AutoRulesCenterDialog(df=pd.DataFrame(_ROWS))
-    assert len(seen) == 3                        # 两页规则 + 影子预览都要拿到主表
+    assert len(seen) == 4                        # 三页规则 + 影子预览都要拿到主表
     assert all(df is not None and len(df) == len(_ROWS) for df in seen)
-    assert dlg.tabs.count() == 3
+    assert dlg.tabs.count() == 4
     dlg.deleteLater()
 
 

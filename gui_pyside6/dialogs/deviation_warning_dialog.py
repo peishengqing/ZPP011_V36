@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-偏差率预警看板对话框 - 仅显示 |偏差率| >= 10% 的预警记录，
+偏差率预警看板对话框 - 只显示 |偏差率| ≥ 阈值的预警记录，
 支持：列宽可拖拽调整、点击列头排序、Ctrl+C 复制、标记已读/未读、导出、双击定位主表。
 
-数据源由主窗口预筛选（|偏差率(%)| >= 10）后传入，本对话框只负责展示与交互。
+数据源由主窗口按 core.threshold_config 的判据预筛选后传入（阈值不再写死 10），
+本对话框只负责展示与交互；副标题里的数字也读同一份配置，否则标题会和内容不一致。
 交互与「替代料看板」(alert_dialog.AlertDialog) 保持一致，仅列宽策略改为可拖拽。
 """
 
@@ -40,17 +41,24 @@ from gui_pyside6.utils.icons import add_icon_action, make_button
 from gui_pyside6.widgets.board_visual import apply_board_visual  # v43.299 方案C
 from gui_pyside6.utils.snapshot_action import attach_snapshot_bar
 from utils.theme_manager import Thm
+from core import threshold_config as _thr
 
 
 
 from gui_pyside6.components import dialog_chrome
 
+
+def _alert_label():
+    """标题里的口径跟着配置走：阈值改成 12 还写「≥ 10%」就是骗人。"""
+    return "|偏差率| ≥ %g%%" % _thr.get_thresholds()["alert_dev_rate_pct"]
+
+
 class DeviationWarningDialog(QDialog):
-    """偏差率预警看板对话框 - |偏差率| >= 10% 的记录，支持标记已读/未读"""
+    """偏差率预警看板对话框 - |偏差率| ≥ 配置阈值的记录，支持标记已读/未读"""
 
     def __init__(self, warnings_df, main_window, parent=None):
         super().__init__(parent)
-        dialog_chrome.apply(self, dialog_chrome.TIER_BOARD, "偏差率预警看板", "|偏差率| ≥ 10%")
+        dialog_chrome.apply(self, dialog_chrome.TIER_BOARD, "偏差率预警看板", _alert_label())
         # 允许最大化/最小化
         self.main_window = main_window
         self.original_df = warnings_df.copy()
@@ -86,7 +94,7 @@ class DeviationWarningDialog(QDialog):
         # closeEvent 断连 / open_maximized Win32 硬兜底 / 批量已读 全部原样保留
         from gui_pyside6.components.dialog_shell_bridge import install_dialog_shell
         install_dialog_shell(
-            self, self._shell_host, "偏差率预警看板 · |偏差率| ≥ 10%",
+            self, self._shell_host, "偏差率预警看板 · " + _alert_label(),
             "已加载 %d 条预警记录" % len(self.original_df))
 
     def open_maximized(self):

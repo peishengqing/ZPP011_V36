@@ -15,8 +15,6 @@
 双击定位与 data_id 生成的依据，抽成公共函数反而会掩盖各看板口径差异。
 """
 
-import pandas as pd
-
 from PySide6.QtWidgets import QMessageBox, QDialog, QVBoxLayout
 from PySide6.QtCore import Qt
 
@@ -28,6 +26,7 @@ from gui_pyside6.widgets.neg_loss_content import NegLossContent
 from gui_pyside6.widgets.pos_loss_content import PosLossContent
 from gui_pyside6.widgets.semi_content import SemiContent
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
+from core import threshold_config as _thr
 from gui_pyside6.dialogs.alt_chain_dialog import AltChainDialog
 from gui_pyside6.dialogs.dashboard_dialog import DashboardDialog
 from gui_pyside6.dialogs.data_stability_dialog import DataStabilityDialog
@@ -131,7 +130,7 @@ class DashboardController:
 
 
     def _show_deviation_warning_dialog(self):
-        """手动打开偏差率预警看板（|偏差率| >= 10%）"""
+        """手动打开偏差率预警看板（阈值见 core.threshold_config，与主表橙色同源）"""
         try:
             df = self.mw._get_master_df()  # 与未读弹窗同源，避免两边数对不上
             if df is None or df.empty:
@@ -140,26 +139,17 @@ class DashboardController:
             if "偏差率(%)" not in df.columns:
                 QMessageBox.information(self.mw, "提示", "当前数据无偏差率列")
                 return
-            # 偏差率预警：|偏差率| >= 10%，且排除「实际=0 且 定额>0」的行
-            # （偏差率恒为 -100%，是未真实投料的机械结果，不是真偏差；与主表橙色高亮、颜色筛选一致）
-            rates = pd.to_numeric(df["偏差率(%)"], errors='coerce').fillna(0)
-            act_col = '数量-实际' if '数量-实际' in df.columns else ('实际' if '实际' in df.columns else None)
-            qty_col = '数量-定额' if '数量-定额' in df.columns else ('定额' if '定额' in df.columns else None)
-            if act_col and qty_col:
-                a = pd.to_numeric(df[act_col], errors='coerce').fillna(0)
-                q = pd.to_numeric(df[qty_col], errors='coerce').fillna(0)
-                no_input = (a.abs() <= 0.001) & (q > 0.001)
-                # v43.250：与主表橙色高亮 / 颜色筛选 / 工作簿「无备注预警」同口径，
-                # 排除 |偏差率| 恰为 100% 的 SAP 除零钳位假值（定额=0 恒 +100.0%）；
-                # -100.0%（实际=0 且 定额>0）已由 ~no_input 排除。
-                mask = (rates.abs() >= 10) & ((rates - 100.0).abs() >= 1e-6) & (~no_input)
-            else:
-                mask = (rates.abs() >= 10) & ((rates - 100.0).abs() >= 1e-6)
+            # 判据不再在这里抄一份：阈值 + SAP 除零钳位排除 + 未投料排除，全部来自
+            # core.threshold_config（第四期E 同口径）。改造前这里是第五处 >= 10 字面量。
+            mask = _thr.dev_alert_mask(df)
             warnings_df = df[mask].copy()
             # 注入原表行号，供看板双击定位主表使用
             warnings_df["原表行号"] = warnings_df.index
             if warnings_df.empty:
-                QMessageBox.information(self.mw, "提示", "没有偏差率预警记录（|偏差率| ≥ 10%）")
+                QMessageBox.information(
+                    self.mw, "提示",
+                    "没有偏差率预警记录（|偏差率| ≥ %.2f%%）"
+                    % _thr.get_thresholds()["alert_dev_rate_pct"])
                 return
             # 只保留关键列（含"工厂"保证 data_id 匹配）
             # 注意：不要同时列「组件物料号」和「物料编码」——sheet5_full 已把组件物料号统一映射为物料编码，

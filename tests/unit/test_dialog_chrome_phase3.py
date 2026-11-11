@@ -63,6 +63,7 @@ MIGRATED = [
     "gui_pyside6/controllers/semi_category_controller.py",
     "gui_pyside6/dialogs/auto_read_rule_dialog.py",
     "gui_pyside6/dialogs/filter_preset_manager_dialog.py",
+    "gui_pyside6/dialogs/threshold_config_dialog.py",
     "gui_pyside6/dialogs/wechat_draft_config_dialog.py",
 ]
 

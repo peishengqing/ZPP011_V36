@@ -61,6 +61,7 @@ from gui_pyside6.dialogs.import_wizard_dialog import ImportWizard
 from gui_pyside6.dialogs.health_check_dialog import HealthCheckDialog
 from gui_pyside6.viewmodels.analysis_vm import AnalysisViewModel
 from core.alert_monitor import AlertMonitor, filter_alt_alerts
+from core import threshold_config as _thr
 from domain.alt_material.alt_manager import (
     load_alt_pairs,
     save_alt_pairs,
@@ -350,7 +351,7 @@ class MainWindow(QMainWindow):
         # 必须在 view_model 创建之后创建
         self.alert_monitor = AlertMonitor(
             data_source_func=lambda: self.view_model.df if self.view_model else None,
-            threshold=10,
+            threshold=_thr.get_thresholds()["alert_dev_rate_pct"],
             interval=60,
             only_alt=True
         )
@@ -593,7 +594,8 @@ class MainWindow(QMainWindow):
         self.action_btn_boards.clicked.connect(self._show_dashboard)
         self.action_btn_export.clicked.connect(self._on_export_full_excel)
         # 原「维护」按钮退役（v43.349 第五期B：自动隔离规则/物料画像并入「更多」菜单），
-        # 该入口现由 layout_composer 的 more_menu 项直接调用 _open_auto_quarantine_rule_dialog。
+        # 该入口现由 layout_composer 的 more_menu 项调用 _open_auto_quarantine_rule_dialog，
+        # v43.356 第四期E 起该方法只是转发到规则中心 Tab①。
         self.action_btn_toggle_stats.clicked.connect(self._toggle_stats_from_toolbar)
         self.action_btn_toggle_progress.clicked.connect(self._toggle_progress_from_toolbar)
         # 「未读」按钮退役（v43.349 第五期B）：它和「审核」开的是同一个队列，
@@ -2064,7 +2066,8 @@ class MainWindow(QMainWindow):
         - 隔离区未读     = _quarantined==1 且 _read==0
         - 变动提醒未读   = _post_audit_changed==1 且 _read==0（已改动且未读的行）
         - 替代料未读     = filter_alt_alerts 命中 且 _read==0（与替代料看板一致）
-        - 偏差率预警未读 = |偏差率|>=10% 且非「实际0定额>0」且 _read==0
+        - 偏差率预警未读 = 命中 core.threshold_config 的预警判据 且 _read==0
+                          （阈值、SAP 除零钳位与未投料两个排除开关都归它管）
         无数据时返回 None。
         """
         df = self._get_master_df()
@@ -2078,15 +2081,7 @@ class MainWindow(QMainWindow):
         else:
             read_mask = pd.Series(True, index=df.index)
 
-        # 列探测
-        qty_col = next((c for c in ['数量-定额', '定额'] if c in df.columns), None)
-        act_col = next((c for c in ['数量-实际', '实际'] if c in df.columns), None)
-        rate_col = next((c for c in ['偏差率(%)', '偏差率', 'dev_rate'] if c in df.columns), None)
         alt_col = '是否替代料' if '是否替代料' in df.columns else None
-
-        a = pd.to_numeric(df[act_col], errors='coerce').fillna(0) if act_col else pd.Series(0, index=df.index)
-        q = pd.to_numeric(df[qty_col], errors='coerce').fillna(0) if qty_col else pd.Series(0, index=df.index)
-        no_input = (a.abs() <= 0.001) & (q > 0.001)
 
         # 1. 隔离区未读
         if '_quarantined' in df.columns:
@@ -2102,16 +2097,10 @@ class MainWindow(QMainWindow):
         threshold = getattr(self.alert_monitor, 'threshold', 10)
         alt_alerts = filter_alt_alerts(df, threshold) if alt_col else pd.DataFrame()
         n_a = int(read_mask.loc[alt_alerts.index].sum()) if not alt_alerts.empty else 0
-        # 4. 偏差率预警未读
-        if rate_col:
-            rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
-            # v43.250：与主表橙色高亮 / 偏差率预警看板 / 颜色筛选同口径，排除
-            # |偏差率| 恰为 100% 的 SAP 除零钳位假值（定额=0 恒 +100.0%）；
-            # -100.0%（实际=0 且 定额>0）已由 ~no_input 排除。
-            alert_mask = (rates.abs() >= 10) & ((rates - 100.0).abs() >= 1e-6) & (~no_input)
-            n_d = int((alert_mask & read_mask).sum())
-        else:
-            n_d = 0
+        # 4. 偏差率预警未读（判据来自 core.threshold_config，与主表橙色 / 颜色筛选 /
+        # 预警看板 / KPI 同一条件；改造前这里是第六处 >= 10 字面量）
+        alert_mask = _thr.dev_alert_mask(df)
+        n_d = int((alert_mask & read_mask).sum()) if alert_mask is not None else 0
 
         return [
             # v43.264：icon 传线性图标名（utils/icons.py），弹窗渲染成 SVG 图标
@@ -2233,11 +2222,14 @@ class MainWindow(QMainWindow):
             self._open_quarantine_dialog()
         elif card_type == 'anomaly':
             df = self.view_model.df
-            rate_col = next((c for c in ['偏差率(%)', '偏差率', 'dev_rate'] if c in df.columns), None)
-            if rate_col:
-                rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
-                count = int((rates.abs() > 30).sum())
-                self.statusBar().showMessage(f"真异常 {count} 条（已排除替代料）", 5000)
+            if _thr.rate_series(df) is not None:
+                # 与 KPI「真异常」那一格调同一个函数。改造前这里自己抄了一份 > 30，
+                # 文案写着「已排除替代料」却没真排（KPI 排了）—— 两处数对不上，
+                # 状态条说什么就是什么，说的却是没做过的事。
+                count = _thr.count_anomalies(df)
+                self.statusBar().showMessage(
+                    "真异常 %d 条（|偏差率| > %.2f%%，已排除替代料）"
+                    % (count, _thr.get_thresholds()["anomaly_dev_rate_pct"]), 5000)
         elif card_type == 'unread':
             if self.filter_panel.read_status_combo.currentText() == '未读':
                 self.filter_panel.set_read_status_filter('全部')
@@ -2855,24 +2847,40 @@ class MainWindow(QMainWindow):
         return self.quarantine_manager_controller._notify_expired_quarantine(new_uids, expired_all)
 
     def _open_auto_quarantine_rule_dialog(self):
-        """打开自动隔离规则配置对话框（独立入口，保留兼容）。保存成功后提示。"""
-        from PySide6.QtWidgets import QDialog
-        from gui_pyside6.dialogs.auto_quarantine_rule_dialog import AutoQuarantineRuleDialog
-        dlg = AutoQuarantineRuleDialog(self, df=self._get_master_df())
-        if dlg.exec_() == QDialog.DialogCode.Accepted:
-            cfg = load_auto_quarantine_config()
-            self.action_btn_auto_q.setToolTip("按规则自动移入隔离区：" + build_all_summary(cfg))
-            toast("自动隔离规则已更新", parent=self)
+        """旧「更多 ▸ 自动隔离规则」入口：收敛到规则中心 Tab①，不再另开一个窗口。
+
+        保留方法名是因为 layout_composer 的 more_menu 指向这里；实现只有一行转发，
+        这样「规则中心」成为隔离/已读/阈值三套规则的唯一编辑处。
+        """
+        self._open_rule_center(open_tab=0)
+
+    def _apply_thresholds(self):
+        """阈值页保存后把新值推给所有活对象。
+
+        「同一屏两种红」的根因是阈值写在五处；真源统一后还差这一步——改完当场生效，
+        不靠重启。set_alert_threshold 从写下来就没有调用者，这里就是它的调用者。
+        """
+        cfg = _thr.reload_thresholds()
+        if getattr(self, "alert_monitor", None) is not None:
+            self.alert_monitor.update_config(threshold=cfg["alert_dev_rate_pct"])
+        if getattr(self, "proxy_model", None) is not None:
+            self.proxy_model.set_alert_threshold(cfg["alert_dev_rate_pct"])
+        if getattr(self, "source_model", None) is not None:
+            self.source_model.refresh_threshold_colors()
+        self._on_view_model_data_changed()
 
     def _open_rule_center(self, open_tab=0):
-        """打开「规则中心」：Tab1 自动隔离区 + Tab2 自动已读，两页共享保存。"""
+        """打开「规则中心」：自动隔离 / 自动已读 / 阈值与提醒 / 命中预览，四页一窗。"""
         from PySide6.QtWidgets import QDialog
         from gui_pyside6.dialogs.auto_rules_center_dialog import AutoRulesCenterDialog
         # v43.341：把主表数据按唯一口径喂给③命中预览页（只读，不改变保存行为）
         _master = self._get_master_df()
         dlg = AutoRulesCenterDialog(self, open_tab=open_tab, df=_master)
         if dlg.exec_() == QDialog.DialogCode.Accepted:
-            toast("规则已更新（自动隔离 + 自动已读）", parent=self)
+            cfg = load_auto_quarantine_config()
+            self.action_btn_auto_q.setToolTip("按规则自动移入隔离区：" + build_all_summary(cfg))
+            self._apply_thresholds()
+            toast("规则已更新（隔离 / 已读 / 阈值已同步到主表）", parent=self)
 
     def _open_quarantine_dialog(self):
         """顶部按钮：打开隔离区弹窗"""

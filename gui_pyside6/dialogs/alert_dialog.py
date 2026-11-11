@@ -290,15 +290,11 @@ class AlertDialog(QDialog):
 
         # 颜色标记筛选（与已读状态 AND）：复用主表 classify_row_color_keys
         if self.color_filters:
-            threshold = 10.0
-            am = getattr(self.main_window, 'alert_monitor', None)
-            if am is not None:
-                try:
-                    threshold = float(getattr(am, 'threshold', 10))
-                except (TypeError, ValueError):
-                    threshold = 10.0
+            # 阈值不在这儿传：classify_row_color_keys 自己读 core.threshold_config，
+            # 与主表橙色高亮同一个数（改造前这里是第八处写死 10.0 的地方，还要绕
+            # 道 AlertMonitor 去猜，monitor 一缺省就退回 10，两边能不一致）。
             mask = filtered.apply(
-                lambda r: bool(classify_row_color_keys(r, filtered, threshold) & self.color_filters),
+                lambda r: bool(classify_row_color_keys(r, filtered) & self.color_filters),
                 axis=1)
             filtered = filtered[mask]
 

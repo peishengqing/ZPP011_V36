@@ -13,6 +13,7 @@ from PySide6.QtGui import QColor
 from gui_pyside6.utils.icons import get_icon
 from gui_pyside6.themes.tokens import num_font
 from utils.theme_manager import Thm
+from core import threshold_config as _thr
 
 # 自定义角色：标记某行是否属于替代料组（代理模型据此跳过预警色覆盖，保证同组视觉一致）
 ALT_GROUP_ROLE = Qt.UserRole + 100
@@ -47,7 +48,7 @@ class DataFrameModel(QAbstractTableModel):
         self._substitute_rows = set()  # 替代料行（是否替代料=是，整行浅蓝标，正常被组色覆盖）
         self._alt_group_color_list = []  # 替代料组行对应的组色（QColor 或 None）
         self._unused_rows = set()  # 未投料行（实际=0 且 定额>0 且 否替代料，整行浅青绿标）
-        self._alert_rows = set()  # 偏差率预警行（|偏差率|>=10% 且排除实际=0定额>0，整行浅橙标）
+        self._alert_rows = set()  # 偏差率预警行（阈值来自 core.threshold_config，整行浅橙标）
         if data is not None:
             self.setDataFrame(data)
 
@@ -92,6 +93,15 @@ class DataFrameModel(QAbstractTableModel):
         self._build_cache()  # 新增：构建缓存
         self.endResetModel()
         # 全表刷新广播：发自定义无参信号，不再发无效索引(QModelIndex())以免触发 Qt 警告
+        self.dataRefreshed.emit()
+
+    def refresh_threshold_colors(self):
+        """阈值/排除开关改完后就地重算行颜色集合。
+
+        走 setDataFrame 同一条 _build_cache，但不开 beginResetModel —— 重置会把
+        滚动位置、排序和选中全冲掉，用户改完阈值回来发现表被翻回第一行是不能接受的。
+        """
+        self._build_cache()
         self.dataRefreshed.emit()
 
     def mark_quarantine(self, ids, flag: bool):
@@ -179,19 +189,13 @@ class DataFrameModel(QAbstractTableModel):
         unused_mask = no_input & (~is_alt)
         self._unused_rows = set(np.where(unused_mask.values)[0])
 
-        # 偏差率预警：|偏差率| >= 10% 的行整行浅橙（与偏差率预警看板阈值一致）
-        # 排除「实际=0 且 定额>0」的行：偏差率恒为 -100%，是未真实投料的机械结果，不是真偏差
-        # 另排除 |偏差率| 恰为 100% 的 SAP 除零钳位假值（定额=0 恒 +100.0%、实际=0 恒 -100.0%），
-        # 与 classify_row_color_keys / 工作簿「无备注预警」sheet（!=100%）口径一致。
-        _alert_rate_col = next((c for c in ['偏差率(%)', '偏差率'] if c in self._data.columns), None)
-        if _alert_rate_col:
-            rates = pd.to_numeric(
-                self._data[_alert_rate_col].astype(str).str.replace('%', '').str.strip(),
-                errors='coerce').fillna(0.0)
-            alert_mask = (rates.abs() >= 10) & ((rates - 100.0).abs() >= 1e-6) & (~no_input)
-            self._alert_rows = set(np.where(alert_mask.values)[0])
-        else:
-            self._alert_rows = set()
+        # 偏差率预警：|偏差率| ≥ 阈值的行整行浅橙。判据从 2026-11-12（第四期E）起
+        # 不再在这里抄一份 —— core.threshold_config 是主表橙色高亮 / 颜色筛选 /
+        # 偏差率预警看板 / KPI 偏差预警 / 未读汇总共用的唯一一条，阈值与两个排除
+        # 开关（SAP 除零钳位 +100.0%、实际=0 未投料）都在规则中心「阈值与提醒」页改。
+        alert_mask = _thr.dev_alert_mask(self._data)
+        self._alert_rows = set() if alert_mask is None else set(
+            np.where(alert_mask.values)[0])
 
         # 替代料组：按 _替代料组 分组生成稳定柔和色（同组同色，便于一眼归组）
         self._alt_group_color_list = [None] * n
@@ -372,7 +376,7 @@ class DataFrameModel(QAbstractTableModel):
             if row in self._unused_rows:
                 return QColor(200, 240, 210)
             col_name = self._display_columns[col]
-            # 偏差率预警行：整行浅橙标记（|偏差率| >= 10%，与审核后变更的浅红区分；预警列本身保留红/黄/绿标记）
+            # 偏差率预警行：整行浅橙标记（阈值见 core.threshold_config，与审核后变更的浅红区分；预警列本身保留红/黄/绿标记）
             if row in self._alert_rows and col_name != '预警':
                 return QColor(255, 198, 142)
             # 预警列上色
@@ -509,7 +513,7 @@ class AuditProxyModel(QSortFilterProxyModel):
         self._custom_filters = {}  # 自定义筛选条件（侧边栏）
         self._value_filters = {}  # 列名 -> 允许显示的展示值集合（Excel式列头成员过滤）
         self._value_keys = {}     # 列名 -> 每行展示值键列表（与 source 行序对齐，加速 filterAcceptsRow）
-        self._alert_threshold = 10.0  # 预警阈值，默认10%
+        self._alert_threshold = _thr.get_thresholds()["alert_dev_rate_pct"]
         # P2-7 修复：保留排序状态
         self._sort_column = -1
         self._sort_order = Qt.AscendingOrder
@@ -1054,10 +1058,15 @@ class AuditProxyModel(QSortFilterProxyModel):
                 rv = pd.to_numeric(
                     df[c_rate_col].astype(str).str.replace('%', '').str.strip(),
                     errors='coerce')  # NaN 保留：abs(nan)>=thr 恒 False → 不告警（与原一致）
-                # 与 classify_row_color_keys 同口径：排除 |偏差率| 恰为 100% 的 SAP 除零钳位假值
-                # （浮点容差 1e-6；NaN 行本就恒 False，不受影响）
-                alert = ((rv.abs() >= thr) & ((rv - 100.0).abs() >= 1e-6)
-                         & (~no_input) & (~changed) & (~quar))
+                # 与 classify_row_color_keys / 主表橙色高亮同一份判据：阈值和两个排除
+                # 开关（SAP 除零钳位、未投料）都来自 core.threshold_config
+                alert = rv.abs() >= thr
+                _tcfg = _thr.get_thresholds()
+                if _tcfg["exclude_sap_zero_div"]:
+                    alert &= (rv - 100.0).abs() >= 1e-6
+                if _tcfg["exclude_unfed"]:
+                    alert &= ~no_input
+                alert &= (~changed) & (~quar)
             else:
                 alert = pd.Series(False, index=idx)
             plain = ~(changed | quar | sub | unused | alert)
@@ -1185,19 +1194,24 @@ class AuditProxyModel(QSortFilterProxyModel):
         except (ValueError, TypeError):
             return str(left_data) < str(right_data)
 
-def classify_row_color_keys(row_data, df, threshold=10.0):
+def classify_row_color_keys(row_data, df, threshold=None):
     """返回该行命中的颜色标记 key 集合，与主表行背景色/偏差率预警看板判定完全一致。
+
+    ``threshold`` 留空即读 core.threshold_config 的当前值（同口径原则：颜色筛选
+    和主表橙色必须同一个数说了算）；显式传值只给测试和老调用方兜底用。
 
     颜色类别：
       _changed_only     审核后变更
       _quarantined_only 隔离区
       _substitute_only  替代料
       _unused_only      未投料（实际=0 定额>0 且非替代料）
-      _alert_only       偏差率预警（|偏差率|>=threshold 且排除 |偏差率| 恰为 100%
-                       的 SAP 除零钳位假值（定额=0 恒 +100%、实际=0 恒 -100%），
-                       且非未投料/非被覆盖行）
+      _alert_only       偏差率预警（|偏差率| >= threshold，按配置排除 |偏差率| 恰为
+                       100% 的 SAP 除零钳位假值与未投料行，且非变更/非隔离行）
       _plain_only       无标记（五类皆非）
     """
+    cfg = _thr.get_thresholds()
+    if threshold is None:
+        threshold = cfg["alert_dev_rate_pct"]
     def _to_float_safe(v):
         try:
             f = float(v)
@@ -1238,8 +1252,10 @@ def classify_row_color_keys(row_data, df, threshold=10.0):
             rv = float(str(rv_raw).replace('%', '').strip())
         except (ValueError, TypeError):
             rv = 0.0
-        if (abs(rv) >= threshold and abs(rv - 100.0) >= 1e-6
-                and not no_input and not (is_changed or is_quarantined)):
+        if (abs(rv) >= threshold
+                and (abs(rv - 100.0) >= 1e-6 or not cfg["exclude_sap_zero_div"])
+                and (not no_input or not cfg["exclude_unfed"])
+                and not (is_changed or is_quarantined)):
             is_alert = True
 
     is_plain = not (is_changed or is_quarantined or is_substitute or is_unused or is_alert)

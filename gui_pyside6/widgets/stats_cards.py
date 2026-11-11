@@ -21,6 +21,7 @@ import pandas as pd
 from gui_pyside6.themes.tokens import SIZE_PX
 from gui_pyside6.utils.icons import get_icon
 from utils.theme_manager import Thm
+from core import threshold_config as _thr
 
 # 圆点取色（pass/unread/anomaly/alt/changed/quarantine/deviation 七键）的唯一权威
 # 在两套 QSS 的 QFrame[kpiAccent="..."] 规则，此处只传键，零内联样式。
@@ -144,7 +145,7 @@ class StatsCardsWidget(QWidget):
         self.card_unread = _make_card(self.cards_container, "--", "未读", "unread",
                                        "你还没看过的记录数")
         self.card_anomaly = _make_card(self.cards_container, "--", "真异常", "anomaly",
-                                        "非替代料中偏差率 > 30% 的条数")
+                                        "非替代料中 |偏差率| 超真异常阈值的条数（刷新时按当前阈值写进提示）")
         self.card_alt = _make_card(self.cards_container, "--", "替代料", "alt",
                                     "替代料配对组数 + 净偏差抵消总金额")
         self.card_changed = _make_card(self.cards_container, "--", "审核后变更", "changed",
@@ -152,7 +153,8 @@ class StatsCardsWidget(QWidget):
         self.card_quarantine = _make_card(self.cards_container, "--", "隔离区", "quarantine",
                                            "疑难待处理、暂存隔离区的数据条数（点击打开隔离区）")
         self.card_deviation = _make_card(self.cards_container, "--", "偏差率预警", "deviation",
-                                         "偏差率绝对值 ≥ 10% 的记录数（点击打开偏差率预警看板）")
+                                         "偏差率绝对值超预警阈值的记录数（点击打开偏差率预警看板；"
+                                         "阈值在规则中心「阈值与提醒」，刷新时按当前值写进提示）")
 
         cards = [self.card_pass, self.card_unread, self.card_anomaly,
                  self.card_alt, self.card_changed, self.card_quarantine,
@@ -241,19 +243,21 @@ class StatsCardsWidget(QWidget):
     # ── 内部计算 ──
 
     def _update_pass_rate(self, df: pd.DataFrame):
-        """AI通过率：audit_result == '合格' / 有审核结果的记录数"""
-        if 'audit_result' not in df.columns:
+        """AI 通过率：合格 / 已审核。判据（列探测 + 分母口径）在 threshold_config。
+
+        改造前这里只认英文列 ``audit_result``，而「阈值与提醒」页的预览认
+        ``审核结果``/``audit_result`` 两种 —— 于是同一张表里 KPI 说「--」、
+        预览说「67%」。列探测统一交给 ``_thr.ai_pass_rate``。
+        """
+        rate = _thr.ai_pass_rate(df)
+        if rate is None:
             _set_card_value(self.card_pass, "--")
             return
-        # 已审核且audit_result非空
-        result_col = '审核结果' if '审核结果' in df.columns else 'audit_result'
-        reviewed = df[df[result_col].notna() & (df[result_col].astype(str).str.strip() != '')]
-        if reviewed.empty:
-            _set_card_value(self.card_pass, "--")
-            return
-        pass_count = (reviewed[result_col].astype(str).str.strip() == '合格').sum()
-        rate = pass_count / len(reviewed) * 100
-        _set_card_value(self.card_pass, f"{rate:.0f}%")
+        floor = _thr.get_thresholds()["ai_pass_rate_min_pct"]
+        # 低于下限时把「低于 xx%」挂在数值后面（KPI 带固定 54px，unit 位是唯一
+        # 不加新样式就能表态的地方）；下限值来自「阈值与提醒」页，不是写死的 80
+        _set_card_value(self.card_pass,
+                        f"{rate:.0f}% 低于{floor:.0f}%" if rate < floor else f"{rate:.0f}%")
 
     def _update_unread(self, df: pd.DataFrame):
         """未读：_read 列为 0 或不存在该列的记录数"""
@@ -264,40 +268,18 @@ class StatsCardsWidget(QWidget):
         _set_card_value(self.card_unread, str(unread))
 
     def _update_anomaly(self, df: pd.DataFrame):
-        """真异常：非替代料 且 |偏差率| > 30% 的条数"""
-        # 替代料列探测
-        alt_col = None
-        for col in ['是否替代料', 'is_alt', '_替代料组', '替代料组']:
-            if col in df.columns:
-                alt_col = col
-                break
+        """真异常条数：|偏差率| > 阈值 且 非替代料，判据在 core.threshold_config。
 
-        # 偏差率列探测
-        rate_col = None
-        for col in ['偏差率(%)', '偏差率', 'dev_rate']:
-            if col in df.columns:
-                rate_col = col
-                break
-
-        if rate_col is None:
+        口径与改造前逐字一致（只排替代料，不排 SAP 钳位与未投料）—— 本期换的是
+        「谁说了算」，不是「怎么算」。
+        """
+        if _thr.rate_series(df) is None:
             _set_card_value(self.card_anomaly, "--")
             return
-
-        rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
-
-        if alt_col and alt_col in df.columns and alt_col in ['是否替代料', 'is_alt']:
-            # 布尔/字符串型替代料标记
-            is_alt = df[alt_col].astype(str).str.strip().isin(['是', 'True', 'true', '1'])
-            anomaly = (~is_alt) & (rates.abs() > 30)
-        elif alt_col and alt_col in ['_替代料组', '替代料组']:
-            # 替代料组非空 = 是替代料
-            has_alt = df[alt_col].notna() & (df[alt_col].astype(str).str.strip() != '')
-            anomaly = (~has_alt) & (rates.abs() > 30)
-        else:
-            # 没有替代料列，全部算进去
-            anomaly = rates.abs() > 30
-
-        _set_card_value(self.card_anomaly, str(int(anomaly.sum())))
+        self.card_anomaly.setToolTip(
+            "非替代料中 |偏差率| > %g%% 的条数（阈值在规则中心「阈值与提醒」改）"
+            % _thr.get_thresholds()["anomaly_dev_rate_pct"])
+        _set_card_value(self.card_anomaly, str(_thr.count_anomalies(df)))
 
     def _update_alt(self, df: pd.DataFrame):
         """替代料：组数 + 净偏差抵消金额"""
@@ -356,29 +338,15 @@ class StatsCardsWidget(QWidget):
         _set_card_value(self.card_quarantine, str(cnt) if cnt else "0")
 
     def _update_deviation(self, df: pd.DataFrame):
-        """偏差率预警：偏差率绝对值 >= 10% 的条数"""
-        rate_col = None
-        for col in ['偏差率(%)', '偏差率', 'dev_rate']:
-            if col in df.columns:
-                rate_col = col
-                break
-        if rate_col is None:
+        """偏差率预警条数：判据在 core.threshold_config，与主表橙色高亮 / 颜色筛选 /
+        偏差率预警看板 / 未读汇总同一条（改造前这里是第四处 >= 10 字面量）。"""
+        if _thr.rate_series(df) is None:
             _set_card_value(self.card_deviation, "--")
             return
-        rates = pd.to_numeric(df[rate_col], errors='coerce').fillna(0)
-        # 排除「实际=0 且 定额>0」的行（偏差率恒为 -100%，是未真实投料的机械结果，
-        # 不是真偏差；与主表橙色高亮、偏差率预警看板、颜色筛选保持一致）
-        act_col = '数量-实际' if '数量-实际' in df.columns else ('实际' if '实际' in df.columns else None)
-        qty_col = '数量-定额' if '数量-定额' in df.columns else ('定额' if '定额' in df.columns else None)
-        if act_col and qty_col:
-            a = pd.to_numeric(df[act_col], errors='coerce').fillna(0)
-            q = pd.to_numeric(df[qty_col], errors='coerce').fillna(0)
-            no_input = (a.abs() <= 0.001) & (q > 0.001)
-            # v43.250：排除 |偏差率| 恰为 100% 的 SAP 除零钳位假值（定额=0 恒
-            # +100.0%），与主表橙色高亮 / 偏差率预警看板 / 颜色筛选 / 工作簿
-            # 「无备注预警」全口径一致（-100.0% 已由 ~no_input 排除）。
-            cnt = int(((rates.abs() >= 10) & ((rates - 100.0).abs() >= 1e-6)
-                       & (~no_input)).sum())
-        else:
-            cnt = int(((rates.abs() >= 10) & ((rates - 100.0).abs() >= 1e-6)).sum())
+        cfg = _thr.get_thresholds()
+        # 提示里的数字跟着配置走：阈值改成 15 还写「≥10%」就是另一处「两种红」
+        self.card_deviation.setToolTip(
+            "偏差率绝对值 ≥ %g%% 的记录数（点击打开偏差率预警看板，阈值在规则中心"
+            "「阈值与提醒」改）" % cfg["alert_dev_rate_pct"])
+        cnt = _thr.count_dev_alerts(df, cfg)
         _set_card_value(self.card_deviation, str(cnt) if cnt else "0")

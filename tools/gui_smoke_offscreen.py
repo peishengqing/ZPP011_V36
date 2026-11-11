@@ -415,7 +415,7 @@ def main():
         menu_acts = more.menu().actions() if more.menu() is not None else []
         items = [a.text() for a in menu_acts if not a.isSeparator() and a.text()]
         menu_ok = (any(isinstance(a, QWidgetAction) for a in menu_acts) and
-                   all(t in items for t in ("自动隔离规则", "物料画像",
+                   all(t in items for t in ("自动隔离规则（规则中心）", "物料画像",
                                             "输出目录…", "收起左栏展开项")))
         hint = getattr(win, 'action_hint_count', None)
         hint_ok = hint is not None and hint.objectName() == "actionHintCount"
@@ -483,7 +483,7 @@ def main():
         except OSError:
             before_rules = b''
         dlg = AutoRulesCenterDialog(win, df=df)
-        tabs_ok = dlg.tabs.count() == 3
+        tabs_ok = dlg.tabs.count() == 4
         p = dlg.tab_preview
         g1 = p._groups[0]
         r1 = g1._rows[0]

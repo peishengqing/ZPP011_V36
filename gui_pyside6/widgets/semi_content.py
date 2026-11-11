@@ -695,15 +695,10 @@ class SemiContent(QWidget):
         """颜色筛选掩码：空集合=全True；否则按 classify_row_color_keys 判断命中颜色集合。"""
         if not self.color_filters:
             return pd.Series(True, index=df.index)
-        threshold = 10.0
-        am = getattr(self.main_window, 'alert_monitor', None)
-        if am is not None:
-            try:
-                threshold = float(getattr(am, 'threshold', 10))
-            except (TypeError, ValueError):
-                threshold = 10.0
+        # 阈值交给 classify_row_color_keys 自己读 core.threshold_config：改造前这里
+        # 绕道 AlertMonitor 猜一个数、猜不到就退 10.0，会和主表橙色对不上。
         mask = df.apply(
-            lambda r: bool(classify_row_color_keys(r, df, threshold) & self.color_filters),
+            lambda r: bool(classify_row_color_keys(r, df) & self.color_filters),
             axis=1)
         return mask
 

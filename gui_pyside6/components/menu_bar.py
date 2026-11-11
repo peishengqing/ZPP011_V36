@@ -69,7 +69,7 @@ class MenuBarComponent:
 
         audit_menu.addSeparator()
 
-        rule_center_action = QAction(get_icon("gear", 14), "规则中心（隔离/已读）", self.mw)
+        rule_center_action = QAction(get_icon("gear", 14), "规则中心（隔离/已读/阈值）", self.mw)
         rule_center_action.triggered.connect(self.mw._open_rule_center)
         audit_menu.addAction(rule_center_action)
 

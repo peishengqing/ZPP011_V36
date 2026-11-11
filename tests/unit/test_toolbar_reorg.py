@@ -219,7 +219,8 @@ def test_menu_contents(main_window):
 
     more_texts = [a.text() for a in w.action_btn_more.menu().actions()
                   if not a.isSeparator() and a.text()]
-    for must in ["自动隔离规则", "物料画像", "输出目录…"]:
+    # v43.356 第四期E：这一项不再单开旧窗口，标签写明它进的是规则中心
+    for must in ["自动隔离规则（规则中心）", "物料画像", "输出目录…"]:
         assert must in more_texts, "%s 不在「更多」菜单（现有 %s）" % (must, more_texts)
 
 

@@ -235,7 +235,7 @@ class LayoutComposer:
         mw.action_btn_more.setFixedSize(30, 30)
         mw.action_btn_more.setPopupMode(QToolButton.InstantPopup)
         mw.action_btn_more.setToolTip(
-            "进度 / 自动隔离 · 自动隔离规则 / 物料画像 · 输出目录 · 收起左栏展开项\n"
+            "进度 / 自动隔离 · 规则中心（隔离/已读/阈值）/ 物料画像 · 输出目录 · 收起左栏展开项\n"
             "快捷键：F5 分析 · F6 导出 · F7 效益报告 · F11 全屏")
         more_menu = QMenu(mw)
         _more_widget_action = QWidgetAction(more_menu)
@@ -243,7 +243,9 @@ class LayoutComposer:
         more_menu.addAction(_more_widget_action)
         more_menu.addSeparator()
         # 原「维护」菜单两项 + 输出目录（裴哥定：左栏改纯导航后，输出目录进「更多」）
-        _icon_action(more_menu, "shield", "自动隔离规则",
+        # v43.356 第四期E：这一项不再另开窗口，而是打开规则中心的 Tab①——
+        # 隔离/已读/阈值三套规则只能有一个编辑处，否则又回到「各写各的」。
+        _icon_action(more_menu, "shield", "自动隔离规则（规则中心）",
                      lambda: mw._open_auto_quarantine_rule_dialog())
         _icon_action(more_menu, "id-card", "物料画像", lambda: mw._show_material_profile())
         _icon_action(more_menu, "folder-open", "输出目录…", lambda: mw._select_output_dir())
