@@ -1,8 +1,13 @@
-"""NegLossContent - 负损看板内容组件（剥离自对话框）"""
+"""NegLossContent - 负损看板内容组件（第二期起：只管数据与口径，界面归外壳）
+
+筛选控件在这里创建，但一律不在此排版：attach_shell() 把它们逐个交给
+DashboardShell 的常驻筛选条（5 个）与筛选抽屉（物料 / 数值 / 组织与状态三组）。
+原来的 186~194px 横向滚动筛选栏连同那条永远拖不到头的横向滚动条一起删除。
+"""
 
 import re
 import pandas as pd
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QCheckBox, QComboBox, QFrame, QPushButton, QHeaderView, QAbstractItemView, QMenu, QFileDialog, QScrollArea, QGroupBox, QDialogButtonBox, QTableView, QInputDialog, QDialog
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QLineEdit, QCheckBox, QComboBox, QPushButton, QHeaderView, QAbstractItemView, QMenu, QFileDialog, QTableView, QInputDialog, QDialog, QDialogButtonBox
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_color_keys
@@ -19,6 +24,11 @@ from gui_pyside6.utils.semi_class import merge_semi_class_values, ensure_semi_cl
 from gui_pyside6.widgets.filter_panel import _color_icon
 from gui_pyside6.utils.icons import add_icon_action
 from gui_pyside6.utils.table_autofit import get_adaptive, install_adaptive
+from gui_pyside6.components.dashboard_shell import pack_row
+from gui_pyside6.themes.tokens import SIZE_PX
+
+# 开箱默认关键字（负损看板的业务口径，不是「未筛选」；「重置」按钮回到这里）
+_DEFAULT_KEYWORDS = "彩罐 , 托盘 , 手包袋"
 
 
 class NegLossContent(QWidget):
@@ -27,13 +37,14 @@ class NegLossContent(QWidget):
     # 信号：当标题变化时触发
     title_changed = Signal(str)
     status_changed = Signal(str)
+    close_requested = Signal()   # 「关闭」→ 由承载看板的 QDialog 收（多开看板用）
 
     def __init__(self, main_window, parent=None):
         super().__init__(parent)
         self.setObjectName("NegLossContent")
         self.main_window = main_window
         self.shell = None  # 绑定到 shell 以更新状态条
-        self._keywords = "彩罐 , 托盘 , 手包袋"
+        self._keywords = _DEFAULT_KEYWORDS
         self._include_zero = False
         self._semi_class_filter = set()
         self._semi_class_col = None
@@ -55,6 +66,7 @@ class NegLossContent(QWidget):
         # 新增属性初始化，避免 _apply_default_filter 访问未定义属性
         self._read_col = None
         self._unit_col = None
+        self._hidden_filters = set()   # 数据缺列时要收起的条件 key
         self._build_ui()
 
     def _build_ui(self):
@@ -62,258 +74,11 @@ class NegLossContent(QWidget):
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
 
-        # v43.342：删掉剥壳时带进来的旧标题行 —— 外层 DashboardShell 已有标题栏，
-        # 两处同名 14pt 粗体重复。移除后筛选区由 QVBoxLayout 自动顶到最上方，
-        # 表格多拿一整行空间（裴哥 11-11 反馈「重复标题 + 上方留白浪费」）。
+        # 动作按钮与筛选控件都只创建、不排版（归位见 attach_shell）；动作按钮必须先建，
+        # 下面装配表格时要用它携带的「列头筛选」提示标签
+        self._build_action_widgets()
+        self._build_filter_widgets()
 
-        # 顶部筛选栏（滚动区域）
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(False)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setMinimumHeight(186)
-        scroll.setMaximumHeight(194)
-        top_widget = QWidget(scroll)
-        _top_col = QVBoxLayout(top_widget)
-        _top_col.setContentsMargins(4, 2, 4, 2)
-        _top_col.setSpacing(4)
-
-        # 第一行筛选
-        top = QHBoxLayout()
-        top.setContentsMargins(0, 0, 0, 0)
-        top.setSpacing(0)
-        top.addWidget(QLabel("关键字搜索(逗号分隔):"))
-        self.edit_keywords = QLineEdit(self._keywords)
-        self.edit_keywords.setToolTip("全列关键字搜索：匹配任意文本列(名称/编码/车间/备注/原因等)，逗号或顿号分隔多值OR")
-        self.edit_keywords.setMinimumWidth(160)
-        self.edit_keywords.setMaximumWidth(240)
-        self.edit_keywords.textChanged.connect(self._on_keywords_changed)
-        self.edit_keywords.returnPressed.connect(self._apply_filter)
-        top.addWidget(self.edit_keywords)
-
-        self.chk_include_zero = QCheckBox("含未投料")
-        self.chk_include_zero.setToolTip("包含未投料：实际=0 的行也视为负损（不影响未投料判定，仅影响负损口径）")
-        self.chk_include_zero.setChecked(False)
-        self.chk_include_zero.stateChanged.connect(self._on_include_zero_changed)
-        top.addWidget(self.chk_include_zero)
-
-        top.addSpacing(14)
-        self.unit_sep = QFrame()
-        self.unit_sep.setFrameShape(QFrame.VLine)
-        self.unit_sep.setFrameShadow(QFrame.Sunken)
-        top.addWidget(self.unit_sep)
-        top.addSpacing(14)
-        self.lbl_unit = QLabel("单位:")
-        top.addWidget(self.lbl_unit)
-        self.grp_unit = QComboBox()
-        self.grp_unit.setMinimumWidth(130)
-        self.grp_unit.setMaximumWidth(180)
-        self.grp_unit.setEditable(False)
-        self.grp_unit.addItem("全部")
-        self.grp_unit.currentTextChanged.connect(self._on_unit_changed)
-        top.addWidget(self.grp_unit)
-
-        top.addSpacing(14)
-        self.mtd_sep = QFrame()
-        self.mtd_sep.setFrameShape(QFrame.VLine)
-        self.mtd_sep.setFrameShadow(QFrame.Sunken)
-        top.addWidget(self.mtd_sep)
-        top.addSpacing(14)
-        self.lbl_mtd = QLabel("物料类型:")
-        top.addWidget(self.lbl_mtd)
-        self.combo_mtd = QComboBox()
-        self.combo_mtd.setMinimumWidth(130)
-        self.combo_mtd.setMaximumWidth(180)
-        self.combo_mtd.setEditable(False)
-        self.combo_mtd.addItem("全部")
-        self.combo_mtd.currentTextChanged.connect(self._on_mtd_changed)
-        top.addWidget(self.combo_mtd)
-
-        top.addSpacing(14)
-        self.workshop_sep = QFrame()
-        self.workshop_sep.setFrameShape(QFrame.VLine)
-        self.workshop_sep.setFrameShadow(QFrame.Sunken)
-        top.addWidget(self.workshop_sep)
-        top.addSpacing(14)
-        self.lbl_workshop = QLabel("车间:")
-        top.addWidget(self.lbl_workshop)
-        self.combo_workshop = QComboBox()
-        self.combo_workshop.setMinimumWidth(130)
-        self.combo_workshop.setMaximumWidth(180)
-        self.combo_workshop.setEditable(False)
-        self.combo_workshop.addItem("全部")
-        self.combo_workshop.currentTextChanged.connect(self._on_workshop_changed)
-        top.addWidget(self.combo_workshop)
-
-        top.addSpacing(14)
-        self.factory_sep = QFrame()
-        self.factory_sep.setFrameShape(QFrame.VLine)
-        self.factory_sep.setFrameShadow(QFrame.Sunken)
-        top.addWidget(self.factory_sep)
-        top.addSpacing(14)
-        self.lbl_factory = QLabel("工厂:")
-        top.addWidget(self.lbl_factory)
-        self.combo_factory = QComboBox()
-        self.combo_factory.setMinimumWidth(150)
-        self.combo_factory.setMaximumWidth(200)
-        self.combo_factory.setEditable(False)
-        self.combo_factory.addItem("全部")
-        self.combo_factory.currentTextChanged.connect(self._on_factory_changed)
-        top.addWidget(self.combo_factory)
-
-        self._mom_label = QLabel()
-        top.addWidget(self._mom_label)
-
-        top.addStretch()
-        _top_col.addLayout(top)
-
-        # 第二行
-        top2 = QHBoxLayout()
-        top2.setContentsMargins(0, 0, 0, 0)
-        top2.setSpacing(0)
-        top2.addSpacing(14)
-        self.semi_sep = QFrame()
-        self.semi_sep.setFrameShape(QFrame.VLine)
-        self.semi_sep.setFrameShadow(QFrame.Sunken)
-        top2.addWidget(self.semi_sep)
-        top2.addSpacing(14)
-        self.lbl_semi_class = QLabel("半成品分类:")
-        top2.addWidget(self.lbl_semi_class)
-        self.grp_semi_class = QComboBox()
-        self.grp_semi_class.setMinimumWidth(170)
-        self.grp_semi_class.setMaximumWidth(220)
-        self.grp_semi_class.setEditable(False)
-        self.grp_semi_class.addItem("全部")
-        self.grp_semi_class.currentTextChanged.connect(self._on_semi_class_changed)
-        top2.addWidget(self.grp_semi_class)
-
-        top2.addSpacing(14)
-        self.quar_sep = QFrame()
-        self.quar_sep.setFrameShape(QFrame.VLine)
-        self.quar_sep.setFrameShadow(QFrame.Sunken)
-        top2.addWidget(self.quar_sep)
-        top2.addSpacing(14)
-        self.lbl_quar = QLabel("隔离区:")
-        top2.addWidget(self.lbl_quar)
-        self.btn_quar_all = QPushButton("全部")
-        self.btn_quar_all.setCheckable(True)
-        self.btn_quar_all.setMinimumWidth(80)
-        self.btn_quar_all.clicked.connect(lambda: self._set_quar_filter("all"))
-        top2.addWidget(self.btn_quar_all)
-        self.btn_quar_yes = QPushButton("是")
-        self.btn_quar_yes.setCheckable(True)
-        self.btn_quar_yes.setMinimumWidth(80)
-        self.btn_quar_yes.clicked.connect(lambda: self._set_quar_filter("yes"))
-        top2.addWidget(self.btn_quar_yes)
-        self.btn_quar_no = QPushButton("否")
-        self.btn_quar_no.setCheckable(True)
-        self.btn_quar_no.setMinimumWidth(80)
-        self.btn_quar_no.clicked.connect(lambda: self._set_quar_filter("no"))
-        top2.addWidget(self.btn_quar_no)
-
-        top2.addSpacing(14)
-        self.note_sep = QFrame()
-        self.note_sep.setFrameShape(QFrame.VLine)
-        self.note_sep.setFrameShadow(QFrame.Sunken)
-        top2.addWidget(self.note_sep)
-        top2.addSpacing(14)
-        self.lbl_note = QLabel("备注:")
-        top2.addWidget(self.lbl_note)
-        self.btn_note_all = QPushButton("全部")
-        self.btn_note_all.setCheckable(True)
-        self.btn_note_all.setMinimumWidth(80)
-        self.btn_note_all.clicked.connect(lambda: self._set_note_filter("all"))
-        top2.addWidget(self.btn_note_all)
-        self.btn_note_yes = QPushButton("有")
-        self.btn_note_yes.setCheckable(True)
-        self.btn_note_yes.setMinimumWidth(80)
-        self.btn_note_yes.clicked.connect(lambda: self._set_note_filter("yes"))
-        top2.addWidget(self.btn_note_yes)
-        self.btn_note_no = QPushButton("无")
-        self.btn_note_no.setCheckable(True)
-        self.btn_note_no.setMinimumWidth(80)
-        self.btn_note_no.clicked.connect(lambda: self._set_note_filter("no"))
-        top2.addWidget(self.btn_note_no)
-
-        top2.addStretch()
-        _top_col.addLayout(top2)
-
-        # 第三行
-        top3 = QHBoxLayout()
-        top3.setContentsMargins(0, 0, 0, 0)
-        top3.setSpacing(0)
-        _top_col.addLayout(top3)
-        top3.addStretch()
-        _top_col.addLayout(top3)
-
-        # 第四行（颜色筛选）
-        top_color = QHBoxLayout()
-        top_color.setContentsMargins(0, 0, 0, 0)
-        top_color.setSpacing(0)
-        _top_col.addLayout(top_color)
-        top_color.addSpacing(14)
-        self.color_sep = QFrame()
-        self.color_sep.setFrameShape(QFrame.VLine)
-        self.color_sep.setFrameShadow(QFrame.Sunken)
-        top_color.addWidget(self.color_sep)
-        top_color.addSpacing(14)
-        self.lbl_color = QLabel("颜色:")
-        top_color.addWidget(self.lbl_color)
-        self.color_group = QGroupBox()
-        self.color_group.setFlat(True)
-        self.color_group.setFixedHeight(36)
-        self._color_layout = QHBoxLayout(self.color_group)
-        self._color_layout.setContentsMargins(6, 4, 6, 4)
-        self._color_layout.setSpacing(8)
-        self.color_checks = {}
-        _color_items = [
-            ("_changed_only", "审核后变更", (255, 205, 205)),
-            ("_quarantined_only", "隔离区", (255, 248, 200)),
-            ("_substitute_only", "替代料", (205, 230, 255)),
-            ("_unused_only", "未投料", (200, 240, 210)),
-            ("_alert_only", "偏差率预警", (255, 198, 142)),
-            ("_plain_only", "无标记", (235, 235, 235)),
-        ]
-        for key, label, rgb in _color_items:
-            cb = QCheckBox(label)
-            cb.setIcon(_color_icon(rgb))
-            cb.stateChanged.connect(self._on_color_toggled)
-            self.color_checks[key] = cb
-            self._color_layout.addWidget(cb)
-        top_color.addWidget(self.color_group)
-        top_color.addStretch()
-
-        top3.addSpacing(14)
-        self.read_sep = QFrame()
-        self.read_sep.setFrameShape(QFrame.VLine)
-        self.read_sep.setFrameShadow(QFrame.Sunken)
-        top3.addWidget(self.read_sep)
-        top3.addSpacing(14)
-        self.lbl_read = QLabel("已读:")
-        top3.addWidget(self.lbl_read)
-        self.combo_read = QComboBox()
-        self.combo_read.setMinimumWidth(100)
-        self.combo_read.setMaximumWidth(140)
-        self.combo_read.setEditable(False)
-        self.combo_read.addItems(["全部", "已读", "未读"])
-        self.combo_read.currentTextChanged.connect(self._on_read_changed)
-        top3.addWidget(self.combo_read)
-
-        self.lbl_count = QLabel("共 0 条")
-        self.lbl_count.setProperty("class", "mutedText")
-        top3.addWidget(self.lbl_count)
-        self.btn_refresh = QPushButton("重新筛选")
-        self.btn_refresh.clicked.connect(self._apply_filter)
-        top3.addWidget(self.btn_refresh)
-        self.btn_col_filter = make_col_filter_button(self, self._on_toggle_col_filter)
-        top3.addWidget(self.btn_col_filter)
-        self._col_filter_hint_label = make_col_filter_hint_label()
-        top3.addWidget(self._col_filter_hint_label)
-
-        scroll.setWidget(top_widget)
-        layout.addWidget(scroll)
-
-        # 表格
         self.table_view = QTableView()
         self.table_view.setAlternatingRowColors(True)
         self.table_view.setSelectionBehavior(QTableView.SelectRows)
@@ -341,7 +106,8 @@ class NegLossContent(QWidget):
         self.col_filter_ctrl.attach_clear_menu(self._col_filter_hint_label)
         self._update_col_filter_hint()
         self.table_view.verticalHeader().setVisible(False)
-        self.table_view.verticalHeader().setDefaultSectionSize(28)
+        # 行高跟设计稿（v43.333 数据密度规格 36px），不再用 28px 的旧密度
+        self.table_view.verticalHeader().setDefaultSectionSize(SIZE_PX["tableRow"])
         self.header.setSectionResizeMode(QHeaderView.Interactive)
         self.header.setMinimumSectionSize(50)
         self.header.setMaximumSectionSize(420)
@@ -353,26 +119,231 @@ class NegLossContent(QWidget):
         self.table_viewViewport.setAttribute(Qt.WA_OpaquePaintEvent, False)
         layout.addWidget(self.table_view)
 
-        # 底部按钮
-        btn_layout = QHBoxLayout()
-        self.btn_add_quar = QPushButton("⚠️ 加入隔离区(选中行)")
-        self.btn_add_quar.clicked.connect(self._add_selected_to_quarantine)
-        btn_layout.addWidget(self.btn_add_quar)
-        self.btn_export = QPushButton("📎 导出 Excel (Alt+V)")
-        self.btn_export.clicked.connect(self.export_excel)
-        btn_layout.addWidget(self.btn_export)
-        btn_layout.addStretch()
-        close_btn = QPushButton("关闭")
-        close_btn.clicked.connect(self.close)
-        btn_layout.addWidget(close_btn)
-        layout.addLayout(btn_layout)
-
         # 键盘快捷键
         self._sc_export = QShortcut(QKeySequence("Alt+V"), self)
         self._sc_export.activated.connect(self.export_excel)
         self._sc_refresh = QShortcut(QKeySequence("F5"), self)
         self._sc_refresh.activated.connect(self._apply_filter)
         self.btn_refresh.setText("重新筛选 (F5)")
+
+    # 常驻筛选条（含外壳的抽屉按钮/重置/总命中，合计不超过设计稿规定的 6 个）
+    BAR_FILTERS = (("keywords", "关键字", "edit_keywords"),
+                   ("unit", "单位", "grp_unit"),
+                   ("workshop", "车间", "combo_workshop"),
+                   ("factory", "工厂", "combo_factory"),
+                   ("read", "已读", "combo_read"))
+    # 抽屉：(分组, key, 标签, 属性名)，分组取 material / numeric / org
+    DRAWER_FILTERS = (("material", "mtd", "物料类型", "combo_mtd"),
+                      ("material", "semi_class", "半成品分类", "grp_semi_class"),
+                      ("material", "color", "颜色标记", "color_bar"),
+                      ("numeric", "include_zero", "含未投料", "chk_include_zero"),
+                      ("org", "quar", "隔离区", "quar_bar"),
+                      ("org", "note", "备注", "note_bar"))
+
+    def _build_filter_widgets(self):
+        """创建筛选控件与联动，但不进任何布局 —— 布局由 attach_shell 交给外壳。"""
+        self.edit_keywords = QLineEdit(self._keywords)
+        self.edit_keywords.setToolTip(
+            "全列关键字搜索：匹配任意文本列(名称/编码/车间/备注/原因等)，逗号或顿号分隔多值OR")
+        self.edit_keywords.setMinimumWidth(160)
+        self.edit_keywords.setMaximumWidth(240)
+        self.edit_keywords.textChanged.connect(self._on_keywords_changed)
+        self.edit_keywords.returnPressed.connect(self._apply_filter)
+
+        self.chk_include_zero = QCheckBox("含未投料")
+        self.chk_include_zero.setToolTip(
+            "包含未投料：实际=0 的行也视为负损（不影响未投料判定，仅影响负损口径）")
+        self.chk_include_zero.setChecked(False)
+        self.chk_include_zero.stateChanged.connect(self._on_include_zero_changed)
+
+        self.grp_unit = QComboBox()
+        self.grp_unit.setMinimumWidth(130)
+        self.grp_unit.setMaximumWidth(180)
+        self.grp_unit.addItem("全部")
+        self.grp_unit.currentTextChanged.connect(self._on_unit_changed)
+
+        self.combo_mtd = QComboBox()
+        self.combo_mtd.setMinimumWidth(130)
+        self.combo_mtd.setMaximumWidth(180)
+        self.combo_mtd.addItem("全部")
+        self.combo_mtd.currentTextChanged.connect(self._on_mtd_changed)
+
+        self.combo_workshop = QComboBox()
+        self.combo_workshop.setMinimumWidth(130)
+        self.combo_workshop.setMaximumWidth(180)
+        self.combo_workshop.addItem("全部")
+        self.combo_workshop.currentTextChanged.connect(self._on_workshop_changed)
+
+        self.combo_factory = QComboBox()
+        self.combo_factory.setMinimumWidth(150)
+        self.combo_factory.setMaximumWidth(200)
+        self.combo_factory.addItem("全部")
+        self.combo_factory.currentTextChanged.connect(self._on_factory_changed)
+
+        self.grp_semi_class = QComboBox()
+        self.grp_semi_class.setMinimumWidth(170)
+        self.grp_semi_class.setMaximumWidth(220)
+        self.grp_semi_class.addItem("全部")
+        self.grp_semi_class.currentTextChanged.connect(self._on_semi_class_changed)
+
+        self.combo_read = QComboBox()
+        self.combo_read.setMinimumWidth(100)
+        self.combo_read.setMaximumWidth(140)
+        self.combo_read.addItems(["全部", "已读", "未读"])
+        self.combo_read.currentTextChanged.connect(self._on_read_changed)
+
+        # 三态档位按钮（互斥由 _set_*_filter 统一管，按钮自身不做 autoExclusive）
+        self.btn_quar_all = QPushButton("全部")
+        self.btn_quar_all.setCheckable(True)
+        self.btn_quar_all.clicked.connect(lambda: self._set_quar_filter("all"))
+        self.btn_quar_yes = QPushButton("是")
+        self.btn_quar_yes.setCheckable(True)
+        self.btn_quar_yes.clicked.connect(lambda: self._set_quar_filter("yes"))
+        self.btn_quar_no = QPushButton("否")
+        self.btn_quar_no.setCheckable(True)
+        self.btn_quar_no.setChecked(True)
+        self.btn_quar_no.clicked.connect(lambda: self._set_quar_filter("no"))
+        self.quar_bar = pack_row([self.btn_quar_all, self.btn_quar_yes, self.btn_quar_no])
+
+        self.btn_note_all = QPushButton("全部")
+        self.btn_note_all.setCheckable(True)
+        self.btn_note_all.clicked.connect(lambda: self._set_note_filter("all"))
+        self.btn_note_yes = QPushButton("有")
+        self.btn_note_yes.setCheckable(True)
+        self.btn_note_yes.clicked.connect(lambda: self._set_note_filter("yes"))
+        self.btn_note_no = QPushButton("无")
+        self.btn_note_no.setCheckable(True)
+        self.btn_note_no.clicked.connect(lambda: self._set_note_filter("no"))
+        self.note_bar = pack_row([self.btn_note_all, self.btn_note_yes, self.btn_note_no])
+
+        self.color_checks = {}
+        _color_items = [
+            ("_changed_only", "审核后变更", (255, 205, 205)),
+            ("_quarantined_only", "隔离区", (255, 248, 200)),
+            ("_substitute_only", "替代料", (205, 230, 255)),
+            ("_unused_only", "未投料", (200, 240, 210)),
+            ("_alert_only", "偏差率预警", (255, 198, 142)),
+            ("_plain_only", "无标记", (235, 235, 235)),
+        ]
+        for key, label, rgb in _color_items:
+            cb = QCheckBox(label)
+            cb.setIcon(_color_icon(rgb))
+            cb.stateChanged.connect(self._on_color_toggled)
+            self.color_checks[key] = cb
+        self.color_bar = pack_row(list(self.color_checks.values()))
+
+    def _build_action_widgets(self):
+        """动作按钮同样只创建；外壳操作条摆放见 attach_shell。"""
+        self.btn_add_quar = QPushButton("加入隔离区(选中行)")
+        self.btn_add_quar.clicked.connect(self._add_selected_to_quarantine)
+        self.btn_export = QPushButton("导出 Excel (Alt+V)")
+        self.btn_export.clicked.connect(self.export_excel)
+        self.btn_refresh = QPushButton("重新筛选")
+        self.btn_refresh.clicked.connect(self._apply_filter)
+        self.btn_col_filter = make_col_filter_button(self, self._on_toggle_col_filter)
+        self._col_filter_hint_label = make_col_filter_hint_label()
+        self.btn_close = QPushButton("关闭")
+        self.btn_close.clicked.connect(self.close_requested.emit)
+
+    def attach_shell(self, shell):
+        """把筛选控件与动作按钮交给看板外壳归位，并把命中数/激活数回灌给它。
+
+        控件的创建与口径联动仍留在看板，外壳只管「放哪、怎么显示命中数」：反向让
+        外壳来问每个看板要控件，就得为 11 个看板各写一套抽屉，正是改造前的病根。
+        """
+        if shell is None or self.shell is shell:
+            return
+        self.shell = shell
+        for key, label, attr in self.BAR_FILTERS:
+            shell.add_filter(key, label, getattr(self, attr))
+        for group, key, label, attr in self.DRAWER_FILTERS:
+            shell.add_filter(key, label, getattr(self, attr), zone="drawer", group=group)
+        for key in sorted(self._hidden_filters):
+            shell.set_filter_visible(key, False)
+        for w in (self.btn_add_quar, self.btn_export, self.btn_refresh,
+                  self.btn_col_filter, self._col_filter_hint_label, self.btn_close):
+            shell.set_action_widget(w)
+        shell.set_reset_callback(self._reset_filters)
+        selection = self.table_view.selectionModel()
+        if selection is not None:
+            selection.selectionChanged.connect(self._report_selection)
+        self._apply_filter()
+
+    def _reset_filters(self):
+        """外壳「重置」= 回到开箱口径（默认关键字 + 未读 + 其余全部），不是取消过滤。
+
+        开箱本身就带关键字与负损口径，重置成「全部」会让用户一下子看到几万行无关
+        数据，等于换了个看板。
+        """
+        self._initializing = True          # 逐个回位期间压掉连锁重算
+        try:
+            self.edit_keywords.setText(_DEFAULT_KEYWORDS)
+            self.chk_include_zero.setChecked(False)
+            for attr in ("grp_unit", "combo_mtd", "combo_workshop",
+                         "combo_factory", "grp_semi_class"):
+                getattr(self, attr).setCurrentIndex(0)
+            for cb in self.color_checks.values():
+                cb.setChecked(False)
+            self._set_quar_filter("no")
+            self._set_note_filter("all")
+        finally:
+            self._initializing = False
+        # 掩码读的是这些状态位而不是控件本身，控件回位后必须同步归零
+        self._keywords = _DEFAULT_KEYWORDS
+        self._include_zero = False
+        self._unit_filter = set()
+        self._mtd_filter = "all"
+        self._workshop_filter = "all"
+        self._factory_filter = "all"
+        self._semi_class_filter = set()
+        self.color_filters = set()
+        self._apply_default_filter()
+
+    def _active_filter_keys(self):
+        """用户主动收紧过的条件（抽屉按钮上的「筛选 (3)」就数这个）。"""
+        keys = []
+        if self._keywords.strip():
+            keys.append("keywords")
+        if self._unit_filter:
+            keys.append("unit")
+        if self._workshop_filter != "all":
+            keys.append("workshop")
+        if self._factory_filter != "all":
+            keys.append("factory")
+        if self._read_filter != "未读":
+            keys.append("read")
+        if self._mtd_filter != "all":
+            keys.append("mtd")
+        if self._semi_class_filter:
+            keys.append("semi_class")
+        if self.color_filters:
+            keys.append("color")
+        if self._include_zero:
+            keys.append("include_zero")
+        if self._quar_filter != "no":
+            keys.append("quar")
+        if self._has_note_filter != "all":
+            keys.append("note")
+        return keys
+
+    def _hide_filter(self, key, hidden=True):
+        """登记某条件要收起。
+
+        set_data 早于 attach_shell，那时控件还没进外壳、hide 不动，所以先记账，
+        挂上外壳时统一回放（数据里没有对应列的条件不该占一排空位）。
+        """
+        if hidden:
+            self._hidden_filters.add(key)
+        else:
+            self._hidden_filters.discard(key)
+
+    def _report_selection(self, *args):
+        """选中行数写外壳状态条（表格里选中 428 行里的 12 行时，操作有落点）。"""
+        if self.shell is None or self.source_model is None:
+            return
+        selection = self.table_view.selectionModel()
+        rows = len(selection.selectedRows()) if selection is not None else 0
+        self.shell.set_selected_count(rows, self.source_model.rowCount())
 
     def _apply_default_filter(self):
         self._read_filter = "未读"
@@ -488,7 +459,8 @@ class NegLossContent(QWidget):
         except Exception:
             import traceback
             traceback.print_exc()
-        self.table_view.verticalHeader().setDefaultSectionSize(28)
+        # 行高统一走设计稿规格（36px）；_build_ui 里设过一次，这里曾把它压回 28
+        self.table_view.verticalHeader().setDefaultSectionSize(SIZE_PX["tableRow"])
         if "data_id" in df.columns:
             self.table_view.setColumnHidden(df.columns.get_loc("data_id"), True)
 
@@ -499,17 +471,11 @@ class NegLossContent(QWidget):
                 v for v in df["半成品重分类"].dropna().astype(str).str.strip().unique() if v
             )
         self._build_semi_checkboxes(unique_vals)
-        self.semi_sep.setVisible(True)
-        self.lbl_semi_class.setVisible(True)
-        self.grp_semi_class.setVisible(True)
 
         self._read_col = "_read" if "_read" in df.columns else None
         if self._read_col:
             self.combo_read.setCurrentText("未读")
-        else:
-            self.combo_read.setVisible(False)
-            self.read_sep.setVisible(False)
-            self.lbl_read.setVisible(False)
+        self._hide_filter("read", not self._read_col)
 
         self._mtd_col = "组件物料类型描述" if "组件物料类型描述" in df.columns else None
         if self._mtd_col:
@@ -520,9 +486,7 @@ class NegLossContent(QWidget):
             self._replace_combo_items(self.combo_mtd, unique_vals, "all",
                                       "_mtd_filter", "_on_mtd_changed")
         else:
-            self.mtd_sep.setVisible(False)
-            self.lbl_mtd.setVisible(False)
-            self.combo_mtd.setVisible(False)
+            self._hide_filter("mtd", True)
 
         self._workshop_col = "车间" if "车间" in df.columns else None
         if self._workshop_col:
@@ -532,9 +496,7 @@ class NegLossContent(QWidget):
             self._replace_combo_items(self.combo_workshop, unique_vals, "all",
                                       "_workshop_filter", "_on_workshop_changed")
         else:
-            self.workshop_sep.setVisible(False)
-            self.lbl_workshop.setVisible(False)
-            self.combo_workshop.setVisible(False)
+            self._hide_filter("workshop", True)
         self._workshop_filter = "all"
         self.combo_workshop.setCurrentText("全部")
 
@@ -549,9 +511,7 @@ class NegLossContent(QWidget):
             self.combo_factory.addItems(unique_vals)
             self.combo_factory.blockSignals(False)
         else:
-            self.factory_sep.setVisible(False)
-            self.lbl_factory.setVisible(False)
-            self.combo_factory.setVisible(False)
+            self._hide_filter("factory", True)
         self._factory_filter = "all"
         self.combo_factory.setCurrentText("全部")
 
@@ -561,9 +521,7 @@ class NegLossContent(QWidget):
             unique_vals = sorted(v for v in unique_vals if v)
             self._build_unit_checkboxes(unique_vals)
         else:
-            self.unit_sep.setVisible(False)
-            self.lbl_unit.setVisible(False)
-            self.grp_unit.setVisible(False)
+            self._hide_filter("unit", True)
         self._unit_filter = set()
 
         self._quar_filter = "no"
@@ -651,23 +609,30 @@ class NegLossContent(QWidget):
         if df.empty:
             self.source_model.setDataFrame(df)
             self._sort_ctrl.reapply()
-            self.lbl_count.setText("共 0 条")
-            # 更新状态条
             if self.shell is not None:
                 self.shell.set_status("0 条记录")
+                self.shell.set_total_hits(0)
             return
 
         self._refresh_cascade_combos('apply')
-        mask = (self._name_mask(df) & self._neg_loss_mask(df)
-                & self._semi_class_mask(df)
-                & self._mtd_mask(df)
-                & self._unit_mask(df)
-                & self._workshop_mask(df, self._workshop_filter)
-                & self._factory_mask(df, self._factory_filter)
-                & self._quar_mask(df, self._quar_filter)
-                & self._note_mask(df, self._has_note_filter)
-                & self._color_mask(df)
-                & self._read_mask(df, self._read_filter))
+        # 逐项算出掩码而不是写成一条长表达式：AND 结果与原来完全一致，
+        # 顺带得到每个条件单独的命中数（抽屉徽章就靠它，不用为徽章再算一遍）
+        terms = {
+            "keywords": self._name_mask(df),
+            "neg": self._neg_loss_mask(df),
+            "semi_class": self._semi_class_mask(df),
+            "mtd": self._mtd_mask(df),
+            "unit": self._unit_mask(df),
+            "workshop": self._workshop_mask(df, self._workshop_filter),
+            "factory": self._factory_mask(df, self._factory_filter),
+            "quar": self._quar_mask(df, self._quar_filter),
+            "note": self._note_mask(df, self._has_note_filter),
+            "color": self._color_mask(df),
+            "read": self._read_mask(df, self._read_filter),
+        }
+        mask = pd.Series(True, index=df.index)
+        for _term in terms.values():
+            mask &= _term
         filtered = df[mask].copy().reset_index(drop=True)
         if hasattr(self, "col_filter_ctrl"):
             filtered = self.col_filter_ctrl.mask_dataframe(filtered)
@@ -675,11 +640,15 @@ class NegLossContent(QWidget):
         self._sort_ctrl.reapply()
         tag = "含未投料" if self._include_zero else "不含未投料"
         note_tag = {"all": "全部", "yes": "有备注", "no": "无备注"}[self._has_note_filter]
-        count_text = "共 %d 条（名称含「%s」· %s · %s）" % (len(filtered), self._keywords, tag, note_tag)
-        self.lbl_count.setText(count_text)
-        # 更新状态条
         if self.shell is not None:
-            self.shell.set_status(f"已筛选 {len(filtered)} 条记录")
+            # 状态条给完整口径文案，筛选条右侧只给数字（设计稿 4.3.1）
+            self.shell.set_status("共 %d 条（名称含「%s」· %s · %s）" % (
+                len(filtered), self._keywords, tag, note_tag))
+            self.shell.set_total_hits(len(filtered))
+            self.shell.set_filter_active(self._active_filter_keys())
+            for key, term in terms.items():
+                self.shell.set_filter_hits(key, int(term.sum()))
+            self._report_selection()
 
     def _other_conditions_mask(self, df, exclude):
         mask = (self._name_mask(df) & self._neg_loss_mask(df)

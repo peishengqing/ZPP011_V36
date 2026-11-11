@@ -12,14 +12,35 @@ font-size / ``::drop-down { border: none }`` 这些"碰巧合法"的片段生效
 dynamic property 挂钩。
 """
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QVBoxLayout as VBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFrame, QScrollArea, QComboBox, QToolButton, QGroupBox, QTableView,
-    QAbstractItemView, QSpinBox
+    QWidget, QVBoxLayout, QVBoxLayout as VBoxLayout, QHBoxLayout, QGridLayout, QLabel,
+    QPushButton, QFrame, QScrollArea, QToolButton, QGroupBox, QTableView,
+    QAbstractItemView
 )
 from PySide6.QtCore import Qt, Signal
 
 from gui_pyside6.themes.tokens import SIZE_PX, build_dashboard_qss, ui_font
 from utils.theme_manager import Thm
+
+from collections import namedtuple
+
+# 外壳替每个筛选控件记的三件套：控件本体、标签、命中徽章（常驻条没有徽章）
+_FilterSlot = namedtuple("_FilterSlot", "widget label badge zone")
+
+
+def pack_row(widgets):
+    """把一组同行控件（如「全部/是/否」三态按钮）装进一个横向容器。
+
+    抽屉一行只放得下一个控件，而看板里的三态按钮、颜色勾选组天然是"一组"。
+    addWidget 会自动 reparent，容器随后交给外壳，原来那块自建布局即可销毁。
+    """
+    box = QWidget()
+    row = QHBoxLayout(box)
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(6)
+    for w in widgets:
+        row.addWidget(w)
+    row.addStretch()
+    return box
 
 
 class KpiCard(QWidget):
@@ -64,56 +85,6 @@ class KpiCard(QWidget):
         super().mousePressEvent(event)
 
 
-class FilterDropdown(QWidget):
-    """下拉筛选控件单元：标签 + 下拉框 + 命中计数徽章"""
-    selection_changed = Signal()
-
-    def __init__(self, label: str, items: list = None, parent=None):
-        super().__init__(parent)
-        self.label = label
-        self.items = items or []
-        self.selected_indices: list = []
-        self.hit_count = 0
-
-        self._build_ui()
-
-    def _build_ui(self):
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
-
-        # 标签
-        self.lbl_label = QLabel(self.label)
-        self.lbl_label.setProperty("class", "mutedText")
-
-        # 下拉框（外观全部交给外壳 QSS，此处只定宽高的，不写样式表）
-        self.cbd_items = QComboBox()
-        self.cbd_items.setFixedSize(140, 26)
-
-        for item in self.items:
-            self.cbd_items.addItem(item)
-
-        # 命中计数徽章
-        self.lbl_count = QLabel("0 条")
-        self.lbl_count.setObjectName("hitBadge")
-        self.lbl_count.setAlignment(Qt.AlignCenter)
-
-        layout.addWidget(self.lbl_label)
-        layout.addWidget(self.cbd_items)
-        layout.addWidget(self.lbl_count)
-        layout.addStretch()
-
-    def set_hit_count(self, count: int):
-        self.hit_count = count
-        self.lbl_count.setText(f"{count:,} 条")
-
-    def reset(self):
-        self.cbd_items.setCurrentIndex(0)
-        self.selected_indices = []
-        self.set_hit_count(0)
-        self.selection_changed.emit()
-
-
 class DashboardShell(QWidget):
     """
     看板通用外壳组件
@@ -128,26 +99,29 @@ class DashboardShell(QWidget):
     - 操作条：40px
     """
 
+    # 常驻筛选条里的看板控件上限（加外壳自己的抽屉按钮/重置/总命中 = 6，设计稿 4.3.1）
+    MAX_PERSISTENT_FILTERS = 5
+    # 抽屉分组固定顺序与标题（设计稿：物料维度 / 数值维度 / 组织与状态维度）
+    _GROUP_TITLES = {"material": "物料维度", "numeric": "数值维度", "org": "组织与状态维度"}
+
     # 信号
-    action_triggered = Signal(str)  # 按钮动作
-    filter_applied = Signal(dict)  # 筛选条件应用
-    kpi_clicked = Signal(str)      # KPI 卡片点击
-    refresh_requested = Signal()   # 刷新请求
+    action_triggered = Signal(str)  # 标题条窗口按钮（export / fullscreen / close）
+    kpi_clicked = Signal(str)       # KPI 卡片点击（下钻入口）
 
     def __init__(self, parent: QWidget = None):
         super().__init__(parent)
+        # QSS 里 #DashboardShell 是 ID 选择器，此前一直没设 objectName，也没开
+        # WA_StyledBackground —— 自定义 QWidget 子类不开这个属性，QSS 的
+        # background 根本不画，外壳底色（各区之间的那几道缝）在暗色下留成原生亮色。
+        self.setObjectName("DashboardShell")
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.title = "看板标题"
         self.subtitle = "副标题"
-        self.kpi_data = []
-        self.table_headers = []
         self._model = None
-        self.current_filters = {}
-        self.total_rows = 0
         self.drawer_visible = False
 
         self._build_ui()
         self._load_theme()
-        self._connect_signals()
         # v43.345：订阅全局主题变化，主窗口切换亮暗时本外壳自动跟随重载 QSS。
         # 持有回调引用以便 closeEvent 时注销，避免删除后回调触发 RuntimeError。
         self._theme_cb = self._on_theme_changed
@@ -201,12 +175,8 @@ class DashboardShell(QWidget):
 
         layout.addStretch()
 
-        # 工厂选择（常驻筛选控件：只允许代码定宽，禁止内联样式表改 sizeHint）
-        self.factory_select = QComboBox()
-        self.factory_select.setFixedSize(120, 30)
-        layout.addWidget(self.factory_select)
-
-        # 窗口控制按钮
+        # 窗口控制按钮（改造前这里还挂着一个空的「工厂」下拉，既无选项也无接线，
+        # 每个看板标题条右侧都多出一个灰空的控件；工厂筛选本就在各看板自己的筛选条里）
         self._build_window_controls()
 
     def _build_window_controls(self):
@@ -223,6 +193,12 @@ class DashboardShell(QWidget):
             self.title_bar.findChild(QHBoxLayout).addWidget(btn)
 
     def _build_filter_bar(self):
+        """常驻筛选条（40px）：抽屉开关 + 看板塞入的常用控件 + 重置 + 总命中数。
+
+        改造前这里预置了「车间/单位/状态」三个假下拉，而各看板的内容组件里又各自
+        带着十几个真下拉，等于同一个看板两套筛选、两套口径。现在常驻条只放外壳
+        自己的三件东西（抽屉按钮 / 重置 / 总命中），真控件全部由 add_filter() 塞。
+        """
         self.filter_bar = QFrame()
         self.filter_bar.setObjectName("filter_bar")
         self.filter_bar.setFixedHeight(SIZE_PX["boardFilterBar"])
@@ -231,40 +207,36 @@ class DashboardShell(QWidget):
         layout.setContentsMargins(10, 0, 10, 0)
         layout.setSpacing(8)
 
-        # 筛选抽屉按钮
         self.btn_filter_drawer = QToolButton()
         self.btn_filter_drawer.setText("筛选 (0)")
+        self.btn_filter_drawer.setCheckable(True)
         self.btn_filter_drawer.setFixedSize(100, 26)
         self.btn_filter_drawer.clicked.connect(self._on_filter_drawer_toggled)
         layout.addWidget(self.btn_filter_drawer)
 
-        # 默认预置的 1-3 个常用筛选
-        self.dropdowns = []
-        for label, items in [
-            ("车间", ["一车间", "二车间", "三车间"]),
-            ("单位", ["全部单位", "单位 A", "单位 B"]),
-            ("状态", ["未读", "已读", "全部"])
-        ]:
-            dropdown = QComboBox()
-            dropdown.setFixedSize(120, 26)
-            dropdown.addItems(items)
-            self.dropdowns.append(dropdown)
-            layout.addWidget(dropdown)
-
+        # 常驻控件永远插在 stretch 之前（末尾三项固定为 stretch / 重置 / 总命中），
+        # 这样右侧两个元素保持贴右，中间不会被拉开空隙。
         layout.addStretch()
 
-        # 重置按钮
         self.btn_reset = QPushButton("重置")
         self.btn_reset.setFixedSize(60, 26)
         self.btn_reset.clicked.connect(self._on_reset)
         layout.addWidget(self.btn_reset)
 
-        # 总计数
         self.lbl_total_hit = QLabel("共 0 条命中")
         self.lbl_total_hit.setProperty("class", "mutedText")
         layout.addWidget(self.lbl_total_hit)
 
+        # key → _FilterSlot(widget, label, badge, zone)；由 add_filter 填充
+        self._filters = {}
+        self._active_keys = set()
+        self._reset_cb = None
+
     def _build_filter_drawer(self):
+        """筛选抽屉：分组卡按需创建，没有条件就没有分组（不再预置示例控件）。
+
+        抽屉里的控件不受常驻条 sizeHint 精算约束，可以带标签列/徽章列的表格化布局。
+        """
         self.drawer_container = QFrame()
         self.drawer_container.setObjectName("drawer_container")
         self.drawer_container.setVisible(False)
@@ -273,58 +245,137 @@ class DashboardShell(QWidget):
         self.drawer_layout.setContentsMargins(10, 10, 10, 10)
         self.drawer_layout.setSpacing(14)
 
-        # 1. 物料维度
-        self.gp_material = QGroupBox("物料维度")
-        gp_material_layout = VBoxLayout(self.gp_material)
-        material_row = QHBoxLayout()
-        material_row.addWidget(QLabel("名称包含:"))
-        name_input = QComboBox()
-        name_input.addItems(["彩罐", "托盘", "手包袋", "塑料袋"])
-        material_row.addWidget(name_input)
-        material_row.addStretch()
-        gp_material_layout.addLayout(material_row)
-        self.drawer_layout.addWidget(self.gp_material)
+        self._drawer_groups = {}   # group_key → (QGroupBox, QGridLayout)
+        self._drawer_rows = {}     # group_key → 下一行号
+        # 尾部弹性项：分组卡按内容收紧贴顶，不被拉成一大块空白
+        self.drawer_layout.addStretch()
 
-        # 2. 数值维度
-        self.gp_numeric = QGroupBox("数值维度")
-        gp_numeric_layout = VBoxLayout(self.gp_numeric)
-        numeric_row = QHBoxLayout()
-        numeric_row.addWidget(QLabel("偏差率:"))
-        dev_min = QSpinBox()
-        dev_min.setRange(0, 100)
-        dev_min.setFixedWidth(60)
-        numeric_row.addWidget(dev_min)
-        numeric_row.addWidget(QLabel("~"))
-        dev_max = QSpinBox()
-        dev_max.setRange(0, 100)
-        dev_max.setFixedWidth(60)
-        numeric_row.addWidget(dev_max)
-        numeric_row.addStretch()
-        gp_numeric_layout.addLayout(numeric_row)
-        self.drawer_layout.addWidget(self.gp_numeric)
+    # ── 筛选接线 API（第二期真接入：看板只描述控件归位，布局与配色归外壳）────
 
-        # 3. 组织与状态维度
-        self.gp_org_status = QGroupBox("组织与状态维度")
-        gp_org_status_layout = VBoxLayout(self.gp_org_status)
-        org_row = QHBoxLayout()
-        org_row.addWidget(QLabel("车间:"))
-        org_cbd = QComboBox()
-        org_cbd.addItems(["一车间", "二车间", "三车间"])
-        org_row.addWidget(org_cbd)
-        org_row.addStretch()
-        gp_org_status_layout.addLayout(org_row)
-        self.drawer_layout.addWidget(self.gp_org_status)
+    def add_filter(self, key: str, label: str, widget: QWidget,
+                   zone: str = "bar", group: str = "", badge: bool = None):
+        """把一个筛选控件放进入驻条或抽屉分组。
+
+        zone="bar"    常驻条，最多 MAX_PERSISTENT_FILTERS 个（设计稿红线：含抽屉
+                      按钮在内一行不超过 6 个控件，且整条不允许横向滚动）
+        zone="drawer" 抽屉，group 取 _GROUP_TITLES 的 key（material/numeric/org）
+        badge=None    常驻条默认无徽章（宽度金贵），抽屉默认带命中计数徽章
+        """
+        if key in self._filters:
+            raise ValueError(f"筛选控件 key 重复: {key}")
+        if zone not in ("bar", "drawer"):
+            raise ValueError(f"未知筛选区域: {zone}")
+        if zone == "bar" and len([s for s in self._filters.values() if s.zone == "bar"]) \
+                >= self.MAX_PERSISTENT_FILTERS:
+            raise ValueError(
+                f"常驻筛选条最多 {self.MAX_PERSISTENT_FILTERS} 个控件，"
+                "其余条件请放抽屉（设计稿 4.3.1：常驻区永不超过 6 个控件）")
+        if zone == "drawer" and group not in self._GROUP_TITLES:
+            raise ValueError(f"未知抽屉分组: {group}（可用: {list(self._GROUP_TITLES)}）")
+
+        if badge is None:
+            badge = zone == "drawer"
+
+        # 常驻条里的控件保持原生 sizeHint（红线 #3：不给它们写样式表/内距），
+        # 宽度仍由看板自己的 setMinimumWidth/setMaximumWidth 决定。
+        lbl = QLabel(label)
+        hit = None
+        if zone == "bar":
+            bar = self.filter_bar.layout()
+            at = bar.count() - 3          # 末尾三项固定为 stretch / 重置 / 总命中
+            bar.insertWidget(at, lbl)
+            bar.insertWidget(at + 1, widget)
+        else:
+            box, grid = self._drawer_group(group)
+            row = self._drawer_rows[group]
+            self._drawer_rows[group] = row + 1
+            grid.addWidget(lbl, row, 0)
+            grid.addWidget(widget, row, 1)
+            if badge:
+                hit = QLabel("—")
+                hit.setObjectName("hitBadge")
+                hit.setAlignment(Qt.AlignCenter)
+                grid.addWidget(hit, row, 2)
+
+        self._filters[key] = _FilterSlot(widget, lbl, hit, zone)
+        return widget
+
+    def _drawer_group(self, group):
+        """取（或建）抽屉分组卡。分组顺序恒为 物料 → 数值 → 组织与状态。"""
+        if group in self._drawer_groups:
+            return self._drawer_groups[group]
+        box = QGroupBox(self._GROUP_TITLES[group])
+        grid = QGridLayout(box)
+        grid.setContentsMargins(12, 10, 12, 10)
+        grid.setSpacing(8)
+        grid.setColumnMinimumWidth(0, 72)
+        grid.setColumnStretch(1, 1)
+        self._drawer_groups[group] = (box, grid)
+        self._drawer_rows[group] = 0
+        # 分组卡按固定语义顺序插入（物料→数值→组织与状态），而不是按看板塞入的先后
+        order = list(self._GROUP_TITLES)
+        pos = sum(1 for g in order[:order.index(group)] if g in self._drawer_groups)
+        self.drawer_layout.insertWidget(pos, box)
+        return box, grid
+
+    def set_filter_hits(self, key: str, count: int):
+        """某条件在当前数据下的命中行数（抽屉徽章）。"""
+        slot = self._filters.get(key)
+        if slot is None or slot.badge is None:
+            return
+        slot.badge.setText(f"{count:,} 条")
+
+    def set_filter_active(self, keys):
+        """当前生效的条件数 → 抽屉按钮文案「筛选 (3)」。"""
+        self._active_keys = set(keys)
+        n = len(self._active_keys)
+        if self.drawer_visible:
+            self.btn_filter_drawer.setText("收起筛选")
+        else:
+            self.btn_filter_drawer.setText(f"筛选 ({n})")
+
+    def set_total_hits(self, count: int):
+        self.lbl_total_hit.setText(f"共 {count:,} 条命中")
+
+    def set_reset_callback(self, fn):
+        """「重置」按钮回调：由各看板把自己的复位逻辑交进来。"""
+        self._reset_cb = fn
+
+    def set_filter_enabled(self, key: str, enabled: bool):
+        slot = self._filters.get(key)
+        if slot is not None:
+            slot.widget.setEnabled(enabled)
+
+    def set_filter_visible(self, key: str, visible: bool):
+        """整条条件收起（标签/控件/徽章一起消失）。
+
+        数据里没有对应列时，看板不希望留下一排灰掉的空控件 —— 隐藏单个控件会留下
+        标签与徽章的空位，所以由外壳统一按 key 处理整行。
+        """
+        slot = self._filters.get(key)
+        if slot is None:
+            return
+        for w in (slot.widget, slot.label, slot.badge):
+            if w is not None:
+                w.setVisible(visible)
 
     def _build_kpi_bar(self):
+        """KPI 带（54px）：默认隐藏，看板调 set_kpi_items 后才出现。
+
+        改造前这里预置了 4 张写死的示例卡（负损 0 条 / 金额 -¥0.0 / 涉及车间 0 个 /
+        隔离 0 条），而生产路径从没调过 set_kpi_data —— 于是每个看板顶部都横着一条
+        永远不会变的假数字。现在没有真数据就没有这一行。
+        """
         self.kpi_bar = QFrame()
         self.kpi_bar.setObjectName("kpi_bar")
         self.kpi_bar.setFixedHeight(SIZE_PX["boardKpiBar"])
+        self.kpi_bar.setVisible(False)
 
         layout = QHBoxLayout(self.kpi_bar)
         layout.setContentsMargins(10, 0, 10, 0)
         layout.setSpacing(0)
 
-        # KPI 卡片容器
+        # KPI 卡片容器（横向不留滚动条：卡片数由看板控制在 4-6 张）
         self.kpi_scroll = QScrollArea()
         self.kpi_scroll.setObjectName("kpiScroll")
         self.kpi_scroll.setWidgetResizable(True)
@@ -332,47 +383,42 @@ class DashboardShell(QWidget):
 
         self.kpi_container = QWidget()
         self.kpi_layout = QHBoxLayout(self.kpi_container)
+        self.kpi_layout.setContentsMargins(0, 0, 0, 0)
         self.kpi_layout.setSpacing(0)
         self.kpi_layout.setAlignment(Qt.AlignVCenter)
-
-        # 示例 KPI 卡片
-        for label, value, color in [
-            ("负损", "0 条", ""),
-            ("金额", "-¥0.0", "danger"),
-            ("涉及车间", "0 个", "warn"),
-            ("隔离", "0 条", "info")
-        ]:
-            kpi = KpiCard(label, value, color)
-            kpi.clicked.connect(lambda checked, l=label: self.kpi_clicked.emit(l))
-            self.kpi_layout.addWidget(kpi)
-
         self.kpi_scroll.setWidget(self.kpi_container)
         layout.addWidget(self.kpi_scroll)
 
+    def set_kpi_data(self, items: list):
+        """用真实数据重建 KPI 卡。items: [{'label','value','status'}]，空列表收起整行。"""
+        while self.kpi_layout.count():
+            self.kpi_layout.takeAt(0).widget().deleteLater()
+        if not items:
+            self.kpi_bar.setVisible(False)
+            return
+        for item in items:
+            card = KpiCard(item.get("label", "KPI"), item.get("value", "—"),
+                           item.get("status", ""))
+            card.clicked.connect(self.kpi_clicked.emit)
+            self.kpi_layout.addWidget(card)
+        self.kpi_bar.setVisible(True)
+
     def _build_table_stub(self):
+        """表格槽：内容组件（自带表格）走 set_content，裸模型走 set_model。
+
+        改造前这里预置了一个空 QTableView + 一行提示文字，而明细看板全部用
+        set_content 塞自己的组件进来 —— set_content 又会清空槽内所有子控件，
+        于是这块占位表格的唯一起作用就是"被销毁"，顺带让 _update_status 里的
+        self.table_view 变成已删除的 C++ 对象引用。
+        """
         self.table_container = QFrame()
         # v43.346：补 objectName 供 QSS #content ID 选择器命中
         self.table_container.setObjectName("content")
         self._content = self.table_container  # 别名：QSS probe/测试按 _content 访问
         self.table_layout = VBoxLayout(self.table_container)
         self.table_layout.setContentsMargins(0, 0, 0, 0)
-        self.table_layout.setAlignment(Qt.AlignTop)
-
-        # 使用 QTableView
-        self.table_view = QTableView()
-        self.table_view.setAlternatingRowColors(True)
-        self.table_view.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table_view.verticalHeader().setDefaultSectionSize(SIZE_PX["tableRow"])
-        self.table_view.horizontalHeader().setHighlightSections(False)
-        self.table_layout.addWidget(self.table_view)
-
-        self.lbl_table_status = QLabel("表格已就绪")
-        self.lbl_table_status.setProperty("class", "mutedText")
-        self.table_layout.addWidget(self.lbl_table_status)
-
-        if self._model is None:
-            self.lbl_table_status.setText("使用 set_model(model) 绑定模型")
+        self.table_view = None      # 仅 set_model 路径下惰性创建
+        self._content_widget = None
 
     def _build_status_bar(self):
         """底部状态条（30px）：承载 _status_label，供 set_status() 更新。"""
@@ -411,6 +457,13 @@ class DashboardShell(QWidget):
         # stretch 在末尾，把控件插到 stretch 之前（靠左排列）
         self._action_bar_layout.insertWidget(self._action_bar_layout.count() - 1, widget)
 
+    def add_action_button(self, text: str, slot):
+        """操作条上放一个按钮（看板把原先贴在表格下的按钮行交进来）。"""
+        btn = QPushButton(text)
+        btn.clicked.connect(slot)
+        self.set_action_widget(btn)
+        return btn
+
     def _load_theme(self):
         """按当前全局主题加载 QSS（读 themes/*.qss，读不到退回内置兜底）。"""
         self._load_theme_qss("dark" if Thm.is_dark else "light")
@@ -436,81 +489,45 @@ class DashboardShell(QWidget):
         except RuntimeError:
             pass
 
-    def _connect_signals(self):
-        for dropdown in self.dropdowns:
-            dropdown.currentIndexChanged.connect(self._on_filter_change)
-
-    def _on_filter_change(self):
-        active_filters = sum(1 for d in self.dropdowns if d.currentIndex() > 0)
-        self.btn_filter_drawer.setText(f"筛选 ({active_filters} 个激活)")
-        self.current_filters = {
-            f"dropdown_{i}": d.currentText()
-            for i, d in enumerate(self.dropdowns)
-            if d.currentIndex() > 0
-        }
-        self.filter_applied.emit(self.current_filters)
-        self._update_status()
-
     def _on_filter_drawer_toggled(self):
         self.drawer_visible = not self.drawer_visible
-        btn = self.btn_filter_drawer
-        if self.drawer_visible:
-            btn.setText("筛选 (收起)")
-            self.drawer_container.setVisible(True)
-        else:
-            btn.setText(f"筛选 ({len(self.current_filters)} 个激活)")
-            self.drawer_container.setVisible(False)
+        self.drawer_container.setVisible(self.drawer_visible)
+        self.btn_filter_drawer.setText("收起筛选" if self.drawer_visible
+                                       else f"筛选 ({len(self._active_keys)})")
 
     def _on_reset(self):
-        self.current_filters.clear()
-        self.total_rows = 0
-        self.lbl_total_hit.setText("共 0 条命中")
-        for dropdown in self.dropdowns:
-            dropdown.setCurrentIndex(0)
-        self._on_filter_change()
+        """「重置」交回看板：条件语义（默认关键字、默认未读档位）只有内容组件自己知道。"""
+        if self._reset_cb is not None:
+            self._reset_cb()
 
     def set_model(self, model):
+        """裸模型进槽（外壳代建 QTableView）；内容组件自带表格时用 set_content。"""
+        if self.table_view is None:
+            self.table_view = QTableView()
+            self.table_view.setAlternatingRowColors(True)
+            self.table_view.setSelectionBehavior(QAbstractItemView.SelectRows)
+            self.table_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
+            self.table_view.verticalHeader().setDefaultSectionSize(SIZE_PX["tableRow"])
+            self.table_view.horizontalHeader().setHighlightSections(False)
+            self.table_layout.addWidget(self.table_view)
         self._model = model
         self.table_view.setModel(model)
-        self._update_status()
-        self._connect_table_selection()
-
-    def _connect_table_selection(self):
-        if self._model:
-            selection = self.table_view.selectionModel()
+        selection = self.table_view.selectionModel()
+        if selection is not None:
             selection.selectionChanged.connect(self._on_selection_changed)
+        self.set_row_count(model.rowCount() if model else 0)
 
     def _on_selection_changed(self, selected, deselected):
-        self.lbl_selected_count.setText(f"已选 {len(selected.indexes()) // max(self.table_view.model().rowCount(), 1)} 行")
-
-    def _update_status(self):
-        if self.table_view.model():
-            count = self.table_view.model().rowCount()
-            # v43.346：状态写到底部状态条 _status_label（持久存在）；
-            # lbl_table_status 属于表格 stub，set_content 替换内容后已被销毁，不可再引用。
-            self._status_label.setText(f"数据已加载 · 共 {count} 行")
-        self.set_row_count(self.table_view.model().rowCount() if self.table_view.model() else 0)
-
-    def set_kpi_data(self, data: list):
-        self.kpi_data = data
-        kpis = self.kpi_scroll.findChild(QWidget).findChildren(KpiCard)
-        if len(kpis) >= len(data):
-            for i, kpi in enumerate(kpis[:len(data)]):
-                item = data[i]
-                kpi.lbl_value.setText(item.get('value', '0'))
-                kpi.lbl_label.setText(item.get('label', 'KPI'))
-                kpi.set_status(item.get('status', ''))
-
-    def set_table_headers(self, headers: list):
-        self.table_headers = headers
+        sm = self.table_view.selectionModel() if self.table_view else None
+        rows = len(sm.selectedRows()) if sm is not None else 0
+        self.set_selected_count(rows, self._model.rowCount() if self._model else 0)
 
     def set_row_count(self, count: int):
-        self.total_rows = count
         self.lbl_total_hit.setText(f"共 {count:,} 条命中")
 
-    def clear_filters(self):
-        self.current_filters.clear()
-        self._on_reset()
+    def set_selected_count(self, rows: int, total: int = 0):
+        """状态条「已选 n / N 行」：内容组件自带表格时由看板回报（外壳看不到它的选择）。"""
+        self.lbl_selected_count.setText(f"已选 {rows} / {total} 行")
 
     def set_title(self, title: str, subtitle: str = ""):
         self.title = title
@@ -520,12 +537,13 @@ class DashboardShell(QWidget):
         self.lbl_title.setText(f"{title} · {subtitle}" if subtitle else title)
 
     def set_content(self, widget: QWidget):
-        while self.table_layout.count():
-            child = self.table_layout.takeAt(0).widget()
-            child.deleteLater()
+        """内容组件进槽；重复调用会先清掉上一份，不会叠两层表格。"""
+        if self._content_widget is not None:
+            self.table_layout.removeWidget(self._content_widget)
+            self._content_widget.deleteLater()
+        self._content_widget = widget
         self.table_layout.addWidget(widget, 1)
-        # v43.346：状态统一走底部状态条 _status_label（持久），不再碰表格 stub 里
-        # 已被 deleteLater 的 lbl_table_status。此处把状态条清空，交由外部 set_status 填充。
+        # 状态统一走底部状态条 _status_label（持久），进新内容时清空待外部 set_status 填
         self._status_label.setText("")
 
     def set_status(self, text: str):

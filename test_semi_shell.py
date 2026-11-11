@@ -10,12 +10,13 @@ import os
 sys.path.insert(0, 'E:/zpp011_v2')
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QScrollArea
 
 app = QApplication.instance() or QApplication([])
 
 from gui_pyside6.widgets.semi_content import (
-    SemiContent, FEED_STATUS_ALL, FEED_STATUS_ITEMS, _demo_dataframe,
+    SemiContent, FEED_STATUS_ALL, FEED_STATUS_ITEMS, SEMI_CLASS_DEFAULT,
+    _demo_dataframe,
 )
 from gui_pyside6.components.dashboard_shell import DashboardShell
 from gui_pyside6.utils.table_autofit import get_adaptive
@@ -69,14 +70,34 @@ print('④ 列宽自适应控制器已安装 OK (mode=%s, key=%s)' % (ctrl.mode,
 # ⑤ 外壳层：状态条实时联动 + 快捷键 + 关闭信号
 shell = DashboardShell()
 shell.set_title('半成品看板')
+content.attach_shell(shell)          # 控件归位到常驻条 + 抽屉 + 操作条
 shell.set_content(content)
 shell.set_status('已加载半成品数据 · 共 5 条记录')
-content.shell = shell
 content._read_filter = '全部'      # 避开默认「未读」
 content._semi_class_filter = set()  # 避开默认只勾两类，避免 demo 行数被压到 0
 content._apply_filter()
-assert '已筛选' in shell._status_label.text(), shell._status_label.text()
-print('⑤ 状态条实时联动 OK（%s）' % shell._status_label.text())
+assert '共 5 条' in shell._status_label.text(), shell._status_label.text()
+assert shell.lbl_total_hit.text() == '共 5 条命中', shell.lbl_total_hit.text()
+print('⑤ 状态条/总命中实时联动 OK（%s / %s）'
+      % (shell._status_label.text(), shell.lbl_total_hit.text()))
+
+# ⑤b 第二期验收：常驻条 5 个看板控件、抽屉按语义分组、无横向滚动筛选栏
+bar_n = len([s for s in shell._filters.values() if s.zone == 'bar'])
+assert bar_n == len(SemiContent.BAR_FILTERS) == 5, bar_n
+assert not content.findChildren(QScrollArea), '筛选栏仍被装进横向滚动区'
+assert set(g for g, *_ in SemiContent.DRAWER_FILTERS) == {'material', 'org'}
+# 投料状态是本看板主轴，常驻可见；半成品分类这种多选进抽屉
+assert shell._filters['feed_status'].zone == 'bar'
+assert shell._filters['semi_class'].zone == 'drawer'
+print('⑤b 常驻控件 %d 个、无横向滚动、抽屉分组 material+org OK' % bar_n)
+
+# ⑤c 「重置」= 回开箱口径（默认两档分类 + 未读），不是取消全部过滤
+content.edit_keywords.setText('薯片')
+content._reset_filters()
+assert content._keywords == '' and content._feed_status == FEED_STATUS_ALL
+assert content._semi_class_filter == set(SEMI_CLASS_DEFAULT), content._semi_class_filter
+assert content._read_filter == '未读'
+print('⑤c 重置回开箱口径 OK（%s）' % sorted(content._semi_class_filter))
 
 assert content._sc_export.key().toString() == 'Alt+V'
 assert content._sc_refresh.key().toString() == 'F5'

@@ -209,6 +209,7 @@ def main():
             c.set_data(df)
             shell = DashboardShell()
             shell.set_title("%s看板 · 冒烟" % label)
+            c.attach_shell(shell)          # 真实链路：控件交给外壳归位
             shell.set_content(c)
             shell.set_status("已加载 · 共 %d 条" % len(df))
             from utils.theme_manager import Thm
@@ -469,44 +470,69 @@ def main():
         return ok, " ".join(detail)
     check("⑫ 重型弹窗统一外壳（原窗口逻辑保留）", _heavy_shell)
 
-    # ⑬ v43.342：重复标题清理 + 空操作条按需（裴哥 11-11 反馈）
-    def _title_cleanup():
+    # ⑬ v43.347（第二期）：看板筛选结构验收
+    #   旧版断言「筛选区必须是主布局第一项 QScrollArea」正是改造前的病根本身 ——
+    #   筛选栏被装进横向滚动区，条件多到拖不完。现在改成结构上限 + 可达性断言。
+    def _board_filter_structure():
         from PySide6.QtWidgets import QScrollArea, QLabel as _QLabel
+        from utils.theme_manager import Thm
+        Thm.set_dark(False)
         detail = []
         ok = True
         for label, cls, board_title in (
             ("负损", NegLossContent, "负损(含未投料)看板"),
             ("正损", PosLossContent, "正损(超投)看板"),
+            ("半成品", SemiContent, "半成品看板"),
         ):
             c = cls(win)
             c.set_data(df)
-            # ① Content 内不得再画同名标题（旧剥壳残留）
-            dup = [l for l in c.findChildren(_QLabel)
-                   if l.text().strip() == board_title]
-            no_attr = not hasattr(c, '_title_label')
-            # ② 筛选区必须是主布局第一项 —— 控件确实顶到最上，不再隔一行标题
-            first = c.layout().itemAt(0)
-            first_scroll = (first is not None and
-                            isinstance(first.widget(), QScrollArea))
-            # ③ 组合后整窗里该标题只出现一次（只由外壳标题栏提供）
             s = DashboardShell()
             s.set_title(board_title)
+            c.attach_shell(s)
             s.set_content(c)
-            shell_titles = [l for l in s.findChildren(_QLabel)
-                            if l.text().strip() == board_title]
-            one_title = len(shell_titles) == 1
-            # ④ 空操作条默认隐藏，放入控件后才展开
-            hidden = s._action_bar.isHidden()
-            s.set_action_widget(_QLabel("操作"))
-            expanded = not s._action_bar.isHidden()
-            good = (not dup and no_attr and first_scroll and one_title
-                    and hidden and expanded)
+            app.processEvents()
+            # ① 永不允许横向滚动筛选栏（设计稿红线：常驻条不可滚动）。
+            #    Content 里一个 QScrollArea 都不该有；外壳只保留 KPI 带那条
+            #    ScrollBarAlwaysOff 的容器（看板没数据时整条还是隐藏的）。
+            content_scroll = len(c.findChildren(QScrollArea))
+            loose_scroll = [sa for sa in s.findChildren(QScrollArea)
+                            if sa.horizontalScrollBarPolicy() != Qt.ScrollBarAlwaysOff]
+            no_scroll = content_scroll == 0 and not loose_scroll
+            # ② 常驻条控件数不超上限，其余条件进抽屉
+            drawer_keys = [k for k, slot in s._filters.items() if slot.zone == "drawer"]
+            bar_n = len(s._filters) - len(drawer_keys)
+            bar_ok = 0 < bar_n <= DashboardShell.MAX_PERSISTENT_FILTERS
+            # ③ 抽屉条件全部可达：展开时每个控件可见，收起时整组让位。
+            #    冒烟样本里没有对应列的条件（如组件物料类型描述）按设计收起，不计入。
+            tucked_keys = set(drawer_keys) & getattr(c, "_hidden_filters", set())
+            s._on_filter_drawer_toggled()
+            app.processEvents()
+            reach = sum(1 for k in drawer_keys if s._filters[k].widget.isVisibleTo(s))
+            expect = len(drawer_keys) - len(tucked_keys)
+            s._on_filter_drawer_toggled()
+            app.processEvents()
+            tucked = all(not s._filters[k].widget.isVisibleTo(s) for k in drawer_keys)
+            # ④ 看板标题只出现一次（外壳标题栏那份，Content 不再自绘）
+            dup = len([l for l in c.findChildren(_QLabel)
+                       if l.text().strip() == board_title])
+            # ⑤ 空操作条不占位：没放控件就隐藏，放了才展开
+            probe = DashboardShell()
+            act_hidden = probe._action_bar.isHidden()
+            probe.set_action_widget(_QLabel("操作"))
+            act_shown = not probe._action_bar.isHidden()
+            act_ok = (not s._action_bar.isHidden()) and act_hidden and act_shown
+            good = (no_scroll and bar_ok and reach == expect and tucked
+                    and dup == 0 and act_ok)
             ok = ok and good
-            detail.append("%s(重复=%d,首项筛选=%s,唯一标题=%s,空条隐藏=%s,放入展开=%s)"
-                          % (label, len(dup), first_scroll, one_title,
-                             hidden, expanded))
+            detail.append("%s(内容滚动区=%d,可横滚=%d,常驻=%d,抽屉可达=%d/%d,收起=%s,"
+                          "重复标题=%d,操作条=%s)"
+                          % (label, content_scroll, len(loose_scroll), bar_n,
+                             reach, expect, tucked, dup,
+                             "开" if act_ok else "关"))
+            s.deleteLater()
+            c.deleteLater()
         return ok, " ".join(detail)
-    check("⑬ 重复标题清理 + 控件上移 + 空条不占位", _title_cleanup)
+    check("⑬ 看板筛选结构：无横滚+常驻≤5+抽屉可达+唯一标题", _board_filter_structure)
 
     # ⑭ v43.343：QSS 尺寸纪律（对齐 board_visual.py v43.299 红线）
     #        v43.346：探测对象改为 tokens 生成器输出（唯一真源）

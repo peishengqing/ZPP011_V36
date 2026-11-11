@@ -210,14 +210,13 @@ class DashboardController:
             content = NegLossContent(self.mw)
             content.set_data(sub)
 
-            # v43.344：传 parent 才会启动 _init_theme_sync()，
-            # 否则 shell 永远停在构造时的 light，暗色主窗口里会嵌一块亮色看板
             shell = DashboardShell(self.mw)
             shell.set_title("负损(含未投料)看板")
+            # 第二期：筛选控件由内容组件交给外壳摆放（常驻条 + 抽屉三组 + 操作条），
+            # 必须在 set_content 之前挂上，否则外壳拿不到控件位置
+            content.attach_shell(shell)
             shell.set_content(content)
             shell.set_status("已加载负损数据 · 共 {} 条记录".format(len(sub)))
-            # 建立内容组件与 shell 的链接，便于状态同步
-            content.shell = shell
 
             # v43.340：非模态多开，三个看板可同时对照（取数/口径零改动）
             self._present_board(
@@ -262,13 +261,13 @@ class DashboardController:
             content = PosLossContent(self.mw)
             content.set_data(sub)
 
-            # v43.344：传 parent 才会启动 _init_theme_sync()，
-            # 否则 shell 永远停在构造时的 light，暗色主窗口里会嵌一块亮色看板
             shell = DashboardShell(self.mw)
             shell.set_title("正损(超投)看板")
+            # 第二期：筛选控件由内容组件交给外壳摆放（常驻条 + 抽屉两组 + 操作条），
+            # 必须在 set_content 之前挂上，否则外壳拿不到控件位置
+            content.attach_shell(shell)
             shell.set_content(content)
             shell.set_status("已加载正损数据 · 共 {} 条记录".format(len(sub)))
-            content.shell = shell
 
             # v43.340：非模态多开，三个看板可同时对照（取数/口径零改动）
             self._present_board(
@@ -399,13 +398,13 @@ class DashboardController:
             content = SemiContent(self.mw)
             content.set_data(sub)
 
-            # v43.344：传 parent 才会启动 _init_theme_sync()，
-            # 否则 shell 永远停在构造时的 light，暗色主窗口里会嵌一块亮色看板
             shell = DashboardShell(self.mw)
             shell.set_title("半成品看板")
+            # 第二期：筛选控件由内容组件交给外壳摆放（常驻条 + 抽屉两组 + 操作条），
+            # 必须在 set_content 之前挂上，否则外壳拿不到控件位置
+            content.attach_shell(shell)
             shell.set_content(content)
             shell.set_status("已加载半成品数据 · 共 {} 条记录".format(len(sub)))
-            content.shell = shell
 
             # v43.340：非模态多开；close_requested 关闭链接由 _present_board 统一接管
             self._present_board(
