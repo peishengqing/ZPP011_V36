@@ -16,7 +16,7 @@
 配色全部经 ``Thm.color(令牌)`` 现取，不写死十六进制：暗色切换自动换档。
 """
 
-from PySide6.QtCore import QEvent, QModelIndex, QRect, Qt
+from PySide6.QtCore import QEvent, QModelIndex, QRect, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import QAbstractItemView, QStyle, QStyleOptionViewItem, QStyledItemDelegate
 
@@ -39,6 +39,9 @@ _HOVER_ALPHA = 26     # 悬浮叠色不透明度：够看出"鼠标在哪一行"
 
 class RowStyleDelegate(QStyledItemDelegate):
     """在原生绘制之上叠加：悬浮行叠色 + 选中格左缘主色条 + 状态胶囊。"""
+
+    #: 悬浮行变了（右侧操作道靠它决定「这一行要不要露出小按钮」，见 row_action_lane）
+    hover_row_changed = Signal(int)
 
     def __init__(self, view: QAbstractItemView, parent=None):
         super().__init__(parent or view)
@@ -77,6 +80,15 @@ class RowStyleDelegate(QStyledItemDelegate):
         old, self._hover_row = self._hover_row, row
         self._repaint_row(old)
         self._repaint_row(row)
+        self.hover_row_changed.emit(row)
+
+    # 对外两个口：右侧操作道读当前悬浮行、也能把悬浮行设回来（鼠标划过操作道时
+    # 整行照样要亮 —— 悬浮行只有一个真源，就是这个代理）
+    def hover_row(self):
+        return self._hover_row
+
+    def set_hover_row(self, row):
+        self._set_hover_row(row)
 
     def _repaint_row(self, row):
         """只重绘这一行所在的视口条带（整表 update 在万行表上会闪）。"""

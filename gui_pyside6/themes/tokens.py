@@ -137,6 +137,9 @@ SIZE_PX = {
     # 行首勾选道（设计稿首列 34px）。这里取 46px：设计稿那列只有勾选框，我们的行首
     # 还要留现行号（裴哥靠「第 N 行」口头定位数据），勾选框 13px + 行号约 20px。
     "tableCheckLane": 46,
+    # 行尾悬浮操作道（设计稿最后一列 <th style="width:74px">）。74 = 2 颗 22px 按钮
+    # + 2px 间隙 + 左右留白；平时整条道只当空白列，鼠标划过某行才在那一行露出按钮。
+    "tableRowActions": 74,
     "statusBar": 30,
     "cardPad": 12,
     "gridGap": 8,

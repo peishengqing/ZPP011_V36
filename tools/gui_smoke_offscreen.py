@@ -1014,6 +1014,123 @@ def main():
                                           ok_uncheck, ok_all, ok_clear, ok_bg, hits))
     check("⑲ 行首勾选道：勾选=选中/三态全选/列号不动/交叉角摆位", _check_lane)
 
+    # ⑳ v43.351（第五期G2）：行尾悬浮操作道 —— 设计稿最后那列 74px 的 .rowact。
+    #     道不是列（列号 == DataFrame 列号 这条 1:1 老墙不能动），而是表格在
+    #     QFrame#tableShell 里的并排兄弟；划过哪一行才在哪一行露出「审核/更多」，
+    #     两颗按钮只是既有入口：铅笔=审核证据卡、三点=右键菜单，不新写任何业务。
+    def _row_actions():
+        from PySide6.QtCore import QEvent, QPoint, QPointF
+        from PySide6.QtGui import QMouseEvent
+        from PySide6.QtWidgets import QFrame
+        from gui_pyside6.themes.tokens import SIZE_PX
+        from gui_pyside6.widgets.row_action_lane import AUDIT, MORE, RowActionLane
+        tv = win.table_view
+        lane = win.row_action_lane
+        shell = win.table_shell
+        # 接线先查（挂探针之前）：每颗按钮各只有一个真插槽，不重复也不空挂
+        ok_wired = (_receiver_count(lane, lane.audit_clicked) == 1
+                    and _receiver_count(lane, lane.more_clicked) == 1)
+        ok_struct = (isinstance(lane, RowActionLane)
+                     and lane.objectName() == "rowActionLane"
+                     and isinstance(shell, QFrame) and shell.objectName() == "tableShell"
+                     and lane.parentWidget() is shell and tv.parentWidget() is shell
+                     and lane.width() == SIZE_PX["tableRowActions"] == 74)
+        # 行尾多一列 data_id：模型列数仍 = DataFrame 列数 + 1（道没加成列）
+        df2 = df.copy()
+        df2["data_id"] = ["D1", "D2", "D3"]
+        win.source_model.setDataFrame(df2)
+        win.proxy_model.invalidate()
+        win.show()
+        app.processEvents()
+        ok_columns = tv.model().columnCount() == len(df2.columns) + 1
+        ok_adjacent = (lane.x() == tv.x() + tv.width() and lane.y() == tv.y())
+        n = tv.model().rowCount()
+        # 视口里露得出的行才谈得上对齐/画按钮（主窗 796 高时表格只容得下两行）
+        vis = [r for r in range(n) if lane._row_rect(r) is not None]
+        # 行对齐：道里第 r 行的中心换算回视口，仍应是第 r 行
+        ok_align = bool(vis) and all(
+            tv.rowAt(lane._row_rect(r).center().y() - lane._rows_top()) == r for r in vis)
+        ok_bottom = lane._rows_bottom() == (tv.y() + tv.viewport().y()
+                                           + tv.viewport().height() - lane.y())
+
+        def send(ev_type, pos, button=Qt.NoButton):
+            QApplication.sendEvent(lane, QMouseEvent(
+                ev_type, QPointF(pos), QPointF(lane.mapToGlobal(pos)),
+                Qt.LeftButton, button, Qt.NoModifier))
+
+        def click(row, kind):
+            center = dict(lane._btn_rects(lane._row_rect(row)))[kind].center()
+            send(QEvent.MouseMove, center)
+            send(QEvent.MouseButtonPress, center, Qt.LeftButton)
+            send(QEvent.MouseButtonRelease, center, Qt.LeftButton)
+            app.processEvents()
+
+        # 只画在该划过的行上：别的行为零变化
+        r_a = vis[0]
+        r_b = vis[-1] if len(vis) > 1 else -1
+        cold = lane.grab().toImage()
+        send(QEvent.MouseMove, lane._btn_rects(lane._row_rect(r_a))[0][1].center())
+        app.processEvents()
+        hot = lane.grab().toImage()
+
+        def changed(row):
+            rect = lane._row_rect(row).adjusted(1, 1, -1, -1)
+            return sum(1 for x in range(rect.left(), rect.right())
+                       for y in range(rect.top(), rect.bottom())
+                       if cold.pixelColor(x, y) != hot.pixelColor(x, y))
+        ok_paint = (r_b >= 0 and changed(r_a) > 60 and changed(r_b) == 0)
+        ok_hover_only = (tv.itemDelegate().hover_row() == r_a
+                         and not tv.selectionModel().hasSelection())
+        # 两颗按钮 = 既有入口：证据卡收到的是该行 data_id，三点转发的坐标在视口内
+        seen = {}
+        origin = win._show_evidence_card
+        origin_menu = win._show_context_menu
+
+        def _spy_card(data_id=None):
+            seen["data_id"] = data_id
+
+        def _spy_menu(pt):
+            seen["pt"] = pt
+            return None
+
+        want_id = str(df2.iloc[win._source_row_of_view_row(r_a)]["data_id"])
+        win._show_evidence_card = _spy_card
+        win._show_context_menu = _spy_menu
+        try:
+            click(r_a, AUDIT)
+            click(r_a, MORE)
+        finally:
+            win._show_evidence_card = origin
+            win._show_context_menu = origin_menu
+        ok_audit = seen.get("data_id") == want_id
+        pt = seen.get("pt")
+        ok_more = (isinstance(pt, QPoint) and pt.x() > 0
+                   and tv.viewport().rect().contains(pt))
+        # 没划过按钮的位置不该发（道里空白处）
+        seen.clear()
+        win._show_evidence_card = _spy_card
+        try:
+            blank = QPoint(2, lane._row_rect(r_a).center().y())
+            send(QEvent.MouseMove, blank)
+            send(QEvent.MouseButtonPress, blank, Qt.LeftButton)
+            send(QEvent.MouseButtonRelease, blank, Qt.LeftButton)
+            app.processEvents()
+        finally:
+            win._show_evidence_card = origin
+        ok_blank = "data_id" not in seen
+        win.hide()
+        app.processEvents()
+        win.source_model.setDataFrame(df)
+        win.proxy_model.invalidate()
+        app.processEvents()
+        ok = all([ok_wired, ok_struct, ok_columns, ok_adjacent, ok_align, ok_bottom,
+                  ok_paint, ok_hover_only, ok_audit, ok_more, ok_blank])
+        return ok, ("接线=%s 结构=%s 列数=%s 紧贴=%s 行对齐=%s 下界=%s 划过才画=%s "
+                    "悬浮唯一真源=%s 铅笔=%s 三点=%s 空白不发=%s"
+                    % (ok_wired, ok_struct, ok_columns, ok_adjacent, ok_align,
+                       ok_bottom, ok_paint, ok_hover_only, ok_audit, ok_more, ok_blank))
+    check("⑳ 行尾悬浮操作道：并排兄弟/划过才画/两颗按钮走既有入口", _row_actions)
+
     return report()
 
 

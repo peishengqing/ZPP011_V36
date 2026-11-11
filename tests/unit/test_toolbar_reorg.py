@@ -50,6 +50,15 @@ _CJK_FONT_OK = False
   里被选中，所以「已选 n 行」与批量已读/导出/隔离零改动复用。左上角三态全选框由新的
   MainTableView 手工摆到两块表头交叉区（PySide6 6.6.3 的 setCornerWidget 只会放右下角）。
   主表视图因此从 QTableView 变成它的子类，test_main_window_smoke 的关键属性契约同步改名。
+- v43.351 第五期G2「行尾悬浮操作按钮」：设计稿最后那列 74px 的 .rowact（划过某行才在该行
+  右端露出铅笔/三点）同样**不是真列**。曾试让视口右端让出 74px：setViewportMargins 会被
+  QTableView::layoutViews() 每次重排打回基准值（道成为视口子控件后 ChildAdded 触发的那次
+  延迟重排把补位彻底吃掉），叠在视口里又会盖住最后一列。故新控件 RowActionLane 是表格在
+  QFrame#tableShell 里的并排兄弟，边框从 #tableView 挪到壳上；自适应列宽预算取
+  viewport().width() 因此自动少 74px，无需改动。悬浮行仍只有 RowStyleDelegate 一个真源
+  （新增 hover_row_changed / set_hover_row 给道复用），划过不改选择；两颗按钮只是既有入口
+  （审核证据卡 / _show_context_menu），不新增业务。主表因此多包了一层壳，全屏切换只做
+  visibility 翻转不动父子关系，故不受影响。
 """
 import os
 import shutil

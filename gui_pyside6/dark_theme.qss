@@ -500,6 +500,16 @@ QMenu::separator { height: 1px; background-color: #253148; margin: 5px 8px; }
     selection-background-color: #18254A;
     selection-color: #E6EDF7;
 }
+/* v43.351 第五期G2：主表右端并排放了 74px 悬浮操作道（RowActionLane，设计稿 .rowact）。
+   道不是列，只能与表格并排，所以边框改由外壳画一圈，把两块围成同一张表。
+   只命中壳里的表格，其它地方的 #tableView 仍用上面那条带边框的规则。 */
+#tableShell {
+    background-color: #121A2B;
+    border: 1px solid #253148;
+    border-radius: 6px;
+}
+#tableShell > #tableView { border: none; border-radius: 0; }
+#rowActionLane { background-color: #121A2B; border: none; }
 #tableView::item { padding: 0 10px; border: none; border-bottom: 1px solid #253148; }
 #tableView::item:selected { background-color: #18254A; color: #E6EDF7; }
 #tableView::item:selected:!active { background-color: #18254A; color: #E6EDF7; }

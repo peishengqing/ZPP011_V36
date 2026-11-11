@@ -427,6 +427,9 @@ class MainWindow(QMainWindow):
         # self.stat_need_note = ... 已删除
         # self.stat_ok = ... 已删除
         self.table_view = self.main_table.table_view
+        # v43.351 第五期G2：右端悬浮操作道 + 它和表格共用的外壳（冒烟/全屏切换要按名取）
+        self.row_action_lane = self.main_table.row_action_lane
+        self.table_shell = self.main_table.table_shell
         # v43.281：底部合计标签（配额/实际/偏差金额/偏差量/净偏差率）已按用户要求
         # 移除，别名不再存在；若有代码误写这些属性会立刻 AttributeError 暴露。
         # self.start_btn 别名在工具栏创建后赋值（见下方 action_bar 构建末尾）
@@ -2685,6 +2688,32 @@ class MainWindow(QMainWindow):
         copy_region_action = menu.addAction("复制选中区域")
         copy_region_action.triggered.connect(self.copy_selected_cells)
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
+
+    # -----------------------------------------------------------
+    # 行内小按钮（v43.351 第五期G2，右侧操作道 RowActionLane 触发）
+    # -----------------------------------------------------------
+    def _open_row_evidence_card(self, view_row: int):
+        """铅笔：打开该行审核证据卡。与右键菜单同一条链路，纯查看、不改数据。"""
+        src = self._source_row_of_view_row(view_row)
+        if src is None:
+            return
+        row_data = self.source_model.getDataFrame().iloc[src]
+        self._show_evidence_card(row_data.get('data_id', ''))
+
+    def _popup_row_menu_for_row(self, view_row: int):
+        """三点：弹菜单。视口内点一个坐标转发给 _show_context_menu —— 菜单本体不复制。"""
+        tv = self.table_view
+        y = tv.rowViewportPosition(view_row) + tv.rowHeight(view_row) // 2
+        x = tv.columnViewportPosition(0) + 10
+        self._show_context_menu(QPoint(max(x, 1), max(y, 0)))
+
+    def _source_row_of_view_row(self, view_row: int):
+        """视图（筛选/排序后）行号 → 源 DataFrame 行号；越界返回 None。"""
+        mdl = self.table_view.model()
+        if mdl is None or view_row < 0 or view_row >= mdl.rowCount():
+            return None
+        src = self.proxy_model.mapToSource(mdl.index(view_row, 0))
+        return src.row() if src.isValid() else None
 
     def _copy_wechat_draft(self, rows):
         """将选中行整理成微信沟通草稿，复制到剪贴板（已迁入 InteractionController）"""

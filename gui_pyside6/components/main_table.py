@@ -11,6 +11,7 @@ from PySide6.QtCore import Qt, Signal, QObject
 from gui_pyside6.utils.icons import make_button
 from gui_pyside6.widgets.row_style_delegate import RowStyleDelegate
 from gui_pyside6.widgets.row_check_header import RowCheckHeader, SelectAllCheck
+from gui_pyside6.widgets.row_action_lane import RowActionLane
 from gui_pyside6.widgets.main_table_view import MainTableView
 
 # 分析进度步骤图标（沿用 v31 经典布局：一排图标 + 进度条 + 状态文字）
@@ -144,6 +145,13 @@ class MainTableComponent(QObject):
         # 左上角这块交叉区由 MainTableView 自己摆位。
         self.table_view.set_corner_widget(self.corner_check)
 
+        # v43.351 第五期G2：设计稿最后一列 74px 的 .rowact —— 划过哪一行，哪一行右端
+        # 露出「审核/更多」两颗 22px 小按钮。同样不加真列（理由见 row_action_lane 文档：
+        # setViewportMargins 会被 QTableView 的私有重排打回基准值），道做成表格的兄弟。
+        self.row_action_lane = RowActionLane(self.table_view)
+        self.row_action_lane.audit_clicked.connect(self.mw._open_row_evidence_card)
+        self.row_action_lane.more_clicked.connect(self.mw._popup_row_menu_for_row)
+
         # 空态提示（无数据时居中显示，v43.285 新增）
         self.empty_hint = QLabel("暂无数据，请导入 ZPP011 导出文件后点击「开始分析」")
         self.empty_hint.setObjectName("emptyHint")
@@ -226,7 +234,17 @@ class MainTableComponent(QObject):
         main_layout.setSpacing(0)
         main_layout.insertWidget(0, self.link_banner)
 
-        main_layout.addWidget(self.table_view, 1)
+        # 表格 + 右端操作道装进同一个壳：边框从 #tableView 挪到 #tableShell（见
+        # light/dark_theme.qss），两块共着一圈边框，道才看着像这张表的最后一列。
+        self.table_shell = QFrame()
+        self.table_shell.setObjectName("tableShell")
+        shell_layout = QHBoxLayout(self.table_shell)
+        shell_layout.setContentsMargins(0, 0, 0, 0)
+        shell_layout.setSpacing(0)
+        shell_layout.addWidget(self.table_view, 1)
+        shell_layout.addWidget(self.row_action_lane, 0)
+
+        main_layout.addWidget(self.table_shell, 1)
         main_layout.addWidget(self.empty_hint, alignment=Qt.AlignCenter)
 
         audit_layout.addLayout(main_layout, 1)
