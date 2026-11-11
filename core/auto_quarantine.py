@@ -130,6 +130,39 @@ def _first_col(df: pd.DataFrame, candidates):
     return None
 
 
+# --------------------------------------------------------------------------- 列探测
+#: 每个条件对应的候选列名，**顺序即优先级**。v43.353 起这里是唯一真源：
+#: 生产隔离（compute_auto_quarantine_ids）、影子预览（match_rule_mask /
+#: compute_rule_hit_counts / describe_rule_hits）共用同一份探测结果，
+#: 避免出现「预览按 A 列算、落库按 B 列算」两套口径。
+_COL_CANDIDATES = {
+    "alt": ["是否替代料", "替代料", "is_alt"],
+    "semi_class": ["半成品重分类", "semi_classify", "semi_classification"],
+    "cat": ["物料分类", "物料大类", "物料类型", "组件物料类型描述"],
+    "name": ["组件物料描述", "物料名称", "物料描述", "material_name"],
+    "actual": ["数量-实际", "实际", "实际数量", "数量 - 实际", "actual"],
+    "quota": ["数量-定额", "定额", "定额数量", "数量 - 定额", "quota"],
+    "dev_rate": ["偏差率(%)", "偏差率", "偏差率%"],
+    "mat_code": ["物料编码", "组件物料号", "物料号"],
+    "workshop": ["车间", "工厂车间", "生产车间", "work_shop", "车间号"],
+    "remark": ["备注", "备注原因", "remark", "备注说明"],
+    "dev_qty": ["偏差数量", "偏差量", "差异数量"],
+    # v43.202：单位列对齐全项目既定口径（auto_read_rules.py / 各报表 sheet 均用组件单位，
+    # 从不用产量单位）。旧候选把「产量单位」排在「组件单位」前——真实 SAP 表无裸「单位」列，
+    # 于是命中「产量单位」（产品母件出货量单位，取值无「片」），导致按「组件投料单位=片」的
+    # 规则（如脱氧剂）永远 0 命中。改为组件单位优先，与自动已读规则彻底一致。
+    "unit": ["单位", "组件单位", "基本单位", "计量单位"],
+    # 「涉及金额」只给预览条用，不参与任何匹配；候选与 components/bottom_bar.py 的
+    # 状态条「偏差合计」同源，两处显示口径必须一致。
+    "amount": ["净偏差金额", "偏差金额(含税)", "偏差金额"],
+}
+
+
+def _probe_columns(df: pd.DataFrame) -> dict:
+    """探测本表各条件实际落到哪一列（缺列 → None，条件按「保守不匹配」处理）。"""
+    return {key: _first_col(df, cands) for key, cands in _COL_CANDIDATES.items()}
+
+
 # --------------------------------------------------------------------------- 配置读写
 def _normalize_rule(rule):
     """补齐字段，保证每条规则都有完整键。"""
@@ -303,60 +336,178 @@ def build_all_summary(cfg=None):
 
 
 # --------------------------------------------------------------------------- 核心匹配
+def _iter_rule_masks(df, cfg=None, include_disabled=False):
+    """按列表顺序产出 ``(序号, 规则, 命中掩码)``。
+
+    这里是「多条规则 OR、单条内部 AND、列表顺序即优先级」的唯一实现处：
+    生产隔离与影子预览都遍历它，不允许再出现第二套等价代码。
+
+    表不可用（None / 空 / 没有 data_id）时不产出任何规则。
+    序号从 1 开始且与规则列表位置一致（停用规则被跳过时也不重新编号，
+    隔离原因里的「第N条」必须和用户在列表里看到的行号一致）。
+    """
+    if df is None or getattr(df, "empty", True) or "data_id" not in df.columns:
+        return
+    cfg = cfg if cfg is not None else load_auto_quarantine_config()
+    rules = cfg.get("rules", []) or []
+    cols = _probe_columns(df)
+    for idx, rule in enumerate(rules, 1):
+        if not rule.get("enabled", True) and not include_disabled:
+            continue
+        yield idx, rule, _match_single_rule(df, rule, cols)
+
+
 def compute_auto_quarantine_ids(df: pd.DataFrame, cfg=None) -> dict:
     """返回 {data_id: 该条命中的规则 reason 文本}。
 
     - 多条规则 OR 合并；同一条记录命中多条时取列表靠前的规则（优先级）。
     - 无匹配返回空 dict。
     """
-    if df is None or df.empty or "data_id" not in df.columns:
-        return {}
+    if df is None or getattr(df, "empty", True) or "data_id" not in df.columns:
+        return {}          # 表不可用就先返回，别为了一张空表去读配置文件
     if cfg is None:
         cfg = load_auto_quarantine_config()
     if not cfg.get("enabled", True):
         return {}
-    rules = cfg.get("rules", [])
-    if not rules:
-        return {}
-
-    alt_col = _first_col(df, ["是否替代料", "替代料", "is_alt"])
-    semi_class_col = _first_col(df, ["半成品重分类", "semi_classify", "semi_classification"])
-    cat_col = _first_col(df, ["物料分类", "物料大类", "物料类型", "组件物料类型描述"])
-    name_col = _first_col(df, ["组件物料描述", "物料名称", "物料描述", "material_name"])
-    actual_col = _first_col(df, ["数量-实际", "实际", "实际数量", "数量 - 实际", "actual"])
-    quota_col = _first_col(df, ["数量-定额", "定额", "定额数量", "数量 - 定额", "quota"])
-    # —— 新增条件所用列探测 ——
-    dev_rate_col = _first_col(df, ["偏差率(%)", "偏差率", "偏差率%"])
-    mat_code_col = _first_col(df, ["物料编码", "组件物料号", "物料号"])
-    workshop_col = _first_col(df, ["车间", "工厂车间", "生产车间", "work_shop", "车间号"])
-    remark_col = _first_col(df, ["备注", "备注原因", "remark", "备注说明"])
-    dev_qty_col = _first_col(df, ["偏差数量", "偏差量", "差异数量"])
-    # v43.202：单位列对齐全项目既定口径（auto_read_rules.py / 各报表 sheet 均用组件单位，
-    # 从不用产量单位）。旧候选把「产量单位」排在「组件单位」前——真实 SAP 表无裸「单位」列，
-    # 于是命中「产量单位」（产品母件出货量单位，取值无「片」），导致按「组件投料单位=片」的
-    # 规则（如脱氧剂）永远 0 命中。改为组件单位优先，与自动已读规则彻底一致。
-    unit_col = _first_col(df, ["单位", "组件单位", "基本单位", "计量单位"])
 
     result = {}  # data_id -> reason（只记靠前规则）
-    for idx, rule in enumerate(rules, 1):
-        if not rule.get("enabled", True):
-            continue
-        mask = _match_single_rule(
-            df, rule, alt_col, cat_col, name_col, actual_col, quota_col,
-            dev_rate_col, mat_code_col, workshop_col, remark_col, dev_qty_col,
-            semi_class_col, unit_col,
-        )
+    for _idx, rule, mask in _iter_rule_masks(df, cfg):
         for uid in df.loc[mask, "data_id"].astype(str):
             if uid not in result:  # 已被靠前规则命中的不再覆盖
-                result[uid] = build_rule_reason(rule, idx)
+                result[uid] = build_rule_reason(rule, _idx)
     return result
 
 
-def _match_single_rule(df, rule, alt_col, cat_col, name_col, actual_col, quota_col,
-                       dev_rate_col=None, mat_code_col=None, workshop_col=None,
-                       remark_col=None, dev_qty_col=None, semi_class_col=None,
-                       unit_col=None):
-    """单条规则的 AND 匹配，返回 bool 掩码。"""
+def match_rule_mask(df, rule, cols=None):
+    """一条规则独立匹配到的布尔掩码（影子预览原语，只读）。
+
+    刻意**不看** enabled 与总开关：预览要回答的正是「这条规则本身会匹配多少行」，
+    停用与否属于「要不要真跑」，由调用方决定。
+    """
+    if df is None:
+        return pd.Series(dtype=bool)
+    return _match_single_rule(df, rule, _probe_columns(df) if cols is None else cols)
+
+
+def compute_rule_hit_counts(df, cfg=None):
+    """逐条规则的只读命中统计，供规则中心左列与预览条展示。
+
+    返回 ``[{'index','name','enabled','hits','net_hits','reason'}]``：
+      hits     —— 本条规则单独匹配的行数（停用规则照样给，含义是「若启用会匹配多少」）
+      net_hits —— 按「靠前规则优先、命中即停」分配后真正由本条产生的条数，
+                  与 :func:`compute_auto_quarantine_ids` 同源；总开关关闭时恒为 0
+    """
+    cfg = cfg if cfg is not None else load_auto_quarantine_config()
+    rules = cfg.get("rules", []) or []
+    master_on = bool(cfg.get("enabled", True))
+    stats = {}
+    if master_on:
+        taken = set()
+        for idx, rule, mask in _iter_rule_masks(df, cfg, include_disabled=True):
+            ids = {str(u) for u in df.loc[mask, "data_id"].astype(str)}
+            active = bool(rule.get("enabled", True))
+            if active:
+                stats[idx] = (len(ids), len(ids - taken))
+                taken |= ids
+            else:
+                stats[idx] = (len(ids), 0)
+    out = []
+    for idx, rule in enumerate(rules, 1):
+        hits, net = stats.get(idx, (0, 0))
+        out.append({
+            "index": idx,
+            "name": rule.get("name", "未命名规则"),
+            "enabled": bool(rule.get("enabled", True)) and master_on,
+            "hits": hits,
+            "net_hits": net,
+            "reason": build_rule_reason(rule, idx),
+        })
+    return out
+
+
+def _fmt_num(v):
+    """样例里的数量：整数不带小数点，否则保留 2 位（定 1200 / 实 1150）。"""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return ""
+    return "%d" % round(f) if abs(f - round(f)) < 1e-9 else "%.2f" % f
+
+
+def _fmt_money(v):
+    """金额文本，与状态条「偏差合计」同一档（≥1 万走「万」）。"""
+    sign = "-" if v < 0 else ""
+    if abs(v) >= 10000:
+        return "%s¥%.1f万" % (sign, abs(v) / 10000)
+    return "%s¥%.0f" % (sign, abs(v))
+
+
+def _sample_text(row, cols):
+    """样例条目：``彩罐-500g（定 1200 / 实 1150）``；缺数量列时只给名称。"""
+    name = ""
+    if cols.get("name"):
+        name = str(row.get(cols["name"], "") or "").strip()
+    if not name:
+        tail = str(row.get("data_id", "") or "").split("|")[-1].strip()
+        name = tail or "（无名称）"
+    if not (cols.get("quota") and cols.get("actual")):
+        return name
+    quota = _fmt_num(row.get(cols["quota"]))
+    actual = _fmt_num(row.get(cols["actual"]))
+    if quota == "" or actual == "":
+        return name
+    return "%s（定 %s / 实 %s）" % (name, quota, actual)
+
+
+def describe_rule_hits(df, rule, samples=3):
+    """一条规则在真实数据上的预览结论（命中数 / 占比 / 涉及金额 / 前 N 条样例）。
+
+    与生产隔离走同一个 ``_match_single_rule``，所以「预览说命中 428 条」与
+    「真跑一遍隔离 428 条」必然同数 —— 设计稿改进点 4「预览必须接真匹配器」的落点。
+    只读：不改数据、不写配置、不碰隔离区。
+
+    ``amount`` 为 None 表示本表没有金额列，调用方要显示「—」而不是 ¥0。
+    """
+    total = 0 if df is None else len(df)
+    if df is None or total == 0 or "data_id" not in df.columns:
+        return {"hits": 0, "total": total, "ratio": 0.0,
+                "amount": None, "amount_text": "—", "samples": []}
+    cols = _probe_columns(df)
+    mask = _match_single_rule(df, rule, cols)
+    hit = df.loc[mask]
+    amount = None
+    if cols.get("amount"):
+        amount = float(pd.to_numeric(hit[cols["amount"]], errors="coerce").fillna(0).sum())
+    return {
+        "hits": int(len(hit)),
+        "total": int(total),
+        "ratio": (len(hit) / total) if total else 0.0,
+        "amount": amount,
+        "amount_text": _fmt_money(amount) if amount is not None else "—",
+        "samples": [_sample_text(row, cols) for _idx, row in hit.head(samples).iterrows()],
+    }
+
+
+def _match_single_rule(df, rule, cols=None):
+    """单条规则的 AND 匹配，返回 bool 掩码。
+
+    ``cols`` 是 :func:`_probe_columns` 的结果；不传则就地探测（多规则循环务必传进来，
+    否则每条规则都重新探一遍列）。
+    """
+    cols = _probe_columns(df) if cols is None else cols
+    alt_col = cols.get("alt")
+    semi_class_col = cols.get("semi_class")
+    cat_col = cols.get("cat")
+    name_col = cols.get("name")
+    actual_col = cols.get("actual")
+    quota_col = cols.get("quota")
+    dev_rate_col = cols.get("dev_rate")
+    mat_code_col = cols.get("mat_code")
+    workshop_col = cols.get("workshop")
+    remark_col = cols.get("remark")
+    dev_qty_col = cols.get("dev_qty")
+    unit_col = cols.get("unit")
+
     # 1. 排除替代料
     if rule.get("exclude_alt", True):
         if alt_col:
