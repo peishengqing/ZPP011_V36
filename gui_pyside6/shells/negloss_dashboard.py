@@ -510,16 +510,19 @@ class NegLossDashboard(DashboardShell):
         df = self.original_df.copy()
 
         # 应用所有筛选条件（始终包含所有 mask）
-        mask = (self._name_mask(df) & self._neg_loss_mask(df)
-                & self._semi_class_mask(df)
-                & self._quar_mask(df, self._quar_filter)
-                & self._note_mask(df, self._has_note_filter)
-                & self._color_mask(df)
-                & self._read_mask(df, self._read_filter)
-                & self._factory_mask(df, self._factory_filter)
-                & self._mtd_mask(df)
-                & self._workshop_mask(df, self._workshop_filter)
-                & self._unit_mask(df))
+        mask = (
+            self._name_mask(df)
+            & self._neg_loss_mask(df)
+            & self._semi_class_mask(df)
+            & self._quar_mask(df, self._quar_filter)
+            & self._note_mask(df, self._has_note_filter)
+            & self._color_mask(df)
+            & self._read_mask(df, self._read_filter)
+            & self._factory_mask(df, self._factory_filter)
+            & self._mtd_mask(df)
+            & self._workshop_mask(df, self._workshop_filter)
+            & self._unit_mask(df)
+        )
 
         df = df[mask]
 
