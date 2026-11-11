@@ -11,7 +11,7 @@ Dashboard 管理器 (DashboardManager) - 看板统一管理
 
 import pandas as pd
 
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QMessageBox, QDialog
 
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.alt_chain_dialog import AltChainDialog

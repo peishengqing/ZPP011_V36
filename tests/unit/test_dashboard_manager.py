@@ -38,18 +38,39 @@ def test_open_dialog_focus_existing():
 
 
 def test_open_dialog_new_dialog():
-    """测试打开新对话框时正常执行."""
+    """测试打开新对话框时正常执行.
+
+    v43.346：_open_dialog 按 isinstance(dialog, QDialog) 分支 —— QDialog 走
+    exec()（模态），非 QDialog（如 DashboardShell 看板 QWidget）走 show()（非模态）。
+    用 MagicMock 不是 QDialog 实例，故 patch 掉 QDialog 使 isinstance 判 True，
+    验证模态对话框走 exec()。
+    """
     mw = Mock()
     manager = DashboardManager(mw)
 
     dialog = MagicMock()
     dialog.closeEvent = None
 
-    manager._open_dialog(dialog, "new_test")
+    with patch("gui_pyside6.dashboard_manager.QDialog", MagicMock):
+        manager._open_dialog(dialog, "new_test")
 
     dialog.exec.assert_called_once()
     assert "new_test" in manager._open_dialogs
     assert manager._open_dialogs["new_test"] == dialog
+
+
+def test_open_dialog_new_widget_show():
+    """测试打开非 QDialog（看板 QWidget）时走 show() 非模态分支 (v43.346)."""
+    mw = Mock()
+    manager = DashboardManager(mw)
+
+    widget = MagicMock()
+    # MagicMock 不是 QDialog 实例 → isinstance 判 False → 走 show()
+    manager._open_dialog(widget, "board_test")
+
+    widget.show.assert_called_once()
+    widget.exec.assert_not_called()
+    assert manager._open_dialogs["board_test"] == widget
 
 
 def test_integration_methods_exist():

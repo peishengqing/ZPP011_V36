@@ -4,6 +4,7 @@
 完整实现：标题条 / 常驻筛选条 / 筛选抽屉 / KPI 带 / 表格槽 / 操作条
 尺寸规范：标题 48px / 常驻筛选 40px / KPI 54px / 操作条 40px
 """
+import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QVBoxLayout as VBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QScrollArea, QComboBox, QToolButton, QGroupBox, QTableView,
@@ -13,7 +14,10 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 
 from utils.theme_manager import Thm
-from gui_pyside6.themes.tokens import build_board_qss
+
+# v43.335：QSS 用模块相对定位，不再写死绝对路径（换机器/换盘即读不到，
+# 会静默退化成兜底样式）。_THEME_DIR 指向 gui_pyside6/themes。
+_THEME_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "themes")
 
 
 class KpiCard(QWidget):
@@ -149,6 +153,10 @@ class DashboardShell(QWidget):
         self._build_ui()
         self._load_theme()
         self._connect_signals()
+        # v43.345：订阅全局主题变化，主窗口切换亮暗时本外壳自动跟随重载 QSS。
+        # 持有回调引用以便 closeEvent 时注销，避免删除后回调触发 RuntimeError。
+        self._theme_cb = self._on_theme_changed
+        Thm.on_change(self._theme_cb)
 
     def _build_ui(self):
         main_layout = VBoxLayout(self)
@@ -161,9 +169,24 @@ class DashboardShell(QWidget):
         self._build_kpi_bar()
         self._build_table_stub()
         self._build_action_bar()
+        self._build_status_bar()
+
+        # 逐个把区块接进主布局（v43.346 修复：之前 _action_bar 建好了却没 addWidget，
+        # 等于游离在布局外、永远不显示）。操作条默认隐藏，仅 set_action_widget 时展开。
+        main_layout.addWidget(self.title_bar)
+        main_layout.addWidget(self.filter_bar)
+        main_layout.addWidget(self.drawer_container)
+        main_layout.addWidget(self.kpi_bar)
+        main_layout.addWidget(self.table_container, 1)
+        main_layout.addWidget(self._action_bar)
+        main_layout.addWidget(self._status_bar)
 
     def _build_title_bar(self):
         self.title_bar = QFrame()
+        # v43.346：补 objectName —— QSS 里 #title_bar 是 ID 选择器，
+        # 之前没设名字导致这条背景/分隔线规则从未命中。
+        self.title_bar.setObjectName("title_bar")
+        self._title_bar = self.title_bar  # 别名：QSS probe/测试按 _title_bar 访问
         self.title_bar.setFixedHeight(48)
         self.title_bar.setStyleSheet(
             "background-color: var(--surface); "
@@ -240,6 +263,7 @@ class DashboardShell(QWidget):
 
     def _build_filter_bar(self):
         self.filter_bar = QFrame()
+        self.filter_bar.setObjectName("filter_bar")
         self.filter_bar.setFixedHeight(40)
         self.filter_bar.setStyleSheet(
             "background-color: var(--surface); "
@@ -378,6 +402,7 @@ class DashboardShell(QWidget):
 
     def _build_kpi_bar(self):
         self.kpi_bar = QFrame()
+        self.kpi_bar.setObjectName("kpi_bar")
         self.kpi_bar.setFixedHeight(54)
         self.kpi_bar.setStyleSheet(
             "background-color: var(--surface); "
@@ -418,6 +443,9 @@ class DashboardShell(QWidget):
 
     def _build_table_stub(self):
         self.table_container = QFrame()
+        # v43.346：补 objectName 供 QSS #content ID 选择器命中
+        self.table_container.setObjectName("content")
+        self._content = self.table_container  # 别名：QSS probe/测试按 _content 访问
         self.table_container.setStyleSheet(
             "background-color: var(--surface); "
             "border-bottom: 1px solid var(--border);"
@@ -453,51 +481,118 @@ class DashboardShell(QWidget):
         if self._model is None:
             self.lbl_table_status.setText("使用 set_model(model) 绑定模型")
 
-    def _build_action_bar(self):
-        self.action_bar = QFrame()
-        self.action_bar.setFixedHeight(40)
-        self.action_bar.setStyleSheet(
+    def _build_status_bar(self):
+        """底部状态条（30px）：承载 _status_label，供 set_status() 更新。"""
+        self._status_bar = QFrame()
+        self._status_bar.setObjectName("status_bar")
+        self._status_bar.setFixedHeight(30)
+        self._status_bar.setStyleSheet(
             "background-color: var(--surface); "
             "border-top: 1px solid var(--border);"
         )
-
-        layout = QHBoxLayout(self.action_bar)
-        layout.setContentsMargins(10, 0, 10, 0)
-        layout.setSpacing(8)
-
+        status_layout = QHBoxLayout(self._status_bar)
+        status_layout.setContentsMargins(10, 0, 10, 0)
+        status_layout.setSpacing(8)
+        self._status_label = QLabel("")
+        self._status_label.setStyleSheet("color: var(--text-muted); font-size: 12px;")
+        status_layout.addWidget(self._status_label, 1)
+        # 选中行数（v43.346：从原操作条迁到状态条，操作条改空条按需展开）
         self.lbl_selected_count = QLabel("已选 0 行")
         self.lbl_selected_count.setStyleSheet("color: var(--text-muted); font-size: 12px;")
-        layout.addWidget(self.lbl_selected_count)
+        status_layout.addWidget(self.lbl_selected_count)
 
-        layout.addStretch()
+    def _build_action_bar(self):
+        self._action_bar = QFrame()
+        # v43.346：属性名统一为 _action_bar（测试/probe 直接访问），并补 objectName
+        # 供 QSS #action_bar ID 选择器命中。
+        self._action_bar.setObjectName("action_bar")
+        self._action_bar.setFixedHeight(40)
+        # v43.342：空操作条默认隐藏（隐藏后不占布局高度），仅当真正放入操作控件
+        # （set_action_widget）时才展开，消除「标题与内容之间一大块留白」。
+        self._action_bar.setVisible(False)
+        self._action_bar.setStyleSheet(
+            "background-color: var(--surface); "
+            "border-top: 1px solid var(--border);"
+        )
+        # 操作条布局在此创建，set_action_widget() 往里加控件
+        self._action_bar_layout = QHBoxLayout(self._action_bar)
+        self._action_bar_layout.setContentsMargins(10, 0, 10, 0)
+        self._action_bar_layout.setSpacing(8)
+        self._action_bar_layout.addStretch()
 
-        self.btn_quarantine = QPushButton("加入隔离区")
-        self.btn_quarantine.setStyleSheet("QPushButton { background: var(--primary); color: #fff; border: none; } "
-                                          "QPushButton:hover { background: var(--primary-hover); }")
-        self.btn_quarantine.setFixedSize(100, 30)
-
-        self.btn_mark_read = QPushButton("标记已读")
-        self.btn_mark_read.setFixedSize(100, 30)
-
-        self.btn_export_selected = QPushButton("导出所选")
-        self.btn_export_selected.setFixedSize(100, 30)
-
-        self.btn_close = QPushButton("关闭")
-        self.btn_close.setFixedSize(80, 30)
-
-        self.btn_quarantine.clicked.connect(lambda: self.action_triggered.emit("quarantine"))
-        self.btn_mark_read.clicked.connect(lambda: self.action_triggered.emit("mark_read"))
-        self.btn_export_selected.clicked.connect(lambda: self.action_triggered.emit("export_selected"))
-        self.btn_close.clicked.connect(lambda: self.action_triggered.emit("close"))
-
-        layout.addWidget(self.btn_quarantine)
-        layout.addWidget(self.btn_mark_read)
-        layout.addWidget(self.btn_export_selected)
-        layout.addWidget(self.btn_close)
+    def set_action_widget(self, widget: QWidget):
+        """放入操作控件并展开操作条（v43.342：空条不占位，放入才展开）。"""
+        self._action_bar.setVisible(True)
+        # stretch 在末尾，把控件插到 stretch 之前（靠左排列）
+        self._action_bar_layout.insertWidget(self._action_bar_layout.count() - 1, widget)
 
     def _load_theme(self):
-        theme = "dark" if Thm.is_dark else "light"
-        self.setStyleSheet(build_board_qss(theme))
+        """按当前全局主题加载 QSS（读 themes/*.qss，读不到退回内置兜底）。"""
+        self._load_theme_qss("dark" if Thm.is_dark else "light")
+
+    def _load_theme_qss(self, theme: str):
+        """加载亮/暗主题 QSS；文件缺失时退回 _default_*_qss() 兜底。"""
+        qss_name = "light_dashboard.qss" if theme == "light" else "dark_dashboard.qss"
+        qss_content = ""
+        try:
+            with open(os.path.join(_THEME_DIR, qss_name), "r", encoding="utf-8") as f:
+                qss_content = f.read()
+        except Exception:
+            qss_content = (self._default_light_qss() if theme == "light"
+                           else self._default_dark_qss())
+        self.setStyleSheet(qss_content)
+
+    def _default_light_qss(self) -> str:
+        """内置亮色兜底 QSS：与 themes/light_dashboard.qss 同纪律，只写颜色不写尺寸。"""
+        return """
+            #DashboardShell { background: #F5F6FA; }
+            #title_bar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
+            #filter_bar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
+            #kpi_bar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
+            #action_bar { background: #FFFFFF; border-top: 1px solid #E2E8F0; }
+            #content { background: #FFFFFF; }
+            #status_bar { background: #F8F9FA; border-top: 1px solid #E2E8F0; }
+            QPushButton { background-color: #FFFFFF; color: #334155; }
+            QPushButton:hover { background-color: #E8F2FF; color: #0969DA; }
+            QPushButton:pressed { background-color: #D3E6FF; }
+            QPushButton:checked { background-color: #0969DA; color: #FFFFFF; }
+            QPushButton:disabled { background-color: #F1F5F9; color: #9AA7B6; }
+            QLabel { color: #1F2937; }
+            QComboBox { background-color: #FFFFFF; color: #1F2937; }
+            QTableView { background-color: #FFFFFF; }
+        """
+
+    def _default_dark_qss(self) -> str:
+        """内置暗色兜底 QSS：与 themes/dark_dashboard.qss 同纪律。"""
+        return """
+            #DashboardShell { background: #1E1E24; }
+            #title_bar { background: #25262B; border-bottom: 1px solid #2C2E33; }
+            #filter_bar { background: #25262B; border-bottom: 1px solid #2C2E33; }
+            #kpi_bar { background: #25262B; border-bottom: 1px solid #2C2E33; }
+            #action_bar { background: #25262B; border-top: 1px solid #2C2E33; }
+            #content { background: #25262B; }
+            #status_bar { background: #2C2E33; border-top: 1px solid #35334A; }
+            QPushButton { background-color: #2C2E33; color: #E9ECEF; }
+            QPushButton:hover { background-color: #3A4050; color: #FFFFFF; }
+            QPushButton:pressed { background-color: #454D60; }
+            QPushButton:checked { background-color: #5C7CFA; color: #FFFFFF; }
+            QPushButton:disabled { background-color: #25262B; color: #7A7F8A; }
+            QLabel { color: #E9ECEF; }
+            QComboBox { background-color: #2C2E33; color: #E9ECEF; }
+            QTableView { background-color: #25262B; }
+        """
+
+    def set_theme(self, theme: str):
+        """theme: 'light' or 'dark'。切换全局主题并重载本外壳 QSS。"""
+        Thm.set_dark(theme == "dark")
+        self._load_theme_qss(theme)
+
+    def _on_theme_changed(self, is_dark: bool):
+        """全局主题变化回调：重载 QSS。Shell 可能已删除，容错忽略。"""
+        try:
+            self._load_theme_qss("dark" if is_dark else "light")
+        except RuntimeError:
+            pass
 
     def _connect_signals(self):
         for dropdown in self.dropdowns:
@@ -551,7 +646,9 @@ class DashboardShell(QWidget):
     def _update_status(self):
         if self.table_view.model():
             count = self.table_view.model().rowCount()
-            self.lbl_table_status.setText(f"数据已加载 · 共 {count} 行")
+            # v43.346：状态写到底部状态条 _status_label（持久存在）；
+            # lbl_table_status 属于表格 stub，set_content 替换内容后已被销毁，不可再引用。
+            self._status_label.setText(f"数据已加载 · 共 {count} 行")
         self.set_row_count(self.table_view.model().rowCount() if self.table_view.model() else 0)
 
     def set_kpi_data(self, data: list):
@@ -577,17 +674,21 @@ class DashboardShell(QWidget):
     def set_title(self, title: str, subtitle: str = ""):
         self.title = title
         self.subtitle = subtitle
-        self.lbl_title.setText(f"{title} · {subtitle}")
+        # v43.346：无副标题时不追加 " · "，避免标题文本带尾部分隔符
+        # （测试 ⑬ 断言整窗标题文本精确等于看板名，尾部 " · " 会导致不匹配）。
+        self.lbl_title.setText(f"{title} · {subtitle}" if subtitle else title)
 
     def set_content(self, widget: QWidget):
         while self.table_layout.count():
             child = self.table_layout.takeAt(0).widget()
             child.deleteLater()
         self.table_layout.addWidget(widget, 1)
-        self.lbl_table_status.setText("")
+        # v43.346：状态统一走底部状态条 _status_label（持久），不再碰表格 stub 里
+        # 已被 deleteLater 的 lbl_table_status。此处把状态条清空，交由外部 set_status 填充。
+        self._status_label.setText("")
 
     def set_status(self, text: str):
-        self.lbl_table_status.setText(text)
+        self._status_label.setText(text)
 
     def get_theme(self):
         return "dark" if Thm.is_dark else "light"

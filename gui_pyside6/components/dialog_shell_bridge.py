@@ -16,6 +16,7 @@ title_changed / status_changed / 亮暗主题同步由 shell 提供。
 """
 from PySide6.QtWidgets import QVBoxLayout
 
+from utils.theme_manager import Thm
 from gui_pyside6.components.dashboard_shell import DashboardShell
 
 
@@ -31,19 +32,22 @@ def install_dialog_shell(dialog, host, title, status=None):
     shell.set_content(host)
     shell.set_status(status or "")
 
-    # apply_board_visual 在 install 之前就把 dialog 级 QSS 挂在 dialog 上
-    # （含 QDialog#zppBoardDialog QTableView 等更具体的选择器）。它会向下级联到
-    # 所有子控件，若与 shell 的裸 QTableView 规则不一致，实测会出现「深色筛选区 +
-    # 白色表格」撕裂。
-    # v43.344 的临时办法是按主题分支：亮色合并、暗色直接清空 dialog 级 QSS，
-    # 交给 app 级 dark_theme.qss 兜着 —— 那是在绕过「BOARD_QSS 只有浅色值」这个
-    # 真实病因。现在 dialog 级 QSS 由 tokens.build_board_qss(theme) 生成，
-    # 暗色有自己的取值（设计稿第一期第 2 条），绕行可以拆掉：
-    # **两种主题都合并**，视觉来源唯一。
+    # apply_board_visual 在 install 之前就把「亮色」BOARD_QSS 挂在 dialog 级
+    # （含 QDialog#zppBoardDialog QTableView{background:#ffffff}）。它会向下级联到
+    # 所有子控件，且选择器比 shell 的裸 QTableView 更具体，暗色下会把表格刷成
+    # 白底 + 浅色字，实测出现白色横条、文字几乎不可读。
+    #   · 亮色：把 dialog 级规则追加到 shell 后面，保住原有表格视觉；
+    #   · 暗色：清空 dialog 级 QSS，也不合并 —— 交给 app 级 dark_theme.qss
+    #     与 shell 级 dark_dashboard.qss 接管。
+    # 只动 dialog 的样式挂载，不碰 board_visual.py（五个看板共用，影响面大）。
     try:
         prev = dialog.styleSheet() or ""
-        if prev:
-            shell.setStyleSheet(shell.styleSheet() + "\n" + prev)
+        is_dark = Thm.is_dark
+        if not is_dark:
+            if prev:
+                shell.setStyleSheet(shell.styleSheet() + "\n" + prev)
+        elif prev:
+            dialog.setStyleSheet("")
     except Exception:
         pass
 
