@@ -50,8 +50,6 @@ EMOJI_RE = re.compile(
 
 #: 还没套尺寸档的弹窗白名单（只许缩短，不许变长）
 APPLY_TODO = {
-    # 第四期D：自动已读页重做时一并套档
-    "auto_read_rule_dialog.py",
     # 待删副本：无活跃调用方，删文件时这一项自然消失
     "neg_loss_dashboard_dialog.py",
     "pos_loss_dashboard_dialog.py",
@@ -63,6 +61,7 @@ MIGRATED = [
     "gui_pyside6/controllers/export_controller.py",
     "gui_pyside6/controllers/ppt_controller.py",
     "gui_pyside6/controllers/semi_category_controller.py",
+    "gui_pyside6/dialogs/auto_read_rule_dialog.py",
     "gui_pyside6/dialogs/filter_preset_manager_dialog.py",
     "gui_pyside6/dialogs/wechat_draft_config_dialog.py",
 ]

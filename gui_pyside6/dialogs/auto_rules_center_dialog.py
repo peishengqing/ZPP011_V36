@@ -31,7 +31,7 @@ class AutoRulesCenterDialog(QDialog):
 
         self.tabs = QTabWidget(self)
         self.tab_quarantine = AutoQuarantineRuleWidget(self, df=df).wire_changed_signals()
-        self.tab_read = AutoReadRuleWidget(self)
+        self.tab_read = AutoReadRuleWidget(self, df=df).wire_changed_signals()
         self.tabs.addTab(self.tab_quarantine, "① 自动隔离区")
         self.tabs.addTab(self.tab_read, "② 自动已读")
         # v43.341 第四期：影子模式命中预览（只读，不参与保存）
@@ -48,8 +48,9 @@ class AutoRulesCenterDialog(QDialog):
         self.btn_box.accepted.connect(self._on_accept)
         self.btn_box.rejected.connect(self.reject)
         layout.addWidget(self.btn_box)
-        # Tab① 自带的「保存规则」走同一条保存路径，成功后把整个中心收掉
+        # 两页各自的「保存规则」走同一条保存路径，成功后把整个中心收掉
         self.tab_quarantine.saved.connect(self._on_widget_saved)
+        self.tab_read.saved.connect(self._on_widget_saved)
 
     def _on_widget_saved(self, ok):
         if ok:

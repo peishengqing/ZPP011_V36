@@ -45,7 +45,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
-    QDoubleSpinBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -71,23 +70,25 @@ from core.auto_quarantine import (
     save_auto_quarantine_config,
 )
 from gui_pyside6.components import dialog_chrome, message_box
-from gui_pyside6.themes.tokens import FONT_NUM, FONT_PT, SIZE_PX
+from gui_pyside6.dialogs.rule_editor_kit import (
+    BODY_MIN_H,
+    FIELD_W,
+    LAYOUT_MIN_H,
+    LIST_W,
+    ROW_GAP,
+    TAG_H,
+    RuleRow,
+    card,
+    fcheck,
+    fhint,
+    flabel,
+    fline,
+    fspin,
+    style_tab,
+)
+from gui_pyside6.themes.tokens import FONT_PT, SIZE_PX
 from gui_pyside6.utils.icons import get_icon
 from gui_pyside6.widgets.tag_multi_select import TagMultiSelect
-from utils.theme_manager import Thm
-
-# ------------------------------------------------------------------ 尺寸（design-system.css 对应项）
-_LIST_W = 240           # .rule-list{width:240px;flex:0 0 240px}
-_NAME_H = 28            # .rule-top input[type=text]{height:28px}
-_FINPUT_H = 27          # .finput{height:27px}
-_FIELD_W = 78           # .frow>label{min-width:78px} / .finput.num-in{width:78px}
-_TOOL = 30              # .tool-btn{width:30px;height:30px}
-_TAG_H = 22             # .tag{height:22px}
-_DOT = 12               # .rule-item .chk{width:12px;height:12px}
-_BODY_MIN_H = 220       # .rule-body{flex:1;overflow:auto}：滚动区下限，卡片多了不撑外壳
-_LAYOUT_MIN_H = 430     # .rule-layout{min-height:430px}
-_ROW_GAP = 8            # .frow{gap:8px}
-_CARD_GAP = 9           # .cgroup-body{gap:9px}
 
 #: 「单位」候选（内置常用 + 现有规则里出现过的）；与旧 _known_units 同一份枚举。
 _BUILTIN_UNITS = [
@@ -102,117 +103,11 @@ _BUILTIN_CATEGORIES = ["包材", "原辅料", "广宣", "食品半成品", "饮�
 #: 备注要求三态（remark_mode），顺序即按钮顺序
 _REMARK_MODES = [("off", "全部"), ("has", "有备注"), ("none", "无备注")]
 
-_CSS = f"""
-QWidget#ruleTab {{ background: $surface; }}
-
-/* —— 左列：规则列表 —— */
-QFrame#ruleListPanel {{ background: $surface2; border-right: 1px solid $border; }}
-QLabel#ruleListHead {{
-    font-size: {FONT_PT["label"]}px; font-weight: 700; color: $textFaint;
-}}
-QListWidget#ruleList {{
-    background: transparent; border: none; outline: none;
-}}
-QListWidget#ruleList::item {{ background: transparent; border: none; }}
-QListWidget#ruleList::item:selected {{ background: transparent; }}
-QWidget#ruleItem {{
-    background: transparent;
-    border-left: 3px solid transparent;
-}}
-QWidget#ruleItem:hover {{ background: $surface3; }}
-QWidget#ruleItem[sel="true"] {{ background: $primarySoft; border-left: 3px solid $primary; }}
-QLabel#ruleDot {{
-    border: 1px solid $borderStrong; border-radius: 3px; background: $surface;
-    min-width: {_DOT}px; min-height: {_DOT}px; max-width: {_DOT}px; max-height: {_DOT}px;
-}}
-QLabel#ruleDot[on="true"] {{ background: $primary; border-color: $primary; }}
-QLabel#ruleName {{ font-size: {FONT_PT["note"]}px; font-weight: 600; color: $text; }}
-QLabel#ruleMeta {{ font-size: {FONT_PT["aux"]}px; color: $textMuted; }}
-QLabel#ruleMetaNum {{ font-size: {FONT_PT["aux"]}px; font-family: {FONT_NUM}; font-weight: 600; color: $text; }}
-QLabel#ruleMetaNum[hit="true"] {{ color: $danger; }}
-QLabel#ruleFoot {{ font-size: {FONT_PT["aux"]}px; color: $textFaint; }}
-QCheckBox#masterCheck {{ font-size: {FONT_PT["note"]}px; color: $text; spacing: 6px; }}
-
-/* —— 右列：编辑区 —— */
-QWidget#ruleEditor {{ background: $surface; }}
-QFrame#ruleTop {{ border-bottom: 1px solid $border; }}
-QLineEdit#ruleNameEdit {{
-    height: {_NAME_H}px; padding: 0 9px; border-radius: {SIZE_PX["radiusSm"]}px;
-    border: 1px solid $border; background: $surface; color: $text;
-    selection-background-color: $primarySoft;
-}}
-QLineEdit#ruleNameEdit:focus {{ border-color: $primarySoftBd; }}
-QCheckBox#ruleTopCheck {{ font-size: {FONT_PT["note"]}px; color: $text; spacing: 6px; }}
-QLabel#ruleIdTag {{
-    height: {_TAG_H}px; padding: 0 8px; border-radius: {SIZE_PX["radiusSm"]}px;
-    background: $surface2; border: 1px solid $border; color: $textMuted;
-    font-family: {FONT_NUM}; font-size: {FONT_PT["aux"]}px;
-}}
-QToolButton#ruleTool {{
-    min-width: {_TOOL}px; max-width: {_TOOL}px; min-height: {_TOOL}px; max-height: {_TOOL}px;
-    border-radius: {SIZE_PX["radiusMd"]}px; border: 1px solid transparent;
-    background: transparent; color: $textMuted;
-}}
-QToolButton#ruleTool:hover {{ background: $surface3; color: $text; border-color: $border; }}
-QToolButton#ruleTool:disabled {{ color: $borderStrong; }}
-
-/* —— 语义行 —— */
-QLabel#semBox {{
-    padding: 3px 8px; border-radius: {SIZE_PX["radiusSm"]}px;
-    border: 1px solid $border; background: $surface2;
-    font-family: {FONT_NUM}; font-size: {FONT_PT["aux"]}px; color: $textMuted;
-}}
-QLabel#semOp {{
-    font-family: {FONT_NUM}; font-size: {FONT_PT["aux"]}px; font-weight: 700;
-    color: $primaryHover; padding: 0 5px;
-}}
-QLabel#semX {{ font-size: {FONT_PT["aux"]}px; color: $textFaint; }}
-QLabel#semNote {{ font-size: {FONT_PT["aux"]}px; color: $textFaint; }}
-
-/* —— 条件卡 —— */
-QScrollArea#ruleBody {{ background: $surface; border: none; }}
-QFrame#cGroup {{
-    border: 1px solid $border; border-radius: {SIZE_PX["radiusMd"]}px; background: $surface2;
-}}
-QFrame#cGroupHead {{ background: $surface3; border-bottom: 1px solid $border; }}
-QLabel#cGroupTitle {{ font-size: {FONT_PT["note"]}px; font-weight: 600; color: $text; }}
-QLabel#cGroupIcon {{ min-width: 14px; max-width: 14px; min-height: 14px; max-height: 14px; }}
-QLabel#cGroupLogic {{
-    font-family: {FONT_NUM}; font-size: {FONT_PT["label"]}px; color: $textFaint;
-}}
-QLabel#fieldLabel {{ font-size: {FONT_PT["note"]}px; color: $textMuted; min-width: {_FIELD_W}px; }}
-QLabel#fieldHint {{ font-size: {FONT_PT["aux"]}px; color: $textFaint; }}
-QCheckBox#fieldCheck {{ font-size: {FONT_PT["note"]}px; color: $text; spacing: 6px; }}
-QLineEdit[finput="1"] {{
-    height: {_FINPUT_H}px; padding: 0 9px; border-radius: {SIZE_PX["radiusSm"]}px;
-    border: 1px solid $border; background: $surface; color: $text;
-}}
-QLineEdit[finput="1"]:focus {{ border-color: $primarySoftBd; }}
-QDoubleSpinBox[finput="1"] {{
-    height: {_FINPUT_H}px; border-radius: {SIZE_PX["radiusSm"]}px;
-    border: 1px solid $border; background: $surface; color: $text;
-    padding: 0 6px; font-family: {FONT_NUM};
-}}
-QDoubleSpinBox[finput="1"]:focus {{ border: 1px solid $primarySoftBd; }}
-QPushButton[role="btn-outline"] {{
-    height: {_FINPUT_H}px; padding: 0 11px; border-radius: {SIZE_PX["radiusSm"]}px;
-    border: 1px solid $borderStrong; background: $surface; color: $text;
-    font-size: {FONT_PT["note"]}px;
-}}
-QPushButton[role="btn-outline"]:hover {{
-    border-color: $primarySoftBd; background: $primarySoft; color: $primaryHover;
-}}
-QPushButton[role="btn-primary"] {{
-    height: {_FINPUT_H}px; padding: 0 13px; border-radius: {SIZE_PX["radiusSm"]}px;
-    border: 1px solid $primary; background: $primary; color: $onPrimary;
-    font-size: {FONT_PT["note"]}px; font-weight: 600;
-}}
-QPushButton[role="btn-primary"]:hover {{ background: $primaryHover; border-color: $primaryHover; }}
-QPushButton[role="btn-danger"]:hover {{
-    border-color: $danger; background: $dangerSoft; color: $danger;
-}}
+#: 本页特有的选择器：备注三态分段按钮。规则列表 / 条件卡 / 命中预览条那一整套在
+#: ``rule_editor_kit.RULE_TAB_QSS`` —— Tab② 自动已读共用同一份，改一处两页同步。
+_EXTRA_QSS = f"""
 QPushButton#remarkSeg {{
-    height: {_TAG_H}px; padding: 0 9px; border-radius: {SIZE_PX["radiusSm"]}px;
+    height: {TAG_H}px; padding: 0 9px; border-radius: {SIZE_PX["radiusSm"]}px;
     border: 1px solid $border; background: $surface; color: $textMuted;
     font-size: {FONT_PT["aux"]}px;
 }}
@@ -221,101 +116,7 @@ QPushButton#remarkSeg:checked {{
     background: $primarySoft; border-color: $primarySoftBd;
     color: $primaryHover; font-weight: 600;
 }}
-
-/* —— 真实命中预览条 —— */
-QFrame#rulePreview {{ background: $primarySoft; border-top: 1px solid $border; }}
-QLabel#pvMain {{ font-size: {FONT_PT["note"]}px; color: $text; }}
-QLabel#pvMainNum {{
-    font-family: {FONT_NUM}; font-size: {FONT_PT["heading"]}px; font-weight: 600;
-    color: $primaryHover;
-}}
-QLabel#pvSample {{ font-size: {FONT_PT["aux"]}px; color: $textMuted; }}
 """
-
-
-def _repolish(widget):
-    """动态属性变了要让 QSS 重算，否则 [sel="true"] 这类选择器不生效。"""
-    st = widget.style()
-    st.unpolish(widget)
-    st.polish(widget)
-
-
-class _RuleRow(QWidget):
-    """列表里的一行（对应 .rule-item）：状态方块 + 名称 + 命中摘要。"""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("ruleItem")
-        outer = QVBoxLayout(self)
-        # .rule-item{padding:9px 12px}：选中时左侧 3px 蓝边已算进边框，正文起点恒为 12px
-        outer.setContentsMargins(12, 7, 12, 7)
-        outer.setSpacing(2)
-
-        top = QHBoxLayout()
-        top.setSpacing(6)
-        self.dot = QLabel()
-        self.dot.setObjectName("ruleDot")
-        self.lbl_name = QLabel()
-        self.lbl_name.setObjectName("ruleName")
-        top.addWidget(self.dot)
-        top.addWidget(self.lbl_name, 1)
-        outer.addLayout(top)
-
-        meta = QHBoxLayout()
-        meta.setSpacing(3)
-        self.lbl_pre = QLabel()
-        self.lbl_pre.setObjectName("ruleMeta")
-        self.lbl_num = QLabel()
-        self.lbl_num.setObjectName("ruleMetaNum")
-        self.lbl_post = QLabel()
-        self.lbl_post.setObjectName("ruleMeta")
-        for w in (self.lbl_pre, self.lbl_num, self.lbl_post):
-            meta.addWidget(w)
-        meta.addStretch(1)
-        outer.addLayout(meta)
-
-        self._sel = None
-        self._on = None
-
-    def set_state(self, name, enabled, hits, total, master_on=True, no_data=False):
-        self.lbl_name.setText(name)
-        on = bool(enabled)
-        self.dot.setProperty("on", "true" if on else "false")
-        if no_data:
-            # 还没选表就说「命中 0 条」，等于骗人说规则失效了
-            self.lbl_pre.setText("主表无数据 · 不计命中")
-            self.lbl_num.setText("")
-            self.lbl_post.setText("")
-        elif not master_on:
-            # 总开关关着时谁都跑，同理不能写成「命中 0 条」
-            self.lbl_pre.setText("总开关已关 · 不计命中")
-            self.lbl_num.setText("")
-            self.lbl_post.setText("")
-        elif not on:
-            self.lbl_pre.setText("已停用 · 命中")
-            self.lbl_num.setText("—")
-            self.lbl_post.setText("条")
-        elif hits:
-            self.lbl_pre.setText("命中")
-            self.lbl_num.setText(str(hits))
-            self.lbl_post.setText("条 · 占比 %.1f%%" % (100.0 * hits / total if total else 0.0))
-        else:
-            self.lbl_pre.setText("命中 0 条")
-            self.lbl_num.setText("")
-            self.lbl_post.setText("")
-        self.lbl_num.setProperty("hit", "true" if (on and master_on and hits) else "false")
-        if on != self._on:
-            self._on = on
-            _repolish(self.dot)
-        _repolish(self.lbl_num)
-
-    def set_selected(self, selected):
-        selected = bool(selected)
-        if selected == self._sel:
-            return
-        self._sel = selected
-        self.setProperty("sel", "true" if selected else "false")
-        _repolish(self)
 
 
 class AutoQuarantineRuleWidget(QWidget):
@@ -332,7 +133,7 @@ class AutoQuarantineRuleWidget(QWidget):
         self.current_index = 0
         self._loading = False                          # 回填期屏蔽「草稿已改」重算
         self._build_ui()
-        dialog_chrome.style_with_tokens(self, _CSS)
+        style_tab(self, _EXTRA_QSS)
         self._load_rule_to_editor(0)
         self._refresh_list()
 
@@ -341,14 +142,14 @@ class AutoQuarantineRuleWidget(QWidget):
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
-        self.setMinimumHeight(_LAYOUT_MIN_H)
+        self.setMinimumHeight(LAYOUT_MIN_H)
         root.addWidget(self._build_list_panel())
         root.addWidget(self._build_editor(), 1)
 
     def _build_list_panel(self):
         panel = QFrame()
         panel.setObjectName("ruleListPanel")
-        panel.setFixedWidth(_LIST_W)
+        panel.setFixedWidth(LIST_W)
         lay = QVBoxLayout(panel)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
@@ -384,7 +185,7 @@ class AutoQuarantineRuleWidget(QWidget):
         self.list_rules.setSelectionBehavior(QListWidget.SelectRows)
         self.list_rules.setSelectionMode(QListWidget.SingleSelection)
         self.list_rules.setUniformItemSizes(True)
-        self._rows = []                                 # index -> _RuleRow
+        self._rows = []                                 # index -> RuleRow
         self.list_rules.currentRowChanged.connect(self._on_select_rule)
         lay.addWidget(self.list_rules, 1)
 
@@ -434,9 +235,11 @@ class AutoQuarantineRuleWidget(QWidget):
 
         self.btn_up = QToolButton()
         self.btn_up.setObjectName("ruleTool")
+        self.btn_up.setIcon(get_icon("chevron-up", 14))
         self.btn_up.setToolTip("把本条规则往前移一位（匹配优先级升高）")
         self.btn_down = QToolButton()
         self.btn_down.setObjectName("ruleTool")
+        self.btn_down.setIcon(get_icon("chevron-down", 14))
         self.btn_down.setToolTip("把本条规则往后移一位")
         self.btn_del = QPushButton("删除")
         self.btn_del.setProperty("role", "btn-outline")
@@ -462,193 +265,125 @@ class AutoQuarantineRuleWidget(QWidget):
         hl.addWidget(note)
         return row
 
-    # ---------------------------------------------------------------- 条件卡
-    def _card(self, icon_name, title, tone="primary"):
-        """一张条件卡（.cgroup）：返回 (卡片控件, 供塞字段的 body 布局)。"""
-        box = QFrame()
-        box.setObjectName("cGroup")
-        v = QVBoxLayout(box)
-        v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(0)
-
-        head = QFrame()
-        head.setObjectName("cGroupHead")
-        hl = QHBoxLayout(head)
-        hl.setContentsMargins(11, 7, 11, 7)
-        hl.setSpacing(8)
-        ic = QLabel()
-        ic.setObjectName("cGroupIcon")
-        ink = Thm.color("danger") if tone == "danger" else (
-            Thm.color("warn") if tone == "warn" else Thm.color("primary"))
-        ic.setPixmap(get_icon(icon_name, 14, ink).pixmap(14, 14))
-        hl.addWidget(ic)
-        title_lbl = QLabel(title)
-        title_lbl.setObjectName("cGroupTitle")
-        hl.addWidget(title_lbl)
-        hl.addStretch(1)
-        logic = QLabel("组内 OR")
-        logic.setObjectName("cGroupLogic")
-        hl.addWidget(logic)
-        v.addWidget(head)
-
-        body = QWidget()
-        bl = QVBoxLayout(body)
-        bl.setContentsMargins(11, 10, 11, 10)
-        bl.setSpacing(_CARD_GAP)
-        v.addWidget(body)
-        return box, bl
-
-    def _flabel(self, text):
-        lbl = QLabel(text)
-        lbl.setObjectName("fieldLabel")
-        return lbl
-
-    def _fhint(self, text):
-        lbl = QLabel(text)
-        lbl.setObjectName("fieldHint")
-        return lbl
-
-    def _line(self, placeholder=""):
-        edit = QLineEdit()
-        edit.setProperty("finput", "1")
-        edit.setPlaceholderText(placeholder)
-        return edit
-
-    def _spin(self, lo, hi, value, width=_FIELD_W):
-        sp = QDoubleSpinBox()
-        sp.setProperty("finput", "1")
-        sp.setRange(lo, hi)
-        sp.setDecimals(2)
-        sp.setValue(value)
-        sp.setFixedWidth(width)
-        sp.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        sp.setButtonSymbols(QDoubleSpinBox.NoButtons)
-        return sp
-
-    def _check(self, text):
-        cb = QCheckBox(text)
-        cb.setObjectName("fieldCheck")
-        return cb
-
     def _build_body(self):
         scroll = QScrollArea()
         scroll.setObjectName("ruleBody")
         scroll.setWidgetResizable(True)
-        scroll.setMinimumHeight(_BODY_MIN_H)
+        scroll.setMinimumHeight(BODY_MIN_H)
         inner = QWidget()
         v = QVBoxLayout(inner)
         v.setContentsMargins(14, 12, 14, 12)
         v.setSpacing(10)
 
         # —— 组 1：物料维度 ——
-        g1, b1 = self._card("box", "物料维度")
+        g1, b1 = card("box", "物料维度")
         r = QHBoxLayout()
-        r.setSpacing(_ROW_GAP)
-        r.addWidget(self._flabel("名称包含"))
-        self.edit_keywords = self._line("例如：箱, 手包袋, 塑料袋")
+        r.setSpacing(ROW_GAP)
+        r.addWidget(flabel("名称包含"))
+        self.edit_keywords = fline("例如：箱, 手包袋, 塑料袋")
         r.addWidget(self.edit_keywords, 1)
-        r.addWidget(self._fhint("逗号分隔，任一命中"))
+        r.addWidget(fhint("逗号分隔，任一命中"))
         b1.addLayout(r)
 
         r = QHBoxLayout()
-        r.setSpacing(_ROW_GAP)
-        r.addWidget(self._flabel("名称排除"))
-        self.edit_name_exclude = self._line("例如：彩箱, 定制")
+        r.setSpacing(ROW_GAP)
+        r.addWidget(flabel("名称排除"))
+        self.edit_name_exclude = fline("例如：彩箱, 定制")
         r.addWidget(self.edit_name_exclude, 1)
-        r.addWidget(self._fhint("任一命中即排除"))
+        r.addWidget(fhint("任一命中即排除"))
         b1.addLayout(r)
 
         r = QHBoxLayout()
-        r.setSpacing(_ROW_GAP)
-        r.addWidget(self._flabel("编码前缀"))
-        self.edit_mat_prefix = self._line("例如 40,41")
-        self.edit_mat_prefix.setMinimumWidth(_FIELD_W)
+        r.setSpacing(ROW_GAP)
+        r.addWidget(flabel("编码前缀"))
+        self.edit_mat_prefix = fline("例如 40,41")
+        self.edit_mat_prefix.setMinimumWidth(FIELD_W)
         r.addWidget(self.edit_mat_prefix)
-        r.addWidget(self._fhint("多值 OR；留空不限制"))
+        r.addWidget(fhint("多值 OR；留空不限制"))
         r.addStretch(1)
         b1.addLayout(r)
 
         r = QHBoxLayout()
-        r.setSpacing(_ROW_GAP)
+        r.setSpacing(ROW_GAP)
         # AlignTop 只给字段标签用：整行设 AlignTop 会让 Qt 按 minimumSizeHint 给
         # TagMultiSelect 定高，标签换到第二行时不再撑高行 → 下一行字段被压住。
-        self.chk_cat = self._check("限定类别")
+        self.chk_cat = fcheck("限定类别")
         r.addWidget(self.chk_cat, 0, Qt.AlignTop)
         self.tag_cat = TagMultiSelect()
         r.addWidget(self.tag_cat, 1)
         b1.addLayout(r)
 
         r = QHBoxLayout()
-        r.setSpacing(_ROW_GAP)
-        self.chk_unit = self._check("限定单位")
+        r.setSpacing(ROW_GAP)
+        self.chk_unit = fcheck("限定单位")
         r.addWidget(self.chk_unit, 0, Qt.AlignTop)
         self.tag_unit = TagMultiSelect()
         r.addWidget(self.tag_unit, 1)
         r2 = QHBoxLayout()
-        r2.addWidget(self._fhint("可搜索多选，20 项不再平铺"))
+        r2.addWidget(fhint("可搜索多选，20 项不再平铺"))
         r2.addStretch(1)
         b1.addLayout(r)
         b1.addLayout(r2)
         v.addWidget(g1)
 
         # —— 组 2：数值维度 ——
-        g2, b2 = self._card("chart", "数值维度", tone="danger")
+        g2, b2 = card("chart", "数值维度", tone="danger")
         r = QHBoxLayout()
-        r.setSpacing(_ROW_GAP)
-        self.chk_dev_rate = self._check("偏差率")
+        r.setSpacing(ROW_GAP)
+        self.chk_dev_rate = fcheck("偏差率")
         r.addWidget(self.chk_dev_rate)
-        self.spin_dev_rate_min = self._spin(-1000, 1000, 10)
-        self.spin_dev_rate_max = self._spin(-1000, 1000, 100)
+        self.spin_dev_rate_min = fspin(-1000, 1000, 10)
+        self.spin_dev_rate_max = fspin(-1000, 1000, 100)
         r.addWidget(self.spin_dev_rate_min)
-        r.addWidget(self._fhint("% ~"))
+        r.addWidget(fhint("% ~"))
         r.addWidget(self.spin_dev_rate_max)
-        r.addWidget(self._fhint("%（开区间，不含端点）"))
+        r.addWidget(fhint("%（开区间，不含端点）"))
         r.addStretch(1)
         b2.addLayout(r)
 
         r = QHBoxLayout()
-        r.setSpacing(_ROW_GAP)
-        self.chk_dev_qty = self._check("偏差数量")
+        r.setSpacing(ROW_GAP)
+        self.chk_dev_qty = fcheck("偏差数量")
         r.addWidget(self.chk_dev_qty)
-        self.spin_dev_qty_min = self._spin(-1000000, 1000000, 0)
-        self.spin_dev_qty_max = self._spin(-1000000, 1000000, 1)
+        self.spin_dev_qty_min = fspin(-1000000, 1000000, 0)
+        self.spin_dev_qty_max = fspin(-1000000, 1000000, 1)
         r.addWidget(self.spin_dev_qty_min)
-        r.addWidget(self._fhint("~"))
+        r.addWidget(fhint("~"))
         r.addWidget(self.spin_dev_qty_max)
-        r.addWidget(self._fhint("开区间"))
+        r.addWidget(fhint("开区间"))
         r.addStretch(1)
         b2.addLayout(r)
 
         r = QHBoxLayout()
-        r.setSpacing(_ROW_GAP)
-        r.addWidget(self._flabel("方向条件"))
-        self.chk_loss = self._check("要求负损（0 < 实际 < 定额）")
-        self.chk_alt = self._check("排除替代料")
+        r.setSpacing(ROW_GAP)
+        r.addWidget(flabel("方向条件"))
+        self.chk_loss = fcheck("要求负损（0 < 实际 < 定额）")
+        self.chk_alt = fcheck("排除替代料")
         r.addWidget(self.chk_loss)
         r.addWidget(self.chk_alt)
         r.addStretch(1)
         b2.addLayout(r)
 
-        warn = self._fhint("「实际=0（未投料）」按口径永远不进自动隔离，须留在隔离区人工审计")
+        warn = fhint("「实际=0（未投料）」按口径永远不进自动隔离，须留在隔离区人工审计")
         warn.setWordWrap(True)
         b2.addWidget(warn)
         v.addWidget(g2)
 
         # —— 组 3：组织与状态 ——
-        g3, b3 = self._card("factory", "组织与状态", tone="warn")
+        g3, b3 = card("factory", "组织与状态", tone="warn")
         r = QHBoxLayout()
-        r.setSpacing(_ROW_GAP)
-        self.chk_workshop = self._check("车间")
+        r.setSpacing(ROW_GAP)
+        self.chk_workshop = fcheck("车间")
         r.addWidget(self.chk_workshop)
-        self.edit_workshop = self._line("例如：一车间（留空不限制）")
+        self.edit_workshop = fline("例如：一车间（留空不限制）")
         self.edit_workshop.setMinimumWidth(160)
         r.addWidget(self.edit_workshop, 1)
-        r.addWidget(self._fhint("单个取值，精确匹配"))
+        r.addWidget(fhint("单个取值，精确匹配"))
         b3.addLayout(r)
 
         r = QHBoxLayout()
         r.setSpacing(6)
-        r.addWidget(self._flabel("备注要求"))
+        r.addWidget(flabel("备注要求"))
         self._remark_btns = []
         self.remark_group = QButtonGroup(self)
         self.remark_group.setExclusive(True)
@@ -668,9 +403,9 @@ class AutoQuarantineRuleWidget(QWidget):
         b3.addLayout(r)
 
         r = QHBoxLayout()
-        r.setSpacing(_ROW_GAP)
-        r.addWidget(self._flabel("半成品分类"))
-        hint = self._fhint("「食品半成品 / 饮料半成品」已并入上方「限定类别」候选 —— "
+        r.setSpacing(ROW_GAP)
+        r.addWidget(flabel("半成品分类"))
+        hint = fhint("「食品半成品 / 饮料半成品」已并入上方「限定类别」候选 —— "
                            "匹配器把「半成品重分类」列当作类别取值的首选匹配源（v43.97），"
                            "所以不另设字段")
         hint.setWordWrap(True)
@@ -891,7 +626,7 @@ class AutoQuarantineRuleWidget(QWidget):
         self._rows = []
         for i, r in enumerate(rules):
             item = QListWidgetItem()
-            row = _RuleRow()
+            row = RuleRow()
             st = stats.get(i, {})
             row.set_state(
                 str(r.get("name", "未命名规则")),

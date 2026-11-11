@@ -8,31 +8,30 @@
     "enabled": true,                 # 总开关；False 则完全不自动已读
     "rules": [                       # 规则列表，多条规则 OR 并存
       {
-        "name": "偏差数量=0",         # 规则名称（写入已读原因列便于追溯）
+        "name": "偏差数量=0",         # 规则名称（仅界面展示用，不落库）
         "enabled": true,             # 单条规则开关
-        "type": "dev_qty_eq",        # 条件类型（见 CONDITION_TYPES）
-        "params": {"value": 0}       # 条件参数（按 type 取值）
-      },
-      {
-        "name": "物料600开头",
-        "enabled": true,
-        "type": "mat_code_prefix",
-        "params": {"value": "600"}
+        "conditions": [              # 组内多条件 AND，全部满足才命中
+          {"type": "dev_qty_eq", "params": {"value": 0}}
+        ],
+        "ignore_exclude_unfed": false,   # 本条豁免全局「排除未投料」
+        "ignore_exclude_units": false    # 本条豁免全局「排除单位」
       }
     ]
   }
 
 匹配语义（关键）：
-  - 多条规则之间为 OR：一条记录命中任意一条「启用」的规则即自动已读。
-  - 同一条记录命中多条规则时，已读原因取列表顺序靠前的那条规则（列表顺序即优先级）。
-  - 单条规则即一个条件（自动已读场景下条件足够清晰，无需 AND 组合）。
-  - 条件「开着，但数据里没有对应列」→ 该项不匹配（False），保守不误伤。
+  - 多条规则之间为 OR（并集）：一条记录命中任意一条「启用」的规则即自动已读。
+  - **列表顺序不改变哪些行被读掉**，只影响反馈文案里「这条归谁」的统计口径：
+    ``mark_read_batch`` 落库时只记 read_source='auto'，不记规则名，所以不存在
+    「靠前的规则优先、后面的规则被抢走」这种自动隔离式优先级。
+  - 单条规则内可有多条件（AND）；条件「开着，但数据里没有对应列」→ 该项不匹配
+    （False），整条规则随之不匹配，保守不误伤。
 
 向后兼容：旧版单条配置（顶层直接是 enabled/name/type/params...）会在 load 时自动包成 rules[0]。
 
 说明：
-  - 本模块只负责返回「应自动已读的 data_id → 原因」映射与命中掩码，
-    真正的 mark_read_batch / 列标记由 GUI 层完成，保持与手动标记已读一致。
+  - 本模块只负责返回命中掩码（union + 逐规则），真正的 mark_read_batch / 列标记
+    由 GUI 层完成，与手动标记已读走同一套落库路径。
   - 列名在不同 SAP 导出可能不同，故用候选名依次探测，缺失则对应条件判为不匹配。
 """
 
@@ -521,6 +520,59 @@ def build_all_summary(cfg=None):
 
 
 # --------------------------------------------------------------------------- 核心匹配
+def _read_global_masks(df, cfg):
+    """全局两个排除开关 → (实际>0 掩码, 单位不在清单 掩码, 单位清单文本)。
+
+    生产匹配与只读命中预览共用这一份逻辑：两个开关若各写一遍，预览就会和真跑
+    不一致（这正是设计稿 rules.html 改进点 4 点名的问题）。列不存在时返回 None，
+    含义是「这个开关在这份数据上不起作用」，而不是「把所有行都排掉」。
+    """
+    cfg = cfg or {}
+    actual_gt0 = None
+    if cfg.get("exclude_unfed", False):
+        col = _first_col(df, _ACTUAL_QTY_CANDIDATES)
+        if col is not None:
+            actual_gt0 = pd.to_numeric(df[col], errors="coerce") > 0
+    unit_outside = None
+    unit_text = str(cfg.get("excluded_units", "") or "").strip()
+    if cfg.get("exclude_units", False):
+        excluded = [u.strip().lower() for u in unit_text.replace("，", ",").split(",") if u.strip()]
+        if excluded:
+            col = _first_col(df, _UNIT_CANDIDATES)
+            if col is not None:
+                unit_outside = ~df[col].fillna("").astype(str).str.strip().str.lower().isin(excluded)
+    return actual_gt0, unit_outside, unit_text
+
+
+def _iter_read_rule_masks(df, cfg=None, include_disabled=False):
+    """按列表顺序产出 ``(序号, 规则, 掩码)``，全局排除已按各规则的豁免标志叠加。
+
+    序号是**列表位置**（1 起）：停用规则也占一个号、不重排，用户在规则列表里看到
+    的行号必须和这里对得上。``include_disabled=False`` 时跳过停用规则 —— 生产口径
+    就是只看启用规则；预览要回答「若启用会命中多少」，所以那里传 True。
+    """
+    if df is None or getattr(df, "empty", True) or "data_id" not in df.columns:
+        return
+    if cfg is None:
+        cfg = load_auto_read_rules_config()
+    if not cfg.get("enabled", True):
+        return
+    rules = cfg.get("rules", []) or []
+    if not rules:
+        return
+    actual_gt0, unit_outside, _text = _read_global_masks(df, cfg)
+    for idx, rule in enumerate(rules, 1):
+        active = bool(rule.get("enabled", True))
+        if not active and not include_disabled:
+            continue
+        m = _match_single_rule(df, rule)
+        if actual_gt0 is not None and not rule.get("ignore_exclude_unfed", False):
+            m = m & actual_gt0
+        if unit_outside is not None and not rule.get("ignore_exclude_units", False):
+            m = m & unit_outside
+        yield idx, rule, m
+
+
 def compute_auto_read_mask(df: pd.DataFrame, cfg=None):
     """返回 (union_mask, per_rule)。
 
@@ -528,54 +580,193 @@ def compute_auto_read_mask(df: pd.DataFrame, cfg=None):
     per_rule   : list of (rule_dict, matched_mask)，matched_mask 为 bool Series。
                  用于上层在「未读」范围内统计每条规则命中数做反馈。
 
-    - 多条规则 OR 合并；同一条记录命中多条时取列表靠前的规则（优先级）。
+    - 多条规则 OR（并集）合并：**列表顺序不影响哪些行被读掉**，per_rule 只是逐条
+      掩码，供上层在「未读」范围内统计每条命中数做反馈。
     - 数据缺失必要条件 → 该规则整条不匹配（保守）。
+    - 全局「排除未投料 / 排除单位」默认生效，规则可用 ``ignore_exclude_unfed`` /
+      ``ignore_exclude_units`` 豁免；实现见 :func:`_iter_read_rule_masks`。
     """
     empty = pd.Series(dtype=bool)  # 占位，真正缺失时按 df.index 重建
     if df is None or df.empty or "data_id" not in df.columns:
         return empty, []
     if cfg is None:
         cfg = load_auto_read_rules_config()
-    if not cfg.get("enabled", True):
+    if not cfg.get("enabled", True) or not (cfg.get("rules") or []):
         return pd.Series(False, index=df.index), []
-    rules = cfg.get("rules", [])
-    if not rules:
-        return pd.Series(False, index=df.index), []
-
-    # 全局「排除未投料（实际数量=0）」开关：开了之后，默认把实际=0 的行挡在自动已读外；
-    # 但若某条规则显式 ignore_exclude_unfed=True（如 600 规则），则该规则不受此开关影响。
-    exclude_unfed = bool(cfg.get("exclude_unfed", False))
-    actual_gt0 = None
-    if exclude_unfed:
-        actual_col = _first_col(df, _ACTUAL_QTY_CANDIDATES)
-        if actual_col is not None:
-            actual_gt0 = pd.to_numeric(df[actual_col], errors="coerce") > 0
-
-    # 全局「排除单位」开关：开了且清单非空后，默认把单位命中清单的行挡在自动已读外；
-    # 若某条规则显式 ignore_exclude_units=True，则该规则不受此开关影响。
-    # 清单支持中英文逗号分隔、自动去空格、忽略大小写（如 "G,个" / "G，个"）。
-    exclude_units = bool(cfg.get("exclude_units", False))
-    excluded_units = [u.strip().lower() for u in
-                      str(cfg.get("excluded_units", "")).replace("，", ",").split(",") if u.strip()]
-    unit_outside = None
-    if exclude_units and excluded_units:
-        unit_col = _first_col(df, _UNIT_CANDIDATES)
-        if unit_col is not None:
-            unit_outside = ~df[unit_col].fillna("").astype(str).str.strip().str.lower().isin(excluded_units)
-
     result_union = pd.Series(False, index=df.index)
     per_rule = []
-    for rule in rules:
-        if not rule.get("enabled", True):
-            continue
-        m = _match_single_rule(df, rule)
-        if exclude_unfed and actual_gt0 is not None and not rule.get("ignore_exclude_unfed", False):
-            m = m & actual_gt0
-        if exclude_units and unit_outside is not None and not rule.get("ignore_exclude_units", False):
-            m = m & unit_outside
+    for _idx, rule, m in _iter_read_rule_masks(df, cfg):
         per_rule.append((rule, m))
         result_union = result_union | m
     return result_union, per_rule
+
+
+# --------------------------------------------------------------------------- 只读命中预览
+def match_read_rule_mask(df, rule, globals_=None):
+    """单条规则的命中掩码（只读）。刻意**不看** ``enabled`` 与总开关。
+
+    规则中心要对一条还没保存的草稿回答「这样改会命中多少行」，此时草稿的
+    启用状态与总开关都不该参与；但全局两个排除开关要参与 —— 它们决定真跑时
+    这些行会不会真的被已读，调用方把当前草稿的全局设置用 ``globals_`` 传进来。
+    """
+    if df is None or getattr(df, "empty", True) or "data_id" not in df.columns:
+        return pd.Series(False, index=(df.index if df is not None else []))
+    m = _match_single_rule(df, rule)
+    actual_gt0, unit_outside, _text = _read_global_masks(df, globals_)
+    if actual_gt0 is not None and not rule.get("ignore_exclude_unfed", False):
+        m = m & actual_gt0
+    if unit_outside is not None and not rule.get("ignore_exclude_units", False):
+        m = m & unit_outside
+    return m
+
+
+def compute_read_rule_hit_counts(df, cfg=None):
+    """逐条规则的只读命中统计，供规则中心左列展示。
+
+    返回 ``[{'index','name','enabled','hits','net_hits'}]``：
+      hits     —— 本条规则单独匹配的行数（停用规则照样给，含义是「若启用会命中多少」）
+      net_hits —— 更靠前的启用规则**没**覆盖到的行数。注意自动已读是并集，被覆盖
+                  并不影响结果（不像自动隔离那样「命中即停」），这个数字只用来让
+                  用户看清「这条其实没在独自起作用」。
+    总开关关闭、表不可用时全部为 0。
+    """
+    if cfg is None:
+        cfg = load_auto_read_rules_config()
+    rules = cfg.get("rules", []) or []
+    master_on = bool(cfg.get("enabled", True))
+    stats = {}
+    if master_on:
+        taken = set()
+        for idx, rule, mask in _iter_read_rule_masks(df, cfg, include_disabled=True):
+            ids = {str(u) for u in df.loc[mask, "data_id"].astype(str)}
+            if rule.get("enabled", True):
+                stats[idx] = (len(ids), len(ids - taken))
+                taken |= ids
+            else:
+                stats[idx] = (len(ids), 0)
+    out = []
+    for idx, rule in enumerate(rules, 1):
+        hits, net = stats.get(idx, (0, 0))
+        out.append({
+            "index": idx,
+            "name": rule.get("name", "未命名规则"),
+            "enabled": bool(rule.get("enabled", True)) and master_on,
+            "hits": hits,
+            "net_hits": net,
+        })
+    return out
+
+
+def _read_sample_text(df, row):
+    """样例文本：物料描述（定 X / 实 Y）—— 与表格底部「偏差合计」同一套数字写法。"""
+    name_col = _first_col(df, CONDITION_TYPES["mat_name_contains"]["field_candidates"])
+    actual_col = _first_col(df, _ACTUAL_QTY_CANDIDATES)
+    quota_col = _first_col(df, ["数量-定额", "定额", "计划数量"])
+    label = str(row[name_col]) if name_col else str(row.get("data_id", ""))
+    actual = _fmt_qty(row[actual_col]) if actual_col else "—"
+    quota = _fmt_qty(row[quota_col]) if quota_col else "—"
+    return "%s（定 %s / 实 %s）" % (label, quota, actual)
+
+
+def _fmt_qty(v):
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return "—"
+    return str(int(f)) if abs(f - int(f)) < 1e-9 else ("%.2f" % f)
+
+
+def read_scope_mask(df):
+    """生产落库范围掩码：**未读 且 不在隔离区**（与隔离区控制器的判据一致）。
+
+    自动已读真跑时只动这个范围内的行（已读过的不重复处理，隔离区记录由
+    「隔离区已读对账」专门管，规则中心不碰）。只读命中预览要说「真跑会读掉 N 条」，
+    就必须按同一个口径算，否则预览报 6 条、真跑读 0 条。
+    ``_read`` 列不存在（表还没分析过）时返回 None，由调用方决定怎么说这句诚实的话。
+    """
+    if df is None or getattr(df, "empty", True) or "data_id" not in df.columns:
+        return None
+    if "_read" not in df.columns:
+        return None
+    unread = df["_read"] == 0
+    if "_quarantined" not in df.columns:
+        return unread
+    q = pd.to_numeric(df["_quarantined"], errors="coerce").fillna(0).astype(int)
+    return unread & ~(q == 1)
+
+
+def count_unfed_rows(df, mask=None):
+    """``mask`` 范围内有几行「实际=0（未投料）」。
+
+    实际数量列在这份数据里不存在时返回 **None**（无从判断），调用方此时不许把
+    它当成 0 说成「不含未投料」。
+    """
+    if df is None or getattr(df, "empty", True):
+        return None
+    col = _first_col(df, _ACTUAL_QTY_CANDIDATES)
+    if col is None:
+        return None
+    num = pd.to_numeric(df[col], errors="coerce")
+    if mask is None:
+        mask = pd.Series(True, index=df.index)
+    return int((mask & num.notna() & (num == 0)).sum())
+
+
+def describe_read_rule_hits(df, rule, globals_=None, samples=3):
+    """本条（草稿）规则在真实主表上的命中情况，供预览条与悬浮提示。
+
+    除了命中数/占比/样例，还必须回答一个红线问题：**这些行里有几条是
+    「实际=0（未投料）」**。自动已读默认会把它们一起读掉（除非勾了「排除未投料」），
+    所以预览把它单列出来，而不是让「命中 6 条」把这件事糊过去。
+
+    字段口径：
+      raw_hits     —— 只按条件算的命中数（还没过全局排除）
+      hits         —— 过完全局排除后的命中数（真跑时「符合规则」的行数）
+      pending_hits —— hits 里未读且不在隔离区的部分，即真跑**实际会读掉**的条数；
+                      主表没有 ``_read`` 列时 ``pending_known`` 为 False，
+                      调用方此时不许把 0 说成「一条都读不掉」
+      unfed_hits / unfed_text —— 红线：hits 里有几条实际=0
+      blocked_by   —— 哪个全局开关挡掉了行（没挡掉就不列）
+      samples      —— 前 N 条样例文本
+    """
+    total = 0 if df is None else len(df)
+    base = {"hits": 0, "total": total, "ratio": 0.0, "samples": [],
+            "unfed_hits": 0, "unfed_text": "—", "blocked_by": [], "raw_hits": 0,
+            "pending_hits": 0, "pending_known": False}
+    if not total or "data_id" not in df.columns:
+        return base
+    raw = _match_single_rule(df, rule)
+    base["raw_hits"] = int(raw.sum())
+    m = match_read_rule_mask(df, rule, globals_)
+    blocked = []
+    actual_gt0, unit_outside, unit_text = _read_global_masks(df, globals_)
+    if actual_gt0 is not None and not rule.get("ignore_exclude_unfed", False) \
+            and int((raw & actual_gt0).sum()) < base["raw_hits"]:
+        blocked.append("排除未投料（实际=0）")
+    if unit_outside is not None and not rule.get("ignore_exclude_units", False) \
+            and int((raw & unit_outside).sum()) < base["raw_hits"]:
+        blocked.append("排除单位（清单：%s）" % (unit_text or "—"))
+    base["blocked_by"] = blocked
+
+    hits = int(m.sum())
+    base["hits"] = hits
+    base["ratio"] = (hits / float(total)) if total else 0.0
+    unfed = count_unfed_rows(df, m)
+    base["unfed_hits"] = unfed if unfed is not None else 0
+    if unfed is None:
+        base["unfed_text"] = "这份数据里没有「实际数量」列，未投料几条无从判断"
+    elif unfed:
+        base["unfed_text"] = "其中 %d 条实际=0（未投料）—— 现在会被一起自动已读" % unfed
+    else:
+        base["unfed_text"] = "不含实际=0（未投料）行"
+    scope = read_scope_mask(df)
+    base["pending_known"] = scope is not None
+    base["pending_hits"] = int((m & scope).sum()) if scope is not None else hits
+    if hits:
+        base["samples"] = [_read_sample_text(df, row)
+                           for _, row in df.loc[m].head(samples).iterrows()]
+    return base
+
 
 
 def _match_single_condition(df, cond):
