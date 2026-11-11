@@ -470,7 +470,9 @@ class TestL2_Instantiation:
             "config_manager": "ConfigManager",
             "data_service": "DataService",
             "source_model": "DataFrameModel",
-            "table_view": "QTableView",
+            # v43.350 第五期G1 起是 QTableView 的子类 MainTableView：左上角那颗全选框
+            # 要手工摆到两块表头的交叉区（PySide6 的 setCornerWidget 只会放右下角）。
+            "table_view": "MainTableView",
         }
         for attr, typename in expected.items():
             obj = getattr(mw, attr, None)

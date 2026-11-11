@@ -44,6 +44,12 @@ _CJK_FONT_OK = False
   低频（分析时间/已读计数/列头筛选/版本号）经 addPermanentWidget 落在右，
   等价设计稿的 .status-right{margin-left:auto}。布局因此少一项，中央布局高度分配
   随之变化，本文件的 1366×768 可用性断言按新分配复核。
+- v43.350 第五期G1「行首勾选列」：设计稿表格首列那颗 .chk 做成**垂直表头**（勾选道，
+  宽 46 = 13px 框 + 行号），不是真加一列 —— 模型列号 == DataFrame 列号的 1:1 映射一旦
+  集体 +1，列宽持久化、自适应、列头筛选、复制区域全要重算。勾选 = 该行在 selectionModel
+  里被选中，所以「已选 n 行」与批量已读/导出/隔离零改动复用。左上角三态全选框由新的
+  MainTableView 手工摆到两块表头交叉区（PySide6 6.6.3 的 setCornerWidget 只会放右下角）。
+  主表视图因此从 QTableView 变成它的子类，test_main_window_smoke 的关键属性契约同步改名。
 """
 import os
 import shutil

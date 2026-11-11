@@ -942,6 +942,78 @@ def main():
         return ok, info
     check("⑱ 表格格式照抄：36px行/32px表头/行下边框/蓝条/悬浮/胶囊", _table_fmt)
 
+    # ⑲ v43.350（第五期G1）：行首勾选道 —— 设计稿表格首列那颗 .chk。
+    #     做成垂直表头（不是真列），所以模型列数/列号必须一个都不动；勾选=该行被选中，
+    #     角标（左上交叉区，PySide6 的 setCornerWidget 只会放右下角，靠 MainTableView 摆）
+    #     三态全选只作用于筛选后可见的行。
+    def _check_lane():
+        from PySide6.QtGui import QColor
+        from gui_pyside6.themes.tokens import SIZE_PX, TOKENS
+        from gui_pyside6.widgets.row_check_header import RowCheckHeader, SelectAllCheck, _OFF, _ON, _PART
+        from gui_pyside6.widgets.main_table_view import MainTableView
+        tv = win.table_view
+        lane = tv.verticalHeader()
+        corner = tv.corner_widget()
+        m = tv.model()
+        n = m.rowCount()
+        ok_struct = (isinstance(lane, RowCheckHeader) and isinstance(corner, SelectAllCheck)
+                     and isinstance(tv, MainTableView)
+                     and lane.width() == SIZE_PX["tableCheckLane"]
+                     and m.columnCount() == len(df.columns) + 1)
+        # 交叉角摆位：x/y/宽/高 = 垂直表头x / 水平表头y / 垂直表头宽 / 水平表头高
+        hh = tv.horizontalHeader()
+        ok_corner = (corner.x() == lane.x() and corner.y() == hh.y()
+                     and corner.width() == lane.width() and corner.height() == hh.height())
+        ok_rowh = all(lane.sectionSize(r) == SIZE_PX["tableRow"] for r in range(n))
+        # 勾选 = 选中（不引入第二套状态）
+        sm = tv.selectionModel()
+        sm.clearSelection()
+        lane.toggle_row(1)
+        app.processEvents()
+        rows = sorted({i.row() for i in sm.selectedIndexes()})
+        ok_toggle = (rows == [1] and lane.is_row_checked(1)
+                     and not lane.is_row_checked(0) and lane.check_state() == _PART)
+        lane.toggle_row(1)
+        app.processEvents()
+        ok_uncheck = (not sm.hasSelection() and lane.check_state() == _OFF)
+        corner.toggled.emit(True)
+        app.processEvents()
+        ok_all = (lane.check_state() == _ON
+                  and len(sm.selectedRows()) == n
+                  and all(lane.is_row_checked(r) for r in range(n)))
+        corner.toggled.emit(False)
+        app.processEvents()
+        ok_clear = lane.check_state() == _OFF and not sm.hasSelection()
+        # 像素：道底色 = surface2，勾上的框里确有 primary 实心（这台机器无字体，只看色）
+        # paintEvent 里有 isVisible 守卫（隐藏时不画，免得对无渲染引擎的控件刷告警），
+        # 而本冒烟全程不 show 主窗，所以这一段临时显一下再取像素。
+        tk = TOKENS["light"]
+        lane.toggle_row(0)
+        win.show()
+        app.processEvents()
+        img = lane.viewport().grab().toImage()
+        win.hide()
+        app.processEvents()
+        y0 = lane.sectionViewportPosition(0)
+
+        def near(px, hexs, tol=26):
+            c = QColor(hexs)
+            return (abs(px.red() - c.red()) <= tol and abs(px.green() - c.green()) <= tol
+                    and abs(px.blue() - c.blue()) <= tol)
+        ok_bg = near(img.pixelColor(30, y0 + SIZE_PX["tableRow"] - 4), tk["surface2"], 10)
+        by = y0 + (SIZE_PX["tableRow"] - 13) // 2
+        hits = sum(1 for x in range(8, 21) for y in range(by, by + 13)
+                   if near(img.pixelColor(x, y), tk["primary"], 30))
+        ok_box = hits > 30
+        lane.toggle_row(0)
+        app.processEvents()
+        ok = all([ok_struct, ok_corner, ok_rowh, ok_toggle, ok_uncheck,
+                  ok_all, ok_clear, ok_bg, ok_box])
+        return ok, ("结构=%s 角标摆位=%s 行高=%s 勾选=选中=%s 取消=%s 全选=%s 清空=%s "
+                    "道底色=%s 勾=%dpx" % (ok_struct, ok_corner, ok_rowh, ok_toggle,
+                                          ok_uncheck, ok_all, ok_clear, ok_bg, hits))
+    check("⑲ 行首勾选道：勾选=选中/三态全选/列号不动/交叉角摆位", _check_lane)
+
     return report()
 
 

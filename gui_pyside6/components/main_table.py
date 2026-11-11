@@ -8,9 +8,10 @@ from PySide6.QtWidgets import (
 import re
 
 from PySide6.QtCore import Qt, Signal, QObject
-from gui_pyside6.themes.tokens import SIZE_PX
 from gui_pyside6.utils.icons import make_button
 from gui_pyside6.widgets.row_style_delegate import RowStyleDelegate
+from gui_pyside6.widgets.row_check_header import RowCheckHeader, SelectAllCheck
+from gui_pyside6.widgets.main_table_view import MainTableView
 
 # 分析进度步骤图标（沿用 v31 经典布局：一排图标 + 进度条 + 状态文字）
 # 分析进度步骤图标（沿用 v31 经典布局：一排图标 + 进度条 + 状态文字）
@@ -109,8 +110,8 @@ class MainTableComponent(QObject):
         progress_main.addWidget(self.progress_content)
 
 
-        # 表格
-        self.table_view = QTableView()
+        # 表格（MainTableView：左上角那颗全选框要手工摆位，见 widgets/main_table_view.py）
+        self.table_view = MainTableView()
         self.table_view.setObjectName("tableView")
         self.table_view.setAlternatingRowColors(True)
         self.table_view.setSortingEnabled(False)
@@ -126,13 +127,22 @@ class MainTableComponent(QObject):
         # 选择行为保持 SelectItems（单元格级）：整行选中会让"复制某格/按列看数"变别扭，
         # 且设计稿那条 3px 蓝条本就由 RowStyleDelegate 画在每个选中格左缘。
         self.table_view.setSelectionBehavior(QTableView.SelectItems)
-        # v43.349 第五期E：行高/表头高度/竖网格线全部照抄设计稿（--row-h 36px、无竖线、
-        # 每行一条 1px 下边框由 QSS #tableView::item 画）。
-        self.table_view.verticalHeader().setDefaultSectionSize(SIZE_PX["tableRow"])
+        # v43.349 第五期E：竖网格线关掉，每行一条 1px 下边框由 QSS #tableView::item 画，
+        # 表头 32px 单行。行高 36px 自 v43.350 起归勾选道表头自己设（下面 setVerticalHeader）。
         self.table_view.setShowGrid(False)
         self.table_view.setTextElideMode(Qt.ElideRight)
         # 悬浮行叠色 + 选中左蓝条 + 状态胶囊（设计稿表格格式的三处 QSS 表达不了的叠加层）
         self.table_view.setItemDelegate(RowStyleDelegate(self.table_view))
+
+        # v43.350 第五期G1：设计稿表格首列那颗勾选框 —— 做成垂直表头（勾选道），
+        # 这样既有列号一个都不动；勾选 = 该行被选中，批量操作/已选计数全部复用。
+        self.row_check_header = RowCheckHeader(self.table_view)
+        self.table_view.setVerticalHeader(self.row_check_header)
+        self.corner_check = SelectAllCheck(self.row_check_header)
+        self.corner_check.toggled.connect(self.row_check_header.set_all)
+        # PySide6 6.6.3 的 setCornerWidget 只会把控件放右下角（滚动条交叉处），
+        # 左上角这块交叉区由 MainTableView 自己摆位。
+        self.table_view.set_corner_widget(self.corner_check)
 
         # 空态提示（无数据时居中显示，v43.285 新增）
         self.empty_hint = QLabel("暂无数据，请导入 ZPP011 导出文件后点击「开始分析」")

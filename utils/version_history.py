@@ -14,6 +14,51 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.350",
+            "date": "2026-11-11",
+            "features": (
+                "第五期G1 · 行首勾选列（裴哥拍板：v43.349 记下的两条「有意差异」里，勾选"
+                "列要加，行内悬浮按钮下一小期做；数值列头保持左对齐、编码列保持 120px 两条"
+                "照旧）。\n"
+                "①为什么勾选框不做成「表格第一列」：设计稿确实把它画在首列，但本项目的模型"
+                "是 模型列号 == DataFrame 列号 的 1:1 映射（data_frame_model.columnCount() "
+                "就是 len(_display_columns)），全仓 20+ 处按列号取数、排序、列头筛选、存/取"
+                "列宽、自适应列宽、复制区域都压在这个映射上；真加一列 = 所有既有列号集体 +1，"
+                "还得迁移用户已存的列宽配置。而垂直表头本来就在 columnCount 之外，它当前只"
+                "显示行号 —— 把勾选道放这里，既有列号一个都不动，行号也照样保留（新增 tests/"
+                "unit/test_row_check_lane.py 里第一条断言就是「列数没变、列号语义没变」）。\n"
+                "②勾选状态 = 选中状态，不引入第二套：勾上就是该行在 selectionModel 里被选中"
+                "（整行带），取消就是从选择里去掉。所以底部「已选 n 行」、批量标记已读、批量"
+                "导出、批量隔离、Ctrl+C 复制区域全部照常工作，没有一行新代码去读「勾选集合」。"
+                "反过来在表格里点一格、拖选一片，道上也立刻显示勾上 —— 两边是同一个真源。\n"
+                "③左上角那颗是三态全选框（全不勾 / 部分=白横杠 / 全勾=白勾），点一下只全选"
+                "当前筛选后可见的行，不是全表。这里踩了 PySide6 的坑：Qt 的 setCornerWidget"
+                "(widget, Qt.TopLeftCorner) 在 6.6.3 只暴露单参重载（第二参既不能位置传也不"
+                "能关键字传），而它写死把控件放**右下角**滚动条交叉处 —— 实测 corner.pos() 落"
+                "在 viewport 右下角，左上角什么都没有。故新增 gui_pyside6/widgets/main_table_"
+                "view.py：MainTableView 自己按「垂直表头 x / 水平表头 y / 垂直表头宽 / 水平表"
+                "头高」把角标摆到交叉区，并在窗口 resize、show、setModel、两块表头 resize 时"
+                "重摆（主表从此是这个子类，其余看板表格不受影响）。\n"
+                "④道宽取 46px 而不是设计稿的 34px：那列只放勾选框，我们还得留现行号（13px "
+                "框 + 约 20px 行号）。整道自绘不走 QSS —— 让原生先画 section 会把行号画在道"
+                "中央跟勾选框叠在一起。配色全部现取 Thm.color(令牌)，切主题即时跟色。\n"
+                "⑤两个性能/接口细节：万行表全选时角标算「是否全勾」走 selectedRows()（Qt 按"
+                "选择段算），不逐格展开 selectedIndexes()（那是十几万个索引）；勾选道重绘挂在"
+                "选择模型的 selectionChanged 上 —— PySide6 里 QAbstractItemView.selection"
+                "Changed 是受保护虚函数、不是信号，直接 .connect 会 AttributeError，故在 "
+                "setModel 时重新绑定新的选择模型。\n"
+                "验证：pytest 全绿（482 passed = 475 基线 + 7 条新增 test_row_check_lane）+ "
+                "GUI 离屏冒烟 24/24（新增 ⑲：列号不动 / 勾选=选中 / 累加与取消 / 三态全选 / "
+                "交叉角摆位 / 道底色与勾选框取色）。另跑离屏探针：12 行表逐像素验亮暗两套"
+                "（道底 surface2、勾上 primary 命中 115px、没勾只有 borderStrong 描边）。分析"
+                "口径、取数、数据零改动。\n"
+                "⚠ 遗留：①行内悬浮操作按钮（G2）下一小期；②第四期规则中心三个弹窗仍未套尺寸"
+                "档（APPLY_TODO 挂账中）；③全仓约 150 处直接 QMessageBox 调用未迁移；④死代码"
+                "（AuditDialog / AIReasonPanel / dashboard_manager.py 等 8 个文件）删前逐个跟"
+                "裴哥确认。"
+            ),
+        },
+        {
             "version": "v43.349",
             "date": "2026-11-11",
             "features": (
