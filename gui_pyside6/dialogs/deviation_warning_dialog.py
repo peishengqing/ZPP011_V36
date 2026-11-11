@@ -43,15 +43,15 @@ from utils.theme_manager import Thm
 
 
 
+from gui_pyside6.components import dialog_chrome
+
 class DeviationWarningDialog(QDialog):
     """偏差率预警看板对话框 - |偏差率| >= 10% 的记录，支持标记已读/未读"""
 
     def __init__(self, warnings_df, main_window, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("偏差率预警看板 - |偏差率| ≥ 10%")
-        self.resize(1280, 640)
+        dialog_chrome.apply(self, dialog_chrome.TIER_BOARD, "偏差率预警看板", "|偏差率| ≥ 10%")
         # 允许最大化/最小化
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.main_window = main_window
         self.original_df = warnings_df.copy()
         # Slots are stored as functools.partial objects in

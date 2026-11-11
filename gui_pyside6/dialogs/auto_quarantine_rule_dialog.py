@@ -35,6 +35,8 @@ from gui_pyside6.utils.icons import make_button
 from PySide6.QtCore import Qt
 
 
+from gui_pyside6.components import dialog_chrome
+
 class AutoQuarantineRuleWidget(QWidget):
     """规则管理器：支持多条规则并存、独立启停、排序。"""
 
@@ -510,7 +512,7 @@ class AutoQuarantineRuleDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
-        self.setWindowTitle("⚙ 自动隔离规则")
+        self.setWindowTitle(dialog_chrome.format_title("自动隔离规则"))
         self.setMinimumWidth(580)
         self.setMinimumHeight(680)
         layout = QVBoxLayout(self)

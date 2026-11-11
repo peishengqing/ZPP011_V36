@@ -36,15 +36,15 @@ _HIDDEN_INTERNAL = ['_read', 'data_id', '_quarantined', '_post_audit_changed', '
 # 注意：'exempt' 不在隐藏列表中，因为我们需要在表格中显示它
 
 
+from gui_pyside6.components import dialog_chrome
+
 class QuarantineDialog(QDialog):
     """隔离区对话框 - 疑难数据暂存区，支持取消隔离 / 双击定位 / 失效复核"""
 
     def __init__(self, quarantine_df, main_window, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("隔离区 - 疑难数据暂存")
-        self.resize(1200, 600)
+        dialog_chrome.apply(self, dialog_chrome.TIER_BOARD, "隔离区", "疑难数据暂存")
         # 允许最大化/最小化（Windows 上最大化按钮需与最小化成对才稳定显示）
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.main_window = main_window
         self._current_reason_filter = "全部"
         self._current_keyword = ""

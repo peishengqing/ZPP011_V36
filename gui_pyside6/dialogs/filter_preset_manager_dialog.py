@@ -3,7 +3,7 @@
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QPushButton, QLabel, QFileDialog, QInputDialog, QMessageBox, QMenu,
+    QPushButton, QLabel, QFileDialog, QInputDialog, QMenu,
     QComboBox,
 )
 from PySide6.QtCore import Qt, Signal
@@ -11,6 +11,8 @@ from PySide6.QtGui import QFont
 import datetime
 import os
 
+
+from gui_pyside6.components import dialog_chrome, message_box
 
 class FilterPresetManagerDialog(QDialog):
     """筛选预设管理对话框 - 提供导入导出、详细信息、快速切换功能"""
@@ -22,11 +24,8 @@ class FilterPresetManagerDialog(QDialog):
 
     def __init__(self, parent=None, filter_controller=None):
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.filter_controller = filter_controller
-        self.setWindowTitle("筛选预设管理")
-        self.setMinimumWidth(600)
-        self.setMinimumHeight(400)
+        dialog_chrome.apply(self, dialog_chrome.TIER_SMALL, "筛选预设管理", "保存 / 复用常用筛选组合")
 
         self._setup_ui()
         self._load_presets()
@@ -148,7 +147,8 @@ class FilterPresetManagerDialog(QDialog):
                 self.preset_combo.addItem(combo_text, preset.name)
 
         except Exception as e:
-            QMessageBox.critical(self, "加载预设失败", f"无法加载预设: {e}", QMessageBox.Ok)
+            message_box.error(self, "预设列表没读出来",
+                          "列表现在是空的，你的预设文件本身没有改动。", exc=e)
 
     def _show_context_menu(self, pos):
         """显示上下文菜单"""
@@ -170,7 +170,7 @@ class FilterPresetManagerDialog(QDialog):
         """加载选中的预设"""
         current = self.preset_list.currentItem()
         if not current:
-            QMessageBox.information(self, "提示", "请先选择要加载的预设")
+            message_box.warn(self, "还没选中预设", "在列表里点一行，再选「加载此预设」。")
             return
 
         preset_name = current.data(Qt.UserRole)
@@ -184,26 +184,28 @@ class FilterPresetManagerDialog(QDialog):
             return
 
         preset_name = current.data(Qt.UserRole)
-        reply = QMessageBox.question(
-            self, "确认删除", f"确定要删除预设 '{preset_name}' 吗？",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-        )
-
-        if reply == QMessageBox.Yes:
+        if message_box.confirm(
+            self, "要删除预设「%s」吗" % preset_name,
+            "删掉以后这个预设就选不到了，已经存好的筛选条件本身不受影响。",
+            yes="删除预设", no="先不删", danger=True):
             try:
                 if self.filter_controller and self.filter_controller.delete_preset(preset_name):
-                    QMessageBox.information(self, "成功", f"已删除预设 '{preset_name}'")
+                    message_box.info(self, "预设「%s」已删除" % preset_name,
+                                         "列表已经刷新。")
                     self._load_presets()
                     self.preset_deleted.emit(preset_name)
                 else:
-                    QMessageBox.critical(self, "删除失败", f"删除预设 '{preset_name}' 失败")
+                    message_box.error(
+                        self, "预设「%s」没删掉" % preset_name,
+                        "预设还在列表里，可以重试一次。")
             except Exception as e:
-                QMessageBox.critical(self, "删除失败", f"删除预设时出错: {e}")
+                message_box.error(self, "删除预设没成功",
+                                  "预设还在列表里，没有改动。", exc=e)
 
     def _export_all(self):
         """导出所有预设到 JSON 文件"""
         if not self.filter_controller:
-            QMessageBox.critical(self, "错误", "FilterController 未设置")
+            message_box.warn(self, "筛选器还没接上", "这个窗口没连到主界面的筛选器，先关掉重开一次。")
             return
 
         file_path, _ = QFileDialog.getSaveFileName(
@@ -215,19 +217,18 @@ class FilterPresetManagerDialog(QDialog):
         if file_path:
             try:
                 if self.filter_controller.export_presets_to_file(file_path):
-                    QMessageBox.information(
-                        self, "导出成功",
-                        f"已将所有预设导出到:\n{file_path}"
-                    )
+                    message_box.info(
+                        self, "预设已导出",
+                        "文件位置：\n%s" % file_path)
                 else:
-                    QMessageBox.critical(self, "导出失败", "无法导出预设")
+                    message_box.error(self, "预设没导出去", "文件没有生成，列表里的预设没改动。")
             except Exception as e:
-                QMessageBox.critical(self, "导出失败", f"导出时出错: {e}")
+                message_box.error(self, "预设没导出去", "文件没有生成，列表里的预设没改动。", exc=e)
 
     def _import(self):
         """导入预设"""
         if not self.filter_controller:
-            QMessageBox.critical(self, "错误", "FilterController 未设置")
+            message_box.warn(self, "筛选器还没接上", "这个窗口没连到主界面的筛选器，先关掉重开一次。")
             return
 
         file_path, _ = QFileDialog.getOpenFileName(
@@ -240,15 +241,15 @@ class FilterPresetManagerDialog(QDialog):
             try:
                 imported = self.filter_controller.import_presets_from_file(file_path)
                 if imported:
-                    QMessageBox.information(
-                        self, "导入成功",
-                        f"已导入 {len(imported)} 个预设:\n" + "\n".join(imported) + "\n\n请在列表中查看"
-                    )
+                    message_box.info(
+                        self, "已导入 %d 个预设" % len(imported),
+                        "新预设已经排在列表里了：\n" + "\n".join(imported))
                     self._load_presets()
                 else:
-                    QMessageBox.warning(self, "导入完成", "没有新预设可导入")
+                    message_box.warn(self, "这个文件里没有新预设",
+                               "要么名字和现有预设重复了，要么文件本身就没写过预设。")
             except Exception as e:
-                QMessageBox.critical(self, "导入失败", f"导入时出错: {e}")
+                message_box.error(self, "预设没导进来", "现有预设没有改动。", exc=e)
 
     def _apply_preset_from_combo(self):
         """从快速切换下拉框应用预设"""

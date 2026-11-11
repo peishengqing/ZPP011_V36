@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
 MATERIAL_ALL_SENTINEL = "全部物料"
 
 
+from gui_pyside6.components import dialog_chrome
+
 class _PresetListWidget(QListWidget):
     """支持内部拖拽重排的列表控件；拖拽落地后通过 parent 的回调同步顺序。"""
 
@@ -39,12 +41,9 @@ class MaterialPresetsDialog(QDialog):
 
     def __init__(self, parent=None, presets=None, preset_path=None):
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.preset_path = preset_path
         self._presets = list(presets or [])
-        self.setWindowTitle("物料名称预设管理")
-        self.setMinimumWidth(360)
-        self.setMinimumHeight(360)
+        dialog_chrome.apply(self, dialog_chrome.TIER_SMALL, "物料名称预设管理", "统一别名与标准名的映射表")
         self._build_ui()
         self._refresh_list()
 

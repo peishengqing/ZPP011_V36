@@ -10,8 +10,7 @@ import sqlite3
 from datetime import datetime
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QTabWidget, QTableWidget, QTableWidgetItem, QLabel,
-    QMessageBox,
+    QDialog, QVBoxLayout, QTabWidget, QTableWidget, QTableWidgetItem, QWidget,
 )
 from PySide6.QtCore import Qt
 
@@ -32,20 +31,27 @@ def _parse(ts):
             return None
 
 
+from gui_pyside6.components import dialog_chrome, dialog_shell_bridge, message_box
+
 class QuarantineReviewDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
-        self.setWindowTitle("🔁 隔离区闭环复盘")
-        self.resize(900, 620)
+        dialog_chrome.apply(self, dialog_chrome.TIER_LARGE, "隔离区闭环复盘", "隔离 → 处理 → 复盘")
+        self._status_text = ""
         self._build_ui()
         self._load()
+        # v43.348：专题看板统一外壳；顶部说明 QLabel 删掉，那句话改由 shell 状态条显示。
+        self._shell = dialog_shell_bridge.install_dialog_shell(
+            self, self._host, self.windowTitle(), self._status_text)
+
+    def _set_status(self, text):
+        """状态文案交给统一状态条；shell 尚未装上时只暂存，装壳时读一次。"""
+        self._status_text = text
+        dialog_shell_bridge.update_shell_status(self, text)
 
     def _build_ui(self):
-        lay = QVBoxLayout(self)
-        self._info = QLabel()
-        self._info.setWordWrap(True)
-        lay.addWidget(self._info)
+        self._host = QWidget()
+        lay = QVBoxLayout(self._host)
         self._tabs = QTabWidget()
         self._t_repeat = QTableWidget()
         self._t_repeat.setColumnCount(4)
@@ -67,7 +73,11 @@ class QuarantineReviewDialog(QDialog):
 
     def _load(self):
         if not os.path.exists(_DB_PATH):
-            QMessageBox.information(self, "提示", "未找到审计库: %s" % _DB_PATH)
+            self._set_status("未找到审计库，无法统计")
+            message_box.info(
+                self, "还没有隔离流水记录",
+                "这里看的是「谁反复进隔离、放回花了多久」；还没有隔离过就没有记录。",
+                detail=_DB_PATH)
             return
         try:
             c = sqlite3.connect(_DB_PATH)
@@ -97,11 +107,14 @@ class QuarantineReviewDialog(QDialog):
             durs.sort(key=lambda x: -x[1])
             self._fill_dur(durs[:200])
 
-            self._info.setText(
+            self._set_status(
                 "quarantine_records 共 %d 条；反复进隔离 %d 个；悬挂未放回 %d 条"
                 % (tot, len(rep), len(hang)))
         except Exception as e:
-            QMessageBox.critical(self, "错误", "读取失败: %s" % e)
+            message_box.error(
+                self, "读取隔离流水失败",
+                "审计库文件在，但读不出内容，可能正被其它程序占用。",
+                exc=e, detail=_DB_PATH)
 
     def _fill_repeat(self, rows):
         self._t_repeat.setRowCount(len(rows))

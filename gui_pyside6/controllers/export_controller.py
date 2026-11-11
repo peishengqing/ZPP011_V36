@@ -7,7 +7,9 @@ import shutil
 import traceback
 from datetime import datetime
 from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtWidgets import QMessageBox, QFileDialog, QProgressDialog, QApplication
+from PySide6.QtWidgets import QFileDialog, QProgressDialog, QApplication
+
+from gui_pyside6.components import message_box
 
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.save_guard import safe_save, precheck_save_path, friendly_error
@@ -17,6 +19,16 @@ from gui_pyside6.utils.file_launcher import open_path
 def open_file(filepath):
     """跨平台打开文件（唯一实现在 gui_pyside6/utils/file_launcher.py，v43.257 收口 GUI-001b）"""
     return open_path(filepath)
+
+
+#: 完整报告的 Sheet 清单（三处「报告已经生成」弹窗共用）。改造前这段是 f-string 里的
+#: 硬编码，还夹了个 📋 —— 设计稿禁的是标题 emoji，但正文一样可能在某些 Windows
+#: 字体里渲染成方块，所以一并去掉，Sheet 名用文字列出来。
+SHEETS_LIST = (
+    "分析说明 · 汇总统计(带预警颜色)\n"
+    "完整偏差明细 · 替代料明细 · 无备注预警\n"
+    "中间地带明细 · 异常预警 · 偏差金额分析\n"
+    "偏差原因汇总 · 偏差原因分析 · 趋势分析")
 
 
 class ExportController(QObject):
@@ -31,7 +43,8 @@ class ExportController(QObject):
     def export_current_table(self, audit_data, parent_widget):
         """导出当前表格（仅当前筛选后的数据）"""
         if audit_data is None or audit_data.empty:
-            QMessageBox.warning(parent_widget, "提示", "无数据")
+            message_box.warn(parent_widget, "表格里没有数据",
+                             "先跑一次分析，或把筛选条件放宽一点再导出。")
             return False
         file_path, _ = QFileDialog.getSaveFileName(
             parent_widget, "导出当前表格", "偏差明细.xlsx", "Excel files (*.xlsx)"
@@ -51,7 +64,8 @@ class ExportController(QObject):
                 return True
             except Exception as e:
                 traceback.print_exc()
-                QMessageBox.critical(parent_widget, "错误", friendly_error(file_path, e))
+                message_box.error(parent_widget, "表格没能写进去",
+                                  friendly_error(file_path, e), exc=e)
                 self.log_message.emit(f"导出失败: {e}", "error")
         return False
 
@@ -60,7 +74,8 @@ class ExportController(QObject):
         """导出完整Excel（可选择多Sheet完整报告，支持缓存秒传）"""
         try:
             if audit_data is None or audit_data.empty:
-                QMessageBox.warning(parent_widget, "提示", "无数据，请先进行分析")
+                message_box.warn(parent_widget, "表格里没有数据",
+                                 "先跑一次分析，再导完整 Excel。")
                 return False
 
             default_name = f"ZPP011偏差分析最终版_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
@@ -72,14 +87,13 @@ class ExportController(QObject):
 
             # 如果有分析参数，询问是否生成完整多Sheet
             if analysis_params and current_input_file:
-                reply = QMessageBox.question(
-                    parent_widget, "导出选项",
-                    "是否生成完整多Sheet分析报告（含汇总统计、预警颜色等）？\n\n"
-                    "点击「是」→ 生成完整多Sheet Excel（缓存命中则秒传，否则重新分析）\n"
-                    "点击「否」→ 仅导出当前表格数据（快速）",
-                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-                )
-                if reply == QMessageBox.Yes:
+                # 设计稿：按钮写动作，不写「是 / 否」—— 按下去就知道会发生什么
+                if message_box.confirm(
+                    parent_widget, "要不要出完整多 Sheet 报告",
+                    "完整报告含汇总统计、预警颜色等 10 个 Sheet（缓存命中则秒传，"
+                    "否则重新分析，要等几十秒）；\n"
+                    "只导当前表格就这一张，几秒就好。",
+                    yes="生成完整报告", no="只导当前表格"):
                     return self._export_full_analysis_excel(
                         save_path, analysis_params, parent_widget, cache_path
                     )
@@ -94,20 +108,23 @@ class ExportController(QObject):
                 if not saved:
                     self.log_message.emit("导出已取消（目标文件被占用）", "warning")
                     return False
-                if QMessageBox.question(
-                    parent_widget, "导出成功", f"文件已导出到：\n{saved}\n是否打开？"
-                ) == QMessageBox.Yes:
+                if message_box.confirm(
+                    parent_widget, "已经导出好了",
+                    "文件在：\n%s\n\n要不要现在打开？" % saved,
+                    yes="打开文件", no="先不打开"):
                     open_file(saved)
                 self.log_message.emit(f"已导出完整Excel到 {saved}", "info")
                 return True
             except Exception as e:
                 traceback.print_exc()
-                QMessageBox.critical(parent_widget, "错误", friendly_error(save_path, e))
+                message_box.error(parent_widget, "表格没能写进去",
+                                  friendly_error(save_path, e), exc=e)
                 self.log_message.emit(f"导出失败: {e}", "error")
                 return False
         except Exception as e:
             traceback.print_exc()
-            QMessageBox.critical(parent_widget, "错误", f"导出完整Excel失败: {e}")
+            message_box.error(parent_widget, "完整 Excel 没能导出",
+                              "这一下没写成，表里的数据没有改动。", exc=e)
             self.log_message.emit(f"导出完整Excel失败: {e}", "error")
             return False
 
@@ -127,17 +144,11 @@ class ExportController(QObject):
                     self.log_message.emit("导出已取消（目标文件被占用）", "warning")
                     return False
                 save_path = saved
-                if QMessageBox.question(
-                    parent_widget, "导出成功",
-                    f"完整分析报告已导出到\n{save_path}\n\n"
-                    "（使用缓存，秒传完成）\n\n"
-                    "包含Sheet:\n"
-                    "📋 分析说明 · 汇总统计(带预警颜色)\n"
-                    "完整偏差明细 · 替代料明细 · 无备注预警\n"
-                    "中间地带明细 · 异常预警 · 偏差金额分析\n"
-                    "偏差原因汇总 · 偏差原因分析 · 趋势分析\n\n"
-                    "是否立即打开？"
-                ) == QMessageBox.Yes:
+                if message_box.confirm(
+                    parent_widget, "完整报告已经生成（走缓存，秒传）",
+                    "文件在：\n%s\n\n包含 10 个 Sheet：\n%s\n\n要不要现在打开？"
+                    % (save_path, SHEETS_LIST),
+                    yes="打开报告", no="先不打开"):
                     open_file(save_path)
                 self.log_message.emit(f"已导出完整分析报告到 {save_path} (缓存)", "info")
                 return True
@@ -187,29 +198,26 @@ class ExportController(QObject):
                 except Exception:
                     pass  # 静默失败，不影响导出
 
-            if QMessageBox.question(
-                parent_widget, "导出成功",
-                f"完整分析报告已导出到\n{save_path}\n\n"
-                "包含Sheet:\n"
-                "📋 分析说明 · 汇总统计(带预警颜色)\n"
-                "完整偏差明细 · 替代料明细 · 无备注预警\n"
-                "中间地带明细 · 异常预警 · 偏差金额分析\n"
-                "偏差原因汇总 · 偏差原因分析 · 趋势分析\n\n"
-                "是否立即打开？"
-            ) == QMessageBox.Yes:
+            if message_box.confirm(
+                parent_widget, "完整报告已经生成",
+                "文件在：\n%s\n\n包含 10 个 Sheet：\n%s\n\n要不要现在打开？"
+                % (save_path, SHEETS_LIST),
+                yes="打开报告", no="先不打开"):
                 open_file(save_path)
             self.log_message.emit(f"已导出完整分析报告到 {save_path}", "info")
             return True
         except Exception as e:
             traceback.print_exc()
-            QMessageBox.critical(parent_widget, "错误", friendly_error(save_path, e))
+            message_box.error(parent_widget, "报告没能写进去",
+                              friendly_error(save_path, e), exc=e)
             self.log_message.emit(f"导出完整报告失败: {e}", "error")
             return False
 
     def generate_simple_ppt(self, audit_data, analysis_output_path, output_dir, parent_widget, log_cb=None):
         """生成「分厂版」智能PPT（9 页，TRAE 版式）"""
         if audit_data is None or audit_data.empty:
-            QMessageBox.warning(parent_widget, "提示", "无数据，请先完成分析")
+            message_box.warn(parent_widget, "表格里没有数据",
+                             "先跑一次分析，再生成分厂版报告。")
             return False
 
         excel_path = analysis_output_path
@@ -239,36 +247,38 @@ class ExportController(QObject):
             if success:
                 if log_cb:
                     log_cb(f"分厂版PPT生成成功：{output_path}", "info")
-                if QMessageBox.question(
-                    parent_widget, "生成成功",
-                    f"分厂版报告已生成：\n{output_path}\n\n"
-                    "内容：封面 / 目录 / 总体概览 / 食品厂专题(2页)\n"
-                    "饮料厂专题(2页) / 预警对比与建议 / 结尾\n\n是否打开？"
-                ) == QMessageBox.Yes:
+                if message_box.confirm(
+                    parent_widget, "分厂版报告已经生成",
+                    "文件在：\n%s\n\n内容：封面 / 目录 / 总体概览 / 食品厂专题(2页)\n"
+                    "饮料厂专题(2页) / 预警对比与建议 / 结尾\n\n要不要现在打开？"
+                    % output_path,
+                    yes="打开报告", no="先不打开"):
                     open_file(output_path)
                 self.log_message.emit(f"PPT生成成功：{output_path}", "info")
                 return True
             else:
                 # 失败原因已由 ppt_trae 通过 log_cb 说清楚，这里只补一条可执行指引
-                QMessageBox.warning(
-                    parent_widget, "生成失败",
-                    "分厂版PPT生成失败，请查看下方日志。\n\n"
-                    "常见原因：所选 Excel 不是「完整分析报告」导出文件\n"
-                    "（本报告需要含「汇总统计」Sheet 的分析结果）。"
+                message_box.warn(
+                    parent_widget, "分厂版报告没能生成",
+                    "具体原因在下面这条日志里。\n\n"
+                    "常见原因：选的 Excel 不是「完整分析报告」导出的文件\n"
+                    "（这份报告需要有含「汇总统计」Sheet 的分析结果）。"
                 )
                 return False
         except Exception as e:
             traceback.print_exc()
             if log_cb:
                 log_cb(f"分厂版PPT生成失败: {e}", "error")
-            QMessageBox.critical(parent_widget, "错误", f"生成失败: {e}")
+            message_box.error(parent_widget, "分厂版报告没能生成",
+                              "表里的数据没有改动，可以换个 Excel 再试。", exc=e)
             self.log_message.emit(f"分厂版PPT生成失败: {e}", "error")
             return False
 
     def generate_advanced_report(self, audit_data, analysis_output_path, output_dir, parent_widget, log_cb=None):
         """生成专业版详细分析报告（20+页）"""
         if audit_data is None or audit_data.empty:
-            QMessageBox.warning(parent_widget, "提示", "无数据，请先完成分析")
+            message_box.warn(parent_widget, "表格里没有数据",
+                             "先跑一次分析，再生成专业版报告。")
             return False
 
         excel_path = analysis_output_path
@@ -296,20 +306,23 @@ class ExportController(QObject):
             if success:
                 if log_cb:
                     log_cb(f"专业版报告生成成功：{output_path}", "info")
-                if QMessageBox.question(
-                    parent_widget, "生成成功", f"专业版报告已生成：\n{output_path}\n是否打开？"
-                ) == QMessageBox.Yes:
+                if message_box.confirm(
+                    parent_widget, "专业版报告已经生成",
+                    "文件在：\n%s\n\n要不要现在打开？" % output_path,
+                    yes="打开报告", no="先不打开"):
                     open_file(output_path)
                 self.log_message.emit(f"专业版报告生成成功：{output_path}", "info")
                 return True
             else:
-                QMessageBox.warning(parent_widget, "生成失败", "专业版报告生成返回失败，请查看日志")
+                message_box.warn(parent_widget, "专业版报告没能生成",
+                                 "具体原因在下面这条日志里，数据没有改动。")
                 return False
         except Exception as e:
             traceback.print_exc()
             if log_cb:
                 log_cb(f"专业版报告生成失败: {e}", "error")
-            QMessageBox.critical(parent_widget, "错误", f"生成失败: {e}")
+            message_box.error(parent_widget, "专业版报告没能生成",
+                              "表里的数据没有改动，可以重新生成一次。", exc=e)
             self.log_message.emit(f"专业版报告生成失败: {e}", "error")
             return False
 
@@ -331,25 +344,18 @@ class ExportController(QObject):
                     self.log_message.emit("导出已取消（目标文件被占用）", "warning")
                     return
                 save_path = _saved
-                if QMessageBox.question(
-                    parent_widget, "导出成功",
-                    f"完整分析报告已导出到\n{save_path}\n\n"
-                    "（使用缓存，秒传完成）\n\n"
-                    "包含Sheet:\n"
-                    "📋 分析说明 · 汇总统计(带预警颜色)\n"
-                    "完整偏差明细 · 替代料明细 · 无备注预警\n"
-                    "中间地带明细 · 异常预警 · 偏差金额分析\n"
-                    "偏差原因汇总 · 偏差原因分析 · 趋势分析\n\n"
-                    "是否立即打开？"
-                ) == QMessageBox.Yes:
+                if message_box.confirm(
+                    parent_widget, "完整报告已经生成（走缓存，秒传）",
+                    "文件在：\n%s\n\n包含 10 个 Sheet：\n%s\n\n要不要现在打开？"
+                    % (save_path, SHEETS_LIST),
+                    yes="打开报告", no="先不打开"):
                     open_file(save_path)
                 self.log_message.emit(f"已导出完整分析报告到 {save_path} (缓存)", "info")
                 return
             except Exception as e:
-                QMessageBox.warning(
-                    parent_widget, "缓存复制失败",
-                    f"缓存复制失败：{e}\n\n将重新分析生成报告。"
-                )
+                message_box.warn(parent_widget, "缓存没能复制过去",
+                                  "不碍事，接下来重新分析生成报告，要多等几十秒。",
+                                  exc=e)
                 self.log_message.emit(f"缓存复制失败，回退重新分析: {e}", "warning")
 
         # 重新分析要跑几十秒，先确认目标文件写得进去，免得白算一场
@@ -407,7 +413,8 @@ class ExportController(QObject):
         except Exception as e:
             traceback.print_exc()
             progress_dlg.close()
-            QMessageBox.critical(parent_widget, "错误", f"导出完整报告失败: {e}")
+            message_box.error(parent_widget, "完整报告没能导出",
+                              "表里的数据没有改动，可以重新导出一次。", exc=e)
             self.log_message.emit(f"导出完整报告失败: {e}", "error")
 
     def on_full_report_done(self, save_path, cache_path, parent_widget):
@@ -424,17 +431,11 @@ class ExportController(QObject):
                 shutil.copy2(save_path, cache_path)
             except Exception:
                 pass
-        reply = QMessageBox.question(
-            parent_widget, "导出成功",
-            f"完整分析报告已生成：\n{save_path}\n\n"
-            "包含Sheet:\n"
-            "📋 分析说明 · 汇总统计(带预警颜色)\n"
-            "完整偏差明细 · 替代料明细 · 无备注预警\n"
-            "中间地带明细 · 异常预警 · 偏差金额分析\n"
-            "偏差原因汇总 · 偏差原因分析 · 趋势分析\n\n"
-            "是否立即打开？"
-        )
-        if reply == QMessageBox.Yes:
+        if message_box.confirm(
+            parent_widget, "完整报告已经生成",
+            "文件在：\n%s\n\n包含 10 个 Sheet：\n%s\n\n要不要现在打开？"
+            % (save_path, SHEETS_LIST),
+            yes="打开报告", no="先不打开"):
             open_file(save_path)
         self.log_message.emit(f"已导出完整分析报告到 {save_path}", "info")
 
@@ -464,11 +465,13 @@ class ExportController(QObject):
             return
         audit_data = parent.view_model.df
         if audit_data is None or audit_data.empty:
-            QMessageBox.warning(parent, "提示", "无数据，请先进行分析")
+            message_box.warn(parent, "表格里没有数据",
+                             "先跑一次分析，再导完整 Excel。")
             return
 
         if parent._heavy_busy:
-            QMessageBox.information(parent, "提示", "分析/报告生成进行中，请稍候再导出")
+            message_box.info(parent, "正在忙，稍等一下",
+                             "分析／报告还在跑，跑完再导比较稳（现在导的是上一轮结果）。")
             return
 
         _ap = getattr(parent, '_analysis_params', None) or {}
@@ -498,14 +501,12 @@ class ExportController(QObject):
         )
 
         if has_valid_params:
-            reply = QMessageBox.question(
-                parent, "导出选项",
-                "是否生成完整多Sheet分析报告（含汇总统计、预警颜色等）？\n\n"
-                "点击「是」→ 生成完整多Sheet Excel（缓存命中则秒传，否则重新分析）\n"
-                "点击「否」→ 仅导出当前表格数据（快速）",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes
-            )
-            if reply == QMessageBox.Yes:
+            if message_box.confirm(
+                parent, "要不要出完整多 Sheet 报告",
+                "完整报告含汇总统计、预警颜色等 10 个 Sheet（缓存命中则秒传，"
+                "否则重新分析，要等几十秒）；\n"
+                "只导当前表格就这一张，几秒就好。",
+                yes="生成完整报告", no="只导当前表格"):
                 self.export_full_analysis_inline(
                     save_path, analysis_params, cache_path, parent
                 )
@@ -521,14 +522,16 @@ class ExportController(QObject):
                 parent.log("导出已取消（目标文件被占用）", "warning")
                 return
             save_path = saved
-            if QMessageBox.question(
-                parent, "导出成功", f"文件已导出到：\n{save_path}\n是否打开？"
-            ) == QMessageBox.Yes:
+            if message_box.confirm(
+                parent, "已经导出好了",
+                "文件在：\n%s\n\n要不要现在打开？" % save_path,
+                yes="打开文件", no="先不打开"):
                 open_file(save_path)
             parent.log(f"已导出完整Excel到 {save_path}", "info")
         except Exception as e:
             traceback.print_exc()
-            QMessageBox.critical(parent, "错误", f"导出失败: {e}")
+            message_box.error(parent, "导出没成功",
+                              friendly_error(save_path, e), exc=e)
             parent.log(f"导出失败: {e}", "error")
 
     def recalculate_net_offset(self, silent=False):
@@ -539,13 +542,16 @@ class ExportController(QObject):
         df = parent.view_model.df
         if df is None or df.empty:
             if not silent:
-                QMessageBox.warning(parent, "提示", "无数据")
+                message_box.warn(parent, "表格里没有数据", "先跑一次分析再算净偏差。")
             return
         from analysis.net_offset import apply_net_offset
         alt_pairs = parent.alt_controller.get_pairs()
         if not alt_pairs:
             if not silent:
-                QMessageBox.information(parent, "提示", "没有替代料配对，已删除所有配对")
+                message_box.info(
+                    parent, "已经没有替代料配对",
+                    "净偏差退回原始偏差数量，替代料一栏全部标「否」。"
+                    "想恢复算法就去「替代料配对」里重新导入。")
             df = df.copy()
             df["净偏差数量"] = df.get("偏差数量", 0)
             df["是否替代料"] = "否"
@@ -584,7 +590,8 @@ class ExportController(QObject):
                 parent.statusBar().showMessage("净偏差已重新计算", 2000)
         except Exception as e:
             if not silent:
-                QMessageBox.critical(parent, "错误", f"重算净偏差失败: {e}")
+                message_box.error(parent, "净偏差没算成",
+                                  "表里还是上一轮的数，没有改动。", exc=e)
             else:
                 parent.log(f"重算净偏差失败: {e}", "error")
 

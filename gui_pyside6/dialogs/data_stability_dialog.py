@@ -10,7 +10,7 @@ import sqlite3
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
-    QTabWidget, QSpinBox, QMessageBox, QWidget, QPushButton,
+    QTabWidget, QSpinBox, QWidget, QPushButton,
 )
 from PySide6.QtCore import Qt
 
@@ -31,19 +31,29 @@ def _split_data_id(did):
     return fac, od, fo, mat
 
 
+from gui_pyside6.components import dialog_chrome, dialog_shell_bridge, message_box
+
 class DataStabilityDialog(QDialog):
     def __init__(self, parent=None, code_name_map=None):
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         # 调用方（dashboard_manager/dashboard_controller）传入 MainWindow 作为 parent，
         # 故 parent 即 MainWindow 实例；用于取主表 DataFrame 计算备注覆盖率。
         self._mw = parent
         # v43.185：物料名称不在 audit.db，由主表当前数据带一份「编码→名称」映射进来。
         self._name_map = dict(code_name_map) if code_name_map else {}
-        self.setWindowTitle("📈 数据稳定性看板")
-        self.resize(1000, 640)
+        dialog_chrome.apply(self, dialog_chrome.TIER_LARGE, "数据稳定性看板", "数据质量诊断")
+        self._status_text = ""
         self._build_ui()
         self._load()
+        # v43.348：专题看板统一外壳（标题栏 + 状态条 + 亮暗主题跟随）。
+        # 顶部说明 QLabel 删了，同一句话改由 shell 状态条承担；阈值 SpinBox 留在原处。
+        self._shell = dialog_shell_bridge.install_dialog_shell(
+            self, self._host, self.windowTitle(), self._status_text)
+
+    def _set_status(self, text):
+        """状态文案交给统一状态条；shell 尚未装上时只暂存，装壳时读一次。"""
+        self._status_text = text
+        dialog_shell_bridge.update_shell_status(self, text)
 
     def _name_of(self, code):
         """按物料编码取名称；查不到返回空串（不猜测）。"""
@@ -52,7 +62,8 @@ class DataStabilityDialog(QDialog):
         return self._name_map.get(normalize_text(code), '')
 
     def _build_ui(self):
-        lay = QVBoxLayout(self)
+        self._host = QWidget()
+        lay = QVBoxLayout(self._host)
         top = QHBoxLayout()
         top.addWidget(QLabel("反复修改阈值 N（次）:"))
         self._spin = QSpinBox()
@@ -60,9 +71,7 @@ class DataStabilityDialog(QDialog):
         self._spin.setValue(10)
         self._spin.valueChanged.connect(self._load)
         top.addWidget(self._spin)
-        self._info = QLabel()
-        self._info.setWordWrap(True)
-        top.addWidget(self._info, 1)
+        top.addStretch(1)
         lay.addLayout(top)
 
         self._tabs = QTabWidget()
@@ -106,7 +115,11 @@ class DataStabilityDialog(QDialog):
 
     def _load(self):
         if not os.path.exists(_DB_PATH):
-            QMessageBox.information(self, "提示", "未找到审计库: %s" % _DB_PATH)
+            self._set_status("未找到审计库，无法统计")
+            message_box.info(
+                self, "还没有审计记录库",
+                "这里统计的是「改过什么、改了几次」的流水；还没做过修改就没有记录。",
+                detail=_DB_PATH)
             return
         n = self._spin.value()
         try:
@@ -129,10 +142,13 @@ class DataStabilityDialog(QDialog):
             self._fill_score(c)
             tot = c.execute("select count(*) from deviation_history").fetchone()[0]
             c.close()
-            self._info.setText(
+            self._set_status(
                 "deviation_history 共 %d 条；阈值≥%d 的反复改物料 %d 个" % (tot, n, len(rows)))
         except Exception as e:
-            QMessageBox.critical(self, "错误", "读取失败: %s" % e)
+            message_box.error(
+                self, "读取审计记录失败",
+                "审计库文件在，但读不出内容，可能正被其它程序占用。",
+                exc=e, detail=_DB_PATH)
 
     def _fill(self, tbl, rows, col_name="修改次数"):
         tbl.setRowCount(len(rows))

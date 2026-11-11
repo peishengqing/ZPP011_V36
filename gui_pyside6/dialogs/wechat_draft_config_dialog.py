@@ -4,19 +4,19 @@ ZPP011 微信草稿格式配置窗口
 """
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QGroupBox,
-    QLabel, QListWidget, QListWidgetItem, QSplitter, QMessageBox,
+    QLabel, QListWidget, QListWidgetItem, QSplitter,
     QLineEdit, QWidget,
 )
 from PySide6.QtCore import Qt
 from gui_pyside6.utils.icons import make_button
 
 
+from gui_pyside6.components import dialog_chrome, message_box
+
 class WechatDraftConfigDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
-        self.setWindowTitle("配置微信草稿格式")
-        self.resize(600, 500)
+        dialog_chrome.apply(self, dialog_chrome.TIER_MEDIUM, "微信草稿格式", "配置推送给微信的字段与顺序")
         self.current_config = None
 
         self._init_ui()
@@ -125,7 +125,7 @@ class WechatDraftConfigDialog(QDialog):
         field_key.setPlaceholderText("字段键名")
 
         dialog = QDialog(self)
-        dialog.setWindowTitle("添加新字段")
+        dialog_chrome.apply(dialog, dialog_chrome.TIER_SMALL, "添加新字段")
         layout = QVBoxLayout(dialog)
         layout.addWidget(QLabel("字段显示名："))
         layout.addWidget(field_name)
@@ -146,13 +146,13 @@ class WechatDraftConfigDialog(QDialog):
             label = field_name.text()
             key = field_key.text()
             if not label or not key:
-                QMessageBox.warning(self, "提示", "字段名和字段键名不能为空")
+                message_box.warn(self, "字段名或键名还没填", "两项都要有名字，草稿模板才知道取表格的哪一列。")
                 return
 
             # 检查是否存在同名字段
             for f in self.current_config["fields"]:
                 if f["key"] == key or f["label"] == label:
-                    QMessageBox.warning(self, "提示", "已存在同名字段或同显示名字段")
+                    message_box.warn(self, "已经有同名字段", "键名或显示名重复会让草稿取错列，换个名字再加。")
                     return
 
             new_field = {
@@ -169,7 +169,7 @@ class WechatDraftConfigDialog(QDialog):
     def _edit_field(self):
         item = self._get_selected_item()
         if not item:
-            QMessageBox.warning(self, "提示", "请先选择一个字段")
+            message_box.warn(self, "还没选字段", "先在左边列表里点一个字段，再来编辑。")
             return
         field = item.data(Qt.UserRole)
 
@@ -183,15 +183,19 @@ class WechatDraftConfigDialog(QDialog):
     def _delete_field(self):
         item = self._get_selected_item()
         if not item:
-            QMessageBox.warning(self, "提示", "请先选择一个字段")
+            message_box.warn(self, "还没选字段", "先在左边列表里点一个字段，再来删除。")
             return
-        if QMessageBox.question(self, "确认删除", "确定要删除此字段吗？") == QMessageBox.Yes:
+        if message_box.confirm(self, "要删除这个字段吗",
+                               "字段从微信草稿模板里去掉，已发出的草稿不受影响。",
+                               yes="删除字段", no="先不删", danger=True):
             self.current_config["fields"].remove(item.data(Qt.UserRole))
             self.field_list.takeItem(self.field_list.row(item))
             self._update_preview()
 
     def _reset_default(self):
-        if QMessageBox.question(self, "确认重置", "确定恢复默认配置吗？") == QMessageBox.Yes:
+        if message_box.confirm(self, "要恢复默认配置吗",
+                               "你自己加的字段会被清掉，改过的字段名也一起还原。",
+                               yes="恢复默认", no="先不恢复", danger=True):
             from gui_pyside6.utils.wechat_draft_config import DEFAULT_CONFIG
             self.current_config = DEFAULT_CONFIG.copy()
             self._load_current_items()
@@ -199,10 +203,11 @@ class WechatDraftConfigDialog(QDialog):
     def _save_config(self):
         from gui_pyside6.utils.wechat_draft_config import _save_wechat_draft_config
         if _save_wechat_draft_config(self.current_config):
-            QMessageBox.information(self, "保存成功", "配置已保存")
+            message_box.info(self, "配置已保存", "下次生成微信草稿就用这套字段。")
             self.accept()
         else:
-            QMessageBox.critical(self, "保存失败", "配置保存失败")
+            message_box.error(self, "配置没保存成",
+                              "改的内容还在窗口里，可以重试一次。")
 
     def _on_item_double_clicked(self, item):
         self._edit_field()

@@ -4,15 +4,14 @@
 """
 import pandas as pd
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QPushButton, QMessageBox
-from PySide6.QtCore import Qt
 
+
+from gui_pyside6.components import dialog_chrome
 
 class UnitSummaryDialog(QDialog):
     def __init__(self, parent, df):
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
-        self.setWindowTitle("按单位汇总")
-        self.resize(600, 400)
+        dialog_chrome.apply(self, dialog_chrome.TIER_MEDIUM, "按单位汇总")
         self.setModal(True)
 
         layout = QVBoxLayout(self)

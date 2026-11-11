@@ -57,14 +57,14 @@ ALLOWED_FONT_PX = set(FONT_PT.values())
 
 #: 挂账：文件 → 允许的表外色号处数（收口一期改小一期）
 DEFERRED = {
-    # 第三期：三类弹窗外壳重写时一并收口
-    "gui_pyside6/dialogs/audit_dialog.py": 5,
-    "gui_pyside6/dialogs/batch_operation_dialog.py": 7,
-    "gui_pyside6/dialogs/filter_explainer_dialog.py": 5,
-    "gui_pyside6/dialogs/ai_reason_panel.py": 1,
-    "gui_pyside6/dialogs/dashboard_dialog.py": 2,
-    "gui_pyside6/dialogs/flip_check_dashboard_dialog.py": 2,
-    "gui_pyside6/dialogs/guizang_dialog.py": 3,
+    # 第三期已清：batch_operation_dialog（批量操作套 ImpactBanner + 令牌按钮）、
+    # filter_explainer_dialog（说明条改 surface2/textMuted/textFaint）已从此表移除。
+    # 以下四处第三期没动，原因写在各自后面，留待对应期收口：
+    "gui_pyside6/dialogs/audit_dialog.py": 5,        # 无活跃调用方（_audit_row 从未接线）
+    "gui_pyside6/dialogs/ai_reason_panel.py": 1,     # 同上，面板未接入主界面
+    "gui_pyside6/dialogs/dashboard_dialog.py": 2,    # QWebEngine 报告页配色，离屏测不了
+    "gui_pyside6/dialogs/flip_check_dashboard_dialog.py": 2,  # 同上
+    "gui_pyside6/dialogs/guizang_dialog.py": 3,      # WebEngine 兜底 HTML 里的占位色
     # 第二期：看板套壳后这三个旧副本整文件删除，挂账随之消失
     "gui_pyside6/dialogs/neg_loss_dashboard_dialog.py": 1,
     "gui_pyside6/dialogs/pos_loss_dashboard_dialog.py": 1,

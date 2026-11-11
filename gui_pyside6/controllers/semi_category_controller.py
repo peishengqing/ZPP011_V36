@@ -20,8 +20,10 @@ import sys
 
 from PySide6.QtCore import Qt, QItemSelection, QItemSelectionModel
 from PySide6.QtWidgets import (
-    QFileDialog, QMessageBox, QTreeWidgetItem,
+    QFileDialog, QTreeWidgetItem,
 )
+
+from gui_pyside6.components import message_box
 
 
 
@@ -42,7 +44,8 @@ class SemiCategoryController:
         title = category
         count = int(mask.sum())
         if count == 0:
-            QMessageBox.information(self.mw, "提示", f"{title}：无匹配记录")
+            message_box.warn(self.mw, "「%s」本期没有记录" % title,
+                             "表格里这一类是空的，所以没有行被选中。")
             return
         rows = [i for i, v in enumerate(mask.values) if v]
         proxy = self.mw.table_view.model()
@@ -246,12 +249,13 @@ class SemiCategoryController:
 
         cat_name = name_input.text().strip()
         if not cat_name:
-            QMessageBox.warning(dlg, "提示", "分类名称不能为空")
+            message_box.warn(dlg, "分类名还没填", "起个名字，左边列表才有地方显示它。")
             return
         # 检查重复（基于分类名）
         categories = self.mw._get_semi_category_list()
         if any(c['name'] == cat_name for c in categories):
-            QMessageBox.warning(dlg, "提示", f"分类「{cat_name}」已存在")
+            message_box.warn(dlg, "已经有同名分类「%s」" % cat_name,
+                             "把物料并进已有分类就够了，不用再建一个重名的。")
             return
 
         factory = factory_combo.currentText()
@@ -260,7 +264,8 @@ class SemiCategoryController:
         self.mw._semi_categories[f"{prefix}999999"] = cat_name
         self.mw._save_semi_categories(self.mw._semi_categories)
         self.mw._refresh_semi_list_ui()
-        QMessageBox.information(dlg, "成功", f"已添加分类「{cat_name}」")
+        message_box.info(dlg, "已添加分类「%s」" % cat_name,
+                        "左边列表刷新好了。这个分类下还没有真实物料，需要再指定物料编码。")
 
 
     def _delete_semi_category(self):
@@ -270,34 +275,40 @@ class SemiCategoryController:
             return
         item = tree.currentItem()
         if item is None:
-            QMessageBox.warning(self.mw, "提示", "请先选中要删除的分类")
+            message_box.warn(self.mw, "还没选中分类",
+                             "在树里点一行，再按删除。")
             return
         # 只有父节点（分类级）可删；子节点是单个物料编码
         if item.childCount() == 0:
-            QMessageBox.warning(self.mw, "提示",
-                                "请选中分类节点（带展开三角的行），物料编码不能单独删除")
+            message_box.warn(self.mw, "选中的是物料编码，不是分类",
+                             "请点带展开三角的那一行（分类名）。编码要从分类里改，不能单独删。")
             return
         # 从 UserRole 取分类名，不再依赖行号 —— 树形展开后行号会随子节点错位
         name = item.data(0, Qt.ItemDataRole.UserRole)
         if not name:
-            QMessageBox.warning(self.mw, "提示", "请先选中要删除的分类")
+            message_box.warn(self.mw, "还没选中分类", "在树里点一行，再按删除。")
             return
         # 从映射中删除该分类的所有条目
         self.mw._semi_categories = {k: v for k, v in self.mw._semi_categories.items() if v != name}
         self.mw._save_semi_categories(self.mw._semi_categories)
         self.mw._refresh_semi_list_ui()
-        QMessageBox.information(self.mw, "成功", f"已删除分类「{name}」")
+        message_box.info(self.mw, "已删除分类「%s」" % name,
+                         "这个分类下的物料回到未归类状态，物料本身没删。")
 
 
     def _reset_semi_categories(self):
         """重置半成品分类为默认值"""
-        if not QMessageBox.question(self.mw, "确认", "确定要重置所有半成品分类吗？",
-                                    QMessageBox.Yes | QMessageBox.No) == QMessageBox.No:
+        if not message_box.confirm(
+            self.mw, "要清空半成品分类吗",
+            "现在建好的分类会全部删掉，回到系统默认的那几类。\n"
+            "已经打上分类的物料只是不再归类，物料本身不动。",
+            yes="清空重建", no="先不清空", danger=True):
             return
         self.mw._semi_categories = {}
         self.mw._save_semi_categories(self.mw._semi_categories)
         self.mw._refresh_semi_list_ui()
-        QMessageBox.information(self.mw, "成功", "已重置所有半成品分类")
+        message_box.info(self.mw, "半成品分类已清空",
+                         "已经回到系统默认分类，左边列表刷新好了。")
 
 
     def _import_semi_categories(self):
@@ -324,9 +335,10 @@ class SemiCategoryController:
             self.mw._semi_categories.update(imported)
             self.mw._save_semi_categories(self.mw._semi_categories)
             self.mw._refresh_semi_list_ui()
-            QMessageBox.information(self.mw, "成功", f"已导入 {len(imported)} 个分类")
+            message_box.info(self.mw, "已导入 %d 个分类" % len(imported),
+                        "左边列表刷新好了，原有分类没有被覆盖。")
         except Exception as e:
-            QMessageBox.critical(self.mw, "错误", f"导入失败: {e}")
+            message_box.error(self.mw, "分类没导进来", "现有分类没有改动。", exc=e)
 
 
     def _export_semi_categories(self):
@@ -336,6 +348,6 @@ class SemiCategoryController:
             try:
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(self.mw._semi_categories, f, ensure_ascii=False, indent=2)
-                QMessageBox.information(self.mw, "成功", f"已导出到 {file_path}")
+                message_box.info(self.mw, "分类已导出", "文件位置：\n%s" % file_path)
             except Exception as e:
-                QMessageBox.critical(self.mw, "错误", f"导出失败: {e}")
+                message_box.error(self.mw, "分类没导出去", "文件没有生成，现有分类没有改动。", exc=e)

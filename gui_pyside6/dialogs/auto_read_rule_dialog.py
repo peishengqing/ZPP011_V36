@@ -78,6 +78,8 @@ def _default_params_for(t):
     return {"value": spec["default"]}
 
 
+from gui_pyside6.components import dialog_chrome
+
 class _ConditionRow(QWidget):
     """单条条件编辑行：类型下拉 + 参数输入 + 删除按钮。"""
 
@@ -503,7 +505,7 @@ class AutoReadRuleDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
-        self.setWindowTitle("⚙ 自动已读规则")
+        self.setWindowTitle(dialog_chrome.format_title("自动已读规则"))
         self.setMinimumWidth(620)
         self.setMinimumHeight(600)
         layout = QVBoxLayout(self)

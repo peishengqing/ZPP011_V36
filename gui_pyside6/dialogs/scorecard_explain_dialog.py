@@ -8,16 +8,15 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QTextBrowser,
                                QPushButton, QHBoxLayout)
 
 from core.scorecard_explain import build_explanation
-from PySide6.QtCore import Qt
 
+
+from gui_pyside6.components import dialog_chrome
 
 class ScorecardExplainDialog(QDialog):
     def __init__(self, main_df, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self._df = main_df
-        self.setWindowTitle("评分卡扣分证据 · 为什么分低")
-        self.resize(640, 560)
+        dialog_chrome.apply(self, dialog_chrome.TIER_LARGE, "评分卡扣分证据", "为什么分低")
         self._build()
 
     def _build(self):

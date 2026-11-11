@@ -37,7 +37,6 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from analysis.dashboard_html import compute_metrics  # noqa: E402
-from PySide6.QtCore import Qt
 
 # 说明：本模块故意不在文件顶部 import PySide6.QtWebEngine*，
 # 因为 main_window.py 在模块级（顶部）就 `from .dialogs.dashboard_dialog import DashboardDialog`，
@@ -97,6 +96,8 @@ def _make_url_interceptor_class():
     return _Zpp011UrlInterceptor
 
 
+from gui_pyside6.components import dialog_chrome
+
 class _DashboardBuildWorker(QThread):
     """后台线程：拆分数据 + 生成看板 HTML（Agg 后端，避免占用 GUI 线程）。"""
 
@@ -155,7 +156,6 @@ class DashboardDialog(QDialog):
             self._web_engine_err = str(e)
 
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.main_window = main_window
         self.audit_df = audit_df
         self.material_df = material_df
@@ -167,8 +167,7 @@ class DashboardDialog(QDialog):
         self._start_build()
 
     def _init_ui(self):
-        self.setWindowTitle("管理看板 · 偏差视角 12 图")
-        self.resize(1100, 760)
+        dialog_chrome.apply(self, dialog_chrome.TIER_BOARD, "管理看板", "偏差视角 12 图")
         layout = QVBoxLayout(self)
 
         # 顶部工具栏

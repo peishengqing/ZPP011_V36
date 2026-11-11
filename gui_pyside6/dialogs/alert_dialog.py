@@ -31,14 +31,14 @@ from gui_pyside6.utils.snapshot_action import attach_snapshot_bar
 from utils.theme_manager import Thm
 
 
+from gui_pyside6.components import dialog_chrome
+
 class AlertDialog(QDialog):
     """替代料看板对话框 - 替代料偏差预警，支持标记已读"""
 
     def __init__(self, alerts_df, main_window, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
-        self.setWindowTitle("实时替代料看板 - 替代料偏差预警")
-        self.resize(1200, 600)
+        dialog_chrome.apply(self, dialog_chrome.TIER_BOARD, "实时替代料看板", "替代料偏差预警")
         self.main_window = main_window
         self.original_df = alerts_df.copy()
         self.filter_mode = "all"

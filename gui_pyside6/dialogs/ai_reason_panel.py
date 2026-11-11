@@ -13,6 +13,8 @@ from PySide6.QtCore import Signal, Qt
 from core.ai_reason_analyzer import AIReasonAnalyzer
 
 
+from gui_pyside6.components import dialog_chrome
+
 class AIReasonPanel(QDialog):
     """AI 归因摘要面板"""
 
@@ -21,9 +23,8 @@ class AIReasonPanel(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.analyzer = AIReasonAnalyzer()
-        self.setWindowTitle("AI 归因摘要")
+        dialog_chrome.apply(self, dialog_chrome.TIER_SMALL, "AI 归因摘要")
         self.setMinimumSize(400, 500)
 
         self._setup_ui()
@@ -71,7 +72,7 @@ class AIReasonPanel(QDialog):
         """加载历史数据"""
         if not hasattr(self, 'material_code'):
             self.info_text = "未设置上下文参数"
-            self.info_label.text(self.info_text)
+            self.info_label.setText(self.info_text)
             return
 
         # 加载相似案例

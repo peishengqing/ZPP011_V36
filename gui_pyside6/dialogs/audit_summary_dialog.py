@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QTextBrowser,
                                QPushButton, QHBoxLayout)
 
 import core.audit_evidence as ae
-from PySide6.QtCore import Qt
 
 _EV_LABEL = {
     ae.EV_RULE_HIT: "命中规则/分支",
@@ -20,12 +19,12 @@ _EV_LABEL = {
 }
 
 
+from gui_pyside6.components import dialog_chrome
+
 class AuditSummaryDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
-        self.setWindowTitle("审核证据 · 期间汇总报告（F1）")
-        self.resize(640, 560)
+        dialog_chrome.apply(self, dialog_chrome.TIER_LARGE, "期间汇总报告", "审核证据")
         self._build()
 
     def _build(self):

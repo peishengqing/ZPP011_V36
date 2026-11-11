@@ -49,14 +49,14 @@ _HEADERS = ['订单日期', '流程订单', '工厂', '车间', '产品物料描
             '产品物料编码', '组件物料编码', '组件物料名称']
 
 
+from gui_pyside6.components import dialog_chrome
+
 class FlipCheckDashboardDialog(QDialog):
     """翻箱净含量守恒审核看板：产出>投入的漏记嫌疑单，只读视图。"""
 
     def __init__(self, df, main_window, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("翻箱守恒预警看板 - ZPFX 净含量守恒")
-        self.resize(1400, 620)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
+        dialog_chrome.apply(self, dialog_chrome.TIER_BOARD, "翻箱守恒预警看板", "ZPFX 净含量守恒")
         self.main_window = main_window
         self._verdict_filter = "全部"   # 全部 / 疑似漏记 / 守恒/正常（与 _apply_filter 比较值一致）
         self._factory_filter = "全部"  # 🔴 必须用中文「全部」，与 _apply_filter 的 != "全部" 对齐；

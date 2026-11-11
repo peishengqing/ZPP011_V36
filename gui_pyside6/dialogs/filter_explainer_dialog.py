@@ -33,17 +33,17 @@ from gui_pyside6.utils.table_autofit import install_adaptive
 MAX_EXCLUDED_ROWS = 500
 
 
+from gui_pyside6.components import dialog_chrome
+
 class FilterExplainerDialog(QDialog):
     """筛选解释器对话框"""
 
     def __init__(self, parent, filter_controller: FilterController):
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.controller = filter_controller
         self.app_state: Optional[AppState] = filter_controller.app_state
 
-        self.setWindowTitle("筛选解释器 · 为什么这 X 条没显示")
-        self.resize(1280, 640)
+        dialog_chrome.apply(self, dialog_chrome.TIER_LARGE, "筛选解释器", "为什么这些行没显示")
 
         self._source_df = None        # 原始 DataFrame
         self._excluded_df = None      # 被排除的 DataFrame（视图）
@@ -78,7 +78,10 @@ class FilterExplainerDialog(QDialog):
         top.addWidget(self.search_edit, 1)
 
         self.summary_label = QLabel("加载中…")
-        self.summary_label.setStyleSheet("color: #444; padding: 2px 8px; background: #f0f0f0; border-radius: 3px;")
+        dialog_chrome.style_with_tokens(
+            self.summary_label,
+            "QLabel { color:$text; padding:2px 8px; background:$surface2;"
+            " border-radius:4px; }")
         top.addWidget(self.summary_label)
         main.addLayout(top)
 
@@ -93,7 +96,8 @@ class FilterExplainerDialog(QDialog):
         left_v.setSpacing(4)
 
         left_head = QLabel("<b>被排除的行</b> · 点击勾选，右侧会显示逐条规则解释（Ctrl/Ctrl+Shift 多选）")
-        left_head.setStyleSheet("color: #666; font-size: 11px;")
+        dialog_chrome.style_with_tokens(
+            left_head, "QLabel { color:$textMuted; font-size:11px; }")
         left_v.addWidget(left_head)
 
         self.list_table = QTableWidget()
@@ -109,7 +113,9 @@ class FilterExplainerDialog(QDialog):
         install_adaptive(self.list_table, mode='off', key='filter_list')
 
         left_footer = QLabel("提示：只展示前 %d 行（性能保护），如需更多请先减少筛选条件。" % MAX_EXCLUDED_ROWS)
-        left_footer.setStyleSheet("color: #999; font-size: 10px; padding-left: 4px;")
+        dialog_chrome.style_with_tokens(
+            left_footer,
+            "QLabel { color:$textFaint; font-size:10px; padding-left:4px; }")
         left_footer.setWordWrap(True)
         left_v.addWidget(left_footer)
 
@@ -122,7 +128,8 @@ class FilterExplainerDialog(QDialog):
         right_v.setSpacing(4)
 
         right_head = QLabel("<b>逐条规则解释</b> · ✓=通过（保留）✗=未通过（排除）")
-        right_head.setStyleSheet("color: #666; font-size: 11px;")
+        dialog_chrome.style_with_tokens(
+            right_head, "QLabel { color:$textMuted; font-size:11px; }")
         right_v.addWidget(right_head)
 
         self.explain_table = QTableWidget()

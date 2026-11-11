@@ -18,19 +18,19 @@ from gui_pyside6.widgets.toast import toast
 from gui_pyside6.services.audit_service import AuditService
 
 
+from gui_pyside6.components import dialog_chrome
+
 class AuditDialog(QDialog):
     """审核完成对话框（最终决策者用）"""
     
     def __init__(self, df, data_id, from_status="待审核", parent=None):
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.df = df
         self.data_id = data_id
         self.from_status = from_status
         self.original_value = None
         
-        self.setWindowTitle(f"审核审核 - {data_id}")
-        self.resize(600, 500)
+        dialog_chrome.apply(self, dialog_chrome.TIER_LARGE, "审核", data_id)
         self.setObjectName("auditDialog")
         
         self._setup_ui()

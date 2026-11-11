@@ -15,11 +15,9 @@
 import os
 import sqlite3
 from collections import Counter
-from PySide6.QtCore import Qt
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QGroupBox, QFrame, QScrollArea,
-    QMessageBox,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QGroupBox, QFrame, QScrollArea, QWidget,
 )
 
 _DB_PATH = os.path.join(os.path.expanduser("~"), ".zpp011_audit", "audit.db")
@@ -62,26 +60,36 @@ def normalize_text(v):
     return s
 
 
+from gui_pyside6.components import dialog_chrome, dialog_shell_bridge, message_box
+
 class MaterialProfileDialog(QDialog):
     def __init__(self, code, parent=None, name=''):
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self._code = normalize_text(code)   # v43.184 修：兼容 numpy.int64/float，勿直接 .strip()
         self._name = normalize_text(name)
-        self.setWindowTitle("🪪 物料画像 — %s" % self._code)
-        self.resize(560, 660)
+        dialog_chrome.apply(self, dialog_chrome.TIER_LARGE, "物料画像", ("%s %s" % (self._name, self._code)).strip())
+        self._status_text = ""
         self._build_ui()
         self._load()
+        # v43.348：专题看板统一外壳（标题栏 + 状态条 + 亮暗主题跟随），滚动卡片本身不动。
+        self._shell = dialog_shell_bridge.install_dialog_shell(
+            self, self._host, self.windowTitle(), self._status_text)
+
+    def _set_status(self, text):
+        """状态文案交给统一状态条；shell 尚未装上时只暂存，装壳时读一次。"""
+        self._status_text = text
+        dialog_shell_bridge.update_shell_status(self, text)
 
     # ---------- UI ----------
     def _build_ui(self):
-        scroll = QScrollArea(self)
+        self._host = QWidget()
+        scroll = QScrollArea(self._host)
         scroll.setWidgetResizable(True)
         body = QFrame()
         self._lay = QVBoxLayout(body)
         self._lay.setSpacing(10)
         scroll.setWidget(body)
-        root = QVBoxLayout(self)
+        root = QVBoxLayout(self._host)
         root.addWidget(scroll)
 
     def _section(self, title):
@@ -107,10 +115,15 @@ class MaterialProfileDialog(QDialog):
     # ---------- 数据 ----------
     def _load(self):
         if not self._code:
+            self._set_status("未提供物料编码")
             self._empty("未提供物料编码")
             return
         if not os.path.exists(_DB_PATH):
-            QMessageBox.information(self, "提示", "未找到审计库: %s" % _DB_PATH)
+            self._set_status("未找到审计库，无画像数据")
+            message_box.info(
+                self, "还没有审计记录库",
+                "物料画像是从修改流水、隔离流水、已读记录里拼出来的；三条表都还没有记录。",
+                detail=_DB_PATH)
             return
         try:
             c = sqlite3.connect(_DB_PATH)
@@ -125,7 +138,10 @@ class MaterialProfileDialog(QDialog):
                 "where data_id is not null and data_id<>'X'").fetchall()
             c.close()
         except Exception as e:
-            QMessageBox.critical(self, "错误", "读取审计库失败: %s" % e)
+            message_box.error(
+                self, "读取审计记录失败",
+                "审计库文件在，但读不出内容，可能正被其它程序占用。",
+                exc=e, detail=_DB_PATH)
             return
 
         dh_rows = [r for r in dh if _mat_of(r[0]) == self._code]
@@ -141,6 +157,9 @@ class MaterialProfileDialog(QDialog):
             self._kv(head, "物料名称", self._name)
         self._kv(head, "厂", plant_txt)
 
+        self._set_status(
+            "修改史 %d 条 · 隔离 %d 条 · 已读 %d 条"
+            % (len(dh_rows), len(q_rows), len(rs_rows)))
         if not (dh_rows or q_rows or rs_rows):
             self._empty("审计库中暂无该物料的任何记录（deviation_history / quarantine_records / "
                         "read_status 均无匹配）。")

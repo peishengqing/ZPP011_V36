@@ -15,7 +15,9 @@ QMessageBox / QFileDialog 等，本模块自行 import 同名对象，行为完�
 
 import os
 from datetime import datetime
-from PySide6.QtWidgets import QMessageBox, QFileDialog, QProgressDialog
+from PySide6.QtWidgets import QFileDialog, QProgressDialog
+
+from gui_pyside6.components import message_box
 from PySide6.QtCore import Qt
 
 from gui_pyside6.save_guard import precheck_save_path
@@ -35,7 +37,7 @@ class PptController:
     def _generate_ppt_report(self):
         """生成 PPT 偏差分析报告（后台线程，完成后弹窗，界面不冻结）。"""
         if self.mw.view_model.df is None or self.mw.view_model.df.empty:
-            QMessageBox.warning(self.mw, "提示", "请先完成分析，暂无数据可生成 PPT")
+            message_box.warn(self.mw, "还没有分析结果", "表格现在是空的，先点一次「分析」再生成 PPT。")
             return
         default_name = f"ZPP011 偏差分析_{datetime.now():%Y%m%d_%H%M}.pptx"
         default_dir = os.path.join(os.path.expanduser('~'), 'Documents', 'ZPP011 分析报告')
@@ -81,10 +83,9 @@ class PptController:
         if hasattr(self.mw, '_ppt_progress'):
             self.mw._ppt_progress.setValue(100)
             self.mw._ppt_progress.close()
-        if QMessageBox.question(
-            self.mw, "生成成功",
-            f"PPT 报告已生成：\n{path}\n\n是否立即打开？"
-        ) == QMessageBox.Yes:
+        if message_box.confirm(self.mw, "PPT 报告已经生成",
+                                "文件在：\n%s\n\n要不要现在打开？" % path,
+                                yes="打开报告", no="先不打开"):
             self._open_file(path)
         self.mw.log(f"已生成 PPT 报告：{path}", "info")
 
@@ -92,7 +93,7 @@ class PptController:
         """PPT 生成失败回调。"""
         if hasattr(self.mw, '_ppt_progress'):
             self.mw._ppt_progress.close()
-        QMessageBox.critical(self.mw, "错误", f"生成 PPT 失败：{err}")
+        message_box.error(self.mw, "PPT 没能生成", str(err))
         self.mw.log(f"生成 PPT 失败：{err}", "error")
 
     @staticmethod
@@ -117,7 +118,7 @@ class PptController:
     def _generate_smart_ppt_simple(self):
         """智能 PPT(试用) — 分厂版 (9 页)。底层 core/ppt_trae.py（TRAE 版式），需完整分析 Excel。"""
         if self.mw.view_model.df is None or self.mw.view_model.df.empty:
-            QMessageBox.warning(self.mw, "提示", "请先完成分析，暂无数据可生成 PPT")
+            message_box.warn(self.mw, "还没有分析结果", "表格现在是空的，先点一次「分析」再生成 PPT。")
             return
         excel_path = self._resolve_smart_ppt_excel()
         self.mw.export_controller.generate_simple_ppt(
@@ -126,7 +127,7 @@ class PptController:
     def _generate_smart_ppt_pro(self):
         """智能 PPT(试用) — 专业版 (20+页)。底层 advanced_ppt_generator_v2，需完整分析 Excel。"""
         if self.mw.view_model.df is None or self.mw.view_model.df.empty:
-            QMessageBox.warning(self.mw, "提示", "请先完成分析，暂无数据可生成 PPT")
+            message_box.warn(self.mw, "还没有分析结果", "表格现在是空的，先点一次「分析」再生成 PPT。")
             return
         excel_path = self._resolve_smart_ppt_excel()
         self.mw.export_controller.generate_advanced_report(
@@ -157,4 +158,5 @@ class PptController:
             dlg.exec()
         except Exception as e:  # noqa: BLE001
             self.mw.log(f"打开归藏报告失败：{e}", "error")
-            QMessageBox.critical(self.mw, "打开失败", f"无法打开归藏报告：\n{e}")
+            message_box.error(self.mw, "打开归藏报告失败",
+                              "报告窗没弹出来。表格里的数据没有改动。", exc=e)

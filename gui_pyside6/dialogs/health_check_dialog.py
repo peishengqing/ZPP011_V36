@@ -18,13 +18,14 @@ from PySide6.QtGui import QFont
 from gui_pyside6.themes.tokens import num_font, FONT_PT
 
 
+from gui_pyside6.components import dialog_chrome
+
 class HealthCheckDialog(QDialog):
     """健康检查面板，检查运行环境、依赖、配置、磁盘空间等"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
-        self.setWindowTitle("系统健康检查")
+        dialog_chrome.apply(self, dialog_chrome.TIER_MEDIUM, "系统健康检查")
         self.setMinimumSize(700, 500)
         self._setup_ui()
         self._run_checks()

@@ -11,15 +11,14 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QTextBrowser,
                                QPushButton, QHBoxLayout, QFileDialog, QMessageBox)
 
 import core.audit_evidence as ae
-from PySide6.QtCore import Qt
 
+
+from gui_pyside6.components import dialog_chrome
 
 class AttributionListDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
-        self.setWindowTitle("归因建议清单（F2）")
-        self.resize(720, 560)
+        dialog_chrome.apply(self, dialog_chrome.TIER_LARGE, "归因建议清单")
         self._items = []
         self._build()
 

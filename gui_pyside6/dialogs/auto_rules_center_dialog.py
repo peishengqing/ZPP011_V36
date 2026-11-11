@@ -17,11 +17,13 @@ from gui_pyside6.widgets.rule_preview_widget import RulePreviewWidget
 from PySide6.QtCore import Qt
 
 
+from gui_pyside6.components import dialog_chrome
+
 class AutoRulesCenterDialog(QDialog):
     def __init__(self, parent=None, open_tab=0, df=None):
         super().__init__(parent)
         self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
-        self.setWindowTitle("⚙ 规则中心（自动隔离 / 自动已读 / 命中预览）")
+        self.setWindowTitle(dialog_chrome.format_title("规则中心", "自动隔离 / 自动已读 / 命中预览"))
         self.setMinimumWidth(620)
         self.setMinimumHeight(620)
 

@@ -6,28 +6,25 @@
 """
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QTextEdit, QGroupBox, QRadioButton, QButtonGroup, QSpinBox,
-    QMessageBox, QComboBox, QMessageBox
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QTextEdit, QGroupBox, QRadioButton, QButtonGroup,
 )
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt
 
+from gui_pyside6.components import dialog_chrome, message_box
+from gui_pyside6.components.dialog_chrome import ImpactBanner, SIZE_PX, style_with_tokens
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.services.batch_operations_service import BatchOperationsService
-
 
 class BatchOperationDialog(QDialog):
     """批量操作对话框"""
     
     def __init__(self, df, selected_indices, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.df = df
         self.selected_indices = selected_indices
         
-        self.setWindowTitle("批量操作")
-        self.resize(600, 600)
+        dialog_chrome.apply(self, dialog_chrome.TIER_MEDIUM, "批量操作")
         self.setObjectName("batchOperationDialog")
         
         self._setup_ui()
@@ -36,19 +33,11 @@ class BatchOperationDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         
-        # 顶部信息区
-        info_label = QLabel("选定 {} 行".format(len(self.selected_indices)))
-        info_label.setStyleSheet("""
-            QLabel {
-                background-color: #262521;
-                color: #8B7DD4;
-                padding: 10px;
-                border-radius: 8px;
-                font-size: 14px;
-                font-weight: 600;
-            }
-        """)
-        layout.addWidget(info_label)
+        # 影响范围条：设计稿 BatchShell 要求「不可逆操作前先说清影响多少行」
+        self._impact = ImpactBanner(
+            "选定 <b>%d</b> 行。下面的四种操作都会一次改完这些行，改完可用「撤销」回退一次。"
+            % len(self.selected_indices))
+        layout.addWidget(self._impact)
         
         # 操作类型选择区
         operation_group = QGroupBox("选择操作类型")
@@ -90,7 +79,8 @@ class BatchOperationDialog(QDialog):
         
         # 恢复未读说明
         read_restore_label = QLabel("将恢复这些行的已读状态为未读")
-        read_restore_label.setStyleSheet("color: #FF6B6B; font-style: italic;")
+        style_with_tokens(read_restore_label,
+                          "QLabel { color:$danger; font-style:italic; }")
         
         # 标记待审核备注
         self.tag_note_label = QLabel("待审核原因:")
@@ -129,39 +119,26 @@ class BatchOperationDialog(QDialog):
         btn_layout = QHBoxLayout()
         
         self.btn_batch = QPushButton("批量执行")
-        self.btn_batch.setStyleSheet("""
-            QPushButton {
-                background-color: #10B981;
-                color: white;
-                padding: 10px 20px;
-                border-radius: 8px;
-                font-size: 14px;
-                font-weight: 600;
-                min-width: 150px;
-            }
-            QPushButton:hover {
-                background-color: #059669;
-            }
-        """)
+        self.btn_batch.setObjectName("dlgPrimaryBtn")
+        # 主按钮配色走令牌（primary/primaryHover/onPrimary），不再抄 #10B981
+        style_with_tokens(self.btn_batch,
+                          "QPushButton#dlgPrimaryBtn { "
+                          " background:$primary; color:$onPrimary; border:none;"
+                          " border-radius:%dpx; padding:6px 18px;"
+                          " font-size:12px; font-weight:600; min-width:120px; }"
+                          " QPushButton#dlgPrimaryBtn:hover { background:$primaryHover; }"
+                          " QPushButton#dlgPrimaryBtn:pressed { background:$primaryActive; }"
+                          % SIZE_PX["radiusMd"])
+        self.btn_batch.setDefault(True)
         self.btn_batch.clicked.connect(self.on_batch_execute)
-        
+
         self.btn_cancel = QPushButton("取消")
-        self.btn_cancel.setStyleSheet("""
-            QPushButton {
-                background-color: #6B7280;
-                color: white;
-                padding: 10px 20px;
-                border-radius: 8px;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #4B5563;
-            }
-        """)
         self.btn_cancel.clicked.connect(self.reject)
-        
-        btn_layout.addWidget(self.btn_batch)
+
+        # 取消永远在主按钮左边，主按钮右下角；Esc 走 reject（QDialog 默认行为）
+        btn_layout.addStretch(1)
         btn_layout.addWidget(self.btn_cancel)
+        btn_layout.addWidget(self.btn_batch)
         
         layout.addLayout(btn_layout)
         
@@ -204,7 +181,10 @@ class BatchOperationDialog(QDialog):
             elif self.radio_audit.isChecked():
                 note = self.audit_note_edit.toPlainText().strip()
                 if not note:
-                    QMessageBox.warning(self, "提示", "请输入审核备注")
+                    message_box.warn(
+                        self, "还要一句审核备注",
+                        "这 %d 行会带上这句备注，写清「为什么算审核完成」后面才查得到依据。"
+                        % len(self.selected_indices))
                     return
                 count = batch_service.batch_audit_complete(
                     self.df, 
@@ -223,7 +203,10 @@ class BatchOperationDialog(QDialog):
             elif self.radio_tag.isChecked():
                 note = self.tag_note_edit.toPlainText().strip()
                 if not note:
-                    QMessageBox.warning(self, "提示", "请输入待审核原因")
+                    message_box.warn(
+                        self, "还要一句待审核原因",
+                        "这 %d 行会标成待审核，原因会显示在隔离区和审核列表里。"
+                        % len(self.selected_indices))
                     return
                 count = batch_service.batch_mark_as_audit_needed(
                     self.df,
@@ -235,7 +218,10 @@ class BatchOperationDialog(QDialog):
             self.accept()
             
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"批量操作失败: {str(e)}")
+            message_box.error(
+                self, "批量操作没做成",
+                "这 %d 行还是原样，没有改动。可以截图这个弹窗再找人看。"
+                % len(self.selected_indices), exc=e)
 
 
 # 全局实例

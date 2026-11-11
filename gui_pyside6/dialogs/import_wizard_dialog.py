@@ -32,6 +32,8 @@ except ImportError:
         pass  # 桩位实现
 
 
+from gui_pyside6.components import dialog_chrome
+
 class LoadExcelWorker(QThread):
     """加载 Excel 文件的工作线程"""
     finished = Signal(object, object)  # dataframe, sheet_names
@@ -146,8 +148,7 @@ class ImportWizard(QWizard):
     """导入向导主窗口"""
     def __init__(self, parent, alt_pairs, rules_path, on_alt_changed=None, on_rules_changed=None):
         super().__init__(parent)
-        self.setWindowTitle("模板导入向导")
-        self.resize(800, 600)
+        dialog_chrome.apply(self, dialog_chrome.TIER_MEDIUM, "模板导入向导", "选表 → 列映射 → 确认")
 
         self.alt_pairs = alt_pairs
         self.rules_path = rules_path

@@ -7,12 +7,11 @@
 """
 import json
 
-from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QTextBrowser,
-                               QPushButton, QHBoxLayout, QFrame)
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (QDialog, QVBoxLayout, QTextBrowser,
+                               QPushButton, QHBoxLayout)
 
 import core.audit_evidence as ae
-from utils.theme_manager import Thm
+from gui_pyside6.components.dialog_chrome import StepChain, VerdictBanner
 
 
 _EV_LABEL = {
@@ -25,29 +24,30 @@ _EV_LABEL = {
 }
 
 
+from gui_pyside6.components import dialog_chrome
+
 class EvidenceCardDialog(QDialog):
     def __init__(self, data_id: str, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.data_id = data_id or ""
-        self.setWindowTitle(f"审核证据卡 · {self.data_id or '（无 data_id）'}")
-        self.resize(620, 520)
+        dialog_chrome.apply(self, dialog_chrome.TIER_LARGE, "审核证据卡", self.data_id)
         self._build()
 
     def _build(self):
         layout = QVBoxLayout(self)
 
-        # 顶部结论条
-        self._head = QLabel("")
-        self._head.setFrameShape(QFrame.Box)
-        self._head.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self._head.setStyleSheet("QLabel{padding:8px;font-weight:bold;font-size:13px;}")
-        layout.addWidget(self._head)
+        # 结论条：设计稿 EvidenceShell 要求第一屏先给一句人话结论，再给依据
+        self._verdict = VerdictBanner("正在读取审核证据…", "", "info")
+        layout.addWidget(self._verdict)
 
         # 证据链正文
         self._body = QTextBrowser()
         self._body.setOpenExternalLinks(False)
         layout.addWidget(self._body, 1)
+
+        # 溯源链：规则/模型/报告版本 + 生成时间，审核员要复核的是「哪套口径算出来的」
+        self._trace = StepChain()
+        layout.addWidget(self._trace)
 
         # 底部可追溯入口
         btn_row = QHBoxLayout()
@@ -70,30 +70,30 @@ class EvidenceCardDialog(QDialog):
     def _render(self):
         rep = ae.get_latest_report(self.data_id) if self.data_id else None
         if rep is None:
-            self._head.setText("暂无审核证据（该 data_id 尚未运行审核或不在本期）")
+            self._verdict.set_verdict(
+                "暂无审核证据", "该 data_id 尚未运行审核，或不在本期数据里。", "info")
             self._body.setPlainText("运行一次「AI 审核」后，此处会显示结论、置信度与证据链。")
             return
 
         evidences = ae.get_evidence(rep["audit_id"])
         suggestions = ae.get_suggestions(self.data_id)
 
-        # 结论条：低置信度 / needs_human 标红
+        # 结论条：低置信度 / 需人工 → danger 档（颜色取自 TOKENS，不写死 hex）
         warn = (rep["confidence"] == "低") or rep["needs_human"]
-        verdict = rep["verdict"]
-        conf = rep["confidence"]
-        conf_tag = f"置信度：{conf}" + ("（建议人工复核）" if warn else "")
-        color = Thm.color("danger" if warn else "ok")
-        self._head.setText(
-            f'<span style="color:{color}">结论：{verdict}</span>　|　{conf_tag}')
-        self._head.setStyleSheet(
-            f"QLabel{{padding:8px;font-weight:bold;font-size:13px;border:1px solid {color};}}")
+        self._verdict.set_verdict(
+            "结论：%s" % rep["verdict"],
+            "置信度：%s%s　|　建议动作：%s"
+            % (rep["confidence"], "（建议人工复核）" if warn else "",
+               rep["suggestion"] or "—"),
+            "danger" if warn else "ok")
+
+        self._trace.add_step("是否需人工：%s" % ("是" if rep["needs_human"] else "否"))
+        self._trace.add_step(
+            "规则版本 %s　·　模型版本 %s" % (rep["rule_version"], rep["model_version"]))
+        self._trace.add_step(
+            "报告版本 v%s　·　生成时间 %s" % (rep["report_version"], rep["created_at"]))
 
         lines = []
-        lines.append(f"**建议动作**：{rep['suggestion'] or '—'}")
-        lines.append(f"**是否需人工**：{'是' if rep['needs_human'] else '否'}")
-        lines.append(f"**规则版本**：{rep['rule_version']}　|　**模型版本**：{rep['model_version']}")
-        lines.append(f"**报告版本**：v{rep['report_version']}　|　**生成时间**：{rep['created_at']}")
-        lines.append("")
 
         # F2 归因建议段
         if suggestions:

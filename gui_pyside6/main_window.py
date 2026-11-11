@@ -32,6 +32,7 @@ from gui_pyside6.components.main_table import MainTableComponent
 from gui_pyside6.components.bottom_bar import BottomBarComponent
 
 # 导入自定义模块
+from gui_pyside6.components import message_box
 from gui_pyside6.models.data_frame_model import DataFrameModel, AuditProxyModel
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.workers.report_workers import (
@@ -1495,15 +1496,11 @@ class MainWindow(QMainWindow):
         count = len(alerts_df)
         # 先刷新一次事件队列，避免主线程因前面积压的 UI 更新被 Windows 标记为未响应
         QApplication.processEvents()
-        box = QMessageBox(self)
-        box.setWindowTitle("预警通知")
-        box.setIcon(QMessageBox.Question)
-        box.setText(f"发现 {count} 条新替代料预警（含差异/超阈值），是否查看明细？")
-        yes_btn = box.addButton("是", QMessageBox.YesRole)
-        no_btn = box.addButton("否", QMessageBox.NoRole)
-        box.setDefaultButton(yes_btn)
-        box.exec()
-        if box.clickedButton() != yes_btn:
+        # 设计稿：按钮写动作，不写「是 / 否」
+        if not message_box.confirm(
+            self, "发现 %d 条新替代料预警" % count,
+            "含差异和超阈值的记录，要不要现在看明细？",
+            yes="看明细", no="先不看"):
             return
         try:
             # 直接用 AlertMonitor 传过来的 alerts_df，已经过滤过替代料了

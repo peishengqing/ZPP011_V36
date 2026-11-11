@@ -9,30 +9,40 @@ import json
 from collections import defaultdict
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QLabel, QMessageBox,
+    QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QWidget,
 )
 from PySide6.QtCore import Qt
 
 from gui_pyside6.utils.table_autofit import install_adaptive, get_adaptive
+from gui_pyside6.components import dialog_shell_bridge, message_box
 
 _CFG_PATH = os.path.join(
     os.environ.get("APPDATA", ""), "ZPP011", "config", "alt_pairs.json")
 
 
+from gui_pyside6.components import dialog_chrome
+
 class AltChainDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
-        self.setWindowTitle("🔗 替代料长链预警")
-        self.resize(900, 600)
+        dialog_chrome.apply(self, dialog_chrome.TIER_LARGE, "替代料长链预警", "三级以上替代链")
+        self._status_text = ""
         self._build_ui()
         self._load()
+        # v43.348：专题看板统一外壳（标题栏 + 状态条 + 亮暗主题跟随），
+        # 原窗口逻辑一行没动，只是把内容搬进 host 再交给 DashboardShell。
+        # 原来的顶部说明 QLabel 删掉了——同一句话现在只出现在 shell 状态条里。
+        self._shell = dialog_shell_bridge.install_dialog_shell(
+            self, self._host, self.windowTitle(), self._status_text)
+
+    def _set_status(self, text):
+        """状态文案交给统一状态条；shell 尚未装上时只暂存，装壳时读一次。"""
+        self._status_text = text
+        dialog_shell_bridge.update_shell_status(self, text)
 
     def _build_ui(self):
-        lay = QVBoxLayout(self)
-        self._info = QLabel()
-        self._info.setWordWrap(True)
-        lay.addWidget(self._info)
+        self._host = QWidget()
+        lay = QVBoxLayout(self._host)
         self._tbl = QTableWidget()
         self._tbl.setColumnCount(4)
         self._tbl.setHorizontalHeaderLabels(
@@ -44,7 +54,11 @@ class AltChainDialog(QDialog):
 
     def _load(self):
         if not os.path.exists(_CFG_PATH):
-            QMessageBox.information(self, "提示", "未找到配对表: %s" % _CFG_PATH)
+            self._set_status("未找到配对表，无法统计")
+            message_box.info(
+                self, "还没有替代料配对表",
+                "长链统计要先有一份 alt_pairs.json，可在「导入向导」里导入替代料表。",
+                detail=_CFG_PATH)
             return
         try:
             d = json.load(open(_CFG_PATH, encoding="utf-8"))
@@ -81,8 +95,11 @@ class AltChainDialog(QDialog):
                 ctrl.request_refit(0)
             else:
                 self._tbl.resizeColumnsToContents()
-            self._info.setText(
+            self._set_status(
                 "alt_pairs.json 共 %d 组；长链物料（出现>1组）%d 个"
                 % (len(d), len(chains)))
         except Exception as e:
-            QMessageBox.critical(self, "错误", "读取失败: %s" % e)
+            message_box.error(
+                self, "读取配对表失败",
+                "文件在，但读不出内容，可能不是有效的 JSON 或已损坏。",
+                exc=e, detail=_CFG_PATH)

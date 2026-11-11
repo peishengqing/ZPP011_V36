@@ -671,6 +671,93 @@ def main():
                     % (dark_active, light_ok, board_themes, heavy_ok, restored))
     check("⑮ 暗色全链路：五外壳跟随 + 亮色路径不受影响", _dark_chain)
 
+    # ⑯ v43.348（第三期）：专题看板弹窗的外壳规范在真实构造下成立
+    #    标题无 emoji + 尺寸命中 DIALOG_SIZES 档 + 内容真的装进了 DashboardShell。
+    def _dialog_chrome():
+        import re
+        from PySide6.QtWidgets import QMessageBox
+        from gui_pyside6.themes.tokens import DIALOG_SIZES
+        from gui_pyside6.dialogs.data_stability_dialog import DataStabilityDialog
+        from gui_pyside6.dialogs.material_profile_dialog import MaterialProfileDialog
+
+        # 构造期可能弹「没找到审计库」之类提示，离屏下 exec 会阻塞，临时放行
+        orig_exec = QMessageBox.exec
+        QMessageBox.exec = lambda self: 0
+        made = []
+        try:
+            for make in (lambda: DataStabilityDialog(),
+                         lambda: MaterialProfileDialog("100327825")):
+                made.append(make())
+            # 与门禁测试同一套黑名单：图形 emoji 区 + 杂项符号/装饰符 + 变体选择符
+            emoji = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF"
+                               "\u2B00-\u2BFF\uFE00-\uFE0F\u200D]")
+            titles = [d.windowTitle() for d in made]
+            sizes = [(d.width(), d.height()) for d in made]
+            no_emoji = not any(emoji.search(t) for t in titles)
+            tier_ok = all(sz in set(DIALOG_SIZES.values()) for sz in sizes)
+            # 壳真装上：shell_host 挂在 DashboardShell 里，而不是直接挂在弹窗上
+            shell_ok = all(getattr(d, "dashboard_shell", None) is not None
+                           and d.shell_host.parent() is not d for d in made)
+            ok = no_emoji and tier_ok and shell_ok
+            return ok, "标题=%s 尺寸=%s emoji无=%s 档位中=%s 已装壳=%s" % (
+                titles, sizes, no_emoji, tier_ok, shell_ok)
+        finally:
+            QMessageBox.exec = orig_exec
+            for d in made:
+                d.deleteLater()
+    check("⑯ 弹窗外壳规范：标题无emoji+尺寸命档+内容进壳", _dialog_chrome)
+
+    # ⑰ v43.348（第三期）：真实 QMessageBox 下的统一模板 —— 按钮写动作、点「先不清空」
+    #     什么都不删、错误框「复制详情」真的把技术详情送进剪贴板。
+    #     pytest 那层是 mock 返回值，这里跑的是真 Qt 按钮角色（DestructiveRole 布局）。
+    def _message_box_live():
+        from PySide6.QtWidgets import QMessageBox
+        from gui_pyside6.components import message_box
+
+        def click_by_text(label):
+            def _exec(self):
+                self.show()
+                try:
+                    for b in self.buttons():
+                        if b.text().replace("&", "") == label:
+                            b.click()
+                            return 0
+                    raise AssertionError("没有按钮 %r，实有 %s"
+                                         % (label, [x.text() for x in self.buttons()]))
+                finally:
+                    self.hide()
+            return _exec
+
+        orig_exec = QMessageBox.exec
+        mw = win
+        # 手动播一份分类，保证「取消不能清空」这条断言不是拿空字典自证
+        real = getattr(mw, "_semi_categories", None)
+        mw._semi_categories = {"400001": "彩罐", "410001": "托盘"}
+        saved = dict(mw._semi_categories)
+        try:
+            # 1) 点「先不清空」→ 分类必须原样保留
+            QMessageBox.exec = click_by_text("先不清空")
+            mw._reset_semi_categories()
+            kept = dict(getattr(mw, "_semi_categories", {}) or {}) == saved
+
+            # 2) 错误框：复制详情按钮走 ActionRole，点了不关窗，剪贴板拿到标题+异常
+            QMessageBox.exec = click_by_text("复制详情")
+            QApplication.clipboard().setText("")
+            try:
+                raise ValueError("列 偏差数量 不存在")
+            except ValueError as e:
+                message_box.error(mw, "导出没成功", "表里的数据没有改动。", exc=e)
+            clip = QApplication.clipboard().text()
+            copied = "导出没成功" in clip and "ValueError" in clip \
+                and "列 偏差数量 不存在" in clip
+        finally:
+            QMessageBox.exec = orig_exec
+            if real is not None:
+                mw._semi_categories = real
+        ok = kept and copied
+        return ok, "点取消不清空=%s 复制详情含标题+异常=%s" % (kept, copied)
+    check("⑰ 真实弹窗模板：动作按钮 + 取消不破坏 + 详情进剪贴板", _message_box_live)
+
     return report()
 
 

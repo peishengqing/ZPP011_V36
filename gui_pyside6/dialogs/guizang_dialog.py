@@ -39,7 +39,6 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import QUrl, QThread, Signal
 from gui_pyside6.utils.icons import make_button
-from PySide6.QtCore import Qt
 
 # 项目根（gui_pyside6/dialogs/xxx.py → parents[2]）
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -56,6 +55,8 @@ def guizang_preview_path(style: str) -> Path:
     meta = GZ_STYLES.get(style) or GZ_STYLES["magazine"]
     return PROJECT_ROOT / "resources" / "guizang" / meta[1] / "_preview.html"
 
+
+from gui_pyside6.components import dialog_chrome
 
 class _GuizangBuildWorker(QThread):
     """后台线程：读分析 Excel → 算数 → 渲染归藏 HTML。"""
@@ -162,7 +163,6 @@ class GuizangDialog(QDialog):
             self._web_engine_err = str(e)
 
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMinMaxButtonsHint)
         self.main_window = main_window
         self.style = style if style in GZ_STYLES else "magazine"
         self._title_text, self._subdir, self._desc = GZ_STYLES[self.style]
@@ -175,8 +175,7 @@ class GuizangDialog(QDialog):
 
     # ------------------------------------------------------------------ UI
     def _init_ui(self):
-        self.setWindowTitle(f"{self._title_text} · ZPP011 偏差分析")
-        self.resize(1280, 800)
+        dialog_chrome.apply(self, dialog_chrome.TIER_BOARD, self._title_text, "ZPP011 偏差分析")
         layout = QVBoxLayout(self)
 
         # 顶部工具栏：状态 + 刷新 + 系统浏览器 + 关闭
