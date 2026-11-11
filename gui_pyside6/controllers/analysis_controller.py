@@ -113,7 +113,7 @@ class AnalysisController(QObject):
         # 优先使用 DataService 处理，如果没有则本地分组
         if self._data_service is not None:
             try:
-                factories, _ = self._data_service.get_combined_factory_data(df, '工厂')
+                factories, _ = self._data_service.get_combined_factory_data(df)
                 self.factory_data = factories
                 if self.factory_data:
                     self.current_factory = list(self.factory_data.keys())[0]
