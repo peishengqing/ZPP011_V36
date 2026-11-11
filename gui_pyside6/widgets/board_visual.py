@@ -37,119 +37,29 @@ from PySide6.QtWidgets import (
 #    QLineEdit 写 border / border-radius / padding，Qt 会改用 stylesheet 路径
 #    重算 sizeHint —— 按钮 80x20 → 24x12、下拉 66x22 → 56x18。
 #    顶部筛选栏宽度是历史逐像素精算的，尺寸一变就挤压重叠（v43.139/v43.154）。
-#    故下方对筛选控件**只写颜色类属性**（background-color / color / selection-*），
+#    故对筛选控件**只写颜色类属性**（background-color / color / selection-*），
 #    offscreen 断言见 verify_board_visual2.py：5 类控件 sizeHint 前后完全一致。
 #    圆角/内边距只用在「不进布局」的独立悬浮按钮与不影响筛选栏的表格/滚动条上。
+#
+# 🎨 颜色真源（设计稿第一期第 1 条，替代原先写死在此处的浅色值）：
+#    本模块不再自带一份 hex —— 亮/暗两套 QSS 全部由
+#    gui_pyside6/themes/tokens.py::build_board_qss(theme) 生成。
+#    改造前这里写死 #f4f7fb / #0969da / #eef4fb 等浅色值，正是设计稿诊断 D1
+#    「主窗口切到暗色、5 个表格看板依然是亮的」的直接根源（文件头旧注释把
+#    「不污染主窗口全局主题」实现成了「自己也没了暗色」）。
+#    v43.344 的临时绕行（桥接器在暗色时清空 dialog 级 QSS）已随之拆除。
 # ---------------------------------------------------------------------------
-BOARD_QSS = """
-QDialog#zppBoardDialog { background-color: #f4f7fb; }
+from gui_pyside6.themes.tokens import build_board_qss
 
-QDialog#zppBoardDialog QLabel { color: #334155; }
-QDialog#zppBoardDialog QLabel[class="mutedText"] { color: #64748b; }
 
-QDialog#zppBoardDialog QScrollArea { background-color: #ffffff; }
+def board_qss_for(is_dark: bool) -> str:
+    """按当前主题取看板 dialog 级 QSS（唯一生成处见 tokens.py）。"""
+    return build_board_qss("dark" if is_dark else "light")
 
-/* 只改颜色：零 sizeHint 影响 */
-QDialog#zppBoardDialog QComboBox,
-QDialog#zppBoardDialog QLineEdit {
-    background-color: #ffffff;
-    color: #1f2937;
-    selection-background-color: #0969da;
-    selection-color: #ffffff;
-}
-QDialog#zppBoardDialog QComboBox:focus,
-QDialog#zppBoardDialog QLineEdit:focus { background-color: #f2f8ff; }
 
-QDialog#zppBoardDialog QPushButton {
-    background-color: #ffffff;
-    color: #334155;
-}
-QDialog#zppBoardDialog QPushButton:hover {
-    background-color: #e8f2ff;
-    color: #0969da;
-}
-QDialog#zppBoardDialog QPushButton:pressed { background-color: #d3e6ff; }
-/* 筛选按钮选中态高亮：以前 checkable 按钮看不出当前档位，这是最大的观感提升 */
-QDialog#zppBoardDialog QPushButton:checked {
-    background-color: #0969da;
-    color: #ffffff;
-}
-QDialog#zppBoardDialog QPushButton:disabled {
-    color: #9aa7b6;
-    background-color: #f1f5f9;
-}
-
-QDialog#zppBoardDialog QCheckBox { color: #334155; }
-QDialog#zppBoardDialog QGroupBox { background-color: #f8fbff; }
-/* 🔴 禁止写裸 `QFrame { color: ... }`：QTableView / QLabel / QScrollArea 全是
-   QFrame 子类，且此规则排在它们之后（同特异性后者胜），会把表格数据与标签
-   文字一并冲成浅色。v43.299 量化对照实测：深色像素占比 7.27% → 0.00%。
-   分隔线（VLine）保持原生配色即可，不值得为此误伤可读性。 */
-
-/* 表格不在筛选栏内，可安全用圆角/边框 */
-QDialog#zppBoardDialog QTableView {
-    background-color: #ffffff;
-    alternate-background-color: #f7fafd;
-    gridline-color: #e8eef5;
-    border: 1px solid #dbe3ec;
-    border-radius: 8px;
-    selection-background-color: #d6e8ff;
-    selection-color: #0f172a;
-}
-QDialog#zppBoardDialog QHeaderView::section {
-    background-color: #eef4fb;
-    color: #334155;
-    border: none;
-    border-right: 1px solid #dde5ef;
-    border-bottom: 2px solid #c9d8ea;
-}
-QDialog#zppBoardDialog QHeaderView::section:hover { background-color: #e0ecfa; }
-
-QDialog#zppBoardDialog QScrollBar:vertical {
-    background: #f4f7fb;
-    width: 9px;
-    margin: 0;
-}
-QDialog#zppBoardDialog QScrollBar::handle:vertical {
-    background: #c3d2e3;
-    border-radius: 4px;
-    min-height: 24px;
-}
-QDialog#zppBoardDialog QScrollBar::handle:vertical:hover { background: #96b4d8; }
-QDialog#zppBoardDialog QScrollBar::add-line:vertical,
-QDialog#zppBoardDialog QScrollBar::sub-line:vertical { height: 0; }
-QDialog#zppBoardDialog QScrollBar::add-page:vertical,
-QDialog#zppBoardDialog QScrollBar::sub-page:vertical { background: transparent; }
-
-/* 悬浮按钮：独立 child，不进任何 layout，可安全用渐变/圆角/内边距 + 投影。
-   🔴 选择器必须带 QDialog#zppBoardDialog 前缀：Qt QSS 特异性按
-   ID数/类数/元素数比较，裸 `QPushButton#zppVisualBtn`（1 ID + 1 元素）会输给
-   上面的 `QDialog#zppBoardDialog QPushButton`（1 ID + 2 元素），
-   结果白底规则盖掉蓝色渐变（v43.299 首版截图实测按钮是白的）。
-   加前缀后 2 ID + 2 元素，稳定胜出。 */
-QDialog#zppBoardDialog QPushButton#zppVisualBtn {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                                stop:0 #0969da, stop:1 #3b8ff0);
-    color: #ffffff;
-    border: none;
-    border-radius: 18px;
-    padding: 8px 18px;
-    font-weight: bold;
-}
-QDialog#zppBoardDialog QPushButton#zppVisualBtn:hover {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                                stop:0 #0550ae, stop:1 #2f7fe0);
-}
-QDialog#zppBoardDialog QPushButton#zppVisualBtn:pressed {
-    background-color: #04428f;
-}
-/* checked/disabled 通用规则也会命中悬浮按钮，这里显式覆盖回蓝底白字 */
-QDialog#zppBoardDialog QPushButton#zppVisualBtn:disabled {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                                stop:0 #0969da, stop:1 #3b8ff0);
-    color: #ffffff;
-}
-"""
+# 向后兼容别名：仍被外部当作「亮色看板 QSS」引用的，保持可用。
+# 新代码请用 board_qss_for(Thm.is_dark)，不要再依赖这个常量。
+BOARD_QSS = build_board_qss("light")
 
 FLOAT_BTN_TEXT = "📊 可视化看板"
 FLOAT_BTN_TIP = (
@@ -242,7 +152,22 @@ def apply_board_visual(dialog, main_window, board_label="偏差看板", show_flo
     dialog.setObjectName("zppBoardDialog")
     # 合并已有的 dialog 级 stylesheet（若未来有人加过），本主题放最后以生效
     prev = dialog.styleSheet() or ""
-    dialog.setStyleSheet(prev + "\n" + BOARD_QSS)
+
+    # v43.346：dialog 级 QSS 改为主题感知 + 订阅主题变化。
+    # 旧实现只挂一次亮色 BOARD_QSS，切到暗色后看板仍是白底 —— 设计稿诊断 D1。
+    from gui_pyside6.themes.tokens import theme_of
+    from utils.theme_manager import Thm
+
+    def _apply_board_theme(is_dark, _dlg=dialog, _prev=prev):
+        try:
+            _dlg.setStyleSheet(_prev + "\n" + build_board_qss(theme_of(is_dark)))
+        except RuntimeError:
+            pass  # 对话框已销毁
+
+    _apply_board_theme(Thm.is_dark)
+    Thm.on_change(_apply_board_theme)
+    # 保活引用，避免闭包被 GC（watcher 同样是这个套路）
+    dialog._board_theme_applier = _apply_board_theme
 
     btn = None
     watcher = None

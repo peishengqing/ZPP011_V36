@@ -19,7 +19,7 @@ class _ThemeConfig:
     # 文字
     text_primary: str
     text_secondary: str
-    # 品牌色（主色，明暗通用）
+    # 品牌色（主色）
     primary: str
     # 边框、分割线
     border: str
@@ -27,34 +27,21 @@ class _ThemeConfig:
     table_alternate: str
     # 高亮/选中
     highlight: str
-    #  드래그/悬停
+    # 悬停
     hover: str
 
 
-# 两套静态配置（直接映射到 QSS hex）
-_LIGHT_CONFIG = _ThemeConfig(
-    bg="#FFFFFF",
-    surface="#FFFFFF",
-    text_primary="#1F2937",
-    text_secondary="#6B7280",
-    primary="#0969DA",
-    border="#E2E8F0",
-    table_alternate="#F8FAFC",
-    highlight="#E0F2FE",
-    hover="#F1F5F9",
-)
+# 两套配置由设计令牌唯一真源派生（gui_pyside6/themes/tokens.py）。
+# 这里**不再写死任何 hex**：改造前本文件自带 #0969DA / #5C7CFA 两个主色，
+# 与 light/dark_theme.qss 的 #1E40AF / #4C7DFF、board_visual 的 #0969da 并存，
+# 是「同一个软件三种蓝」的第 5 个真源（且 get_config/get_color 全项目零调用方，
+# 所以从没人在意过它和设计稿不一致）。
+# 新增界面代码请优先直接用 tokens.TOKENS；本类的 get_color 仅作兼容保留。
+from gui_pyside6.themes.tokens import build_theme_manager_configs
 
-_DARK_CONFIG = _ThemeConfig(
-    bg="#1E1E24",
-    surface="#25262B",
-    text_primary="#E9ECEF",
-    text_secondary="#9AA7B6",
-    primary="#5C7CFA",
-    border="#2C2E33",
-    table_alternate="#2C2E33",
-    highlight="#454D60",
-    hover="#3A4050",
-)
+_LIGHT_CFG, _DARK_CFG = build_theme_manager_configs()
+_LIGHT_CONFIG = _ThemeConfig(**_LIGHT_CFG)
+_DARK_CONFIG = _ThemeConfig(**_DARK_CFG)
 
 
 class ThemeManager:
