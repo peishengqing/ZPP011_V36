@@ -12,23 +12,18 @@ def toast(message, level='info', parent=None, duration=3000):
 
 
 class Toast(QWidget):
-    COLORS = {
-        'success': ('#d4edda', '#155724'),
-        'error': ('#f8d7da', '#721c24'),
-        'info': ('#d1ecf1', '#0c5460'),
-        'warning': ('#fff3cd', '#856404'),
-    }
+    """轻提示。配色完全由 light/dark_theme.qss 的 #toastWidget 规则负责，
+    这里不再维护第二套颜色表（改造前的 COLORS 从未被使用，且只有浅色值）。"""
 
     def __init__(self, message, level='info', parent=None, duration=3000):
         super().__init__(parent)
         self.duration = duration
-        bg, fg = self.COLORS.get(level, self.COLORS['info'])
+        self.level = level
 
         self.setObjectName("toastWidget")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 10, 16, 10)
         label = QLabel(message)
-        label.setFont(QFont("Microsoft YaHei", 10))
         layout.addWidget(label)
         self.adjustSize()
 

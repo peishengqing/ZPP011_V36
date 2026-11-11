@@ -86,6 +86,20 @@ class ThemeManager:
         except AttributeError:
             return None
 
+    def color(self, token_key: str) -> str:
+        """按当前主题取一个设计令牌色值（#RRGGBB 串）。
+
+        画布绘制（QPainter / QIcon 上色 / 富文本 HTML）拿不到 QSS，只能显式取色；
+        改造前这些地方各自写死 #0078D4 / #4CAF50 / #8A8A82 等游离色，暗色主题下
+        就是一块块错色。一律走这里，颜色真源仍只有 tokens.py 一份。
+        """
+        from gui_pyside6.themes.tokens import t, theme_of
+        return t(theme_of(self._is_dark), token_key)
+
+    def qcolor(self, token_key: str):
+        from PySide6.QtGui import QColor
+        return QColor(self.color(token_key))
+
 
 def get_theme_manager() -> ThemeManager:
     """获取主题管理器单例"""

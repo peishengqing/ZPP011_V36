@@ -8,17 +8,19 @@ import pandas as pd
 from datetime import datetime
 import hashlib
 from PySide6.QtCore import QAbstractTableModel, QSortFilterProxyModel, Qt, Signal, QModelIndex
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor
 
 from gui_pyside6.utils.icons import get_icon
+from gui_pyside6.themes.tokens import num_font
+from utils.theme_manager import Thm
 
 # 自定义角色：标记某行是否属于替代料组（代理模型据此跳过预警色覆盖，保证同组视觉一致）
 ALT_GROUP_ROLE = Qt.UserRole + 100
 
-# v43.264：主表数值列等宽字体（tabular figures）。Consolas 数字天然等宽，
-# 中文/单位字符走 Qt 逐字回退，不受影响；找不到 Consolas 的环境自动退化，
-# 不影响数据与对齐逻辑。
-_TABULAR_FONT = QFont("Consolas")
+# v43.264：主表数值列等宽字体（tabular figures）。家族与等宽数字开关由 tokens
+# 统一发（Cascadia Mono 优先、Consolas 兜底）；字号不设定，继承表格当前字号，
+# 免得 FontRole 反过来把 QSS 里的字号顶掉。
+_TABULAR_FONT = num_font()
 
 
 def _make_alt_group_color(group_name: str) -> QColor:
@@ -246,9 +248,11 @@ class DataFrameModel(QAbstractTableModel):
                 return '已读' if read_val else '未读'
             elif role == Qt.DecorationRole:
                 # v43.264：已读=绿色实心勾，未读=蓝色空心圆（替代 ✅/🔘 emoji）
+                # 两支色由令牌发：已读走 ok（绿），未读走 info（蓝），暗色下自动换档
                 read_val = self._data_cache[row][0]
-                return get_icon("check" if read_val else "circle", 14,
-                                "#4CAF50" if read_val else "#4A90D9")
+                return get_icon(
+                    "check" if read_val else "circle", 14,
+                    Thm.color("ok" if read_val else "info"))
             elif role == ALT_GROUP_ROLE:
                 if row < len(self._alt_group_color_list):
                     return self._alt_group_color_list[row] is not None

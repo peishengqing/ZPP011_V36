@@ -78,10 +78,7 @@ class AppState(QObject):
             "export_last_path": None,
             "export_success": False
         }
-        self._theme = {
-            "theme_mode": "light",
-            "accent_color": "#0078D4"
-        }
+        self._theme = {"theme_mode": "light"}
 
     # Data properties
     def set_data(self, df: Union[pd.DataFrame, Dict]) -> None:
@@ -263,10 +260,7 @@ class AppState(QObject):
             "export_last_path": None,
             "export_success": False
         }
-        self._theme = {
-            "theme_mode": "light",
-            "accent_color": "#0078D4"
-        }
+        self._theme = {"theme_mode": "light"}
         # 清理预设存储
         if hasattr(self, '_preset_store'):
             self._preset_store = {}

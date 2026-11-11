@@ -14,6 +14,50 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.346",
+            "date": "2026-11-11",
+            "features": (
+                "设计稿 v43.333 重构第一期：颜色只有一个真源（裴哥"
+                "「按五期全做，每期跑测试 + 提交」）。改造前全仓有 5 份各自"
+                "写死的配色（同一个「主色」存在 #1E40AF / #4C7DFF / #0969DA / "
+                "#5C7CFA 四个值），改一套漏两套，这就是「看板和新界面不太像"
+                "一个产品」的根因。\n"
+                "①gui_pyside6/themes/tokens.py 成为唯一真源：两套主题的调色板、"
+                "字号（11/12/13/14/17/22）、圆角（4/6/10 + 胶囊 18）、栏高"
+                "（标题 48 / 操作 44 / 筛选 40 / KPI 54 / 表格行 36）全部登记在案；"
+                "看板外壳 QSS 由 build_dashboard_qss() 现场生成，themes/*.qss "
+                "降级为构建产物（python -m gui_pyside6.themes.tokens 可重生成）。\n"
+                "②运行时两套主题 light_theme.qss / dark_theme.qss 逐色号迁移：462 处"
+                "与 465 处颜色全部等于令牌取值，旧主色（含 Windows 蓝 #0078D4）清零，"
+                "字体族统一为 FONT_UI / FONT_NUM（等宽数字 Cascadia Mono 前置）。\n"
+                "③dashboard_shell.py 原来整片用 CSS 的 var(--令牌) 写法 —— Qt 不认识"
+                " var()，会把这类声明整条丢掉，于是筛选栏下拉丢了原生箭头、控件尺寸被"
+                " padding 顶歪。已改回令牌实值 + objectName/动态属性挂钩，并删掉两份"
+                "写死旧主色的兜底 QSS。\n"
+                "④QSS 覆盖不到的染色点（ QPainter、图标墨色、表格单元格前景、HTML "
+                "富文本、日期选择器自绘表格）统一改走 Thm.color(令牌名)，暗色主题下"
+                "自动换档；日期选择器整块由令牌驱动，选中态用主色而不是 Windows 蓝。\n"
+                "⑤新增防漂移门禁 tests/unit/test_design_tokens.py（13 项）：两套 app "
+                "QSS 每个色号必须在令牌表内、themes/*.qss 必须与生成器逐字节一致、"
+                "圆角字号必须在档位上、代码里禁止旧主色、剩余 45 处历史颜色按文件"
+                "记名挂账（只许减不许增，第二/三/四/五期各认领一批）。\n"
+                "⑥删除 5 个零引用死文件：gui_pyside6/style.qss、theme.qss、"
+                "modern_dark_theme.qss、shells/negloss_board.py、"
+                "dialogs/threshold_config_dialog.py，同步清理 build_pyside6_exe.py 与 "
+                "run_pyside6.py 里的残留引用；main_window.py 三个从未被使用的旧看板"
+                "对话框导入一并删除。toast.py 的死配色表、main_table.py 的死 "
+                "PROGRESS_STYLE、store.py 里没人读的 accent_color 默认值一并清除。\n"
+                "⑦新增 ThemeManager.color(令牌名)/qcolor(令牌名) 与 "
+                "tokens.ui_font()/num_font()，非 QSS 染色点从此一处取色。\n"
+                "验证：pytest 全绿（与基线一致）+ GUI 离屏冒烟通过 + 亮/暗两套"
+                "主题主窗口与看板外壳离屏渲染目视核对、QSS 解析告警 0 条。"
+                "分析口径、数据、交互逻辑零改动。\n"
+                "⚠ 遗留待确认：三个旧看板对话框（neg_loss/pos_loss/semi_dashboard_dialog，"
+                "约 4600 行）与只引用它们的 dashboard_manager.py 是一整簇死代码，"
+                "删哪几个需要裴哥逐个点头，本期未动。"
+            ),
+        },
+        {
             "version": "v43.345",
             "date": "2026-11-11",
             "features": (

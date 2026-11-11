@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
+from gui_pyside6.themes.tokens import num_font, FONT_PT
 
 
 class HealthCheckDialog(QDialog):
@@ -38,7 +39,7 @@ class HealthCheckDialog(QDialog):
 
         self.text = QTextEdit()
         self.text.setReadOnly(True)
-        self.text.setFont(QFont("Consolas", 10))
+        self.text.setFont(num_font(FONT_PT["note"]))
         layout.addWidget(self.text)
 
         btn_layout = QHBoxLayout()

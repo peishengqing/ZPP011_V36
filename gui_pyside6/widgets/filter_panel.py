@@ -12,6 +12,9 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal, Qt, QDate, QEvent
 from PySide6.QtGui import QColor, QPixmap, QIcon
+
+from gui_pyside6.themes.tokens import FONT_UI
+
 import pandas as pd
 import json
 import os
@@ -29,6 +32,31 @@ def _color_icon(rgb):
     pix = QPixmap(14, 14)
     pix.fill(QColor(*rgb))
     return QIcon(pix)
+
+
+def _tk(key: str) -> str:
+    """当前主题下的设计令牌色值（#RRGGBB）。
+
+    内联 QSS 与 QColor 这类「QSS 文件覆盖不到的染色点」一律从这里取色，
+    不再写死 hex —— 改造前本文件的日期选择器整块是 Windows 原生蓝、近黑文字、
+    浅灰底等浅色死值，暗色主题下就是一块白斑。
+    """
+    from utils.theme_manager import Thm
+    return Thm.color(key)
+
+
+def _exclusion_qss(tone: str) -> str:
+    """排除摘要标签的三档配色：只换「底色 + 文字色 + 描边」三个色位，
+    尺寸属性（padding/圆角/字号/边框宽度）与主题无关，保持原值。"""
+    bg, fg = {
+        "neutral": ("surface2", "textMuted"),
+        "ok": ("okSoft", "ok"),
+        "warn": ("warnSoft", "warn"),
+    }[tone]
+    return (
+        f"background: {_tk(bg)}; color: {_tk(fg)}; padding: 6px 8px; "
+        f"border-radius: 4px; font-size: 11px; border: 1px solid {_tk('border')};"
+    )
 
 
 class FilterPanel(QWidget):
@@ -344,10 +372,7 @@ class FilterPanel(QWidget):
         # 排除摘要标签（Phase 6 / v43.271）—— 由 main_window 每次筛选后调用 update_exclusion_summary() 刷新
         self.exclusion_summary_label = QLabel("尚未筛选")
         self.exclusion_summary_label.setWordWrap(True)
-        self.exclusion_summary_label.setStyleSheet(
-            "background: #f5f5f5; color: #555; padding: 6px 8px; border-radius: 4px; "
-            "font-size: 11px; border: 1px solid #ddd;"
-        )
+        self.exclusion_summary_label.setStyleSheet(_exclusion_qss("neutral"))
         self.exclusion_summary_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         content_layout.addWidget(self.exclusion_summary_label)
 
@@ -576,7 +601,7 @@ class FilterPanel(QWidget):
         dlg.setWindowTitle("选择日期")
         dlg.setModal(True)
         dlg.setMinimumSize(420, 500)
-        dlg.setStyleSheet("QDialog { background-color: #FFFFFF; }")
+        dlg.setStyleSheet(f"QDialog {{ background-color: {_tk('surface')}; }}")
 
         outer_v = QVBoxLayout(dlg)
         outer_v.setContentsMargins(14, 14, 14, 10)
@@ -592,15 +617,16 @@ class FilterPanel(QWidget):
         prev_btn.setMinimumHeight(32)
         next_btn.setMinimumHeight(32)
         prev_btn.setStyleSheet(
-            "QPushButton { background:#f8f9fa; color:#333; border:1px solid #dee2e6; "
-            "border-radius:3px; padding:2px; font-size:14px; }"
-            "QPushButton:hover { background:#e9ecef; }"
-            "QPushButton:disabled { color:#adb5bd; }"
+            f"QPushButton {{ background-color: {_tk('surface2')}; color: {_tk('text')}; "
+            f"border: 1px solid {_tk('border')}; border-radius: 6px; padding: 2px; "
+            f"font-size: 14px; }}"
+            f"QPushButton:hover {{ background-color: {_tk('surface3')}; }}"
+            f"QPushButton:disabled {{ color: {_tk('textFaint')}; }}"
         )
         next_btn.setStyleSheet(prev_btn.styleSheet())
         title_lbl = QLabel("")
         title_lbl.setAlignment(Qt.AlignCenter)
-        title_lbl.setStyleSheet("font-size:15px; font-weight:bold; color:#1A1A18;")
+        title_lbl.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {_tk('text')};")
         nav_h.addWidget(prev_btn)
         nav_h.addWidget(title_lbl, 1)
         nav_h.addWidget(next_btn)
@@ -612,14 +638,16 @@ class FilterPanel(QWidget):
         table.setSelectionMode(QAbstractItemView.SingleSelection)
         table.setSelectionBehavior(QAbstractItemView.SelectItems)
         table.setShowGrid(True)
-        table.setStyleSheet("""
-            QTableWidget {
-                background-color:#FFFFFF; color:#1A1A18;
-                gridline-color:#E5E5E5; border:none;
-                font-size:15px; font-family:"Microsoft YaHei","Segoe UI",sans-serif;
-            }
-            QTableWidget::item { padding:0; }
-            QTableWidget::item:selected { background-color:#0078D4; color:#FFFFFF; }
+        table.setStyleSheet(f"""
+            QTableWidget {{
+                background-color: {_tk('surface')}; color: {_tk('text')};
+                gridline-color: {_tk('border')}; border: none;
+                font-size: 14px; font-family: {FONT_UI};
+            }}
+            QTableWidget::item {{ padding: 0; }}
+            QTableWidget::item:selected {{
+                background-color: {_tk('primary')}; color: {_tk('onPrimary')};
+            }}
         """)
         table.verticalHeader().setVisible(False)
         table.horizontalHeader().setVisible(False)
@@ -634,7 +662,7 @@ class FilterPanel(QWidget):
             item = QTableWidgetItem(f"周{w}")
             item.setTextAlignment(Qt.AlignCenter)
             item.setFlags(Qt.NoItemFlags)  # 不可选中
-            item.setForeground(QColor("#8A8A88"))
+            item.setForeground(QColor(_tk("textMuted")))
             f = item.font()
             f.setBold(True)
             item.setFont(f)
@@ -681,29 +709,29 @@ class FilterPanel(QWidget):
                     cell_date = cursor
                     item = QTableWidgetItem(str(cell_date.day()))
                     item.setTextAlignment(Qt.AlignCenter)
-                    item.setForeground(QColor("#1A1A18"))
+                    item.setForeground(QColor(_tk("text")))
 
                     # 相邻月日期：浅灰色 + 禁用点击
                     if cell_date.month() != m or cell_date.year() != y:
-                        item.setForeground(QColor("#C8C8C6"))
+                        item.setForeground(QColor(_tk("textFaint")))
                         item.setFlags(Qt.NoItemFlags)
 
                     # 越界日期：更浅 + 禁用
                     if cell_date < min_d or cell_date > max_d:
-                        item.setForeground(QColor("#E0E0DE"))
+                        item.setForeground(QColor(_tk("borderStrong")))
                         item.setFlags(Qt.NoItemFlags)
 
                     # 今天：红字加粗
                     if cell_date == today and cell_date.month() == m and cell_date.year() == y:
-                        item.setForeground(QColor("#D93025"))
+                        item.setForeground(QColor(_tk("danger")))
                         f = item.font()
                         f.setBold(True)
                         item.setFont(f)
 
                     # 选中：蓝底白字（覆盖之前）
                     if cell_date == selected:
-                        item.setBackground(QColor("#0078D4"))
-                        item.setForeground(QColor("#FFFFFF"))
+                        item.setBackground(QColor(_tk("primary")))
+                        item.setForeground(QColor(_tk("onPrimary")))
                         f = item.font()
                         f.setBold(True)
                         item.setFont(f)
@@ -721,7 +749,8 @@ class FilterPanel(QWidget):
         # ---- 预览 + 确定/取消按钮 ----
         preview_lbl = QLabel("")
         preview_lbl.setAlignment(Qt.AlignCenter)
-        preview_lbl.setStyleSheet("color:#0078D4; font-weight:bold; font-size:13px;")
+        preview_lbl.setStyleSheet(
+            f"color: {_tk('primary')}; font-weight: bold; font-size: 13px;")
         outer_v.addWidget(preview_lbl)
 
         btn_row = QHBoxLayout()
@@ -1510,20 +1539,11 @@ class FilterPanel(QWidget):
             return
         if not text:
             text = "尚未筛选"
-            self.exclusion_summary_label.setStyleSheet(
-                "background: #f5f5f5; color: #555; padding: 6px 8px; "
-                "border-radius: 4px; font-size: 11px; border: 1px solid #ddd;"
-            )
+            self.exclusion_summary_label.setStyleSheet(_exclusion_qss("neutral"))
         elif "排除 0" in text or "已过滤 0" in text or "保留" in text and "排除 0" in text:
-            self.exclusion_summary_label.setStyleSheet(
-                "background: #eef7ee; color: #2f6b2f; padding: 6px 8px; "
-                "border-radius: 4px; font-size: 11px; border: 1px solid #b8d8b8;"
-            )
+            self.exclusion_summary_label.setStyleSheet(_exclusion_qss("ok"))
         else:
-            self.exclusion_summary_label.setStyleSheet(
-                "background: #fff6e5; color: #8a5b00; padding: 6px 8px; "
-                "border-radius: 4px; font-size: 11px; border: 1px solid #f0d48a;"
-            )
+            self.exclusion_summary_label.setStyleSheet(_exclusion_qss("warn"))
         self.exclusion_summary_label.setText(text)
 
     # ------------------------------------------------------------------ #

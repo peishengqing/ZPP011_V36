@@ -8,6 +8,8 @@ import time
 from PySide6.QtCore import QObject
 
 from utils.version_history import VERSION_HISTORY, APP_NAME, AUTHOR
+from utils.theme_manager import Thm
+from gui_pyside6.themes.tokens import FONT_UI
 
 
 class UISettingsController(QObject):
@@ -241,11 +243,15 @@ class UISettingsController(QObject):
 
     def _build_version_log_html(self):
         """生成版本日志 HTML"""
+        _c_text = Thm.color("text")
         html_parts = ["<style>"
-                      "body { font-family: 'Microsoft YaHei', sans-serif; font-size: 12px; color: #1f2328; }"
-                      ".ver { font-weight: bold; color: #0969da; font-size: 13px; margin-top: 12px; }"
-                      ".date { color: #656d76; font-size: 11px; margin-left: 8px; }"
-                      ".section { color: #1f2328; font-weight: 600; margin-top: 6px; }"
+                      f"body {{ font-family: {FONT_UI}, sans-serif; font-size: 12px; "
+                      f"color: {_c_text}; }}"
+                      f".ver {{ font-weight: bold; color: {Thm.color('primary')}; "
+                      f"font-size: 13px; margin-top: 12px; }}"
+                      f".date {{ color: {Thm.color('textMuted')}; font-size: 11px; "
+                      f"margin-left: 8px; }}"
+                      f".section {{ color: {_c_text}; font-weight: 600; margin-top: 6px; }}"
                       "ul { margin: 2px 0 6px 0; padding-left: 20px; }"
                       "li { margin: 2px 0; }"
                       "</style>"]

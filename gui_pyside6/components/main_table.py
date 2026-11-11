@@ -21,24 +21,6 @@ ANALYSIS_STEPS = [
 ]
 
 
-PROGRESS_STYLE = """
-QProgressBar {
-    background-color: #1A1830;
-    color: #EAE8E4;
-    border: 0.5px solid #444441;
-    border-radius: 4px;
-    text-align: center;
-    font-family: 'Microsoft YaHei';
-    font-size: 11px;
-    height: 16px;
-}
-QProgressBar::chunk {
-    background-color: #7F77DD;
-    border-radius: 3px;
-}
-"""
-
-
 class MainTableComponent(QObject):
     """主表格区组件：分析进度、操作按钮、统计卡片、表格"""
 

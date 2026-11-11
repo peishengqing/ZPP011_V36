@@ -14,6 +14,8 @@ from PySide6.QtGui import QFont
 import os
 
 from gui_pyside6.utils.icons import get_icon, has_icon
+from gui_pyside6.themes.tokens import ui_font, FONT_PT
+from utils.theme_manager import Thm
 
 # v43.152：打开看板失败时的运行日志（写失败静默吞掉，日志绝不反噬运行路径）
 _RUNTIME_LOG = os.path.join("logs", "unread_summary.log")
@@ -100,12 +102,13 @@ class UnreadSummaryPopup(QWidget):
         self._all_clear_row.setSpacing(6)
         self._all_clear_icon = QLabel()
         self._all_clear_icon.setFixedSize(16, 16)
-        self._all_clear_icon.setPixmap(get_icon("check", 14, "#1F7A4D").pixmap(14, 14))
+        self._all_clear_icon.setPixmap(
+            get_icon("check", 14, Thm.color("ok")).pixmap(14, 14))
         self._all_clear_row.addStretch()
         self._all_clear_row.addWidget(self._all_clear_icon)
         self._all_clear_label = QLabel("全清零啦")
         self._all_clear_label.setObjectName("unreadAllClear")
-        self._all_clear_label.setFont(QFont("Microsoft YaHei", 10, QFont.Bold))
+        self._all_clear_label.setFont(ui_font(FONT_PT["body"], bold=True))
         self._all_clear_label.setAlignment(Qt.AlignCenter)
         self._all_clear_row.addWidget(self._all_clear_label)
         self._all_clear_row.addStretch()

@@ -3,54 +3,60 @@
 
 完整实现：标题条 / 常驻筛选条 / 筛选抽屉 / KPI 带 / 表格槽 / 操作条
 尺寸规范：标题 48px / 常驻筛选 40px / KPI 54px / 操作条 40px
+
+样式只有一个来源：``themes/tokens.build_dashboard_qss()``。本文件不再写任何
+``setStyleSheet``——v43.346 之前这里散落着 70 多处 ``var(--token)``，那是设计稿
+HTML 的 CSS 变量写法，Qt QSS 不认识，整条声明被静默丢弃，只剩 padding /
+font-size / ``::drop-down { border: none }`` 这些"碰巧合法"的片段生效，
+结果是下拉箭头消失、筛选控件尺寸被内距改写。控件侧只留 objectName 与
+dynamic property 挂钩。
 """
-import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QVBoxLayout as VBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QScrollArea, QComboBox, QToolButton, QGroupBox, QTableView,
     QAbstractItemView, QSpinBox
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
 
+from gui_pyside6.themes.tokens import SIZE_PX, build_dashboard_qss, ui_font
 from utils.theme_manager import Thm
-
-# v43.335：QSS 用模块相对定位，不再写死绝对路径（换机器/换盘即读不到，
-# 会静默退化成兜底样式）。_THEME_DIR 指向 gui_pyside6/themes。
-_THEME_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "themes")
 
 
 class KpiCard(QWidget):
-    """KPI 卡片单元：label + value + 小点"""
+    """KPI 卡片单元：小标签 + 数值。数值颜色用 status 动态属性挂钩（5.1 纪律）。"""
     clicked = Signal(str)
 
-    def __init__(self, label: str, value: str, color: str = "var(--text)", parent=None):
+    def __init__(self, label: str, value: str, status: str = "", parent=None):
         super().__init__(parent)
         self.label = label
-        self.color = color
+        self.status = status
 
         self.setFixedSize(118, 54)
-        self.setStyleSheet(
-            "QFrame { border-left: 1px solid var(--border); background: transparent; } "
-            "QFrame:hover { background: var(--surface-2); cursor: pointer; }"
-        )
+        self.setProperty("kpiCard", True)   # → QSS QWidget[kpiCard="1"]
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(4)
 
         lbl_label = QLabel(label)
-        lbl_label.setFont(QFont("Microsoft YaHei UI", 11))
-        lbl_label.setStyleSheet("color: var(--text-muted);")
+        lbl_label.setProperty("kpiLabel", True)
         layout.addWidget(lbl_label)
 
         lbl_value = QLabel(value)
-        lbl_value.setFont(QFont("Cascadia Mono", 17, QFont.DemiBold))
-        lbl_value.setStyleSheet(f"color: {color}; background: transparent;")
+        lbl_value.setProperty("kpiValue", True)
+        if status:
+            lbl_value.setProperty("status", status)
         layout.addWidget(lbl_value)
 
         self.lbl_label = lbl_label
         self.lbl_value = lbl_value
+
+    def set_status(self, status: str):
+        """改数值语义色：重设 status 属性后必须重新抛光，QSS 才会重算。"""
+        self.status = status
+        self.lbl_value.setProperty("status", status)
+        self.lbl_value.style().unpolish(self.lbl_value)
+        self.lbl_value.style().polish(self.lbl_value)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -78,30 +84,19 @@ class FilterDropdown(QWidget):
 
         # 标签
         self.lbl_label = QLabel(self.label)
-        self.lbl_label.setStyleSheet("font-size: 12px; color: var(--text-muted);")
+        self.lbl_label.setProperty("class", "mutedText")
 
-        # 下拉框
+        # 下拉框（外观全部交给外壳 QSS，此处只定宽高的，不写样式表）
         self.cbd_items = QComboBox()
         self.cbd_items.setFixedSize(140, 26)
-        self.cbd_items.setStyleSheet(
-            "QComboBox { background: var(--surface); border: 1px solid var(--border); "
-            "border-radius: var(--r-sm); padding: 0 10px; font-size: 12px; } "
-            "QComboBox:hover { border-color: var(--primary-soft-bd); } "
-            "QComboBox:focus { outline: 2px solid var(--primary-soft-bd); border-color: var(--primary-soft-bd); } "
-            "QComboBox::drop-down { border: none; width: 20px; } "
-            "QComboBox::down-arrow { width: 12px; height: 12px; }"
-        )
 
         for item in self.items:
             self.cbd_items.addItem(item)
 
         # 命中计数徽章
         self.lbl_count = QLabel("0 条")
-        self.lbl_count.setStyleSheet(
-            "color: var(--primary); font-size: 10px; font-weight: 700; "
-            "background: var(--primary-soft); border: 1px solid var(--primary-soft-bd); "
-            "border-radius: 20px; padding: 0 5px; min-width: 35px; text-align: center;"
-        )
+        self.lbl_count.setObjectName("hitBadge")
+        self.lbl_count.setAlignment(Qt.AlignCenter)
 
         layout.addWidget(self.lbl_label)
         layout.addWidget(self.cbd_items)
@@ -187,11 +182,7 @@ class DashboardShell(QWidget):
         # 之前没设名字导致这条背景/分隔线规则从未命中。
         self.title_bar.setObjectName("title_bar")
         self._title_bar = self.title_bar  # 别名：QSS probe/测试按 _title_bar 访问
-        self.title_bar.setFixedHeight(48)
-        self.title_bar.setStyleSheet(
-            "background-color: var(--surface); "
-            "border-bottom: 1px solid var(--border);"
-        )
+        self.title_bar.setFixedHeight(SIZE_PX["titleBar"])
 
         layout = QHBoxLayout(self.title_bar)
         layout.setContentsMargins(10, 0, 10, 0)
@@ -199,76 +190,42 @@ class DashboardShell(QWidget):
 
         # 品牌块
         self.tb_mark = QFrame()
+        self.tb_mark.setObjectName("tb_mark")
         self.tb_mark.setFixedSize(26, 26)
-        self.tb_mark.setStyleSheet(
-            "background: linear-gradient(140deg, var(--primary), var(--primary-hover)); "
-            "border-radius: var(--r-md); "
-            "box-shadow: 0 2px 6px rgba(30,64,175,.28);"
-        )
         layout.addWidget(self.tb_mark)
 
         # 标题
         self.lbl_title = QLabel(f"{self.title} · {self.subtitle}")
-        self.lbl_title.setFont(QFont("Microsoft YaHei UI", 14, QFont.DemiBold))
-        self.lbl_title.setStyleSheet("color: var(--text);")
+        self.lbl_title.setFont(ui_font(14, bold=True))
         layout.addWidget(self.lbl_title)
 
         layout.addStretch()
 
-        # 工厂选择
+        # 工厂选择（常驻筛选控件：只允许代码定宽，禁止内联样式表改 sizeHint）
         self.factory_select = QComboBox()
         self.factory_select.setFixedSize(120, 30)
-        self.factory_select.setStyleSheet(
-            "QComboBox { background: var(--surface); border: 1px solid var(--border); "
-            "border-radius: var(--r-md); padding: 0 20px 0 10px; font-size: 12.5px; } "
-            "QComboBox:hover { border-color: var(--primary-soft-bd); } "
-            "QComboBox:focus { outline: 2px solid var(--primary-soft-bd); border-color: var(--primary-soft-bd); } "
-            "QComboBox::drop-down { border: none; width: 20px; } "
-            "QComboBox::down-arrow { width: 12px; height: 12px; }"
-        )
         layout.addWidget(self.factory_select)
 
         # 窗口控制按钮
         self._build_window_controls()
 
     def _build_window_controls(self):
-        btn_style = (
-            "background: transparent; border: none; color: var(--text-muted); "
-            "border-radius: var(--r-md); padding: 6px; "
-            "transition: all 0.18s ease;"
-        )
-
-        self.btn_export = QPushButton("导出")
-        self.btn_export.setFixedHeight(30)
-        self.btn_export.setFixedSize(60, 30)
-        self.btn_export.setStyleSheet(btn_style + " :hover { background: var(--surface-3); color: var(--text); }")
-        self.btn_export.clicked.connect(lambda: self.action_triggered.emit("export"))
-
-        self.btn_fullscreen = QPushButton("全屏")
-        self.btn_fullscreen.setFixedHeight(30)
-        self.btn_fullscreen.setFixedSize(60, 30)
-        self.btn_fullscreen.setStyleSheet(btn_style + " :hover { background: var(--surface-3); color: var(--text); }")
-        self.btn_fullscreen.clicked.connect(lambda: self.action_triggered.emit("fullscreen"))
-
-        self.btn_close = QPushButton("关闭")
-        self.btn_close.setFixedHeight(30)
-        self.btn_close.setFixedSize(60, 30)
-        self.btn_close.setStyleSheet(btn_style + " :hover { background: var(--surface-3); color: var(--text); }")
-        self.btn_close.clicked.connect(lambda: self.action_triggered.emit("close"))
-
-        layout = self.title_bar.findChild(QHBoxLayout)
-        layout.addWidget(self.btn_export)
-        layout.addWidget(self.btn_fullscreen)
-        layout.addWidget(self.btn_close)
+        for attr, text, action in (
+            ("btn_export", "导出", "export"),
+            ("btn_fullscreen", "全屏", "fullscreen"),
+            ("btn_close", "关闭", "close"),
+        ):
+            btn = QPushButton(text)
+            btn.setFixedSize(60, 30)
+            btn.setObjectName("titleToolBtn")
+            btn.clicked.connect(lambda _checked=False, a=action: self.action_triggered.emit(a))
+            setattr(self, attr, btn)
+            self.title_bar.findChild(QHBoxLayout).addWidget(btn)
 
     def _build_filter_bar(self):
         self.filter_bar = QFrame()
         self.filter_bar.setObjectName("filter_bar")
-        self.filter_bar.setFixedHeight(40)
-        self.filter_bar.setStyleSheet(
-            "background-color: var(--surface); "
-            "border-bottom: 1px solid var(--border);"
-        )
+        self.filter_bar.setFixedHeight(SIZE_PX["boardFilterBar"])
 
         layout = QHBoxLayout(self.filter_bar)
         layout.setContentsMargins(10, 0, 10, 0)
@@ -276,14 +233,8 @@ class DashboardShell(QWidget):
 
         # 筛选抽屉按钮
         self.btn_filter_drawer = QToolButton()
-        self.btn_filter_drawer.setText("🔍 筛选 (0)")
+        self.btn_filter_drawer.setText("筛选 (0)")
         self.btn_filter_drawer.setFixedSize(100, 26)
-        self.btn_filter_drawer.setStyleSheet(
-            "QToolButton { background: var(--surface-2); border: 1px solid var(--border); "
-            "border-radius: var(--r-sm); font-size: 12px; padding: 0 9px; } "
-            "QToolButton:hover { border-color: var(--primary-soft-bd); color: var(--primary-hover); } "
-            "QToolButton:pressed { background: var(--primary-soft); border-color: var(--primary-soft-bd); }"
-        )
         self.btn_filter_drawer.clicked.connect(self._on_filter_drawer_toggled)
         layout.addWidget(self.btn_filter_drawer)
 
@@ -296,14 +247,6 @@ class DashboardShell(QWidget):
         ]:
             dropdown = QComboBox()
             dropdown.setFixedSize(120, 26)
-            dropdown.setStyleSheet(
-                "QComboBox { background: var(--surface); border: 1px solid var(--border); "
-                "border-radius: var(--r-sm); padding: 0 10px; font-size: 12px; } "
-                "QComboBox:hover { border-color: var(--primary-soft-bd); } "
-                "QComboBox:focus { outline: 2px solid var(--primary-soft-bd); border-color: var(--primary-soft-bd); } "
-                "QComboBox::drop-down { border: none; width: 20px; } "
-                "QComboBox::down-arrow { width: 12px; height: 12px; }"
-            )
             dropdown.addItems(items)
             self.dropdowns.append(dropdown)
             layout.addWidget(dropdown)
@@ -313,27 +256,17 @@ class DashboardShell(QWidget):
         # 重置按钮
         self.btn_reset = QPushButton("重置")
         self.btn_reset.setFixedSize(60, 26)
-        self.btn_reset.setStyleSheet(
-            "QPushButton { background: var(--surface); border: 1px solid var(--border); "
-            "border-radius: var(--r-sm); font-size: 12px; padding: 0 10px; } "
-            "QPushButton:hover { background: var(--surface-2); border-color: var(--border-strong); }"
-        )
         self.btn_reset.clicked.connect(self._on_reset)
         layout.addWidget(self.btn_reset)
 
         # 总计数
         self.lbl_total_hit = QLabel("共 0 条命中")
-        self.lbl_total_hit.setStyleSheet("color: var(--text-muted); font-size: 12px;")
+        self.lbl_total_hit.setProperty("class", "mutedText")
         layout.addWidget(self.lbl_total_hit)
 
     def _build_filter_drawer(self):
         self.drawer_container = QFrame()
-        self.drawer_container.setStyleSheet(
-            "QFrame { background-color: var(--surface-2); border: none; } "
-            "QFrame#drawer_visible { border-top: 1px solid var(--border); } "
-            "QFrame#drawer_hidden { max-height: 0; overflow: hidden; border: none; }"
-        )
-        self.drawer_container.setObjectName("drawer_visible")
+        self.drawer_container.setObjectName("drawer_container")
         self.drawer_container.setVisible(False)
 
         self.drawer_layout = VBoxLayout(self.drawer_container)
@@ -342,12 +275,6 @@ class DashboardShell(QWidget):
 
         # 1. 物料维度
         self.gp_material = QGroupBox("物料维度")
-        self.gp_material.setStyleSheet(
-            "QGroupBox { font-size: 12px; font-weight: 650; color: var(--text); "
-            "margin-top: 12px; padding: 10px; border: 1px solid var(--border); "
-            "border-radius: var(--r-md); background: var(--surface); } "
-            "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }"
-        )
         gp_material_layout = VBoxLayout(self.gp_material)
         material_row = QHBoxLayout()
         material_row.addWidget(QLabel("名称包含:"))
@@ -360,12 +287,6 @@ class DashboardShell(QWidget):
 
         # 2. 数值维度
         self.gp_numeric = QGroupBox("数值维度")
-        self.gp_numeric.setStyleSheet(
-            "QGroupBox { font-size: 12px; font-weight: 650; color: var(--text); "
-            "margin-top: 12px; padding: 10px; border: 1px solid var(--border); "
-            "border-radius: var(--r-md); background: var(--surface); } "
-            "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }"
-        )
         gp_numeric_layout = VBoxLayout(self.gp_numeric)
         numeric_row = QHBoxLayout()
         numeric_row.addWidget(QLabel("偏差率:"))
@@ -384,12 +305,6 @@ class DashboardShell(QWidget):
 
         # 3. 组织与状态维度
         self.gp_org_status = QGroupBox("组织与状态维度")
-        self.gp_org_status.setStyleSheet(
-            "QGroupBox { font-size: 12px; font-weight: 650; color: var(--text); "
-            "margin-top: 12px; padding: 10px; border: 1px solid var(--border); "
-            "border-radius: var(--r-md); background: var(--surface); } "
-            "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }"
-        )
         gp_org_status_layout = VBoxLayout(self.gp_org_status)
         org_row = QHBoxLayout()
         org_row.addWidget(QLabel("车间:"))
@@ -403,11 +318,7 @@ class DashboardShell(QWidget):
     def _build_kpi_bar(self):
         self.kpi_bar = QFrame()
         self.kpi_bar.setObjectName("kpi_bar")
-        self.kpi_bar.setFixedHeight(54)
-        self.kpi_bar.setStyleSheet(
-            "background-color: var(--surface); "
-            "border-bottom: 1px solid var(--border);"
-        )
+        self.kpi_bar.setFixedHeight(SIZE_PX["boardKpiBar"])
 
         layout = QHBoxLayout(self.kpi_bar)
         layout.setContentsMargins(10, 0, 10, 0)
@@ -415,12 +326,9 @@ class DashboardShell(QWidget):
 
         # KPI 卡片容器
         self.kpi_scroll = QScrollArea()
+        self.kpi_scroll.setObjectName("kpiScroll")
         self.kpi_scroll.setWidgetResizable(True)
         self.kpi_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.kpi_scroll.setStyleSheet(
-            "QScrollArea { border: none; background: transparent; } "
-            "QScrollArea QScrollBar:horizontal { border: none; background: transparent; height: 0; }"
-        )
 
         self.kpi_container = QWidget()
         self.kpi_layout = QHBoxLayout(self.kpi_container)
@@ -429,10 +337,10 @@ class DashboardShell(QWidget):
 
         # 示例 KPI 卡片
         for label, value, color in [
-            ("负损", "0 条", "var(--text)"),
-            ("金额", "-¥0.0", "var(--danger)"),
-            ("涉及车间", "0 个", "var(--amber)"),
-            ("隔离", "0 条", "var(--info)")
+            ("负损", "0 条", ""),
+            ("金额", "-¥0.0", "danger"),
+            ("涉及车间", "0 个", "warn"),
+            ("隔离", "0 条", "info")
         ]:
             kpi = KpiCard(label, value, color)
             kpi.clicked.connect(lambda checked, l=label: self.kpi_clicked.emit(l))
@@ -446,10 +354,6 @@ class DashboardShell(QWidget):
         # v43.346：补 objectName 供 QSS #content ID 选择器命中
         self.table_container.setObjectName("content")
         self._content = self.table_container  # 别名：QSS probe/测试按 _content 访问
-        self.table_container.setStyleSheet(
-            "background-color: var(--surface); "
-            "border-bottom: 1px solid var(--border);"
-        )
         self.table_layout = VBoxLayout(self.table_container)
         self.table_layout.setContentsMargins(0, 0, 0, 0)
         self.table_layout.setAlignment(Qt.AlignTop)
@@ -459,23 +363,12 @@ class DashboardShell(QWidget):
         self.table_view.setAlternatingRowColors(True)
         self.table_view.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table_view.verticalHeader().setDefaultSectionSize(36)
+        self.table_view.verticalHeader().setDefaultSectionSize(SIZE_PX["tableRow"])
         self.table_view.horizontalHeader().setHighlightSections(False)
-        self.table_view.setStyleSheet(
-            "QTableView { background-color: var(--surface); "
-            "alternate-background-color: var(--surface2); "
-            "gridline-color: var(--border); border: 1px solid var(--border); "
-            "border-radius: 4px; selection-background-color: var(--primary-soft); "
-            "selection-color: var(--text); } "
-            "QHeaderView::section { background-color: var(--surface2); "
-            "color: var(--textMuted); border: none; border-right: 1px solid var(--border); "
-            "border-bottom: 1px solid var(--borderStrong); font-weight: bold; } "
-            "QHeaderView::section:hover { background-color: var(--surface3); }"
-        )
         self.table_layout.addWidget(self.table_view)
 
         self.lbl_table_status = QLabel("表格已就绪")
-        self.lbl_table_status.setStyleSheet("color: var(--text-muted); font-size: 12px; padding: 5px;")
+        self.lbl_table_status.setProperty("class", "mutedText")
         self.table_layout.addWidget(self.lbl_table_status)
 
         if self._model is None:
@@ -485,20 +378,16 @@ class DashboardShell(QWidget):
         """底部状态条（30px）：承载 _status_label，供 set_status() 更新。"""
         self._status_bar = QFrame()
         self._status_bar.setObjectName("status_bar")
-        self._status_bar.setFixedHeight(30)
-        self._status_bar.setStyleSheet(
-            "background-color: var(--surface); "
-            "border-top: 1px solid var(--border);"
-        )
+        self._status_bar.setFixedHeight(SIZE_PX["statusBar"])
         status_layout = QHBoxLayout(self._status_bar)
         status_layout.setContentsMargins(10, 0, 10, 0)
         status_layout.setSpacing(8)
         self._status_label = QLabel("")
-        self._status_label.setStyleSheet("color: var(--text-muted); font-size: 12px;")
+        self._status_label.setProperty("class", "mutedText")
         status_layout.addWidget(self._status_label, 1)
         # 选中行数（v43.346：从原操作条迁到状态条，操作条改空条按需展开）
         self.lbl_selected_count = QLabel("已选 0 行")
-        self.lbl_selected_count.setStyleSheet("color: var(--text-muted); font-size: 12px;")
+        self.lbl_selected_count.setProperty("class", "mutedText")
         status_layout.addWidget(self.lbl_selected_count)
 
     def _build_action_bar(self):
@@ -506,14 +395,10 @@ class DashboardShell(QWidget):
         # v43.346：属性名统一为 _action_bar（测试/probe 直接访问），并补 objectName
         # 供 QSS #action_bar ID 选择器命中。
         self._action_bar.setObjectName("action_bar")
-        self._action_bar.setFixedHeight(40)
+        self._action_bar.setFixedHeight(SIZE_PX["boardActBar"])
         # v43.342：空操作条默认隐藏（隐藏后不占布局高度），仅当真正放入操作控件
         # （set_action_widget）时才展开，消除「标题与内容之间一大块留白」。
         self._action_bar.setVisible(False)
-        self._action_bar.setStyleSheet(
-            "background-color: var(--surface); "
-            "border-top: 1px solid var(--border);"
-        )
         # 操作条布局在此创建，set_action_widget() 往里加控件
         self._action_bar_layout = QHBoxLayout(self._action_bar)
         self._action_bar_layout.setContentsMargins(10, 0, 10, 0)
@@ -531,56 +416,13 @@ class DashboardShell(QWidget):
         self._load_theme_qss("dark" if Thm.is_dark else "light")
 
     def _load_theme_qss(self, theme: str):
-        """加载亮/暗主题 QSS；文件缺失时退回 _default_*_qss() 兜底。"""
-        qss_name = "light_dashboard.qss" if theme == "light" else "dark_dashboard.qss"
-        qss_content = ""
-        try:
-            with open(os.path.join(_THEME_DIR, qss_name), "r", encoding="utf-8") as f:
-                qss_content = f.read()
-        except Exception:
-            qss_content = (self._default_light_qss() if theme == "light"
-                           else self._default_dark_qss())
-        self.setStyleSheet(qss_content)
+        """外壳 QSS 只由 tokens.build_dashboard_qss() 生成，不再读文件、不再有兜底副本。
 
-    def _default_light_qss(self) -> str:
-        """内置亮色兜底 QSS：与 themes/light_dashboard.qss 同纪律，只写颜色不写尺寸。"""
-        return """
-            #DashboardShell { background: #F5F6FA; }
-            #title_bar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
-            #filter_bar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
-            #kpi_bar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
-            #action_bar { background: #FFFFFF; border-top: 1px solid #E2E8F0; }
-            #content { background: #FFFFFF; }
-            #status_bar { background: #F8F9FA; border-top: 1px solid #E2E8F0; }
-            QPushButton { background-color: #FFFFFF; color: #334155; }
-            QPushButton:hover { background-color: #E8F2FF; color: #0969DA; }
-            QPushButton:pressed { background-color: #D3E6FF; }
-            QPushButton:checked { background-color: #0969DA; color: #FFFFFF; }
-            QPushButton:disabled { background-color: #F1F5F9; color: #9AA7B6; }
-            QLabel { color: #1F2937; }
-            QComboBox { background-color: #FFFFFF; color: #1F2937; }
-            QTableView { background-color: #FFFFFF; }
+        改造前这里先读 themes/{light,dark}_dashboard.qss、读不到再退回本文件内
+        又写死一份 _default_*_qss()——那份兜底里的主色还停留在 #0969DA/#5C7CFA，
+        等于全项目第 6 份颜色真源。换机器/换盘读不到文件时就会静默用上它。
         """
-
-    def _default_dark_qss(self) -> str:
-        """内置暗色兜底 QSS：与 themes/dark_dashboard.qss 同纪律。"""
-        return """
-            #DashboardShell { background: #1E1E24; }
-            #title_bar { background: #25262B; border-bottom: 1px solid #2C2E33; }
-            #filter_bar { background: #25262B; border-bottom: 1px solid #2C2E33; }
-            #kpi_bar { background: #25262B; border-bottom: 1px solid #2C2E33; }
-            #action_bar { background: #25262B; border-top: 1px solid #2C2E33; }
-            #content { background: #25262B; }
-            #status_bar { background: #2C2E33; border-top: 1px solid #35334A; }
-            QPushButton { background-color: #2C2E33; color: #E9ECEF; }
-            QPushButton:hover { background-color: #3A4050; color: #FFFFFF; }
-            QPushButton:pressed { background-color: #454D60; }
-            QPushButton:checked { background-color: #5C7CFA; color: #FFFFFF; }
-            QPushButton:disabled { background-color: #25262B; color: #7A7F8A; }
-            QLabel { color: #E9ECEF; }
-            QComboBox { background-color: #2C2E33; color: #E9ECEF; }
-            QTableView { background-color: #25262B; }
-        """
+        self.setStyleSheet(build_dashboard_qss(theme))
 
     def set_theme(self, theme: str):
         """theme: 'light' or 'dark'。切换全局主题并重载本外壳 QSS。"""
@@ -600,7 +442,7 @@ class DashboardShell(QWidget):
 
     def _on_filter_change(self):
         active_filters = sum(1 for d in self.dropdowns if d.currentIndex() > 0)
-        self.btn_filter_drawer.setText(f"🔍 筛选 ({active_filters} 个激活)")
+        self.btn_filter_drawer.setText(f"筛选 ({active_filters} 个激活)")
         self.current_filters = {
             f"dropdown_{i}": d.currentText()
             for i, d in enumerate(self.dropdowns)
@@ -613,13 +455,11 @@ class DashboardShell(QWidget):
         self.drawer_visible = not self.drawer_visible
         btn = self.btn_filter_drawer
         if self.drawer_visible:
-            btn.setText("🔍 筛选 (关闭)")
+            btn.setText("筛选 (收起)")
             self.drawer_container.setVisible(True)
-            self.drawer_container.setObjectName("drawer_visible")
         else:
-            btn.setText(f"🔍 筛选 ({len(self.current_filters)} 个激活)")
+            btn.setText(f"筛选 ({len(self.current_filters)} 个激活)")
             self.drawer_container.setVisible(False)
-            self.drawer_container.setObjectName("drawer_hidden")
 
     def _on_reset(self):
         self.current_filters.clear()
@@ -659,6 +499,7 @@ class DashboardShell(QWidget):
                 item = data[i]
                 kpi.lbl_value.setText(item.get('value', '0'))
                 kpi.lbl_label.setText(item.get('label', 'KPI'))
+                kpi.set_status(item.get('status', ''))
 
     def set_table_headers(self, headers: list):
         self.table_headers = headers

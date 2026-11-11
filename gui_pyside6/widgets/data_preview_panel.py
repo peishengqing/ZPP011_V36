@@ -13,9 +13,10 @@ from PySide6.QtWidgets import (
     QGroupBox, QFormLayout, QScrollArea, QSplitter, QPushButton, QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QColor
+from PySide6.QtGui import QColor
 
 import pandas as pd
+from gui_pyside6.themes.tokens import num_font, FONT_PT
 
 
 # 当前预览的数据行
@@ -92,7 +93,7 @@ class DataViewWidget(QWidget):
         self.text_preview.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
-        self.text_preview.setFont(QFont("Consolas", 10))
+        self.text_preview.setFont(num_font(FONT_PT["note"]))
         
         left_layout.addWidget(self.text_preview)
         

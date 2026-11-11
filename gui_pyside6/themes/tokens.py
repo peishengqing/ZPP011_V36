@@ -67,8 +67,13 @@ _LIGHT = {
     "primaryActive": "#1A3478",
     "primarySoft": "#E7EDFB",
     "primarySoftBd": "#C3D3F4",
+    # 主色实底之上的前景（按钮文字、选中数字）。亮/暗同值，靠主色本身拉开对比。
+    "onPrimary": "#FFFFFF",
     # 语义色（纪律：只允许出现在 6px 圆点、状态胶囊、accent 条三处）
     "ok": "#0E8F63", "okSoft": "#E3F5EE",
+    # 实底语义按钮（「AI 分析」这类整块填色的主操作）。设计稿 5.1 只给了文字/胶囊
+    # 两档，而 Qt QSS 没有 CSS 的 brightness()，hover 变深必须有显式取值，故补此档。
+    "okSolid": "#0E8F63", "okSolidHover": "#0B7355",
     "warn": "#C2740B", "warnSoft": "#FDF3E3",
     "danger": "#C62A2A", "dangerSoft": "#FBEAEA",
     "info": "#2563EB", "infoSoft": "#E8F0FE",
@@ -90,7 +95,11 @@ _DARK = {
     "primaryActive": "#3A66E8",
     "primarySoft": "#18254A",
     "primarySoftBd": "#2B3E6E",
+    "onPrimary": "#FFFFFF",
     "ok": "#3FBF8F", "okSoft": "#0E2C22",
+    # 暗色下 #3FBF8F 是「文字/圆点」档，直接当实底按钮会顶掉白字对比度，
+    # 因此实底按钮单列一档更深的绿（同 light 侧的理由：QSS 没有 brightness()）。
+    "okSolid": "#116B4E", "okSolidHover": "#178A64",
     "warn": "#E0A33C", "warnSoft": "#33270F",
     "danger": "#F26D6D", "dangerSoft": "#331A1A",
     "info": "#60A5FA", "infoSoft": "#15243F",
@@ -131,6 +140,7 @@ SIZE_PX = {
     "radiusSm": 4,
     "radiusMd": 6,
     "radiusLg": 10,
+    "radiusPill": 18,     # 悬浮胶囊按钮（高 36 的一半），设计稿 .pill 同源
 }
 
 #: 弹窗尺寸规范（设计稿 4.4）：名称 → (宽, 高)
@@ -157,16 +167,51 @@ def theme_of(is_dark: bool) -> str:
     return "dark" if is_dark else "light"
 
 
+def _families(spec: str) -> list:
+    """'"A","B"' → ['A', 'B']，供 QFont.setFamilies 使用。"""
+    return [f.strip().strip('"') for f in spec.split(",") if f.strip()]
+
+
+def ui_font(pt_size: int = None, bold: bool = False):
+    """正文字体（FONT_UI 家族）。字号一律走 FONT_PT 档位，不要就地写数字；
+    pt_size=None 表示「不设字号、继承控件/表格当前字号」。"""
+    from PySide6.QtGui import QFont
+    f = QFont()
+    f.setFamilies(_families(FONT_UI))
+    if pt_size is not None:
+        f.setPixelSize(pt_size)
+    f.setBold(bold)
+    return f
+
+
+def num_font(pt_size: int = None, bold: bool = False):
+    """数字/编码字体（FONT_NUM 家族 + 等宽数字）。
+
+    改造前 KPI 值、表格数字列各自写死 QFont("Cascadia Mono", 17) /
+    QFont("Consolas", 10)，字号还不在设计稿阶梯上；统一由此处发。
+    """
+    from PySide6.QtGui import QFont
+    f = QFont()
+    f.setFamilies(_families(FONT_NUM))
+    if pt_size is not None:
+        f.setPixelSize(pt_size)
+    f.setBold(bold)
+    try:
+        f.setFontVariants({"tnum": True})   # tabular-nums，列对齐不抖
+    except Exception:
+        pass
+    return f
+
+
 # ==========================================================================
 #  QSS 生成
 # ==========================================================================
 
 def build_dashboard_qss(theme: str) -> str:
-    """DashboardShell 外壳 QSS —— 全项目唯一生成处。
+    """DashboardShell 外壳 QSS —— 全项目唯一生成处，themes/*_dashboard.qss 由此落盘。
 
-    与改造前的 themes/light_dashboard.qss 保持**选择器集合逐条一致**，
-    只把写死的 hex 换成令牌，并补齐设计稿 5.1 的语义色段。
-    尺寸纪律：筛选控件（QPushButton/QComboBox/QLineEdit）只写颜色。
+    尺寸纪律：常驻筛选条里的 QPushButton / QToolButton / QComboBox / QLineEdit /
+    QSpinBox 只写颜色；只有抽屉（QGroupBox）、表格与 KPI 卡可以用边框/圆角/内距。
     """
     c = TOKENS[theme]
     return """/* 由 gui_pyside6/themes/tokens.py 生成 · 请勿手改，改令牌请改 tokens.py
@@ -179,9 +224,12 @@ def build_dashboard_qss(theme: str) -> str:
  */
 #DashboardShell {{ background: {bg}; }}
 #title_bar {{ background: {surface}; border-bottom: 1px solid {border}; }}
-#action_bar {{ background: {surface}; border-bottom: 1px solid {border}; }}
+#filter_bar {{ background: {surface}; border-bottom: 1px solid {border}; }}
+#kpi_bar {{ background: {surface}; border-bottom: 1px solid {border}; }}
+#action_bar {{ background: {surface}; border-top: 1px solid {border}; }}
 #content {{ background: {surface}; }}
 #status_bar {{ background: {surface2}; border-top: 1px solid {border}; }}
+#drawer_container {{ background: {surface2}; }}
 
 /* 按钮：只写颜色。筛选区是 checkable 按钮，:checked 用主色实底标出当前档位。 */
 QPushButton {{
@@ -190,14 +238,25 @@ QPushButton {{
 }}
 QPushButton:hover    {{ background-color: {primarySoft}; color: {primaryHover}; }}
 QPushButton:pressed  {{ background-color: {primarySoftBd}; }}
-QPushButton:checked  {{ background-color: {primary}; color: #FFFFFF; }}
+QPushButton:checked  {{ background-color: {primary}; color: {onPrimary}; }}
 QPushButton:disabled {{ background-color: {surface3}; color: {textFaint}; }}
+
+/* 工具按钮同样只写颜色（外壳标题条/筛选条里的 导出/全屏/关闭/筛选 都算筛选控件）。 */
+QToolButton {{
+    background-color: {surface2};
+    color: {textMuted};
+}}
+QToolButton:hover {{ background-color: {primarySoft}; color: {primaryHover}; }}
+QToolButton:pressed {{ background-color: {primarySoftBd}; }}
+QToolButton:checked {{ background-color: {primary}; color: {onPrimary}; }}
+QToolButton:disabled {{ background-color: {surface3}; color: {textFaint}; }}
 
 /* 标签 */
 QLabel {{ color: {text}; }}
-QLabel[class="mutedText"] {{ color: {textMuted}; }}
+QLabel[class="mutedText"] {{ color: {textMuted}; font-size: {f_note}px; }}
 
-/* 下拉：只写颜色；弹出列表 QAbstractItemView 不占筛选栏布局，可保留边框。 */
+/* 下拉：只写颜色；刻意不写 ::drop-down，一旦接管该子控件 Qt 就不再画原生箭头。
+   弹出列表 QAbstractItemView 不占筛选栏布局，可保留边框。 */
 QComboBox {{
     background-color: {surface};
     color: {text};
@@ -212,14 +271,75 @@ QComboBox QAbstractItemView {{
     selection-color: {primary};
 }}
 
-/* 输入框：只写颜色 */
-QLineEdit {{
+/* 输入框 / 数字框：只写颜色（数字框同样不写 ::up-button，理由同下拉箭头） */
+QLineEdit, QSpinBox, QDateEdit {{
     background-color: {surface};
     color: {text};
     selection-background-color: {primary};
-    selection-color: #FFFFFF;
+    selection-color: {onPrimary};
 }}
-QLineEdit:focus {{ background-color: {surface2}; }}
+QLineEdit:focus, QSpinBox:focus, QDateEdit:focus {{ background-color: {surface2}; }}
+
+/* KPI 带的横向滚动容器：只负责去掉边框与滚动条，不负责配色 */
+QScrollArea#kpiScroll {{ border: none; background: transparent; }}
+
+/* 标题条右侧窗口按钮（导出/全屏/关闭）：幽灵样式，不参与筛选条精算 */
+QPushButton#titleToolBtn {{ background: transparent; color: {textMuted}; }}
+QPushButton#titleToolBtn:hover {{ background-color: {surface3}; color: {text}; }}
+
+/* 品牌块：26×26 装饰方块，不进配色纪律范围，允许渐变与圆角 */
+QFrame#tb_mark {{
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                                stop:0 {primary}, stop:1 {primaryHover});
+    border-radius: {r_md}px;
+}}
+
+/* 抽屉里的命中计数徽章（胶囊）：抽屉不在筛选条精算范围内 */
+QLabel#hitBadge {{
+    color: {primary};
+    background: {primarySoft};
+    border: 1px solid {primarySoftBd};
+    border-radius: {r_pill}px;
+    padding: 0 5px;
+    min-width: 35px;
+    font-size: {f_aux}px;
+    font-weight: 600;
+}}
+
+/* 抽屉里的分组卡：不在精算过的筛选条内，可安全用边框/圆角/内边距 */
+QGroupBox {{
+    color: {text};
+    background: {surface};
+    border: 1px solid {border};
+    border-radius: {r_md}px;
+    margin-top: 12px;
+    padding: {pad}px;
+    font-size: {f_body}px;
+    font-weight: 600;
+}}
+QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 5px; }}
+
+/* KPI 卡：整块只允许 1px 左分隔线 + hover 换底，禁止投影/大面积填色 */
+QWidget[kpiCard="1"] {{
+    background: transparent;
+    border-left: 1px solid {border};
+}}
+QWidget[kpiCard="1"]:hover {{ background: {surface2}; }}
+QLabel[kpiLabel="1"] {{
+    color: {textMuted};
+    font-family: {font_ui};
+    font-size: {f_aux}px;
+}}
+QLabel[kpiValue="1"] {{
+    font-family: {font_num};
+    font-size: {f_kpi}px;
+    font-weight: 600;
+}}
+QLabel[kpiValue="1"][status="ok"]     {{ color: {ok}; }}
+QLabel[kpiValue="1"][status="warn"]   {{ color: {warn}; }}
+QLabel[kpiValue="1"][status="danger"] {{ color: {danger}; }}
+QLabel[kpiValue="1"][status="info"]   {{ color: {info}; }}
+QLabel[kpiValue="1"][status="violet"] {{ color: {violet}; }}
 
 /* 表格：看板实际用 QTableView + DataFrameModel（QTableWidget 选择器从未命中，已删） */
 QTableView {{
@@ -227,7 +347,7 @@ QTableView {{
     alternate-background-color: {surface2};
     gridline-color: {border};
     border: 1px solid {border};
-    border-radius: 4px;
+    border-radius: {r_sm}px;
     selection-background-color: {primarySoft};
     selection-color: {text};
 }}
@@ -249,7 +369,7 @@ QScrollBar:vertical {{
 }}
 QScrollBar::handle:vertical {{
     background: {borderStrong};
-    border-radius: 5px;
+    border-radius: {r_sm}px;
     min-height: 24px;
 }}
 QScrollBar::handle:vertical:hover {{ background: {primarySoftBd}; }}
@@ -274,6 +394,12 @@ QLabel[devrate="pos"]   {{ color: {ok}; font-weight: 600; }}
         text=c["text"], textMuted=c["textMuted"], textFaint=c["textFaint"],
         primary=c["primary"], primaryHover=c["primaryHover"],
         primarySoft=c["primarySoft"], primarySoftBd=c["primarySoftBd"],
+        onPrimary=c["onPrimary"],
+        r_sm=SIZE_PX["radiusSm"], r_md=SIZE_PX["radiusMd"], r_pill=SIZE_PX["radiusPill"],
+        pad=SIZE_PX["cardPad"],
+        font_ui=FONT_UI, font_num=FONT_NUM,
+        f_aux=FONT_PT["aux"], f_note=FONT_PT["note"], f_body=FONT_PT["body"],
+        f_kpi=FONT_PT["kpi"],
         ok=c["ok"], warn=c["warn"], danger=c["danger"], info=c["info"], violet=c["violet"],
     )
 
@@ -291,7 +417,6 @@ def build_board_qss(theme: str) -> str:
     否则会输给 ``QDialog#zppBoardDialog QPushButton``（1 ID + 2 元素）而变白底。
     """
     c = TOKENS[theme]
-    white = "#FFFFFF"
     return """/* 由 tokens.build_board_qss() 生成 · 主题感知（设计稿第一期第 2 条） */
 QDialog#zppBoardDialog {{ background-color: {bg}; }}
 
@@ -306,7 +431,7 @@ QDialog#zppBoardDialog QLineEdit {{
     background-color: {surface};
     color: {text};
     selection-background-color: {primary};
-    selection-color: {white};
+    selection-color: {onPrimary};
 }}
 QDialog#zppBoardDialog QComboBox:focus,
 QDialog#zppBoardDialog QLineEdit:focus {{ background-color: {surface2}; }}
@@ -322,7 +447,7 @@ QDialog#zppBoardDialog QPushButton:hover {{
 QDialog#zppBoardDialog QPushButton:pressed {{ background-color: {primarySoftBd}; }}
 QDialog#zppBoardDialog QPushButton:checked {{
     background-color: {primary};
-    color: {white};
+    color: {onPrimary};
 }}
 QDialog#zppBoardDialog QPushButton:disabled {{
     color: {textFaint};
@@ -341,7 +466,7 @@ QDialog#zppBoardDialog QTableView {{
     alternate-background-color: {surface2};
     gridline-color: {border};
     border: 1px solid {border};
-    border-radius: 8px;
+    border-radius: {r_md}px;
     selection-background-color: {primarySoft};
     selection-color: {text};
 }}
@@ -361,7 +486,7 @@ QDialog#zppBoardDialog QScrollBar:vertical {{
 }}
 QDialog#zppBoardDialog QScrollBar::handle:vertical {{
     background: {borderStrong};
-    border-radius: 4px;
+    border-radius: {r_sm}px;
     min-height: 24px;
 }}
 QDialog#zppBoardDialog QScrollBar::handle:vertical:hover {{ background: {primarySoftBd}; }}
@@ -375,9 +500,9 @@ QDialog#zppBoardDialog QScrollBar::sub-page:vertical {{ background: transparent;
 QDialog#zppBoardDialog QPushButton#zppVisualBtn {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                                 stop:0 {primary}, stop:1 {primaryHover});
-    color: {white};
+    color: {onPrimary};
     border: none;
-    border-radius: 18px;
+    border-radius: {r_pill}px;
     padding: 8px 18px;
     font-weight: bold;
 }}
@@ -392,7 +517,7 @@ QDialog#zppBoardDialog QPushButton#zppVisualBtn:pressed {{
 QDialog#zppBoardDialog QPushButton#zppVisualBtn:disabled {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                                 stop:0 {primary}, stop:1 {primaryHover});
-    color: {white};
+    color: {onPrimary};
 }}
 """.format(
         bg=c["bg"], surface=c["surface"], surface2=c["surface2"], surface3=c["surface3"],
@@ -400,7 +525,8 @@ QDialog#zppBoardDialog QPushButton#zppVisualBtn:disabled {{
         text=c["text"], textMuted=c["textMuted"], textFaint=c["textFaint"],
         primary=c["primary"], primaryHover=c["primaryHover"], primaryActive=c["primaryActive"],
         primarySoft=c["primarySoft"], primarySoftBd=c["primarySoftBd"],
-        white=white,
+        onPrimary=c["onPrimary"],
+        r_sm=SIZE_PX["radiusSm"], r_md=SIZE_PX["radiusMd"], r_pill=SIZE_PX["radiusPill"],
     )
 
 

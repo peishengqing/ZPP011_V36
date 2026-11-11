@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 
 from gui_pyside6.utils.icons import get_icon
+from utils.theme_manager import Thm
 
 
 class TitleBarWidget(QWidget):
@@ -42,7 +43,7 @@ class TitleBarWidget(QWidget):
         brand.setFixedSize(30, 30)
         brand.setAlignment(Qt.AlignCenter)
         brand.setObjectName("titleBrand")
-        brand.setPixmap(get_icon("factory", 18, "#FFFFFF").pixmap(18, 18))
+        brand.setPixmap(get_icon("factory", 18, Thm.color("onPrimary")).pixmap(18, 18))
         logo_bar = QVBoxLayout()
         logo_bar.setContentsMargins(14, 0, 10, 0)
         logo_bar.addWidget(brand, alignment=Qt.AlignVCenter)

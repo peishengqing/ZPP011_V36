@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QTextBrowser,
 from PySide6.QtCore import Qt
 
 import core.audit_evidence as ae
+from utils.theme_manager import Thm
 
 
 _EV_LABEL = {
@@ -81,7 +82,7 @@ class EvidenceCardDialog(QDialog):
         verdict = rep["verdict"]
         conf = rep["confidence"]
         conf_tag = f"置信度：{conf}" + ("（建议人工复核）" if warn else "")
-        color = "#c0392b" if warn else "#1f6f43"
+        color = Thm.color("danger" if warn else "ok")
         self._head.setText(
             f'<span style="color:{color}">结论：{verdict}</span>　|　{conf_tag}')
         self._head.setStyleSheet(

@@ -6,8 +6,8 @@
   的现代扁平语言一致；
 - 图标按 (name, color, size) 缓存 QIcon；QSvgRenderer 以 2× 超采样渲染后
   setDevicePixelRatio(2)，高分屏与 100% 缩放下都不糊；
-- 默认色为中性暖灰 #8A8A82：亮色主题 (#FAF9F6) 与暗色主题 (#1C1C1A) 上
-  都清晰但不抢文字；主色按钮（如「分析」）显式传白色；
+- 默认墨色取当前主题的 textMuted 令牌（亮 #5A6B82 / 暗 #9AA9BF），清晰但不抢
+  文字；主色按钮（如「分析」）显式传 onPrimary；
 - 新增图标只需往 _ICONS 里加一条 path 数据，禁止引入图片文件/图标字体
   （公司网络 DNS 劫持，零外链铁律同样适用于本地资源）。
 """
@@ -15,7 +15,14 @@ from PySide6.QtGui import QIcon, QPixmap, QPainter
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtCore import QByteArray, Qt
 
-_DEFAULT_INK = "#8A8A82"
+def _default_ink() -> str:
+    """图标默认墨色 = 当前主题的 textMuted。
+
+    改造前是写死的 #8A8A82，暗色主题（底 #121A2B）下几乎看不见；改为按主题现取，
+    一个图标不再需要两套值。调用方显式传色时不走这里。
+    """
+    from utils.theme_manager import Thm
+    return Thm.color("textMuted")
 
 # ── 图标 path 数据（stroke 线性，24×24）──
 _ICONS = {
@@ -100,20 +107,20 @@ _SVG_TMPL = ('<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" '
 _icon_cache = {}
 
 
-def icon_svg(name: str, color: str = _DEFAULT_INK) -> str:
-    """取图标的 SVG 源码（着色后的完整 XML）。"""
+def icon_svg(name: str, color: str = None) -> str:
+    """取图标的 SVG 源码（着色后的完整 XML）。color=None 用当前主题默认墨色。"""
     paths = _ICONS.get(name)
     if paths is None:
         raise KeyError(f"未知图标: {name}（可用: {sorted(_ICONS)}）")
-    return _SVG_TMPL.format(w=24, h=24, color=color, paths=paths)
+    return _SVG_TMPL.format(w=24, h=24, color=color or _default_ink(), paths=paths)
 
 
 def get_icon(name: str, size: int = 16, color: str = None) -> QIcon:
     """渲染线性图标为 QIcon（2× 超采样，按 (name,color,size) 缓存）。
 
-    color 传 None 用默认中性墨色；主色按钮上传 "#FFFFFF"。
+    color 传 None 用当前主题默认墨色；主色按钮上传 tokens 的 onPrimary。
     """
-    color = color or _DEFAULT_INK
+    color = color or _default_ink()
     key = (name, color, size)
     cached = _icon_cache.get(key)
     if cached is not None:

@@ -18,6 +18,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.icons import get_icon
+from utils.theme_manager import Thm
 
 
 def _icon_action(menu: QMenu, icon: str, text: str, handler) -> QAction:
@@ -119,7 +120,7 @@ class LayoutComposer:
         # ═══ 主操作（高频，平铺 + 强调色）═══
         # 创建分析按钮
         mw.action_btn_analyze = QPushButton("分析")
-        mw.action_btn_analyze.setIcon(get_icon("play", 15, "#FFFFFF"))
+        mw.action_btn_analyze.setIcon(get_icon("play", 15, Thm.color("onPrimary")))
         mw.action_btn_analyze.setObjectName("actionBtnAnalyze")
         action_layout.addWidget(mw.action_btn_analyze)
 

@@ -509,19 +509,17 @@ def main():
     check("⑬ 重复标题清理 + 控件上移 + 空条不占位", _title_cleanup)
 
     # ⑭ v43.343：QSS 尺寸纪律（对齐 board_visual.py v43.299 红线）
+    #        v43.346：探测对象改为 tokens 生成器输出（唯一真源）
     def _qss_discipline():
         from PySide6.QtWidgets import (QPushButton as _QPushButton,
                                       QComboBox as _QComboBox,
                                       QLineEdit as _QLineEdit)
-        theme_dir = os.path.join(REPO, 'gui_pyside6', 'themes')
         probe = DashboardShell()
-        sources = []
-        for label, fname in (("亮色文件", "light_dashboard.qss"),
-                             ("暗色文件", "dark_dashboard.qss")):
-            with open(os.path.join(theme_dir, fname), encoding='utf-8') as fh:
-                sources.append((label, fh.read()))
-        sources.append(("兜底亮", probe._default_light_qss()))
-        sources.append(("兜底暗", probe._default_dark_qss()))
+        # v43.346 起外壳 QSS 只有 tokens.build_dashboard_qss() 一个真源：
+        # themes/*.qss 是它的落盘产物，兜底副本已删，故探测路径从四条并为两条。
+        from gui_pyside6.themes.tokens import build_dashboard_qss
+        sources = [("生成亮", build_dashboard_qss("light")),
+                   ("生成暗", build_dashboard_qss("dark"))]
 
         def _size(w):
             s = w.sizeHint()
@@ -560,7 +558,7 @@ def main():
         detail.append("objectName=%s" % names_ok)
         ok = ok and names_ok
         return ok, " ".join(detail)
-    check("⑭ QSS 尺寸纪律：四条路径零 sizeHint 变更", _qss_discipline)
+    check("⑭ QSS 尺寸纪律：两条生成路径零 sizeHint 变更", _qss_discipline)
 
     # ⑮ v43.345：暗色全链路跟随（真实走 _toggle_theme，且通过 Thm 驱动）
     def _dark_chain():

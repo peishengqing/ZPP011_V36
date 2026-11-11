@@ -44,11 +44,8 @@ from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.dialogs.unit_summary_dialog import UnitSummaryDialog
 from gui_pyside6.dialogs.alert_dialog import AlertDialog
 from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
-from gui_pyside6.dialogs.neg_loss_dashboard_dialog import NegLossDashboardDialog
-from gui_pyside6.dialogs.semi_dashboard_dialog import SemiDashboardDialog
 
 from gui_pyside6.dialogs.quarantine_dialog import QuarantineDialog
-from gui_pyside6.dialogs.pos_loss_dashboard_dialog import PosLossDashboardDialog
 from gui_pyside6.dialogs.data_stability_dialog import DataStabilityDialog
 from gui_pyside6.dialogs.quarantine_review_dialog import QuarantineReviewDialog
 from gui_pyside6.dialogs.alt_chain_dialog import AltChainDialog

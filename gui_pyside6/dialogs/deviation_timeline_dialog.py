@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QTextBrowser,
 from PySide6.QtCore import Qt
 
 from core.deviation_timeline import build_timeline
+from utils.theme_manager import Thm
 
 
 _KIND_LABEL = {
@@ -18,11 +19,12 @@ _KIND_LABEL = {
     "suggestion": "归因建议",
     "feedback": "人工反馈",
 }
-_KIND_COLOR = {
-    "change": "#8a6d3b",     # 琥珀
-    "audit": "#1f6f43",      # 绿
-    "suggestion": "#1f5c99",  # 蓝
-    "feedback": "#7d3c98",    # 紫
+#: 事件类型 → 语义色令牌键（实际色值按当前主题由 Thm 取，暗色下自动换亮档）
+_KIND_TOKEN = {
+    "change": "warn",
+    "audit": "ok",
+    "suggestion": "info",
+    "feedback": "violet",
 }
 
 
@@ -53,7 +55,7 @@ class DeviationTimelineDialog(QDialog):
 
         # 底部：F3 占位 + 可追溯入口
         self._foot = QLabel("⏳ 人工采纳/驳回：F3 反馈闭环待落地，此节点暂无数据。")
-        self._foot.setStyleSheet("QLabel{color:#7d3c98;padding:2px;}")
+        self._foot.setStyleSheet(f"QLabel{{color:{Thm.color('violet')};padding:2px;}}")
         layout.addWidget(self._foot)
 
         btn_row = QHBoxLayout()
@@ -106,7 +108,7 @@ class DeviationTimelineDialog(QDialog):
         for ev in events:
             kind = ev.get("kind", "")
             label = _KIND_LABEL.get(kind, kind)
-            color = _KIND_COLOR.get(kind, "#555")
+            color = Thm.color(_KIND_TOKEN.get(kind, "textMuted"))
             time_s = ev.get("time") or "时间未知"
             warn = ev.get("needs_human")
             flag = "　⚠️需人工" if warn else ""

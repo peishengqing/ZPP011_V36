@@ -14,8 +14,6 @@ from PyInstaller.__main__ import run as pyinstaller_run
 add_data_opts = []
 if os.path.isdir("config"):
     add_data_opts.append(f"--add-data={os.path.join('config')};config")
-if os.path.isfile(os.path.join("gui_pyside6", "style.qss")):
-    add_data_opts.append(f"--add-data={os.path.join('gui_pyside6', 'style.qss')};gui_pyside6")
 
 if __name__ == "__main__":
     # 检测是否要调试模式（带控制台）

@@ -1,72 +1,174 @@
-/* 亮色主题 - Dashboard Shell
+/* 由 gui_pyside6/themes/tokens.py 生成 · 请勿手改，改令牌请改 tokens.py
  *
- * v43.343 尺寸纪律（对齐 board_visual.py v43.299 红线）：
- *   筛选栏里的 QPushButton / QComboBox / QLineEdit 只写颜色类属性，绝不写
- *   padding / border / border-radius / min-width / font-size —— Qt 会改走
- *   stylesheet 路径重算 sizeHint（offscreen 实测：按钮 80x20→58x29、
- *   下拉 54x22→178x30），而顶部筛选栏宽度是逐像素精算的，一变就挤压重叠。
- *   表格 / 表头 / 滚动条不在筛选栏内，可安全用边框与圆角。
+ * 尺寸纪律（v43.343 红线）：筛选栏里的 QPushButton / QComboBox / QLineEdit
+ * 只写颜色类属性，绝不写 padding / border / border-radius / min-width / font-size，
+ * 否则 Qt 重算 sizeHint（按钮 80x20→58x29、下拉 54x22→178x30），
+ * 顶部筛选栏逐像素精算的宽度会被挤压重叠。
+ * 表格 / 表头 / 滚动条不在筛选栏内，可安全用边框与圆角。
  */
 #DashboardShell { background: #EEF1F6; }
 #title_bar { background: #FFFFFF; border-bottom: 1px solid #DBE2EC; }
-#action_bar { background: #FFFFFF; border-bottom: 1px solid #DBE2EC; }
+#filter_bar { background: #FFFFFF; border-bottom: 1px solid #DBE2EC; }
+#kpi_bar { background: #FFFFFF; border-bottom: 1px solid #DBE2EC; }
+#action_bar { background: #FFFFFF; border-top: 1px solid #DBE2EC; }
 #content { background: #FFFFFF; }
-#status_bar { background: #F8F9FA; border-top: 1px solid #DBE2EC; }
+#status_bar { background: #F5F8FC; border-top: 1px solid #DBE2EC; }
+#drawer_container { background: #F5F8FC; }
 
-/* 按钮：轻量幽灵风格，只写颜色。筛选区是 checkable 按钮，
-   :checked 用主色实底标出当前档位（旧版缺这条，选中态看不出来）。 */
+/* 按钮：只写颜色。筛选区是 checkable 按钮，:checked 用主色实底标出当前档位。 */
 QPushButton {
     background-color: #FFFFFF;
-    color: #334155;
+    color: #5A6B82;
 }
-QPushButton:hover    { background-color: #E8F2FF; color: #1E40AF; }
-QPushButton:pressed  { background-color: #D3E6FF; }
+QPushButton:hover    { background-color: #E7EDFB; color: #1E3A8A; }
+QPushButton:pressed  { background-color: #C3D3F4; }
 QPushButton:checked  { background-color: #1E40AF; color: #FFFFFF; }
-QPushButton:disabled { background-color: #F1F5F9; color: #9AA7B6; }
+QPushButton:disabled { background-color: #E9EEF5; color: #8595AA; }
+
+/* 工具按钮同样只写颜色（外壳标题条/筛选条里的 导出/全屏/关闭/筛选 都算筛选控件）。 */
+QToolButton {
+    background-color: #F5F8FC;
+    color: #5A6B82;
+}
+QToolButton:hover { background-color: #E7EDFB; color: #1E3A8A; }
+QToolButton:pressed { background-color: #C3D3F4; }
+QToolButton:checked { background-color: #1E40AF; color: #FFFFFF; }
+QToolButton:disabled { background-color: #E9EEF5; color: #8595AA; }
 
 /* 标签 */
-QLabel { color: #1F2937; }
+QLabel { color: #101828; }
+QLabel[class="mutedText"] { color: #5A6B82; font-size: 12px; }
 
-/* 下拉：只写颜色；去掉 min-width / padding / border 后 sizeHint 保持原生。
+/* 下拉：只写颜色；刻意不写 ::drop-down，一旦接管该子控件 Qt 就不再画原生箭头。
    弹出列表 QAbstractItemView 不占筛选栏布局，可保留边框。 */
 QComboBox {
     background-color: #FFFFFF;
-    color: #1F2937;
-    selection-background-color: #EFF6FF;
+    color: #101828;
+    selection-background-color: #E7EDFB;
     selection-color: #1E40AF;
 }
-QComboBox:hover { background-color: #F2F8FF; }
+QComboBox:hover { background-color: #F5F8FC; }
 QComboBox QAbstractItemView {
     background-color: #FFFFFF;
     border: 1px solid #DBE2EC;
-    selection-background-color: #EFF6FF;
+    selection-background-color: #E7EDFB;
     selection-color: #1E40AF;
 }
 
-/* 表格：看板实际用 QTableView + DataFrameModel，旧 QTableWidget 选择器从未命中。
-   不在筛选栏内，可用边框圆角；但 ::item 不写 padding 以免改变行高。 */
+/* 输入框 / 数字框：只写颜色（数字框同样不写 ::up-button，理由同下拉箭头） */
+QLineEdit, QSpinBox, QDateEdit {
+    background-color: #FFFFFF;
+    color: #101828;
+    selection-background-color: #1E40AF;
+    selection-color: #FFFFFF;
+}
+QLineEdit:focus, QSpinBox:focus, QDateEdit:focus { background-color: #F5F8FC; }
+
+/* KPI 带的横向滚动容器：只负责去掉边框与滚动条，不负责配色 */
+QScrollArea#kpiScroll { border: none; background: transparent; }
+
+/* 标题条右侧窗口按钮（导出/全屏/关闭）：幽灵样式，不参与筛选条精算 */
+QPushButton#titleToolBtn { background: transparent; color: #5A6B82; }
+QPushButton#titleToolBtn:hover { background-color: #E9EEF5; color: #101828; }
+
+/* 品牌块：26×26 装饰方块，不进配色纪律范围，允许渐变与圆角 */
+QFrame#tb_mark {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                                stop:0 #1E40AF, stop:1 #1E3A8A);
+    border-radius: 6px;
+}
+
+/* 抽屉里的命中计数徽章（胶囊）：抽屉不在筛选条精算范围内 */
+QLabel#hitBadge {
+    color: #1E40AF;
+    background: #E7EDFB;
+    border: 1px solid #C3D3F4;
+    border-radius: 18px;
+    padding: 0 5px;
+    min-width: 35px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* 抽屉里的分组卡：不在精算过的筛选条内，可安全用边框/圆角/内边距 */
+QGroupBox {
+    color: #101828;
+    background: #FFFFFF;
+    border: 1px solid #DBE2EC;
+    border-radius: 6px;
+    margin-top: 12px;
+    padding: 12px;
+    font-size: 13px;
+    font-weight: 600;
+}
+QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }
+
+/* KPI 卡：整块只允许 1px 左分隔线 + hover 换底，禁止投影/大面积填色 */
+QWidget[kpiCard="1"] {
+    background: transparent;
+    border-left: 1px solid #DBE2EC;
+}
+QWidget[kpiCard="1"]:hover { background: #F5F8FC; }
+QLabel[kpiLabel="1"] {
+    color: #5A6B82;
+    font-family: "Segoe UI","Microsoft YaHei UI","Microsoft YaHei";
+    font-size: 11px;
+}
+QLabel[kpiValue="1"] {
+    font-family: "Cascadia Mono","Consolas";
+    font-size: 17px;
+    font-weight: 600;
+}
+QLabel[kpiValue="1"][status="ok"]     { color: #0E8F63; }
+QLabel[kpiValue="1"][status="warn"]   { color: #C2740B; }
+QLabel[kpiValue="1"][status="danger"] { color: #C62A2A; }
+QLabel[kpiValue="1"][status="info"]   { color: #2563EB; }
+QLabel[kpiValue="1"][status="violet"] { color: #6D28D9; }
+
+/* 表格：看板实际用 QTableView + DataFrameModel（QTableWidget 选择器从未命中，已删） */
 QTableView {
     background-color: #FFFFFF;
+    alternate-background-color: #F5F8FC;
+    gridline-color: #DBE2EC;
     border: 1px solid #DBE2EC;
     border-radius: 4px;
+    selection-background-color: #E7EDFB;
+    selection-color: #101828;
 }
-QTableView::item:selected { background-color: #EFF6FF; color: #1E40AF; }
 QHeaderView::section {
-    background-color: #F9FAFB;
-    border: 1px solid #DBE2EC;
+    background-color: #F5F8FC;
+    color: #5A6B82;
+    border: none;
+    border-right: 1px solid #DBE2EC;
+    border-bottom: 1px solid #C0CCDA;
     font-weight: bold;
-    color: #374151;
 }
+QHeaderView::section:hover { background-color: #E9EEF5; }
 
 /* 滚动条 */
 QScrollBar:vertical {
-    background: #F9FAFB;
-    width: 12px;
-    border-radius: 6px;
+    background: #EEF1F6;
+    width: 10px;
+    margin: 0;
 }
 QScrollBar::handle:vertical {
-    background: #D1D5DB;
-    border-radius: 6px;
-    min-height: 30px;
+    background: #C0CCDA;
+    border-radius: 4px;
+    min-height: 24px;
 }
-QScrollBar::handle:vertical:hover { background: #9CA3AF; }
+QScrollBar::handle:vertical:hover { background: #C3D3F4; }
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical { background: transparent; }
+
+/* 语义色（5.1 纪律：只允许出现在 6px 圆点、状态胶囊、accent 条三处）
+   供 objectName / dynamic property 挂钩，大面积填充一律禁止 */
+QLabel[status="ok"]     { color: #0E8F63; }
+QLabel[status="warn"]   { color: #C2740B; }
+QLabel[status="danger"] { color: #C62A2A; }
+QLabel[status="info"]   { color: #2563EB; }
+QLabel[status="violet"] { color: #6D28D9; }
+/* 偏差率双编码：颜色 + 数值，色觉障碍用户不丢信息（红线 6） */
+QLabel[devrate="neg"]   { color: #C62A2A; font-weight: 600; }
+QLabel[devrate="pos"]   { color: #0E8F63; font-weight: 600; }

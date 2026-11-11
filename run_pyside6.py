@@ -138,8 +138,8 @@ def main():
     if "Fusion" in QStyleFactory.keys():
         app.setStyle(QStyleFactory.create("Fusion"))
 
-    # 注意：app 级别不加载 style.qss，因为暗色主题由 MainWindow._load_dark_theme() 内部管控
-    # 如果未来需要 app 级全局样式，可以在此加载 light_theme.qss 作为基准
+    # app 级别不设全局 QSS：两套主题（light_theme.qss / dark_theme.qss）由
+    # MainWindow 按当前主题加载，看板外壳 QSS 由 themes.tokens 现生成。
 
     win = MainWindow()
     win.showMaximized()

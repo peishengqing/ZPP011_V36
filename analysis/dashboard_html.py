@@ -36,7 +36,9 @@ plt.rcParams["axes.unicode_minus"] = False
 # ---------- 配色（中国习惯：涨/正偏差=红，跌/负偏差=绿） ----------
 C_POS = "#d4392f"      # 正偏差 红
 C_NEG = "#2e8b57"      # 负偏差 绿
-C_ACCENT = "#0969da"   # 强调蓝
+# 强调蓝取设计令牌 primary 的亮档值（真源 gui_pyside6/themes/tokens.py）。
+# 本报告是浏览器里打开的静态 HTML、没有主题切换，故只取亮档一套。
+C_ACCENT = "#1E40AF"
 C_GRAY = "#8b949e"
 GRID = "#eaecef"
 
@@ -48,8 +50,8 @@ DASHBOARD_CSS = """
 :root {
   --c-pos: #d4392f;
   --c-neg: #2e8b57;
-  --c-accent: #0969da;
-  --c-accent-light: #0969da14;
+  --c-accent: #1E40AF;
+  --c-accent-light: #1E40AF14;
   --c-gray: #656d76;
   --c-muted: #8b949e;
   --c-border: #d0d7de;
@@ -380,7 +382,7 @@ def chart_material_type_pie(df):
         return None
     fig, ax = plt.subplots(figsize=(6.2, 3.6))
     ax.pie(g.values, labels=g.index, autopct="%1.1f%%", startangle=90,
-           colors=["#0969da", "#d4392f", "#2e8b57", "#bf8700", "#8250df"][: len(g)],
+           colors=["#1E40AF", "#d4392f", "#2e8b57", "#bf8700", "#8250df"][: len(g)],
            textprops={"fontsize": 9}, pctdistance=0.75)
     _style_ax(ax, "物料类型偏差金额占比")
     return fig_to_b64(fig)
@@ -593,7 +595,7 @@ def chart_boxplot(df):
 
     fig, ax = plt.subplots(figsize=(6.2, 3.6))
     # 生成颜色
-    colors = ['#0969da', '#d4392f', '#2e8b57', '#bf8700', '#8250df']
+    colors = ['#1E40AF', '#d4392f', '#2e8b57', '#bf8700', '#8250df']
     bp = ax.boxplot(data_list, whis=1.5, patch_artist=True, boxprops=dict(linewidth=1.2),
                    medianprops=dict(linewidth=2.2, color='#d4392f'),
                    flierprops=dict(marker='o', markersize=2.5, markerfacecolor='#d4392f', markeredgecolor='none'))

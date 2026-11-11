@@ -55,6 +55,7 @@ from gui_pyside6.utils.semi_class import (  # noqa: F401
 )
 from gui_pyside6.utils.icons import add_icon_action, make_button
 from gui_pyside6.utils.snapshot_action import attach_snapshot_bar
+from utils.theme_manager import Thm
 
 
 class SemiContent(QWidget):
@@ -995,7 +996,8 @@ class SemiContent(QWidget):
             self._mom_label.setText(
                 "期段 %s ｜ %s" % (_period, _badge) if _period else _badge)
             if _has and _badge.startswith("环比 ↑"):
-                self._mom_label.setStyleSheet("color:#FF0000;font-weight:bold;")
+                self._mom_label.setStyleSheet(
+                    f"color:{Thm.color('danger')};font-weight:bold;")
             else:
                 self._mom_label.setStyleSheet("")
 
