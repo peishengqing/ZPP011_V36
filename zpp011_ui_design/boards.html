@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZPP011 · 看板体系设计稿 v43.333</title>
+<link rel="stylesheet" href="design-system.css">
+<style>
+.split{display:grid;grid-template-columns:1fr 300px;gap:14px;align-items:start}
+.drawer{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+.drawer-head{padding:9px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;
+  background:var(--surface-2);font-size:12px;font-weight:650}
+.drawer-group{padding:10px 12px;border-bottom:1px solid var(--border)}
+.drawer-group:last-child{border-bottom:none}
+.drawer-group .dgt{font-size:11px;font-weight:700;color:var(--text-faint);letter-spacing:.4px;text-transform:uppercase;margin-bottom:7px}
+.drawer-item{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px;color:var(--text-muted)}
+.drawer-item .dname{flex:1}
+.drawer-item .dval{font-size:11.5px;color:var(--text);background:var(--surface-2);border:1px solid var(--border);
+  border-radius:var(--r-sm);padding:1px 7px}
+.drawer-item .dcount{font-family:var(--font-num);font-size:11px;color:var(--text-faint);min-width:52px;text-align:right}
+.evid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px}
+.evid-block{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 12px}
+.evid-block h5{font-size:12px;font-weight:650;margin-bottom:7px;display:flex;align-items:center;gap:6px}
+.evid-block h5 .n{font-family:var(--font-num);font-size:11px;color:var(--primary-hover);background:var(--primary-soft);
+  padding:0 6px;border-radius:20px}
+.chain{display:flex;flex-direction:column;gap:5px;font-size:11.5px;color:var(--text-muted)}
+.chain div{display:flex;align-items:center;gap:7px}
+.chain .step{width:15px;height:15px;border-radius:50%;background:var(--surface-3);color:var(--text-muted);
+  font-size:9px;font-family:var(--font-num);display:grid;place-items:center;flex:0 0 auto}
+.tbl-wrap{overflow:auto;background:var(--surface);border-top:1px solid var(--border)}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="doc-head">
+    <div class="doc-title">
+      <h1>
+        <svg viewBox="0 0 24 24" style="width:19px;height:19px;stroke:var(--primary);fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/><rect x="17" y="13" width="3" height="5"/></svg>
+        ZPP011 看板体系设计稿
+      </h1>
+      <p>11 个看板收敛为三种形态：明细型（5 个表格看板）、图形型（管理看板）、专题型（5 个专项看板）。共同点是「一个外壳 DashboardShell + 各自只写数据」，从此看板跟随全局明暗主题，筛选不再需要横向滚动。</p>
+    </div>
+    <div class="doc-actions">
+      <button class="chip-btn on" id="btnLight"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>浅色</button>
+      <button class="chip-btn" id="btnDark"><svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>暗色</button>
+    </div>
+  </div>
+
+  <div class="navpages">
+    <a href="index.html">主界面</a>
+    <a href="boards.html" class="on">看板体系</a>
+    <a href="rules.html">规则中心</a>
+    <a href="dialogs.html">弹窗体系</a>
+  </div>
+
+  <!-- ═══════ 看板总索引 ═══════ -->
+  <p class="sec-title">看板总索引 · 11 个看板按三类收敛，入口收口到导航栏</p>
+  <div class="card">
+    <div class="board-index">
+      <div class="bi"><div class="bih"><div class="bi-ic"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 9.5h18M3 15h18"/></svg></div><span class="binm">偏差率预警</span><span class="bic">28 条</span></div><div class="bid">明细型 · |偏差率| ≥ 10%</div></div>
+      <div class="bi"><div class="bih"><div class="bi-ic"><svg viewBox="0 0 24 24"><path d="M7 7h10v10H7z"/><path d="M3 12h4M17 12h4"/></svg></div><span class="binm">替代料</span><span class="bic">24 组</span></div><div class="bid">明细型 · 替代料偏差预警</div></div>
+      <div class="bi"><div class="bih"><div class="bi-ic"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></div><span class="binm">正损（超投）</span><span class="bic">156 条</span></div><div class="bid">明细型 · 彩罐/托盘/手包袋</div></div>
+      <div class="bi"><div class="bih"><div class="bi-ic"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></div><span class="binm">负损（含未投料）</span><span class="bic">428 条</span></div><div class="bid">明细型 · 彩罐/托盘/手包袋</div></div>
+      <div class="bi"><div class="bih"><div class="bi-ic"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M8 4v16"/></svg></div><span class="binm">半成品</span><span class="bic">83 条</span></div><div class="bid">明细型 · 400/410 开头物料</div></div>
+      <div class="bi"><div class="bih"><div class="bi-ic"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/></svg></div><span class="binm">管理看板</span><span class="bic">12 图</span></div><div class="bid">图形型 · 图表明细双联</div></div>
+      <div class="bi"><div class="bih"><div class="bi-ic"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg></div><span class="binm">数据稳定性</span><span class="bic">12 物料</span></div><div class="bid">专题型 · 数据质量诊断</div></div>
+      <div class="bi"><div class="bih"><div class="bi-ic"><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div><span class="binm">隔离区闭环</span><span class="bic">12 条</span></div><div class="bid">专题型 · 隔离-处理-复盘</div></div>
+      <div class="bi"><div class="bih"><div class="bi-ic"><svg viewBox="0 0 24 24"><path d="M7 7h10v10H7z"/><path d="M3 12h4M17 12h4"/></svg></div><span class="binm">替代料长链</span><span class="bic">5 条</span></div><div class="bid">专题型 · 三级以上替代</div></div>
+      <div class="bi"><div class="bih"><div class="bi-ic"><svg viewBox="0 0 24 24"><path d="M3 21V9l6 3V9l6 3V6l6 3v12z"/></svg></div><span class="binm">翻箱守恒</span><span class="bic">3 例</span></div><div class="bid">专题型 · 产出 &gt; 投入</div></div>
+      <div class="bi"><div class="bih"><div class="bi-ic"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></div><span class="binm">物料画像</span><span class="bic">—</span></div><div class="bid">专题型 · 单物料全历史</div></div>
+    </div>
+    <p class="note"><b>入口收口：</b>工具栏「看板▾」的 8 个下拉项与菜单「审核▸」的重复项全部取消，改为导航栏「看板」分组，每项带图标 + 一句话说明 + <b>实时命中数</b>——不用点进去就知道有没有东西可看。菜单栏「审核▸」只保留纯审核动作（AI 审核、批量已读/未读、规则中心、F1/F2 证据）。</p>
+  </div>
+
+  <!-- ═══════ 形态 A · 明细型 ═══════ -->
+  <p class="sec-title">形态 A · 明细型看板（偏差率预警 / 替代料 / 正损 / 负损 / 半成品）</p>
+  <div class="app-wrap">
+    <span class="callout" style="left:-11px;top:16px">1</span>
+    <span class="callout" style="left:-11px;top:64px">2</span>
+    <span class="callout" style="left:-11px;top:112px">3</span>
+    <span class="callout" style="left:-11px;bottom:52px">4</span>
+    <div class="app">
+      <div class="title-bar">
+        <div class="tb-mark"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></div>
+        <h2>负损（含未投料）看板 <span>· 彩罐 / 托盘 / 手包袋</span></h2>
+        <div class="tb-right">
+          <button class="btn btn-outline"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M4 21h16"/></svg>导出</button>
+          <button class="btn btn-outline"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>最大化</button>
+          <button class="btn btn-ghost"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        </div>
+      </div>
+
+      <div class="filterbar">
+        <button class="fbtn on"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>筛选<span class="fcount">3</span></button>
+        <button class="fbtn"><svg viewBox="0 0 24 24"><path d="M3 21V9l6 3V9l6 3V6l6 3v12z"/></svg>车间：二车间<svg class="caret" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button class="fbtn"><svg viewBox="0 0 24 24"><path d="M3 7h18v13H3z"/><path d="M3 7l3-4M9 7l3-4M15 7l3-4"/></svg>单位：全部<svg class="caret" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button class="fbtn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>已读：未读<svg class="caret" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button class="fbtn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="9"/></svg>颜色<svg class="caret" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button class="fbtn" style="color:var(--text-faint)">重置</button>
+        <span class="muted" style="margin-left:auto;font-size:11.5px">命中 <b class="num" style="color:var(--text)">428</b> / 12,480 条</span>
+      </div>
+
+      <div class="kpi-bar">
+        <div class="kpi"><div class="kpi-top"><i class="kpi-dot" style="background:var(--danger)"></i>负损条数</div><div class="kpi-val">428</div></div>
+        <div class="kpi"><div class="kpi-top"><i class="kpi-dot" style="background:var(--danger)"></i>负损金额</div><div class="kpi-val">−12.4<small>万</small></div></div>
+        <div class="kpi"><div class="kpi-top"><i class="kpi-dot" style="background:var(--amber)"></i>其中未投料</div><div class="kpi-val">61</div></div>
+        <div class="kpi"><div class="kpi-top"><i class="kpi-dot" style="background:var(--info)"></i>涉及车间</div><div class="kpi-val">18</div></div>
+        <div class="kpi"><div class="kpi-top"><i class="kpi-dot" style="background:var(--text-faint)"></i>已隔离</div><div class="kpi-val">12</div></div>
+      </div>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:34px"><span class="chk on"></span></th><th style="width:92px">物料编码</th><th>物料名称</th>
+            <th style="width:92px">车间</th><th class="num-col" style="width:78px">定额</th><th class="num-col" style="width:78px">实际</th>
+            <th class="num-col" style="width:84px">偏差量</th><th class="num-col" style="width:84px">偏差率</th>
+            <th style="width:92px">状态</th><th style="width:56px"></th>
+          </tr></thead>
+          <tbody>
+            <tr class="sel"><td><span class="chk on"></span></td><td class="strong num">1002345</td><td>彩罐-500g</td><td>二车间</td><td class="num-col">1,200</td><td class="num-col">1,150</td><td class="num-col neg">−50</td><td class="num-col neg">−4.17%</td><td><span class="pill pill-warn">待审核</span></td><td></td></tr>
+            <tr><td><span class="chk"></span></td><td class="strong num">1002871</td><td>彩罐-750g</td><td>二车间</td><td class="num-col">860</td><td class="num-col">612</td><td class="num-col neg">−248</td><td class="num-col neg">−28.84%</td><td><span class="pill pill-dan">真异常</span></td><td></td></tr>
+            <tr><td><span class="chk"></span></td><td class="strong num">1003115</td><td>托盘-塑封</td><td>一车间</td><td class="num-col">340</td><td class="num-col">340</td><td class="num-col">0</td><td class="num-col">0.00%</td><td><span class="pill pill-vio">替代料</span></td><td></td></tr>
+            <tr><td><span class="chk"></span></td><td class="strong num">1003420</td><td>手包袋-大</td><td>三车间</td><td class="num-col">520</td><td class="num-col">498</td><td class="num-col neg">−22</td><td class="num-col neg">−4.23%</td><td><span class="pill pill-warn">待审核</span></td><td></td></tr>
+            <tr><td><span class="chk"></span></td><td class="strong num">1004002</td><td>彩箱-定制</td><td>二车间</td><td class="num-col">240</td><td class="num-col">240</td><td class="num-col">0</td><td class="num-col">0.00%</td><td><span class="pill pill-mute">已归档</span></td><td></td></tr>
+            <tr><td><span class="chk"></span></td><td class="strong num">1004551</td><td>彩罐-250g</td><td>一车间</td><td class="num-col">180</td><td class="num-col">163</td><td class="num-col neg">−17</td><td class="num-col mark">−9.44%</td><td><span class="pill pill-warn">待审核</span></td><td></td></tr>
+            <tr><td><span class="chk"></span></td><td class="strong num">1005017</td><td>托盘-纸</td><td>三车间</td><td class="num-col">95</td><td class="num-col">88</td><td class="num-col neg">−7</td><td class="num-col mark">−7.37%</td><td><span class="pill pill-ok">已通过</span></td><td></td></tr>
+            <tr><td><span class="chk"></span></td><td class="strong num">1005620</td><td>手包袋-小</td><td>一车间</td><td class="num-col">72</td><td class="num-col">0</td><td class="num-col neg">−72</td><td class="num-col mark">−100.00%</td><td><span class="pill pill-dan">未投料</span></td><td></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="actbar">
+        <span class="muted" style="font-size:11.5px">已选 <b class="num" style="color:var(--text)">1</b> / 428 条</span>
+        <button class="btn btn-outline">加入隔离区</button>
+        <button class="btn btn-outline">标记已读</button>
+        <button class="btn btn-outline">导出所选</button>
+        <div class="right"><span class="muted" style="font-size:11.5px">F5 刷新 · F11 全屏</span><button class="btn btn-primary">关闭</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="split">
+    <div class="card">
+      <h3><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>筛选抽屉 · 展开态（解决 3153px 横向滚动）</h3>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.6">
+        13 个筛选控件从「一行平铺 + 横向滚动」改为「3 个常驻下拉 + 1 个抽屉」。抽屉按语义分三组，每项带<b>实时命中计数</b>——用户能直接看到「切到车间二会剩多少条」，不必先切了再看。
+      </p>
+      <div class="drawer">
+        <div class="drawer-head"><svg viewBox="0 0 24 24" style="width:13px;height:13px;stroke:var(--primary-hover);fill:none;stroke-width:2"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>筛选条件<span class="tag on" style="margin-left:auto">3 项生效</span></div>
+        <div class="drawer-group">
+          <div class="dgt">物料维度</div>
+          <div class="drawer-item"><span class="dname">关键字（逗号分隔）</span><span class="dval">彩罐, 托盘</span><span class="dcount">428</span></div>
+          <div class="drawer-item"><span class="dname">含未投料（实际=0）</span><span class="dval">关</span><span class="dcount">61</span></div>
+          <div class="drawer-item"><span class="dname">物料类型</span><span class="dval">全部</span><span class="dcount">2,140</span></div>
+          <div class="drawer-item"><span class="dname">单位</span><span class="dval">全部单位</span><span class="dcount">12,480</span></div>
+          <div class="drawer-item"><span class="dname">颜色标记</span><span class="dval">● ●</span><span class="dcount">2,310</span></div>
+        </div>
+        <div class="drawer-group">
+          <div class="dgt">组织与状态</div>
+          <div class="drawer-item"><span class="dname">车间</span><span class="dval">二车间</span><span class="dcount">428</span></div>
+          <div class="drawer-item"><span class="dname">工厂</span><span class="dval">全部</span><span class="dcount">12,480</span></div>
+          <div class="drawer-item"><span class="dname">隔离区</span><span class="dval">排除</span><span class="dcount">12,468</span></div>
+          <div class="drawer-item"><span class="dname">已读状态</span><span class="dval">未读</span><span class="dcount">3,102</span></div>
+          <div class="drawer-item"><span class="dname">备注</span><span class="dval">无备注</span><span class="dcount">9,806</span></div>
+        </div>
+        <div class="drawer-group">
+          <div class="dgt">半成品分类（可多选）</div>
+          <div class="drawer-item"><span class="dname">食品半成品</span><span class="dval">●</span><span class="dcount">640</span></div>
+          <div class="drawer-item"><span class="dname">饮料半成品</span><span class="dval">●</span><span class="dcount">512</span></div>
+        </div>
+      </div>
+      <p class="note"><b>为什么这样就解决了雷区：</b>抽屉里的控件不再并排平铺，每个下拉/多选都能放心写 <code>padding</code>、<code>border-radius</code>、<code>border</code>，不会触发 <code>sizeHint</code> 崩塌。现有 <code>board_visual.py</code> 里「只许改颜色、不许改尺寸」的尺寸红线，随着抽屉化自然解除，看板终于可以和其他界面长得一样。</p>
+    </div>
+
+    <div class="card">
+      <h3><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 9.5h18M3 15h18"/></svg>形态 A 五要点</h3>
+      <div class="chg"><span class="chg-no">1</span><div><b>标题条统一</b><p>去掉 emoji，改「名称 · 副标题」；副标题用灰字承载口径说明（如「彩罐 / 托盘 / 手包袋」），不再塞进窗口标题栏撑宽度。</p></div></div>
+      <div class="chg"><span class="chg-no">2</span><div><b>常驻筛选条 ≤ 6 控件</b><p>只留最高频的 4 个 + 「筛选」抽屉按钮，右侧显示「命中 N / 总数」，随时知道筛掉了多少。</p></div></div>
+      <div class="chg"><span class="chg-no">3</span><div><b>KPI 带 54px</b><p>4–5 个关键量一行放完：条数、金额、其中未投料、涉及车间、已隔离。点 KPI 即下钻筛选。</p></div></div>
+      <div class="chg"><span class="chg-no">4</span><div><b>表格为绝对主角</b><p>sticky 表头 32px、行高 36px、斑马纹、悬停高亮；未投料行（实际=0）单列「未投料」状态，<b>不与真异常同色</b>——避免用户误判处置优先级。</p></div></div>
+      <div class="chg"><span class="chg-no">5</span><div><b>操作条承载写操作</b><p>加入隔离区 / 标记已读 / 导出所选 三个写操作统一收在底部，右侧显示快捷键。选中行数实时显示在左。</p></div></div>
+    </div>
+  </div>
+
+  <!-- ═══════ 形态 B · 图形型 ═══════ -->
+  <p class="sec-title">形态 B · 图形型看板（管理看板）— 图表明细双联</p>
+  <div class="app-wrap">
+    <span class="callout" style="left:-11px;top:16px">6</span>
+    <div class="app">
+      <div class="title-bar">
+        <div class="tb-mark"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/></svg></div>
+        <h2>管理看板 <span>· 偏差视角 12 图</span></h2>
+        <div class="tb-right">
+          <button class="fbtn on">食品厂</button>
+          <button class="fbtn">饮料厂</button>
+          <button class="btn btn-outline"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M4 21h16"/></svg>导出 HTML</button>
+        </div>
+      </div>
+      <div class="chart-grid">
+        <div class="chart"><div class="ct">车间偏差额 Top5</div><div class="cb">
+          <div class="bar" style="height:72%"><b>−4.2万</b></div><div class="bar" style="height:56%"><b>−3.1万</b></div><div class="bar" style="height:41%"></div><div class="bar" style="height:28%"></div><div class="bar" style="height:17%"></div></div></div>
+        <div class="chart"><div class="ct">物料类型占比</div><div class="cb pie"><div class="donut"><div class="donut-c">62%</div></div></div></div>
+        <div class="chart"><div class="ct">偏差率分布</div><div class="cb">
+          <div class="bar hi" style="height:22%"></div><div class="bar" style="height:58%"></div><div class="bar" style="height:88%"></div><div class="bar bad" style="height:64%"></div><div class="bar bad" style="height:31%"></div><div class="bar" style="height:12%"></div></div></div>
+        <div class="chart"><div class="ct">订单日期趋势</div><div class="cb">
+          <div class="bar" style="height:34%"></div><div class="bar" style="height:52%"></div><div class="bar" style="height:44%"></div><div class="bar hi" style="height:78%"></div><div class="bar" style="height:61%"></div><div class="bar" style="height:47%"></div><div class="bar bad" style="height:35%"></div></div></div>
+        <div class="chart"><div class="ct">正损 / 负损对比</div><div class="cb">
+          <div class="bar hi" style="height:66%"></div><div class="bar bad" style="height:82%"></div><div class="bar" style="height:29%"></div></div></div>
+        <div class="chart"><div class="ct">供应商偏差 Top5</div><div class="cb">
+          <div class="bar bad" style="height:74%"></div><div class="bar" style="height:49%"></div><div class="bar" style="height:37%"></div><div class="bar" style="height:22%"></div><div class="bar" style="height:14%"></div></div></div>
+        <div class="chart"><div class="ct">审核状态分布</div><div class="cb pie"><div class="donut" style="background:conic-gradient(var(--ok) 0 71%, var(--amber) 71% 88%, var(--danger) 88% 95%, var(--surface-3) 95% 100%)"><div class="donut-c">71%</div></div></div></div>
+        <div class="chart"><div class="ct">单位偏差金额</div><div class="cb">
+          <div class="bar" style="height:44%"></div><div class="bar hi" style="height:70%"></div><div class="bar" style="height:33%"></div><div class="bar" style="height:19%"></div></div></div>
+      </div>
+      <div class="filterbar" style="border-top:1px solid var(--border)">
+        <span style="font-size:11.5px;color:var(--text-muted);display:flex;align-items:center;gap:6px">
+          <svg viewBox="0 0 24 24" style="width:13px;height:13px;stroke:var(--primary);fill:none;stroke-width:2"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>
+          已按「车间偏差额 Top5 · 二车间」联动，下方明细同步过滤
+        </span>
+        <button class="fbtn" style="margin-left:auto">清除联动</button>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th style="width:34px"><span class="chk"></span></th><th style="width:92px">物料编码</th><th>物料名称</th><th style="width:92px">车间</th><th class="num-col" style="width:84px">偏差量</th><th class="num-col" style="width:88px">偏差率</th><th style="width:92px">状态</th></tr></thead>
+          <tbody>
+            <tr><td><span class="chk"></span></td><td class="strong num">1002871</td><td>白砂糖</td><td>二车间</td><td class="num-col neg">−248</td><td class="num-col neg">−28.84%</td><td><span class="pill pill-dan">真异常</span></td></tr>
+            <tr><td><span class="chk"></span></td><td class="strong num">1005980</td><td>麦芽糊精</td><td>二车间</td><td class="num-col neg">−128</td><td class="num-col neg">−31.22%</td><td><span class="pill pill-dan">真异常</span></td></tr>
+            <tr><td><span class="chk"></span></td><td class="strong num">1002345</td><td>特精粉（小麦）</td><td>二车间</td><td class="num-col neg">−50</td><td class="num-col neg">−4.17%</td><td><span class="pill pill-warn">待审核</span></td></tr>
+            <tr><td><span class="chk"></span></td><td class="strong num">1004551</td><td>低糖果葡糖浆</td><td>二车间</td><td class="num-col neg">−17</td><td class="num-col mark">−9.44%</td><td><span class="pill pill-warn">待审核</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="statusbar"><span>图表与明细<b>共享同一筛选状态</b></span><span>命中 <b>428</b> 条</span><span class="muted" style="margin-left:auto">图形区 55% · 明细区 45%</span></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="chg"><span class="chg-no">6</span><div><b>图表点一下，明细立刻跟上</b><p>现状图形看板（<code>dashboard_dialog.py</code>，QWebEngineView 渲染 12 图）与明细看板的筛选<b>完全独立</b>，用户想从「哪个车间偏差大」下钻到「具体哪几条」，必须关掉图形窗口、另开一个看板、重新筛一遍。新版上下分栏、共享状态，图表点击即联动过滤。<br><b>性能对策：</b>图表区按需渲染（默认只出当前分厂，切换分厂用增量 HTML 替换而非重建页面），WebEngine 不可用时降级到静态 HTML + QTextBrowser（沿用现有降级路径）。</p></div></div>
+  </div>
+
+  <!-- ═══════ 形态 C · 专题型 ═══════ -->
+  <p class="sec-title">形态 C · 专题型看板（数据稳定性 / 隔离区闭环 / 替代料长链 / 翻箱守恒 / 物料画像）</p>
+  <div class="app-wrap">
+    <span class="callout" style="left:-11px;top:16px">7</span>
+    <span class="callout" style="left:-11px;bottom:52px">8</span>
+    <div class="app">
+      <div class="title-bar">
+        <div class="tb-mark"><svg viewBox="0 0 24 24"><path d="M3 21V9l6 3V9l6 3V6l6 3v12z"/></svg></div>
+        <h2>翻箱守恒预警看板 <span>· 产出 &gt; 投入 = 拆包投入漏记</span></h2>
+        <div class="tb-right"><button class="btn btn-outline"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M4 21h16"/></svg>导出</button><button class="btn btn-ghost"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      </div>
+      <div style="padding:12px 14px 0">
+        <div class="verdict bad">
+          <svg viewBox="0 0 24 24" style="width:22px;height:22px;stroke:var(--danger);fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round"><path d="M12 8v5M12 17h.01"/><path d="M10.3 3.9L2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+          <div><div class="vmain">3 例净含量守恒异常，产出大于投入</div><div class="vsub">可能为拆包投入漏记，需人工核对接班记录</div></div>
+          <div class="vnum">+4,820</div>
+        </div>
+        <div class="evid">
+          <div class="evid-block">
+            <h5>净含量守恒测算 <span class="n">3 例</span></h5>
+            <div class="chart" style="height:96px;box-shadow:none;background:var(--surface)">
+              <div class="cb">
+                <div class="bar" style="height:42%"><b>投入</b></div><div class="bar hi" style="height:74%"><b>产出</b></div><div class="bar bad" style="height:74%"><b>差 +820</b></div>
+              </div>
+            </div>
+          </div>
+          <div class="evid-block">
+            <h5>溯源链 <span class="n">来源可追</span></h5>
+            <div class="chain">
+              <div><span class="step">1</span>SAP 产出记录 2026-11-09 18:42 · 批次 ZPFX-241109</div>
+              <div><span class="step">2</span>拆包投入单缺失 · 交接班表无对应记录</div>
+              <div><span class="step">3</span>系统未匹配到投入凭证（v43.317 起）</div>
+              <div><span class="step">4</span>同批次另有 2 例表现一致（±5% 内）</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="tbl-wrap" style="margin-top:10px">
+        <table>
+          <thead><tr><th style="width:34px"><span class="chk"></span></th><th style="width:112px">批次号</th><th style="width:104px">物料</th><th class="num-col" style="width:88px">投入</th><th class="num-col" style="width:88px">产出</th><th class="num-col" style="width:88px">差额</th><th style="width:96px">判定</th></tr></thead>
+          <tbody>
+            <tr><td><span class="chk"></span></td><td class="strong num">ZPFX-241109</td><td>彩罐-500g</td><td class="num-col">1,200</td><td class="num-col">1,410</td><td class="num-col neg">+210</td><td><span class="pill pill-dan">守恒异常</span></td></tr>
+            <tr><td><span class="chk"></span></td><td class="strong num">ZPFX-241108</td><td>彩罐-750g</td><td class="num-col">860</td><td class="num-col">1,190</td><td class="num-col neg">+330</td><td><span class="pill pill-dan">守恒异常</span></td></tr>
+            <tr><td><span class="chk"></span></td><td class="strong num">ZPFX-241107</td><td>托盘-塑封</td><td class="num-col">340</td><td class="num-col">620</td><td class="num-col neg">+280</td><td><span class="pill pill-warn">疑似</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="actbar">
+        <span class="muted" style="font-size:11.5px">已选 <b class="num" style="color:var(--text)">0</b> / 3 例</span>
+        <button class="btn btn-outline">加入隔离区</button>
+        <button class="btn btn-outline">标记已读</button>
+        <button class="btn btn-outline">生成核查报告</button>
+        <div class="right"><button class="btn btn-primary">关闭</button></div>
+      </div>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <h3><svg viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg>专题型统一骨架</h3>
+      <div class="chg"><span class="chg-no">7</span><div><b>结论条先行</b><p>大字结论 + 语义色 + 关键数字（金额/数量）。用户 3 秒内知道「有没有问题、有多严重」。这一条是专题型看板与明细型看板的根本区别：明细型让用户自己找异常，专题型直接把异常端上来。</p></div></div>
+      <div class="chg"><span class="chg-no">8</span><div><b>证据块 + 溯源链</b><p>结论必须能被质疑——给出测算图、来源链路（哪张单、哪一步、为什么这样判）。现有「数据稳定性」「隔离区闭环」「物料画像」各自有证据，但排布方式各异；统一成「测算块 + 溯源块」两栏。</p></div></div>
+      <div class="chg"><span class="chg-no">9</span><div><b>底部动作与明细型一致</b><p>加入隔离区 / 标记已读 / 生成报告 三个写操作，三类看板行为一致，用户不需要重新学。</p></div></div>
+    </div>
+    <div class="card">
+      <h3><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>看板规范速查</h3>
+      <table class="tok-table">
+        <tr><td>窗口标题</td><td><code>名称 · 副标题</code>，禁 emoji</td></tr>
+        <tr><td>默认尺寸</td><td><code>1440 × 900</code>，允许最大化</td></tr>
+        <tr><td>标题条 / 筛选条 / KPI / 表头 / 行高</td><td><code>48 / 40 / 54 / 32 / 36 px</code></td></tr>
+        <tr><td>常驻筛选控件上限</td><td><code>6 个</code>，其余进抽屉</td></tr>
+        <tr><td>抽屉分组</td><td>物料维度 / 组织与状态 / 分类</td></tr>
+        <tr><td>KPI 数量</td><td><code>4–5 个</code>，一行</td></tr>
+        <tr><td>底部操作条</td><td><code>40 px</code>，写操作统一收此</td></tr>
+        <tr><td>图表数量文案</td><td>全项目<b>统一一个数字</b>（现 12/14 不一致）</td></tr>
+        <tr><td>主题</td><td>随全局 light/dark，不再局部写死</td></tr>
+      </table>
+      <p class="note"><b>语义色纪律（专题型尤其重要）：</b>「未投料（实际=0）」与「真异常」在颜色上必须可区分——前者是机械结果需人工审计、后者是真问题。二者若同色，用户会按错误优先级去查数据。</p>
+    </div>
+  </div>
+
+  <p class="footer-note">ZPP011 · 看板体系设计稿 · ui-ux-pro-max（Pattern: Data-Dense + Drill-Down）· 2026-11-10 · 仅设计稿，未改动生产代码</p>
+</div>
+
+<script>
+(function(){
+  var root=document.documentElement,bL=document.getElementById('btnLight'),bD=document.getElementById('btnDark');
+  function set(t){root.setAttribute('data-theme',t);bL.classList.toggle('on',t==='light');bD.classList.toggle('on',t==='dark');
+    try{localStorage.setItem('zpp011-design-theme',t);}catch(e){}}
+  bL.addEventListener('click',function(){set('light');});
+  bD.addEventListener('click',function(){set('dark');});
+  var s=null;try{s=localStorage.getItem('zpp011-design-theme');}catch(e){}
+  if(location.hash==='#dark')s='dark';else if(location.hash==='#light')s='light';
+  set(s||'light');
+  document.querySelectorAll('tbody tr').forEach(function(tr){
+    tr.addEventListener('click',function(){document.querySelectorAll('tbody tr').forEach(function(o){o.classList.remove('sel');});tr.classList.add('sel');});
+  });
+  document.querySelectorAll('.fbtn,.tab,.bi').forEach(function(b){
+    if(b.classList.contains('bi'))return;
+    b.addEventListener('click',function(){ if(b.classList.contains('fbtn'))b.classList.toggle('on'); });
+  });
+})();
+</script>
+</body>
+</html>

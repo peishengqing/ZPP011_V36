@@ -19,7 +19,7 @@ from gui_pyside6.dialogs.dashboard_dialog import DashboardDialog
 from gui_pyside6.dialogs.data_stability_dialog import DataStabilityDialog
 from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
 from gui_pyside6.dialogs.material_profile_dialog import MaterialProfileDialog, normalize_text
-from gui_pyside6.dialogs.neg_loss_dashboard_dialog import NegLossDashboardDialog
+from gui_pyside6.shells.negloss_dashboard import NegLossDashboard
 from gui_pyside6.dialogs.pos_loss_dashboard_dialog import PosLossDashboardDialog
 from gui_pyside6.dialogs.quarantine_review_dialog import QuarantineReviewDialog
 from gui_pyside6.dialogs.semi_dashboard_dialog import SemiDashboardDialog

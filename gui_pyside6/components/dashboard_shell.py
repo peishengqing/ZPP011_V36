@@ -5,7 +5,7 @@
 尺寸规范：标题 48px / 常驻筛选 40px / KPI 54px / 操作条 40px
 """
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QScrollArea, QHeaderView, QComboBox,
     QToolButton, QGroupBox, QVBoxLayout as VBoxLayout, QTableView,
     QAbstractItemView, QSpinBox, QDoubleSpinBox
