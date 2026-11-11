@@ -1,6 +1,4 @@
 # -*- coding: utf-8 -*-
-_CJK_FONT_OK = False
-
 """工具栏重组回归：18 平级按钮 → 三段分层 9 平铺（主操作│视图开关│收纳）。
 
 锁定 2026-09-30 的整理结果（v43.262 对齐裴哥此后的有意演化）：
@@ -59,6 +57,12 @@ _CJK_FONT_OK = False
   （新增 hover_row_changed / set_hover_row 给道复用），划过不改选择；两颗按钮只是既有入口
   （审核证据卡 / _show_context_menu），不新增业务。主表因此多包了一层壳，全屏切换只做
   visibility 翻转不动父子关系，故不受影响。
+- v43.352 第四期A「可搜索多选标签控件」：只新增 gui_pyside6/widgets/tag_multi_select.py，
+  规则中心 Tab① 的接线与三分组重做一起在 4C 做，因此本文件的按钮/布局断言一条未动。
+  值得记的是它为什么不能直接用 QHBoxLayout —— 设计稿 .chips 是 flex-wrap:wrap，而 Qt 的
+  水平布局不换行（20 个单位选 5 个 sizeHint 实测宽 991px，弹窗只有 620~720px，标签被压扁
+  并溢出），垂直布局又正是设计稿点名的「平铺撑高表单」。控件内置 _ChipFlow 自行换行，并按
+  Qt「最小宽度处的高度即最小高度」的规则给行宽封了下限，否则整条表单虚高。
 """
 import os
 import shutil
@@ -69,6 +73,10 @@ from pytest import MonkeyPatch
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, ROOT)
+
+#: 由 main_window fixture 探测后置位：离屏环境加载不到 CJK 字体时，宽度断言不可信，
+#: 相关用例降级跳过（无中文字体时回退字形更宽）。
+_CJK_FONT_OK = False
 
 
 @pytest.fixture(scope="module")

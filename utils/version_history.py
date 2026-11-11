@@ -14,6 +14,43 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.352",
+            "date": "2026-11-12",
+            "features": (
+                "第四期A · 规则中心第 1 块砖：可搜索多选标签控件 "
+                "gui_pyside6/widgets/tag_multi_select.py（设计稿 rules.html 的 .chips 形态）。"
+                "本期只交付控件本体 + 17 条断言，还没接线进 Tab① —— 接线与三分组重做在 4C "
+                "一次做完，免得同一个编辑区改两遍。\n"
+                "为什么要有它：旧 auto_quarantine_rule_dialog 把 20 个「单位」平铺成 20 个 "
+                "QCheckBox 竖排，「类别」还按规则内容动态再补复选框 —— 一条规则的条件区就把表单"
+                "撑到一屏多。设计稿原话「可搜索多选，20 项不再平铺」。\n"
+                "①语义一条都没改。已选列表读出顺序 = 候选枚举顺序（额外取值靠后），与改造前"
+                "「按复选框插入顺序 join」逐字一致，config/auto_quarantine_config.json 不需要"
+                "迁移、diff 不会整片重排。旧代码专门写「未知分类也补出复选框」，是因为规则里存过"
+                "手填取值，枚举里没有就不能吞 —— 这条兜底等价保留（setValues 换枚举也不丢已选）。\n"
+                "②换行必须自己写。QHBoxLayout 不换行：20 单位选 5 个实测 sizeHint 宽 991px，而"
+                "规则弹窗只有 620~720px，标签会被压扁并溢出容器；换 QVBoxLayout 又回到「平铺撑高」"
+                "那个被设计稿点名的病。所以内置 _ChipFlow（hasHeightForWidth + heightForWidth）"
+                "复刻 .chips{flex-wrap:wrap}：宽处一行放完、窄处自动多行。\n"
+                "  坑：Qt 把「widget 最小宽度处所需的高度」当作最小高度。不封最小宽度时，"
+                "heightForWidth(最宽单标签) 就是「每个标签各占一行」，整条表单虚高几十像素起。"
+                "故给控件 setMinimumWidth(260)，行宽预算写清来源（.rule-body 一条 .frow 的可用宽）。\n"
+                "③弹层是 Qt.Popup，勾选即时生效、没有确定/取消（旧表单里根本没有这一步，加按钮"
+                "只会多一次误操作）。两处硬要求：WA_InputMethodEnabled 必须打开，否则浮层拿不到"
+                "输入法、搜索框打不进汉字（v43.251 列筛选浮层同一个坑）；重开浮层要先 "
+                "setParent(None)+deleteLater，只 close() 的话旧浮层作为隐形子控件永久留着，"
+                "每开一次漏一只（测试里数 QLineEdit 钉住）。\n"
+                "④配色零 hex：QSS 交 dialog_chrome.style_with_tokens，圆角/字号取 "
+                "SIZE_PX/FONT_PT 档位。踩到的坑是 f-string 里写了 $radiusSm / $fontUi —— 它们"
+                "不在 TOKENS 里，safe_substitute 原样留着占位符，Qt 解析失败就**静默丢掉整条属性**，"
+                "肉眼看不出来。测试改成断言「替换后的 styleSheet() 里不许再出现 $」。\n"
+                "⑤另记一次：QLayout 在 PySide6.QtWidgets，不在 QtCore（导错直接 "
+                "ImportError，collection 阶段就炸）。\n"
+                "验证：tests/unit/test_tag_multi_select.py 17 条全过；全量 508 passed / "
+                "1 skipped / 2 xfailed / 4 xpassed；离屏冒烟 25/25 PASS（未接线，故冒烟数不变）。"
+            ),
+        },
+        {
             "version": "v43.351",
             "date": "2026-11-12",
             "features": (
