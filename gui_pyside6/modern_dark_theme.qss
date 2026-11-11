@@ -2,7 +2,7 @@
  *  ZPP011 现代化暗色主题 THEME (2026-10-29 更新)
  *  ------------------------------------------------------------
  *  设计原则：温润感 + 交互式反馈 + 清晰层次
- *  主色调：暖紫 #8B7DD4 → #6B63D5 (渐变)
+ *  主色调：暖紫 #4C7DFF → #3A66E8 (渐变)
  *  圆角：10px / 12px
  *  交互：前置透出 + 渐变色变化
  */
@@ -14,12 +14,12 @@ QMainWindow, QDialog, QWidget {
     font-family: 'Microsoft YaHei', '.SF NS Text', sans-serif;
     font-size: 13px;
     selection-color: #FFFFFF;
-    selection-background-color: #8B7DD4;
+    selection-background-color: #4C7DFF;
 }
 
 /* ── 按钮 Button ── */
 QPushButton {
-    background: linear-gradient(180deg, #8B7DD4 0%, #6B63D5 100%);
+    background: linear-gradient(180deg, #4C7DFF 0%, #3A66E8 100%);
     border-radius: 10px;
     padding: 8px 16px;
     min-width: 80px;
@@ -28,12 +28,12 @@ QPushButton {
 }
 
 QPushButton:hover {
-    background: linear-gradient(180deg, #9A8ADD 0%, #7A72DB 100%);
-    border: 1px solid #A996DC;
+    background: linear-gradient(180deg, #6B93FF 0%, #6B93FF 100%);
+    border: 1px solid #6B93FF;
 }
 
 QPushButton:pressed {
-    background: linear-gradient(180deg, #6B63D5 0%, #5A53C9 100%);
+    background: linear-gradient(180deg, #3A66E8 0%, #3A66E8 100%);
     transform: scale(0.98);
 }
 
@@ -44,7 +44,7 @@ QPushButton:disabled {
 
 /* 按钮变体 */
 QPushButton#btnPrimary {
-    background: linear-gradient(135deg, #8B7DD4 0%, #6B63D5 100%);
+    background: linear-gradient(135deg, #4C7DFF 0%, #3A66E8 100%);
 }
 
 QPushButton#btnSecondary {
@@ -67,7 +67,7 @@ QPushButton#btnDanger {
 
 /* ── 表格 Table & TableView ── */
 QHeaderView::section {
-    background: linear-gradient(180deg, #8B7DD4 0%, #7F77DD 100%);
+    background: linear-gradient(180deg, #4C7DFF 0%, #6B93FF 100%);
     color: #FFFFFF;
     padding: 10px;
     border: none;
@@ -107,7 +107,7 @@ QLineEdit, QSpinBox, QComboBox {
 }
 
 QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
-    border: 1px solid #8B7DD4;
+    border: 1px solid #4C7DFF;
     outline: none;
 }
 
@@ -148,7 +148,7 @@ QScrollBar::handle:vertical {
 }
 
 QScrollBar::handle:vertical:hover {
-    background-color: #6B63D5;
+    background-color: #3A66E8;
 }
 
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
@@ -171,7 +171,7 @@ QGroupBox::title {
     subcontrol-origin: margin;
     left: 12px;
     padding: 0 8px;
-    color: #8B7DD4;
+    color: #4C7DFF;
 }
 
 /* ── 复选框 CheckBox ── */
@@ -189,8 +189,8 @@ QCheckBox::indicator {
 }
 
 QCheckBox::indicator:checked {
-    background-color: #8B7DD4;
-    border: 1px solid #6B63D5;
+    background-color: #4C7DFF;
+    border: 1px solid #3A66E8;
 }
 
 QCheckBox::indicator:hover {
@@ -212,8 +212,8 @@ QRadioButton::indicator {
 }
 
 QRadioButton::indicator:checked {
-    background-color: #8B7DD4;
-    border: 1px solid #6B63D5;
+    background-color: #4C7DFF;
+    border: 1px solid #3A66E8;
 }
 
 /* ── 进度条 ProgressBar ── */
@@ -227,7 +227,7 @@ QProgressBar {
 }
 
 QProgressBar::chunk {
-    background: linear-gradient(180deg, #8B7DD4 0%, #6B63D5 100%);
+    background: linear-gradient(180deg, #4C7DFF 0%, #3A66E8 100%);
     border-radius: 6px;
 }
 
@@ -237,7 +237,7 @@ QComboBox QAbstractItemView {
     color: #EAE8E4;
     border: 1px solid #3E3D38;
     border-radius: 8px;
-    selection-background-color: #3C3489;
+    selection-background-color: #18254A;
     selection-color: #FFFFFF;
 }
 
@@ -248,7 +248,7 @@ QMenu::item {
 }
 
 QMenu::item:selected {
-    background-color: #3C3489;
+    background-color: #18254A;
 }
 
 /* ── 标签页 TabWidget ── */
@@ -268,7 +268,7 @@ QTabBar::tab {
 }
 
 QTabBar::tab:selected, QTabBar::tab:hover {
-    background-color: #3C3489;
+    background-color: #18254A;
     color: #FFFFFF;
 }
 
@@ -302,7 +302,7 @@ QMenuBar::item {
 }
 
 QMenuBar::item:selected {
-    background-color: #3C3489;
+    background-color: #18254A;
 }
 
 /* ── 工具提示 Tooltip ── */
@@ -351,5 +351,5 @@ AuditStatusBadge:hover {
     background-color: #2A2A27;
     border-radius: 10px;
     padding: 16px;
-    border-left: 4px solid #8B7DD4;
+    border-left: 4px solid #4C7DFF;
 }
