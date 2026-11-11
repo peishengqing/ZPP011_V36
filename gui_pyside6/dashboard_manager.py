@@ -19,7 +19,7 @@ from gui_pyside6.dialogs.dashboard_dialog import DashboardDialog
 from gui_pyside6.dialogs.data_stability_dialog import DataStabilityDialog
 from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
 from gui_pyside6.dialogs.material_profile_dialog import MaterialProfileDialog, normalize_text
-from gui_pyside6.shells.negloss_dashboard import NegLossDashboard
+from gui_pyside6.shells.negloss_dashboard import NegLossDashboard  # 使用 DashboardShell 版本
 from gui_pyside6.dialogs.pos_loss_dashboard_dialog import PosLossDashboardDialog
 from gui_pyside6.dialogs.quarantine_review_dialog import QuarantineReviewDialog
 from gui_pyside6.dialogs.semi_dashboard_dialog import SemiDashboardDialog
@@ -35,13 +35,18 @@ class DashboardManager:
         self._open_dialogs = {}  # 跟踪已打开的对话框，避免重复打开
 
     def _open_dialog(self, dialog, key):
-        """打开对话框，跟踪是否已打开，若已打开则聚焦."""
-        # 若对话框已打开且未关闭，则聚焦
-        if key in self._open_dialogs and not self._open_dialogs[key].closeEvent:
-            self._open_dialogs[key].raise_()
-            self._open_dialogs[key].activateWindow()
+        """打开对话框/窗口，跟踪是否已打开，若已打开则聚焦."""
+        # 检查是否已打开且可见
+        existing = self._open_dialogs.get(key)
+        if existing and existing.isVisible():
+            existing.raise_()
+            existing.activateWindow()
             return
-        dialog.exec()
+        # 根据类型选择显示方式
+        if isinstance(dialog, QDialog):
+            dialog.exec()
+        else:
+            dialog.show()
         self._open_dialogs[key] = dialog
 
     def show_alert_dashboard(self):

@@ -4,7 +4,11 @@
 """
 import re
 import pandas as pd
-from PySide6.QtWidgets import QLineEdit
+from PySide6.QtWidgets import (
+    QLineEdit, QGroupBox, QLabel, QWidget, QVBoxLayout, QHBoxLayout, QFrame,
+    QScrollArea, QComboBox, QToolButton, QCheckBox, QSpinBox, QDateEdit, QTimeEdit,
+    QDialog, QMenu, QFileDialog
+)
 
 from gui_pyside6.components.dashboard_shell import DashboardShell
 from gui_pyside6.models.data_frame_model import DataFrameModel
