@@ -8,10 +8,10 @@
  *   表格 / 表头 / 滚动条不在筛选栏内，可安全用边框与圆角。
  */
 #DashboardShell { background: #EEF1F6; }
-#title_bar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
-#action_bar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
+#title_bar { background: #FFFFFF; border-bottom: 1px solid #DBE2EC; }
+#action_bar { background: #FFFFFF; border-bottom: 1px solid #DBE2EC; }
 #content { background: #FFFFFF; }
-#status_bar { background: #F8F9FA; border-top: 1px solid #E2E8F0; }
+#status_bar { background: #F8F9FA; border-top: 1px solid #DBE2EC; }
 
 /* 按钮：轻量幽灵风格，只写颜色。筛选区是 checkable 按钮，
    :checked 用主色实底标出当前档位（旧版缺这条，选中态看不出来）。 */
@@ -38,7 +38,7 @@ QComboBox {
 QComboBox:hover { background-color: #F2F8FF; }
 QComboBox QAbstractItemView {
     background-color: #FFFFFF;
-    border: 1px solid #E2E8F0;
+    border: 1px solid #DBE2EC;
     selection-background-color: #EFF6FF;
     selection-color: #1E40AF;
 }
@@ -47,13 +47,13 @@ QComboBox QAbstractItemView {
    不在筛选栏内，可用边框圆角；但 ::item 不写 padding 以免改变行高。 */
 QTableView {
     background-color: #FFFFFF;
-    border: 1px solid #E2E8F0;
+    border: 1px solid #DBE2EC;
     border-radius: 4px;
 }
 QTableView::item:selected { background-color: #EFF6FF; color: #1E40AF; }
 QHeaderView::section {
     background-color: #F9FAFB;
-    border: 1px solid #E2E8F0;
+    border: 1px solid #DBE2EC;
     font-weight: bold;
     color: #374151;
 }

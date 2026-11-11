@@ -10,7 +10,7 @@
 #title_bar { background: #25262B; border-bottom: 1px solid #2C2E33; }
 #action_bar { background: #25262B; border-bottom: 1px solid #2C2E33; }
 #content { background: #25262B; }
-#status_bar { background: #2C2E33; border-top: 1px solid #35334A; }
+#status_bar { background: #2C2E33; border-top: 1px solid #253148; }
 
 /* 按钮：暗色轻量风格，只写颜色；:checked 用主色实底标出当前档位。 */
 QPushButton {
@@ -35,7 +35,7 @@ QComboBox {
 QComboBox:hover { background-color: #353B4A; }
 QComboBox QAbstractItemView {
     background-color: #2C2E33;
-    border: 1px solid #35334A;
+    border: 1px solid #253148;
     selection-background-color: #18254A;
     selection-color: #FFFFFF;
 }
@@ -43,13 +43,13 @@ QComboBox QAbstractItemView {
 /* 表格：看板实际用 QTableView + DataFrameModel */
 QTableView {
     background-color: #25262B;
-    border: 1px solid #35334A;
+    border: 1px solid #253148;
     border-radius: 4px;
 }
 QTableView::item:selected { background-color: #18254A; color: #FFFFFF; }
 QHeaderView::section {
     background-color: #2C2E33;
-    border: 1px solid #35334A;
+    border: 1px solid #253148;
     font-weight: bold;
     color: #E9ECEF;
 }
