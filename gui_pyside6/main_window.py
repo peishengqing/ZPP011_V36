@@ -96,6 +96,7 @@ from gui_pyside6.controllers.filter_controller import FilterController
 from gui_pyside6.analysis_orchestrator import AnalysisOrchestrator
 from gui_pyside6.file_loader import FileLoader
 from gui_pyside6.view_manager import ViewManager
+from utils.theme_manager import Thm
 
 
 
@@ -434,13 +435,13 @@ class MainWindow(QMainWindow):
         self._setup_connections()
         self._setup_shortcuts()
 
-        # 加载亮色主题（在所有组件创建和布局组装之后，show 之前）
-        self._is_dark_theme = False
+        # 初始化主题：亮色
         qss_path = os.path.join(os.path.dirname(__file__), "light_theme.qss")
         if os.path.exists(qss_path):
             with open(qss_path, "r", encoding="utf-8") as f:
                 QApplication.instance().setStyleSheet(f.read())
         self.title_bar.set_theme_light()
+        Thm.set_dark(False)
 
         # 所有组件初始化完成后才显示窗口
         self._refresh_alt_view()
@@ -640,12 +641,8 @@ class MainWindow(QMainWindow):
         self.filter_controller.reset()
 
     def _toggle_theme(self):
-        """切换亮色/暗色主题"""
-        # 用成员变量跟踪当前主题
-        if not hasattr(self, '_is_dark_theme'):
-            self._is_dark_theme = True  # 默认是暗色主题
-
-        if self._is_dark_theme:
+        """切换亮色/暗色主题（通过主题管理器统一状态）"""
+        if Thm.is_dark:
             # 切换到亮色主题
             qss_path = os.path.join(os.path.dirname(__file__), "light_theme.qss")
             if os.path.exists(qss_path):
@@ -653,14 +650,19 @@ class MainWindow(QMainWindow):
                     QApplication.instance().setStyleSheet(f.read())
             else:
                 QApplication.instance().setStyleSheet("")
-            self._is_dark_theme = False
             self.title_bar.set_theme_light()
+            Thm.set_dark(False)
             toast("已切换至亮色主题", "info", parent=self)
         else:
             # 切换到暗色主题
-            self._load_dark_theme()
-            self._is_dark_theme = True
+            qss_path = os.path.join(os.path.dirname(__file__), "dark_theme.qss")
+            if os.path.exists(qss_path):
+                with open(qss_path, "r", encoding="utf-8") as f:
+                    QApplication.instance().setStyleSheet(f.read())
+            else:
+                QApplication.instance().setStyleSheet("")
             self.title_bar.set_theme_dark()
+            Thm.set_dark(True)
             toast("已切换至暗色主题", "info", parent=self)
 
     # -----------------------------------------------------------

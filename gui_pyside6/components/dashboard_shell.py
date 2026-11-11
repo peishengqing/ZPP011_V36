@@ -2,8 +2,10 @@
 
 import os
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame
-from PySide6.QtCore import Signal, QTimer
-from PySide6.QtGui import QFont, QPalette
+from PySide6.QtCore import Signal
+from PySide6.QtGui import QFont
+
+from utils.theme_manager import Thm
 
 # v43.335：QSS 用模块相对定位，不再写死 E:/zpp011_v2（换机器/换盘即读不到，静默退化成兜底样式）
 _THEME_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "themes")
@@ -20,13 +22,11 @@ class DashboardShell(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("DashboardShell")
-        self._current_theme = "light"
-        self._parent_window = parent
         self._init_layout()
-        self._load_theme_qss(self._current_theme)
-        # 检查父窗口并启动主题监听
-        if parent is not None:
-            self._init_theme_sync()
+        # 直接同步全局主题真源
+        self._load_theme_qss("dark" if Thm.is_dark else "light")
+        # 订阅 Thm 变化，自动重新加载 QSS
+        Thm.on_change(self._on_theme_changed)
 
     def _init_layout(self):
         layout = QVBoxLayout(self)
@@ -76,7 +76,6 @@ class DashboardShell(QWidget):
 
     def _load_theme_qss(self, theme):
         """加载亮/暗主题 QSS"""
-        self._current_theme = theme
         qss_content = ""
         qss_name = "light_dashboard.qss" if theme == "light" else "dark_dashboard.qss"
         try:
@@ -143,32 +142,16 @@ class DashboardShell(QWidget):
 
     def set_theme(self, theme):
         """theme: 'light' or 'dark'"""
+        Thm.set_dark(theme == "dark")
         self._load_theme_qss(theme)
 
     def get_theme(self):
-        return self._current_theme
+        return "dark" if Thm.is_dark else "light"
 
-    def _init_theme_sync(self):
-        """同步父窗口主题"""
-        # 立即同步一次
-        self._sync_theme_with_window()
-        # 使用定时器持续监听主题变化（每隔500ms检查一次）
-        self._theme_timer = QTimer(self)
-        self._theme_timer.setInterval(500)
-        self._theme_timer.timeout.connect(self._sync_theme_with_window)
-        self._theme_timer.start()
-
-    def _sync_theme_with_window(self):
-        """根据父窗口的palette自动切换主题"""
-        if self._parent_window is None:
-            return
+    def _on_theme_changed(self, is_dark):
+        """从主题管理器获取新主题"""
         try:
-            palette = self._parent_window.palette()
-            window_color = palette.color(QPalette.Window)
-            # 计算亮度的简单方法：(R*0.299 + G*0.587 + B*0.114)
-            brightness = int(window_color.red() * 0.299 + window_color.green() * 0.587 + window_color.blue() * 0.114)
-            new_theme = "dark" if brightness < 128 else "light"
-            if new_theme != self._current_theme:
-                self.set_theme(new_theme)
-        except Exception:
+            self._load_theme_qss("dark" if is_dark else "light")
+        except RuntimeError:
+            # Shell may be deleted; ignore to avoid crash in tests/edge cases
             pass

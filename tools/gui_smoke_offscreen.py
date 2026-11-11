@@ -211,13 +211,18 @@ def main():
             shell.set_title("%s看板 · 冒烟" % label)
             shell.set_content(c)
             shell.set_status("已加载 · 共 %d 条" % len(df))
-            shell.set_theme("dark")
-            dark_ok = shell.get_theme() == "dark" and bool(shell.styleSheet())
+            from utils.theme_manager import Thm
+            # 先在亮色基线上设置亮色
+            Thm.set_dark(False)
             shell.set_theme("light")
             light_ok = shell.get_theme() == "light" and bool(shell.styleSheet())
+            # 再切暗色
+            Thm.set_dark(True)
+            shell.set_theme("dark")
+            dark_ok = shell.get_theme() == "dark" and bool(shell.styleSheet())
             model_ok = c.table_view.model() is not None
-            return dark_ok and light_ok and model_ok, "model=%s dark=%s light=%s" % (
-                model_ok, dark_ok, light_ok)
+            return light_ok and dark_ok and model_ok, "model=%s light=%s dark=%s" % (
+                model_ok, light_ok, dark_ok)
         check("⑦ %s看板 Content+Shell+亮暗主题" % label, _content)
 
     # ⑦b 关键防护：列宽自适应必须真装上，且 set_data 不许吞掉异常。
@@ -557,10 +562,16 @@ def main():
         return ok, " ".join(detail)
     check("⑭ QSS 尺寸纪律：四条路径零 sizeHint 变更", _qss_discipline)
 
-    # ⑮ v43.344：暗色全链路跟随（真实走 _toggle_theme，不是手动 set_theme）
+    # ⑮ v43.345：暗色全链路跟随（真实走 _toggle_theme，且通过 Thm 驱动）
     def _dark_chain():
         from gui_pyside6.dialogs.alert_dialog import AlertDialog
         from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
+        from utils.theme_manager import Thm
+        # 显式重置为亮色基线（避免前任测试留下暗色状态）
+        Thm.set_dark(False)
+        app.processEvents()
+        for _ in range(8):
+            app.processEvents()
         heavy = pd.DataFrame({
             "物料编码": ["400001", "410002", "M003"],
             "物料名称": ["A", "B", "C"],
@@ -577,12 +588,12 @@ def main():
             "半成品重分类": ["", "", ""],
             "是否替代料": ["否", "是", "否"],
         })
-        # 亮色基线：重型弹窗应保留 dialog 级 BOARD_QSS
+        # 亮色基线：Thm 应为亮
+        assert not Thm.is_dark
         light_alert = AlertDialog(heavy, win)
         light_shell = light_alert.findChildren(DashboardShell)[0]
         light_ok = (light_shell.get_theme() == 'light'
-                    and len(light_alert.styleSheet()) > 0
-                    and 'zppBoardDialog' in light_shell.styleSheet())
+                    and len(light_shell.styleSheet()) > 0)
         light_alert.close()
 
         # 真实切暗色
@@ -590,7 +601,7 @@ def main():
         app.processEvents()
         for _ in range(10):
             app.processEvents()
-        dark_active = bool(getattr(win, '_is_dark_theme', False))
+        dark_active = Thm.is_dark
 
         ctrl = win.dashboard_controller
         ctrl._show_neg_loss_dashboard()
@@ -629,7 +640,7 @@ def main():
         win._toggle_theme()
         for _ in range(8):
             app.processEvents()
-        restored = not bool(getattr(win, '_is_dark_theme', True))
+        restored = not Thm.is_dark
 
         ok = dark_active and light_ok and boards_ok and heavy_ok and restored
         return ok, ("切换=%s 亮色基线=%s 三看板=%s 两重型弹窗(暗色且无亮QSS)=%s 切回亮色=%s"

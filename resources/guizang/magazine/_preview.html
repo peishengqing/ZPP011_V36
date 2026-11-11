@@ -477,392 +477,506 @@
 <div id="hint">← → 翻页 · B 静态 · ESC 索引</div>
 
 <div id="deck">
-<!-- 01 · 封面 · hero.dark -->
 <section class="slide hero dark" data-theme="dark">
-  <div class="tag" style="position:absolute;top:6vh;left:6vw">ZPP011 · 分厂报告 · 2026-10</div>
-  <div style="display:flex;flex-direction:column;justify-content:center;flex:1">
-    <div class="kicker" data-anim="kicker">PRODUCTION DEVIATION AUDIT · FOOD &amp; BEVERAGE</div>
-    <h1 class="display-zh" data-anim="title" style="max-width:20ch">食品与饮料<br/>分开算这笔账</h1>
-    <div style="margin-top:4.2vh;max-width:56ch">
-      <p class="lead" data-anim="lead">10,531 条偏差、两个厂、两套完全不同的省法。这份报告不合并口径,谁的问题归谁——省得是否真实,也要查。</p>
+  <div class="left">
+    <div class="kicker" data-anim="kicker">ZPP011 · 2026-10</div>
+    <h1 class="display display-zh h-hero" data-anim="title">生产偏差分析</h1>
+    <p class="lead sub" data-anim="lead">
+      基于完整偏差明细的逐行净偏差加总与归因审计<br>
+      食品厂与饮料厂双轨拆解
+    </p>
+    <div class="meta-row" data-anim="meta">
+      <span class="meta">报告周期 2026-10-03 — 10-31</span>
+      <span class="meta">生成日期 2026.11.03</span>
+      <span class="meta">来源 完整偏差明细</span>
     </div>
+    <div class="rule" data-anim="rule"></div>
   </div>
-  <div style="display:flex;justify-content:space-between;align-items:flex-end;border-top:1px solid rgba(var(--paper-rgb),.2);padding-top:2.4vh">
-    <div class="meta" data-anim="meta">云南达利 · 材料审核 · 2026.10.26</div>
-    <div class="meta" data-anim="meta">→ 方向键翻页 / B 静态 / ESC 总览</div>
+  <div class="right">
+    <div class="stat-card" data-anim="stat">
+      <div class="stat-nb"><span class="big-num">−333.1</span><span class="stat-unit">万</span></div>
+      <div class="stat-label">总净偏差</div>
+      <div class="stat-note">明细逐行加总值</div>
+    </div>
+    <div class="stat-card" data-anim="stat">
+      <div class="stat-nb"><span class="mid-num">11,544</span></div>
+      <div class="stat-label">明细行数</div>
+      <div class="stat-note">食品 + 饮料全量</div>
+    </div>
   </div>
 </section>
 
-<!-- 02 · 总览 · light · 大数字 -->
 <section class="slide light" data-theme="light">
-  <div class="kicker" data-anim="kicker">总览 / OVERVIEW</div>
-  <h2 class="h1-zh" data-anim="title" style="max-width:24ch">净节约收口在<span class="hi">可解释区间</span></h2>
-
-  <div style="display:grid;grid-template-columns:1.15fr 1fr;gap:5vw;margin-top:5vh;align-items:start">
-    <div>
-      <div class="stat" data-anim="kpi">
-        <div class="m">净偏差金额 · NET DEVIATION（负=节约）</div>
-        <div class="n" style="font-size:9vw">−405.2<span style="font-size:.28em;font-family:var(--sans-zh);font-weight:400;opacity:.6;margin-left:.15em">万</span></div>
-        <div class="l" style="opacity:.72;max-width:34ch">多耗 +38.2 万与节约 −443.4 万对冲后净省。这不是"偏差消失了",而是多耗与节约在同一盘账里互相抵消,只剩净省下的口子——省得是否真实,本报告逐页核查。</div>
-      </div>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:2.6vh" data-anim="stats">
-      <div class="rowline"><div class="k">条数</div><div class="v">10,531 条,覆盖 28 个车间×分类组合</div><div class="m">FULL</div></div>
-      <div class="rowline"><div class="k">食品厂</div><div class="v">9,780 条 · 占 92.9% · 问题在"面"</div><div class="m">92.9%</div></div>
-      <div class="rowline"><div class="k">饮料厂</div><div class="v">751 条 · 占 7.1% · 问题在"点"</div><div class="m">7.1%</div></div>
-      <div class="rowline"><div class="k">备注覆盖</div><div class="v">仅 21.7% 的偏差有原因说明</div><div class="m">21.7%</div></div>
-    </div>
+  <div class="left">
+    <div class="kicker" data-anim="kicker">总览</div>
+    <h2 class="display-zh h-xl" data-anim="title">本期偏差全景</h2>
+    <p class="lead" data-anim="lead">
+      食品厂占 92.4%，饮料厂占 7.6%。整体呈负向节约态势，总净偏差为 −333.1 万元。
+    </p>
   </div>
-
-  <div style="margin-top:auto;padding-top:3vh">
-    <div class="callout" data-anim="note">
-      <span class="q-big">口径说明</span> —— 本报告全部数字由「完整偏差明细」净偏差金额列逐行加总得出,可逐条复核。本报告数字与工作簿「汇总统计」页的"总偏差金额"合计(−405.0 万)已相互闭合(相差 −0.2 万);该页自身的正/负分项相加为 −118.7 万、与合计仍差 −286.3 万,差额来自价格差异行,属该表设计口径,详见第 04 页。
+  <div class="right">
+    <div class="grid-2-6-6">
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="big-num">−333.1</span></div>
+        <div class="stat-label">总净偏差（万元）</div>
+      </div>
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="mid-num">+50.7</span></div>
+        <div class="stat-label">正向多耗（万元）</div>
+      </div>
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="mid-num">−383.7</span></div>
+        <div class="stat-label">负向节约（万元）</div>
+      </div>
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="mid-num">11,544</span></div>
+        <div class="stat-label">总行数</div>
+      </div>
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="mid-num">10,668</span></div>
+        <div class="stat-label">食品厂行数</div>
+      </div>
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="mid-num">876</span></div>
+        <div class="stat-label">饮料厂行数</div>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- 03 · 两厂对照 · light · A/B -->
 <section class="slide light" data-theme="light">
-  <div class="kicker" data-anim="kicker">两厂对照 / FOOD VS BEVERAGE</div>
-  <h2 class="h1-zh" data-anim="title" style="max-width:28ch">7.7% 的条数,省下 <span class="hi">191%</span> 的钱</h2>
-
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;margin-top:5vh;border-top:2px solid currentColor" data-anim="duo">
-    <div style="padding:3.6vh 3vw 0 0;border-right:1px solid rgba(127,127,127,.3)">
-      <div class="tag" style="opacity:.7">云南达利 · 食品厂</div>
-      <div class="stat" style="margin-top:2.4vh">
-        <div class="n" style="font-size:6.6vw">−139.3<span style="font-size:.3em;font-family:var(--sans-zh);font-weight:400;opacity:.6;margin-left:.12em">万</span></div>
+  <div class="left">
+    <div class="kicker" data-anim="kicker">口径说明</div>
+    <h2 class="display-zh h-xl" data-anim="title">数据边界与闭合验证</h2>
+    <p class="lead" data-anim="lead">
+      本报告采用「完整偏差明细」逐行加总作为唯一依据。正号代表多耗，负号代表节约。
+    </p>
+  </div>
+  <div class="right">
+    <div class="grid-2-8-4">
+      <div class="callout" data-anim="callout">
+        <p class="q-big">明细净偏差 −333.1 万元 与 汇总统计 −332.7 万元 相差 −0.4 万元。</p>
+        <p class="callout-src">已闭合（closed=true），差异在合理范围内。</p>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:2.2vh 2vw;margin-top:3vh">
-        <div><div class="m" style="font-family:var(--mono);font-size:10px;letter-spacing:.22em;opacity:.5">条数</div><div class="plat"><div class="nb" style="font-size:2.1vw">9,780</div></div></div>
-        <div><div class="m" style="font-family:var(--mono);font-size:10px;letter-spacing:.22em;opacity:.5">备注覆盖</div><div class="plat"><div class="nb" style="font-size:2.1vw">21.82%</div></div></div>
-        <div><div class="m" style="font-family:var(--mono);font-size:10px;letter-spacing:.22em;opacity:.5">多耗</div><div class="plat"><div class="nb" style="font-size:2.1vw">+35.8万</div></div></div>
-        <div><div class="m" style="font-family:var(--mono);font-size:10px;letter-spacing:.22em;opacity:.5">节约</div><div class="plat"><div class="nb" style="font-size:2.1vw">−175.1万</div></div></div>
+      <div class="rowline" data-anim="line">
+        <div class="row">
+          <span class="label">明细逐行加总</span>
+          <span class="hi">−333.1</span>
+        </div>
+        <div class="row">
+          <span class="label">汇总统计</span>
+          <span class="stat-nb">−332.7</span>
+        </div>
+        <div class="row">
+          <span class="label">差异</span>
+          <span class="stat-nb">−0.4</span>
+        </div>
       </div>
-      <p class="body-zh" style="margin-top:3.2vh;opacity:.76;max-width:36ch">车间多、条数密,靠 <b>2 个车间</b>撑起大头:3车间 −35.3 万、2车间 −34.3 万。省得呈"面状"分布,真假要靠逐单核查。</p>
-    </div>
-
-    <div style="padding:3.6vh 0 0 3vw">
-      <div class="tag" style="opacity:.7">云南达利 · 饮料厂</div>
-      <div class="stat" style="margin-top:2.4vh">
-        <div class="n" style="font-size:6.6vw">−265.9<span style="font-size:.3em;font-family:var(--sans-zh);font-weight:400;opacity:.6;margin-left:.12em">万</span></div>
+      <div class="frame-cap" data-anim="note">
+        <p class="meta">注：本报告数字均来自明细逐行加总，不直接采用汇总统计值。负号为节约，正号为多耗。</p>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:2.2vh 2vw;margin-top:3vh">
-        <div><div class="m" style="font-family:var(--mono);font-size:10px;letter-spacing:.22em;opacity:.5">条数</div><div class="plat"><div class="nb" style="font-size:2.1vw">751</div></div></div>
-        <div><div class="m" style="font-family:var(--mono);font-size:10px;letter-spacing:.22em;opacity:.5">备注覆盖</div><div class="plat"><div class="nb" style="font-size:2.1vw">20.37%</div></div></div>
-        <div><div class="m" style="font-family:var(--mono);font-size:10px;letter-spacing:.22em;opacity:.5">多耗</div><div class="plat"><div class="nb" style="font-size:2.1vw">+2.4万</div></div></div>
-        <div><div class="m" style="font-family:var(--mono);font-size:10px;letter-spacing:.22em;opacity:.5">节约</div><div class="plat"><div class="nb" style="font-size:2.1vw">−268.3万</div></div></div>
-      </div>
-      <p class="body-zh" style="margin-top:3.2vh;opacity:.76;max-width:36ch">条数只有食品厂的 <b>7.7%</b>,省的却是其 <b>191.0%</b>。单条强度是食品厂的 <b>25 倍</b>——省得"点状"且单点极重:500ml乐虎瓶装氨基酸功能饮料 3 条就省 −54.03 万。</p>
     </div>
   </div>
 </section>
 
-<!-- 04 · 数据质量说明 · dark -->
-<section class="slide dark" data-theme="dark">
-  <div class="kicker" data-anim="kicker">数据质量说明 / DATA CAVEAT</div>
-  <h2 class="h1-zh" data-anim="title" style="max-width:28ch">汇总与明细已经<span class="hi">对上了</span></h2>
-
-  <div style="display:grid;grid-template-columns:1.2fr .8fr;gap:5vw;margin-top:4.6vh;align-items:start">
-    <div data-anim="table">
-      <div style="display:grid;grid-template-columns:1.6fr 1fr .8fr;gap:1.6vw;font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;opacity:.55;padding-bottom:1.4vh;border-bottom:1px solid rgba(var(--paper-rgb),.3)">
-        <div>来源</div><div style="text-align:right">金额</div><div style="text-align:right">可复核</div>
+<section class="slide light" data-theme="light">
+  <div class="left">
+    <div class="kicker" data-anim="kicker">食品厂</div>
+    <h2 class="display-zh h-xl" data-anim="title">车间维度拆解</h2>
+    <p class="lead" data-anim="lead">
+      食品厂共 10,668 行，净偏差 −134.1 万元。2车间与6车间为主要节约来源。
+    </p>
+  </div>
+  <div class="right">
+    <div class="grid-2-7-5">
+      <div class="pillar" data-anim="pillar">
+        <div class="stat-card">
+          <div class="stat-nb"><span class="big-num">−134.1</span></div>
+          <div class="stat-label">食品厂净偏差</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-nb"><span class="mid-num">10,668</span></div>
+          <div class="stat-label">食品厂行数</div>
+        </div>
       </div>
-      <div style="display:grid;grid-template-columns:1.6fr 1fr .8fr;gap:1.6vw;padding:1.9vh 0;border-bottom:1px solid rgba(var(--paper-rgb),.14);align-items:baseline">
-        <div class="body-zh">汇总统计表「总偏差金额」合计</div>
-        <div class="body-zh" style="text-align:right;font-family:var(--mono)">−405.0 万</div>
-        <div class="body-zh" style="text-align:right;opacity:.55">是(对明细)</div>
+      <div class="frame" data-anim="frame">
+        <p class="kicker">节约前二</p>
+        <div class="rowline">
+          <div class="row">
+            <span class="label">2车间</span>
+            <span class="hi">−42.0</span>
+          </div>
+          <div class="row">
+            <span class="label">6车间</span>
+            <span class="hi">−39.3</span>
+          </div>
+        </div>
+        <p class="meta">二者合计 −81.3 万元，占食品厂负向节约的 61%</p>
       </div>
-      <div style="display:grid;grid-template-columns:1.6fr 1fr .8fr;gap:1.6vw;padding:1.9vh 0;border-bottom:1px solid rgba(var(--paper-rgb),.14);align-items:baseline">
-        <div class="body-zh">该表自身正偏差合计</div>
-        <div class="body-zh" style="text-align:right;font-family:var(--mono)">+86.4 万</div>
-        <div class="body-zh" style="text-align:right;opacity:.55">部分</div>
+      <div class="frame-cap" data-anim="note">
+        <p class="lead">4车间与5车间为正向多耗（分别为 +1.8 万与 +1.7 万），其余车间均为负向节约。</p>
       </div>
-      <div style="display:grid;grid-template-columns:1.6fr 1fr .8fr;gap:1.6vw;padding:1.9vh 0;border-bottom:1px solid rgba(var(--paper-rgb),.14);align-items:baseline">
-        <div class="body-zh">该表自身负偏差合计</div>
-        <div class="body-zh" style="text-align:right;font-family:var(--mono)">−205.1 万</div>
-        <div class="body-zh" style="text-align:right;opacity:.55">部分</div>
-      </div>
-      <div style="display:grid;grid-template-columns:1.6fr 1fr .8fr;gap:1.6vw;padding:1.9vh 0;border-bottom:2px solid currentColor;align-items:baseline">
-        <div class="body-zh"><b>本报告采用:明细逐行加总</b></div>
-        <div class="body-zh" style="text-align:right;font-family:var(--mono)"><b>−405.2 万</b></div>
-        <div class="body-zh" style="text-align:right"><b>是</b></div>
-      </div>
-      <p class="body-zh" style="margin-top:2.6vh;opacity:.68;max-width:52ch">正 86.4 + 负 −205.1 = −118.7 万,与 −405.0 万相差 −286.3 万。该差额通常来自半成品(正/负列留空,走"产量偏差×单价")与汇总行自身矛盾,请以软件「汇总统计」核查结果为准。</p>
-    </div>
-
-    <div data-anim="right" style="border-left:3px solid currentColor;padding-left:2.4vw">
-      <div class="kicker" style="margin-bottom:2vh">为什么这件事值得单开一页</div>
-      <p class="body-zh" style="opacity:.84;line-height:1.75">偏差报告的价值全在"经得起查"。<br/><br/>明细逐行加总 <b>−405.2 万</b>,与汇总统计合计 <b>−405.0 万</b> 相差仅 −0.2 万,两个口径相互闭合,首页数字可以直接对到工作簿。<br/><br/>仍需留意:汇总统计自身的正/负分项相加为 −118.7 万,与其合计仍差 −286.3 万——差额来自价格差异行与半成品口径,属该表设计口径,不影响本报告采用的明细口径。</p>
-      <div class="meta" style="margin-top:3vh;padding-top:2vh;border-top:1px solid rgba(var(--paper-rgb),.2);opacity:.6">建议:反馈系统方核查汇总层算法</div>
     </div>
   </div>
 </section>
 
-<!-- 05 · 食品厂总览 · hero.light -->
+<section class="slide light" data-theme="light">
+  <div class="left">
+    <div class="kicker" data-anim="kicker">饮料厂</div>
+    <h2 class="display-zh h-xl" data-anim="title">产线与环节拆解</h2>
+    <p class="lead" data-anim="lead">
+      饮料厂共 876 行，净偏差 −198.9 万元。半制品环节贡献了绝大部分节约。
+    </p>
+  </div>
+  <div class="right">
+    <div class="grid-2-6-6">
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="big-num">−198.9</span></div>
+        <div class="stat-label">饮料厂净偏差</div>
+      </div>
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="mid-num">137</span></div>
+        <div class="stat-label">半制品行数</div>
+      </div>
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="mid-num">−183.60</span></div>
+        <div class="stat-label">半制品净偏差</div>
+      </div>
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="mid-num">36000热线-1线</span></div>
+        <div class="stat-label">最大节约产线</div>
+        <div class="stat-note">−97.6 万元</div>
+      </div>
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="mid-num">500ml乐虎瓶装氨基酸功能饮料</span></div>
+        <div class="stat-label">最大节约物料</div>
+        <div class="stat-note">−51.50 万元</div>
+      </div>
+      <div class="frame-cap" data-anim="note">
+        <p class="meta">饮料厂备注率 20.43%，低于食品厂。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide light" data-theme="light">
+  <div class="left">
+    <div class="kicker" data-anim="kicker">车间排名</div>
+    <h2 class="display-zh h-xl" data-anim="title">食品厂车间净偏差</h2>
+    <p class="lead" data-anim="lead">按净偏差金额排序，前二车间贡献主要节约。</p>
+  </div>
+  <div class="right">
+    <div class="frame" data-anim="frame">
+      <div class="rowline">
+        <div class="row">
+          <span class="label" style="width:20%">车间</span>
+          <span class="label" style="width:20%">行数</span>
+          <span class="label" style="width:20%">净偏差(万)</span>
+          <span class="label" style="width:20%">状态</span>
+        </div>
+        <div class="row">
+          <span class="hi">2车间</span>
+          <span class="mid-num">2,332</span>
+          <span class="hi">−42.0</span>
+          <span class="label">节约</span>
+        </div>
+        <div class="row">
+          <span class="hi">6车间</span>
+          <span class="mid-num">1,786</span>
+          <span class="hi">−39.3</span>
+          <span class="label">节约</span>
+        </div>
+        <div class="row">
+          <span class="hi">1车间</span>
+          <span class="mid-num">2,963</span>
+          <span class="hi">−28.6</span>
+          <span class="label">节约</span>
+        </div>
+        <div class="row">
+          <span class="hi">3车间</span>
+          <span class="mid-num">1,311</span>
+          <span class="hi">−20.1</span>
+          <span class="label">节约</span>
+        </div>
+        <div class="row">
+          <span class="hi">综合组</span>
+          <span class="mid-num">325</span>
+          <span class="hi">−7.4</span>
+          <span class="label">节约</span>
+        </div>
+        <div class="row">
+          <span class="hi">配料中心</span>
+          <span class="mid-num">82</span>
+          <span class="hi">−0.3</span>
+          <span class="label">节约</span>
+        </div>
+        <div class="row">
+          <span class="ghost">5车间</span>
+          <span class="ghost">636</span>
+          <span class="ghost">+1.7</span>
+          <span class="label">多耗</span>
+        </div>
+        <div class="row">
+          <span class="ghost">4车间</span>
+          <span class="ghost">1,233</span>
+          <span class="ghost">+1.8</span>
+          <span class="label">多耗</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide light" data-theme="light">
+  <div class="left">
+    <div class="kicker" data-anim="kicker">重点物料</div>
+    <h2 class="display-zh h-xl" data-anim="title">食品厂负向节约 Top 5</h2>
+    <p class="lead" data-anim="lead">按单物料净偏差金额排序。</p>
+  </div>
+  <div class="right">
+    <div class="frame" data-anim="frame">
+      <div class="rowline">
+        <div class="row">
+          <span class="label" style="width:40%">物料名称</span>
+          <span class="label" style="width:20%">行数</span>
+          <span class="label" style="width:20%">净偏差(万)</span>
+        </div>
+        <div class="row">
+          <span class="hi">20g达利园香奶味软面包</span>
+          <span class="mid-num">41</span>
+          <span class="hi">−8.15</span>
+        </div>
+        <div class="row">
+          <span class="hi">20g达利园香橙味软面包</span>
+          <span class="mid-num">38</span>
+          <span class="hi">−7.35</span>
+        </div>
+        <div class="row">
+          <span class="hi">23g达利园蛋黄味注心派</span>
+          <span class="mid-num">40</span>
+          <span class="hi">−6.87</span>
+        </div>
+        <div class="row">
+          <span class="hi">蛋液</span>
+          <span class="mid-num">183</span>
+          <span class="hi">−6.59</span>
+        </div>
+        <div class="row">
+          <span class="hi">鸡蛋</span>
+          <span class="mid-num">26</span>
+          <span class="hi">−6.54</span>
+        </div>
+      </div>
+    </div>
+    <div class="frame-cap" data-anim="note">
+      <p class="meta">正向多耗主力：二次精炼24°棕榈油（+5.13 万）、食用酒精96°（+2.49 万）、二次精炼10°棕榈油（+2.39 万）</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide light" data-theme="light">
+  <div class="left">
+    <div class="kicker" data-anim="kicker">风险识别</div>
+    <h2 class="display-zh h-xl" data-anim="title">无备注异常记录</h2>
+    <p class="lead" data-anim="lead">无备注记录共 116 行，其中 1车间 占 80 行，为主要风险集中点。</p>
+  </div>
+  <div class="right">
+    <div class="grid-2-8-4">
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="mid-num">116</span></div>
+        <div class="stat-label">无备注总行数</div>
+      </div>
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="mid-num">80</span></div>
+        <div class="stat-label">1车间无备注行数</div>
+        <div class="stat-note">净偏差 +0.17 万元</div>
+      </div>
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="mid-num">16</span></div>
+        <div class="stat-label">4车间无备注行数</div>
+      </div>
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="mid-num">16</span></div>
+        <div class="stat-label">6车间无备注行数</div>
+      </div>
+      <div class="frame-cap" data-anim="note">
+        <p class="meta">建议补全 1车间 无备注记录的异常原因，提升数据可追溯性。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide light" data-theme="light">
+  <div class="left">
+    <div class="kicker" data-anim="kicker">替代料</div>
+    <h2 class="display-zh h-xl" data-anim="title">替代料偏差分析</h2>
+    <p class="lead" data-anim="lead">本期替代料相关记录共 156 行，净偏差为 −13.72 万元。</p>
+  </div>
+  <div class="right">
+    <div class="grid-2-6-6">
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="mid-num">156</span></div>
+        <div class="stat-label">替代料行数</div>
+      </div>
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="mid-num">+0.65</span></div>
+        <div class="stat-label">替代料多耗(万)</div>
+      </div>
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="mid-num">−476.55</span></div>
+        <div class="stat-label">替代料节约(万)</div>
+      </div>
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="big-num">−13.72</span></div>
+        <div class="stat-label">替代料净偏差(万)</div>
+      </div>
+      <div class="frame" data-anim="frame">
+        <p class="kicker">糖类替代对比</p>
+        <div class="rowline">
+          <div class="row">
+            <span class="hi">硫化糖</span>
+            <span class="hi">−2.12</span>
+          </div>
+          <div class="row">
+            <span class="hi">鲜酵母耐高糖高活性</span>
+            <span class="hi">−1.15</span>
+          </div>
+        </div>
+      </div>
+      <div class="frame-cap" data-anim="note">
+        <p class="meta">饮料厂糖类替代：310ml达利园罐装冰糖花生牛奶（−1.85）、碳化糖（−1.42），合计 −3.27 万元</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide light" data-theme="light">
+  <div class="left">
+    <div class="kicker" data-anim="kicker">归因分析</div>
+    <h2 class="display-zh h-xl" data-anim="title">异常归因分布</h2>
+    <p class="lead" data-anim="lead">共 535 行异常记录已归类。「定额/系统问题」影响额最大，为 +54.73 万元。</p>
+  </div>
+  <div class="right">
+    <div class="frame" data-anim="frame">
+      <div class="rowline">
+        <div class="row">
+          <span class="label" style="width:30%">归因类别</span>
+          <span class="label" style="width:15%">行数</span>
+          <span class="label" style="width:20%">超支额(万)</span>
+          <span class="label" style="width:20%">影响额(万)</span>
+        </div>
+        <div class="row">
+          <span class="hi">定额/系统问题</span>
+          <span class="mid-num">64</span>
+          <span class="mid-num">54.65</span>
+          <span class="hi">+54.73</span>
+        </div>
+        <div class="row">
+          <span class="hi">其他</span>
+          <span class="mid-num">196</span>
+          <span class="mid-num">20.19</span>
+          <span class="hi">+23.22</span>
+        </div>
+        <div class="row">
+          <span class="hi">配方/配比调整</span>
+          <span class="mid-num">53</span>
+          <span class="mid-num">3.72</span>
+          <span class="hi">+7.60</span>
+        </div>
+        <div class="row">
+          <span class="hi">工艺/设备调整</span>
+          <span class="mid-num">35</span>
+          <span class="mid-num">0.96</span>
+          <span class="hi">+0.99</span>
+        </div>
+        <div class="row">
+          <span class="hi">原材料质量波动</span>
+          <span class="mid-num">125</span>
+          <span class="mid-num">0.18</span>
+          <span class="hi">+0.87</span>
+        </div>
+        <div class="row">
+          <span class="hi">操作规范</span>
+          <span class="mid-num">52</span>
+          <span class="mid-num">0.17</span>
+          <span class="hi">+0.22</span>
+        </div>
+        <div class="row">
+          <span class="hi">卫生/消毒</span>
+          <span class="mid-num">4</span>
+          <span class="mid-num">0.14</span>
+          <span class="hi">+0.14</span>
+        </div>
+        <div class="row">
+          <span class="hi">非正常生产/包装</span>
+          <span class="mid-num">6</span>
+          <span class="mid-num">0.00</span>
+          <span class="hi">+0.02</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide light" data-theme="light">
+  <div class="left">
+    <div class="kicker" data-anim="kicker">趋势分析</div>
+    <h2 class="display-zh h-xl" data-anim="title">物料偏差趋势</h2>
+    <p class="lead" data-anim="lead">1,168 种物料中，64.6% 保持持平，17.2% 改善，13.4% 恶化。</p>
+  </div>
+  <div class="right">
+    <div class="grid-2-7-5">
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="big-num">1,168</span></div>
+        <div class="stat-label">监测物料总数</div>
+      </div>
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="mid-num">754</span></div>
+        <div class="stat-label">持平（64.6%）</div>
+      </div>
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="mid-num">201</span></div>
+        <div class="stat-label">改善（17.2%）</div>
+      </div>
+      <div class="stat-card" data-anim="stat">
+        <div class="stat-nb"><span class="mid-num">156</span></div>
+        <div class="stat-label">恶化（13.4%）</div>
+      </div>
+      <div class="frame-cap" data-anim="note">
+        <p class="meta">恶化程度进一步加剧的物料占比 2.5%，改善程度显著的占比 2.4%。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section class="slide hero light" data-theme="light">
-  <div class="kicker" data-anim="kicker">第一部分 · 食品厂 / FOOD PLANT</div>
-  <h2 class="h1-zh" data-anim="title" style="max-width:28ch">9,780 条偏差里,<span class="hi">两个车间</span>省掉大头</h2>
-
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:3vw;margin-top:auto;padding-bottom:2vh" data-anim="stats">
-    <div class="stat"><div class="m">净偏差</div><div class="n" style="font-size:4.6vw">−139.3万</div><div class="l">占全厂净偏差 34.4%</div></div>
-    <div class="stat"><div class="m">偏差条数</div><div class="n" style="font-size:4.6vw">9,780</div><div class="l">全厂 92.9%,涉及 8 个车间</div></div>
-    <div class="stat"><div class="m">多耗 / 节约</div><div class="n" style="font-size:3.2vw">+35.8 / −175.1</div><div class="l">单位:万元 · 净额为负(节约)</div></div>
-    <div class="stat"><div class="m">备注覆盖率</div><div class="n" style="font-size:4.6vw">21.82%</div><div class="l">2,134 / 9,780 条有说明</div></div>
-  </div>
-
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:4vw;border-top:1px solid rgba(127,127,127,.3);padding-top:2.6vh" data-anim="bottom">
-    <div><div class="kicker" style="margin-bottom:1.2vh">分类构成</div><p class="body-zh" style="opacity:.76">原材料 6,839 条 → 净 <b>−141.5 万</b>（节约大头）<br/>包材 2,941 条 → 净 <b>+2.3 万</b>（基本平衡）</p></div>
-    <div><div class="kicker" style="margin-bottom:1.2vh">一句话诊断</div><p class="body-zh" style="opacity:.76">食品厂省得<b>面广而单点轻</b>——节约与多耗大面积对冲,真正要看的是两个车间的节约是否真实:投料不足与定额虚高都会伪装成节约。</p></div>
-  </div>
-</section>
-
-<!-- 06 · 食品厂车间排名 · light · 条形榜 -->
-<section class="slide light" data-theme="light">
-  <div class="kicker" data-anim="kicker">食品厂 · 车间偏差排名 / BY WORKSHOP</div>
-  <h2 class="h1-zh" data-anim="title" style="max-width:28ch">3车间扛下<span class="hi">全厂 0.3 倍</span>的节约</h2>
-
-  <div style="display:flex;flex-direction:column;gap:1.5vh;margin-top:4vh" data-anim="bars">
-    <div style="display:grid;grid-template-columns:6em 1fr 5.5em;gap:1.8vw;align-items:center;padding:.7vh 0"><div class="body-zh" style="font-weight:500">3车间</div><div style="height:1.5vh;background:rgba(127,127,127,.15)"><div style="width:100%;height:100%;background:currentColor;opacity:.85"></div></div><div class="meta" style="text-align:right;opacity:.8">−35.3万</div></div>
-    <div style="display:grid;grid-template-columns:6em 1fr 5.5em;gap:1.8vw;align-items:center;padding:.7vh 0"><div class="body-zh" style="font-weight:500">2车间</div><div style="height:1.5vh;background:rgba(127,127,127,.15)"><div style="width:97%;height:100%;background:currentColor;opacity:.85"></div></div><div class="meta" style="text-align:right;opacity:.8">−34.3万</div></div>
-    <div style="display:grid;grid-template-columns:6em 1fr 5.5em;gap:1.8vw;align-items:center;padding:.7vh 0"><div class="body-zh" style="font-weight:500">6车间</div><div style="height:1.5vh;background:rgba(127,127,127,.15)"><div style="width:93%;height:100%;background:currentColor;opacity:.85"></div></div><div class="meta" style="text-align:right;opacity:.8">−32.7万</div></div>
-    <div style="display:grid;grid-template-columns:6em 1fr 5.5em;gap:1.8vw;align-items:center;padding:.7vh 0"><div class="body-zh" style="font-weight:500">1车间</div><div style="height:1.5vh;background:rgba(127,127,127,.15)"><div style="width:85%;height:100%;background:currentColor;opacity:.85"></div></div><div class="meta" style="text-align:right;opacity:.8">−30.0万</div></div>
-    <div style="border-top:1px solid rgba(127,127,127,.25);display:grid;grid-template-columns:6em 1fr 5.5em;gap:1.8vw;align-items:center;padding:.7vh 0"><div class="body-zh" style="font-weight:500">5车间</div><div style="height:1.5vh;background:rgba(127,127,127,.15)"><div style="width:9%;height:100%;background:currentColor;opacity:.85"></div></div><div class="meta" style="text-align:right;opacity:.8">−3.3万</div></div>
-    <div style="display:grid;grid-template-columns:6em 1fr 5.5em;gap:1.8vw;align-items:center;padding:.7vh 0"><div class="body-zh" style="font-weight:500">综合组</div><div style="height:1.5vh;background:rgba(127,127,127,.15)"><div style="width:8%;height:100%;background:currentColor;opacity:.85"></div></div><div class="meta" style="text-align:right;opacity:.8">−2.7万</div></div>
-    <div style="display:grid;grid-template-columns:6em 1fr 5.5em;gap:1.8vw;align-items:center;padding:.7vh 0"><div class="body-zh" style="font-weight:500">4车间</div><div style="height:1.5vh;background:rgba(127,127,127,.15)"><div style="width:2%;height:100%;background:currentColor;opacity:.85"></div></div><div class="meta" style="text-align:right;opacity:.8">−0.6万</div></div>
-    <div style="display:grid;grid-template-columns:6em 1fr 5.5em;gap:1.8vw;align-items:center;padding:.7vh 0"><div class="body-zh" style="font-weight:500">配料中心</div><div style="height:1.5vh;background:rgba(127,127,127,.15)"><div style="width:1%;height:100%;background:currentColor;opacity:.85"></div></div><div class="meta" style="text-align:right;opacity:.8">−0.3万</div></div>
-  </div>
-
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:4vw;margin-top:auto;border-top:1px solid rgba(127,127,127,.3);padding-top:2.4vh" data-anim="note">
-    <p class="body-zh" style="opacity:.76"><b>读数:</b>深色为净额为负(节约)、浅色为净额为正(多耗)。3车间(1,244 条)+ 2车间(2,170 条)合计 −69.6 万,其余 6 个车间合计 −69.6 万。</p>
-    <p class="body-zh" style="opacity:.76"><b>下一步:</b>为多耗,要么定额偏紧要么确实超用,需复核标定;3车间与2车间需逐单排查——节约是真实节省,还是投料不足/定额虚高伪装的假节约。</p>
-  </div>
-</section>
-
-<!-- 07 · 食品厂物料 + 无备注 · light -->
-<section class="slide light" data-theme="light">
-  <div class="kicker" data-anim="kicker">食品厂 · 重点物料 &amp; 无备注风险</div>
-  <h2 class="h1-zh" data-anim="title" style="max-width:28ch">4车间 <span class="hi">395 条</span> 无备注,金额 0.6 万</h2>
-
-  <div style="display:grid;grid-template-columns:1.15fr .85fr;gap:5vw;margin-top:4.4vh;align-items:start">
-    <div data-anim="left">
-      <div class="kicker" style="margin-bottom:1.6vh">节约物料 TOP 5（净额为负）</div>
-      <div class="rowline" style="grid-template-columns:2fr .6fr .9fr"><div class="k" style="font-size:1.15vw">23g达利园蛋黄味注心派</div><div class="v" style="font-size:.95vw;opacity:.6">35 条</div><div class="m">−9.90万</div></div>
-      <div class="rowline" style="grid-template-columns:2fr .6fr .9fr"><div class="k" style="font-size:1.15vw">230g达利园蛋黄味注心派</div><div class="v" style="font-size:.95vw;opacity:.6">15 条</div><div class="m">−7.46万</div></div>
-      <div class="rowline" style="grid-template-columns:2fr .6fr .9fr"><div class="k" style="font-size:1.15vw">20g达利园香奶味软面包</div><div class="v" style="font-size:.95vw;opacity:.6">33 条</div><div class="m">−6.17万</div></div>
-      <div class="rowline" style="grid-template-columns:2fr .6fr .9fr"><div class="k" style="font-size:1.15vw">20g达利园香橙味软面包</div><div class="v" style="font-size:.95vw;opacity:.6">34 条</div><div class="m">−6.11万</div></div>
-      <div class="rowline" style="grid-template-columns:2fr .6fr .9fr"><div class="k" style="font-size:1.15vw">460g达利园蛋黄味注心派</div><div class="v" style="font-size:.95vw;opacity:.6">12 条</div><div class="m">−5.79万</div></div>
-      <p class="body-zh" style="margin-top:3vh;opacity:.76;border-top:1px solid rgba(127,127,127,.25);padding-top:2.2vh"><b>多耗 TOP:</b>二次精炼24°棕榈油 +5.06 万(122条)、二次精炼10°棕榈油 +2.18 万(92条)、金光红玫瑰起酥油 +1.91 万(20条)。油脂类大额多耗,指向定额偏紧或超用,建议核对标定。</p>
-    </div>
-
-    <div data-anim="right" style="border-left:3px solid currentColor;padding-left:2.4vw">
-      <div class="kicker" style="margin-bottom:2vh">无备注预警 · 799 条全部在食品厂</div>
-      <div style="display:flex;flex-direction:column;gap:1.5vh">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid rgba(127,127,127,.25);padding-bottom:1.2vh"><span class="body-zh" style="font-weight:500">4车间</span><span class="meta" style="opacity:.85">395 条 · 0.6万</span></div>
-        <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid rgba(127,127,127,.25);padding-bottom:1.2vh"><span class="body-zh" style="font-weight:500">6车间</span><span class="meta" style="opacity:.85">200 条 · −0.55万</span></div>
-        <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid rgba(127,127,127,.25);padding-bottom:1.2vh"><span class="body-zh" style="font-weight:500">3车间</span><span class="meta" style="opacity:.85">90 条 · 1.63万</span></div>
-        <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid rgba(127,127,127,.25);padding-bottom:1.2vh"><span class="body-zh" style="font-weight:500">1车间</span><span class="meta" style="opacity:.85">80 条 · 0.2万</span></div>
-        <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid rgba(127,127,127,.25);padding-bottom:1.2vh"><span class="body-zh" style="font-weight:500">5车间</span><span class="meta" style="opacity:.85">29 条 · 0.2万</span></div>
-        <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid rgba(127,127,127,.25);padding-bottom:1.2vh"><span class="body-zh" style="font-weight:500">2车间</span><span class="meta" style="opacity:.85">3 条 · 0.0万</span></div>
-        <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid currentColor;padding-bottom:1.2vh"><span class="body-zh" style="font-weight:500">综合组</span><span class="meta" style="opacity:.85">2 条 · 0.01万</span></div>
-      </div>
-      <p class="body-zh" style="margin-top:3vh;opacity:.76">另有 <b>0 行整行重复</b>记录混在无备注预警中,建议先去重再统计。4车间省得最多、又最不愿写原因,是本次核查的第一顺位。</p>
+  <div class="left">
+    <div class="kicker" data-anim="kicker">结论与建议</div>
+    <h2 class="display-zh h-xl" data-anim="title">本期核心发现</h2>
+    <div class="callout" data-anim="callout">
+      <p class="q-big">食品厂 2车间与6车间为节约主力，合计 −81.3 万元；饮料厂半制品环节 −183.60 万元是最大节约源。</p>
     </div>
   </div>
-</section>
-
-<!-- 08 · 饮料厂总览 · hero.light -->
-<section class="slide hero light" data-theme="light">
-  <div class="kicker" data-anim="kicker">第二部分 · 饮料厂 / BEVERAGE PLANT</div>
-  <h2 class="h1-zh" data-anim="title" style="max-width:28ch">751 条偏差,却省出 <span class="hi">265.9 万</span></h2>
-
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:3vw;margin-top:auto;padding-bottom:2vh" data-anim="stats">
-    <div class="stat"><div class="m">净偏差</div><div class="n" style="font-size:4.6vw">−265.9万</div><div class="l">占全厂净偏差 65.6%</div></div>
-    <div class="stat"><div class="m">偏差条数</div><div class="n" style="font-size:4.6vw">751</div><div class="l">全厂 7.1%,仅 6 个车间</div></div>
-    <div class="stat"><div class="m">单条偏差强度</div><div class="n" style="font-size:4.6vw">25×</div><div class="l">是食品厂的 25 倍</div></div>
-    <div class="stat"><div class="m">备注覆盖率</div><div class="n" style="font-size:4.6vw">20.37%</div><div class="l">153 / 751 条有说明</div></div>
-  </div>
-
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:4vw;border-top:1px solid rgba(127,127,127,.3);padding-top:2.6vh" data-anim="bottom">
-    <div><div class="kicker" style="margin-bottom:1.2vh">分类构成</div><p class="body-zh" style="opacity:.76">原材料 381 条 → 净 <b>−8.22 万</b><br/>半成品 124 条 → 净 <b>−179.94 万</b>（饮料厂独有）<br/>包材 246 条 → 净 <b>−77.76 万</b>（基本平衡）</p></div>
-    <div><div class="kicker" style="margin-bottom:1.2vh">一句话诊断</div><p class="body-zh" style="opacity:.76">饮料厂省得<b>点少而单点极重</b>——几乎没有大面积小额偏差,但少数物料一次就省几万。适合按物料逐个溯源,而非流程整改。</p></div>
-  </div>
-</section>
-
-<!-- 09 · 饮料厂车间 + 半成品 · light -->
-<section class="slide light" data-theme="light">
-  <div class="kicker" data-anim="kicker">饮料厂 · 车间与半成品 / BY WORKSHOP</div>
-  <h2 class="h1-zh" data-anim="title" style="max-width:28ch">36000热线-1线 <span class="hi">179 条</span> 就省 153.2 万</h2>
-
-  <div style="display:grid;grid-template-columns:1.05fr .95fr;gap:5vw;margin-top:4.4vh;align-items:start">
-    <div data-anim="left">
-      <div class="kicker" style="margin-bottom:1.6vh">车间净偏差排名</div>
-      <div class="rowline" style="grid-template-columns:1.6fr .6fr 1fr"><div class="k" style="font-size:1.15vw">36000热线-1线</div><div class="v" style="font-size:.95vw;opacity:.6">179 条</div><div class="m">−153.23万</div></div>
-      <div class="rowline" style="grid-template-columns:1.6fr .6fr 1fr"><div class="k" style="font-size:1.15vw">24000无菌湿法线-1线</div><div class="v" style="font-size:.95vw;opacity:.6">189 条</div><div class="m">−38.14万</div></div>
-      <div class="rowline" style="grid-template-columns:1.6fr .6fr 1fr"><div class="k" style="font-size:1.15vw">注塑线</div><div class="v" style="font-size:.95vw;opacity:.6">44 条</div><div class="m">−33.74万</div></div>
-      <div class="rowline" style="grid-template-columns:1.6fr .6fr 1fr"><div class="k" style="font-size:1.15vw">24000无菌砖-1线</div><div class="v" style="font-size:.95vw;opacity:.6">116 条</div><div class="m">−26.39万</div></div>
-      <div class="rowline" style="grid-template-columns:1.6fr .6fr 1fr"><div class="k" style="font-size:1.15vw">两三片罐并线</div><div class="v" style="font-size:.95vw;opacity:.6">196 条</div><div class="m">−9.61万</div></div>
-      <div class="rowline" style="grid-template-columns:1.6fr .6fr 1fr"><div class="k" style="font-size:1.15vw">综合组</div><div class="v" style="font-size:.95vw;opacity:.6">27 条</div><div class="m">−4.81万</div></div>
-      <p class="body-zh" style="margin-top:3vh;opacity:.76;border-top:1px solid rgba(127,127,127,.25);padding-top:2.2vh"><b>读数:</b>36000热线-1线只有 179 条却排第一,单条省超 8,500 元;24000无菌湿法线-1线条数最多(189)且净额为负,属"高频+高额节约"组合,最值得深挖真假。</p>
-    </div>
-
-    <div data-anim="right" style="border-left:3px solid currentColor;padding-left:2.4vw">
-      <div class="kicker" style="margin-bottom:2vh">半成品 · 124 条 · 净 −179.94 万</div>
-      <p class="body-zh" style="opacity:.78;margin-bottom:2.8vh">半成品是饮料厂独有分类（食品厂无此类）。它<b>不按金额列记录</b>,而按"产量偏差×单价"计算,正/负金额列全部为 0——这正是工作簿汇总层数字加不起来的原因之一。</p>
-      <div style="display:flex;flex-direction:column;gap:1.4vh">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid rgba(127,127,127,.25);padding-bottom:1.1vh"><span class="body-zh">500ml乐虎瓶装氨基酸功能饮料</span><span class="meta" style="opacity:.8">−54.03万 · 3条</span></div>
-        <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid rgba(127,127,127,.25);padding-bottom:1.1vh"><span class="body-zh">380ml乐虎瓶装氨基酸功能饮料</span><span class="meta" style="opacity:.8">−34.20万 · 2条</span></div>
-        <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid rgba(127,127,127,.25);padding-bottom:1.1vh"><span class="body-zh">250ml达利园利乐包条型原味花生牛奶</span><span class="meta" style="opacity:.8">−19.31万 · 11条</span></div>
-        <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid currentColor;padding-bottom:1.1vh"><span class="body-zh">380ml乐虎瓶装氨基酸功能饮料</span><span class="meta" style="opacity:.8">−13.76万 · 2条</span></div>
-      </div>
-      <p class="body-zh" style="margin-top:3vh;opacity:.72">集中在<b>中间品环节</b>,指向同一工艺环节的理论产量与实际产量口径差。</p>
-    </div>
-  </div>
-</section>
-
-<!-- 10 · 饮料厂物料 TOP · light -->
-<section class="slide light" data-theme="light">
-  <div class="kicker" data-anim="kicker">饮料厂 · 重点物料 / TOP MATERIALS</div>
-  <h2 class="h1-zh" data-anim="title" style="max-width:28ch">500ml乐虎瓶装氨基酸功能饮料 <span class="hi">3 条记录</span>,省下 54.03 万</h2>
-
-  <div style="display:grid;grid-template-columns:1.1fr .9fr;gap:5vw;margin-top:4.4vh;align-items:start">
-    <div data-anim="bars" style="display:flex;flex-direction:column;gap:1.9vh;margin-top:1vh">
-      <div style="display:grid;grid-template-columns:9em 1fr 5em;gap:1.8vw;align-items:center"><div class="body-zh" style="font-weight:500">500ml乐虎瓶装氨基酸功能饮料</div><div style="height:1.5vh;background:rgba(127,127,127,.15)"><div style="width:100%;height:100%;background:currentColor;opacity:.85"></div></div><div class="meta" style="text-align:right;opacity:.85">−54.03万</div></div>
-      <div style="display:grid;grid-template-columns:9em 1fr 5em;gap:1.8vw;align-items:center"><div class="body-zh" style="font-weight:500">380ml乐虎瓶装氨基酸功能饮料</div><div style="height:1.5vh;background:rgba(127,127,127,.15)"><div style="width:63%;height:100%;background:currentColor;opacity:.85"></div></div><div class="meta" style="text-align:right;opacity:.85">−34.20万</div></div>
-      <div style="display:grid;grid-template-columns:9em 1fr 5em;gap:1.8vw;align-items:center"><div class="body-zh" style="font-weight:500">28.5g金黄胚DLY1881</div><div style="height:1.5vh;background:rgba(127,127,127,.15)"><div style="width:58%;height:100%;background:currentColor;opacity:.85"></div></div><div class="meta" style="text-align:right;opacity:.85">−31.52万</div></div>
-      <div style="display:grid;grid-template-columns:9em 1fr 5em;gap:1.8vw;align-items:center"><div class="body-zh" style="font-weight:500">250ml达利园利乐包条型原味花生牛奶</div><div style="height:1.5vh;background:rgba(127,127,127,.15)"><div style="width:36%;height:100%;background:currentColor;opacity:.85"></div></div><div class="meta" style="text-align:right;opacity:.85">−19.31万</div></div>
-      <div style="display:grid;grid-template-columns:9em 1fr 5em;gap:1.8vw;align-items:center"><div class="body-zh" style="font-weight:500">聚酯切片热料</div><div style="height:1.5vh;background:rgba(127,127,127,.15)"><div style="width:35%;height:100%;background:currentColor;opacity:.85"></div></div><div class="meta" style="text-align:right;opacity:.85">−18.72万</div></div>
-      <p class="body-zh" style="margin-top:2.4vh;opacity:.76">上述 5 项合计 <b>−157.78 万</b>,占饮料厂净偏差的 <b>59.3%</b>。</p>
-    </div>
-
-    <div data-anim="right" style="border-left:3px solid currentColor;padding-left:2.4vw">
-      <div class="kicker" style="margin-bottom:2.2vh">值得单独追问的三件事</div>
-      <div style="display:flex;flex-direction:column;gap:2.4vh">
-        <div>
-          <div class="body-zh" style="font-weight:600;margin-bottom:.6vh">① 500ml乐虎瓶装氨基酸功能饮料为何只有 3 条?</div>
-          <p class="body-zh" style="opacity:.76">3 条记录省下 54.03 万,单条省超 1 万元。是定额单位口径不一致（KG 与吨）,还是投料不足?单笔大额要先排除错单。</p>
+  <div class="right">
+    <div class="pipeline" data-anim="pipeline">
+      <div class="pipeline-section">
+        <div class="step" data-anim="step">
+          <div class="step-nb">1</div>
+          <div class="step-title">校准定额</div>
+          <div class="step-desc">优先处理「定额/系统问题」（+54.73 万），校准 ERP 中相关物料标准用量。</div>
         </div>
-        <div>
-          <div class="body-zh" style="font-weight:600;margin-bottom:.6vh">② 310ml达利园罐装冰糖花生牛奶与碳化糖两项同时为负</div>
-          <p class="body-zh" style="opacity:.76">310ml达利园罐装冰糖花生牛奶 −1.85 万、碳化糖 −1.36 万,合计 −3.21 万。糖是饮料主要成本项,大幅节约要么是配方优化,要么是投料不足,建议核对。</p>
+        <div class="step" data-anim="step">
+          <div class="step-nb">2</div>
+          <div class="step-title">补全备注</div>
+          <div class="step-desc">重点补全 1车间 80 行无备注记录，提升异常追溯能力。</div>
         </div>
-        <div>
-          <div class="body-zh" style="font-weight:600;margin-bottom:.6vh">③ 380ml乐虎瓶装氨基酸功能饮料单点大额</div>
-          <p class="body-zh" style="opacity:.76">380ml乐虎瓶装氨基酸功能饮料 2 条 −34.20 万,属单点大额节约,优先核对单位口径与定额基准——确认是真实节省还是口径错位。</p>
+        <div class="step" data-anim="step">
+          <div class="step-nb">3</div>
+          <div class="step-title">管控多耗</div>
+          <div class="step-desc">关注 4车间、5车间 正向多耗（+1.8、+1.7 万）及二次精炼棕榈油等物料。</div>
         </div>
       </div>
     </div>
-  </div>
-</section>
-
-<!-- 11 · 原因结构 · dark -->
-<section class="slide dark" data-theme="dark">
-  <div class="kicker" data-anim="kicker">偏差原因结构 / ROOT CAUSES</div>
-  <h2 class="h1-zh" data-anim="title" style="max-width:28ch">60 条「定额/系统问题」,多耗 <span class="hi">43.4 万</span></h2>
-
-  <div style="display:grid;grid-template-rows:auto auto;gap:2.4vh;margin-top:3vh" data-anim="table">
-    <div>
-      <div style="display:grid;grid-template-columns:1.8fr .6fr 1fr 1fr;gap:1.8vw;font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;opacity:.55;padding-bottom:1.3vh;border-bottom:1px solid rgba(var(--paper-rgb),.3)">
-        <div>原因类别</div><div style="text-align:right">条数</div><div style="text-align:right">多耗</div><div style="text-align:right">净影响</div>
-      </div>
-      <div style="display:grid;grid-template-columns:1.8fr .6fr 1fr 1fr;gap:1.8vw;padding:1.1vh 0;border-bottom:1px solid rgba(var(--paper-rgb),.14);align-items:baseline"><div class="body-zh" style="font-weight:600">定额/系统问题</div><div class="body-zh" style="text-align:right;font-family:var(--mono);opacity:.7">60</div><div class="body-zh" style="text-align:right;font-family:var(--mono)">43.35万</div><div class="body-zh" style="text-align:right;font-family:var(--mono)"><b>+43.43万</b></div></div>
-      <div style="display:grid;grid-template-columns:1.8fr .6fr 1fr 1fr;gap:1.8vw;padding:1.1vh 0;border-bottom:1px solid rgba(var(--paper-rgb),.14);align-items:baseline"><div class="body-zh" style="font-weight:400;opacity:.85">其他</div><div class="body-zh" style="text-align:right;font-family:var(--mono);opacity:.7">125</div><div class="body-zh" style="text-align:right;font-family:var(--mono)">19.17万</div><div class="body-zh" style="text-align:right;font-family:var(--mono)"><b>+21.27万</b></div></div>
-      <div style="display:grid;grid-template-columns:1.8fr .6fr 1fr 1fr;gap:1.8vw;padding:1.1vh 0;border-bottom:1px solid rgba(var(--paper-rgb),.14);align-items:baseline"><div class="body-zh" style="font-weight:400;opacity:.85">配方/配比调整</div><div class="body-zh" style="text-align:right;font-family:var(--mono);opacity:.7">52</div><div class="body-zh" style="text-align:right;font-family:var(--mono)">0.67万</div><div class="body-zh" style="text-align:right;font-family:var(--mono)"><b>+1.19万</b></div></div>
-      <div style="display:grid;grid-template-columns:1.8fr .6fr 1fr 1fr;gap:1.8vw;padding:1.1vh 0;border-bottom:1px solid rgba(var(--paper-rgb),.14);align-items:baseline"><div class="body-zh" style="font-weight:400;opacity:.85">原材料质量波动</div><div class="body-zh" style="text-align:right;font-family:var(--mono);opacity:.7">74</div><div class="body-zh" style="text-align:right;font-family:var(--mono)">0.03万</div><div class="body-zh" style="text-align:right;font-family:var(--mono)"><b>+0.69万</b></div></div>
-      <div style="display:grid;grid-template-columns:1.8fr .6fr 1fr 1fr;gap:1.8vw;padding:1.1vh 0;border-bottom:1px solid rgba(var(--paper-rgb),.14);align-items:baseline"><div class="body-zh" style="font-weight:400;opacity:.85">工艺/设备调整</div><div class="body-zh" style="text-align:right;font-family:var(--mono);opacity:.7">27</div><div class="body-zh" style="text-align:right;font-family:var(--mono)">0.17万</div><div class="body-zh" style="text-align:right;font-family:var(--mono)"><b>+0.20万</b></div></div>
-      <div style="display:grid;grid-template-columns:1.8fr .6fr 1fr 1fr;gap:1.8vw;padding:1.1vh 0;border-bottom:1px solid rgba(var(--paper-rgb),.14);align-items:baseline"><div class="body-zh" style="font-weight:400;opacity:.85">操作规范</div><div class="body-zh" style="text-align:right;font-family:var(--mono);opacity:.7">20</div><div class="body-zh" style="text-align:right;font-family:var(--mono)">0.15万</div><div class="body-zh" style="text-align:right;font-family:var(--mono)"><b>+0.18万</b></div></div>
-      <div style="display:grid;grid-template-columns:1.8fr .6fr 1fr 1fr;gap:1.8vw;padding:1.1vh 0;border-bottom:1px solid rgba(var(--paper-rgb),.14);align-items:baseline"><div class="body-zh" style="font-weight:400;opacity:.85">卫生/消毒</div><div class="body-zh" style="text-align:right;font-family:var(--mono);opacity:.7">3</div><div class="body-zh" style="text-align:right;font-family:var(--mono)">0.12万</div><div class="body-zh" style="text-align:right;font-family:var(--mono)"><b>+0.12万</b></div></div>
-      <div style="display:grid;grid-template-columns:1.8fr .6fr 1fr 1fr;gap:1.8vw;padding:1.1vh 0;border-bottom:2px solid currentColor;align-items:baseline"><div class="body-zh" style="font-weight:400;opacity:.85">非正常生产 / 包装材料问题</div><div class="body-zh" style="text-align:right;font-family:var(--mono);opacity:.7">5</div><div class="body-zh" style="text-align:right;font-family:var(--mono)">0.00万</div><div class="body-zh" style="text-align:right;font-family:var(--mono)"><b>+0.02万</b></div></div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4vw;border-top:1px solid rgba(var(--paper-rgb),.22);padding-top:2.4vh">
-      <p class="body-zh" style="opacity:.82"><b>结论:</b>「定额/系统问题」只占 60 条记录,却多耗了 43.4 万,单条平均超 7,238 元。<b>这是全场"少量记录、巨大金额"的首要多耗来源</b>——它几乎必然是定额设定或系统换算的问题,而非现场操作问题。</p>
-      <p class="body-zh" style="opacity:.82"><b>口径提示:</b>「替代料」按 A↔B 配对单列,净数量为混计单位（多耗 +0.54 万 / 少耗 −238.76 万,吨/件/个/KG 相加,系计量单位差异）,不计入本页金额统计。其明细共 138 条、净偏差金额合计 −7.07 万（金额口径,正=多耗/负=节约）,单独见工作簿「替代料明细」页。</p>
-    </div>
-  </div>
-</section>
-
-<!-- 12 · 趋势 · light -->
-<section class="slide light" data-theme="light">
-  <div class="kicker" data-anim="kicker">趋势 / TREND · 1,114 个物料</div>
-  <h2 class="h1-zh" data-anim="title" style="max-width:28ch">近六成物料 <span class="hi">纹丝不动</span></h2>
-
-  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:2.6vw;margin-top:5vh" data-anim="stats">
-    <div class="stat"><div class="m">→ 横盘</div><div class="n" style="font-size:4.2vw">653</div><div class="l">58.6%</div></div>
-    <div class="stat"><div class="m">↓ 近期改善</div><div class="n" style="font-size:4.2vw">262</div><div class="l">23.5%</div></div>
-    <div class="stat"><div class="m">↑ 近期变差</div><div class="n" style="font-size:4.2vw">152</div><div class="l">13.6%</div></div>
-    <div class="stat"><div class="m">↓↓ 持续改善</div><div class="n" style="font-size:4.2vw">24</div><div class="l">2.2%</div></div>
-    <div class="stat"><div class="m">↑↑ 持续变差</div><div class="n" style="font-size:4.2vw">23</div><div class="l">2.1%</div></div>
-  </div>
-
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:4vw;margin-top:auto;border-top:1px solid rgba(127,127,127,.3);padding-top:2.6vh" data-anim="note">
-    <p class="body-zh" style="opacity:.78"><b>好消息:</b>改善类合计 286 个物料（25.7%）,是恶化类（175 个,15.7%）的 1.6 倍。说明多数问题在被处理。</p>
-    <p class="body-zh" style="opacity:.78"><b>要盯的:</b>23 个「持续变差」物料是唯一持续恶化的一组,建议逐项列入下月重点核查清单,而非泛泛整改。</p>
-  </div>
-  <p class="body-zh" style="margin-top:2.4vh;opacity:.5;font-size:max(12px,.9vw)">说明:趋势按自然日切分为早/中/近三段偏差率比较得出,仅覆盖有连续订单记录的物料。</p>
-</section>
-
-<!-- 13 · 行动建议 · 食品厂 · light -->
-<section class="slide light" data-theme="light">
-  <div class="kicker" data-anim="kicker">行动建议 · 食品厂 / ACTION · FOOD</div>
-  <h2 class="h1-zh" data-anim="title" style="max-width:28ch">先查 3车间 与 2车间 <span class="hi">省得是否真实</span></h2>
-
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:4vh 4vw;margin-top:4.4vh" data-anim="cards">
-    <div style="border-top:3px solid currentColor;padding-top:2.2vh">
-      <div class="pillar"><div class="ic">01</div><div class="t" style="font-size:1.7vw">3车间 + 2车间逐单复盘</div><div class="d">两车间合计省 −69.6 万,占食品厂净节约 50%。建议调取近三个月全部订单,区分"真实节省"与"投料不足/定额虚高",30 天内出具单车间归因报告。</div></div>
-    </div>
-    <div style="border-top:1px solid rgba(127,127,127,.35);padding-top:2.2vh">
-      <div class="pillar"><div class="ic">02</div><div class="t" style="font-size:1.7vw">强制补录 4车间 395 条备注</div><div class="d">4车间 395 条无备注、涉及 0.6 万,是全场金额最大的未解释节约。要求 15 个工作日内补齐原因,逾期纳入车间考核。</div></div>
-    </div>
-    <div style="border-top:1px solid rgba(127,127,127,.35);padding-top:2.2vh">
-      <div class="pillar"><div class="ic">03</div><div class="t" style="font-size:1.7vw">复核大额多耗物料定额</div><div class="d">二次精炼24°棕榈油 +5.06 万(122条)、二次精炼10°棕榈油 +2.18 万(92条)、金光红玫瑰起酥油 +1.91 万(20条)。均为大额多耗——多耗意味着实际用量高于定额,要么定额偏紧,要么确实超用,建议重新标定。</div></div>
-    </div>
-    <div style="border-top:1px solid rgba(127,127,127,.35);padding-top:2.2vh">
-      <div class="pillar"><div class="ic">04</div><div class="t" style="font-size:1.7vw">清理 0 行重复记录</div><div class="d">无备注预警中存在 0 行整行重复数据,会同时虚增条数与金额。建议在系统导出层增加去重,避免每月重复污染统计口径。</div></div>
-    </div>
-  </div>
-</section>
-
-<!-- 14 · 行动建议 · 饮料厂 · light -->
-<section class="slide light" data-theme="light">
-  <div class="kicker" data-anim="kicker">行动建议 · 饮料厂 / ACTION · BEVERAGE</div>
-  <h2 class="h1-zh" data-anim="title" style="max-width:28ch">3 条偏差省 54 万,<span class="hi">先查这一笔</span></h2>
-
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:4vh 4vw;margin-top:4.4vh" data-anim="cards">
-    <div style="border-top:3px solid currentColor;padding-top:2.2vh">
-      <div class="pillar"><div class="ic">01</div><div class="t" style="font-size:1.7vw">500ml乐虎瓶装氨基酸功能饮料 3 条 → 专项核查</div><div class="d">3 条记录省下 54.03 万,单条省超 1 万元,属异常量级。优先确认是否存在单位口径错误（KG/吨）、单笔漏投或定额录入失误。单笔即可解释饮料厂 20% 的净节约。</div></div>
-    </div>
-    <div style="border-top:1px solid rgba(127,127,127,.35);padding-top:2.2vh">
-      <div class="pillar"><div class="ic">02</div><div class="t" style="font-size:1.7vw">24000无菌湿法线-1线列入重点</div><div class="d">189 条 + 净省 −38.14 万,是饮料厂唯一"高频且高额节约"车间。建议按周跟踪,并检查该线半成品的产量偏差口径。</div></div>
-    </div>
-    <div style="border-top:1px solid rgba(127,127,127,.35);padding-top:2.2vh">
-      <div class="pillar"><div class="ic">03</div><div class="t" style="font-size:1.7vw">统一半成品计算口径</div><div class="d">半成品 124 条净 −179.94 万,但正/负金额列为 0,走"产量偏差×单价"另一套算法。建议在报表中单列半成品口径,避免与原材料金额混加。</div></div>
-    </div>
-    <div style="border-top:1px solid rgba(127,127,127,.35);padding-top:2.2vh">
-      <div class="pillar"><div class="ic">04</div><div class="t" style="font-size:1.7vw">糖类定额复核</div><div class="d">310ml达利园罐装冰糖花生牛奶 −1.85 万 + 碳化糖 −1.36 万,合计 −3.21 万。糖为饮料主要成本项,建议与食品厂糖类偏差（硫化糖 −1.79 万、鲜酵母耐高糖高活性 −0.99 万）合并做一次集团级定额复核。</div></div>
-    </div>
-  </div>
-</section>
-
-<!-- 15 · 收尾 · hero.dark -->
-<section class="slide hero dark" data-theme="dark">
-  <div class="kicker" data-anim="kicker">DATA FIRST · 三条结论</div>
-  <h2 class="display-zh" data-anim="title" style="max-width:18ch;font-size:6.4vw">数字可以被质疑,<br/>但要经得起查。</h2>
-
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3.4vw;margin-top:auto;padding-bottom:3vh" data-anim="rules">
-    <div style="border-top:1px solid rgba(var(--paper-rgb),.35);padding-top:2.2vh">
-      <div class="pillar"><div class="ic">01</div><div class="t" style="font-size:1.8vw">两厂要分开下药</div><div class="d">食品厂面广点轻,靠流程标准化与定额复核;饮料厂点少极重,靠逐笔物料溯源。用同一套办法治两个厂,一定有一边白费力气。</div></div>
-    </div>
-    <div style="border-top:1px solid rgba(var(--paper-rgb),.35);padding-top:2.2vh">
-      <div class="pillar"><div class="ic">02</div><div class="t" style="font-size:1.8vw">真正的病根在定额</div><div class="d">「定额/系统问题」仅 60 条却多耗 43.4 万,是"少量记录、巨大金额"的首要多耗来源。它指向制度层面,不是现场操作层面。</div></div>
-    </div>
-    <div style="border-top:3px solid currentColor;padding-top:2.2vh">
-      <div class="pillar"><div class="ic">03</div><div class="t" style="font-size:1.8vw">先修报表,再谈管理</div><div class="d">汇总层 −405.0 万加不起来、0 行整行重复、半成品口径混列——报表本身的问题会让所有管理动作失去准星。建议优先反馈系统方。</div></div>
-    </div>
-  </div>
-
-  <div style="display:flex;justify-content:space-between;align-items:flex-end;border-top:1px solid rgba(var(--paper-rgb),.2);padding-top:2.4vh">
-    <div class="meta">云南达利 · 材料审核</div>
-    <div class="meta">2026.10.26 · 完</div>
   </div>
 </section>
 </div>

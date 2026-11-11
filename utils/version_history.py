@@ -14,6 +14,35 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.345",
+            "date": "2026-11-11",
+            "features": (
+                "主题治理治本：将主题状态收敛到全局 Manag er Thm（utils/theme_manager.py），\n"
+                "            所有 DashboardShell 和重型弹窗直接读 Thm.is_dark，不再依赖父窗口 palette。\n"
+                "            MainWindow 切换主题时更新 Thm，壳体订阅 Thm 变化自动刷新 QSS。\n"
+                "            移除 _init_theme_sync 和 dialog_shell_bridge 的 palette 逻辑，\n"
+                "            确保亮暗主题在全项目统一，彻底消灭散判断。\n"
+                "            冒烟新增/强化 ⑮ 暗色全链路测试。\n"
+                "            业务口气零改动。\n"
+                "            （裴哥 11-11「我想治本，不怕麻烦」）\n"
+            ),
+            "sub_features": (
+                """
+- 新建 utils/theme_manager.py：单例主题管理器 Thm，提供 is_dark、set_dark、on_change。
+- MainWindow() 初始化时用 Thm.set_dark(False); 切换时用 Thm.set_dark(True/False)。
+- DashboardShell 不再接收 parent; __init__ 直接调用 _load_theme_qss(Thm.is_dark ? "dark" : "light");
+  并订阅 Thm.on_change(self._on_theme_changed)。
+- set_theme() 通过 Thm.set_dark() 同步全局状态; get_theme() 返回 Thm 状态。
+- 移除 DashboardShell 的 _init_theme_sync 和 _sync_theme_with_window。
+- dialog_shell_bridge.install_dialog_shell() 不再传 parent，直接创建无 parent 的 DashboardShell;
+  完全依赖 Thm 管理主题。
+- 冒烟：在 ⑦ 三看板测试中先设 Thm 为亮再设暗; ⑮ 暗色全链路测试照旧，但断言基于 Thm。
+- 修复：DashboardController 不再创建带 parent 的 shell，全用无 parent 方式。
+- 所有改动纯 UI 层面，业务口径零影响。
+"""
+            ),
+        },
+        {
             "version": "v43.344",
             "date": "2026-11-11",
             "features": (

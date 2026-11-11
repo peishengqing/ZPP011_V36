@@ -17,6 +17,7 @@ title_changed / status_changed / 亮暗主题同步由 shell 提供。
 from PySide6.QtWidgets import QVBoxLayout
 
 from gui_pyside6.components.dashboard_shell import DashboardShell
+from utils.theme_manager import Thm
 
 
 def install_dialog_shell(dialog, host, title, status=None):
@@ -24,13 +25,9 @@ def install_dialog_shell(dialog, host, title, status=None):
 
     返回 shell，并挂到 ``dialog.dashboard_shell`` 供后续状态更新。
     """
-    # v43.344：主题源必须是 main_window，不能用 dialog。
-    # 重型弹窗的 Qt parent 其实是 None（main_window 只是普通属性），且
-    # apply_board_visual 给 dialog 套了亮色 BOARD_QSS，dialog 自身 palette
-    # 亮度实测 238（亮），传 dialog 会让 _sync_theme_with_window() 误判成 light。
-    # 主窗口切暗色后 palette 亮度 27，用它才能正确同步。
-    theme_source = getattr(dialog, 'main_window', None) or dialog.parent() or dialog
-    shell = DashboardShell(theme_source)
+    # v43.345：Shell 不再依赖 parent，直接创建即可，主题由全局主题管理器 Thm 驱动。
+    # DashboardShell 构造函数会读取当前 Thm.is_dark 并加载对应的 QSS。
+    shell = DashboardShell()
     shell.set_title(title)
     shell.set_content(host)
     shell.set_status(status or "")
@@ -45,7 +42,8 @@ def install_dialog_shell(dialog, host, title, status=None):
     # 只动 dialog 的样式挂载，不碰 board_visual.py（五个看板共用，影响面大）。
     try:
         prev = dialog.styleSheet() or ""
-        if shell.get_theme() == 'light':
+        is_dark = Thm.is_dark
+        if not is_dark:
             if prev:
                 shell.setStyleSheet(shell.styleSheet() + "\n" + prev)
         elif prev:
