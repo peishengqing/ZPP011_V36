@@ -5,9 +5,7 @@
 import re
 import pandas as pd
 from PySide6.QtWidgets import (
-    QLineEdit, QGroupBox, QLabel, QWidget, QVBoxLayout, QHBoxLayout, QFrame,
-    QScrollArea, QComboBox, QToolButton, QCheckBox, QSpinBox, QDateEdit, QTimeEdit,
-    QDialog, QMenu, QFileDialog
+    QLineEdit, QGroupBox, QLabel, QVBoxLayout, QHBoxLayout, QComboBox, QCheckBox
 )
 
 from gui_pyside6.components.dashboard_shell import DashboardShell
