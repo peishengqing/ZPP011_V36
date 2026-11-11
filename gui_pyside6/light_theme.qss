@@ -2,8 +2,8 @@
    ZPP011 亮色主题 LIGHT THEME (2026-10-26 现代化改版)
    ------------------------------------------------------------
    调色板（与 dark_theme.qss 一一对应，改配色只改本文件+暗色同名值）：
-     窗口底 #F3F3EE · 面板 #FFFFFF · 描边 #DEDED7/#C9C9C1 · 正文 #1A1A18
-     次文 #6C6C64 · 主色 #3B5BDB（按下 #2F49C0 · 浅底 #EDF2FF）
+     窗口底 #EEF1F6 · 面板 #FFFFFF · 描边 #DEDED7/#C9C9C1 · 正文 #1A1A18
+     次文 #6C6C64 · 主色 #1E40AF（按下 #2F49C0 · 浅底 #EDF2FF）
      语义 危险 #C0453C 提醒 #8A5A00 信息 #15598C 成功 #1F7A4D
    约定：控件侧只写 objectName / setProperty("class",...)，禁止内联
          setStyleSheet 写死颜色，否则切暗色主题会失配（历史上工具栏
@@ -12,8 +12,8 @@
 
 /* ── 全局 ── */
 QMainWindow, QDialog, QWidget {
-    background-color: #F3F3EE;
-    color: #1A1A18;
+    background-color: #EEF1F6;
+    color: #101828;
     font-family: 'Microsoft YaHei';
     font-size: 12px;
 }
@@ -21,13 +21,13 @@ QMainWindow, QDialog, QWidget {
 /* ── 标题栏 TitleBarWidget ── */
 #titleBar {
     background-color: #FFFFFF;
-    border-bottom: 1px solid #DEDED7;
+    border-bottom: 1px solid #DBE2EC;
 }
 #titleAccentBar {
-    background-color: #3B5BDB;
+    background-color: #1E40AF;
 }
 #titleMain {
-    color: #1A1A18;
+    color: #101828;
     font-size: 14px;
     font-weight: 600;
 }
@@ -65,7 +65,7 @@ QMainWindow, QDialog, QWidget {
     background-color: transparent;
     color: #6C6C64;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     font-size: 11px;
     padding: 4px 10px;
 }
@@ -73,8 +73,8 @@ QMainWindow, QDialog, QWidget {
 
 /* 标题栏品牌块（v43.264：主色圆角方块承托 SVG 工厂标） */
 #titleBrand {
-    background-color: #3B5BDB;
-    border-radius: 8px;
+    background-color: #1E40AF;
+    border-radius: 10px;
 }
 
 
@@ -84,7 +84,7 @@ QMainWindow, QDialog, QWidget {
     background-color: transparent;
     color: #6C6C64;
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: 10px;
     font-size: 12px;
     padding: 4px 8px;
 }
@@ -99,17 +99,17 @@ QMainWindow, QDialog, QWidget {
     background-color: #FFFFFF;
     color: #2A2A26;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 5px 12px;
     font-size: 11px;
 }
 .actionBtn:hover { background-color: #EDF2FF; border-color: #BAC8FF; color: #364FC7; }
-.actionBtn:checked { background-color: #3B5BDB; border-color: #3B5BDB; color: #FFFFFF; }
+.actionBtn:checked { background-color: #1E40AF; border-color: #1E40AF; color: #FFFFFF; }
 #actionBtnAnalyze {
-    background-color: #3B5BDB;
+    background-color: #1E40AF;
     color: #FFFFFF;
     border: none;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 5px 18px;
     font-size: 12px;
     font-weight: 600;
@@ -121,7 +121,7 @@ QMainWindow, QDialog, QWidget {
     background-color: #0F6E56;
     color: #FFFFFF;
     border: none;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 5px 18px;
     font-size: 12px;
     font-weight: 600;
@@ -131,7 +131,7 @@ QMainWindow, QDialog, QWidget {
     background-color: #FFFFFF;
     color: #2A2A26;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 5px 12px;
     font-size: 11px;
 }
@@ -144,7 +144,7 @@ QToolButton#toolGhostBtn, .toolGhost {
     background-color: transparent;
     color: #5C5C55;
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 4px 10px;
     font-size: 12px;
 }
@@ -168,7 +168,7 @@ QPushButton#btn_col_filter, QPushButton#btn_col_filter_expired {
     background-color: transparent;
     color: #5C5C55;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 4px 12px;
     font-size: 12px;
 }
@@ -185,7 +185,7 @@ QToolButton#actionMenuBtn {
     background-color: #FFFFFF;
     color: #2A2A26;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 5px 12px;
     font-size: 11px;
     text-align: left;
@@ -200,14 +200,14 @@ QToolButton#actionMenuBtn::menu-indicator { width: 0; height: 0; }
     background-color: #FFFFFF;
     color: #1A1A18;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 5px 10px;
     font-size: 11px;
     font-family: 'Microsoft YaHei';
 }
 .inputEdit:hover, #startDateEdit:hover, #endDateEdit:hover { border-color: #C9C9C1; }
 .inputEdit:focus, #startDateEdit:focus, #endDateEdit:focus {
-    border-color: #3B5BDB;
+    border-color: #1E40AF;
     background-color: #FBFAFE;
 }
 /* 侧边栏通用输入（left_panel 建的 <标签>Input，历史上写死暗色值） */
@@ -215,12 +215,12 @@ QLineEdit#inputFileEdit, QLineEdit#outputDirEdit, .sideInput {
     background-color: #FFFFFF;
     color: #1A1A18;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 5px 10px;
     font-size: 11px;
 }
 QLineEdit#inputFileEdit:focus, QLineEdit#outputDirEdit:focus, .sideInput:focus {
-    border-color: #3B5BDB;
+    border-color: #1E40AF;
     background-color: #FBFAFE;
 }
 
@@ -229,7 +229,7 @@ QLineEdit#inputFileEdit:focus, QLineEdit#outputDirEdit:focus, .sideInput:focus {
     background-color: #FFFFFF;
     color: #1A1A18;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 4px 8px;
     font-size: 11px;
     font-family: 'Microsoft YaHei';
@@ -270,7 +270,7 @@ QLineEdit#inputFileEdit:focus, QLineEdit#outputDirEdit:focus, .sideInput:focus {
 }
 #collapseArrow:hover {
     background-color: #EDF2FF;
-    color: #3B5BDB;
+    color: #1E40AF;
 }
 #collapsibleBody {
     background-color: transparent;
@@ -283,7 +283,7 @@ QLineEdit#inputFileEdit:focus, QLineEdit#outputDirEdit:focus, .sideInput:focus {
     border-radius: 10px;
 }
 #cardStripe {
-    background-color: #3B5BDB;
+    background-color: #1E40AF;
     border-top-left-radius: 10px;
     border-top-right-radius: 10px;
 }
@@ -310,10 +310,10 @@ QLineEdit#inputFileEdit:focus, QLineEdit#outputDirEdit:focus, .sideInput:focus {
     font-size: 11px;
 }
 #browseBtn {
-    background-color: #3B5BDB;
+    background-color: #1E40AF;
     color: #FFFFFF;
     border: none;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 5px 14px;
     font-size: 11px;
     font-weight: 600;
@@ -323,7 +323,7 @@ QLineEdit#inputFileEdit:focus, QLineEdit#outputDirEdit:focus, .sideInput:focus {
     background-color: #FFFFFF;
     color: #2A2A26;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 5px 12px;
     font-size: 11px;
 }
@@ -332,7 +332,7 @@ QLineEdit#inputFileEdit:focus, QLineEdit#outputDirEdit:focus, .sideInput:focus {
     background-color: #FFFFFF;
     color: #2A2A26;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 5px 12px;
     font-size: 11px;
     font-family: 'Microsoft YaHei';
@@ -349,7 +349,7 @@ QLabel#dialogTipLabel, QLabel#filterNoteLabel {
     color: #1A1A18;
     alternate-background-color: #FAFAF6;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     font-size: 11px;
     gridline-color: #EDEDE7;
     selection-background-color: #DBE4FF;
@@ -369,7 +369,7 @@ QLabel#dialogTipLabel, QLabel#filterNoteLabel {
     background-color: #FFFFFF;
     color: #3A3A36;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     font-size: 11px;
     font-family: 'Consolas', 'Microsoft YaHei';
     padding: 6px;
@@ -389,7 +389,7 @@ QMenu {
     background-color: #FFFFFF;
     color: #1A1A18;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 5px;
     font-size: 12px;
 }
@@ -405,7 +405,7 @@ QMenu::separator { height: 1px; background-color: #EDEDE7; margin: 5px 8px; }
     alternate-background-color: #FAFAF6;
     gridline-color: #EDEDE7;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     font-size: 11px;
     font-family: 'Microsoft YaHei';
     selection-background-color: #DBE4FF;
@@ -442,14 +442,14 @@ QHeaderView::section#altTable {
 #progressBar {
     background-color: #EDEBE4;
     border: none;
-    border-radius: 5px;
+    border-radius: 6px;
     text-align: center;
     font-size: 10px;
     color: #FFFFFF;
 }
 #progressBar::chunk {
-    background-color: #3B5BDB;
-    border-radius: 5px;
+    background-color: #1E40AF;
+    border-radius: 6px;
 }
 #progressGroup {
     color: #6C6C64;
@@ -478,7 +478,7 @@ QToolButton#stepIcon {
     color: #8A8A82;
     background-color: #F4F3EF;
     border: 1px solid #E3E2DC;
-    border-radius: 7px;
+    border-radius: 6px;
     font-size: 10px;
     font-weight: 600;
     min-width: 24px;
@@ -490,8 +490,8 @@ QToolButton#stepIcon {
 QToolButton#stepIcon:hover { background-color: #EDF2FF; border-color: #BAC8FF; color: #364FC7; }
 QToolButton#stepIcon[active="true"] {
     color: #FFFFFF;
-    background-color: #3B5BDB;
-    border-color: #3B5BDB;
+    background-color: #1E40AF;
+    border-color: #1E40AF;
 }
 QToolButton#stepIcon[done="true"] {
     color: #364FC7;
@@ -507,10 +507,10 @@ QToolButton#stepIcon[done="true"] {
     border: none;
 }
 #startBtn {
-    background-color: #3B5BDB;
+    background-color: #1E40AF;
     color: #FFFFFF;
     border: none;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 5px 18px;
     font-size: 12px;
     font-weight: 600;
@@ -520,7 +520,7 @@ QToolButton#stepIcon[done="true"] {
     background-color: #FFFFFF;
     color: #2A2A26;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 5px 12px;
     font-size: 11px;
 }
@@ -539,7 +539,7 @@ QToolButton#stepIcon[done="true"] {
 }
 #markStatsLabel {
     padding: 3px 10px;
-    border-radius: 7px;
+    border-radius: 6px;
     background-color: #F4F3EF;
     border: 1px solid #E3E2DC;
     color: #4A4A44;
@@ -549,7 +549,7 @@ QToolButton#stepIcon[done="true"] {
     background-color: #FFFFFF;
     color: #2A2A26;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 5px 12px;
     font-size: 11px;
 }
@@ -649,10 +649,10 @@ QLabel#readCounterLabel { color: #15598C; }
     border-top: 1px solid #DEDED7;
 }
 #aboutCloseBtn {
-    background-color: #3B5BDB;
+    background-color: #1E40AF;
     color: #FFFFFF;
     border: none;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 6px 24px;
     font-weight: 600;
 }
@@ -670,13 +670,13 @@ QLabel#readCounterLabel { color: #15598C; }
     background-color: #FFFFFF;
     color: #1A1A18;
     border: 1px solid #DEDED7;
-    border-radius: 12px;
+    border-radius: 10px;
 }
 #alertDetail {
     background-color: #F6F5F1;
     color: #1A1A18;
     border: 1px solid #EDEDE7;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 6px;
 }
 
@@ -689,20 +689,20 @@ QLabel#readCounterLabel { color: #15598C; }
 #loadingProgress {
     background-color: #EDEBE4;
     border: none;
-    border-radius: 5px;
+    border-radius: 6px;
     text-align: center;
     color: #FFFFFF;
 }
 #loadingProgress::chunk {
-    background-color: #3B5BDB;
-    border-radius: 5px;
+    background-color: #1E40AF;
+    border-radius: 6px;
 }
 
 /* ── 联动横幅（看板钻取到主表，可一键清除） ── */
 QFrame#linkBanner {
     background: #EDF2FF;
     border: 1px solid #BAC8FF;
-    border-radius: 8px;
+    border-radius: 10px;
     margin: 4px 4px 0px 4px;
 }
 QLabel#linkBannerLabel {
@@ -712,7 +712,7 @@ QLabel#linkBannerLabel {
 }
 QPushButton#linkBannerClearBtn {
     color: #FFFFFF;
-    background: #3B5BDB;
+    background: #1E40AF;
     border: none;
     border-radius: 6px;
     padding: 3px 12px;
@@ -725,7 +725,7 @@ QPushButton#filterPresetBtn {
     color: #2A2A26;
     background: #FFFFFF;
     border: 1px solid #DEDED7;
-    border-radius: 7px;
+    border-radius: 6px;
     padding: 2px 10px;
     font-size: 11px;
 }
@@ -785,7 +785,7 @@ QToolTip {
    专用控件的 objectName / class 规则优先级更高，不受影响。
    ════════════════════════════════════════════════════════════ */
 QDialog, QMessageBox, QFileDialog {
-    background-color: #F3F3EE;
+    background-color: #EEF1F6;
     color: #1A1A18;
 }
 
@@ -793,7 +793,7 @@ QPushButton {
     background-color: #FFFFFF;
     color: #1A1A18;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 5px 14px;
     font-size: 12px;
 }
@@ -801,14 +801,14 @@ QPushButton:hover { background-color: #EDF2FF; border-color: #BAC8FF; color: #36
 QPushButton:pressed { background-color: #DBE4FF; border-color: #91A7FF; color: #1C3FAE; }
 QPushButton:checked { background-color: #EDF2FF; border-color: #91A7FF; color: #364FC7; font-weight: 600; }
 QPushButton:selected { background-color: #DBE4FF; color: #1A1A18; }
-QPushButton:default { border-color: #3B5BDB; color: #364FC7; font-weight: 600; }
+QPushButton:default { border-color: #1E40AF; color: #364FC7; font-weight: 600; }
 QPushButton:disabled { background-color: #F4F3EF; color: #A6A69E; border-color: #E7E6E0; }
 
 QToolButton {
     background-color: #FFFFFF;
     color: #1A1A18;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 4px 10px;
     font-size: 12px;
 }
@@ -822,14 +822,14 @@ QLineEdit, QTextEdit, QPlainTextEdit {
     background-color: #FFFFFF;
     color: #1A1A18;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 4px 8px;
     selection-background-color: #DBE4FF;
     selection-color: #1A1A18;
 }
 QLineEdit:hover, QTextEdit:hover, QPlainTextEdit:hover { border-color: #C9C9C1; }
 QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {
-    border-color: #3B5BDB;
+    border-color: #1E40AF;
     background-color: #FBFAFE;
 }
 QTextEdit, QPlainTextEdit { padding: 6px 8px; }
@@ -838,7 +838,7 @@ QDateEdit, QDateTimeEdit, QTimeEdit, QSpinBox, QDoubleSpinBox {
     background-color: #FFFFFF;
     color: #1A1A18;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 3px 8px;
     selection-background-color: #DBE4FF;
     selection-color: #1A1A18;
@@ -851,7 +851,7 @@ QComboBox {
     background-color: #FFFFFF;
     color: #1A1A18;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 4px 10px;
 }
 QComboBox:hover { border-color: #BAC8FF; color: #364FC7; }
@@ -860,7 +860,7 @@ QComboBox QAbstractItemView {
     background-color: #FFFFFF;
     color: #1A1A18;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     selection-background-color: #EDF2FF;
     selection-color: #364FC7;
     outline: none;
@@ -884,11 +884,11 @@ QCheckBox::indicator, QRadioButton::indicator {
     border-radius: 4px;
     background-color: #FFFFFF;
 }
-QRadioButton::indicator { border-radius: 8px; }
-QCheckBox::indicator:hover, QRadioButton::indicator:hover { border-color: #3B5BDB; }
+QRadioButton::indicator { border-radius: 10px; }
+QCheckBox::indicator:hover, QRadioButton::indicator:hover { border-color: #1E40AF; }
 QCheckBox::indicator:checked, QRadioButton::indicator:checked {
-    background-color: #3B5BDB;
-    border-color: #3B5BDB;
+    background-color: #1E40AF;
+    border-color: #1E40AF;
 }
 QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {
     background-color: #F4F3EF;
@@ -920,7 +920,7 @@ QTableView, QTableWidget, QListWidget, QListView, QTreeView, QTreeWidget {
     color: #1A1A18;
     gridline-color: #EDEDE7;
     border: 1px solid #DEDED7;
-    border-radius: 8px;
+    border-radius: 10px;
     selection-background-color: #DBE4FF;
     selection-color: #1A1A18;
     font-size: 12px;
@@ -952,7 +952,7 @@ QTabBar::tab {
     color: #6C6C64;
     border: 1px solid transparent;
     border-bottom: none;
-    border-radius: 8px 8px 0 0;
+    border-radius: 10px 10px 0 0;
     padding: 5px 14px;
     font-size: 12px;
 }
@@ -971,15 +971,15 @@ QScrollArea {
 QProgressBar {
     background-color: #EDEBE4;
     border: none;
-    border-radius: 5px;
+    border-radius: 6px;
     text-align: center;
     font-size: 11px;
     color: #3A3A36;
     min-height: 16px;
 }
 QProgressBar::chunk {
-    background-color: #3B5BDB;
-    border-radius: 5px;
+    background-color: #1E40AF;
+    border-radius: 6px;
 }
 
 /* ── 代码侧新移交的主题钩子（原先是内联写死的颜色） ── */
@@ -1005,7 +1005,7 @@ QLabel#ruleSummaryLabel {
     color: #3A3A36;
     background-color: #F6F5F1;
     border: 1px solid #E3E2DC;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 8px 10px;
 }
 /* 物料画像中的异常值 */
@@ -1028,7 +1028,7 @@ QLabel#unreadAllClear {
 QFrame#unreadRow {
     background-color: #FAFAF6;
     border: 1px solid #EDEDE7;
-    border-radius: 8px;
+    border-radius: 10px;
 }
 QLabel#unreadCount {
     color: #8A5A00;
@@ -1160,7 +1160,7 @@ QWidget#colFilterPopup {
 #filterPanel QComboBox:focus,
 #filterPanel QDoubleSpinBox:focus,
 #filterPanel QDateEdit:focus {
-    border-color: #5C7CFA;
+    border-color: #1E40AF;
     outline: none;
     /* box-shadow 不被 Qt QSS 支持（会刷 "Unknown property" 告警），焦点视觉
        反馈改由上方 border-color 高亮承担；如以后要光晕，需用 QPainter 自绘。 */
@@ -1174,7 +1174,7 @@ QWidget#colFilterPopup {
     background-color: #FFFFFF;
     border: 1px solid #DEE2E6;
     border-radius: 4px;
-    selection-background-color: #5C7CFA;
+    selection-background-color: #1E40AF;
     selection-color: #FFFFFF;
     padding: 4px 0;
 }
@@ -1206,14 +1206,14 @@ QWidget#colFilterPopup {
     background-color: #DEE2E6;
 }
 #filterPanel QPushButton#reset_filters {
-    background-color: #5C7CFA;
+    background-color: #1E40AF;
     color: #FFFFFF;
     border: none;
     font-weight: 600;
     padding: 8px 20px;
 }
 #filterPanel QPushButton#reset_filters:hover {
-    background-color: #3B5BDB;
+    background-color: #1E40AF;
 }
 
 /* ── 复选框与单选按钮 ── */
@@ -1226,12 +1226,12 @@ QWidget#colFilterPopup {
     width: 16px;
     height: 16px;
     border: 1px solid #CED4DA;
-    border-radius: 3px;
+    border-radius: 4px;
     background-color: #FFFFFF;
 }
 #filterPanel QCheckBox::indicator:checked {
-    background-color: #5C7CFA;
-    border-color: #5C7CFA;
+    background-color: #1E40AF;
+    border-color: #1E40AF;
 }
 
 /* ── 摘要与提示信息 ── */

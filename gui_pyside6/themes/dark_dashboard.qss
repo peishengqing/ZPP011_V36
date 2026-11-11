@@ -6,7 +6,7 @@
  *   stylesheet 路径重算 sizeHint，而顶部筛选栏宽度是逐像素精算的。
  *   表格 / 表头 / 滚动条不在筛选栏内，可安全用边框与圆角。
  */
-#DashboardShell { background: #1E1E24; }
+#DashboardShell { background: #0B1220; }
 #title_bar { background: #25262B; border-bottom: 1px solid #2C2E33; }
 #action_bar { background: #25262B; border-bottom: 1px solid #2C2E33; }
 #content { background: #25262B; }
@@ -19,7 +19,7 @@ QPushButton {
 }
 QPushButton:hover    { background-color: #3A4050; color: #FFFFFF; }
 QPushButton:pressed  { background-color: #454D60; }
-QPushButton:checked  { background-color: #5C7CFA; color: #FFFFFF; }
+QPushButton:checked  { background-color: #4C7DFF; color: #FFFFFF; }
 QPushButton:disabled { background-color: #25262B; color: #7A7F8A; }
 
 /* 标签 */
@@ -29,14 +29,14 @@ QLabel { color: #E9ECEF; }
 QComboBox {
     background-color: #2C2E33;
     color: #E9ECEF;
-    selection-background-color: #3B5BDB;
+    selection-background-color: #18254A;
     selection-color: #FFFFFF;
 }
 QComboBox:hover { background-color: #353B4A; }
 QComboBox QAbstractItemView {
     background-color: #2C2E33;
     border: 1px solid #35334A;
-    selection-background-color: #3B5BDB;
+    selection-background-color: #18254A;
     selection-color: #FFFFFF;
 }
 
@@ -46,7 +46,7 @@ QTableView {
     border: 1px solid #35334A;
     border-radius: 4px;
 }
-QTableView::item:selected { background-color: #3B5BDB; color: #FFFFFF; }
+QTableView::item:selected { background-color: #18254A; color: #FFFFFF; }
 QHeaderView::section {
     background-color: #2C2E33;
     border: 1px solid #35334A;

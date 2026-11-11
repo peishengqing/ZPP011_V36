@@ -7,7 +7,7 @@
  *   下拉 54x22→178x30），而顶部筛选栏宽度是逐像素精算的，一变就挤压重叠。
  *   表格 / 表头 / 滚动条不在筛选栏内，可安全用边框与圆角。
  */
-#DashboardShell { background: #F5F6FA; }
+#DashboardShell { background: #EEF1F6; }
 #title_bar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
 #action_bar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
 #content { background: #FFFFFF; }
@@ -19,9 +19,9 @@ QPushButton {
     background-color: #FFFFFF;
     color: #334155;
 }
-QPushButton:hover    { background-color: #E8F2FF; color: #0969DA; }
+QPushButton:hover    { background-color: #E8F2FF; color: #1E40AF; }
 QPushButton:pressed  { background-color: #D3E6FF; }
-QPushButton:checked  { background-color: #0969DA; color: #FFFFFF; }
+QPushButton:checked  { background-color: #1E40AF; color: #FFFFFF; }
 QPushButton:disabled { background-color: #F1F5F9; color: #9AA7B6; }
 
 /* 标签 */
