@@ -150,7 +150,7 @@ class DashboardManager:
             sub = df[keep].copy() if keep else df.copy()
             if "半成品重分类" not in sub.columns:
                 sub["半成品重分类"] = ""
-            dialog = NegLossDashboardDialog(sub, self.mw)
+            dialog = NegLossDashboard(sub, self.mw)
             self._open_dialog(dialog, "neg_loss")
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开负损看板失败: {e}")
