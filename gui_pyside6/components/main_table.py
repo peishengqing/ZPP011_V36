@@ -8,7 +8,9 @@ from PySide6.QtWidgets import (
 import re
 
 from PySide6.QtCore import Qt, Signal, QObject
+from gui_pyside6.themes.tokens import SIZE_PX
 from gui_pyside6.utils.icons import make_button
+from gui_pyside6.widgets.row_style_delegate import RowStyleDelegate
 
 # 分析进度步骤图标（沿用 v31 经典布局：一排图标 + 进度条 + 状态文字）
 # 分析进度步骤图标（沿用 v31 经典布局：一排图标 + 进度条 + 状态文字）
@@ -121,8 +123,16 @@ class MainTableComponent(QObject):
         self.table_view.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table_view.customContextMenuRequested.connect(self.mw._show_context_menu)
         self.table_view.setSelectionMode(QTableView.ExtendedSelection)
+        # 选择行为保持 SelectItems（单元格级）：整行选中会让"复制某格/按列看数"变别扭，
+        # 且设计稿那条 3px 蓝条本就由 RowStyleDelegate 画在每个选中格左缘。
         self.table_view.setSelectionBehavior(QTableView.SelectItems)
-        self.table_view.verticalHeader().setDefaultSectionSize(28)
+        # v43.349 第五期E：行高/表头高度/竖网格线全部照抄设计稿（--row-h 36px、无竖线、
+        # 每行一条 1px 下边框由 QSS #tableView::item 画）。
+        self.table_view.verticalHeader().setDefaultSectionSize(SIZE_PX["tableRow"])
+        self.table_view.setShowGrid(False)
+        self.table_view.setTextElideMode(Qt.ElideRight)
+        # 悬浮行叠色 + 选中左蓝条 + 状态胶囊（设计稿表格格式的三处 QSS 表达不了的叠加层）
+        self.table_view.setItemDelegate(RowStyleDelegate(self.table_view))
 
         # 空态提示（无数据时居中显示，v43.285 新增）
         self.empty_hint = QLabel("暂无数据，请导入 ZPP011 导出文件后点击「开始分析」")

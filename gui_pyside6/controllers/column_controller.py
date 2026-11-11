@@ -211,7 +211,13 @@ class ColumnController:
                 if col_name:
                     col_name = str(col_name).replace('\n', '')
                     if col_name in saved_widths:
-                        self.mw.table_view.setColumnWidth(col, saved_widths[col_name])
+                        w = saved_widths[col_name]
+                        # v43.349 第五期E：第 0 列（状态）不得窄于 52 —— 表头左缘
+                        # 20px 是筛选漏斗角标的槽，剩下才轮到"状态"两个字；沿用旧配置
+                        # 里的手动窄宽会把列名挤成省略号（设计稿那列没有文字，我们有关）。
+                        if col == 0:
+                            w = max(int(w), 52)
+                        self.mw.table_view.setColumnWidth(col, w)
                         continue
                 # 没有保存过的列用默认逻辑
                 self.mw._apply_default_width(col, col_name)
@@ -222,7 +228,7 @@ class ColumnController:
         # 无配置文件时用默认逻辑。
         # 注意：不再调用 resizeColumnsToContents()——万行级表格会逐行测量宽度，
         # 导致主线程卡顿/未响应。改为按列名设定合理最小宽度，让用户可手动拖动。
-        self.mw.table_view.setColumnWidth(0, 35)
+        self.mw.table_view.setColumnWidth(0, 52)
         for col in range(1, model.columnCount()):
             col_name = model.headerData(col, Qt.Horizontal) if hasattr(model, 'headerData') else ''
             self.mw._apply_default_width(col, col_name)

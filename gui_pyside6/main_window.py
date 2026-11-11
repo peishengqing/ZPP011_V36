@@ -34,6 +34,7 @@ from gui_pyside6.components.bottom_bar import BottomBarComponent
 # 导入自定义模块
 from gui_pyside6.components import message_box
 from gui_pyside6.models.data_frame_model import DataFrameModel, AuditProxyModel
+from gui_pyside6.themes.tokens import SIZE_PX
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.workers.report_workers import (
     _FullReportWorker, _PptReportWorker, _FileReadWorker,
@@ -263,6 +264,11 @@ class MainWindow(QMainWindow):
         self.file_loader = FileLoader(self)
         self.audit_controller = AuditController(self)
         self.audit_controller.manual_marked.connect(self._on_manual_marked)
+        # v43.349 第五期F：底部状态条就是主窗口唯一的 QStatusBar（设计稿 .status-bar 单行）。
+        # 必须先建它、再挂下面四个常驻标签 —— 那些 addPermanentWidget 才会落到这根条的右端，
+        # 而不是另开一条原生状态条（改造前两条叠在一起，多吃 30px 且两份字号）。
+        self.bottom_bar = BottomBarComponent(self)
+        self.setStatusBar(self.bottom_bar)
         # 状态栏常驻「分析时间」：最近一次分析的触发方式(自动/手动) + 完成时刻
         # （windowed exe 无控制台，自动读取/自动分析后用户无从知晓何时发生，故常驻显示）
         self._analysis_time_label = QLabel("分析：—")
@@ -301,6 +307,14 @@ class MainWindow(QMainWindow):
             "当前已设列头取值过滤的列（表头橙色三角标记）。\n"
             "点此标签 → 菜单里可「清除此列」或「清除全部列头筛选」。")
         self.statusBar().addPermanentWidget(self._col_filter_hint_label)
+
+        # v43.349 第五期A：版本号从标题栏主标题里摘出来，放状态条最右（低频信息右置，
+        # 设计稿 .status-right）。改造前它挤在「云南达利ZPP011生产偏差分析器 v43.348」
+        # 中间，既拉长主标题又让人误以为版本号是产品名的一部分。
+        self._version_label = QLabel(VERSION_HISTORY[0]["version"])
+        self._version_label.setObjectName("versionLabel")
+        self._version_label.setToolTip("当前版本号（完整改动记录见「帮助 → 版本历史」）")
+        self.statusBar().addPermanentWidget(self._version_label)
 
         self.export_controller = ExportController(self)
         self.alt_controller = AltController(self)
@@ -355,7 +369,6 @@ class MainWindow(QMainWindow):
         self.left_panel_component = LeftPanelComponent(self)
         self.main_table = MainTableComponent(self)
         self.stats_cards = StatsCardsWidget(self)  # 统计卡片（审核概览 + 变更感知）
-        self.bottom_bar = BottomBarComponent(self)
         self.filter_panel = FilterPanel(self)
 
         # 初始化筛选控制器（Phase 3 新增）
@@ -446,6 +459,9 @@ class MainWindow(QMainWindow):
         self.showMaximized()
 
         self.title_bar.theme_toggled.connect(self._toggle_theme)
+        # v43.349 第五期A：标题栏「数据源」胶囊 = 选 Excel 的唯一入口（左栏改成纯
+        # 导航后，文件选择从 left_panel 上移到标题栏；输出目录进「更多」菜单）。
+        self.title_bar.source_requested.connect(self._select_input_file)
 
     def _setup_shortcuts(self):
         QShortcut(QKeySequence("F5"), self).activated.connect(self._start_analysis)
@@ -573,10 +589,12 @@ class MainWindow(QMainWindow):
         self.action_btn_col_filter.clicked.connect(self._toggle_col_filter_mode)
         self.action_btn_boards.clicked.connect(self._show_dashboard)
         self.action_btn_export.clicked.connect(self._on_export_full_excel)
-        self.action_btn_maint.clicked.connect(self._open_auto_quarantine_rule_dialog)
+        # 原「维护」按钮退役（v43.349 第五期B：自动隔离规则/物料画像并入「更多」菜单），
+        # 该入口现由 layout_composer 的 more_menu 项直接调用 _open_auto_quarantine_rule_dialog。
         self.action_btn_toggle_stats.clicked.connect(self._toggle_stats_from_toolbar)
         self.action_btn_toggle_progress.clicked.connect(self._toggle_progress_from_toolbar)
-        self.action_btn_unread_summary.clicked.connect(self._show_unread_summary)
+        # 「未读」按钮退役（v43.349 第五期B）：它和「审核」开的是同一个队列，
+        # 队列入口现在只留操作栏主按钮 + 左栏导航项两处。
         self.action_btn_auto_q.clicked.connect(self._auto_move_to_quarantine)
 
 
@@ -1237,12 +1255,12 @@ class MainWindow(QMainWindow):
             self._update_read_counter()
             self._analysis_params = self.analysis_controller.get_analysis_params()
 
-            # v43.337：刷新标题栏副标题（数据源 + 分析时间），设计稿第1项
+            # v43.349 第五期A：刷新标题栏数据上下文（设计稿 Tier 1「本次分析」+「数据源」胶囊）
             try:
                 from datetime import datetime as _dt
-                _src = os.path.basename(getattr(self, "input_file", "") or "")
-                self.title_bar.set_subtitle(
-                    f"数据源：{_src or '未知文件'}  |  分析时间：{_dt.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                _src = os.path.basename(getattr(self, "current_input_file", "") or "")
+                self.title_bar.set_data_context(
+                    _src or "未知文件", _dt.now().strftime("%Y-%m-%d %H:%M"))
             except Exception:
                 pass
 
@@ -1284,11 +1302,9 @@ class MainWindow(QMainWindow):
             self._set_column_widths()
             QApplication.processEvents()
             self.statusBar().showMessage(f"分析完成，共加载 {len(processed_df)} 行 × {len(processed_df.columns)} 列")
-            # 更新左侧"数据预览"卡片（文字统计，使用与表格一致的预处理后 df）
+            # 更新左侧"数据预览"（文字统计，使用与表格一致的预处理后 df）
             if hasattr(self, 'preview_label') and self.preview_label:
                 self.preview_label.setText(self._format_preview_stats(processed_df))
-            if hasattr(self, 'left_panel') and hasattr(self.left_panel, 'preview_group'):
-                self.left_panel.preview_group.expand()
             self.main_table.summary_container.setVisible(True)
             self._update_summary()
             QApplication.processEvents()
@@ -1370,6 +1386,8 @@ class MainWindow(QMainWindow):
             df = self.view_model.df
             if df is not None and not getattr(df, "empty", True) and "_read" in df.columns:
                 self.bottom_bar.set_unread(int((df["_read"] == 0).sum()))
+            # 左栏「审核队列 / 隔离区」徽标与状态条同一时刻口径一致
+            self.left_panel_component.refresh_counts(df)
         except Exception:
             pass
 
@@ -1633,6 +1651,9 @@ class MainWindow(QMainWindow):
             # 新一批数据：分析时间标签重置（上一批的分析结果不再适用）
             if hasattr(self, "_analysis_time_label"):
                 self._analysis_time_label.setText("分析：—")
+            # v43.349 第五期A：标题栏数据上下文同步换文件、分析时刻归零 ——
+            # 与上一行同一口径（自动读取和手动选文件都走这里，胶囊不会滞后于表格）。
+            self.title_bar.set_data_context(os.path.basename(file_path or ""))
             # 缓存 Data sheet DataFrame，点击分析时直接复用，跳过 ~20-30s 重复文件 IO
             self._cached_input_df = df
             # v43.180：连同源文件的修改时间/大小一起记下，供分析前比对
@@ -1793,6 +1814,8 @@ class MainWindow(QMainWindow):
     # -----------------------------------------------------------
     def _refresh_alt_view(self):
         self.alt_controller.refresh_view(self.alt_table, self.alt_count_label)
+        # 左栏「替代料配对」导航徽标 = 配对数（徽标只放数字，完整口径看表单内说明）
+        self.left_panel_component.set_badge("alt", len(self.alt_controller.get_pairs()))
 
     def _on_alt_pairs_changed(self):
         self.alt_controller.on_pairs_changed(self)
@@ -1969,9 +1992,14 @@ class MainWindow(QMainWindow):
         # 防抖 + user_touched 守卫，避免程序自身批量设宽导致疯狂写盘。
         self.table_view.horizontalHeader().sectionResized.connect(
             self._schedule_save_column_widths)
-        # 表头2行显示：自动换行
-        self.table_view.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)
-        self.table_view.setWordWrap(True)
+        # v43.349 第五期E：表头照抄设计稿 —— 单行 32px 左对齐（原来两行居中）。
+        # 左对齐后文字左侧空出的 20px 内边距（见 light/dark_theme.qss 的
+        # #tableView QHeaderView::section）正好留给 SortBadgeHeader 画筛选漏斗角标，
+        # 右端角标（1▲/2▼）另留 8px；因此数值列表头不再右对齐，否则会被角标压住。
+        _hdr = self.table_view.horizontalHeader()
+        _hdr.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        _hdr.setFixedHeight(SIZE_PX["tableHeader"])
+        self.table_view.setWordWrap(False)   # 设计稿 th/td 都是 white-space:nowrap
         self.lock_btn.setChecked(False)
         self.log("Table model initialized", "info")
 
@@ -1987,8 +2015,10 @@ class MainWindow(QMainWindow):
             self.filter_panel.update_options(df)
             self.main_table.set_empty_hint_visible(False)
         # v43.337：底部状态条随数据变化刷新（记录总数 / 偏差合计 / 未读）
+        # v43.349 第五期C：左栏导航徽标（审核队列未读数 / 隔离区数）同源刷新
         try:
             self.bottom_bar.refresh_from_df(df)
+            self.left_panel_component.refresh_counts(df)
         except Exception:
             pass
         # 真实数据载入后，弹未读汇总（非模态 + 延迟到渲染完成后，避免卡顿）
@@ -2971,7 +3001,7 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "已打开", f"已打开源码备份目录:\n{backup_dir}")
 
     def _toggle_left_panel(self):
-        """切换左侧栏（文件选择 / 替代料配对 / 数据预览）的显示与隐藏"""
+        """切换左侧导航栏（工作区 / 快捷入口 / 底部工具）的显示与隐藏"""
         if self.left_panel.isVisible():
             self.left_panel.setVisible(False)
             prev_sizes = self.body_splitter.sizes()
@@ -2982,8 +3012,11 @@ class MainWindow(QMainWindow):
         else:
             self.left_panel.setVisible(True)
             prev_sizes = self.body_splitter.sizes()
-            # left_panel | filter_panel | table_area，左侧栏恢复约 360px
-            self.body_splitter.setSizes([360, prev_sizes[1], max(prev_sizes[2] - 360, 200)])
+            # left_panel | filter_panel | table_area；左栏是固定宽（236 收起 / 360 展开
+            # 表单），按当前实际宽度取值，别写死，否则展开态下恢复会把 splitter 设歪。
+            nav_w = self.left_panel.width()
+            self.body_splitter.setSizes([nav_w, prev_sizes[1],
+                                         max(prev_sizes[2] - nav_w, 200)])
             self.action_btn_left_panel.setText("隐藏左侧栏")
             self.action_btn_left_panel.setChecked(True)
 

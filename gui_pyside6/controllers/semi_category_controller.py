@@ -204,11 +204,13 @@ class SemiCategoryController:
         tree.setSortingEnabled(True)
         tree.sortByColumn(0, Qt.AscendingOrder)
         tree.clearSelection()
-        if hasattr(self, 'semi_count_label'):
-            total_codes = sum(int(c.get('code_count', 0)) for c in categories)
-            self.mw.semi_count_label.setText(
-                f"共 {len(categories)} 类 · {total_codes} 个物料"
-                if total_codes else f"共 {len(categories)} 项")
+        # v43.349 修正：原来判的是 controller 自己的属性（恒 False），说明文字从未刷新过
+        total_codes = sum(int(c.get('code_count', 0)) for c in categories)
+        self.mw.semi_count_label.setText(
+            f"共 {len(categories)} 类 · {total_codes} 个物料"
+            if total_codes else f"共 {len(categories)} 项")
+        # 导航徽标只放分类数（完整口径在展开的表单里看）
+        self.mw.left_panel_component.set_badge("semi", len(categories))
 
 
     def _add_semi_category(self):

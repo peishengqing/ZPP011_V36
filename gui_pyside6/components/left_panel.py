@@ -1,19 +1,28 @@
 # -*- coding: utf-8 -*-
-"""左侧面板组件 — 卡片式 360px 设计
-包含：文件选择 + 替代料配对 + 数据预览
-筛选条件由右侧 FilterPanel 独立管理，负责工厂/车间/物料类型/日期等详细筛选
-"""
-# ⚠ QTreeWidget 看似「未用」（pyflakes 会报），实际在 _build_semi_materials 内
-#   通过 self.semi_tree = QTreeWidget() 使用 —— 方法体内的名字解析不到模块级 import。
-#   同理 main_window.py 里的 QTreeWidgetItem（在建树处用）。**不要因为这条告警删 import。**
-from PySide6.QtWidgets import (
-    QWidget, QGroupBox, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QTableWidget,
-    QHeaderView, QMessageBox, QTreeWidget,
-    QAbstractItemView,
-)
-from PySide6.QtCore import Qt, QObject, QEvent
+"""左侧面板组件 —— 236px 纯导航侧栏（v43.349 第五期C，照抄设计稿 Tier-3 .sidebar）
 
+设计稿逐条落地（index.html 446-494 结构 + 184-206 CSS）：
+  side-sec「工作区」   偏差明细(.on) · 审核队列(未读徽标) · 隔离区(徽标) · 替代料配对(徽标)
+  side-sec「快捷入口」 数据源 · 材料半成品(徽标) · 数据预览
+  side-foot           列管理 · 筛选预设
+
+nav-item 统一 30px 高、14px 图标、左对齐文字，右端挂 .count 数字胶囊。
+带表单的项（替代料配对/数据源/材料半成品/数据预览）点开后在行下方展开 body：
+同一时刻只展开一个，展开瞬间把栏宽临时拉回 360px（表单控件的列宽是 360 时代调好
+的，236px 会把表格挤扁），全部收起即回 236px。
+
+保留的外部契约（其他地方直接引用，勿改属性名）：
+  mw.input_file_edit / output_dir_edit / alt_table / alt_count_label /
+  semi_count_label / preview_label / left_panel_component.semi_tree
+"""
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QLineEdit, QPushButton, QTableWidget,
+    QHeaderView, QTreeWidget, QAbstractItemView,
+)
+from PySide6.QtCore import Qt, QSize
+
+from gui_pyside6.themes.tokens import SIZE_PX
 from gui_pyside6.utils.icons import get_icon
 from gui_pyside6.utils.table_autofit import install_adaptive
 
@@ -21,17 +30,136 @@ from gui_pyside6.utils.table_autofit import install_adaptive
 class LeftPanelComponent:
     """左侧面板组件：创建并返回 self.left_panel"""
 
+    NAV_W = SIZE_PX["navPanel"]  # 236，设计稿 --sidebar-w
+    OPEN_W = 360                 # 展开表单时的临时栏宽
+    ITEM_H = 30                  # 设计稿 .nav-item{height:30px}
+    ALERT_KEYS = ("unread",)     # 计数 > 0 时用 danger 胶囊（设计稿 .count.alert）
+
     def __init__(self, main_window):
         self.mw = main_window
-        self.compact = False  # v43.341：默认 360px 卡片表单态
+        self.badges = {}          # badge_key -> QLabel 胶囊
+        self._alert_state = {}    # badge_key -> bool，避免每次刷新都 re-polish
+        self._expandables = []    # [(btn, body)] 可展开项（互斥）
         self.left_panel = self._create_panel()
 
-    # ── v43.341 设计稿第4项：236px 纯导航 / 360px 卡片表单 双模式 ──
-    def _card_groups(self):
-        return [g for g in (
-            getattr(self, 'file_group', None), getattr(self, 'alt_group', None),
-            getattr(self, 'semi_group', None), getattr(self, 'preview_group', None),
-        ) if g is not None]
+    # ── 骨架 ──
+
+    def _create_panel(self):
+        panel = QWidget()
+        panel.setObjectName("leftPanel")
+        # QWidget 子类不绘 QSS 背景，必须显式打开（标题栏/操作栏同套路）
+        panel.setAttribute(Qt.WA_StyledBackground, True)
+        panel.setFixedWidth(self.NAV_W)
+        lay = QVBoxLayout(panel)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+
+        sec = self._add_section(lay, "工作区")
+        self._nav(sec, "偏差明细", "table", on=True, clicked=self._show_dev_table)
+        self._nav(sec, "审核队列", "clipboard", badge="unread",
+                  clicked=self._open_audit_queue)
+        self._nav(sec, "隔离区", "lock", badge="quarantine",
+                  clicked=self._open_quarantine)
+        self._nav(sec, "替代料配对", "exchange", badge="alt",
+                  body=self._build_alternative_materials)
+
+        sec = self._add_section(lay, "快捷入口")
+        self._nav(sec, "数据源", "folder-open", body=self._build_file_selection)
+        self._nav(sec, "材料半成品", "layers", badge="semi",
+                  body=self._build_semi_materials)
+        self._nav(sec, "数据预览", "chart", body=self._build_preview)
+
+        foot = self._add_foot(lay)
+        self._nav(foot, "列管理", "menu", clicked=self._open_column_manager)
+        self._nav(foot, "筛选预设", "funnel-lines", clicked=self._open_presets)
+        return panel
+
+    def _add_section(self, lay, label):
+        """设计稿 .side-sec（padding 10/10/4）+ .side-label（10.5px 大写字距标题）"""
+        box = QWidget()
+        box.setObjectName("sideSec")
+        v = QVBoxLayout(box)
+        v.setContentsMargins(10, 10, 10, 4)
+        v.setSpacing(1)
+        cap = QLabel(label)
+        cap.setObjectName("sideLabel")
+        v.addWidget(cap)
+        lay.addWidget(box)
+        return v
+
+    def _add_foot(self, lay):
+        """设计稿 .side-foot：margin-top:auto → Qt 里用 stretch 顶到底部"""
+        lay.addStretch(1)
+        box = QWidget()
+        box.setObjectName("sideFoot")
+        v = QVBoxLayout(box)
+        v.setContentsMargins(10, 8, 10, 8)
+        v.setSpacing(1)
+        lay.addWidget(box)
+        return v
+
+    def _nav(self, lay, label, icon, *, badge=None, on=False, clicked=None, body=None):
+        """一颗 nav-item：按钮本体负责图标+左对齐文字，右端挂计数胶囊，下方可选 body。"""
+        btn = QPushButton(label)
+        btn.setObjectName("navItem")
+        btn.setFixedHeight(self.ITEM_H)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setFocusPolicy(Qt.NoFocus)      # 导航行不参与 Tab 链，空格键留给表格
+        btn.setIcon(get_icon(icon, 14))
+        btn.setIconSize(QSize(14, 14))
+        if on:
+            btn.setProperty("navOn", True)  # 设计稿 .nav-item.on（当前工作区）
+
+        if badge:
+            # 按钮自身的图标+文字由 style 绘制，这里只摆右端胶囊：
+            # stretch 把胶囊顶到最右，鼠标事件穿透给按钮（点胶囊也算点这行）。
+            pill_row = QHBoxLayout(btn)
+            pill_row.setContentsMargins(0, 0, 8, 0)
+            pill_row.setSpacing(0)
+            pill_row.addStretch(1)
+            pill = QLabel("0")
+            pill.setObjectName("navCount")
+            pill.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            pill_row.addWidget(pill)
+            self.badges[badge] = pill
+            self._alert_state[badge] = False
+
+        if body is not None:
+            btn.setCheckable(True)
+            body_w = QWidget()
+            body_w.setObjectName("navBody")
+            bv = QVBoxLayout(body_w)
+            bv.setContentsMargins(10, 2, 10, 12)
+            bv.setSpacing(8)
+            body(bv)
+            body_w.setVisible(False)
+            btn.toggled.connect(
+                lambda checked, b=body_w, bb=btn: self._on_toggle(b, bb, checked))
+            self._expandables.append((btn, body_w))
+
+        lay.addWidget(btn)
+        if body is not None:
+            lay.addWidget(body_w)
+        if clicked is not None:
+            btn.clicked.connect(clicked)
+        return btn
+
+    # ── 展开/收起 ──
+
+    def _on_toggle(self, body, btn, checked):
+        if checked:
+            for btn2, body2 in self._expandables:
+                if body2 is not body:
+                    btn2.setChecked(False)  # 互斥：递归进 else 分支把别处收干净
+            self._apply_width(self.OPEN_W)
+        body.setVisible(checked)
+        if not checked and all(b.isHidden() for _, b in self._expandables):
+            self._apply_width(self.NAV_W)
+
+    def collapse_all(self):
+        """收起全部展开项（点纯导航项、「收起全部展开项」菜单共用）"""
+        for btn, _ in self._expandables:
+            btn.setChecked(False)
 
     def _apply_width(self, width):
         """改左栏固定宽并同步 splitter 首值，避免两者约束打架。"""
@@ -46,158 +174,62 @@ class LeftPanelComponent:
             except Exception:
                 pass
 
-    def _compact_toggle(self, body, arrow_btn):
-        """紧凑模式下只允许一张卡片展开；展开时临时回到 360px，表单永不被挤。"""
-        # 用 isHidden() 而非 isVisible()：窗口尚未 show 时后者恒为 False，
-        # 会导致每次点击都判定成「展开」而无法收起（offscreen 场景尤其明显）。
-        expanding = body.isHidden()
-        for g in self._card_groups():
-            g.body.setVisible(False)
-            g.arrow_btn.setText("▶")
-        if expanding:
-            body.setVisible(True)
-            arrow_btn.setText("▼")
-            self._apply_width(360)
-        else:
-            self._apply_width(236)
+    # ── 徽标（待办类计数） ──
 
-    def set_compact(self, enabled):
-        """切换紧凑纯导航(236px) / 原卡片表单(360px)。返回当前状态。"""
-        self.compact = bool(enabled)
-        for g in self._card_groups():
-            g.body.setVisible(not self.compact)
-            g.arrow_btn.setText("▶" if self.compact else "▼")
-        self._apply_width(236 if self.compact else 360)
-        return self.compact
+    def set_badge(self, key, value):
+        pill = self.badges.get(key)
+        if pill is None:
+            return
+        n = value if isinstance(value, int) and value > 0 else 0
+        pill.setText(str(n))
+        alert = key in self.ALERT_KEYS and n > 0
+        if self._alert_state.get(key) != alert:
+            # QSS 靠 [alert="true"] 属性选择器命中，改属性后必须重 polish 才生效
+            pill.setProperty("alert", "true" if alert else "false")
+            pill.style().unpolish(pill)
+            pill.style().polish(pill)
+            self._alert_state[key] = alert
 
-    def _create_panel(self):
-        panel = QWidget()
-        panel.setFixedWidth(360)
-        panel.setObjectName("leftPanel")
-        layout = QVBoxLayout(panel)
-        layout.setSpacing(10)
-        layout.setContentsMargins(8, 8, 8, 8)
+    def refresh_counts(self, df=None):
+        """未读 / 隔离区徽标的单一出口（数据变化后由 MainWindow 调用）。
 
-        # 1. 文件选择组
-        self.file_group = self._create_card("文件选择", True, icon="folder")
-        self._build_file_selection(self.file_group.body_layout)
-        layout.addWidget(self.file_group.container)
+        替代料、半成品是配置项而非待办，计数由 alt/semi 各自的刷新漏斗就地写入。
+        """
+        if df is None:
+            getter = getattr(self.mw, '_get_master_df', None)
+            df = getter() if callable(getter) else None
+        if df is None or getattr(df, "empty", True):
+            self.set_badge("unread", 0)
+            self.set_badge("quarantine", 0)
+            return
+        self.set_badge("unread", int((df["_read"] == 0).sum()) if "_read" in df.columns else 0)
+        self.set_badge("quarantine",
+                       int((df["_quarantined"] == 1).sum()) if "_quarantined" in df.columns else 0)
 
-        # 3. 替代料管理组
-        self.alt_group = self._create_card("替代料配对", False, icon="wrench")  # 默认折叠：低频配置，省出给文件/预览的空间
-        self._build_alternative_materials(self.alt_group.body_layout)
-        # 「共 N 对」摘要放进卡片头（箭头左侧）：卡片折叠时依然可见，不必展开就知道当前配对数
-        self.alt_group.add_header_extra(self.mw.alt_count_label)
-        layout.addWidget(self.alt_group.container)
+    # ── 导航动作 ──
 
-        # 3.5 材料半成品分类组
-        self.semi_group = self._create_card("材料半成品", False, icon="layers")
-        self._build_semi_materials(self.semi_group.body_layout)
-        layout.addWidget(self.semi_group.container)
+    def _show_dev_table(self):
+        self.collapse_all()
+        self.mw.table_view.setFocus()
 
-        # 4. 数据预览组（文字统计：显示行数/列数），默认展开
-        self.preview_group = self._create_card("数据预览", True, icon="chart")
-        self.mw.preview_label = QLabel("")
-        self.mw.preview_label.setObjectName("previewLabel")
-        self.mw.preview_label.setWordWrap(True)
-        self.preview_group.body_layout.addWidget(self.mw.preview_label)
-        layout.addWidget(self.preview_group.container)
+    def _open_audit_queue(self):
+        self.collapse_all()
+        # 审核队列 = 未读/待核对汇总弹窗（AuditDialog 是死路，见 layout_composer 注释）
+        self.mw.show_unread_summary(force=True)
 
-        layout.addStretch()
-        return panel
+    def _open_quarantine(self):
+        self.collapse_all()
+        self.mw._open_quarantine_dialog()
 
-    def _create_card(self, title: str, expanded: bool, icon: str = None):
-        """创建卡片式分组（v43.264：卡片头左侧加线性图标，替代 emoji 前缀）"""
-        container = QWidget()
-        container.setObjectName("cardContainer")
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+    def _open_column_manager(self):
+        self.collapse_all()
+        self.mw._show_column_hide_dialog()
 
-        # 顶部蓝色条纹
-        stripe = QWidget()
-        stripe.setObjectName("cardStripe")
-        stripe.setFixedHeight(3)
-        layout.addWidget(stripe)
+    def _open_presets(self):
+        self.collapse_all()
+        self.mw._open_filter_preset_manager()
 
-        # 头部（可点击）
-        header = QWidget()
-        header.setObjectName("cardHeader")
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(12, 10, 12, 10)
-
-        # 卡片图标（v43.264：SVG 线性图标，颜色跟随 cardTitle 文字色）
-        if icon:
-            icon_label = QLabel()
-            icon_label.setObjectName("cardIcon")
-            icon_label.setFixedSize(18, 18)
-            icon_label.setPixmap(get_icon(icon, 15).pixmap(15, 15))
-            header_layout.addWidget(icon_label)
-
-        title_label = QLabel(title)
-        title_label.setObjectName("cardTitle")
-        header_layout.addWidget(title_label)
-        header_layout.addStretch()
-
-        arrow_btn = QPushButton("▼")
-        arrow_btn.setObjectName("collapseArrow")
-        arrow_btn.setFixedSize(20, 20)
-        arrow_btn.setCursor(Qt.PointingHandCursor)
-        header_layout.addWidget(arrow_btn)
-        container.header_layout = header_layout  # 供外部把摘要标签放进卡片头
-
-        # 内容区域
-        body = QWidget()
-        body.setObjectName("cardBody")
-        body_layout = QVBoxLayout(body)
-        body_layout.setContentsMargins(12, 12, 12, 12)
-        body_layout.setSpacing(10)
-
-        if not expanded:
-            body.setVisible(False)
-            arrow_btn.setText("▶")
-
-        # 连接折叠逻辑：箭头按钮点击 + header 区域点击
-        def toggle_state():
-            if getattr(self, 'compact', False):
-                # v43.341 紧凑导航态：走互斥展开 + 临时拉宽逻辑
-                self._compact_toggle(body, arrow_btn)
-                return
-            is_visible = body.isVisible()
-            body.setVisible(not is_visible)
-            arrow_btn.setText("▶" if is_visible else "▼")
-
-        arrow_btn.clicked.connect(toggle_state)
-
-        # header 整个区域可点击（用 eventFilter 拦截 mousePress）
-        class HeaderEventFilter(QObject):
-            def __init__(self_inner, callback):
-                super().__init__()
-                self_inner._cb = callback
-
-            def eventFilter(self_inner, obj, e):  # noqa: N802 — Qt override
-                if e.type() == QEvent.Type.MouseButtonPress:
-                    if e.button() == Qt.MouseButton.LeftButton:
-                        self_inner._cb()
-                return super().eventFilter(obj, e)
-
-        header_filter = HeaderEventFilter(toggle_state)
-        header.installEventFilter(header_filter)
-
-        layout.addWidget(header)
-        layout.addWidget(body)
-
-        class CardGroup:
-            pass
-        group = CardGroup()
-        group.container = container
-        group.body_layout = body_layout
-        group.body = body
-        group.arrow_btn = arrow_btn
-        group.expand = lambda: (body.setVisible(True), arrow_btn.setText("▼"))
-        # 往卡片头插入额外控件（插在折叠箭头左侧，摘要类标签用）
-        group.add_header_extra = lambda w: header_layout.insertWidget(header_layout.count() - 1, w)
-        return group
+    # ── 三块可展开表单（控件与绑定沿用旧版，仅换容器） ──
 
     def _build_file_selection(self, layout: QVBoxLayout):
         """构建文件选择表单"""
@@ -248,9 +280,10 @@ class LeftPanelComponent:
 
     def _build_alternative_materials(self, layout: QVBoxLayout):
         """构建替代料管理表单"""
-        # 计数标签
+        # 计数说明（徽标只显示数字，这里保留完整口径供表单内查看）
         self.mw.alt_count_label = QLabel("共 0 对")
         self.mw.alt_count_label.setObjectName("altCountLabel")
+        layout.addWidget(self.mw.alt_count_label)
 
         # 替代料表格
         self.mw.alt_table = QTableWidget()
@@ -317,17 +350,16 @@ class LeftPanelComponent:
         layout.addLayout(sel_row)
 
     def _build_semi_materials(self, layout: QVBoxLayout):
-        """构建材料半成品分类卡片 — QTableWidget 模仿替代料配对样式，带工厂编码列"""
-        # 计数标签（v43.337：挂到卡片头，折叠时也能看到待办数，对应设计稿「待办徽标」）
+        """构建材料半成品分类表单 —— QTreeWidget 两级：工厂·分类 / 物料编码"""
+        # 计数说明（徽标只放数字，这里给完整口径）
         self.mw.semi_count_label = QLabel("共 0 项")
         self.mw.semi_count_label.setObjectName("semiCountLabel")
-        self.semi_group.add_header_extra(self.mw.semi_count_label)
+        layout.addWidget(self.mw.semi_count_label)
 
         # 树形（v43.165 由 QTableWidget 改QTreeWidget）
         # 两级结构：父节点 = 「工厂 · 分类」，子节点 = 该分类下的物料编码。
-        # 实测（offscreen Qt）：左侧栏宽仅 260px，全部展开 4父+69子=73 行需 876px，
-        # 而180px 高只能看 15 行 → 必须**默认折叠** + 高度上限提到 320px
-        #（320px 约 26 行，食品辅原料 6 行 / 配料中心 8 行可完整展开不需滚）。
+        # 实测（offscreen Qt）：栏宽 236/360、可见高有限，全展开 4父+69子=73 行远超
+        # 可视范围，故**默认折叠** + 高度上限 320px（约 26 行，常见分类可完整展开不需滚）。
         self.semi_tree = QTreeWidget()
         self.semi_tree.setColumnCount(2)
         self.semi_tree.setHeaderLabels(["分类 / 物料编码", "物料数"])
@@ -370,6 +402,13 @@ class LeftPanelComponent:
         zoom_layout.addStretch()
         layout.addLayout(zoom_layout)
 
+    def _build_preview(self, layout: QVBoxLayout):
+        """数据预览：纯文字统计（行列数、工厂/日期跨度），与主表口径一致"""
+        self.mw.preview_label = QLabel("")
+        self.mw.preview_label.setObjectName("previewLabel")
+        self.mw.preview_label.setWordWrap(True)
+        layout.addWidget(self.mw.preview_label)
+
     def _on_semi_tree_click(self, item, _column):
         """点击树节点：仅**父节点**（分类级）触发明细窗，子节点（单个物料编码）不触发。
         v43.165：原 QTableWidget 的 cellClicked 语义是「点分类行→筛该分类」，
@@ -380,35 +419,3 @@ class LeftPanelComponent:
             category = item.data(0, Qt.ItemDataRole.UserRole)
             if category:
                 self.mw._show_semi_detail_window(category)
-
-    def _create_input_row(self, parent_layout: QVBoxLayout, label_text: str,
-                         placeholder: str, has_browse: bool = False) -> QWidget:
-        """创建 label + 输入框行"""
-        container = QWidget()
-        row_layout = QVBoxLayout(container)
-        row_layout.setSpacing(4)
-        row_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Label
-        label = QLabel(label_text)
-        label.setObjectName("filterLabel")
-        row_layout.addWidget(label)
-
-        # Input + Browse
-        input_row = QHBoxLayout()
-        input_row.setSpacing(6)
-
-        input_field = QLineEdit()
-        input_field.setPlaceholderText(placeholder)
-        input_field.setObjectName(f"{label_text.lower()}Input")
-        input_field.setProperty("class", "sideInput")
-        input_row.addWidget(input_field)
-
-        if has_browse:
-            browse_btn = QPushButton("浏览")
-            browse_btn.setObjectName("browseBtn")
-            input_row.addWidget(browse_btn)
-
-        row_layout.addLayout(input_row)
-        parent_layout.addWidget(container)
-        return container

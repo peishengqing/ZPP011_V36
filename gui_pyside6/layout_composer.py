@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
-from gui_pyside6.widgets.toast import toast
+from gui_pyside6.themes.tokens import SIZE_PX
 from gui_pyside6.utils.icons import get_icon
 from utils.theme_manager import Thm
 
@@ -30,34 +30,17 @@ def _icon_action(menu: QMenu, icon: str, text: str, handler) -> QAction:
 
 
 def _on_audit_action(mw):
-    """处理审核按钮点击事件"""
-    # 获取选中的行
-    selected_rows = list({idx.row() for idx in mw.table_view.selectionModel().selectedIndexes()})
-    if not selected_rows and mw.source_model and mw.source_model.getDataFrame() and 'data_id' in mw.source_model.getDataFrame().columns:
-        # 如果没有选中行，选择第一行
-        selected_rows = [0]
-    
-    if selected_rows:
-        # 打开审核对话框进行单个审核
-        row = selected_rows[0]
-        row_data = mw.source_model.getDataFrame().iloc[row]
-        data_id = row_data.get('data_id')
-        if data_id:
-            from gui_pyside6.dialogs.audit_dialog import AuditDialog
-            dialog = AuditDialog(data_id, mw)
-            if dialog.exec_() == 1:
-                result = dialog.get_audit_result()
-                # 更新数据
-                if 'new_value' in result:
-                    # 找到对应的列（实际、quantity等）
-                    col = next((c for c in ['实际', '数量-实际', 'actual'] if c in mw.view_model.df.columns), None)
-                    if col:
-                        mw.view_model.df.loc[row, col] = result['new_value']
-                        mw.source_model.setDataFrame(mw.view_model.df)
-                        mw.proxy_model.invalidate()
-                toast("审核完成", level="success", parent=mw)
-    else:
-        toast("请先选择要审核的行", level="warning", parent=mw)
+    """审核入口 = 打开「审核队列」（未读/待核对汇总弹窗）。
+
+    v43.349 第五期B：原先这里直连 `self._on_audit_action`（模块级函数挂 self 上，
+    一点就 AttributeError），且它要打开的 AuditDialog 本身就是死路 —— 构造即崩
+    （`_setup_ui` 用了未定义的 self.value_label/note_label），调用方还把 data_id
+    当成 df 传进去，后端 `AuditService.audit_complete` 走的是另一套
+    `~/.zpp011_audit/audit.db`，全仓无人 mark 过「待审核」，永远返回 False。
+    本项目真正在用的核对流程是「未读 → 逐行核对 → 标记已读」（core/read_status），
+    所以按设计稿把这颗主操作按钮接到那个真能用的队列上，死弹窗留待后续单独一期处理。
+    """
+    mw.show_unread_summary(force=True)
 
 
 class LayoutComposer:
@@ -98,70 +81,82 @@ class LayoutComposer:
         # 将 body_splitter 引用保存到主窗口，供控制器和外部的 _toggle_left_panel/_toggle_filter_panel 访问
         mw.body_splitter = body_area
 
-        # v43.337：复活底部状态条（设计稿第6项），常驻显示记录/选中/偏差合计/未读
-        main_layout.addWidget(mw.bottom_bar)
+        # v43.349 第五期F：底部状态条不再挂进中央布局 —— 它本身就是主窗口的
+        # QStatusBar（main_window 里 setStatusBar），由 QMainWindow 放在最下方，
+        # 原生那条已被它顶替，不会再叠出第二条状态条。
 
         self.compiled = True
         return central
 
     def _make_action_bar(self, mw) -> QWidget:
-        """制作操作栏（按钮组）.
+        """制作操作栏 —— 设计稿 v43.333 第五期第 2 项（Tier 2，44px 三段）。
 
-        分组顺序：主操作 │ 视图开关 │ 收纳菜单 │ 面板开关/通知 …… 快捷键提示
-        v43.264：图标化（SVG 线性图标 + 文字，ToolButtonTextBesideIcon）。
+        分组：主操作（分析 / 审核）│ 视图开关（数据表 / 筛选抽屉 / 列头过滤 /
+        概览面板）│ 收纳（看板 / 导出 / ⋮更多）……右端提示（共 N 条 · F5 分析 · F11 全屏）。
+        改造前是 38px 一排混排：主操作和 4 个带文字的收纳菜单挤在一起，低频按钮
+        藏在「更多」弹出面板里靠文字辨认，右端只剩一行快捷键说明。
         """
         action_bar = QWidget()
         action_bar.setObjectName("actionBar")
-        action_bar.setFixedHeight(38)
+        # QWidget 子类不自绘 QSS 底色，必须显式开这个属性（同 components/title_bar.py）
+        action_bar.setAttribute(Qt.WA_StyledBackground, True)
+        action_bar.setFixedHeight(SIZE_PX["actionBar"])
         action_layout = QHBoxLayout(action_bar)
-        action_layout.setContentsMargins(8, 4, 8, 4)
-        action_layout.setSpacing(6)
+        action_layout.setContentsMargins(12, 0, 12, 0)
+        action_layout.setSpacing(SIZE_PX["gridGap"])
 
-        # ═══ 主操作（高频，平铺 + 强调色）═══
-        # 创建分析按钮
+        # ═══ 第 1 段：主操作（设计稿 .btn-primary + .btn-outline）═══
         mw.action_btn_analyze = QPushButton("分析")
         mw.action_btn_analyze.setIcon(get_icon("play", 15, Thm.color("onPrimary")))
         mw.action_btn_analyze.setObjectName("actionBtnAnalyze")
+        mw.action_btn_analyze.setFixedHeight(30)
         action_layout.addWidget(mw.action_btn_analyze)
 
-        action_layout.addWidget(self._make_separator())
-        # ═══ 视图开关（用户常用，按需求保留在工具栏）═══
-        # 创建视图开关按钮
-        mw.action_btn_left_panel = QToolButton()
-        mw.action_btn_left_panel.setIcon(get_icon("panel-left"))
-        mw.action_btn_left_panel.setText("左侧栏")
-        mw.action_btn_left_panel.setToolButtonStyle(Qt.ToolButtonIconOnly)
-        mw.action_btn_left_panel.setCheckable(True)
-        mw.action_btn_left_panel.setToolTip("切换左侧栏显示")
-        mw.action_btn_left_panel.setObjectName("toolGhostBtn")
-        action_layout.addWidget(mw.action_btn_left_panel)
-
-        mw.action_btn_filter = QToolButton()
-        mw.action_btn_filter.setIcon(get_icon("search"))
-        mw.action_btn_filter.setText("筛选")
-        mw.action_btn_filter.setToolButtonStyle(Qt.ToolButtonIconOnly)
-        mw.action_btn_filter.setCheckable(True)
-        mw.action_btn_filter.setToolTip("切换筛选面板")
-        mw.action_btn_filter.setObjectName("toolGhostBtn")
-        action_layout.addWidget(mw.action_btn_filter)
-
-        mw.action_btn_col_filter = QToolButton()
-        mw.action_btn_col_filter.setIcon(get_icon("funnel-lines"))
-        mw.action_btn_col_filter.setText("列头筛选")
-        mw.action_btn_col_filter.setToolButtonStyle(Qt.ToolButtonIconOnly)
-        mw.action_btn_col_filter.setCheckable(True)
-        mw.action_btn_col_filter.setToolTip("列头取值过滤模式")
-        mw.action_btn_col_filter.setObjectName("toolGhostBtn")
-        action_layout.addWidget(mw.action_btn_col_filter)
+        # 审核从「更多」面板提到主操作位（设计稿：审核是日常工作流的第一跳）
+        mw.action_btn_audit = QToolButton()
+        mw.action_btn_audit.setIcon(get_icon("edit", 14))
+        mw.action_btn_audit.setText("审核")
+        mw.action_btn_audit.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        mw.action_btn_audit.setToolTip("打开审核队列（未读 / 待核对清单）")
+        mw.action_btn_audit.setObjectName("actionBtnAudit")
+        mw.action_btn_audit.setFixedHeight(30)
+        # 模块级函数，不能用 self. 取（v43.341 之前一直挂在 self 上，点了就报错）
+        mw.action_btn_audit.clicked.connect(lambda: _on_audit_action(mw))
+        action_layout.addWidget(mw.action_btn_audit)
 
         action_layout.addWidget(self._make_separator())
-        # ═══ 收纳菜单：看板 / 导出 / 维护 ═══
-        # 创建菜单按钮
+
+        # ═══ 第 2 段：视图开关（4 个 icon-only，设计稿 .tool-btn）═══
+        # 对象名/属性名沿用旧名（main_window 与控制器都挂在 mw.action_btn_* 上），
+        # 只换视觉与文案；文本保留是给读屏与「更多」菜单同步用的，按钮本身不显示。
+        for _attr, _icon, _text, _tip in (
+            ("action_btn_left_panel", "table", "数据表", "显示/隐藏左栏（数据表与导航）"),
+            ("action_btn_filter", "search", "筛选抽屉", "显示/隐藏筛选抽屉"),
+            ("action_btn_col_filter", "funnel-lines", "列头过滤", "列头取值过滤模式"),
+            ("action_btn_toggle_stats", "gauge", "概览面板", "显示/隐藏本次分析概览"),
+        ):
+            btn = QToolButton()
+            btn.setIcon(get_icon(_icon, 15))
+            btn.setText(_text)
+            btn.setToolTip(_tip)
+            btn.setToolButtonStyle(Qt.ToolButtonIconOnly)
+            btn.setCheckable(True)
+            btn.setFixedSize(30, 30)
+            btn.setObjectName("toolViewBtn")
+            setattr(mw, _attr, btn)
+            action_layout.addWidget(btn)
+        # 数据表默认 on（左栏默认可见）、概览默认 on（旧版即默认展开）
+        mw.action_btn_left_panel.setChecked(True)
+        mw.action_btn_toggle_stats.setChecked(True)
+
+        action_layout.addWidget(self._make_separator())
+        # ═══ 第 3 段：收纳（设计稿 .btn-ghost 看板 / 导出 + ⋮更多）═══
         mw.action_btn_boards = QToolButton()
         mw.action_btn_boards.setObjectName("actionMenuBtn")
-        mw.action_btn_boards.setIcon(get_icon("chart"))
+        mw.action_btn_boards.setIcon(get_icon("chart", 14))
         mw.action_btn_boards.setText("看板")
         mw.action_btn_boards.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        mw.action_btn_boards.setFixedHeight(30)
         mw.action_btn_boards.setToolTip("打开看板")
 
         # 为看板按钮添加下拉菜单
@@ -180,9 +175,10 @@ class LayoutComposer:
 
         mw.action_btn_export = QToolButton()
         mw.action_btn_export.setObjectName("actionMenuBtn")
-        mw.action_btn_export.setIcon(get_icon("download"))
+        mw.action_btn_export.setIcon(get_icon("download", 14))
         mw.action_btn_export.setText("导出")
         mw.action_btn_export.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        mw.action_btn_export.setFixedHeight(30)
         mw.action_btn_export.setToolTip("导出当前表格")
 
         # 为导出按钮添加下拉菜单
@@ -194,33 +190,14 @@ class LayoutComposer:
         mw.action_btn_export.setPopupMode(QToolButton.MenuButtonPopup)
         action_layout.addWidget(mw.action_btn_export)
 
-        mw.action_btn_maint = QToolButton()
-        mw.action_btn_maint.setObjectName("actionMenuBtn")
-        mw.action_btn_maint.setIcon(get_icon("sliders"))
-        mw.action_btn_maint.setText("维护")
-        mw.action_btn_maint.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        mw.action_btn_maint.setToolTip("维护工具")
-        # 维护按钮改为下拉菜单（自动隔离规则 + 物料画像）
-        mw.action_btn_maint.setPopupMode(QToolButton.MenuButtonPopup)
-        maint_menu = QMenu(mw)
-        _icon_action(maint_menu, "shield", "自动隔离规则", lambda: mw._open_auto_quarantine_rule_dialog())
-        _icon_action(maint_menu, "id-card", "物料画像", lambda: mw._show_material_profile())
-        mw.action_btn_maint.setMenu(maint_menu)
-        action_layout.addWidget(mw.action_btn_maint)
+        # 原「维护」菜单按钮（自动隔离规则 / 物料画像）退役，两项并入「更多」——
+        # 设计稿这一段只留 看板 / 导出 / ⋮ 三颗，第四颗会把主操作挤远。
+        # 注意：mw.action_btn_maint 已不再创建，main_window 里对它的连接一并删除。
 
-        action_layout.addWidget(self._make_separator())
-        # ═══ v43.341 设计稿第2项：低频 5 按钮收进「更多」弹出面板（可见控件 13→8）═══
-        # 关键：按钮对象本身不删、clicked/toggled 连接不删、外部 setChecked 同步不断，
-        # 只把 parent 从工具栏搬进弹出面板，避免 main_window 挂在它们身上的逻辑失效。
-        mw.action_btn_toggle_stats = QToolButton()
-        mw.action_btn_toggle_stats.setIcon(get_icon("gauge"))
-        mw.action_btn_toggle_stats.setText("概览")
-        mw.action_btn_toggle_stats.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        mw.action_btn_toggle_stats.setCheckable(True)
-        mw.action_btn_toggle_stats.setChecked(True)
-        mw.action_btn_toggle_stats.setToolTip("切换概览面板")
-        mw.action_btn_toggle_stats.setObjectName("toolGhostBtn")
-
+        # ═══ 「更多」⋮：低频开关 + 原「维护」两项 + 输出目录 ═══
+        # v43.341 起这 5 个按钮就搬进了弹出面板（对象与连接保留，只换 parent）；
+        # 本期把 概览 / 审核 请回主操作与视图开关位，「未读」与「审核」现在是同
+        # 一个队列（见 _on_audit_action），不再留第三颗重复按钮 → 面板只剩 2 个开关。
         mw.action_btn_toggle_progress = QToolButton()
         mw.action_btn_toggle_progress.setIcon(get_icon("zap"))
         mw.action_btn_toggle_progress.setText("进度")
@@ -229,23 +206,6 @@ class LayoutComposer:
         mw.action_btn_toggle_progress.setChecked(True)
         mw.action_btn_toggle_progress.setToolTip("切换分析进度")
         mw.action_btn_toggle_progress.setObjectName("toolGhostBtn")
-
-        # 添加审核按钮
-        mw.action_btn_audit = QToolButton()
-        mw.action_btn_audit.setIcon(get_icon("wrench"))
-        mw.action_btn_audit.setText("审核")
-        mw.action_btn_audit.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        mw.action_btn_audit.setToolTip("执行审核")
-        mw.action_btn_audit.setObjectName("toolGhostBtn")
-        # 设置点击事件
-        mw.action_btn_audit.clicked.connect(lambda: self._on_audit_action(mw))
-
-        mw.action_btn_unread_summary = QToolButton()
-        mw.action_btn_unread_summary.setIcon(get_icon("megaphone"))
-        mw.action_btn_unread_summary.setText("未读")
-        mw.action_btn_unread_summary.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        mw.action_btn_unread_summary.setToolTip("未读汇总")
-        mw.action_btn_unread_summary.setObjectName("toolGhostBtn")
 
         # 自动隔离规则按钮（ARC-003 第七刀，需额外创建）
         mw.action_btn_auto_q = QToolButton()
@@ -260,44 +220,75 @@ class LayoutComposer:
         more_layout.setContentsMargins(10, 10, 10, 10)
         more_layout.setSpacing(4)
         for _btn in (
-            mw.action_btn_toggle_stats, mw.action_btn_toggle_progress,
-            mw.action_btn_audit, mw.action_btn_unread_summary,
-            mw.action_btn_auto_q,
+            mw.action_btn_toggle_progress, mw.action_btn_auto_q,
         ):
             _btn.setMinimumWidth(150)
             more_layout.addWidget(_btn)
         more_layout.addStretch(1)
 
         mw.action_btn_more = QToolButton()
-        mw.action_btn_more.setObjectName("actionMenuBtn")
-        mw.action_btn_more.setIcon(get_icon("menu"))
+        # 设计稿这一段第三颗是 icon-only 的 ⋮（.tool-btn），不再占一颗带文字的菜单位
+        mw.action_btn_more.setObjectName("toolViewBtn")
+        mw.action_btn_more.setIcon(get_icon("dots", 16))
         mw.action_btn_more.setText("更多")
-        mw.action_btn_more.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        mw.action_btn_more.setToolTip("概览 / 进度 / 审核 / 未读 / 自动隔离 / 紧凑左栏")
+        mw.action_btn_more.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        mw.action_btn_more.setFixedSize(30, 30)
         mw.action_btn_more.setPopupMode(QToolButton.InstantPopup)
+        mw.action_btn_more.setToolTip(
+            "进度 / 自动隔离 · 自动隔离规则 / 物料画像 · 输出目录 · 收起左栏展开项\n"
+            "快捷键：F5 分析 · F6 导出 · F7 效益报告 · F11 全屏")
         more_menu = QMenu(mw)
         _more_widget_action = QWidgetAction(more_menu)
         _more_widget_action.setDefaultWidget(more_panel)
         more_menu.addAction(_more_widget_action)
         more_menu.addSeparator()
-        _compact_act = QAction("紧凑左栏（236px 导航）", more_menu)
-        _compact_act.setCheckable(True)
-        _compact_act.toggled.connect(
-            lambda on: mw.left_panel_component.set_compact(on))
-        more_menu.addAction(_compact_act)
+        # 原「维护」菜单两项 + 输出目录（裴哥定：左栏改纯导航后，输出目录进「更多」）
+        _icon_action(more_menu, "shield", "自动隔离规则",
+                     lambda: mw._open_auto_quarantine_rule_dialog())
+        _icon_action(more_menu, "id-card", "物料画像", lambda: mw._show_material_profile())
+        _icon_action(more_menu, "folder-open", "输出目录…", lambda: mw._select_output_dir())
+        more_menu.addSeparator()
+        _collapse_act = QAction("收起左栏展开项", more_menu)
+        # v43.341 的「紧凑左栏 236/360 双模式」已被第五期C 取代：左栏恒为 236px 纯
+        # 导航，展开某块表单时才临时拉宽，所以这里只剩「把展开项收回去」这一个动作。
+        _collapse_act.triggered.connect(lambda: mw.left_panel_component.collapse_all())
+        more_menu.addAction(_collapse_act)
         mw.action_btn_more.setMenu(more_menu)
-        mw.action_compact_left = _compact_act
+        mw.action_collapse_nav = _collapse_act
         action_layout.addWidget(mw.action_btn_more)
 
-        # 一次性按钮点完收起菜单，避免遮住主界面（checkable 两个不收，方便连点）
-        for _once in (mw.action_btn_audit, mw.action_btn_unread_summary,
-                      mw.action_btn_auto_q):
+        # 一次性面板按钮点完收起菜单，避免遮住主界面
+        for _once in (mw.action_btn_auto_q,):
             _once.clicked.connect(lambda _c=False, m=more_menu: m.close())
 
-        action_layout.addStretch()
-        shortcut_hint = QLabel("F5:分析 | F6:导出 | F7:效益 | F11:全屏")
-        shortcut_hint.setObjectName("shortcutHint")
-        action_layout.addWidget(shortcut_hint)
+        action_layout.addStretch(1)
+
+        # ═══ 右端提示（设计稿 .hint）：共 N 条 + 快捷键胶囊 ═══
+        # 条数与底部状态条同源：bottom_bar.set_records() 顺手刷新这颗标签，
+        # 避免出现两处「记录数」各说各话。
+        # 三段（共 / 数字 / 条）拆开而不是富文本：数字要单独吃 #actionHintCount 的
+        # 等宽字体与正文色，写死 inline style 的话切主题就不跟着 QSS 变了。
+        count_box = QWidget()
+        count_box.setObjectName("actionHint")
+        count_layout = QHBoxLayout(count_box)
+        count_layout.setContentsMargins(0, 0, 0, 0)
+        count_layout.setSpacing(3)
+        for _txt, _obj in (("共", "actionHintText"), ("—", "actionHintCount"),
+                           ("条", "actionHintText")):
+            _lbl = QLabel(_txt)
+            _lbl.setObjectName(_obj)
+            count_layout.addWidget(_lbl)
+        mw.action_hint_count = count_box.findChildren(QLabel)[1]
+        mw.action_hint_count.setToolTip("当前主表条数（与底部状态条同源）")
+        action_layout.addWidget(count_box)
+
+        for _key, _label in (("F5", "分析"), ("F11", "全屏")):
+            _kbd = QLabel(_key)
+            _kbd.setObjectName("kbdChip")
+            action_layout.addWidget(_kbd)
+            _txt = QLabel(_label)
+            _txt.setObjectName("actionHintText")
+            action_layout.addWidget(_txt)
 
         # 底部按钮行已删除，start_btn 别名指向顶部工具栏分析按钮（供分析起止启用/禁用）
         mw.start_btn = mw.action_btn_analyze
@@ -329,15 +320,17 @@ class LayoutComposer:
         right_layout.setContentsMargins(6, 6, 6, 6)
         right_layout.setSpacing(6)
 
-        # 上半部分：本次分析概览 + 分析进度（用户可拖动，默认占较小空间）
+        # 上半部分：KPI 概览带 + 分析进度（用户可拖动）
         top_panel = QWidget()
         top_panel.setObjectName("topPanel")
         top_layout = QVBoxLayout(top_panel)
         top_layout.setContentsMargins(0, 0, 0, 0)
         top_layout.setSpacing(6)
-        top_layout.addWidget(mw.stats_cards)                # 本次分析概览
+        top_layout.addWidget(mw.stats_cards)                # KPI 概览带（固定 54px）
         top_layout.addWidget(mw.main_table.progress_group)  # 分析进度
-        top_panel.setMaximumHeight(235)                       # v43.337：概览更扁，多给表格空间
+        # v43.349 第五期D：不再限高 235。概览带自己钉死 54px，进度面板收起后
+        # top_panel 的最大高度就跟着缩到 54，多出来的高度自动回到表格里
+        # （以前靠一个写死的数字压着，收起进度也腾不出空间）。
 
         # 将 top_panel 引用保存到主窗口，以便控制器访问
         mw.top_panel = top_panel
@@ -353,7 +346,7 @@ class LayoutComposer:
         _right_v_splitter.setChildrenCollapsible(True)
         _right_v_splitter.addWidget(top_panel)
         _right_v_splitter.addWidget(_v_splitter)
-        _right_v_splitter.setSizes([150, 650])   # v43.337：概览更扁，多给表格空间
+        _right_v_splitter.setSizes([110, 690])   # 54 KPI 带 + 6 间距 + 进度条一小截
         _right_v_splitter.setStretchFactor(0, 0)
         _right_v_splitter.setStretchFactor(1, 1)
 
@@ -361,7 +354,8 @@ class LayoutComposer:
         right_layout.addWidget(mw.main_table.summary_container, 0)
 
         body_splitter.addWidget(right_container)
-        # v43.337：左栏实际 setFixedWidth(360)，此处首值须与之匹配，避免 splitter 约束冲突
-        body_splitter.setSizes([360, 440, 860])
+        # v43.349 第五期C：左栏改 236px 纯导航，首值须与 setFixedWidth 匹配，
+        # 否则 splitter 约束和控件约束打架（v43.337 时代是 360）。
+        body_splitter.setSizes([236, 440, 860])
 
         return body_splitter

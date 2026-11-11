@@ -255,9 +255,11 @@ class DataController:
         self.mw.data_view_model.setDataFrame(df)
         self.mw.table_view.setModel(self.mw.data_view_model)
 
-        # 更新统计卡片
+        # 更新概览 KPI 带（v43.349 修正：StatsCardsWidget 的方法叫 refresh，
+        # 这里写的是 update_stats —— 每次应用筛选都会在控制台抛一条
+        # AttributeError，带上的数字从来不跟着变）
         if hasattr(self.mw, 'stats_cards'):
-            self.mw.stats_cards.update_stats(df)
+            self.mw.stats_cards.refresh(df)
 
     def get_original_data(self) -> pd.DataFrame:
         """获取原始数据（未筛选）"""

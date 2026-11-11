@@ -413,32 +413,14 @@ class DataFrameModel(QAbstractTableModel):
                         header_text = str(data_cols[section - 1])
                 if header_text is None:
                     return str(section)
-                # 将长表头分成2行显示
-                return self._wrap_header(header_text)
+                # v43.349 第五期E：表头改为设计稿的单行 nowrap（表头固定 32px 高，
+                # 由 main_window 里 setFixedHeight + setWordWrap(False) 决定）。
+                # 原先这里会把长列名插 '\n' 折成两行 —— 单行后折行只剩半截文字，
+                # 故不再折行，列名放不下时由 Qt 按 ElideRight 打点。
+                return header_text
             else:
                 return str(self._data.index[section] + 1)
         return None
-
-    def _wrap_header(self, text):
-        """将长表头文字分成2行，在合适位置插入换行符"""
-        if not text or len(text) <= 4:
-            return text
-        # 已经有括号的，在括号前换行
-        if '(' in text and not text.startswith('('):
-            idx = text.index('(')
-            return text[:idx].rstrip() + '\n' + text[idx:]
-        # 含"-"的（如 数量-定额），在"-"前换行
-        if '-' in text and not text.startswith('-'):
-            idx = text.index('-')
-            return text[:idx].rstrip() + '\n' + text[idx:]
-        # 含"金额"的较长短名，在"金额"前换行
-        if '金额' in text and len(text) > 4:
-            idx = text.index('金额')
-            if idx > 0:
-                return text[:idx].rstrip() + '\n' + text[idx:]
-        # 一般长文本，从中间断开
-        mid = len(text) // 2
-        return text[:mid] + '\n' + text[mid:]
 
     def flags(self, index):
         if not index.isValid():

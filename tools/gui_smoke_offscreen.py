@@ -15,6 +15,7 @@ import contextlib
 import datetime
 import io
 import os
+import re
 import sys
 import traceback
 
@@ -24,7 +25,9 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ.setdefault("QT_LOGGING_RULES", "*.debug=false")
 
 import pandas as pd
-from PySide6.QtWidgets import QApplication, QStyleFactory, QLabel, QWidget
+from PySide6.QtWidgets import (
+    QApplication, QStyleFactory, QLabel, QPushButton, QWidget,
+)
 from PySide6.QtGui import QFont
 from PySide6.QtCore import Qt, QTimer
 
@@ -41,6 +44,18 @@ def check(name, fn):
     except Exception as exc:
         RESULTS.append((name, False, "%s: %s" % (type(exc).__name__, exc)))
         traceback.print_exc()
+
+
+def _receiver_count(owner, sig):
+    """信号接收者数量（与 tests/test_main_window_smoke.py 同一手法）。
+
+    PySide6 的 ``QObject.receivers()`` 只认 C++ 签名字符串，SignalInstance 没有
+    ``.signal`` 属性，所以从 repr 里反解 ``name(args)``。
+    """
+    m = re.search(r"SignalInstance (\w+)\((.*?)\)", repr(sig))
+    if not m:
+        return -1
+    return owner.receivers("2%s(%s)" % (m.group(1), m.group(2)))
 
 
 def build_app():
@@ -109,30 +124,58 @@ def main():
 
     df = sample_df()
 
-    # ① 标题栏：48px + 动态副标题
+    # ① 标题栏（v43.349 第五期A：设计稿 Tier 1 四段式）
     def _title():
         tb = win.title_bar
-        subs = [l for l in tb.findChildren(QLabel) if l.objectName() == "titleSub"]
-        before = subs[0].text() if subs else "<no titleSub>"
+        by_name = {}
+        for lbl in tb.findChildren(QLabel):
+            by_name.setdefault(lbl.objectName(), lbl)
+        for btn in tb.findChildren(QPushButton):
+            by_name.setdefault(btn.objectName(), btn)
+        parts = ["titleBrand", "titleMain", "titleBrandSub", "titleCtx",
+                 "titleCtxValue", "titleSourceBtn", "themeBtn"]
+        missing = [p for p in parts if p not in by_name]
         stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-        tb.set_subtitle("数据源：smoke.xlsx | 分析时间：%s" % stamp)
-        after = subs[0].text() if subs else "<no titleSub>"
-        ok = tb.maximumHeight() == 48 and bool(subs) and "数据源" in after and before != after
-        return ok, "height=%s 副标题 '%s' -> '%s'" % (tb.maximumHeight(), before, after)
-    check("① 标题栏 48px + 副标题动态化", _title)
+        before = by_name["titleCtxValue"].text()
+        tb.set_data_context("smoke.xlsx", stamp)
+        after = by_name["titleCtxValue"].text()
+        src_text = by_name["titleSourceBtn"].text()
+        # 「数据源」胶囊必须真接到选文件入口（裴哥定：左栏改纯导航后选文件在标题栏）
+        wired = _receiver_count(tb, tb.source_requested) >= 1
+        ok = (tb.maximumHeight() == 48 and not missing and before != after
+              and stamp in after and "smoke.xlsx" in src_text and wired
+              and win._version_label.text().startswith("v"))
+        return ok, ("height=%s 缺段=%s 上下文 '%s'->'%s' 胶囊='%s' 接线=%s 版本=%s" % (
+            tb.maximumHeight(), missing or "无", before, after, src_text, wired,
+            win._version_label.text()))
+    check("① 标题栏四段式 + 数据源胶囊可选文件", _title)
 
-    # ② 底部状态条
+    # ② 底部状态条（v43.349 第五期F：本组件就是主窗口唯一的 QStatusBar，不再两条叠加）
     def _bottom():
         bb = win.bottom_bar
-        ok = bb is not None and bb.maximumHeight() == 30 and bb.parent() is not None
-        return ok, "height=%s 记录='%s' 选中='%s' 偏差='%s' 未读='%s'" % (
-            bb.maximumHeight(), bb.lbl_records.text(), bb.lbl_selected.text(),
+        one_bar = win.statusBar() is bb
+        # 左端高频指标：前缀标签（已选/共/偏差合计/未读）+ 状态文字
+        high_freq = [w for w in bb.findChildren(QLabel)
+                     if w.objectName() == "bottomStatusLabel"]
+        # 右端低频：原先挂在原生状态条上的四个常驻标签，现在必须落进这一根条里
+        low_freq = [getattr(win, "_analysis_time_label", None),
+                    getattr(win, "_read_counter_label", None),
+                    getattr(win, "_col_filter_hint_label", None),
+                    getattr(win, "_version_label", None)]
+        in_bar = [w for w in low_freq if w is not None and bb.isAncestorOf(w)]
+        ok = (bb is not None and bb.maximumHeight() == 30 and bb.parent() is not None
+              and one_bar and len(high_freq) >= 4 and len(in_bar) == 4)
+        return ok, "height=%s 唯一状态栏=%s 高频=%d 低频常驻=%d/4 状态='%s' 已选='%s' 共='%s' 偏差='%s' 未读='%s'" % (
+            bb.maximumHeight(), one_bar, len(high_freq), len(in_bar),
+            bb.lbl_state.text(),
+            bb.lbl_selected.text(), bb.lbl_records.text(),
             bb.lbl_deviation.text(), bb.lbl_unread.text())
-    check("② 底部状态条常驻 + 已挂布局", _bottom)
+    check("② 底部状态条=唯一 QStatusBar（高频左/低频右）", _bottom)
 
-    # ③ 操作栏三开关 icon-only
+    # ③ 操作栏四开关 icon-only 30×30（v43.349 第五期B）
     def _toggles():
-        names = ["action_btn_left_panel", "action_btn_filter", "action_btn_col_filter"]
+        names = ["action_btn_left_panel", "action_btn_filter",
+                 "action_btn_col_filter", "action_btn_toggle_stats"]
         detail = []
         ok = True
         for n in names:
@@ -143,29 +186,50 @@ def main():
             else:
                 icon_ok = not b.icon().isNull()
                 style_ok = b.toolButtonStyle() == Qt.ToolButtonIconOnly
-                ok = ok and icon_ok and style_ok
-                detail.append("%s(icon=%s,style=%s)" % (n, icon_ok, style_ok))
+                size_ok = b.maximumWidth() == 30 and b.maximumHeight() == 30
+                name_ok = b.objectName() == "toolViewBtn"
+                ok = ok and icon_ok and style_ok and size_ok and name_ok
+                detail.append("%s(icon=%s,style=%s,30=%s,name=%s)"
+                              % (n, icon_ok, style_ok, size_ok, name_ok))
         return ok, " ".join(detail)
-    check("③ 操作栏三开关 icon-only", _toggles)
+    check("③ 操作栏四开关 icon-only 30×30", _toggles)
 
-    # ④ 概览 KPI 带 52px
+    # ④ 概览 = 54px KPI 带（v43.349 第五期D：照抄设计稿 .kpi-bar，无标题行）
     def _kpi():
-        cards = [w for w in win.stats_cards.findChildren(QWidget)
-                 if w.minimumHeight() == 52 and w is not win.stats_cards]
-        return len(cards) >= 7, "52px 卡片数=%d（期望7）" % len(cards)
-    check("④ 概览 KPI 带 52px", _kpi)
+        from PySide6.QtWidgets import QFrame
+        sc = win.stats_cards
+        cells = [w for w in sc.findChildren(QFrame) if w.objectName() == "statsCard"]
+        dots = [w for w in sc.findChildren(QFrame) if w.objectName() == "kpiDot"]
+        dividers = [w for w in sc.findChildren(QFrame) if w.objectName() == "kpiDivider"]
+        marks = [w for w in sc.findChildren(QLabel) if w.objectName() == "kpiMore"]
+        height_ok = (sc.minimumHeight() == 54 and sc.maximumHeight() == 54)
+        cells_ok = len(cells) == 7 and all(c.minimumWidth() == 118 for c in cells)
+        label_ok = [c.findChildren(QLabel)[0].text() for c in cells] == [
+            "AI 通过率", "未读", "真异常", "替代料", "审核后变更", "隔离区", "偏差率预警"]
+        accent_ok = len(dots) == 7 and all(d.property("kpiAccent") for d in dots)
+        divider_ok = len(dividers) == 6
+        mark_ok = sum(1 for m in marks if not m.isHidden()) == 5
+        no_title_ok = not any(m.text() == "本次分析概览"
+                              for m in win.findChildren(QLabel))
+        ok = all((height_ok, cells_ok, label_ok, accent_ok, divider_ok,
+                  mark_ok, no_title_ok))
+        return ok, ("带高=%s 格=%d 标签序=%s 圆点=%d 竖线=%d 可点标记=%d 无标题行=%s"
+                    % (sc.minimumHeight(), len(cells), label_ok, len(dots),
+                       len(dividers), sum(1 for m in marks if not m.isHidden()),
+                       no_title_ok))
+    check("④ 概览 54px KPI 带（7 格 + 圆点 + 竖线 + 可点标记）", _kpi)
 
-    # ⑤ 左栏 360 + splitter 首值匹配
+    # ⑤ 左栏 236 纯导航 + splitter 首值匹配（v43.349 第五期C：360 → 236）
     def _left():
         lp = getattr(win, "left_panel", None)
         sp = getattr(win, "body_splitter", None)
         w = lp.width() if lp is not None else -1
         sizes = sp.sizes() if sp is not None else []
-        ok = lp is not None and w == 360 and bool(sizes) and sizes[0] == 360
+        ok = lp is not None and w == 236 and bool(sizes) and sizes[0] == 236
         return ok, "left_panel.width=%s splitter.sizes=%s" % (w, sizes[:3])
-    check("⑤ 左栏固定宽 360 + splitter 匹配", _left)
+    check("⑤ 左栏固定宽 236 + splitter 匹配", _left)
 
-    # ⑥ 灌小数据：data_changed -> 底部状态条联动
+    # ⑥ 灌小数据：data_changed -> 底部状态条联动（操作栏「共 N 条」同源）
     def _data():
         win.view_model.df = df
         app.processEvents()
@@ -173,9 +237,13 @@ def main():
         rec = bb.lbl_records.text()
         dev = bb.lbl_deviation.text()
         unr = bb.lbl_unread.text()
-        ok = rec == "记录：3" and "¥" in dev and unr == "未读：2"
-        return ok, "记录='%s' 偏差='%s' 未读='%s'" % (rec, dev, unr)
-    check("⑥ 灌 3 行真实数据 → 底部状态条联动", _data)
+        hint = getattr(win, "action_hint_count", None)
+        hint_txt = hint.text() if hint is not None else "?"
+        ok = (rec == "3" and "¥" in dev and unr == "2"
+              and hint_txt == "3" and bb.dot.property("dotState") == "warn")
+        return ok, "共='%s' 偏差='%s' 未读='%s' 操作栏条数='%s' 状态='%s/%s'" % (
+            rec, dev, unr, hint_txt, bb.dot.property("dotState"), bb.lbl_state.text())
+    check("⑥ 灌 3 行真实数据 → 状态条 + 操作栏条数同源", _data)
 
     # ⑥b 选中行数联动（主表为 SelectItems，必须按行号去重统计）
     def _sel():
@@ -199,7 +267,7 @@ def main():
         win.table_view.selectAll()
         app.processEvents()
         txt = win.bottom_bar.lbl_selected.text()
-        return txt != "选中：0", "选中='%s'" % txt
+        return txt != "0", "选中='%s'" % txt
     check("⑥b 选中行数联动（SelectItems 全选）", _sel)
 
     # ⑦ 三看板 Content + Shell + 亮暗主题
@@ -313,64 +381,96 @@ def main():
                     app.processEvents()
     check("⑧ 看板多开：三看板非模态并存/复用/清理", _multi_board)
 
-    # ⑨ 操作栏 13→8（v43.341 设计稿第2项）
+    # ⑨ 操作栏三段分层：主操作2 │ 视图开关4 │ 收纳3 + 右端提示（v43.349 第五期B）
     def _action_bar():
-        from PySide6.QtWidgets import QToolButton, QPushButton
+        from PySide6.QtWidgets import QToolButton, QPushButton, QWidgetAction
         more = getattr(win, 'action_btn_more', None)
         assert more is not None, '「更多」按钮未创建'
         bar = more.parent()
         lay = bar.layout()
-        direct = [lay.itemAt(i).widget() for i in range(lay.count())]
+        direct = [w for w in (lay.itemAt(i).widget() for i in range(lay.count()))
+                  if w is not None]  # 尾部 addStretch 的 item 没有 widget
         visible_btns = [w for w in direct
                         if isinstance(w, (QToolButton, QPushButton))]
-        names = ('action_btn_toggle_stats', 'action_btn_toggle_progress',
-                 'action_btn_audit', 'action_btn_unread_summary',
-                 'action_btn_auto_q')
+        seps = [w for w in direct if w.objectName() == "toolbarSep"]
+        bar_ok = len(visible_btns) == 9 and len(seps) == 2
+        # 低频 3 开关：对象没重建（外部 setChecked 同步不断链），parent 已进弹出面板
+        names = ('action_btn_toggle_progress', 'action_btn_auto_q')
         low = [getattr(win, n, None) for n in names]
         kept = all(b is not None for b in low)
         moved = all(b.parent() is not bar for b in low if b is not None)
-        # 按钮对象没被重建：checkable 状态仍可切换（外部 setChecked 同步不断链）
+        # 概览/审核 已请回主操作位（第 2 段视图开关 / 第 1 段主操作）
+        promoted = (getattr(win, 'action_btn_toggle_stats', None) in visible_btns
+                    and getattr(win, 'action_btn_audit', None) in visible_btns)
+        # 按钮对象没被重建：checkable 状态仍可切换
         togglable = False
         if low[0] is not None:
             old = low[0].isChecked()
             low[0].setChecked(not old)
             togglable = low[0].isChecked() == (not old)
             low[0].setChecked(old)
-        compact_act = getattr(win, 'action_compact_left', None)
-        act_ok = compact_act is not None and compact_act.isCheckable()
-        menu_ok = more.menu() is not None and len(more.menu().actions()) >= 2
-        ok = (len(visible_btns) == 8 and kept and moved and togglable
-              and act_ok and menu_ok)
-        return ok, ("可见按钮=%d(期望8) 5对象保留=%s 已搬入菜单=%s 可切换=%s "
-                    "紧凑开关=%s 菜单项=%s" % (len(visible_btns), kept, moved,
-                                       togglable, act_ok, menu_ok))
-    check("⑨ 操作栏 13→8 收拢进「更多」", _action_bar)
+        collapse_act = getattr(win, 'action_collapse_nav', None)
+        act_ok = (collapse_act is not None and not collapse_act.isCheckable()
+                  and collapse_act.text() == "收起左栏展开项")
+        menu_acts = more.menu().actions() if more.menu() is not None else []
+        items = [a.text() for a in menu_acts if not a.isSeparator() and a.text()]
+        menu_ok = (any(isinstance(a, QWidgetAction) for a in menu_acts) and
+                   all(t in items for t in ("自动隔离规则", "物料画像",
+                                            "输出目录…", "收起左栏展开项")))
+        hint = getattr(win, 'action_hint_count', None)
+        hint_ok = hint is not None and hint.objectName() == "actionHintCount"
+        ok = (bar_ok and kept and moved and promoted and togglable
+              and act_ok and menu_ok and hint_ok)
+        return ok, ("可见按钮=%d(期望9) 分隔=%d(期望2) 3对象保留=%s 已搬入菜单=%s "
+                    "概览/审核归位=%s 可切换=%s 收起展开项=%s 菜单项=%s 条数提示=%s"
+                    % (len(visible_btns), len(seps), kept, moved, promoted,
+                       togglable, act_ok, menu_ok, hint_ok))
+    check("⑨ 操作栏三段分层 9 可见按钮 + 低频进「更多」", _action_bar)
 
-    # ⑩ 左栏 236px 紧凑纯导航（v43.341 设计稿第4项）
-    def _left_compact():
+    # ⑩ 左栏 236px 纯导航：9 行 nav-item + 互斥展开 + 徽标档位（v43.349 第五期C）
+    def _left_nav():
+        from PySide6.QtWidgets import QPushButton
         lp = win.left_panel_component
-        bodies = [lp.file_group.body, lp.alt_group.body,
-                  lp.semi_group.body, lp.preview_group.body]
         sp = win.body_splitter
-        lp.set_compact(True)
-        w236, s236 = lp.left_panel.width(), sp.sizes()[0]
-        hidden = all(b.isHidden() for b in bodies)
-        # 模拟点开第一张卡片头：互斥展开 + 临时拉回 360 保证表单不挤
-        lp._compact_toggle(lp.file_group.body, lp.file_group.arrow_btn)
-        w360 = lp.left_panel.width()
-        opened = (not lp.file_group.body.isHidden()) and all(
-            b.isHidden() for b in bodies[1:])
-        lp._compact_toggle(lp.file_group.body, lp.file_group.arrow_btn)
-        back236 = lp.left_panel.width()
-        lp.set_compact(False)
-        w_restore, s_restore = lp.left_panel.width(), sp.sizes()[0]
-        ok = (w236 == 236 and s236 == 236 and hidden and w360 == 360
-              and opened and back236 == 236 and w_restore == 360
-              and s_restore == 360)
-        return ok, ("紧凑=%d/split%d 全收=%s 展开=%d 互斥=%s 收起=%d 还原=%d/split%d"
-                    % (w236, s236, hidden, w360, opened, back236,
-                       w_restore, s_restore))
-    check("⑩ 左栏 236px 紧凑导航双模式", _left_compact)
+        panel = lp.left_panel
+        rows = [w for w in panel.findChildren(QPushButton)
+                if w.objectName() == "navItem"]
+        want = ["偏差明细", "审核队列", "隔离区", "替代料配对",
+                "数据源", "材料半成品", "数据预览", "列管理", "筛选预设"]
+        rows_ok = [r.text() for r in rows] == want
+        on_ok = rows[0].property("navOn") is True and rows[1].property("navOn") != True
+        body_of = dict((btn, body) for btn, body in lp._expandables)
+        w236, s236 = panel.width(), sp.sizes()[0]
+        closed0 = all(b.isHidden() for b in body_of.values())
+
+        # 展开项：点「数据源」拉宽到 360，再点「材料半成品」互斥收起前者
+        src = [b for b in body_of if b.text() == "数据源"][0]
+        src.click()
+        opened = not body_of[src].isHidden()
+        w_open = panel.width()
+        semi = [b for b in body_of if b.text() == "材料半成品"][0]
+        semi.click()
+        excl = (not body_of[semi].isHidden() and body_of[src].isHidden()
+                and not src.isChecked())
+        # 点纯导航项（偏差明细）= 收起全部 + 宽度回 236
+        rows[0].click()
+        collapsed = all(b.isHidden() for b in body_of.values())
+        w_back, s_back = panel.width(), sp.sizes()[0]
+
+        pill = lp.badges["unread"]
+        lp.set_badge("unread", 37)
+        alert_on = pill.text() == "37" and pill.property("alert") == "true"
+        lp.set_badge("unread", 0)
+        alert_off = pill.text() == "0" and pill.property("alert") == "false"
+
+        ok = (rows_ok and on_ok and w236 == 236 and s236 == 236 and closed0
+              and opened and w_open == 360 and excl and collapsed and w_back == 236
+              and s_back == 236 and alert_on and alert_off)
+        return ok, ("行数=%d(期望9) 顺序=%s 当前区标记=%s 初始=%d/split%d 全收=%s "
+                    "展开宽=%d 互斥=%s 收起宽=%d/split%d 徽标=%s/%s"
+                    % (len(rows), rows_ok, on_ok, w236, s236, closed0, w_open,
+                       excl, w_back, s_back, alert_on, alert_off))
+    check("⑩ 左栏 236px 纯导航：互斥展开 + 待办徽标", _left_nav)
 
     # ⑪ 规则中心：组间 AND / 组内 OR + 只读命中预览（第四期）
     def _rule_preview():
@@ -757,6 +857,90 @@ def main():
         ok = kept and copied
         return ok, "点取消不清空=%s 复制详情含标题+异常=%s" % (kept, copied)
     check("⑰ 真实弹窗模板：动作按钮 + 取消不破坏 + 详情进剪贴板", _message_box_live)
+
+    # ⑱ v43.349（第五期E）：主表格格式照抄设计稿 .tbl —— 36px 行 / 32px 单行表头
+    #     左对齐 / 关竖网格线改画 1px 行下边框 / 悬浮行叠色 + 选中左 3px 主色条 +
+    #     状态胶囊的自绘代理。像素断言走 viewport().grab()，字体在这台机器上是方框，
+    #     所以只验"该出现什么颜色"，不验文字。
+    def _table_fmt():
+        from PySide6.QtCore import QItemSelection
+        from PySide6.QtGui import QColor
+        from gui_pyside6.themes.tokens import SIZE_PX, TOKENS
+        from gui_pyside6.widgets.row_style_delegate import RowStyleDelegate
+        try:
+            win.source_model.setDataFrame(df)
+            win.proxy_model.invalidate()
+        except Exception as e:
+            return False, "喂表格失败: %s: %s" % (type(e).__name__, e)
+        app.processEvents()
+        tv = win.table_view
+        hdr = tv.horizontalHeader()
+        m = tv.model()
+        vis = [i for i in range(m.columnCount()) if not tv.isColumnHidden(i)]
+        if not vis:
+            return False, "无可见列"
+
+        def near(px, hexs, tol=26):
+            c = QColor(hexs)
+            return (abs(px.red() - c.red()) <= tol and abs(px.green() - c.green()) <= tol
+                    and abs(px.blue() - c.blue()) <= tol)
+
+        row_ok = tv.rowHeight(0) == SIZE_PX["tableRow"]
+        grid_ok = not tv.showGrid()
+        hdr_ok = (hdr.height() == SIZE_PX["tableHeader"] and not tv.wordWrap()
+                  and hdr.defaultAlignment() == (Qt.AlignLeft | Qt.AlignVCenter))
+        deg = tv.itemDelegate()
+        deg_ok = isinstance(deg, RowStyleDelegate)
+        oneline_ok = all("\n" not in str(m.headerData(i, Qt.Horizontal, Qt.DisplayRole) or "")
+                         for i in range(m.columnCount()))
+        idx = m.index(0, vis[-1] if len(vis) > 1 else vis[0])
+        r = tv.visualRect(idx)
+        img = tv.viewport().grab().toImage()
+        border_ok = r.height() > 2 and near(img.pixelColor(r.center().x(), r.bottom()),
+                                            TOKENS["light"]["border"])
+        sm = tv.selectionModel()
+        sm.select(QItemSelection(idx, idx), sm.SelectionFlag.ClearAndSelect)
+        app.processEvents()
+        img2 = tv.viewport().grab().toImage()
+        bar_ok = all(near(img2.pixelColor(r.left() + 1, r.center().y() + d),
+                         TOKENS["light"]["primary"], 30) for d in (-4, 0, 4))
+        sel_ok = near(img2.pixelColor(r.center().x(), r.center().y() - 8),
+                      TOKENS["light"]["primarySoft"], 16)
+        sm.clearSelection()
+        before = tv.viewport().grab().toImage()
+        deg._set_hover_row(0)
+        app.processEvents()
+        after = tv.viewport().grab().toImage()
+        hover_ok = any(before.pixelColor(r.center().x(), y) != after.pixelColor(r.center().x(), y)
+                       for y in range(r.top() + 2, r.bottom() - 2, 2))
+        deg._set_hover_row(-1)
+        # 状态胶囊：灌一份带「偏差区间」的数据，看该格左缘是否画出了 dangerSoft 浅底
+        df_pill = df.copy()
+        df_pill["偏差区间"] = ["正偏差"] * len(df_pill)
+        win.source_model.setDataFrame(df_pill)
+        win.proxy_model.invalidate()
+        app.processEvents()
+        m2 = tv.model()
+        pcol = [i for i in range(m2.columnCount())
+                if str(m2.headerData(i, Qt.Horizontal, Qt.DisplayRole) or "") == "偏差区间"]
+        pill_ok = False
+        if pcol and not tv.isColumnHidden(pcol[0]):
+            pr = tv.visualRect(m2.index(0, pcol[0]))
+            pimg = tv.viewport().grab().toImage()
+            hits = sum(1 for y in range(pr.top() + 4, pr.bottom() - 3, 2)
+                       for x in range(pr.left() + 4, pr.left() + 30, 2)
+                       if near(pimg.pixelColor(x, y), TOKENS["light"]["dangerSoft"], 22))
+            pill_ok = hits >= 8
+        win.source_model.setDataFrame(df)
+        win.proxy_model.invalidate()
+        app.processEvents()
+        ok = all([row_ok, grid_ok, hdr_ok, deg_ok, oneline_ok, border_ok,
+                  bar_ok, sel_ok, hover_ok, pill_ok])
+        info = ("行=%d 表头=%d 竖线=%s 代理=%s 单行=%s 下边框=%s 蓝条=%s 选中底=%s 悬浮=%s 胶囊=%s"
+                % (tv.rowHeight(0), hdr.height(), "关" if grid_ok else "开",
+                   type(deg).__name__, oneline_ok, border_ok, bar_ok, sel_ok, hover_ok, pill_ok))
+        return ok, info
+    check("⑱ 表格格式照抄：36px行/32px表头/行下边框/蓝条/悬浮/胶囊", _table_fmt)
 
     return report()
 
