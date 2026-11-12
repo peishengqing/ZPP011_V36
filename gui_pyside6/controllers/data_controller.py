@@ -75,15 +75,27 @@ class DataController:
             self._persist_material_names(df)
 
             # 更新预览统计
-            if hasattr(self.mw, 'preview_label'):
-                self.mw.preview_label.setText(self._format_preview_stats(df))
+            self._set_preview(self._format_preview_stats(df))
         except Exception as e:
-            if hasattr(self.mw, 'preview_label'):
-                self.mw.preview_label.setText(f"读取失败：{e}")
+            self._set_preview(f"读取失败：{e}")
         finally:
             if self._file_worker is not None:
                 self._file_worker.deleteLater()
                 self._file_worker = None
+
+    def _set_preview(self, text):
+        """写「数据预览」文字，并顺手把左栏那一项展开。
+
+        只在统计真正落地（或明确读失败）那一刻展开；「正在读取文件…」那种占位
+        文案走 preview_label.setText 原路，不动面板——否则选完文件先弹一块空壳。
+        """
+        label = getattr(self.mw, 'preview_label', None)
+        if label is None:
+            return
+        label.setText(text)
+        comp = getattr(self.mw, 'left_panel_component', None)
+        if comp is not None:
+            comp.open_data_preview()
 
     def _file_mtime_signature(self, path):
         """取源文件的「修改时间 + 大小」作为变更指纹"""
@@ -150,8 +162,7 @@ class DataController:
 
     def _on_file_failed(self, msg):
         """文件加载失败回调"""
-        if hasattr(self.mw, 'preview_label'):
-            self.mw.preview_label.setText(f"读取失败：{msg}")
+        self._set_preview(f"读取失败：{msg}")
         if self._file_worker is not None:
             self._file_worker.deleteLater()
             self._file_worker = None

@@ -24,6 +24,7 @@ from gui_pyside6.utils.semi_class import merge_semi_class_values, ensure_semi_cl
 from gui_pyside6.widgets.filter_panel import _color_icon
 from gui_pyside6.utils.icons import add_icon_action
 from gui_pyside6.utils.table_autofit import get_adaptive, install_adaptive
+from gui_pyside6.utils.board_empty_hint import empty_hint_text, set_empty_hint
 from gui_pyside6.components.dashboard_shell import pack_row
 from gui_pyside6.themes.tokens import SIZE_PX
 
@@ -345,19 +346,16 @@ class NegLossContent(QWidget):
         self.shell.set_selected_count(rows, self.source_model.rowCount())
 
     def _apply_default_filter(self):
+        """开箱默认只看未读，一条都不退。
+
+        v43.364 前这里在「未读 0 条」时会悄悄把口径换成「全部」，把已读的一起摊出来：
+        用户以为在看待办，其实看的是全量，而且筛选下拉写的还是「未读」，显示与生效
+        两套。现在保持未读不动，空了由表体中央那句提示讲清楚。
+        """
         self._read_filter = "未读"
         if self._read_col and hasattr(self, "combo_read"):
             self.combo_read.setCurrentText("未读")
         self._apply_filter()
-        sm = getattr(self, "source_model", None)
-        if sm is None or sm.rowCount() > 0:
-            return
-        if self.original_df is not None and len(self.original_df) > 0:
-            self._read_filter = "全部"
-            if hasattr(self, "combo_read"):
-                self.combo_read.setCurrentText("全部")
-            else:
-                self._apply_filter()
 
     def set_data(self, df):
         df = df.copy()
@@ -608,6 +606,7 @@ class NegLossContent(QWidget):
         if df.empty:
             self.source_model.setDataFrame(df)
             self._sort_ctrl.reapply()
+            set_empty_hint(self.table_view, empty_hint_text(0, df, self._read_filter))
             if self.shell is not None:
                 self.shell.set_status("0 条记录")
                 self.shell.set_total_hits(0)
@@ -637,6 +636,8 @@ class NegLossContent(QWidget):
             filtered = self.col_filter_ctrl.mask_dataframe(filtered)
         self.source_model.setDataFrame(filtered)
         self._sort_ctrl.reapply()
+        set_empty_hint(self.table_view,
+                       empty_hint_text(len(filtered), df, self._read_filter))
         tag = "含未投料" if self._include_zero else "不含未投料"
         note_tag = {"all": "全部", "yes": "有备注", "no": "无备注"}[self._has_note_filter]
         if self.shell is not None:

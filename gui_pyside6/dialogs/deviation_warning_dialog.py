@@ -33,6 +33,7 @@ from gui_pyside6.utils.locate import locate_row, drill_to_workshop, compute_mom_
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
+from gui_pyside6.utils.board_empty_hint import empty_hint_text, set_empty_hint
 from gui_pyside6.utils.semi_class import (
     SEMI_CLASS_FOOD, SEMI_CLASS_DRINK, merge_semi_class_values, ensure_semi_class_column,
 )
@@ -67,7 +68,7 @@ class DeviationWarningDialog(QDialog):
         # Plain lambdas are unreferencable and would leak the dialog
         # (see A-06).
         self._handlers = []
-        self.filter_mode = "all"
+        self.filter_mode = "unread"   # v43.364：默认只看未读（按钮态由 _set_filter 同步）
         self.mat_filter = "all"   # 料别筛选：all / raw(原料) / pkg(包材)，与已读状态筛选独立叠加
         self._mat_col = None      # 料别列名（物料类型 / 物料大类），set_data 时探测
         self._workshop_filter = "all"  # 车间筛选：all / 车间名
@@ -86,6 +87,9 @@ class DeviationWarningDialog(QDialog):
         self._mtd_col = None          # 组件物料类型描述列名（set_data 时探测）
         self.setup_ui()
         self.set_data(warnings_df)
+        # v43.364：开箱默认只看未读，与各看板同一口径；走 _set_filter 是为了让
+        # 「全部/未读/已读」三颗按钮的勾选态和真正生效的条件一起定下来。
+        self._set_filter("unread")
         # v43.288: 默认最大化打开（裴哥 11-02 反馈截图：默认浮动 resize(1280,640) 不最大化）
         self.open_maximized()
         # v43.299 方案C：统一看板美化 + 悬浮「📊 可视化看板」入口
@@ -906,6 +910,7 @@ class DeviationWarningDialog(QDialog):
             if hasattr(self, "source_model"):
                 self.source_model.setDataFrame(df)
                 self._sort_ctrl.reapply()  # 恢复排序态
+            set_empty_hint(self.table_view, empty_hint_text(0, df, self.filter_mode))
             self._update_button_counts()
             return
 
@@ -936,6 +941,8 @@ class DeviationWarningDialog(QDialog):
         if hasattr(self, "source_model"):
             self.source_model.setDataFrame(filtered)
             self._sort_ctrl.reapply()  # 恢复排序态
+        set_empty_hint(self.table_view,
+                       empty_hint_text(len(filtered), df, self.filter_mode))
         self._update_button_counts()
 
     def _update_col_filter_hint(self):

@@ -77,10 +77,8 @@ class MenuBarComponent:
         alert_action.triggered.connect(self.mw._show_alert_dashboard)
         audit_menu.addAction(alert_action)
 
-        # v43.320：翻箱守恒预警看板（ZPFX 净含量守恒，产出>投入=拆包投入漏记）
-        flip_action = QAction(get_icon("box", 14), "翻箱守恒预警看板", self.mw)
-        flip_action.triggered.connect(self.mw._show_flip_check_dashboard)
-        audit_menu.addAction(flip_action)
+        # v43.364：翻箱守恒预警看板挪进操作栏「看板」下拉菜单（下级项），
+        # 这里不再挂——它和负损/正损/半成品是同一类专项看板，散在两个菜单里找不到。
 
         audit_menu.addSeparator()
 

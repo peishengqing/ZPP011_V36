@@ -197,6 +197,7 @@ def test_menu_contents(main_window):
     亲手恢复下拉菜单并重建看板菜单（9 项）、ARC-003 加自动隔离按钮、物料画像
     挪进维护菜单 → 看板定型为 8 项。除总数外逐个断言关键项，防将来再扩菜单时
     数字对但内容错。v43.349 第五期B：「维护」菜单退役，两项并入「更多」。
+    v43.364：「翻箱守恒」从菜单栏「审核」搬进这里，回到它和别的看板同一处 → 9 项。
     """
     from PySide6.QtWidgets import QToolButton
 
@@ -208,11 +209,11 @@ def test_menu_contents(main_window):
             menus[b.text()] = ([a.text() for a in m.actions() if not a.isSeparator()]
                                if m else [])
 
-    assert len(menus.get("看板", [])) == 8, menus.get("看板")
+    assert len(menus.get("看板", [])) == 9, menus.get("看板")
     assert len(menus.get("导出", [])) == 2, menus.get("导出")
     assert "维护" not in menus, "「维护」菜单已退役（两项并入「更多」）"
     for must in ["替代料看板", "偏差率预警", "负损看板", "正损看板",
-                 "隔离区", "数据稳定性", "替代料长链", "半成品看板"]:
+                 "隔离区", "数据稳定性", "替代料长链", "半成品看板", "翻箱守恒"]:
         assert must in menus["看板"], "%s 不在看板菜单（现有 %s）" % (must, menus["看板"])
     for must in ["导出当前表格", "导出完整偏差"]:
         assert must in menus["导出"], "%s 不在导出菜单（现有 %s）" % (must, menus["导出"])
@@ -250,6 +251,44 @@ def test_nav_sidebar_default_collapsed_with_count_pills(main_window):
         % w.alt_count_label.parent().objectName()
     assert set(lp.badges) == {"unread", "quarantine", "alt", "semi"}, \
         "四颗待办/配置胶囊缺一不可（现有 %s）" % sorted(lp.badges)
+
+
+def test_import_reveals_data_preview(main_window, monkeypatch):
+    """导入数据读到那一刻：左栏「数据预览」自己展开，不用再点一次（v43.364）。
+
+    口径按 裴哥 选的「数据真读到那一刻」：选完文件时那句「正在读取文件…」不展开
+    （弹一块空壳更烦），统计/读取失败真正落地时才展开。
+    """
+    import pandas as pd
+    from PySide6.QtWidgets import QApplication
+
+    w = main_window
+    lp = w.left_panel_component
+    dc = w.data_controller
+    cached = dc._cached_input_df
+    lp.collapse_all()
+    # 只验装载的 UI 副作用，落库/计数那两步与本用例无关
+    monkeypatch.setattr(dc, "_persist_material_names", lambda df: None)
+    monkeypatch.setattr(w, "_update_read_counter", lambda: None)
+    try:
+        assert all(b.isHidden() for _x, b in lp._expandables), "起点必须是全收起"
+
+        df = pd.DataFrame([{"物料编码": "30000001", "物料名称": "物料A",
+                            "工厂名称": "食品厂", "产量": 1}])
+        dc._on_file_loaded(df, "")
+        QApplication.processEvents()
+
+        body = w.preview_label.parent()
+        assert body is not None and body.objectName() == "navBody"
+        assert not body.isHidden(), "读到数据后「数据预览」没有自动展开"
+        assert "总行数" in w.preview_label.text()
+        assert sum(1 for _b, bd in lp._expandables if not bd.isHidden()) == 1, \
+            "展开必须互斥，只开这一项"
+        if _CJK_FONT_OK:
+            assert w.left_panel.width() == lp.OPEN_W, "展开表单时栏宽要拉回 360"
+    finally:
+        dc._cached_input_df = cached
+        lp.collapse_all()
 
 
 def test_progress_autocollapse_guarded_by_heavy_busy(main_window):

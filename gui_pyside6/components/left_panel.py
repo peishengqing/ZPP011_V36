@@ -67,7 +67,8 @@ class LeftPanelComponent:
         self._nav(sec, "数据源", "folder-open", body=self._build_file_selection)
         self._nav(sec, "材料半成品", "layers", badge="semi",
                   body=self._build_semi_materials)
-        self._nav(sec, "数据预览", "chart", body=self._build_preview)
+        self.preview_nav_btn = self._nav(sec, "数据预览", "chart",
+                                         body=self._build_preview)
 
         foot = self._add_foot(lay)
         self._nav(foot, "列管理", "menu", clicked=self._open_column_manager)
@@ -160,6 +161,17 @@ class LeftPanelComponent:
         """收起全部展开项（点纯导航项、「收起全部展开项」菜单共用）"""
         for btn, _ in self._expandables:
             btn.setChecked(False)
+
+    def open_data_preview(self):
+        """导入数据后把「数据预览」自己展开，统计不用人再点一次才看得到。
+
+        走 setChecked 而不是直接显示 body：互斥收起别项、栏宽拉回 360px 都写在
+        _on_toggle 里，绕过它就得到「两个 body 同时开着、栏宽还是 236」的畸形态。
+        已经开着就什么都不做——否则用户刚手动收起来，下一次刷新又给他弹开。
+        """
+        btn = getattr(self, 'preview_nav_btn', None)
+        if btn is not None and not btn.isChecked():
+            btn.setChecked(True)
 
     def _apply_width(self, width):
         """改左栏固定宽并同步 splitter 首值，避免两者约束打架。"""

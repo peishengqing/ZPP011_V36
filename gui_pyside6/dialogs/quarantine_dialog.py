@@ -34,6 +34,7 @@ from gui_pyside6.utils.locate import locate_row
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
+from gui_pyside6.utils.board_empty_hint import set_empty_hint
 from gui_pyside6.utils.icons import add_icon_action, make_button
 
 _HIDDEN_INTERNAL = ['_read', 'data_id', '_quarantined', '_post_audit_changed', 'fingerprint']
@@ -601,6 +602,13 @@ class QuarantineDialog(QDialog):
         self.source_model = DataFrameModel()
         self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
+        n_shown = 0 if df is None else len(df)
+        n_total = 0 if getattr(self, "full_df", None) is None else len(self.full_df)
+        set_empty_hint(self.table_view, "" if n_shown else (
+            "隔离区当前为空\n可在主表勾选记录手动隔离，或到「规则中心」设置自动隔离。"
+            if not n_total else
+            "没有符合条件的记录（隔离区共 %d 条）\n"
+            "请清空搜索框，或把「隔离原因 / 是否备注」切回「全部」。" % n_total))
         # v43.300：列宽自适应收编到统一控制器（替代 ResizeToContents + StretchLastSection）
         _ctrl = get_adaptive(self.table_view)
         if _ctrl is None:

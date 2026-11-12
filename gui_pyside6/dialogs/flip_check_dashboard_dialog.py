@@ -21,12 +21,14 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QDialog, QHBoxLayout, QHeaderView,
     QLabel, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
-    QVBoxLayout,
+    QTabWidget, QVBoxLayout,
 )
 
 # 复用导出表的守恒逻辑（单一口径来源）
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from analysis.excel_builder.analysis_extra_flip import _check_order, parse_net_kg
+from analysis.excel_builder.analysis_extra_flip import (
+    _check_order, _food_kg_of, parse_net_kg)
+from gui_pyside6.utils.board_empty_hint import NO_DATA_TEXT, set_empty_hint
 
 # 看板统一美化（v43.299 方案C）
 try:
@@ -48,6 +50,14 @@ _HEADERS = ['订单日期', '流程订单', '工厂', '车间', '产品物料描
             '差额KG(产出-投入)', '偏差率', '结论', '备注',
             '产品物料编码', '组件物料编码', '组件物料名称']
 
+# 组件明细页表头：与导出「翻箱组件明细」sheet 同源（analysis_extra_flip._build_flip_detail），
+# 末尾多挂一列「结论」，让明细行带着所属单的守恒结论——筛出疑似漏记单时，
+# 底下这些行才是真正要核对的那批组件。
+_DETAIL_HEADERS = ['订单日期', '流程订单', '工厂', '车间',
+                   '产品物料编码', '产品物料描述',
+                   '组件物料编码', '组件物料名称', '组件物料类型', '组件物料类型描述',
+                   '单位', '实际', '是否计入食物投入', '计入KG(参考)', '备注', '结论']
+
 
 from gui_pyside6.components import dialog_chrome
 
@@ -63,6 +73,8 @@ class FlipCheckDashboardDialog(QDialog):
         self._workshop_filter = "全部"  #    若初始化成英文 'all'，首屏 _apply_filter 会把全部行滤空（真事故）
         self._rows = []                # 算好的守恒结果（订单维度）
         self._filtered = []
+        self._detail = []              # 一行一组件的明细（所属单的结论跟着走）
+        self._filtered_detail = []
         self._build_ui()
         self._load(df)
 
@@ -112,24 +124,34 @@ class FlipCheckDashboardDialog(QDialog):
 
         layout.addLayout(top)
 
-        # ---- 主表格 ----
-        self.table = QTableWidget()
-        self.table.setColumnCount(len(_HEADERS))
-        self.table.setHorizontalHeaderLabels(_HEADERS)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setAlternatingRowColors(True)
-        self.table.setSortingEnabled(True)
-        hh = self.table.horizontalHeader()
+        # ---- 主表格：结论页一单一行，明细页一行一组件（同一套筛选同时作用于两页）----
+        self.tabs = QTabWidget()
+        self.table = self._make_table(_HEADERS, [90, 100, 90, 70, 240, 70, 110, 120,
+                                                 110, 110, 110, 130, 80, 90, 140,
+                                                 120, 240, 280])
+        self.table_detail = self._make_table(
+            _DETAIL_HEADERS, [90, 100, 90, 70, 120, 240, 120, 280, 90, 110,
+                              60, 90, 130, 110, 140, 90])
+        self.tabs.addTab(self.table, "守恒结论（一单一行）")
+        self.tabs.addTab(self.table_detail, "组件明细（一行一组件）")
+        self.tabs.currentChanged.connect(lambda *_: self._refresh_count_label())
+        layout.addWidget(self.tabs, 1)
+
+    def _make_table(self, headers, widths):
+        t = QTableWidget()
+        t.setColumnCount(len(headers))
+        t.setHorizontalHeaderLabels(headers)
+        t.verticalHeader().setVisible(False)
+        t.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        t.setSelectionBehavior(QAbstractItemView.SelectRows)
+        t.setAlternatingRowColors(True)
+        t.setSortingEnabled(True)
+        hh = t.horizontalHeader()
         hh.setSectionResizeMode(QHeaderView.Interactive)
         hh.setStretchLastSection(True)
-        # 列宽
-        widths = [90, 100, 90, 70, 240, 70, 110, 120, 110, 110, 110, 130, 80, 90, 140,
-                  120, 240, 280]
         for j, w in enumerate(widths):
-            self.table.setColumnWidth(j, w)
-        layout.addWidget(self.table, 1)
+            t.setColumnWidth(j, w)
+        return t
 
     # ------------------------------------------------------------------ 数据
     def _load(self, df):
@@ -137,6 +159,7 @@ class FlipCheckDashboardDialog(QDialog):
         if df is None or df.empty:
             QMessageBox.information(self, "提示", "暂无数据，请先分析")
             self._rows = []
+            self._detail = []
             self._refresh_table()
             return
         need = ['订单类型', '流程订单', '产品物料号码', '产品物料描述', '产量',
@@ -145,6 +168,7 @@ class FlipCheckDashboardDialog(QDialog):
         if miss:
             QMessageBox.warning(self, "列缺失", "主表缺少翻箱守恒必要列: %s" % ", ".join(miss))
             self._rows = []
+            self._detail = []
             self._refresh_table()
             return
 
@@ -152,6 +176,7 @@ class FlipCheckDashboardDialog(QDialog):
         if fx.empty:
             QMessageBox.information(self, "提示", "本期无翻箱(ZPFX)订单")
             self._rows = []
+            self._detail = []
             self._refresh_table()
             return
 
@@ -191,6 +216,7 @@ class FlipCheckDashboardDialog(QDialog):
                 'pdesc': g(row, '产品物料描述'),
                 'yield': gnum(row, '产量'),
                 'mtype': g(row, '组件物料类型').upper(),
+                'mtdesc': g(row, '组件物料类型描述'),
                 'mcode': g(row, '物料编码'),
                 'mname': g(row, '物料名称'),
                 'unit': g(row, '单位').upper(),
@@ -199,6 +225,7 @@ class FlipCheckDashboardDialog(QDialog):
             })
 
         rows = []
+        detail = []
         for k in order_keys:
             res = _check_order(groups[k])
             first = groups[k][0]
@@ -218,7 +245,22 @@ class FlipCheckDashboardDialog(QDialog):
                 'mcodes': '；'.join(x['mcode'] for x in groups[k] if x['mcode']),
                 'mnames': '；'.join(x['mname'] for x in groups[k] if x['mname']),
             })
+            # v43.364 组件明细页：一行一组件。判别照用导出侧同一个 _food_kg_of，
+            # 所以「计入KG(参考)」这一列按单求和能回对结论页的「投入食物合计KG」，
+            # 不会出现两页各算一套、明细加起来对不上结论的事故。
+            for x in groups[k]:
+                flag, kg = _food_kg_of(x)
+                detail.append({
+                    'date': x['date'], 'ord': x['ord'], 'fac': x['fac'],
+                    'ws': x['ws'], 'pno': x['pno'], 'pdesc': x['pdesc'],
+                    'mcode': x['mcode'], 'mname': x['mname'],
+                    'mtype': x['mtype'], 'mtdesc': x['mtdesc'],
+                    'unit': x['unit'], 'actual': x['actual'],
+                    'flag': flag, 'kg': kg, 'note': x['note'],
+                    'verdict': res['verdict'],
+                })
         self._rows = rows
+        self._detail = detail
         # 先建 rows 再初始化筛选下拉：combo.addItem 会触发 currentTextChanged→_apply_filter，
         # 若在 rows 就绪前触发会按空 rows 渲染出「首屏 0 行」。
         self._init_factory_combo()
@@ -252,7 +294,12 @@ class FlipCheckDashboardDialog(QDialog):
         self._apply_filter()
 
     def _apply_filter(self):
-        rows = self._rows
+        # 两页吃同一套筛选：切页只换「看单」还是「看组件」，不该换数据范围。
+        self._filtered = self._match(self._rows)
+        self._filtered_detail = self._match(self._detail)
+        self._refresh_table()
+
+    def _match(self, rows):
         if self._verdict_filter == "疑似漏记":
             rows = [r for r in rows if r['verdict'] == '疑似漏记']
         elif self._verdict_filter == "守恒/正常":
@@ -261,16 +308,37 @@ class FlipCheckDashboardDialog(QDialog):
             rows = [r for r in rows if r['fac'] == self._factory_filter]
         if self._workshop_filter != "全部":
             rows = [r for r in rows if r['ws'] == self._workshop_filter]
-        self._filtered = rows
-        self._refresh_table()
+        return rows
 
     def _refresh_table(self):
+        self._fill_orders()
+        self._fill_detail()
+        self._refresh_count_label()
+        # 空表要写清为什么空：这里没有已读/未读，只看得到「筛没了」和「本来就没数据」
+        for table, shown, total in ((self.table, self._filtered, self._rows),
+                                    (self.table_detail, self._filtered_detail, self._detail)):
+            set_empty_hint(table, "" if shown else (
+                NO_DATA_TEXT if not total
+                else "没有符合条件的记录（原始 %d 条）\n"
+                     "请把上方的「结论 / 工厂 / 车间」切回「全部」。" % len(total)))
+
+    def _refresh_count_label(self):
+        """计数跟着当前页说人话：结论页报「几单」，明细页报「几行组件、几单」。"""
+        n_alert = sum(1 for r in self._filtered if r['verdict'] == '疑似漏记')
+        if self.tabs.currentIndex() == 1:
+            rows = self._filtered_detail
+            n_ord = len({r['ord'] for r in rows})
+            n_in_alert = sum(1 for r in rows if r['verdict'] == '疑似漏记')
+            self.lbl_count.setText("共 %d 行组件 · 涉及 %d 单，疑似漏记单内 %d 行"
+                                   % (len(rows), n_ord, n_in_alert))
+        else:
+            self.lbl_count.setText("共 %d 单，疑似漏记 %d 单" % (len(self._filtered), n_alert))
+
+    def _fill_orders(self):
         rows = self._filtered
         self.table.setRowCount(0)
         self.table.setSortingEnabled(False)
         self.table.setRowCount(len(rows))
-        n_alert = sum(1 for r in rows if r['verdict'] == '疑似漏记')
-        self.lbl_count.setText("共 %d 单，疑似漏记 %d 单" % (len(rows), n_alert))
         for i, r in enumerate(rows):
             net_each_txt = ('%.4g' % r['net_each']) if r['net_each'] is not None else '解析失败'
             out_txt = ('%.3f' % r['out_kg']) if r['out_kg'] is not None else '待解析'
@@ -299,10 +367,37 @@ class FlipCheckDashboardDialog(QDialog):
                 self.table.setItem(i, j, it)
         self.table.setSortingEnabled(True)
 
+    def _fill_detail(self):
+        """组件明细页：一行一组件，所属单的结论决定底色（红=疑似漏记单里的组件）。"""
+        rows = self._filtered_detail
+        self.table_detail.setRowCount(0)
+        self.table_detail.setSortingEnabled(False)
+        self.table_detail.setRowCount(len(rows))
+        for i, r in enumerate(rows):
+            vals = [r['date'], r['ord'], r['fac'], r['ws'], r['pno'], r['pdesc'],
+                    r['mcode'], r['mname'], r['mtype'], r['mtdesc'], r['unit'],
+                    '%g' % r['actual'], r['flag'], '%.6g' % r['kg'],
+                    r['note'], r['verdict']]
+            is_alert = (r['verdict'] == '疑似漏记')
+            bg = _RED if is_alert else _GREEN
+            for j, v in enumerate(vals):
+                it = QTableWidgetItem(str(v))
+                it.setBackground(bg)
+                if j in (11, 13):        # 实际 / 计入KG
+                    it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                if j == 12:             # 是否计入食物投入
+                    f = it.font()
+                    f.setBold(r['flag'] == '是')
+                    it.setFont(f)
+                self.table_detail.setItem(i, j, it)
+        self.table_detail.setSortingEnabled(True)
+
     # ------------------------------------------------------------------ 导出
     def _on_export(self):
-        """导出当前视图为 xlsx。"""
-        if not self._filtered:
+        """导出当前页视图为 xlsx（结论页导结论行，明细页导组件行）。"""
+        on_detail = self.tabs.currentIndex() == 1
+        rows = self._filtered_detail if on_detail else self._filtered
+        if not rows:
             QMessageBox.information(self, "提示", "当前视图无数据")
             return
         try:
@@ -314,21 +409,37 @@ class FlipCheckDashboardDialog(QDialog):
                 self, "导出当前视图", default, "Excel (*.xlsx)")
             if not path:
                 return
-            out = []
-            for r in self._filtered:
-                out.append({
-                    '订单日期': r['date'], '流程订单': r['ord'], '工厂': r['fac'],
-                    '车间': r['ws'], '产品物料描述': r['pdesc'], '产量(件)': r['yield'],
-                    '单件净含量(KG)': r['net_each'], '产出总净含量(KG)': r['out_kg'],
-                    '投入成品件折KG': r['in_fin'], '投入散货食物KG': r['in_loose'],
-                    '投入食物合计KG': r['in_food'], '差额KG(产出-投入)': r['diff'],
-                    '偏差率': r['rate'], '结论': r['verdict'], '备注': r['note'],
-                    '产品物料编码': r['pno'], '组件物料编码': r['mcodes'],
-                    '组件物料名称': r['mnames'],
-                })
-            pd.DataFrame(out, columns=_HEADERS).to_excel(path, index=False)
+            out = [self._detail_record(r) if on_detail else self._order_record(r)
+                   for r in rows]
+            pd.DataFrame(out, columns=_DETAIL_HEADERS if on_detail else _HEADERS
+                         ).to_excel(path, index=False)
             QMessageBox.information(self, "已导出", "已导出 %d 行到:\n%s" % (len(out), path))
         except Exception as e:
             import traceback
             traceback.print_exc()
             QMessageBox.critical(self, "导出失败", str(e))
+
+    @staticmethod
+    def _order_record(r):
+        return {
+            '订单日期': r['date'], '流程订单': r['ord'], '工厂': r['fac'],
+            '车间': r['ws'], '产品物料描述': r['pdesc'], '产量(件)': r['yield'],
+            '单件净含量(KG)': r['net_each'], '产出总净含量(KG)': r['out_kg'],
+            '投入成品件折KG': r['in_fin'], '投入散货食物KG': r['in_loose'],
+            '投入食物合计KG': r['in_food'], '差额KG(产出-投入)': r['diff'],
+            '偏差率': r['rate'], '结论': r['verdict'], '备注': r['note'],
+            '产品物料编码': r['pno'], '组件物料编码': r['mcodes'],
+            '组件物料名称': r['mnames'],
+        }
+
+    @staticmethod
+    def _detail_record(r):
+        return {
+            '订单日期': r['date'], '流程订单': r['ord'], '工厂': r['fac'],
+            '车间': r['ws'], '产品物料编码': r['pno'], '产品物料描述': r['pdesc'],
+            '组件物料编码': r['mcode'], '组件物料名称': r['mname'],
+            '组件物料类型': r['mtype'], '组件物料类型描述': r['mtdesc'],
+            '单位': r['unit'], '实际': r['actual'],
+            '是否计入食物投入': r['flag'], '计入KG(参考)': round(r['kg'], 6),
+            '备注': r['note'], '结论': r['verdict'],
+        }

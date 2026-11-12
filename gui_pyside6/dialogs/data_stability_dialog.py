@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from gui_pyside6.utils.table_autofit import install_adaptive, get_adaptive
+from gui_pyside6.utils.board_empty_hint import set_empty_hint
 
 from gui_pyside6.dialogs.material_profile_dialog import normalize_text
 
@@ -116,6 +117,9 @@ class DataStabilityDialog(QDialog):
     def _load(self):
         if not os.path.exists(_DB_PATH):
             self._set_status("未找到审计库，无法统计")
+            for tbl in (self._tbl_freq, self._tbl_note, self._tbl_day):
+                set_empty_hint(tbl, "还没有审计记录库\n"
+                                    "这里统计「改过什么、改了几次」，做过修改才有记录。")
             message_box.info(
                 self, "还没有审计记录库",
                 "这里统计的是「改过什么、改了几次」的流水；还没做过修改就没有记录。",
@@ -129,12 +133,16 @@ class DataStabilityDialog(QDialog):
                 "where data_id<>'X' and data_id is not null "
                 "group by data_id having cnt>=? order by cnt desc limit 300",
                 (n,)).fetchall()
-            self._fill(self._tbl_freq, rows)
+            self._fill(self._tbl_freq, rows,
+                       empty_hint="修改次数 ≥ %d 的物料有 0 个\n"
+                                  "可把上方「反复修改阈值 N」调小再看。" % n)
             rows2 = c.execute(
                 "select data_id, count(*) cnt from deviation_history "
                 "where data_id<>'X' and data_id is not null and field='备注原因' "
                 "group by data_id order by cnt desc limit 300").fetchall()
-            self._fill(self._tbl_note, rows2, col_name="备注原因改动次数")
+            self._fill(self._tbl_note, rows2, col_name="备注原因改动次数",
+                       empty_hint="没有「备注原因」被修改过的记录\n"
+                                  "改过备注原因之后这里才会统计。")
             rows3 = c.execute(
                 "select substr(change_time,1,10) d, count(*) from deviation_history "
                 "group by d order by d").fetchall()
@@ -150,8 +158,10 @@ class DataStabilityDialog(QDialog):
                 "审计库文件在，但读不出内容，可能正被其它程序占用。",
                 exc=e, detail=_DB_PATH)
 
-    def _fill(self, tbl, rows, col_name="修改次数"):
+    def _fill(self, tbl, rows, col_name="修改次数", empty_hint=""):
         tbl.setRowCount(len(rows))
+        # 0 行不等于坏消息，但一片白会让用户以为没读到：把原因写在表格中央
+        set_empty_hint(tbl, "" if rows else empty_hint)
         for i, (did, cnt) in enumerate(rows):
             fac, od, fo, mat = _split_data_id(did)
             vals = [fac, od, fo, mat, self._name_of(mat), str(cnt)]
@@ -168,6 +178,8 @@ class DataStabilityDialog(QDialog):
 
     def _fill_day(self, rows):
         self._tbl_day.setRowCount(len(rows))
+        set_empty_hint(self._tbl_day, "" if rows else
+                       "审计库里还没有任何改动记录\n做过偏差修改之后才有按天趋势。")
         for i, (d, cnt) in enumerate(rows):
             self._tbl_day.setItem(i, 0, QTableWidgetItem(str(d)))
             it = QTableWidgetItem(str(cnt))

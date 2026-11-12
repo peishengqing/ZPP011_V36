@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from gui_pyside6.utils.table_autofit import install_adaptive, get_adaptive
+from gui_pyside6.utils.board_empty_hint import set_empty_hint
 from gui_pyside6.components import dialog_shell_bridge, message_box
 
 _CFG_PATH = os.path.join(
@@ -55,6 +56,7 @@ class AltChainDialog(QDialog):
     def _load(self):
         if not os.path.exists(_CFG_PATH):
             self._set_status("未找到配对表，无法统计")
+            set_empty_hint(self._tbl, "未找到替代料配对表\n请先在「导入向导」里导入替代料表。")
             message_box.info(
                 self, "还没有替代料配对表",
                 "长链统计要先有一份 alt_pairs.json，可在「导入向导」里导入替代料表。",
@@ -80,6 +82,9 @@ class AltChainDialog(QDialog):
                       for code, c in cnt.items() if c > 1]
             chains.sort(key=lambda x: -x[1])
             self._tbl.setRowCount(len(chains))
+            # 0 行时表格是一片白：说清是「真的没有长链」而不是「读不出来」
+            set_empty_hint(self._tbl, "" if chains else
+                           "没有长链物料\n每个物料只出现在 1 组替代配对里。")
             for i, (code, c, nm, grs) in enumerate(chains):
                 uniq = list(dict.fromkeys(grs))
                 rel = "；".join("%s %s" % (oc, onm) for oc, onm in uniq[:8])

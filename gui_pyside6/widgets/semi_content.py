@@ -44,6 +44,7 @@ from gui_pyside6.utils.column_filter import ColumnFilterController
 from gui_pyside6.widgets.filter_panel import _color_icon
 # v43.174：下拉级联公共件（与负损看板/偏差率预警看板同源）
 from gui_pyside6.utils.cascade_filter import replace_combo_items, cascade_options
+from gui_pyside6.utils.board_empty_hint import empty_hint_text, set_empty_hint
 
 # 投料状态下拉：全部 + 四档
 FEED_STATUS_ALL = "全部"
@@ -1070,6 +1071,7 @@ class SemiContent(QWidget):
         if df.empty:
             self.source_model.setDataFrame(df)
             self._sort_ctrl.reapply()
+            set_empty_hint(self.table_view, empty_hint_text(0, df, self._read_filter))
             if self.shell is not None:
                 self.shell.set_status("0 条记录")
                 self.shell.set_total_hits(0)
@@ -1100,6 +1102,8 @@ class SemiContent(QWidget):
             filtered = self.col_filter_ctrl.mask_dataframe(filtered)
         self.source_model.setDataFrame(filtered)
         self._sort_ctrl.reapply()
+        set_empty_hint(self.table_view,
+                       empty_hint_text(len(filtered), df, self._read_filter))
         semi_tag = "、".join(sorted(self._semi_class_filter)) if self._semi_class_filter else "全部分类"
         note_tag = {"all": "全部", "yes": "有备注", "no": "无备注"}[self._has_note_filter]
         if self.shell is not None:

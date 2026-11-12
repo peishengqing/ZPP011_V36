@@ -25,6 +25,7 @@ from gui_pyside6.widgets.filter_panel import _color_icon
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
+from gui_pyside6.utils.board_empty_hint import empty_hint_text, set_empty_hint
 from gui_pyside6.utils.icons import add_icon_action, make_button
 from gui_pyside6.widgets.board_visual import apply_board_visual  # v43.299 方案C
 from gui_pyside6.utils.snapshot_action import attach_snapshot_bar
@@ -41,12 +42,14 @@ class AlertDialog(QDialog):
         dialog_chrome.apply(self, dialog_chrome.TIER_BOARD, "实时替代料看板", "替代料偏差预警")
         self.main_window = main_window
         self.original_df = alerts_df.copy()
-        self.filter_mode = "all"
+        self.filter_mode = "unread"   # v43.364：开箱默认只看未读，与各看板同一口径
         self.color_filters = set()
         self._semi_class_filter = set()  # 半成品重分类筛选：空集合=全部 / 集合内为选中分类（虚拟项模糊匹配）
         self._semi_class_col = None
         self._initializing = False  # 初始化守卫
         self.setup_ui()
+        # set_data 末尾的 _apply_default_filter 负责把默认口径定成「未读」，
+        # 它走 _set_filter，三颗按钮的勾选态和生效条件是一起落定的，不用再补一次
         self.set_data(alerts_df)
         # v43.299 方案C：统一看板美化 + 悬浮「📊 可视化看板」入口
         apply_board_visual(self, main_window, board_label="替代料看板")
@@ -310,6 +313,8 @@ class AlertDialog(QDialog):
             filtered["AI建议"] = ""
         self.source_model.setDataFrame(filtered)
         self._sort_ctrl.reapply()  # 恢复排序态
+        set_empty_hint(self.table_view,
+                       empty_hint_text(len(filtered), df, self.filter_mode))
 
     def _on_semi_class_changed(self):
         """半成品重分类复选框变化回调：收集勾选项（空=全部），全部与其他互斥。"""
@@ -525,25 +530,15 @@ class AlertDialog(QDialog):
             col += 1
 
     def _apply_default_filter(self):
-        """默认视图自适应：先试「未读」，未读空但全量非空时回退「全部」。
+        """开箱默认只看未读，一条都不退。
 
-        v43.173：原先 set_data 末尾无条件 `self._set_filter("unread")`，
-        而替代料预警的已读比例随用户日常标读单调升高（本批 93 条实测已读 93 /
-        未读 0），于是构造完成就是一张空表 —— 用户不主动点「全部」什么都看不到。
-        钉死在最容易被读空的维度上，等于让看板第一印象取决于历史操作习惯。
-
-        必须在 source_model 已 setDataFrame 之后调用：否则 rowCount 尚未装载，
-        算出来的 0 是「还没数据」而非「筛不到」，会把每一次都误判成需回退。
+        v43.173 时这里是「未读空了就悄悄换成全部」，理由是替代料预警的已读比例会随
+        日常标读单调升高（本批 93 条实测已读 93 / 未读 0），怕用户一打开什么都看不到。
+        v43.364 把它退掉了：待办看板替你决定「未读看完了就把已读摊出来」是越界的，
+        而且筛选按钮还写着「未读」、实际生效的是全部，显示与生效两套。现在保持未读不动，
+        空了由表体中央那句「未读 0 条 · 已读 N 条」讲清楚，切不切「全部」由人决定。
         """
         self._set_filter("unread")
-        sm = getattr(self, "source_model", None)
-        if sm is None or sm.rowCount() > 0:
-            return
-        # 未读 0 行：确认全量确实非行，才回退（两者皆空则保持未读，避免空表套空表）
-        if len(self.original_df) > 0:
-            # 走 _set_filter 而非只改 filter_mode —— 由它统一同步三个
-            # checkable 按钮的 checked 态，杜绝「按钮显示未读、实际筛全部」的错位。
-            self._set_filter("all")
 
     def set_data(self, df):
         """设置表格数据 - 确保 _read 和 data_id 列存在"""
