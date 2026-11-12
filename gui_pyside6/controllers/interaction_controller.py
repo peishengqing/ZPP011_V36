@@ -236,7 +236,7 @@ class InteractionController:
                 else:
                     date_val = datetime.now().strftime("%Y-%m-%d")
             code = get_col('物料编码', '物料号', 'code', '组件物料号')
-            name = get_col('物料名称', '物料描述', 'name', '组件物料描述')[:20]
+            name = get_col('物料名称', '物料描述', 'name', '组件物料描述')
             quota = get_col('定额', '标准用量')
             actual = get_col('实际', '实际用量')
             dev_qty = get_col('偏差数量', 'dev_qty')

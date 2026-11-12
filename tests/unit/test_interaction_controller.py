@@ -180,5 +180,48 @@ def test_controller_file_has_real_implementations():
         )
 
 
+# ---------- 4. 复制为微信草稿：物料名称不截断 ----------
+
+class _DraftSM:
+    def __init__(self, df):
+        self._df = df
+
+    def getDataFrame(self):
+        return self._df
+
+
+def _draft_ctrl(df):
+    """装配只带 source_model/statusBar 的裸 mw + 真 controller，够 _copy_wechat_draft 跑。"""
+    class _Bar:
+        def showMessage(self, *a, **k):
+            pass
+
+    class _Stub:
+        pass
+
+    stub = _Stub()
+    stub.source_model = _DraftSM(df)
+    stub.statusBar = lambda: _Bar()
+    return InteractionController(stub)
+
+
+def test_wechat_draft_keeps_full_material_name(qapp):
+    """物料名称超过 20 字必须完整进草稿——长名尾部的规格/单位正是对方要看的部分。"""
+    import pandas as pd
+    from PySide6.QtWidgets import QApplication
+
+    long_name = "碳酸饮料500ml*24罐整箱装（PET瓶-原味-出口规格A）"
+    assert len(long_name) > 20  # 短于 20 字这条用例就测不到截断
+    df = pd.DataFrame([{
+        "订单日期": "2026-11-12", "流程订单": "ZPP011_20261112",
+        "物料编码": "30001234", "物料名称": long_name,
+        "定额": "1.0", "实际": "1.2", "偏差数量": "0.2",
+    }])
+    QApplication.clipboard().setText("")
+    _draft_ctrl(df)._copy_wechat_draft([0])
+    text = QApplication.clipboard().text()
+    assert long_name in text, "物料名称被截断，微信草稿里名字不完整"
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

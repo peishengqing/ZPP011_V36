@@ -14,7 +14,7 @@ DEFAULT_FIELDS = [
     {"key": "date", "label": "日期", "aliases": ["创建日期", "date", "order_date"], "show_empty": True, "format_func": lambda v, df, row: v},
     {"key": "order", "label": "流程订单", "aliases": ["流程订单", "order", "SAP订单", "订单号"], "show_empty": True, "format_func": lambda v, df, row: v},
     {"key": "code", "label": "物料编码", "aliases": ["物料编码", "物料号", "code", "组件物料号"], "show_empty": True, "format_func": lambda v, df, row: v},
-    {"key": "name", "label": "物料名称", "aliases": ["物料名称", "物料描述", "name", "组件物料描述"], "show_empty": True, "format_func": lambda v, df, row: str(v)[:20]},
+    {"key": "name", "label": "物料名称", "aliases": ["物料名称", "物料描述", "name", "组件物料描述"], "show_empty": True, "format_func": lambda v, df, row: str(v)},
     {"key": "quota", "label": "定额", "aliases": ["定额", "标准用量", "quota"], "show_empty": True, "format_func": lambda v, df, row: v},
     {"key": "actual", "label": "实际", "aliases": ["实际", "实际用量", "actual"], "show_empty": True, "format_func": lambda v, df, row: v},
     {"key": "dev_qty", "label": "偏差数量", "aliases": ["偏差数量", "dev_qty", "quantity"], "show_empty": True, "format_func": lambda v, df, row: v},
