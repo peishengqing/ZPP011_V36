@@ -80,6 +80,11 @@ def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True, gro
             df['净偏差金额'] = df['偏差金额']
         else:
             df['净偏差金额'] = 0
+        # 一条配对都没有了，上一轮的分组结果也必须一起清掉，否则「是否替代料」会留在「是」
+        if '_替代料组' in df.columns:
+            df['_替代料组'] = None
+        if '是否替代料' in df.columns:
+            df['是否替代料'] = '否'
         _calc_net_rate(df)
         return df
 
@@ -93,6 +98,20 @@ def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True, gro
         df['净偏差金额'] = df['偏差金额']
     else:
         df['净偏差金额'] = 0
+
+    # 净偏差每轮都从「偏差数量」重算（上面几行），替代料标记过去却只加不减：删掉或改过
+    # 一对配对后，旧行仍挂着上一轮的 _替代料组，「是否替代料」就停在「是」，替代料预警、
+    # 行色、统计卡全退不回去——看起来就是「改了替代料列表，数据不更新」。所以先记下上一轮
+    # 在这里成过组的行，清空分组，末尾只把那些行退回「否」。
+    _was_alt = (df['_替代料组'].notna() if '_替代料组' in df.columns
+                else pd.Series(False, index=df.index))
+    # object 而非 NaN：NaN 会把这一列定成 float64，后面往里面写组名就直接 TypeError
+    df['_替代料组'] = pd.Series([None] * len(df), index=df.index, dtype='object')
+
+    def _sync_alt_flag():
+        is_alt = df['_替代料组'].notna()
+        df.loc[is_alt, '是否替代料'] = '是'
+        df.loc[_was_alt & ~is_alt, '是否替代料'] = '否'
 
     # ---------- 并查集构建物料组 ----------
     parent = {}
@@ -126,6 +145,7 @@ def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True, gro
         group_members.setdefault(root, []).append(code)
 
     if not group_members:
+        _sync_alt_flag()
         return df
 
     # ---------- 按订单分组计算组内净偏差 ----------
@@ -216,8 +236,7 @@ def apply_net_offset(df: pd.DataFrame, alt_pairs: list, enable: bool = True, gro
     # 计算净偏差率 = 净偏差数量 / 定额 * 100
     _calc_net_rate(df)
 
-    # 更新"是否替代料"列：_替代料组非空的即为替代料
-    if '_替代料组' in df.columns:
-        df['是否替代料'] = df['_替代料组'].notna().map({True: '是', False: '否'})
+    # 更新"是否替代料"：本轮成过组的标是，上一轮成组、本轮散掉的退回否
+    _sync_alt_flag()
 
     return df

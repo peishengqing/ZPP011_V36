@@ -171,3 +171,66 @@ class TestNetOffsetEdgeCases:
         assert result['净偏差金额'].iloc[1] == 150.0
         assert result['净偏差金额'].iloc[2] == 20.0
         assert result['净偏差金额'].iloc[3] == 20.0
+
+
+class TestAltFlagRoundTrip:
+    """v43.367：净偏差每轮重算，替代料标记也必须跟着退回（改了配对列表要能实时反映）。
+
+    历史 bug：_替代料组 从不清空、是否替代料 只写「是」不写「否」，于是删掉一对配对后
+    净偏差数量回到了原始值，那两行却永远挂着「是」——替代料预警、统计卡、行色全退不回去，
+    表现就是「我修改了替代料列表，数据不实时更新」。
+    """
+
+    def _df(self):
+        return pd.DataFrame({
+            '订单日期': ['2026-05-01'] * 3,
+            '流程订单': ['PO001', 'PO001', 'PO002'],
+            '物料编码': ['A', 'B', 'C'],
+            '偏差数量': [-10.0, 8.0, -5.0],
+            '偏差金额(含税)': [-100.0, 80.0, -50.0],
+            '数量-定额': [100.0, 100.0, 100.0],
+            '是否替代料': ['否', '否', '否'],
+        })
+
+    def test_removing_pair_reverts_flag(self):
+        from analysis.net_offset import apply_net_offset
+        marked = apply_net_offset(self._df(), [('A', 'B')], group_key=['订单日期', '流程订单'])
+        assert marked['是否替代料'].tolist() == ['是', '是', '否']
+        after = apply_net_offset(marked, [('X', 'Y')], group_key=['订单日期', '流程订单'])
+        assert after['是否替代料'].tolist() == ['否', '否', '否']
+        assert after['净偏差数量'].tolist() == [-10.0, 8.0, -5.0]
+        assert after['_替代料组'].isna().all()
+
+    def test_recompute_is_idempotent(self):
+        from analysis.net_offset import apply_net_offset
+        once = apply_net_offset(self._df(), [('A', 'B')], group_key=['订单日期', '流程订单'])
+        twice = apply_net_offset(once, [('A', 'B')], group_key=['订单日期', '流程订单'])
+        assert twice['净偏差数量'].tolist() == once['净偏差数量'].tolist()
+        assert twice['是否替代料'].tolist() == once['是否替代料'].tolist()
+        assert twice['_替代料组'].tolist() == once['_替代料组'].tolist()
+
+    def test_empty_pairs_clears_stale_group(self):
+        from analysis.net_offset import apply_net_offset
+        marked = apply_net_offset(self._df(), [('A', 'B')], group_key=['订单日期', '流程订单'])
+        after = apply_net_offset(marked, [], group_key=['订单日期', '流程订单'])
+        assert after['是否替代料'].tolist() == ['否', '否', '否']
+        assert after['_替代料组'].isna().all()
+        assert after['净偏差数量'].tolist() == [-10.0, 8.0, -5.0]
+
+    def test_group_column_accepts_group_names_after_reset(self):
+        """重置列必须是 object dtype：写成 float NaN 后，pandas 2.x 再往里塞组名会 TypeError。"""
+        from analysis.net_offset import apply_net_offset
+        df = self._df()
+        df['_替代料组'] = float('nan')
+        out = apply_net_offset(df, [('A', 'B')], group_key=['订单日期', '流程订单'])
+        assert out['_替代料组'].notna().sum() == 2
+
+    def test_analyst_flag_on_untouched_rows_survives(self):
+        """分析阶段按「订单+物料」打的标记不由净偏差负责抹掉：只退回本轮散伙的组。"""
+        from analysis.net_offset import apply_net_offset
+        df = self._df()
+        df.loc[2, '是否替代料'] = '是'      # C 行从未成组，是分析阶段标的
+        out = apply_net_offset(df, [('A', 'B')], group_key=['订单日期', '流程订单'])
+        assert out['是否替代料'].tolist() == ['是', '是', '是']
+        gone = apply_net_offset(out, [('X', 'Y')], group_key=['订单日期', '流程订单'])
+        assert gone['是否替代料'].tolist() == ['否', '否', '是']
