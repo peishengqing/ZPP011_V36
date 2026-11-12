@@ -1,5 +1,5 @@
 @echo off
-chcp 936 >nul
+chcp 65001 >nul
 title ZPP011 一键打包工具
 echo ========================================
 echo   ZPP011 偏差分析器 - 一键打包
