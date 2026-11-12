@@ -4,6 +4,8 @@
 覆盖看板外壳与内容组件之间的新契约：控件归位（常驻条 / 抽屉三组）、命中徽章、
 激活条件数、条件整行收起、操作条按需展开。纯结构约定，不依赖真实业务数据。
 """
+import os
+
 import pytest
 from PySide6.QtWidgets import QComboBox, QGroupBox, QLabel, QPushButton, QScrollArea
 
@@ -212,3 +214,74 @@ class TestNegLossOpensWithoutKeywords:
 
     def test_placeholder_announces_empty_means_all(self, board):
         assert "留空" in board.edit_keywords.placeholderText()
+
+
+class TestBoardLocateClosesWholeWindow:
+    """看板里「定位到主表后关窗」必须关整窗，不能只收内容组件。
+
+    v43.340 三块看板改成非模态多开：承载窗口换成 _present_board 建的 QDialog，
+    内容组件只是它的孙子控件。此时组件里残留的 self.close() 只把自己藏起来，
+    窗口还开着 —— 用户侧就是「双击负损看板某行 → 变成一块空白面板 →
+    把空白面板关掉才看到主表」。正确做法是发 close_requested，由窗口自己收。
+    """
+
+    class _Idx:
+        """on_double_click 只用 isValid()/row()，鸭子类型即可，省掉 Qt 模型装配。"""
+
+        def isValid(self):
+            return True
+
+        def row(self):
+            return 0
+
+    class _SM:
+        def __init__(self, df):
+            self._df = df
+
+        def getDataFrame(self):
+            return self._df
+
+    @pytest.fixture(params=["neg_loss", "pos_loss"])
+    def hosted(self, qapp, request):
+        import pandas as pd
+        from PySide6.QtWidgets import QDialog, QVBoxLayout
+        from gui_pyside6.widgets.neg_loss_content import NegLossContent
+        from gui_pyside6.widgets.pos_loss_content import PosLossContent
+        cls = {"neg_loss": NegLossContent, "pos_loss": PosLossContent}[request.param]
+
+        content = cls(object())   # 不接主窗：locate_row 三条判据全落空，走提示分支
+        content.source_model = self._SM(pd.DataFrame([{"data_id": "2026-11-12|SAP001|30001234"}]))
+        shell = DashboardShell()
+        content.attach_shell(shell)
+        shell.set_content(content)
+        dlg = QDialog()
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(shell)
+        content.close_requested.connect(dlg.close)   # 与 _present_board 同款接线
+        dlg.show()
+        yield dlg, content
+        dlg.deleteLater()
+
+    def test_double_click_closes_host_window(self, hosted):
+        dlg, content = hosted
+        assert dlg.isVisible()
+        content.on_double_click(self._Idx())
+        assert not dlg.isVisible(), "双击后承载窗口还开着（只剩空白面板）"
+
+    def test_drilldown_path_uses_the_same_signal(self):
+        """右键「下钻该车间」成功后走的是同一条关闭路径。"""
+        import ast
+        for mod in ("neg_loss_content", "pos_loss_content"):
+            path = os.path.join(os.path.dirname(__file__), "..", "..",
+                                "gui_pyside6", "widgets", "%s.py" % mod)
+            with open(path, "r", encoding="utf-8") as f:
+                tree = ast.parse(f.read())
+            bad = [n.lineno for n in ast.walk(tree)
+                   if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                   and n.func.attr == "close" and isinstance(n.func.value, ast.Name)
+                   and n.func.value.id == "self"]
+            assert not bad, "%s.py 里还有 self.close()（行 %s）——只藏内容组件、窗口留成空白" % (mod, bad)
+        # 关闭按钮用的信号仍在
+        from gui_pyside6.widgets.neg_loss_content import NegLossContent
+        assert hasattr(NegLossContent, "close_requested")

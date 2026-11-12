@@ -921,7 +921,7 @@ class PosLossContent(QWidget):
                 _rec = _df_drill.iloc[selected_rows[0]]
                 _drill = add_icon_action(menu, "🔍 下钻该车间（主表筛选）")
                 _drill.triggered.connect(
-                    lambda: self.close() if drill_to_workshop(self.main_window, _rec, "正损看板") else None)
+                    lambda: self.close_requested.emit() if drill_to_workshop(self.main_window, _rec, "正损看板") else None)
             except Exception:
                 pass
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
@@ -1134,7 +1134,7 @@ class PosLossContent(QWidget):
         df = self.source_model.getDataFrame()
         if index.row() < len(df):
             locate_row(self.main_window, df.iloc[index.row()], parent=self, link_source="正损看板")
-            self.close()
+            self.close_requested.emit()
 
     def export_excel(self):
         cur_df = self.source_model.getDataFrame() if hasattr(self, "source_model") else None
