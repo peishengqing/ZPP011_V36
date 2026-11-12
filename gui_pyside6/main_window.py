@@ -582,6 +582,7 @@ class MainWindow(QMainWindow):
         self.filter_panel.delete_preset_requested.connect(self._delete_filter_preset)
         self.main_table.link_banner_cleared.connect(self._clear_link_drilldown)
         self._link_snapshot = None  # 联动钻取前的筛选快照（清除时恢复）
+        self._link_return = None    # 联动钻取前停在主表哪一行 + 流程订单框原值
         self._refresh_filter_preset_menu()
 
         # 分析按钮点击连接（ARC-003 第八刀，必须创建）
@@ -2305,6 +2306,7 @@ class MainWindow(QMainWindow):
                     # 同分析完成路径：自绘画在表头本体，必须 header.update()
                     self._sort_header.update()
             self._link_snapshot = None  # 清除联动钻取快照（重置后不应再保留钻取）
+            self._link_return = None
             self._update_col_filter_hint()
         except Exception as e:
             self.log(f"[重置筛选] 清理 proxy 残留失败: {e}", "warning")
@@ -2326,6 +2328,11 @@ class MainWindow(QMainWindow):
         order_text = str(order).strip()
         if not order_text or order_text.lower() in ("nan", "none"):
             return
+        # v43.362：钻取前记住「用户原本停在哪一行、流程订单框里原本填的什么」，
+        # 点横幅「清除」时一并回到那个位置——否则筛掉的就是自己刚看的那一行。
+        if self._link_snapshot is None:
+            self._link_return = self._current_main_position()
+
         try:
             ep = self.filter_panel.process_order_edit
             ep.blockSignals(True)
@@ -2421,13 +2428,61 @@ class MainWindow(QMainWindow):
         except Exception:
             return True
 
+    def _current_main_position(self):
+        """联动钻取前的主表位置：(当前行 data_id, 流程订单框原值)。
+
+        data_id 取当前行的值（不是表格位置）——恢复筛选后行序可能变，按值找才靠得住。
+        """
+        try:
+            idx = self.table_view.selectionModel().currentIndex()
+            data_id = ""
+            if idx.isValid():
+                src = self.proxy_model.mapToSource(idx)
+                df = self.source_model.getDataFrame()
+                if src.isValid() and src.row() < len(df) and "data_id" in df.columns:
+                    v = df.iloc[src.row()]["data_id"]
+                    data_id = "" if v is None else str(v).strip()
+        except Exception:
+            data_id = ""
+        try:
+            order_text = self.filter_panel.process_order_edit.text()
+        except Exception:
+            order_text = ""
+        return (data_id, order_text)
+
     def _clear_link_drilldown(self):
-        """清除联动：恢复钻取前的筛选快照，隐藏横幅。"""
+        """清除联动：恢复钻取前的筛选快照与光标位置，隐藏横幅。"""
+        ret = self._link_return
+        self._link_return = None
         if self._link_snapshot is not None and self.proxy_model is not None:
             self.proxy_model.setCustomFilters(self._link_snapshot)
             self._update_summary()
         self._link_snapshot = None
+        if ret is not None:
+            # 流程订单框在钻取时被改写成那个订单号，条件恢复后必须回填原值，
+            # 否则面板显示的仍是联动条件，下次动筛选会把它悄悄带回来。
+            try:
+                ep = self.filter_panel.process_order_edit
+                ep.blockSignals(True)
+                ep.setText(ret[1])
+                ep.blockSignals(False)
+            except Exception:
+                pass
+            if ret[0] and self._main_row_visible_for_data_id(ret[0]):
+                self._locate_row_in_main_table(ret[0], silent=True)
         self.main_table.clear_link_banner()
+
+    def _main_row_visible_for_data_id(self, data_id):
+        """恢复筛选后该行是否仍可见——可见才跳，否则会把选区丢到隐藏行上。"""
+        try:
+            df = self.source_model.getDataFrame()
+            hit = df.index[df["data_id"].astype(str) == str(data_id)].tolist()
+            if not hit:
+                return False
+            return bool(self.proxy_model.filterAcceptsRow(
+                int(df.index.get_loc(hit[0])), QModelIndex()))
+        except Exception:
+            return False
 
     def _apply_focus_filters(self, filter_keys, label, replace=False, base=None,
                              drop_keys=()):

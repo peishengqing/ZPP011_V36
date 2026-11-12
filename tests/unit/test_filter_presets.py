@@ -163,3 +163,92 @@ def test_locate_row_triggers_drilldown(main_window):
     w._clear_link_drilldown()
     locate_row(w, record)
     assert proxy.getCustomFilters().get("_process_order") is None
+
+
+def _main_df(n=8):
+    import pandas as pd
+    return pd.DataFrame({
+        "data_id": ["d%d" % i for i in range(n)],
+        "原表行号": list(range(1, n + 1)),
+        "流程订单": ["1700%02d" % i for i in range(n)],
+        "工厂": ["食品厂"] * n,
+        "物料编码": ["3000%04d" % i for i in range(n)],
+        "物料名称": ["物料%d" % i for i in range(n)],
+    })
+
+
+def _current_data_id(w):
+    from PySide6.QtCore import QModelIndex  # noqa: F401  保持与主链路同样的映射方式
+    idx = w.table_view.selectionModel().currentIndex()
+    if not idx.isValid():
+        return ""
+    src = w.proxy_model.mapToSource(idx)
+    df = w.source_model.getDataFrame()
+    return "" if not src.isValid() else str(df.iloc[src.row()]["data_id"])
+
+
+def _clean_board_state(w):
+    """把主窗恢复到「只有一份 proxy、面板与条件一致」的干净态。
+
+    本文件前面几条用例把 w.proxy_model 换成过裸 AuditProxyModel（没挂 source model），
+    模块级 fixture 会把这个脏状态带到后面每条用例。
+    """
+    from PySide6.QtWidgets import QApplication
+    w.proxy_model = w.table_view.model()
+    w.filter_panel.reset_filters()
+    w.proxy_model.setCustomFilters({})
+    w._link_snapshot = None
+    w._link_return = None
+    QApplication.processEvents()
+
+
+def test_clear_link_drilldown_returns_to_original_row(main_window):
+    """点横幅「清除」→ 回到钻取前那一行，流程订单框也回填原值（v43.362）。"""
+    import pandas as pd
+    from PySide6.QtWidgets import QApplication
+
+    w = main_window
+    df = _main_df()
+    w.source_model.setDataFrame(df)
+    w.view_model.df = df
+    _clean_board_state(w)
+    w.table_view.selectRow(5)
+    assert _current_data_id(w) == "d5"
+
+    w._apply_link_drilldown(
+        pd.Series({"流程订单": "170003", "工厂": "食品厂", "物料编码": "30000003"}),
+        "负损看板")
+    assert w._link_return == ("d5", "")
+    assert w.filter_panel.process_order_edit.text() == "170003"
+
+    w._clear_link_drilldown()
+    QApplication.processEvents()
+    assert w.filter_panel.process_order_edit.text() == ""
+    assert _current_data_id(w) == "d5", "清除联动后没有跳回原来那一行"
+    assert w._link_snapshot is None and w._link_return is None
+
+
+def test_clear_link_drilldown_skips_hidden_return_row(main_window, monkeypatch):
+    """原行被恢复后的筛选挡住时不硬跳（选区不该落到不可见行上）。"""
+    import pandas as pd
+    from PySide6.QtWidgets import QApplication
+
+    w = main_window
+    df = _main_df()
+    w.source_model.setDataFrame(df)
+    w.view_model.df = df
+    _clean_board_state(w)
+    w.table_view.selectRow(5)
+
+    w._apply_link_drilldown(pd.Series({"流程订单": "170003", "工厂": "食品厂"}), "正损看板")
+    # 把「钻取前」口径改成只剩 d0：要回的 d5 恢复筛选后是隐藏行
+    w._link_snapshot = {"物料名称": "物料0"}
+    w._link_return = ("d5", "")
+    calls = []
+    monkeypatch.setattr(w, "_locate_row_in_main_table",
+                        lambda did, silent=False: calls.append(did) or True)
+
+    w._clear_link_drilldown()
+    QApplication.processEvents()
+    assert calls == [], "d5 已被筛掉，不该再往它身上跳"
+    assert w.proxy_model.getCustomFilters().get("物料名称") == "物料0"

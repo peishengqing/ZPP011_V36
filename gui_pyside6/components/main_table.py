@@ -269,7 +269,7 @@ class MainTableComponent(QObject):
     # ------------------------------------------------------------------ #
     def show_link_banner(self, text):
         """显示联动提示条（text 例：'订单 17001234 · 偏差率预警'）。"""
-        self.link_banner_label.setText("联动视图：" + text + "（点击「清除」恢复原筛选）")
+        self.link_banner_label.setText("联动视图：" + text + "（点击「清除」恢复原筛选并回到原来那行）")
         self.link_banner.setVisible(True)
 
     def clear_link_banner(self):
