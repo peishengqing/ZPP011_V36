@@ -206,6 +206,12 @@ class LeftPanelComponent:
         """未读 / 隔离区徽标的单一出口（数据变化后由 MainWindow 调用）。
 
         替代料、半成品是配置项而非待办，计数由 alt/semi 各自的刷新漏斗就地写入。
+
+        「审核队列」那颗数走 `mw._unread_audit_count()`：队列 = 隔离区 / 变动提醒 /
+        替代料 / 偏差率预警这四类里未读的行，去重之后计数，和点开队列看到的条数同源。
+        原先这里写的是 `(df['_read']==0).sum()`，那是**全表未读**——主表装的是每一行
+        物料（零偏差的也在），且从没标过已读的行默认算未读，于是裴哥看到「徽标 1591、
+        队列其实 100」。数字大得离谱不是算错，是它一直在数另一件事。
         """
         if df is None:
             getter = getattr(self.mw, '_get_master_df', None)
@@ -214,7 +220,14 @@ class LeftPanelComponent:
             self.set_badge("unread", 0)
             self.set_badge("quarantine", 0)
             return
-        self.set_badge("unread", int((df["_read"] == 0).sum()) if "_read" in df.columns else 0)
+        counter = getattr(self.mw, '_unread_audit_count', None)
+        n_audit = int(counter()) if callable(counter) else 0
+        self.set_badge("unread", n_audit)
+        pill = self.badges.get("unread")
+        if pill is not None:
+            pill.setToolTip(
+                "待核对 %d 行：隔离区 / 变动提醒 / 替代料 / 偏差率预警四类未读，"
+                "同一行只数一次\n点开本行看分类条数" % n_audit)
         self.set_badge("quarantine",
                        int((df["_quarantined"] == 1).sum()) if "_quarantined" in df.columns else 0)
 

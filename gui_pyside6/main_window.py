@@ -2065,58 +2065,79 @@ class MainWindow(QMainWindow):
             pass
         return getattr(self.view_model, 'df', None)
 
-    def _count_unread_items(self):
-        """统计 4 类未读条数，返回 items 列表（供弹窗构建 + 实时刷新共用）。
+    def _unread_audit_masks(self, df):
+        """审核队列的唯一判据：4 类「未读且值得核对」的行掩码（各与 df 等长）。
 
-        4 类未读统一用主表 _read 列判定，口径与各看板一致：
         - 隔离区未读     = _quarantined==1 且 _read==0
         - 变动提醒未读   = _post_audit_changed==1 且 _read==0（已改动且未读的行）
         - 替代料未读     = filter_alt_alerts 命中 且 _read==0（与替代料看板一致）
         - 偏差率预警未读 = 命中 core.threshold_config 的预警判据 且 _read==0
                           （阈值、SAP 除零钳位与未投料两个排除开关都归它管）
+
+        汇总弹窗的四行条数、左栏「审核队列」徽标、清零自动关闭判定都读这一份。
+        改造前徽标走的是 `(df['_read']==0).sum()`，那是**全表未读**：主表装的是每一行
+        物料（分析阈值取 0.0，零偏差的行也在表里），而且从没标过已读的行默认就是未读，
+        于是裴哥看到「徽标 1591 / 队列实际 100」——不是数错了，是两处口径本来不一样。
+        """
+        if '_read' in df.columns:
+            read_mask = (pd.to_numeric(df['_read'], errors='coerce')
+                         .fillna(0).astype(int) == 0)
+        else:
+            read_mask = pd.Series(True, index=df.index)
+
+        def _flag(col):
+            if col not in df.columns:
+                return pd.Series(False, index=df.index)
+            hit = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int) == 1
+            return hit & read_mask
+
+        alt = pd.Series(False, index=df.index)
+        if '是否替代料' in df.columns:
+            threshold = getattr(self.alert_monitor, 'threshold', 10)
+            hits = filter_alt_alerts(df, threshold)
+            if not hits.empty:
+                alt.loc[hits.index] = True
+        alt &= read_mask
+
+        dev = _thr.dev_alert_mask(df)
+        dev = (dev & read_mask) if dev is not None else pd.Series(False, index=df.index)
+
+        return {"隔离区": _flag('_quarantined'), "变动提醒": _flag('_post_audit_changed'),
+                "替代料": alt, "偏差率预警": dev}
+
+    def _unread_audit_count(self):
+        """「审核队列」徽标数字：4 类去重之后的行数。
+
+        不是四个数相加——同一行可以既是隔离区又是偏差预警，那样会被数两遍。
+        """
+        df = self._get_master_df()
+        if df is None or df.empty:
+            return 0
+        acc = None
+        for m in self._unread_audit_masks(df).values():
+            acc = m if acc is None else (acc | m)
+        return int(acc.sum()) if acc is not None else 0
+
+    def _count_unread_items(self):
+        """统计 4 类未读条数，返回 items 列表（供弹窗构建 + 实时刷新共用）。
+
+        判据全在 _unread_audit_masks，这里只负责把掩码换成带回调的展示条目。
         无数据时返回 None。
         """
         df = self._get_master_df()
         if df is None or df.empty:
             return None
-
-        # 未读掩码
-        if '_read' in df.columns:
-            read_mask = pd.to_numeric(
-                df['_read'], errors='coerce').fillna(0).astype(int) == 0
-        else:
-            read_mask = pd.Series(True, index=df.index)
-
-        alt_col = '是否替代料' if '是否替代料' in df.columns else None
-
-        # 1. 隔离区未读
-        if '_quarantined' in df.columns:
-            n_q = int(((pd.to_numeric(df['_quarantined'], errors='coerce').fillna(0).astype(int) == 1) & read_mask).sum())
-        else:
-            n_q = 0
-        # 2. 变动提醒未读（已改动且未读的行）
-        if '_post_audit_changed' in df.columns:
-            n_c = int(((pd.to_numeric(df['_post_audit_changed'], errors='coerce').fillna(0).astype(int) == 1) & read_mask).sum())
-        else:
-            n_c = 0
-        # 3. 替代料未读（与替代料看板口径一致：超阈值/组内有差异 且 未读）
-        threshold = getattr(self.alert_monitor, 'threshold', 10)
-        alt_alerts = filter_alt_alerts(df, threshold) if alt_col else pd.DataFrame()
-        n_a = int(read_mask.loc[alt_alerts.index].sum()) if not alt_alerts.empty else 0
-        # 4. 偏差率预警未读（判据来自 core.threshold_config，与主表橙色 / 颜色筛选 /
-        # 预警看板 / KPI 同一条件；改造前这里是第六处 >= 10 字面量）
-        alert_mask = _thr.dev_alert_mask(df)
-        n_d = int((alert_mask & read_mask).sum()) if alert_mask is not None else 0
+        counts = {label: int(m.sum()) for label, m in self._unread_audit_masks(df).items()}
 
         return [
             # v43.264：icon 传线性图标名（utils/icons.py），弹窗渲染成 SVG 图标
-            {"icon": "box", "label": "隔离区", "count": n_q,
+            {"icon": "box", "label": "隔离区", "count": counts["隔离区"],
              "callback": self._open_quarantine_dialog},
-            {"icon": "edit", "label": "变动提醒", "count": n_c,
+            {"icon": "edit", "label": "变动提醒", "count": counts["变动提醒"],
              "callback": self._show_audit_changes_dialog},
-            {"icon": "refresh", "label": "替代料", "count": n_a,
+            {"icon": "refresh", "label": "替代料", "count": counts["替代料"],
              "callback": self._show_alert_dashboard},
-            {"icon": "alert", "label": "偏差率预警", "count": n_d,
+            {"icon": "alert", "label": "偏差率预警", "count": counts["偏差率预警"],
              "callback": self._show_deviation_warning_dialog},
         ]
 
