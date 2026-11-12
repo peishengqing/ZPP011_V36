@@ -26,6 +26,7 @@ from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
 from gui_pyside6.utils.board_empty_hint import empty_hint_text, set_empty_hint
+from gui_pyside6.utils.row_number_gutter import enable_row_numbers
 from gui_pyside6.utils.icons import add_icon_action, make_button
 from gui_pyside6.widgets.board_visual import apply_board_visual  # v43.299 方案C
 from gui_pyside6.utils.snapshot_action import attach_snapshot_bar
@@ -188,7 +189,7 @@ class AlertDialog(QDialog):
             pass
         self.header.sectionClicked.connect(self.col_filter_ctrl.on_header_clicked)
         self.header.setStretchLastSection(False)
-        self.table_view.verticalHeader().setVisible(False)
+        enable_row_numbers(self.table_view)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
         # 安装 Ctrl+C 复制事件过滤器
         self.table_view.installEventFilter(self)

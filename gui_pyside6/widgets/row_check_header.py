@@ -243,7 +243,8 @@ class RowCheckHeader(QHeaderView):
                 # _box_rect 给的是「节区内」坐标，必须按节区原点平移，否则勾选框
                 # 会全部叠在视口顶部（探针取色实测踩过这个坑）。
                 paint_check(painter, _box_rect(self.width(), h).translated(0, y), state)
-                # 行号沿用模型给的文本（= 原表行号，不是视图序号），跟改造前一致
+                # 行号取自模型的 headerData：主表挂的是 AuditProxyModel，它返回的就是
+                # **当前视图第几行**（筛选/排序后依旧 1..N 连续），不是 Excel 里的原始行号
                 label = "" if mdl is None else str(
                     mdl.headerData(logical, Qt.Vertical, Qt.DisplayRole) or "")
                 painter.setPen(num_pen)

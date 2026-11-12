@@ -144,6 +144,15 @@ QHeaderView::section {
     font-weight: bold;
 }
 QHeaderView::section:hover { background-color: #E9EEF5; }
+/* 看板最左行号栏（v43.366）：只当刻度，比列头轻一档，不画底部横线 */
+QHeaderView::section:vertical {
+    background-color: #F5F8FC;
+    color: #8595AA;
+    border: none;
+    border-right: 1px solid #DBE2EC;
+    font-weight: normal;
+}
+QHeaderView::section:vertical:hover { background-color: #F5F8FC; color: #8595AA; }
 
 /* 滚动条 */
 QScrollBar:vertical {

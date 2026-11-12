@@ -34,6 +34,7 @@ from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
 from gui_pyside6.utils.board_empty_hint import empty_hint_text, set_empty_hint
+from gui_pyside6.utils.row_number_gutter import enable_row_numbers
 from gui_pyside6.utils.semi_class import (
     SEMI_CLASS_FOOD, SEMI_CLASS_DRINK, merge_semi_class_values, ensure_semi_class_column,
 )
@@ -531,7 +532,7 @@ class DeviationWarningDialog(QDialog):
         except Exception:
             pass
         self.header.sectionClicked.connect(self.col_filter_ctrl.on_header_clicked)
-        self.table_view.verticalHeader().setVisible(False)
+        enable_row_numbers(self.table_view)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
 
         # 列宽可拖拽调整：Interactive 模式 + 初始按内容自适应 + 限制最大宽度防超宽

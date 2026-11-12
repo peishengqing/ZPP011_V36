@@ -45,6 +45,7 @@ from gui_pyside6.widgets.filter_panel import _color_icon
 # v43.174：下拉级联公共件（与负损看板/偏差率预警看板同源）
 from gui_pyside6.utils.cascade_filter import replace_combo_items, cascade_options
 from gui_pyside6.utils.board_empty_hint import empty_hint_text, set_empty_hint
+from gui_pyside6.utils.row_number_gutter import enable_row_numbers
 
 # 投料状态下拉：全部 + 四档
 FEED_STATUS_ALL = "全部"
@@ -148,7 +149,7 @@ class SemiContent(QWidget):
         # 此前是纯 QLabel，用户只能开浮层重勾一遍才能取消，观感=「无法取消」。
         self.col_filter_ctrl.attach_clear_menu(self._col_filter_hint_label)
         self._update_col_filter_hint()
-        self.table_view.verticalHeader().setVisible(False)
+        enable_row_numbers(self.table_view)
         # 行高跟设计稿（v43.333 数据密度规格 36px），不再用 28px 的旧密度
         self.table_view.verticalHeader().setDefaultSectionSize(SIZE_PX["tableRow"])
         self.header.setSectionResizeMode(QHeaderView.Interactive)

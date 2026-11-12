@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 from analysis.excel_builder.analysis_extra_flip import (
     _check_order, _food_kg_of, parse_net_kg)
 from gui_pyside6.utils.board_empty_hint import NO_DATA_TEXT, set_empty_hint
+from gui_pyside6.utils.row_number_gutter import enable_row_numbers
 
 # 看板统一美化（v43.299 方案C）
 try:
@@ -141,7 +142,7 @@ class FlipCheckDashboardDialog(QDialog):
         t = QTableWidget()
         t.setColumnCount(len(headers))
         t.setHorizontalHeaderLabels(headers)
-        t.verticalHeader().setVisible(False)
+        enable_row_numbers(t)
         t.setEditTriggers(QAbstractItemView.NoEditTriggers)
         t.setSelectionBehavior(QAbstractItemView.SelectRows)
         t.setAlternatingRowColors(True)

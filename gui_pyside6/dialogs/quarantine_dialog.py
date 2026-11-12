@@ -35,10 +35,14 @@ from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
 from gui_pyside6.utils.board_empty_hint import set_empty_hint
+from gui_pyside6.utils.row_number_gutter import enable_row_numbers
 from gui_pyside6.utils.icons import add_icon_action, make_button
 
 _HIDDEN_INTERNAL = ['_read', 'data_id', '_quarantined', '_post_audit_changed', 'fingerprint']
 # 注意：'exempt' 不在隐藏列表中，因为我们需要在表格中显示它
+# 这两个只藏不删：模型第 0/1 列已经画了已读图标和「手动/自动」（数据源就是 _read /
+# _read_source），这两列是同一份信息的文本副本，留着导出才有字可写，摆在表里就重复。
+_VIEW_DUP_COLS = ['状态', '已读来源']
 
 
 from gui_pyside6.components import dialog_chrome
@@ -159,7 +163,7 @@ class QuarantineDialog(QDialog):
         self.header.sectionClicked.connect(self.col_filter_ctrl.on_header_clicked)
         # v43.300：取消末列独吞余量，由自适应控制器接管列宽
         self.table_view.horizontalHeader().setStretchLastSection(False)
-        self.table_view.verticalHeader().setVisible(False)
+        enable_row_numbers(self.table_view)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
         self.col_filter_ctrl.filtered_cols_changed.connect(
             functools.partial(
@@ -255,7 +259,7 @@ class QuarantineDialog(QDialog):
         # v43.143：同款清除菜单（过期区表格），此前纯 QLabel 无任何取消入口
         self.col_filter_ctrl_expired.attach_clear_menu(self._col_filter_hint_label_expired)
         self._update_col_filter_hint(self.col_filter_ctrl_expired, self._col_filter_hint_label_expired, getattr(self, "expired_model", None))
-        self.expired_view.verticalHeader().setVisible(False)
+        enable_row_numbers(self.expired_view)
         self.expired_view.verticalHeader().setDefaultSectionSize(28)
         v.addWidget(self.expired_view)
 
@@ -298,7 +302,7 @@ class QuarantineDialog(QDialog):
         self.exempt_view.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.exempt_view.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.exempt_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.exempt_view.verticalHeader().setVisible(False)
+        enable_row_numbers(self.exempt_view)
         self.exempt_view.verticalHeader().setDefaultSectionSize(28)
         v.addWidget(self.exempt_view)
 
@@ -576,16 +580,11 @@ class QuarantineDialog(QDialog):
 
     def _render_table(self, df):
         """重建表格模型并应用内部列隐藏（不重查 reason），并叠加 Excel 式列头取值过滤（漏斗标由 SortBadgeHeader 绘制）"""
-        # 插入序号列（从1开始，筛选后自动重编）
         if df is not None and not df.empty:
             df = df.copy()
-            df.insert(0, '序号', range(1, len(df) + 1))
-            # 已读来源紧跟序号后面
-            if '已读来源' in df.columns:
-                cols = list(df.columns)
-                cols.remove('已读来源')
-                cols.insert(1, '已读来源')
-                df = df[cols]
+            # v43.366：「序号」数据列删除，行号改由最左的垂直表头给（utils/row_number_gutter）。
+            # 数据列那条有两个毛病：它是个真列，会跟着 DataFrameModel.sort 一起被重排，
+            # 排完序「1 号」能跑到第 40 行去；原先还挤在首列只有 20 多 px，三位数就省略号。
             # 豁免列放在隔离原因之后，data_id 之前
             if '隔离原因' in df.columns and '豁免' in df.columns:
                 cols = list(df.columns)
@@ -617,9 +616,15 @@ class QuarantineDialog(QDialog):
         else:
             _ctrl.request_refit(0)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
-        for col in _HIDDEN_INTERNAL:
-            if col in df.columns:
-                self.table_view.setColumnHidden(df.columns.get_loc(col), True)
+        # 隐藏列的列号必须按**模型里**的列序算：DataFrameModel.setDataFrame 会把
+        # _read/_read_source 挪到最前两列，其余列整体右移，拿外面那份 df 的列号去
+        # hide 会错位（下面恢复默认排序那行早就用的是模型列号，两处该一致）。
+        # 「状态 / 已读来源」一并藏掉：模型第 0/1 列本来就画已读图标和「手动/自动」，
+        # 这两列只是给导出用的文本副本，留在界面上就是两个「已读来源」表头。
+        model_df = self.source_model.getDataFrame()
+        for col in _HIDDEN_INTERNAL + _VIEW_DUP_COLS:
+            if col in model_df.columns:
+                self.table_view.setColumnHidden(int(model_df.columns.get_loc(col)), True)
 
         # 重渲染后恢复排序态：用户点过列头则保持；否则默认按 data_id 升序
         if hasattr(self, "_sort_ctrl"):

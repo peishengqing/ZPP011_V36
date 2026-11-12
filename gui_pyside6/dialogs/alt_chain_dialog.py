@@ -15,6 +15,7 @@ from PySide6.QtCore import Qt
 
 from gui_pyside6.utils.table_autofit import install_adaptive, get_adaptive
 from gui_pyside6.utils.board_empty_hint import set_empty_hint
+from gui_pyside6.utils.row_number_gutter import enable_row_numbers
 from gui_pyside6.components import dialog_shell_bridge, message_box
 
 _CFG_PATH = os.path.join(
@@ -52,6 +53,8 @@ class AltChainDialog(QDialog):
         # v43.300：长链物料表自适应（内容+视口余量）
         install_adaptive(self._tbl, mode='content', key='alt_chain')
         get_adaptive(self._tbl).schedule_initial()
+        # v43.366：行号道与其它看板同款（原先是 Qt 默认那条宽道）
+        enable_row_numbers(self._tbl)
 
     def _load(self):
         if not os.path.exists(_CFG_PATH):

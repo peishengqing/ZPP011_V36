@@ -16,6 +16,7 @@ from PySide6.QtCore import Qt
 
 from gui_pyside6.utils.table_autofit import install_adaptive, get_adaptive
 from gui_pyside6.utils.board_empty_hint import set_empty_hint
+from gui_pyside6.utils.row_number_gutter import enable_row_numbers
 
 from gui_pyside6.dialogs.material_profile_dialog import normalize_text
 
@@ -112,6 +113,10 @@ class DataStabilityDialog(QDialog):
         self._btn_explain.clicked.connect(self._show_score_explain)
         s_lay.addWidget(self._btn_explain)
         self._tabs.addTab(self._score_widget, "数据质量评分卡")
+        # v43.366：这四张表本来用 Qt 默认那条行号道（又宽、数字左对齐、字号跟列头一样重），
+        # 统一收成其它看板同款的 44px 右对齐细道。
+        for _t in (self._tbl_freq, self._tbl_note, self._tbl_day, self._tbl_score):
+            enable_row_numbers(_t)
         lay.addWidget(self._tabs, 1)
 
     def _load(self):

@@ -24,6 +24,7 @@ from gui_pyside6.utils.semi_class import merge_semi_class_values, ensure_semi_cl
 from gui_pyside6.widgets.filter_panel import _color_icon
 from gui_pyside6.utils.icons import add_icon_action
 from gui_pyside6.utils.table_autofit import get_adaptive, install_adaptive
+from gui_pyside6.utils.row_number_gutter import enable_row_numbers
 from gui_pyside6.utils.board_empty_hint import empty_hint_text, set_empty_hint
 from gui_pyside6.components.dashboard_shell import pack_row
 from gui_pyside6.themes.tokens import SIZE_PX
@@ -104,7 +105,7 @@ class NegLossContent(QWidget):
         self.col_filter_ctrl.filtered_cols_changed.connect(self._update_col_filter_hint)
         self.col_filter_ctrl.attach_clear_menu(self._col_filter_hint_label)
         self._update_col_filter_hint()
-        self.table_view.verticalHeader().setVisible(False)
+        enable_row_numbers(self.table_view)
         # 行高跟设计稿（v43.333 数据密度规格 36px），不再用 28px 的旧密度
         self.table_view.verticalHeader().setDefaultSectionSize(SIZE_PX["tableRow"])
         self.header.setSectionResizeMode(QHeaderView.Interactive)

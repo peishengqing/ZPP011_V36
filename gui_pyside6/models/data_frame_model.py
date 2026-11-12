@@ -423,7 +423,12 @@ class DataFrameModel(QAbstractTableModel):
                 # 故不再折行，列名放不下时由 Qt 按 ElideRight 打点。
                 return header_text
             else:
-                return str(self._data.index[section] + 1)
+                # v43.366 看板行号栏：显示「当前视图里的第几行」，不是 DataFrame 行标签。
+                # 各看板把过滤后的 DataFrame 直接挂进本模型（没有代理层），原先返回
+                # _data.index[section]+1 会带来两个毛病：筛选后行号跳号（1、7、23…），
+                # 点列头排序后行号跟着数值跑。看板的「序号」要的是「这一屏第几行」，
+                # 与 AuditProxyModel 主表侧的写法（同样是 section+1）对齐。
+                return str(section + 1)
         return None
 
     def flags(self, index):

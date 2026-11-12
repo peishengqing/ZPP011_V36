@@ -14,6 +14,48 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.366",
+            "date": "2026-11-12",
+            "features": (
+                "各看板最左亮起一列连续行号（裴哥 11-12：「看板里能不能显示序号」，选定"
+                "「最左行号栏」）。要的是「这一屏第几行」：筛完从 1 重排、点列头排序后也"
+                "还是 1、2、3 连着，方便口头定位「看板第 7 行那条」。\n"
+                "①为什么不走「加一个序号数据列」：看板排序走 DataFrameModel.sort()（整块 "
+                "DataFrame 就地重排），数据列跟着数值一起跑，排完序 1 号能跑到第 40 行；"
+                "原先隔离区那条「序号」正是这么做的，还挤在首列 20 多 px，三位数就打省略号。"
+                "这次把它删掉，改用 Qt 给行号留的那块**垂直表头**（主表的勾选道就在同一处）。"
+                "新增 gui_pyside6/utils/row_number_gutter.py 一个出口：点亮 + 定宽 44px"
+                "（新令牌 SIZE_PX[\"rowNumberLane\"]）+ 数字右对齐。⚠️ 垂直表头的 "
+                "setDefaultSectionSize 管的是**行高**不是道宽，各看板原有的 28/36 行高一个没动。\n"
+                "②行号文本的真源改一处：DataFrameModel.headerData 垂直分支原先返回 "
+                "_data.index[section]+1（= DataFrame 行标签，筛完就跳号 1、7、23…），现在"
+                "返回 section+1。主表不受影响：它挂的是 AuditProxyModel，那里早就写的是 "
+                "section+1，两处从此同一句话；顺手把 row_check_header 里那句「= 原表行号」"
+                "的错注释改对。\n"
+                "③接线覆盖九块看板的十几张表：替代料、偏差率预警、负损/正损/半成品（内容组件"
+                "与 DashboardShell 外壳代建的表）、隔离区三个页签（列表/失效复核/豁免台账）、"
+                "翻箱守恒两页、数据稳定性四页、替代料长链。样式在 app 级 QSS 与"
+                "tokens.build_dashboard_qss()/build_board_qss() 两处都加了 "
+                "QHeaderView::section:vertical（看板实际吃的是外壳那份，只写 app 级不生效），"
+                "生成产物 themes/*_dashboard.qss 已同步重生成。\n"
+                "④顺手修掉截图里那个真 bug：**「已读来源」出现两列**。根因不在 pandas——"
+                "DataFrameModel 本来就把第0列渲染成已读图标、第1列渲染成「手动/自动」，表头"
+                "文字「状态 / 已读来源」也是它硬写的；隔离区又自己加了一对同名的文本列，于是"
+                "并排两个「已读来源」。同时 setDataFrame 会把 _read/_read_source 提到最前两列，"
+                "而隐藏代码拿的是**输入 df 的列号**，整套隐藏列因此错位（同一函数里恢复默认"
+                "排序用的却是模型列号，两处不一致）。改成隐藏列号一律按模型列序算，并把那对"
+                "重复文本列只藏不删（导出 Excel 仍然有字可写）。\n"
+                "验证：新增 tests/unit/test_row_number_gutter.py（19 条：模型行号=视图序号且"
+                "排序后仍连续（含「排序确实生效」的反证）、道点亮/定宽/右对齐/幂等/不碰行高、"
+                "十个文件逐个点名必须调用 enable_row_numbers 且不再 setVisible(False)、"
+                "隔离区不再有 序号 数据列且隐藏按模型列序、setDataFrame 会把内部列提到最前、"
+                "两套主题三处 QSS 都带 section:vertical）。反向验证过：把 helper 从某个看板"
+                "撤掉、或把 headerData 改回 _data.index，对应用例立刻红。"
+                "全量 726 passed / 1 skipped / 2 xfailed / 4 xpassed；离屏冒烟 25/25 PASS，"
+                "版本 v43.366。"
+            ),
+        },
+        {
             "version": "v43.365",
             "date": "2026-11-12",
             "features": (

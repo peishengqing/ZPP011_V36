@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 
 from gui_pyside6.themes.tokens import SIZE_PX, build_dashboard_qss, ui_font
+from gui_pyside6.utils.row_number_gutter import enable_row_numbers
 from utils.theme_manager import Thm
 
 from collections import namedtuple
@@ -508,6 +509,8 @@ class DashboardShell(QWidget):
             self.table_view.setSelectionBehavior(QAbstractItemView.SelectRows)
             self.table_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
             self.table_view.verticalHeader().setDefaultSectionSize(SIZE_PX["tableRow"])
+            # v43.366：外壳代建的表格，行号道与各看板同款 44px 右对齐
+            enable_row_numbers(self.table_view)
             self.table_view.horizontalHeader().setHighlightSections(False)
             self.table_layout.addWidget(self.table_view)
         self._model = model

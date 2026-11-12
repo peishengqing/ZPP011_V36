@@ -1068,6 +1068,18 @@ QHeaderView::section {
     font-size: 12px;
 }
 QHeaderView::section:hover { background-color: #18254A; color: #6B93FF; }
+/* 看板最左行号栏（v43.366）：只当刻度，不跟列头抢视觉重量。
+   主表那根道（rowCheckLane）整条自绘、不走 QSS，故这里不会影响它。 */
+QHeaderView::section:vertical {
+    background-color: #182136;
+    color: #9AA9BF;
+    border: none;
+    border-right: 1px solid #253148;
+    padding: 2px 6px;
+    font-weight: 400;
+    font-size: 11px;
+}
+QHeaderView::section:vertical:hover { background-color: #182136; color: #9AA9BF; }
 
 QTabWidget::pane {
     background-color: #182136;

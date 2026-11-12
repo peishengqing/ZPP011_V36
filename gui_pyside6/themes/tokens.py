@@ -137,6 +137,9 @@ SIZE_PX = {
     # 行首勾选道（设计稿首列 34px）。这里取 46px：设计稿那列只有勾选框，我们的行首
     # 还要留现行号（裴哥靠「第 N 行」口头定位数据），勾选框 13px + 行号约 20px。
     "tableCheckLane": 46,
+    # 看板最左行号栏（v43.366）。主表那 46px 是「勾选框 + 行号」，看板只需要行号，
+    # 44 = 4 位数（1000+ 行）+ 左右各 6px 内边距；再宽就要吃掉列头的地方了。
+    "rowNumberLane": 44,
     # 行尾悬浮操作道（设计稿最后一列 <th style="width:74px">）。74 = 2 颗 22px 按钮
     # + 2px 间隙 + 左右留白；平时整条道只当空白列，鼠标划过某行才在那一行露出按钮。
     "tableRowActions": 74,
@@ -366,6 +369,15 @@ QHeaderView::section {{
     font-weight: bold;
 }}
 QHeaderView::section:hover {{ background-color: {surface3}; }}
+/* 看板最左行号栏（v43.366）：只当刻度，比列头轻一档，不画底部横线 */
+QHeaderView::section:vertical {{
+    background-color: {surface2};
+    color: {textFaint};
+    border: none;
+    border-right: 1px solid {border};
+    font-weight: normal;
+}}
+QHeaderView::section:vertical:hover {{ background-color: {surface2}; color: {textFaint}; }}
 
 /* 滚动条 */
 QScrollBar:vertical {{
@@ -484,6 +496,14 @@ QDialog#zppBoardDialog QHeaderView::section {{
     border-bottom: 2px solid {borderStrong};
 }}
 QDialog#zppBoardDialog QHeaderView::section:hover {{ background-color: {surface3}; }}
+/* 看板最左行号栏（v43.366）：只当刻度，比列头轻一档，不画底部横线 */
+QDialog#zppBoardDialog QHeaderView::section:vertical {{
+    background-color: {surface2};
+    color: {textFaint};
+    border: none;
+    border-right: 1px solid {border};
+}}
+QDialog#zppBoardDialog QHeaderView::section:vertical:hover {{ background-color: {surface2}; }}
 
 QDialog#zppBoardDialog QScrollBar:vertical {{
     background: {bg};
