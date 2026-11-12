@@ -3,6 +3,9 @@
 隔离区对话框 - 列出已隔离的疑难数据，支持取消隔离、查看明细、双击定位主表
 v42.37 新增：Tab2「失效复核」——监控隔离区旧数据改动（如负损→补投相符），
 可手动扫描并一键移出已失效记录。
+v43.358 新增：Tab3「豁免台账」——列出所有已豁免记录并提供「取消豁免并放回隔离区」。
+自动隔离不再抓回已豁免记录之后，这些行永远不会回到 Tab1，没有这一页就再也点不到
+「取消豁免」。
 """
 import functools
 
@@ -21,6 +24,7 @@ from gui_pyside6.dialogs.col_filter_ui import (
 from core.quarantine_manager import (
     remove_quarantine, remove_quarantine_batch, get_quarantine_records, scan_expired_quarantine,
     update_quarantine_reason, set_exempted, is_exempted,
+    add_quarantine_batch, get_exempted_records,
 )
 from core.auto_quarantine import load_auto_quarantine_config
 from core.read_status import save_read_status_batch
@@ -79,6 +83,10 @@ class QuarantineDialog(QDialog):
         self.tab_expired = QWidget()
         self._build_expired_tab(self.tab_expired)
         self.tabs.addTab(self.tab_expired, "失效复核")
+        # ── Tab3：豁免台账 ──
+        self.tab_exempt = QWidget()
+        self._build_exempt_tab(self.tab_exempt)
+        self.tabs.addTab(self.tab_exempt, "豁免台账")
         layout.addWidget(self.tabs)
 
         btn_layout = QHBoxLayout()
@@ -272,7 +280,149 @@ class QuarantineDialog(QDialog):
         # 初始渲染（复用主窗口已算好的缓存，若没有则实时算）
         self._render_expired(self._load_expired_from_main())
 
+    # ------------------------------------------------------------------ Tab3
+    def _build_exempt_tab(self, tab):
+        v = QVBoxLayout(tab)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(6)
+        hint = QLabel("这里列出所有被「标记为已豁免」的记录（含已经不在隔离区里的）。\n"
+                      "豁免 = 人工已经判过：自动隔离规则不再把它抓回隔离区，失效复核与「未完结」统计也不再算它。\n"
+                      "两条会让它作废的情况：①这条记录在审核后又被改动（实际数量/备注原因/产量）——豁免自动作废并提示；"
+                      "②你在下面选中行点「取消豁免并放回隔离区」——反悔，交回人工处理。")
+        hint.setWordWrap(True)
+        v.addWidget(hint)
+
+        self.exempt_view = QTableView()
+        self.exempt_view.setAlternatingRowColors(True)
+        self.exempt_view.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.exempt_view.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.exempt_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.exempt_view.verticalHeader().setVisible(False)
+        self.exempt_view.verticalHeader().setDefaultSectionSize(28)
+        v.addWidget(self.exempt_view)
+
+        bl = QHBoxLayout()
+        self.btn_cancel_exempt = make_button("↩ 取消豁免并放回隔离区（选中行）")
+        self.btn_cancel_exempt.setToolTip(
+            "豁免标记作废，这条重新按现行规则处理（命中就回到隔离区）")
+        self.btn_cancel_exempt.clicked.connect(self._cancel_exempt_selected)
+        bl.addWidget(self.btn_cancel_exempt)
+        refresh_btn = make_button("🔄 刷新台账")
+        refresh_btn.clicked.connect(self._render_exempt)
+        bl.addWidget(refresh_btn)
+        bl.addStretch()
+        self.exempt_count_label = QLabel("已豁免：0 条")
+        bl.addWidget(self.exempt_count_label)
+        v.addLayout(bl)
+
+        self._render_exempt()
+
+    def _render_exempt(self):
+        """渲染豁免台账：库里所有 exempted=1 的记录（restored_at 只说明它此刻在不在区里）。"""
+        try:
+            recs = get_exempted_records()
+        except Exception:
+            recs = []
+        mat_lookup = self._main_material_lookup()
+        rows = []
+        for r in recs:
+            uid = str(r.get('uid', ''))
+            info = mat_lookup.get(self._norm_id(uid), {})
+            rows.append({
+                '物料编码': info.get('物料编码', ''),
+                '物料名称': info.get('物料名称', ''),
+                '车间': info.get('车间', ''),
+                '隔离原因': r.get('reason') or '（未填写原因）',
+                '入区时间': (r.get('quarantined_at') or '')[:19].replace('T', ' '),
+                '当前状态': '在隔离区' if not r.get('restored_at') else '已移出（豁免生效中）',
+                'data_id': uid,
+            })
+        cols = ['物料编码', '物料名称', '车间', '隔离原因', '入区时间', '当前状态', 'data_id']
+        edf = pd.DataFrame(rows, columns=cols)
+        self._exempt_records = recs
+        self.exempt_model = DataFrameModel()
+        self.exempt_model.setDataFrame(edf)
+        self.exempt_view.setModel(self.exempt_model)
+        self._hide_read_cols(self.exempt_view, self.exempt_model.getDataFrame())
+        _ctrl = get_adaptive(self.exempt_view)
+        if _ctrl is None:
+            install_adaptive(self.exempt_view, mode='content', key='quarantine_exempt')
+            get_adaptive(self.exempt_view).schedule_initial()
+        else:
+            _ctrl.request_refit(0)
+        self.exempt_count_label.setText("已豁免：%d 条" % len(edf))
+        idx = self.tabs.indexOf(self.tab_exempt)
+        self.tabs.setTabText(idx, "豁免台账 (%d)" % len(edf) if edf.shape[0] else "豁免台账")
+
+    def _cancel_exempt_selected(self):
+        """取消选中行的豁免，并把它放回隔离区交回人工处理。"""
+        sel = self.exempt_view.selectionModel()
+        if not sel or not sel.hasSelection():
+            toast("请先选中要取消豁免的行", 'info', parent=self)
+            return
+        df = self.exempt_model.getDataFrame()
+        rows = sorted(set(idx.row() for idx in sel.selectedIndexes()))
+        ids = []
+        for r in rows:
+            if r < len(df):
+                uid = df.iloc[r].get('data_id')
+                if uid and str(uid) not in ids:
+                    ids.append(str(uid))
+        if not ids:
+            return
+        basis_map = {str(x.get('uid')): (x.get('reason_basis') or '') for x in self._exempt_records}
+        reason_map = {str(x.get('uid')): (x.get('reason') or '') for x in self._exempt_records}
+        for uid in ids:
+            set_exempted(uid, False)
+        add_quarantine_batch(
+            [(uid, reason_map.get(uid, ''), basis_map.get(uid) or "手动:取消豁免") for uid in ids])
+        main_df = getattr(getattr(self.main_window, 'view_model', None), 'df', None)
+        if main_df is not None and 'data_id' in main_df.columns:
+            mask = main_df['data_id'].astype(str).isin(set(ids))
+            if '_quarantined' in main_df.columns:
+                main_df.loc[mask, '_quarantined'] = 1
+            self.main_window.view_model.df = main_df
+            sm = getattr(self.main_window, 'source_model', None)
+            if sm is not None:
+                if hasattr(sm, 'mark_quarantine'):
+                    sm.mark_quarantine(set(ids), True)
+                else:
+                    sm.setDataFrame(main_df)
+                if hasattr(self.main_window, '_apply_column_visibility_by_name'):
+                    self.main_window._apply_column_visibility_by_name()
+        if getattr(self.main_window, 'stats_cards', None) is not None:
+            self.main_window.stats_cards.refresh(main_df)
+        self._refresh_self()
+        toast(f"↩ 已取消豁免并放回隔离区 {len(ids)} 条", parent=self)
+
     # ------------------------------------------------------------------ 数据
+    @staticmethod
+    def _hide_read_cols(view, df):
+        """子表隐藏 DataFrameModel.setDataFrame 自动补的 _read / _read_source 两列。
+
+        这两列是主表已读渲染的内部字段，摆在失效复核/豁免台账里就是「一列 0 + 一列空白」。
+        """
+        for col in ('_read', '_read_source'):
+            if col in df.columns:
+                view.setColumnHidden(int(df.columns.get_loc(col)), True)
+
+    @staticmethod
+    def _norm_id(v):
+        s = str(v).strip()
+        return s[:-2] if s.endswith('.0') else s
+
+    def _main_material_lookup(self):
+        """主表按 data_id 反查 物料编码/物料名称/车间（防御式：列不存在则留空）。"""
+        main_df = getattr(getattr(self.main_window, 'view_model', None), 'df', None)
+        if main_df is None or 'data_id' not in main_df.columns:
+            return {}
+        avail = [c for c in ('物料编码', '物料名称', '车间') if c in main_df.columns]
+        if not avail:
+            return {}
+        sub = main_df[['data_id'] + avail].copy()
+        sub['data_id'] = sub['data_id'].apply(self._norm_id)
+        return sub.set_index('data_id').to_dict('index')
+
     def set_data(self, df):
         df = df.copy()
         # v43.239：打开/刷新隔离区前，先对主表跑一次「隔离区已读对账」。
@@ -508,27 +658,15 @@ class QuarantineDialog(QDialog):
         auto_select=True（仅「扫描失效」按钮）：把列出的行整列选中，省掉一次手动框选。
         只动选中态——已读和移出仍由用户点按钮触发。
         """
-        # 从主表按 data_id 反查物料编码/物料名称/车间（防御式：列不存在则留空）
-        def _norm_id(v):
-            s = str(v).strip()
-            return s[:-2] if s.endswith('.0') else s
-        mat_lookup = {}
-        if self.main_window and hasattr(self.main_window, 'view_model') and self.main_window.view_model is not None:
-            main_df = self.main_window.view_model.df
-            if main_df is not None and 'data_id' in main_df.columns:
-                keys = ['物料编码', '物料名称', '车间']
-                avail = [c for c in keys if c in main_df.columns]
-                if avail:
-                    sub = main_df[['data_id'] + avail].copy()
-                    sub['data_id'] = sub['data_id'].apply(_norm_id)
-                    mat_lookup = sub.set_index('data_id').to_dict('index')
+        # 从主表按 data_id 反查物料编码/物料名称/车间（与豁免台账共用同一份查找）
+        mat_lookup = self._main_material_lookup()
         rows = []
         for r in expired_list:
             actual = r.get('actual')
             quota = r.get('quota')
             dev = (actual - quota) if (actual is not None and quota is not None) else ''
             uid = r.get('uid', '')
-            info = mat_lookup.get(_norm_id(uid), {})
+            info = mat_lookup.get(self._norm_id(uid), {})
             rows.append({
                 '物料编码': info.get('物料编码', ''),
                 '物料名称': info.get('物料名称', ''),
@@ -552,6 +690,7 @@ class QuarantineDialog(QDialog):
         self.expired_model = DataFrameModel()
         self.expired_model.setDataFrame(edf)
         self.expired_view.setModel(self.expired_model)
+        self._hide_read_cols(self.expired_view, self.expired_model.getDataFrame())
         # v43.300：失效复核表同样收编到自适应控制器
         _ectrl = get_adaptive(self.expired_view)
         if _ectrl is None:
@@ -898,10 +1037,13 @@ class QuarantineDialog(QDialog):
                         self.main_window.view_model.df = main_df
                         self.main_window.source_model.setDataFrame(main_df)
             else:
-                self.full_df.loc[self.full_df['data_id'].astype(str) == uid, '豁免'] = "是"
+                # 取消豁免：内存里的「豁免」列要跟着清空。原先这里写死 "是"，
+                # 于是点完「✅ 取消豁免」列表仍显示已豁免（v43.358 顺手改掉）。
+                self.full_df.loc[self.full_df['data_id'].astype(str) == uid, '豁免'] = ""
                 self._render_table(self.full_df.copy())
         else:
             self._apply_list_filters()
+        self._render_exempt()
         toast(f"{msg} {uid}", parent=self)
 
     def _is_row_exempted(self, uid: str) -> bool:
@@ -1111,8 +1253,9 @@ class QuarantineDialog(QDialog):
                 # 数据变化后重新应用用户当前的隔离原因 + 关键字筛选（保持选择）
                 self.set_data(qdf)
                 self._apply_list_filters()
-        # 同步刷新失效复核页
+        # 同步刷新失效复核页与豁免台账
         self._render_expired(self._load_expired_from_main())
+        self._render_exempt()
 
     def _repair_consistency(self):
         """隔离区对话框内一键修复：调用主窗口的隔离区一致性修复，并刷新本列表。"""

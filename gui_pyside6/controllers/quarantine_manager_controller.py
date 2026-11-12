@@ -40,6 +40,8 @@ from core.auto_quarantine import (
 )
 from core.quarantine_manager import (
     add_quarantine_batch,
+    clear_exempted_batch,
+    get_exempted_uids,
     get_quarantined_ids,
     is_overfeed_needs_review,
     remove_quarantine,
@@ -168,6 +170,12 @@ class QuarantineManagerController:
             from core.quarantine_manager import get_quarantined_ids
 
             uids = get_quarantined_ids()
+            if not uids:
+                return
+            # 已豁免的记录由人工收口，对账不碰它：不自动标已读、也不自动翻回未读。
+            # （自动隔离已经不再抓回豁免行，这里挡的是历史遗留——库里同时
+            #  exempted=1 且仍在区的行。）
+            uids = uids - get_exempted_uids()
             if not uids:
                 return
 
@@ -400,12 +408,21 @@ class QuarantineManagerController:
         already = set()
         if '_quarantined' in df.columns:
             already = set(df.loc[df['_quarantined'] == 1, 'data_id'].astype(str))
-        new_ids = set(matched) - already
+        # 已豁免 = 人工判过的记录，自动隔离规则不再把它抓回隔离区（v43.358）。
+        # 缺这一步就是「豁免看起来没生效」的根因：标记豁免当场移出，下次分析又被抓回来。
+        exempted_hit = set(matched) & get_exempted_uids()
+        new_ids = set(matched) - already - exempted_hit
         if not new_ids:
             if manual:
-                QMessageBox.information(
-                    self.mw, "自动整理隔离区",
-                    f"符合规则的 {len(matched)} 条均已在隔离区，无需重复移入。")
+                if exempted_hit:
+                    QMessageBox.information(
+                        self.mw, "自动整理隔离区",
+                        f"符合规则的 {len(matched)} 条无需移入：其中 {len(exempted_hit)} 条已标记豁免"
+                        f"（不再自动抓回，可在「隔离区 ▸ 豁免台账」取消豁免），其余已在隔离区。")
+                else:
+                    QMessageBox.information(
+                        self.mw, "自动整理隔离区",
+                        f"符合规则的 {len(matched)} 条均已在隔离区，无需重复移入。")
             return
         # 批量写入 SQLite：单事务 executemany，替代逐行 connect/commit/close（12K 行下卡死的根因之一）
         from core.quarantine_manager import add_quarantine_batch
@@ -419,9 +436,53 @@ class QuarantineManagerController:
                 self.mw._apply_column_visibility_by_name()
         self.mw.stats_cards.refresh(df)
         msg = f"🧹 自动移入隔离区 {len(new_ids)} 条（{build_all_summary(cfg)}）"
+        if exempted_hit:
+            msg += f"｜{len(exempted_hit)} 条已豁免未抓回"
         toast(msg, parent=self.mw)
         if manual:
             QMessageBox.information(self.mw, "自动整理隔离区", msg)
+
+    # ═══════════════ 豁免作废 ═══════════════
+
+    def _revoke_exemptions_on_post_audit_change(self, df=None):
+        """已豁免的记录在审核后又被改动 → 豁免自动作废（裴哥 11-12 定）。
+
+        豁免只对「当时人工判过的那一版数据」负责：实际数量 / 备注原因 / 产量一改，
+        当初的判断就不再成立，这条得回到正常流程里重新过目。
+
+        判据不自造：改动检测的唯一真相是主表 `_post_audit_changed==1`
+        （由 ReadStatusService.restore_read_status 与已读基线快照比对得出，KPI
+        「审核后变更」那格和变动提醒看板读的都是它），这里只取它与豁免集合的交集。
+        作废后不在这里直接把它塞回隔离区 —— 调用点排在自动隔离之前，
+        同一次分析里它就会按现行规则重新被判定，规则不命中就不该回区。
+        返回被作废的 uid 列表。
+        """
+        try:
+            if df is None:
+                df = self.mw.view_model.df
+            if df is None or 'data_id' not in df.columns or '_post_audit_changed' not in df.columns:
+                return []
+            exempted = get_exempted_uids()
+            if not exempted:
+                return []
+            changed = (pd.to_numeric(df['_post_audit_changed'], errors='coerce')
+                       .fillna(0).astype(int) == 1)
+            if not changed.any():
+                return []
+            ids = sorted({str(d) for d in df.loc[changed, 'data_id'].astype(str)
+                          if str(d) in exempted})
+            if not ids:
+                return []
+            clear_exempted_batch(ids)
+            msg = ("%d 条已豁免记录在审核后又被改动，豁免已作废并重新按规则处理"
+                   "（可在「隔离区 ▸ 豁免台账」查看）" % len(ids))
+            toast("🔓 " + msg, "warning", parent=self.mw, duration=8000)
+            self.mw.statusBar().showMessage("豁免作废：" + msg, 8000)
+            self.mw.log("豁免作废：" + msg, "warning")
+            return ids
+        except Exception as e:
+            print(f"[WARN] 豁免作废检查失败(不影响主流程): {e}", flush=True)
+            return []
 
     # ═══════════════ 角标 ═══════════════
 

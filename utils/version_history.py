@@ -14,6 +14,55 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.358",
+            "date": "2026-11-12",
+            "features": (
+                "隔离区「豁免」全修 + 审核后变动自动作废（裴哥 11-12：「我选择全修，但是有一点，"
+                "如果触发了审核后变动，豁免失效，并给出提示」）。先回话「是不是没生效」：一半生效。"
+                "当场移出隔离区、失效复核跳过它、快照未完结跳过它、列表里的「豁免」列都是真的；"
+                "漏的是最要紧的一环 —— 自动隔离从来不看豁免，于是每次分析完，规则命中的这条又被"
+                "抓回隔离区，看上去就是「豁免点了没用」。\n"
+                "①语义先定死：豁免说的是「这条人被人工判过了」，与它此刻在不在区里无关。所以"
+                "core/quarantine_manager.get_exempted_uids() 刻意不加 restored_at IS NULL —— 标记"
+                "豁免那一步会同时把记录移出（restored_at 有值），一按在区过滤，豁免就只在点下的"
+                "那一刻生效，下次自动隔离又抓回来。get_exempted_records() 把 restored_at 带出来，"
+                "台账才能区分「在隔离区」和「已移出（豁免生效中）」。\n"
+                "②三个消费点接线：自动隔离把 exempted_hit 从 new_ids 里减掉，提示诚实写明"
+                "「N 条已豁免未抓回」，全部命中项都被豁免挡掉时不再假装「均已在隔离区」，而是告诉"
+                "去哪取消；已读对账 uids -= get_exempted_uids()（挡的是库里 exempted=1 且仍在区的"
+                "历史遗留行，既不自动标已读也不翻回未读）；新增第三页「豁免台账」，因为一旦不再"
+                "抓回，旧界面上就再也找不到这条记录，「取消豁免」会变成永远点不到的按钮 —— 台账"
+                "列出所有已豁免行，「↩ 取消豁免并放回隔离区（选中行）」作标记、写回库、置主表 "
+                "_quarantined=1，反悔有路可走。\n"
+                "③作废判据不自造：改动检测的唯一真相是主表 _post_audit_changed==1（由 "
+                "ReadStatusService.restore_read_status 拿实际数量/备注原因/产量与已读基线快照比"
+                "对得出，KPI「审核后变更」格和变动提醒读的是同一列）。作废只取「已豁免 ∩ 已变动」"
+                "的交集，绝不重算第二套判据 —— 同口径原则。\n"
+                "④作废不等于塞回隔离区：_revoke_exemptions_on_post_audit_change 只解除标记，"
+                "重新入区交给紧随其后的自动隔离按现行规则判定，所以调用点必须排在 "
+                "_auto_move_to_quarantine 之前（这次分析就重新过一遍）。提示三处齐发：toast "
+                "warning「🔓 N 条已豁免记录在审核后又被改动，豁免已作废…」+ 状态栏 + 日志，"
+                "文案指向「隔离区 ▸ 豁免台账」。没有 _post_audit_changed 列（还没建基线）或库里"
+                "没有豁免行时静默返回，不打扰正常分析。\n"
+                "⑤顺手修掉两处显示 bug：_toggle_exempted 的「取消豁免」分支写的是「豁免 = 是」，"
+                "点完列表仍显示已豁免；DataFrameModel.setDataFrame 会给任何表自动补 "
+                "_read/_read_source 两列，失效复核与豁免台账里露出来就是「一列 0 + 一列空白」，"
+                "两页改用同一个 _hide_read_cols 收掉。批量作废的返回值用 len(uids) 而不是 "
+                "conn.total_changes —— 后者是连接累计值，会把别人做过的改动一起报进来。\n"
+                "⑥测试卫生：控制器里 _auto_move_to_quarantine 有一处函数内 "
+                "from core.quarantine_manager import add_quarantine_batch，补丁目标因此分两套"
+                "（QM 与 CTRL）；新增的豁免读走模块级名，既有 7 处对账测试不 patch 就会去读真实 "
+                "audit.db，已一并补上 patch(CTRL.get_exempted_uids, return_value=set())。\n"
+                "验证：新增 tests/unit/test_quarantine_exempt_phase4g.py 23 条（豁免语义不看 "
+                "restored_at / 台账明细带状态与判定依据 / 批量作废只动传入项 / 自动隔离跳过豁免并"
+                "诚实提示 / 无豁免时行为与修复前一致 / 对账既不标已读也不翻回 / 全豁免时提前返回"
+                "零读零写 / 作废只取交集且不越权写隔离区 / 提示文案与 warning 级别 / 调用顺序钉死"
+                "在自动隔离之前 / 台账三页结构与计数 / 取消豁免闭环与依据快照回落 / 辅助列隐藏）；"
+                "失效复核页补 1 条同口径；全量 664 passed / 1 skipped / 2 xfailed / 4 xpassed；"
+                "离屏冒烟 25/25 PASS，版本 v43.358。"
+            ),
+        },
+        {
             "version": "v43.357",
             "date": "2026-11-12",
             "features": (

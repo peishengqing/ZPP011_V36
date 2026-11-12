@@ -69,6 +69,7 @@ def patched(monkeypatch):
     monkeypatch.setattr(qd, "scan_expired_quarantine", _scan)
     monkeypatch.setattr(qd, "load_auto_quarantine_config", lambda: {"rules": []})
     monkeypatch.setattr(qd, "get_quarantine_records", lambda: [])
+    monkeypatch.setattr(qd, "get_exempted_records", lambda: [])
     monkeypatch.setattr(qd, "save_read_status_batch",
                         lambda records: calls["read_batch"].append(list(records)))
     monkeypatch.setattr(qd, "remove_quarantine_batch",
@@ -183,3 +184,13 @@ def test_hint_text_documents_auto_select():
     text = open(src, encoding="utf-8").read()
     assert "自动全部选中" in text
     assert "不会替你改状态" in text
+
+
+def test_expired_table_hides_read_helper_cols(dialog, patched):
+    """失效复核表与豁免台账共用 _hide_read_cols，两页列观感一致。"""
+    patched["scan_result"] = [_expired("U1")]
+    dialog.btn_scan_expired.click()
+    mdf = dialog.expired_model.getDataFrame()
+    for col in ('_read', '_read_source'):
+        assert dialog.expired_view.isColumnHidden(int(mdf.columns.get_loc(col)))
+    assert not dialog.expired_view.isColumnHidden(int(mdf.columns.get_loc('物料名称')))

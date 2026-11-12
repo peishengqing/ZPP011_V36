@@ -191,6 +191,7 @@ def test_reconcile_resolved_unread_gets_read():
     }
     captured = {}
     with patch(f"{QM}.get_quarantined_ids", return_value={'A', 'B', 'C', 'D'}), \
+         patch(f"{CTRL}.get_exempted_uids", return_value=set()), \
          patch(f"{RS}.load_read_status", return_value=read_map), \
          patch(f"{RS}.mark_read_batch", side_effect=lambda d, s, **k: captured.setdefault('read', list(d))), \
          patch(f"{RS}.save_read_status_batch", return_value=None), \
@@ -212,6 +213,7 @@ def test_reconcile_resolved_already_read_untouched():
     }
     called = {}
     with patch(f"{QM}.get_quarantined_ids", return_value={'A', 'B', 'C', 'D'}), \
+         patch(f"{CTRL}.get_exempted_uids", return_value=set()), \
          patch(f"{RS}.load_read_status", return_value=read_map), \
          patch(f"{RS}.mark_read_batch", side_effect=lambda d, s, **k: called.setdefault('read', list(d))), \
          patch(f"{RS}.save_read_status_batch", return_value=None), \
@@ -234,6 +236,7 @@ def test_reconcile_still_neg_auto_read_rolled_back():
     }
     rolled = {}
     with patch(f"{QM}.get_quarantined_ids", return_value={'A', 'B', 'C', 'D'}), \
+         patch(f"{CTRL}.get_exempted_uids", return_value=set()), \
          patch(f"{RS}.load_read_status", return_value=read_map), \
          patch(f"{RS}.mark_read_batch", return_value=None), \
          patch(f"{RS}.save_read_status_batch",
@@ -275,6 +278,7 @@ def test_reconcile_rollback_tuple_real_db_not_silently_failing():
             'D': (1, 'fpD', None, None, None, 'manual'),
         }
         with patch(f"{QM}.get_quarantined_ids", return_value={'A', 'B', 'C', 'D'}), \
+             patch(f"{CTRL}.get_exempted_uids", return_value=set()), \
              patch(f"{RS}.load_read_status", return_value=read_map), \
              patch(f"{RS}.mark_read_batch", return_value=None), \
              patch(f"{CTRL}.toast", return_value=None):
@@ -308,6 +312,7 @@ def test_reconcile_manual_read_preserved():
     }
     rolled = {}
     with patch(f"{QM}.get_quarantined_ids", return_value={'A', 'B', 'C', 'D'}), \
+         patch(f"{CTRL}.get_exempted_uids", return_value=set()), \
          patch(f"{RS}.load_read_status", return_value=read_map), \
          patch(f"{RS}.mark_read_batch", return_value=None), \
          patch(f"{RS}.save_read_status_batch",
@@ -331,6 +336,7 @@ def test_reconcile_non_quarantined_ignored():
     }
     touched = {}
     with patch(f"{QM}.get_quarantined_ids", return_value={'A', 'B', 'C', 'D'}), \
+         patch(f"{CTRL}.get_exempted_uids", return_value=set()), \
          patch(f"{RS}.load_read_status", return_value=read_map), \
          patch(f"{RS}.mark_read_batch", side_effect=lambda d, s, **k: touched.setdefault('read', list(d))), \
          patch(f"{RS}.save_read_status_batch",

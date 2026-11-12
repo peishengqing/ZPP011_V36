@@ -1326,6 +1326,10 @@ class MainWindow(QMainWindow):
         if not self.alert_monitor.isRunning():
             self.alert_monitor.start()
 
+        # 分析完成后：已豁免记录若发生「审核后变动」，先作废豁免（v43.358）——
+        # 排在自动隔离之前，作废掉的行才会在这次就按现行规则重新判定。
+        self._revoke_exemptions_on_post_audit_change()
+
         # 分析完成后自动把「疑难包材箱」记录移入隔离区（静默：仅当有新增时 toast）
         self._auto_move_to_quarantine(manual=False)
 
@@ -2829,6 +2833,10 @@ class MainWindow(QMainWindow):
     def _auto_move_to_quarantine(self, manual=False):
         """薄壳：按规则自动移入隔离区（ARC-003 第七刀切出到 QuarantineManagerController）。"""
         return self.quarantine_manager_controller._auto_move_to_quarantine(manual)
+
+    def _revoke_exemptions_on_post_audit_change(self, df=None):
+        """薄壳：已豁免记录发生审核后变动时作废豁免（v43.358）。"""
+        return self.quarantine_manager_controller._revoke_exemptions_on_post_audit_change(df)
 
     # ------------------------------------------------------------------ #
     # 隔离区失效复核（监控旧数据改动：负损→补投相符 / 自动规则不再命中）

@@ -199,8 +199,9 @@ def test_scan_expired_quota_zero_not_treated_as_overfeed():
 
 
 # ---------------------------------------------------------------- 已读对账
-def _reconcile(df, read_map, quarantine_ids, captured):
+def _reconcile(df, read_map, quarantine_ids, captured, exempted=None):
     with patch(f"{QM}.get_quarantined_ids", return_value=set(quarantine_ids)), \
+         patch(f"{CTRL}.get_exempted_uids", return_value=set(exempted or ())), \
          patch(f"{RS}.load_read_status", return_value=read_map), \
          patch(f"{RS}.mark_read_batch",
                side_effect=lambda d, s, **k: captured.setdefault('read', list(d))), \

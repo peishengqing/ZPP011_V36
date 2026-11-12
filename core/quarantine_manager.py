@@ -386,3 +386,46 @@ def is_exempted(uid: str) -> bool:
     row = cur.fetchone()
     conn.close()
     return row is not None and row[0] == 1
+
+
+def get_exempted_uids() -> Set[str]:
+    """当前处于「人工已豁免」状态的 uid 集合。
+
+    刻意**不**加 `restored_at IS NULL`：标记豁免的那一步会同时把记录移出隔离区
+    （见 quarantine_dialog._toggle_exempted），若按在区过滤，豁免就只在那一刻生效，
+    下一次自动隔离又会把它抓回来 —— 这正是「豁免看起来没生效」的根因。
+    语义是「这条记录人被人工判过了」，与它此刻在不在区里无关。
+    """
+    conn = _get_conn()
+    cur = conn.execute("SELECT uid FROM quarantine_records WHERE exempted = 1")
+    result = {str(row[0]) for row in cur.fetchall()}
+    conn.close()
+    return result
+
+
+def get_exempted_records() -> List[Dict]:
+    """豁免台账：所有 exempted=1 的记录，含 restored_at（供界面区分「已移出/仍在区」）。"""
+    conn = _get_conn()
+    cur = conn.execute(
+        "SELECT uid, reason, reason_basis, quarantined_at, restored_at FROM quarantine_records "
+        "WHERE exempted = 1 ORDER BY quarantined_at DESC"
+    )
+    columns = ['uid', 'reason', 'reason_basis', 'quarantined_at', 'restored_at']
+    result = [dict(zip(columns, row)) for row in cur.fetchall()]
+    conn.close()
+    return result
+
+
+def clear_exempted_batch(uids: List[str]) -> int:
+    """批量作废豁免（审核后又被改动时用）。传入的应当确实是已豁免的 uid，
+    返回值就是作废条数（调用方已用 get_exempted_uids 筛过）。"""
+    if not uids:
+        return 0
+    conn = _get_conn()
+    conn.executemany(
+        "UPDATE quarantine_records SET exempted = 0 WHERE uid = ?",
+        [(str(uid),) for uid in uids]
+    )
+    conn.commit()
+    conn.close()
+    return len(uids)
