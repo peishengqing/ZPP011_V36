@@ -190,7 +190,10 @@ class QuarantineDialog(QDialog):
         v.setSpacing(6)
         hint = QLabel("监控隔离区旧数据的改动：例如某行当初因「负损（实际<定额）」入区，"
                       "后来补投使实际≥定额（相符/多耗用），其入区原因即已失效。"
-                      "点「扫描失效」实时比对主表，下方列出失效记录，可一键移出隔离区。"
+                      "点「扫描失效」实时比对主表，下方列出失效记录并自动全部选中，"
+                      "可直接点「设为已读并移出隔离区（选中行）」或「移出隔离区（选中行）」，"
+                      "不必手动框选；不想一起处理就用 Ctrl/Shift 点着改选。"
+                      "扫描只会选中行，不会替你改状态——已读与移出仍要点按钮确认。"
                       "注意：超额投料（(实际-定额)/定额 > 10%）不算失效、不会自动已读，"
                       "必须保留在隔离区由人工复核，不会出现在下方列表。")
         hint.setWordWrap(True)
@@ -248,10 +251,14 @@ class QuarantineDialog(QDialog):
         v.addWidget(self.expired_view)
 
         bl = QHBoxLayout()
-        scan_btn = make_button("🔄 扫描失效")
-        scan_btn.clicked.connect(self._run_expired_scan)
-        bl.addWidget(scan_btn)
+        self.btn_scan_expired = make_button("🔄 扫描失效")
+        self.btn_scan_expired.setToolTip("实时比对主表，列出的失效记录会自动全部选中")
+        self.btn_scan_expired.clicked.connect(self._run_expired_scan)
+        bl.addWidget(self.btn_scan_expired)
         self.btn_mark_read_expired = make_button("✓ 设为已读并移出隔离区（选中行）")
+        self.btn_mark_read_expired.setToolTip(
+            "扫描失效后这里的行已自动全选，直接点即可；想只处理一部分就先用 "
+            "Ctrl/Shift 点行改选")
         self.btn_mark_read_expired.clicked.connect(self._mark_expired_read_selected)
         bl.addWidget(self.btn_mark_read_expired)
         self.btn_remove_expired = make_button("↩ 移出隔离区（选中行）")
@@ -488,11 +495,19 @@ class QuarantineDialog(QDialog):
         if self.main_window and hasattr(self.main_window, '_expired_q_cache'):
             self.main_window._expired_q_cache = {r['uid']: r for r in expired}
             self.main_window._update_quarantine_badge(expired)
-        self._render_expired(expired)
-        toast(f"扫描完成：{len(expired)} 条失效记录", parent=self)
+        self._render_expired(expired, auto_select=True)
+        if expired:
+            toast("扫描完成：%d 条失效记录，已自动全选，可直接点「设为已读并移出隔离区（选中行）」"
+                  % len(expired), parent=self)
+        else:
+            toast("扫描完成：没有失效记录", parent=self)
 
-    def _render_expired(self, expired_list):
-        """渲染失效复核表格。列：物料编码/物料名称/车间（从主表反查）+ 隔离原因/失效说明/定额/实际/偏差数量 + data_id（置末）。"""
+    def _render_expired(self, expired_list, auto_select=False):
+        """渲染失效复核表格。列：物料编码/物料名称/车间（从主表反查）+ 隔离原因/失效说明/定额/实际/偏差数量 + data_id（置末）。
+
+        auto_select=True（仅「扫描失效」按钮）：把列出的行整列选中，省掉一次手动框选。
+        只动选中态——已读和移出仍由用户点按钮触发。
+        """
         # 从主表按 data_id 反查物料编码/物料名称/车间（防御式：列不存在则留空）
         def _norm_id(v):
             s = str(v).strip()
@@ -556,6 +571,11 @@ class QuarantineDialog(QDialog):
                 df0 = self.expired_model.getDataFrame()
                 col = df0.columns.get_loc('偏差数量') if '偏差数量' in df0.columns else 1
                 self._sort_ctrl_expired.apply_default(col, Qt.DescendingOrder)
+        # 选中放在最后一步：上面 setModel 会把旧的 selectionModel 整个换掉
+        if auto_select and not edf.empty:
+            self.expired_view.selectAll()
+            self.expired_count_label.setText(
+                "失效记录：%d 条（已自动全选，可直接点右侧按钮）" % len(edf))
 
     def _on_search_text_changed(self, text):
         """P2-10 修复：防抖处理，避免每次按键都重建模型。"""
