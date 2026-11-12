@@ -216,13 +216,15 @@ class TestNegLossOpensWithoutKeywords:
         assert "留空" in board.edit_keywords.placeholderText()
 
 
-class TestBoardLocateClosesWholeWindow:
-    """看板里「定位到主表后关窗」必须关整窗，不能只收内容组件。
+class TestBoardHandoffToMain:
+    """看板双击定位后「让位」：整窗隐藏而不是自杀，主表清除联动时再弹回原位。
 
-    v43.340 三块看板改成非模态多开：承载窗口换成 _present_board 建的 QDialog，
-    内容组件只是它的孙子控件。此时组件里残留的 self.close() 只把自己藏起来，
-    窗口还开着 —— 用户侧就是「双击负损看板某行 → 变成一块空白面板 →
-    把空白面板关掉才看到主表」。正确做法是发 close_requested，由窗口自己收。
+    两段历史：
+      · v43.340 三块看板改成非模态多开，承载窗口换成 _present_board 建的 QDialog，
+        内容组件只是它的孙子控件。此时组件里残留的 self.close() 只把自己藏起来，
+        窗口还开着 —— 用户侧就是「双击 → 变成一块空白面板，再关一次才看到主表」。
+      · v43.363 起，跳到主表那条路径改发 handoff_to_main（整窗 hide，随时能弹回），
+        只有看板里的「关闭」按钮才发 close_requested 真把窗口关掉。
     """
 
     class _Idx:
@@ -241,13 +243,15 @@ class TestBoardLocateClosesWholeWindow:
         def getDataFrame(self):
             return self._df
 
-    @pytest.fixture(params=["neg_loss", "pos_loss"])
+    @pytest.fixture(params=["neg_loss", "pos_loss", "semi"])
     def hosted(self, qapp, request):
         import pandas as pd
         from PySide6.QtWidgets import QDialog, QVBoxLayout
         from gui_pyside6.widgets.neg_loss_content import NegLossContent
         from gui_pyside6.widgets.pos_loss_content import PosLossContent
-        cls = {"neg_loss": NegLossContent, "pos_loss": PosLossContent}[request.param]
+        from gui_pyside6.widgets.semi_content import SemiContent
+        cls = {"neg_loss": NegLossContent, "pos_loss": PosLossContent,
+               "semi": SemiContent}[request.param]
 
         content = cls(object())   # 不接主窗：locate_row 三条判据全落空，走提示分支
         content.source_model = self._SM(pd.DataFrame([{"data_id": "2026-11-12|SAP001|30001234"}]))
@@ -258,21 +262,32 @@ class TestBoardLocateClosesWholeWindow:
         lay = QVBoxLayout(dlg)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(shell)
-        content.close_requested.connect(dlg.close)   # 与 _present_board 同款接线
+        stats = {"closed": 0, "handed": 0}
+        content.close_requested.connect(lambda: stats.__setitem__("closed", stats["closed"] + 1))
+        content.handoff_to_main.connect(lambda: (stats.__setitem__("handed", stats["handed"] + 1),
+                                                 dlg.hide()))   # 与 _present_board 同款接线
         dlg.show()
-        yield dlg, content
+        yield dlg, content, stats
         dlg.deleteLater()
 
-    def test_double_click_closes_host_window(self, hosted):
-        dlg, content = hosted
+    def test_double_click_hands_off_without_destroying(self, hosted):
+        dlg, content, stats = hosted
         assert dlg.isVisible()
         content.on_double_click(self._Idx())
-        assert not dlg.isVisible(), "双击后承载窗口还开着（只剩空白面板）"
+        assert stats == {"closed": 0, "handed": 1}, "双击该走「让位」，不该真关窗"
+        assert not dlg.isVisible(), "让位后窗口还挡在主表前面"
+        dlg.show()
+        assert dlg.isVisible(), "只是隐藏，不该把窗口销毁（弹不回原位）"
 
-    def test_drilldown_path_uses_the_same_signal(self):
-        """右键「下钻该车间」成功后走的是同一条关闭路径。"""
+    def test_close_button_still_asks_for_a_real_close(self, hosted):
+        _dlg, content, stats = hosted
+        content.btn_close.click()
+        assert stats["closed"] == 1 and stats["handed"] == 0
+
+    def test_components_never_close_themselves(self):
+        """组件里不许再出现 self.close()：那只藏起内容组件，窗口会留成一块空白。"""
         import ast
-        for mod in ("neg_loss_content", "pos_loss_content"):
+        for mod in ("neg_loss_content", "pos_loss_content", "semi_content"):
             path = os.path.join(os.path.dirname(__file__), "..", "..",
                                 "gui_pyside6", "widgets", "%s.py" % mod)
             with open(path, "r", encoding="utf-8") as f:
@@ -281,7 +296,4 @@ class TestBoardLocateClosesWholeWindow:
                    if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
                    and n.func.attr == "close" and isinstance(n.func.value, ast.Name)
                    and n.func.value.id == "self"]
-            assert not bad, "%s.py 里还有 self.close()（行 %s）——只藏内容组件、窗口留成空白" % (mod, bad)
-        # 关闭按钮用的信号仍在
-        from gui_pyside6.widgets.neg_loss_content import NegLossContent
-        assert hasattr(NegLossContent, "close_requested")
+            assert not bad, "%s.py 里还有 self.close()（行 %s）" % (mod, bad)

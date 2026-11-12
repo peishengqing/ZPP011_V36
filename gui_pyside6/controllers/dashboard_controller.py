@@ -80,9 +80,15 @@ class DashboardController:
         dialog.setMinimumSize(*size)
         dialog.resize(*size)
 
-        # SemiContent 有 close_requested（关闭/下钻后关看板）；负损/正损没有此信号
-        if content is not None and hasattr(content, 'close_requested'):
-            content.close_requested.connect(dialog.close)
+        # 三块内容组件都有这两个信号，语义不同，别并成一个：
+        #   · close_requested —— 看板里点「关闭」，整窗真销毁；
+        #   · handoff_to_main —— 已双击定位/下钻到主表，看板只「让位」隐藏，
+        #     主表清除联动时弹回原位（筛选、滚动、选中行都还在）。
+        if content is not None:
+            if hasattr(content, 'close_requested'):
+                content.close_requested.connect(dialog.close)
+            if hasattr(content, 'handoff_to_main'):
+                content.handoff_to_main.connect(lambda d=dialog: self._stash_board(d))
 
         self._board_windows[key] = dialog
         dialog.destroyed.connect(lambda *_a, k=key: self._board_windows.pop(k, None))
@@ -90,6 +96,14 @@ class DashboardController:
         dialog.raise_()
         dialog.activateWindow()
         return dialog
+
+    def _stash_board(self, dialog):
+        """看板让位：隐藏而不是关闭，并把「要弹回的那个窗」交给主窗。"""
+        try:
+            dialog.hide()
+            self.mw._link_return_board = dialog
+        except RuntimeError:          # C++ 侧已销毁，没什么可弹回的
+            self.mw._link_return_board = None
 
     def _show_alert_dashboard(self):
         """手动打开替代料看板"""

@@ -583,6 +583,7 @@ class MainWindow(QMainWindow):
         self.main_table.link_banner_cleared.connect(self._clear_link_drilldown)
         self._link_snapshot = None  # 联动钻取前的筛选快照（清除时恢复）
         self._link_return = None    # 联动钻取前停在主表哪一行 + 流程订单框原值
+        self._link_return_board = None  # 为这次联动「让位」隐藏起来的看板窗口
         self._refresh_filter_preset_menu()
 
         # 分析按钮点击连接（ARC-003 第八刀，必须创建）
@@ -2307,6 +2308,7 @@ class MainWindow(QMainWindow):
                     self._sort_header.update()
             self._link_snapshot = None  # 清除联动钻取快照（重置后不应再保留钻取）
             self._link_return = None
+            self._link_return_board = None
             self._update_col_filter_hint()
         except Exception as e:
             self.log(f"[重置筛选] 清理 proxy 残留失败: {e}", "warning")
@@ -2471,6 +2473,24 @@ class MainWindow(QMainWindow):
             if ret[0] and self._main_row_visible_for_data_id(ret[0]):
                 self._locate_row_in_main_table(ret[0], silent=True)
         self.main_table.clear_link_banner()
+        self._recall_stashed_board()
+
+    def _recall_stashed_board(self):
+        """把为这次联动「让位」隐藏的看板弹回原处（v43.363）。
+
+        看板当初只是 hide()，没走 close()（WA_DeleteOnClose 不触发），所以里面的
+        筛选条件、滚动位置、选中行都还是离开时的样子。
+        """
+        board = self._link_return_board
+        self._link_return_board = None
+        if board is None:
+            return
+        try:
+            board.show()
+            board.raise_()
+            board.activateWindow()
+        except RuntimeError:      # 期间用户在任务栏/别处把它真关了
+            pass
 
     def _main_row_visible_for_data_id(self, data_id):
         """恢复筛选后该行是否仍可见——可见才跳，否则会把选区丢到隐藏行上。"""

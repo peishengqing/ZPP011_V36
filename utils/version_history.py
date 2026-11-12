@@ -14,6 +14,32 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.363",
+            "date": "2026-11-12",
+            "features": (
+                "看板「让位」而不是关掉：双击看板行跳到主表后，点横幅「清除」→ 那块看板自己"
+                "弹回屏幕原来位置，筛选、滚动、选中行都还在（裴哥 11-12：「跳转到主面板，清除"
+                "之后可以返回到原来的看板那个位置」）。\n"
+                "①上一版 v43.361 只解决了「不留空白面板」：双击之后看板整窗隐藏。这一版把隐藏"
+                "变成可逆——看板不 close()，只 hide()，所以 WA_DeleteOnClose 不触发，窗口和里面"
+                "的状态都还活着。\n"
+                "②内容组件新增第二条信号 handoff_to_main（已让位给主表），和原有的 close_requested"
+                "（用户点「关闭」，整窗真销毁）分开，两条语义不同不能并成一条：负损/正损/半成品"
+                "三块看板的双击定位、右键「下钻该车间」共 6 个发射点全部改走 handoff_to_main；"
+                "关闭按钮仍走 close_requested。\n"
+                "③承载控制器 _stash_board 隐藏窗口的同时把「要弹回哪个窗」交给主窗（_link_return_board）；"
+                "主窗清除联动时在恢复筛选、跳回原来那行之后调 _recall_stashed_board 把窗口 show/"
+                "raise/activateWindow。期间用户从任务栏把看板真关了也不报错（C++ 侧已销毁只吞掉）。\n"
+                "④半路「重置筛选」会把这条待弹回的引用一并清掉，不会出现「清了别的、看板莫名弹出」。\n"
+                "验证：tests/unit/test_dashboard_shell_filters.py 的看板关闭用例重写成三条（双击只让位"
+                "不销毁、关闭按钮仍真关、三个组件里都不许出现 self.close()）+ test_filter_presets.py"
+                "补 1 条端到端（开看板 → 联动 → 让位 → 清除 → 看板弹回且主表停在原来那行）；反向验证"
+                "过——把 _recall_stashed_board 提前 return，用例报「清除联动后看板没有弹回原位」；"
+                "全量 678 passed / 1 "
+                "skipped / 2 xfailed / 4 xpassed；离屏冒烟 25/25 PASS，版本 v43.363。"
+            ),
+        },
+        {
             "version": "v43.362",
             "date": "2026-11-12",
             "features": (

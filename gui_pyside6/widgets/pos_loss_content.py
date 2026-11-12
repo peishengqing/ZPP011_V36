@@ -45,6 +45,7 @@ class PosLossContent(QWidget):
     title_changed = Signal(str)
     status_changed = Signal(str)
     close_requested = Signal()   # 「关闭」→ 由承载看板的 QDialog 收（多开看板用）
+    handoff_to_main = Signal()   # 已跳到主表 → 整窗「让位」（隐藏不销毁，清除联动时弹回原位）
 
     def __init__(self, main_window, parent=None):
         super().__init__(parent)
@@ -921,7 +922,7 @@ class PosLossContent(QWidget):
                 _rec = _df_drill.iloc[selected_rows[0]]
                 _drill = add_icon_action(menu, "🔍 下钻该车间（主表筛选）")
                 _drill.triggered.connect(
-                    lambda: self.close_requested.emit() if drill_to_workshop(self.main_window, _rec, "正损看板") else None)
+                    lambda: self.handoff_to_main.emit() if drill_to_workshop(self.main_window, _rec, "正损看板") else None)
             except Exception:
                 pass
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
@@ -1134,7 +1135,7 @@ class PosLossContent(QWidget):
         df = self.source_model.getDataFrame()
         if index.row() < len(df):
             locate_row(self.main_window, df.iloc[index.row()], parent=self, link_source="正损看板")
-            self.close_requested.emit()
+            self.handoff_to_main.emit()
 
     def export_excel(self):
         cur_df = self.source_model.getDataFrame() if hasattr(self, "source_model") else None

@@ -68,6 +68,7 @@ class SemiContent(QWidget):
 
     # 由外层 QDialog 连接，用于「关闭/下钻后关闭看板」
     close_requested = Signal()
+    handoff_to_main = Signal()   # 已跳到主表 → 整窗「让位」（隐藏不销毁，清除联动时弹回原位）
     status_changed = Signal(str)
     title_changed = Signal(str)
 
@@ -1169,7 +1170,7 @@ class SemiContent(QWidget):
                 _rec = _df_drill.iloc[selected_rows[0]]
                 _drill = add_icon_action(menu, "🔍 下钻该车间（主表筛选）")
                 _drill.triggered.connect(
-                    lambda: self.close_requested.emit() if drill_to_workshop(self.main_window, _rec, "半成品看板") else None)
+                    lambda: self.handoff_to_main.emit() if drill_to_workshop(self.main_window, _rec, "半成品看板") else None)
             except Exception:
                 pass
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
@@ -1457,7 +1458,7 @@ class SemiContent(QWidget):
         df = self.source_model.getDataFrame()
         if index.row() < len(df):
             locate_row(self.main_window, df.iloc[index.row()], parent=self, link_source="半成品看板")
-            self.close_requested.emit()
+            self.handoff_to_main.emit()
 
     # ------------------------------------------------------------------ 导出
     def export_excel(self):

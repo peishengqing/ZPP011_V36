@@ -199,6 +199,7 @@ def _clean_board_state(w):
     w.proxy_model.setCustomFilters({})
     w._link_snapshot = None
     w._link_return = None
+    w._link_return_board = None
     QApplication.processEvents()
 
 
@@ -252,3 +253,48 @@ def test_clear_link_drilldown_skips_hidden_return_row(main_window, monkeypatch):
     QApplication.processEvents()
     assert calls == [], "d5 已被筛掉，不该再往它身上跳"
     assert w.proxy_model.getCustomFilters().get("物料名称") == "物料0"
+
+
+def test_clear_link_drilldown_brings_the_board_back(main_window):
+    """看板为联动「让位」而隐藏；点横幅「清除」→ 看板弹回原位（v43.363）。
+
+    这是 裴哥 要的那条路径：双击负损看板某行 → 主表筛出这一单 → 看完点「清除」
+    → 负损看板自己回到屏幕上原来那块位置，选中行仍是刚才双击的那一行。
+    """
+    import pandas as pd
+    from PySide6.QtWidgets import QApplication
+    from gui_pyside6.widgets.neg_loss_content import NegLossContent
+
+    w = main_window
+    df = _main_df()
+    w.source_model.setDataFrame(df)
+    w.view_model.df = df
+    _clean_board_state(w)
+    w.table_view.selectRow(5)
+    assert w._link_return_board is None
+
+    # 真实 Content 作看板内容，承载窗由 _present_board 现造（key 用测试专用名，不撞车）
+    key = "neg_loss|test_recall"
+    content = NegLossContent(w)
+    dlg = w.dashboard_controller._present_board(key, "负损看板（测试）", content,
+                                                content=content)
+    try:
+        assert dlg.isVisible()
+
+        w._apply_link_drilldown(
+            pd.Series({"流程订单": "170003", "工厂": "食品厂"}), "负损看板")
+        content.handoff_to_main.emit()       # 与 on_double_click 成功后同一发信号
+        QApplication.processEvents()
+        assert not dlg.isVisible(), "让位之后看板窗还挂着"
+        assert w._link_return_board is dlg
+
+        w._clear_link_drilldown()
+        QApplication.processEvents()
+        assert dlg.isVisible(), "清除联动后看板没有弹回原位"
+        assert w._link_return_board is None
+        assert _current_data_id(w) == "d5"
+    finally:
+        w.dashboard_controller._board_windows.pop(key, None)
+        w._link_return_board = None
+        dlg.deleteLater()
+        content.deleteLater()
