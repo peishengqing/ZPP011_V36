@@ -146,11 +146,8 @@ def _df(ids, actual=None, quota=None, changed=None):
 # ══════════════════════════════ 1. 数据层语义
 @pytest.fixture
 def tmp_db(monkeypatch):
-    """把隔离区表指向临时 SQLite 文件。
-
-    qm._get_conn 用的是模块级 DB_PATH（from core.read_status import DB_PATH），
-    所以必须 patch qm 命名空间里的这个名字，patch core.read_status 无效。
-    """
+    """qm._get_conn 读的是模块级 DB_PATH（from core.read_status import DB_PATH），
+    所以必须 patch qm 命名空间里的这个名字，patch core.read_status 无效。"""
     path = os.path.join(tempfile.mkdtemp(), "audit_test.db")
     monkeypatch.setattr(qm, "DB_PATH", path)
     yield path
