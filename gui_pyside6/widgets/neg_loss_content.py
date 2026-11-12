@@ -27,9 +27,6 @@ from gui_pyside6.utils.table_autofit import get_adaptive, install_adaptive
 from gui_pyside6.components.dashboard_shell import pack_row
 from gui_pyside6.themes.tokens import SIZE_PX
 
-# 开箱默认关键字（负损看板的业务口径，不是「未筛选」；「重置」按钮回到这里）
-_DEFAULT_KEYWORDS = "彩罐 , 托盘 , 手包袋"
-
 
 class NegLossContent(QWidget):
     """负损看板内容组件：标题 + 筛选 + 表格 + 操作按钮（不含对话框外壳）"""
@@ -44,7 +41,7 @@ class NegLossContent(QWidget):
         self.setObjectName("NegLossContent")
         self.main_window = main_window
         self.shell = None  # 绑定到 shell 以更新状态条
-        self._keywords = _DEFAULT_KEYWORDS
+        self._keywords = ""
         self._include_zero = False
         self._semi_class_filter = set()
         self._semi_class_col = None
@@ -143,6 +140,7 @@ class NegLossContent(QWidget):
     def _build_filter_widgets(self):
         """创建筛选控件与联动，但不进任何布局 —— 布局由 attach_shell 交给外壳。"""
         self.edit_keywords = QLineEdit(self._keywords)
+        self.edit_keywords.setPlaceholderText("留空=不过滤")
         self.edit_keywords.setToolTip(
             "全列关键字搜索：匹配任意文本列(名称/编码/车间/备注/原因等)，逗号或顿号分隔多值OR")
         self.edit_keywords.setMinimumWidth(160)
@@ -270,14 +268,14 @@ class NegLossContent(QWidget):
         self._apply_filter()
 
     def _reset_filters(self):
-        """外壳「重置」= 回到开箱口径（默认关键字 + 未读 + 其余全部），不是取消过滤。
+        """外壳「重置」= 回到开箱口径（关键字清空 + 未读 + 其余全部），不是取消过滤。
 
-        开箱本身就带关键字与负损口径，重置成「全部」会让用户一下子看到几万行无关
+        开箱本身带负损口径与未读筛选，重置成「全部」会让用户一下子看到几万行无关
         数据，等于换了个看板。
         """
         self._initializing = True          # 逐个回位期间压掉连锁重算
         try:
-            self.edit_keywords.setText(_DEFAULT_KEYWORDS)
+            self.edit_keywords.setText("")
             self.chk_include_zero.setChecked(False)
             for attr in ("grp_unit", "combo_mtd", "combo_workshop",
                          "combo_factory", "grp_semi_class"):
@@ -289,7 +287,7 @@ class NegLossContent(QWidget):
         finally:
             self._initializing = False
         # 掩码读的是这些状态位而不是控件本身，控件回位后必须同步归零
-        self._keywords = _DEFAULT_KEYWORDS
+        self._keywords = ""
         self._include_zero = False
         self._unit_filter = set()
         self._mtd_filter = "all"
@@ -642,8 +640,9 @@ class NegLossContent(QWidget):
         note_tag = {"all": "全部", "yes": "有备注", "no": "无备注"}[self._has_note_filter]
         if self.shell is not None:
             # 状态条给完整口径文案，筛选条右侧只给数字（设计稿 4.3.1）
-            self.shell.set_status("共 %d 条（名称含「%s」· %s · %s）" % (
-                len(filtered), self._keywords, tag, note_tag))
+            kw_tag = ("名称含「%s」· " % self._keywords) if self._keywords.strip() else ""
+            self.shell.set_status("共 %d 条（%s%s · %s）" % (
+                len(filtered), kw_tag, tag, note_tag))
             self.shell.set_total_hits(len(filtered))
             self.shell.set_filter_active(self._active_filter_keys())
             for key, term in terms.items():

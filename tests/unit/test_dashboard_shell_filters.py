@@ -186,3 +186,29 @@ class TestBoardContract:
             w = getattr(board, attr)
             assert w.parentWidget() is not None, attr
         shell.deleteLater()
+
+
+class TestNegLossOpensWithoutKeywords:
+    """负损看板开箱不带默认关键字（裴哥 11-12：「把负损看板里的默认关键字去掉」）。
+
+    正损看板仍带那三个默认值，本期只按原话改负损。
+    """
+
+    @pytest.fixture()
+    def board(self, qapp):
+        from gui_pyside6.widgets.neg_loss_content import NegLossContent
+        return NegLossContent(object())
+
+    def test_keyword_box_starts_empty(self, board):
+        assert board.edit_keywords.text() == ""
+        assert board._keywords == ""
+        # 空关键字不算「用户收紧过的条件」
+        assert "keywords" not in board._active_filter_keys()
+
+    def test_reset_clears_keywords(self, board):
+        board.edit_keywords.setText("彩罐 , 托盘")
+        board._reset_filters()
+        assert board.edit_keywords.text() == "" and board._keywords == ""
+
+    def test_placeholder_announces_empty_means_all(self, board):
+        assert "留空" in board.edit_keywords.placeholderText()
