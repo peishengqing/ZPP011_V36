@@ -85,6 +85,7 @@ from gui_pyside6.utils.table_autofit import install_adaptive, get_adaptive
 from gui_pyside6.controllers.column_controller import ColumnController
 from gui_pyside6.controllers.filter_preset_controller import FilterPresetController
 from gui_pyside6.controllers.dashboard_controller import DashboardController
+from gui_pyside6.controllers.threshold_controller import ThresholdController
 from gui_pyside6.controllers.semi_category_controller import SemiCategoryController
 from gui_pyside6.controllers.interaction_controller import InteractionController
 from gui_pyside6.controllers.quarantine_manager_controller import QuarantineManagerController
@@ -325,6 +326,8 @@ class MainWindow(QMainWindow):
         self.filter_preset_controller = FilterPresetController(self)
         # ARC-003 第四刀：11 个看板/弹窗展示职责已切出到 DashboardController
         self.dashboard_controller = DashboardController(self)
+        # ARC-003 第十一刀：阈值应用职责已切出到 ThresholdController
+        self.threshold_controller = ThresholdController(self)
         # v43.318 修复：DataController 此前是历史孤儿（文件在但从未实例化），
         # v43.316 把工厂切换真身迁入后第一次走到 data_controller 即 AttributeError 崩溃。
         # 补接线；同时修好下方 596/598/627/628/631/633 那几个一直潜伏的坏调用点。
@@ -2079,44 +2082,14 @@ class MainWindow(QMainWindow):
         物料（分析阈值取 0.0，零偏差的行也在表里），而且从没标过已读的行默认就是未读，
         于是裴哥看到「徽标 1591 / 队列实际 100」——不是数错了，是两处口径本来不一样。
         """
-        if '_read' in df.columns:
-            read_mask = (pd.to_numeric(df['_read'], errors='coerce')
-                         .fillna(0).astype(int) == 0)
-        else:
-            read_mask = pd.Series(True, index=df.index)
-
-        def _flag(col):
-            if col not in df.columns:
-                return pd.Series(False, index=df.index)
-            hit = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int) == 1
-            return hit & read_mask
-
-        alt = pd.Series(False, index=df.index)
-        if '是否替代料' in df.columns:
-            threshold = getattr(self.alert_monitor, 'threshold', 10)
-            hits = filter_alt_alerts(df, threshold)
-            if not hits.empty:
-                alt.loc[hits.index] = True
-        alt &= read_mask
-
-        dev = _thr.dev_alert_mask(df)
-        dev = (dev & read_mask) if dev is not None else pd.Series(False, index=df.index)
-
-        return {"隔离区": _flag('_quarantined'), "变动提醒": _flag('_post_audit_changed'),
-                "替代料": alt, "偏差率预警": dev}
+        return self.dashboard_controller._unread_audit_masks(df)
 
     def _unread_audit_count(self):
         """「审核队列」徽标数字：4 类去重之后的行数。
 
         不是四个数相加——同一行可以既是隔离区又是偏差预警，那样会被数两遍。
         """
-        df = self._get_master_df()
-        if df is None or df.empty:
-            return 0
-        acc = None
-        for m in self._unread_audit_masks(df).values():
-            acc = m if acc is None else (acc | m)
-        return int(acc.sum()) if acc is not None else 0
+        return self.dashboard_controller._unread_audit_count()
 
     def _count_unread_items(self):
         """统计 4 类未读条数，返回 items 列表（供弹窗构建 + 实时刷新共用）。
@@ -2502,16 +2475,7 @@ class MainWindow(QMainWindow):
         看板当初只是 hide()，没走 close()（WA_DeleteOnClose 不触发），所以里面的
         筛选条件、滚动位置、选中行都还是离开时的样子。
         """
-        board = self._link_return_board
-        self._link_return_board = None
-        if board is None:
-            return
-        try:
-            board.show()
-            board.raise_()
-            board.activateWindow()
-        except RuntimeError:      # 期间用户在任务栏/别处把它真关了
-            pass
+        return self.dashboard_controller._recall_stashed_board()
 
     def _main_row_visible_for_data_id(self, data_id):
         """恢复筛选后该行是否仍可见——可见才跳，否则会把选区丢到隐藏行上。"""
@@ -2964,14 +2928,7 @@ class MainWindow(QMainWindow):
         「同一屏两种红」的根因是阈值写在五处；真源统一后还差这一步——改完当场生效，
         不靠重启。set_alert_threshold 从写下来就没有调用者，这里就是它的调用者。
         """
-        cfg = _thr.reload_thresholds()
-        if getattr(self, "alert_monitor", None) is not None:
-            self.alert_monitor.update_config(threshold=cfg["alert_dev_rate_pct"])
-        if getattr(self, "proxy_model", None) is not None:
-            self.proxy_model.set_alert_threshold(cfg["alert_dev_rate_pct"])
-        if getattr(self, "source_model", None) is not None:
-            self.source_model.refresh_threshold_colors()
-        self._on_view_model_data_changed()
+        return self.threshold_controller.apply_thresholds()
 
     def _open_rule_center(self, open_tab=0):
         """打开「规则中心」：自动隔离 / 自动已读 / 阈值与提醒 / 命中预览，四页一窗。"""

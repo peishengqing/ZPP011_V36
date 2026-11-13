@@ -39,7 +39,8 @@
       "category_value": "包材",
       "name_keywords": [
         "胚",
-        "瓶盖"
+        "瓶盖",
+        "泡沫"
       ],
       "negative_loss_required": true,
       "dev_rate_required": false,

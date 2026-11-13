@@ -15,6 +15,7 @@
 双击定位与 data_id 生成的依据，抽成公共函数反而会掩盖各看板口径差异。
 """
 
+import pandas as pd
 from PySide6.QtWidgets import QMessageBox, QDialog, QVBoxLayout
 from PySide6.QtCore import Qt
 
@@ -104,6 +105,71 @@ class DashboardController:
             self.mw._link_return_board = dialog
         except RuntimeError:          # C++ 侧已销毁，没什么可弹回的
             self.mw._link_return_board = None
+
+    def _recall_stashed_board(self):
+        """把为这次联动「让位」隐藏的看板弹回原处（v43.363）。
+
+        看板当初只是 hide()，没走 close()（WA_DeleteOnClose 不触发），所以里面的
+        筛选条件、滚动位置、选中行都还是离开时的样子。
+        """
+        board = self.mw._link_return_board
+        self.mw._link_return_board = None
+        if board is None:
+            return
+        try:
+            board.show()
+            board.raise_()
+            board.activateWindow()
+        except RuntimeError:      # 期间用户在任务栏/别处把它真关了
+            pass
+
+    def _unread_audit_masks(self, df):
+        """审核队列的唯一判据：4 类「未读且值得核对」的行掩码（各与 df 等长）。
+
+        - 隔离区未读     = _quarantined==1 且 _read==0
+        - 变动提醒未读   = _post_audit_changed==1 且 _read==0（已改动且未读的行）
+        - 替代料未读     = filter_alt_alerts 命中 且 _read==0（与替代料看板一致）
+        - 偏差率预警未读 = 命中 core.threshold_config 的预警判据 且 _read==0
+                          （阈值、SAP 除零钳位与未投料两个排除开关都归它管）
+        """
+        if '_read' in df.columns:
+            read_mask = (pd.to_numeric(df['_read'], errors='coerce')
+                         .fillna(0).astype(int) == 0)
+        else:
+            read_mask = pd.Series(True, index=df.index)
+
+        def _flag(col):
+            if col not in df.columns:
+                return pd.Series(False, index=df.index)
+            hit = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int) == 1
+            return hit & read_mask
+
+        alt = pd.Series(False, index=df.index)
+        if '是否替代料' in df.columns:
+            threshold = getattr(self.mw.alert_monitor, 'threshold', 10)
+            hits = filter_alt_alerts(df, threshold)
+            if not hits.empty:
+                alt.loc[hits.index] = True
+        alt &= read_mask
+
+        dev = _thr.dev_alert_mask(df)
+        dev = (dev & read_mask) if dev is not None else pd.Series(False, index=df.index)
+
+        return {"隔离区": _flag('_quarantined'), "变动提醒": _flag('_post_audit_changed'),
+                "替代料": alt, "偏差率预警": dev}
+
+    def _unread_audit_count(self):
+        """「审核队列」徽标数字：4 类去重之后的行数。
+
+        不是四个数相加——同一行可以既是隔离区又是偏差预警，那样会被数两遍。
+        """
+        df = self.mw._get_master_df()
+        if df is None or df.empty:
+            return 0
+        acc = None
+        for m in self._unread_audit_masks(df).values():
+            acc = m if acc is None else (acc | m)
+        return int(acc.sum()) if acc is not None else 0
 
     def _show_alert_dashboard(self):
         """手动打开替代料看板"""
