@@ -611,9 +611,18 @@ class MainWindow(QMainWindow):
 
     # Phase 3 数据驱动筛选桥接方法
     def _on_filter_panel_changed(self, filters: dict):
-        """FilterPanel 筛选变化 → FilterController 规则转换"""
-        rules = self.filter_controller.create_filters_from_dict(filters)
-        self.filter_controller.set_filters(rules)
+        """FilterPanel 筛选变化 → 应用到表格"""
+        if self.proxy_model is None or self.view_model.df is None:
+            return
+        # 记录生效的筛选条件，方便排查"有数据但表格空白"等问题
+        active = {k: v for k, v in filters.items() if v not in (None, '', [], {})}
+        if active:
+            self.log(f"[筛选] 当前条件: {active}", "debug")
+        else:
+            self.log("[筛选] 条件已清空", "debug")
+        # 直接应用到 proxy model（setCustomFilters 内部会 invalidateFilter + layoutChanged）
+        self.proxy_model.setCustomFilters(filters)
+        self._update_summary()
 
     def _on_filter_changed(self):
         """FilterController 筛选变化事件 → 更新表格模型"""
@@ -621,12 +630,10 @@ class MainWindow(QMainWindow):
         pass
 
     def _on_filters_applied(self):
-        """FilterController 已应用筛选 → 更新视图"""
+        """FilterController 已应用筛选 → 更新视图（Phase 3 遗留，保留兜底）"""
         filtered_df = self.filter_controller.get_filtered_dataframe()
         if filtered_df is not None:
             self.data_controller.on_data_changed(filtered_df)
-        else:
-            self.data_controller.on_data_changed(None)
         # Phase 6 (v43.271)：刷新筛选解释摘要
         self._update_exclusion_summary()
 
@@ -662,9 +669,6 @@ class MainWindow(QMainWindow):
                 self.data_controller.on_data_changed(filtered_df)
             else:
                 self.data_controller.on_data_changed(original_df)
-
-    def _on_filter_reset_requested(self):
-        self.filter_controller.reset()
 
     def _toggle_theme(self):
         """切换亮色/暗色主题（通过主题管理器统一状态）"""
@@ -1263,6 +1267,15 @@ class MainWindow(QMainWindow):
             # 旧实现只在本次新标记>0 时才刷，从数据库恢复的历史已读永远不上标签。
             # 必须在 view_model.df 赋值之后（统计读的就是它）。
             self._update_read_counter()
+            # KPI「未读」卡片必须与主表同源：自动已读刚把一批 _read 翻成 1，未读数会掉，
+            # 若 KPI 沿用分析前那次 refresh 的旧数（如 1785），就会和「主表只看未读=空」自相矛盾。
+            # 这里用自动已读之后的 processed_df 再刷一次，保证 KPI/底部未读/主表口径一致。
+            try:
+                self.stats_cards.refresh(processed_df)
+            except Exception:
+                pass
+            # 主表空态提示（未读被清光时解释原因）：显式刷一次，不靠 layoutChanged 时序
+            self._update_main_empty_hint()
             self._analysis_params = self.analysis_controller.get_analysis_params()
 
             # v43.349 第五期A：刷新标题栏数据上下文（设计稿 Tier 1「本次分析」+「数据源」胶囊）
@@ -1315,6 +1328,8 @@ class MainWindow(QMainWindow):
             # 更新左侧"数据预览"（文字统计，使用与表格一致的预处理后 df）
             if hasattr(self, 'preview_label') and self.preview_label:
                 self.preview_label.setText(self._format_preview_stats(processed_df))
+            if self.left_panel_component:
+                self.left_panel_component.open_data_preview()
             self.main_table.summary_container.setVisible(True)
             self._update_summary()
             QApplication.processEvents()
@@ -1477,13 +1492,13 @@ class MainWindow(QMainWindow):
         并强制把可能残留的「AI建议」列清空/隐藏，避免 mock 文案继续显示。
         """
         self._stop_countdown()
-        self.progress_bar.setVisible(False)
         elapsed = self._format_elapsed()
-        self.progress_label.setText(f"审核完成 ({elapsed})")
-        toast(f"✅ 审核完成 ({elapsed})", "success", parent=self)
 
-        total = len(updated_df)
-        self.log(f"审核完成：共 {total} 条记录（AI建议功能已停用）", "info")
+        # 预处理/重建主表在主线跑，大数据量会卡一小会儿——先亮一句「整理中」，
+        # 免得进度条停在 100%、界面没反应，被当成卡死
+        self.progress_bar.setValue(100)
+        self.progress_bar.setVisible(True)
+        self.progress_label.setText("正在整理结果…")
 
         # 预处理（恢复已读状态+审核结果）直接同步执行，DB 操作 ~0.2s 不卡
         try:
@@ -1495,12 +1510,33 @@ class MainWindow(QMainWindow):
         if "AI建议" in updated_df.columns:
             updated_df["AI建议"] = ""
 
+        # 各审核类型分布：让「审核完了」能一眼看到 合格/需关注/需改进/需补备注/未完结 各多少条
+        total = len(updated_df)
+        if "审核结果" in updated_df.columns:
+            _vc = updated_df["审核结果"].astype(str).str.strip().replace("", "未判定").value_counts()
+            _cat_line = " ｜ ".join(f"{k} {v}条" for k, v in _vc.items())
+        else:
+            _cat_line = ""
+        summary = f"共 {total} 条" + (f"（{_cat_line}）" if _cat_line else "")
+
         self.source_model.setDataFrame(updated_df)
         self._apply_column_visibility_by_name()
         self.view_model.df = updated_df
+        self.progress_bar.setValue(100)
         self.progress_bar.setVisible(False)
-        self.progress_label.setText("就绪")
-        QMessageBox.information(self, "完成", "审核已完成（AI建议已停用）")
+        self.progress_label.setText(f"审核完成 ({elapsed})")
+        # 数据加载完成后，应用默认筛选（默认未读）
+        self.filter_panel._emit_filter()
+        self.log(f"审核完成：{summary}（AI建议功能已停用）", "info")
+        # 明细落地：按行列出各类型、可过滤，双击/「定位到主表」跳对应行（非模态，
+        # 方便逐行跳转、主表还看得见）。替代原先挤成一行的完成弹窗。
+        from gui_pyside6.dialogs.ai_audit_result_dialog import AiAuditResultDialog
+        _prev = getattr(self, "_ai_audit_result_dlg", None)
+        if _prev is not None:
+            _prev.close()
+        _dlg = AiAuditResultDialog(updated_df, self, parent=self)
+        self._ai_audit_result_dlg = _dlg
+        _dlg.show()
 
     def _on_ai_preprocess_error(self, error_msg, updated_df):
         self.log(f"AI审核后预处理失败，降级用原始结果: {error_msg}", "error")
@@ -1600,7 +1636,8 @@ class MainWindow(QMainWindow):
     # 文件与目录
     # -----------------------------------------------------------
     def _select_input_file(self):
-        default_dir = r"E:\ZPP011导出文件原数据"
+        from config.paths import get_data_dir
+        default_dir = get_data_dir()
         file_path, _ = QFileDialog.getOpenFileName(self, "选择 SAP Excel 文件", default_dir, "Excel files (*.xlsx *.xls)")
         if not file_path:
             return
@@ -1683,6 +1720,9 @@ class MainWindow(QMainWindow):
                 pass
             if hasattr(self, 'preview_label') and self.preview_label:
                 self.preview_label.setText(self._format_preview_stats(df))
+            # 数据读到 → 自动展开「数据预览」面板
+            if self.left_panel_component:
+                self.left_panel_component.open_data_preview()
         except Exception as e:
             if hasattr(self, 'preview_label') and self.preview_label:
                 self.preview_label.setText(f"读取失败：{e}")
@@ -1955,6 +1995,12 @@ class MainWindow(QMainWindow):
         self._sort_header.set_funnel_clicked(
             lambda col: QTimer.singleShot(0, lambda c=col: self._open_column_filter(c)))
         self.table_view.setHorizontalHeader(self._sort_header)
+        self._sort_header.setSectionsMovable(True)
+        # 列序（拖拽排序）即时落盘：不能用 _schedule_save_column_widths——它的
+        # user_touched 守卫只在「拖过列宽」时才放行，纯排序永远不进守卫、不落盘，
+        # 导致下次分析/切视图 _set_column_widths 拿旧序覆盖回来（表现为列序"弹回去"）。
+        self._sort_header.sectionMoved.connect(
+            lambda _f, _t: self._save_column_widths())
         self.table_view.setModel(self.proxy_model)
         try:
             self.table_view.selectionModel().selectionChanged.connect(self._on_selection_changed)
@@ -1968,6 +2014,10 @@ class MainWindow(QMainWindow):
         self.source_model.dataRefreshed.connect(self._refresh_unread_popup)
         self.proxy_model.layoutChanged.connect(self._update_summary)
         self.proxy_model.layoutChanged.connect(self._update_mark_stats)
+        # 筛选变化 → 刷新底部「筛选 N 行」（满足当前筛选条件的可见行数）
+        self.proxy_model.layoutChanged.connect(self._update_filtered_count)
+        # 筛选后 0 条（典型：只看未读 + 未读被清光）→ 主表空态提示原因
+        self.proxy_model.layoutChanged.connect(self._update_main_empty_hint)
         # self.proxy_model.layoutChanged.connect(self._refresh_stats_cards)  # stats_cards 已删除
         self.source_model.dataChanged.connect(self._update_mark_stats)
         self.source_model.dataRefreshed.connect(self._update_mark_stats)
@@ -2269,17 +2319,6 @@ class MainWindow(QMainWindow):
     # -----------------------------------------------------------
     # 数据相关
     # -----------------------------------------------------------
-    def _on_filter_panel_changed(self, filters: dict):
-        if self.proxy_model is None or self.view_model.df is None:
-            return
-        # 记录生效的筛选条件，方便排查"有数据但表格空白"等问题
-        active = {k: v for k, v in filters.items() if v not in (None, '', [], {})}
-        if active:
-            self.log(f"[筛选] 当前条件: {active}", "debug")
-        else:
-            self.log("[筛选] 条件已清空", "debug")
-        self.proxy_model.setCustomFilters(filters)
-        self._update_summary()
 
     def _on_filter_reset_requested(self):
         """重置筛选：面板已归位，这里同步清理 proxy 残留的列头取值过滤。
@@ -2622,6 +2661,47 @@ class MainWindow(QMainWindow):
     def _update_mark_stats(self):
         self.ui_settings_controller.update_mark_stats()
 
+    def _update_filtered_count(self):
+        """筛选（列头取值/侧栏）变化后刷新底部「筛选 N 行」。
+
+        满足当前筛选条件的可见行数 = 代理模型当前的行数（无筛选时等于总数）。"""
+        try:
+            if self.proxy_model is not None:
+                self.bottom_bar.set_filtered(self.proxy_model.rowCount())
+        except Exception:
+            pass
+
+    def _update_main_empty_hint(self):
+        """主表「筛选后 0 条」空态提示。
+
+        主表默认「只看未读」，自动/手动已读把未读清光后主表就 0 行——空表本身没错，
+        但得告诉用户为什么空、怎么切回全部。数据源为空（还没导入）时不动这个提示，
+        那条「暂无数据」由无数据路径自己管。"""
+        try:
+            if self.proxy_model is None or self.source_model is None:
+                return
+            total = self.source_model.rowCount()
+            if total == 0:
+                return
+            visible = self.proxy_model.rowCount()
+            if visible > 0:
+                self.main_table.set_empty_hint_visible(False)
+                return
+            cf = {}
+            try:
+                cf = self.proxy_model.getCustomFilters() or {}
+            except Exception:
+                cf = {}
+            if cf.get('_read_status') == '未读':
+                text = ("未读 0 条 · 未读行已全部自动/手动已读；"
+                        "想看全部 %d 条，把筛选面板「已读状态」切到「全部」" % total)
+            else:
+                text = "当前筛选 0 条 · 共 %d 条。可调整右侧筛选面板条件" % total
+            self.main_table.set_empty_hint_text(text)
+            self.main_table.set_empty_hint_visible(True)
+        except Exception:
+            pass
+
     def _update_selection_summary(self, col_sums: dict):
         """更新选中行合计到底部栏"""
         return self.interaction_controller._update_selection_summary(col_sums)
@@ -2955,6 +3035,24 @@ class MainWindow(QMainWindow):
             return
         dlg = QuarantineDialog(qdf, self, self)
         dlg.exec_()
+
+    def _open_ai_audit_result_dialog(self):
+        """左栏「AI审核结果」：按行列出审核结果明细，可点击跳主表对应行。"""
+        df = self._get_master_df()
+        if df is None or len(df) == 0:
+            QMessageBox.information(self, "AI审核结果", "暂无数据，无法打开审核结果")
+            return
+        if "审核结果" not in df.columns:
+            QMessageBox.information(
+                self, "AI审核结果", "还没跑过 AI审核，暂无审核结果。\n请先在菜单里执行 AI审核。")
+            return
+        from gui_pyside6.dialogs.ai_audit_result_dialog import AiAuditResultDialog
+        prev = getattr(self, "_ai_audit_result_dlg", None)
+        if prev is not None:
+            prev.close()
+        dlg = AiAuditResultDialog(df, self, parent=self)
+        self._ai_audit_result_dlg = dlg
+        dlg.show()
 
     # -----------------------------------------------------------
     # 表格复制

@@ -14,6 +14,55 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.369",
+            "date": "2026-11-14",
+            "features": (
+                "配置集中管理（第一步）——SAP 数据目录收口。换机器/换盘以前要动源码重打包："
+                "文件夹监控目录（file_monitor_controller）和「打开 Excel」默认目录（"
+                "main_window._select_input_file）各写死一份 E:\\ZPP011导出文件原数据，"
+                "且 data_controller 里还残留一份带空格的旧写法 E:\\ZPP011 导出文件原数据"
+                "（真实目录无空格，那份是死代码/死赋值，会落空，本轮不碰）。统一走 "
+                "config.paths.get_data_dir()：优先读 config.yaml 的 data.dir，缺失回退默认值；"
+                "改目录只改配置、无需重启无需重打包。set_data_dir() 逐行替换写回 config.yaml、"
+                "保留全部中文注释（不用全量 yaml.dump 以免冲掉注释）、临时文件+原子替换、"
+                "热更新内存配置。\n"
+                "①config/paths.py：新增 get_data_dir() / set_data_dir() / DEFAULT_DATA_DIR；\n"
+                "②core/config_loader.py + config/config.yaml：新增 data.dir 配置项；\n"
+                "③收口活代码 2 处硬编码：file_monitor_controller.py（监控目录）、"
+                "main_window.py:_select_input_file（默认目录）；\n"
+                "④新增 gui_pyside6/dialogs/settings_dialog.py 系统设置面板（浏览/手填/实时校验/"
+                "保存即时落盘生效）；工具菜单新增「系统设置（数据目录…）」入口。\n"
+                "往返测试：改→验→还原后与原 config.yaml 逐字节一致，中文注释零丢失；"
+                "offscreen 冒烟：对话框构造、初始回填、非法目录校验、落盘热更新全通；"
+                "py_compile + pyflakes 全绿（menu_bar 里 QMenuBar unused 是原有告警，本轮未动）。",
+            ),
+            "author": "裴盛清",
+            "type": "feat",
+        },
+        {
+            "version": "v43.368",
+            "date": "2026-11-14",
+            "features": (
+                "AI 审核结果落成「看板」（裴哥 11-14：审核跑完看不清单、左栏想要一个"
+                "能逐行看、点一下就跳回主表那条的入口）。\n"
+                "①跑完不再弹那句挤成一行的完成框：新增 "
+                "gui_pyside6/dialogs/ai_audit_result_dialog.py「AI审核结果」明细窗口——按行"
+                "列出（已读/未读 · 审核结果 · 物料 · 车间 · 偏差率 · 归因 · 建议动作 ·"
+                "候选建议 · 备注来源），顶部可按类型过滤，双击一行或点「定位到主表」跳对应"
+                "主表行（走既有 locate_row 链路，带 AI审核 联动钻取），窗口非模态、主表还看得"
+                "见。main_window._on_ai_finished_ui 结尾接上。\n"
+                "②左栏「工作区」新增「AI审核结果」导航入口（sparkles 图标），随时可打开；"
+                "没数据 / 还没跑过 AI 审核时给明确提示不硬开。main_window._open_ai_audit_result_dialog。\n"
+                "③窗口支持「已读/未读」筛选：状态下拉（全部/未读/已读）与类型叠加，表格最左"
+                "加「已读/未读」列；_read 一律先强转数值再判，字符串 '0'/'1' 不再被误标全未读。\n"
+                "④窗口支持最大化：标题栏最大/还原 + 底部「最大化/还原」按钮（文字跟窗口态同步），"
+                "表格铺满。\n"
+                "⑤配套修：AI 审核进度条按 total//100 分段刷新不再中途停；审核结果/备注来源列名"
+                "归一（audit_result → 审核结果）+ 空表也保证两列存在，主表审核结果不再漏显。\n"
+                "验证：新增文件 py_compile 通过；离屏冒烟 25/25 PASS（含 ⑩ 左栏 10 行序）。"
+            ),
+        },
+        {
             "version": "v43.367",
             "date": "2026-11-12",
             "features": (

@@ -15,6 +15,7 @@ import 来源说明：原方法体依赖 main_window.py 顶部的 os / QTimer �
 
 import os
 from PySide6.QtCore import QTimer
+from config.paths import get_data_dir
 
 
 class FileMonitorController:
@@ -23,7 +24,7 @@ class FileMonitorController:
     def __init__(self, mw):
         self.mw = mw
         # 监控配置（与 MainWindow 中的值保持一致）
-        self._monitor_dir = r"E:\ZPP011导出文件原数据"
+        self._monitor_dir = get_data_dir()
         self._monitor_enabled = True
         self._monitor_timer = QTimer(self.mw)
         self._monitor_timer.setInterval(2000)  # 每 2 秒扫描一次

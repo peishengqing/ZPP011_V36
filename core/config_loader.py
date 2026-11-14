@@ -29,6 +29,11 @@ class ConfigLoader:
             },
             'ppt': {
                 'alert_threshold_percent': 10.0,
+            },
+            'data': {
+                # SAP 导出原数据目录（监控目录 / 打开文件默认目录）。
+                # 换机器/换盘改这里即可，无需动代码。留空则回退 config.paths.DEFAULT_DATA_DIR。
+                'dir': r"E:\ZPP011导出文件原数据",
             }
         }
         if config_path.exists():

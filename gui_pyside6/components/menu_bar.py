@@ -136,6 +136,16 @@ class MenuBarComponent:
         monitor_action.triggered.connect(self.mw._toggle_folder_monitor)
         tools_menu.addAction(monitor_action)
 
+        # v43.368：系统设置面板 —— 数据目录等硬编码配置的可视化编辑入口
+        settings_action = QAction(get_icon("gear", 14), "系统设置（数据目录…）", self.mw)
+
+        def _open_settings():
+            from gui_pyside6.dialogs.settings_dialog import SettingsDialog
+            SettingsDialog(self.mw).exec()
+
+        settings_action.triggered.connect(_open_settings)
+        tools_menu.addAction(settings_action)
+
         # 历史菜单
         history_menu = menubar.addMenu("历史")
         source_backup_action = QAction("历史源码", self.mw)
