@@ -120,6 +120,7 @@ class DashboardShell(QWidget):
         self.subtitle = "副标题"
         self._model = None
         self.drawer_visible = False
+        self._filter_drawer_target = None
 
         self._build_ui()
         self._load_theme()
@@ -490,11 +491,29 @@ class DashboardShell(QWidget):
         except RuntimeError:
             pass
 
+    def set_filter_drawer_target(self, widget):
+        """让「筛选/收起筛选」按钮折叠看板自己塞进来的可折叠区，而非内置抽屉。
+
+        桥接类看板（AlertDialog / DeviationWarningDialog）把筛选控件留在 host 里、
+        没走 add_filter 填内置抽屉，抽屉是空的，点「筛选」只切换一个看不见的空容器
+        —— 用户以为「收起筛选没生效」。这类看板把「可折叠的那几行」交给这里，按钮
+        就改折叠它们。目标区默认展开（与内置抽屉默认藏相反）。"""
+        self._filter_drawer_target = widget
+        if widget is not None:
+            self.drawer_visible = True
+            widget.setVisible(True)
+            self.btn_filter_drawer.setText("收起筛选")
+
     def _on_filter_drawer_toggled(self):
         self.drawer_visible = not self.drawer_visible
-        self.drawer_container.setVisible(self.drawer_visible)
-        self.btn_filter_drawer.setText("收起筛选" if self.drawer_visible
-                                       else f"筛选 ({len(self._active_keys)})")
+        if self._filter_drawer_target is not None:
+            self._filter_drawer_target.setVisible(self.drawer_visible)
+            self.btn_filter_drawer.setText("收起筛选" if self.drawer_visible
+                                           else "展开筛选")
+        else:
+            self.drawer_container.setVisible(self.drawer_visible)
+            self.btn_filter_drawer.setText("收起筛选" if self.drawer_visible
+                                           else f"筛选 ({len(self._active_keys)})")
 
     def _on_reset(self):
         """「重置」交回看板：条件语义（默认关键字、默认未读档位）只有内容组件自己知道。"""

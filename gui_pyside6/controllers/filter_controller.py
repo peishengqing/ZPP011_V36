@@ -106,9 +106,13 @@ class FilterController(QObject):
         self._debounce_timer = QTimer()
         self._debounce_timer.setSingleShot(True)
         self._debounce_timer.setInterval(300)  # 300ms 防抖
-        self._debounce_timer.timeout.connect(self._apply_debounced_filters)
+        self._debounce_timer.timeout.connect(self._on_debounce_fired)
         self._pending_filter_rules: List[FilterRule] = []
         self._preview_preset: Optional[FilterPreset] = None  # 当前预览的预设
+
+    def _on_debounce_fired(self) -> None:
+        """防抖定时器到期 → 真正应用筛选"""
+        self.apply_filters_immediately()
 
     def reset(self) -> None:
         """重置筛选状态"""
@@ -146,7 +150,7 @@ class FilterController(QObject):
             self._apply_debounced_filters()
 
     def _apply_debounced_filters(self) -> None:
-        """应用筛选（防抖）"""
+        """防抖：每次调用重置计时器，300ms 无新调用后触发 _on_debounce_fired"""
         self._debounce_timer.stop()
         self._debounce_timer.start()
 

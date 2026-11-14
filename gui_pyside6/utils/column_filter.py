@@ -332,16 +332,26 @@ class ColumnFilterController(QObject):
             return
         col_name = sm._display_columns[logical_index]
 
-        # 收集本列全部展示值及计数（保持首次出现顺序）
+        # 收集本列展示值及计数（保持首次出现顺序）
         # 性能（2026-10-02）：向量化取展示键（与 DisplayRole 一致），替代逐行 sm.data()
-        n = sm.rowCount()
+        # 动态筛选（2026-11-13）：只统计「当前可见行」（已套用其它筛选条件，如只看未读），
+        # 而非全量 sm.rowCount()。可见源行号取自代理模型 mapToSource —— 这样「只看未读」
+        # 生效时，各取值计数就是未读里的分布，标题「共 N 行」也跟着变成可见行数。
         from gui_pyside6.models.data_frame_model import build_display_key_list
-        key_list = build_display_key_list(sm, logical_index)
-        if key_list is None:
+        proxy = self.table_view.model()
+        if proxy is not None and hasattr(proxy, "mapToSource") and proxy.rowCount() > 0:
+            visible_rows = [proxy.mapToSource(proxy.index(r, 0)).row() for r in range(proxy.rowCount())]
+        else:
+            visible_rows = list(range(sm.rowCount()))
+        n = len(visible_rows)
+        full_keys = build_display_key_list(sm, logical_index)
+        if full_keys is None:
             key_list = []
-            for r in range(n):
-                disp = sm.data(sm.index(r, logical_index), Qt.DisplayRole)
+            for i in visible_rows:
+                disp = sm.data(sm.index(i, logical_index), Qt.DisplayRole)
                 key_list.append("(空)" if disp in (None, "") else str(disp))
+        else:
+            key_list = [full_keys[i] for i in visible_rows if i < len(full_keys)]
         cnt = {}
         order = []
         for key in key_list:

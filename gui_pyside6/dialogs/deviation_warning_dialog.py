@@ -1182,6 +1182,11 @@ class DeviationWarningDialog(QDialog):
             df["状态"] = df["_read"].map({0: "未读", 1: "已读"})
             df = df[["状态"] + [c for c in df.columns if c != "状态"]]
 
+        # 确保审核结果 + AI 归因 3 列存在（主表 preprocess 已注入，兜底空列）
+        for _col in ("审核结果", "归因", "建议动作", "候选建议"):
+            if _col not in df.columns:
+                df[_col] = ""
+
         # ===== 跨看板提示：隔离区 / 替代料（偏差率预警看板需求）=====
         # 隔离区：优先用主表已水合的 _quarantined 列（data_service 已从隔离库比对好，最可靠），
         # 避免本看板自构 data_id 因「订单日期」类型/格式与隔离库 uid 对不齐而漏判（表现为筛选"是"永远0条）。
@@ -1203,12 +1208,25 @@ class DeviationWarningDialog(QDialog):
             df = df.rename(columns={"是否替代料": "替代料"})
         else:
             df["替代料"] = ""
-        # 把两列插到「状态」之后，确保一眼可见
+        # 把审核相关列插到「备注来源」之后，确保一眼可见
         _cols = list(df.columns)
         for _extra in ("替代料", "隔离区"):
             if _extra in _cols:
                 _cols.remove(_extra)
                 _cols.insert(1, _extra)
+        # 审核结果 + AI 归因 3 列紧跟备注来源
+        audit_cols = [c for c in ("审核结果", "归因", "建议动作", "候选建议") if c in _cols]
+        if "备注来源" in _cols and audit_cols:
+            _anchor = _cols.index("备注来源")
+            for c in audit_cols:
+                _cols.remove(c)
+            for i, c in enumerate(audit_cols):
+                _cols.insert(_anchor + 1 + i, c)
+        elif audit_cols:
+            for c in audit_cols:
+                _cols.remove(c)
+            for i, c in enumerate(audit_cols):
+                _cols.insert(1 + i, c)
         df = df[_cols]
 
         self.original_df = df.copy()

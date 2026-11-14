@@ -435,7 +435,7 @@ def main():
         panel = lp.left_panel
         rows = [w for w in panel.findChildren(QPushButton)
                 if w.objectName() == "navItem"]
-        want = ["偏差明细", "审核队列", "隔离区", "替代料配对",
+        want = ["偏差明细", "审核队列", "隔离区", "替代料配对", "AI审核结果",
                 "数据源", "材料半成品", "数据预览", "列管理", "筛选预设"]
         rows_ok = [r.text() for r in rows] == want
         on_ok = rows[0].property("navOn") is True and rows[1].property("navOn") != True
@@ -466,7 +466,7 @@ def main():
         ok = (rows_ok and on_ok and w236 == 236 and s236 == 236 and closed0
               and opened and w_open == 360 and excl and collapsed and w_back == 236
               and s_back == 236 and alert_on and alert_off)
-        return ok, ("行数=%d(期望9) 顺序=%s 当前区标记=%s 初始=%d/split%d 全收=%s "
+        return ok, ("行数=%d(期望10) 顺序=%s 当前区标记=%s 初始=%d/split%d 全收=%s "
                     "展开宽=%d 互斥=%s 收起宽=%d/split%d 徽标=%s/%s"
                     % (len(rows), rows_ok, on_ok, w236, s236, closed0, w_open,
                        excl, w_back, s_back, alert_on, alert_off))

@@ -203,6 +203,12 @@ class ColumnController:
         saved_widths, saved_hidden = self.mw._load_column_widths()
         # 恢复隐藏集合（按列名），再按名应用显隐
         self.mw._hidden_column_names = set(saved_hidden) if saved_hidden else set()
+
+        # 恢复用户拖拽的列顺序
+        saved_order = getattr(self, '_saved_column_order', None)
+        if saved_order:
+            self._restore_column_order(saved_order)
+
         self.mw._apply_column_visibility_by_name()
 
         if saved_widths:
@@ -260,6 +266,31 @@ class ColumnController:
                 if self.mw.table_view.columnWidth(col) < 80:
                     self.mw.table_view.setColumnWidth(col, 80)
 
+    def _restore_column_order(self, saved_order):
+        """按保存的列顺序重排列头。saved_order 是列名列表（视觉顺序）。"""
+        model = self.mw.table_view.model()
+        header = self.mw.table_view.horizontalHeader()
+        if not model:
+            return
+        # 建立 列名→当前逻辑列号 映射
+        name_to_col = {}
+        for col in range(model.columnCount()):
+            h = model.headerData(col, Qt.Horizontal)
+            if h:
+                name_to_col[str(h).replace('\n', '')] = col
+        # 从右往左移动，避免列号偏移
+        for i in range(len(saved_order) - 1, -1, -1):
+            col_name = saved_order[i]
+            current_col = name_to_col.get(col_name)
+            if current_col is None:
+                continue
+            if current_col != i:
+                header.moveSection(current_col, i)
+                # 更新映射：被移动列的目标位置已变化，后续列号也偏移
+                name_to_col[col_name] = i
+        # 触发一次保存以持久化
+        self._save_column_widths()
+
     def _get_user_config_dir(self):
         """用户可写的配置目录（打包 onefile 后 __file__ 在临时目录，不能再用它落盘）。"""
         base = os.environ.get("ZPP011_CONFIG_DIR")
@@ -287,6 +318,7 @@ class ColumnController:
         if not model:
             return
         config = {}
+        order = []
         for col in range(model.columnCount()):
             col_name = model.headerData(col, Qt.Horizontal)
             if col_name:
@@ -295,6 +327,9 @@ class ColumnController:
                     'width': self.mw.table_view.columnWidth(col),
                     'hidden': col_name in self.mw._hidden_column_names,
                 }
+                order.append(col_name)
+        # 记录列顺序（用户拖拽排序）
+        config['__order__'] = order
         try:
             import json
             with open(self.mw._get_config_path(), 'w', encoding='utf-8') as f:
@@ -315,6 +350,8 @@ class ColumnController:
             if os.path.exists(path):
                 with open(path, 'r', encoding='utf-8') as f:
                     raw = json.load(f)
+                # 提取列顺序
+                saved_order = raw.pop('__order__', None) if isinstance(raw, dict) else None
                 widths = {}
                 hidden = set()
                 for k, v in raw.items():
@@ -325,6 +362,8 @@ class ColumnController:
                     else:
                         # 兼容旧格式（纯宽度数值）
                         widths[k] = v
+                # 保存列顺序到临时属性，供 _set_column_widths 使用
+                self._saved_column_order = saved_order
                 return widths, hidden
         except Exception as e:
             self.mw.log(f"加载列宽失败: {e}", "warning")
@@ -376,7 +415,7 @@ class ColumnController:
         label = getattr(self, "_col_filter_hint_label", None)
         if label is None:
             return
-        col_set = getattr(self, "_filtered_col_set", set()) or set()
+        col_set = getattr(self.mw, "_filtered_col_set", set()) or set()
         if not col_set:
             label.setText("列头筛选：0 列")
             label.show()
@@ -741,7 +780,7 @@ class ColumnController:
         （且关掉「🔽 列头筛选」模式开关并不清筛选），观感=「无法取消」。
         """
         menu = QMenu(label)
-        col_set = getattr(self, "_filtered_col_set", set()) or set()
+        col_set = getattr(self.mw, "_filtered_col_set", set()) or set()
         sm = getattr(self, "source_model", None)
         display_cols = getattr(sm, "_display_columns", []) if sm is not None else []
         if not col_set:

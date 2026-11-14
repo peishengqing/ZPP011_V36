@@ -26,13 +26,15 @@ def enable_row_numbers(view, width=None):
     """点亮视图最左边的行号栏，返回该垂直表头（便于链式/断言）。
 
     幂等：重复调用只会把同一组属性再设一遍，可安全放在每次重建模型的地方。
+    道宽默认 56px（容纳 4 位数行号），Interactive 模式允许用户拖拽调宽。
     """
     vh = view.verticalHeader()
     vh.setVisible(True)
-    vh.setFixedWidth(SIZE_PX["rowNumberLane"] if width is None else width)
+    default_w = width if width is not None else SIZE_PX.get("rowNumberLane", 56)
+    vh.setFixedWidth(default_w)
     # 数字右对齐：个/十/百位上下成列，比居中好扫读
     vh.setDefaultAlignment(Qt.AlignRight | Qt.AlignVCenter)
-    vh.setSectionResizeMode(QHeaderView.Fixed)
+    vh.setSectionResizeMode(QHeaderView.Interactive)
     # 点行号不给整节区刷蓝色高亮——行号是刻度，不是按钮
     vh.setHighlightSections(False)
     return vh

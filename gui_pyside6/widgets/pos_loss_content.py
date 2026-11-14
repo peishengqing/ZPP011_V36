@@ -37,7 +37,7 @@ from gui_pyside6.components.dashboard_shell import pack_row
 from gui_pyside6.themes.tokens import SIZE_PX
 
 # 开箱默认关键字（与负损看板同一业务口径；「重置」按钮回到这里）
-_DEFAULT_KEYWORDS = "彩罐 , 托盘 , 手包袋"
+_DEFAULT_KEYWORDS = ""
 
 
 class PosLossContent(QWidget):
@@ -66,6 +66,7 @@ class PosLossContent(QWidget):
         self._factory_col = None
         self._quar_filter = "no"
         self._has_note_filter = "all"
+        self._dev_qty_filter = "all"
         self._unit_filter = set()
         self.color_filters = set()
         self.original_df = None
@@ -145,6 +146,7 @@ class PosLossContent(QWidget):
     # 开关在正损口径下无意义（实际=0 不可能大于定额），控件已随本次重构一并移除。
     DRAWER_FILTERS = (("material", "mtd", "物料类型", "combo_mtd"),
                       ("material", "semi_class", "半成品分类", "grp_semi_class"),
+                      ("material", "dev_qty", "偏差数量", "combo_dev_qty"),
                       ("material", "color", "颜色标记", "color_bar"),
                       ("org", "quar", "隔离区", "quar_bar"),
                       ("org", "note", "备注", "note_bar"))
@@ -194,6 +196,12 @@ class PosLossContent(QWidget):
         self.combo_read.setMaximumWidth(140)
         self.combo_read.addItems(["全部", "已读", "未读"])
         self.combo_read.currentTextChanged.connect(self._on_read_changed)
+
+        self.combo_dev_qty = QComboBox()
+        self.combo_dev_qty.setMinimumWidth(120)
+        self.combo_dev_qty.setMaximumWidth(160)
+        self.combo_dev_qty.addItems(["全部", "大于0", "等于0", "小于0"])
+        self.combo_dev_qty.currentTextChanged.connect(self._on_dev_qty_changed)
 
         # 三态档位按钮（互斥由 _set_*_filter 统一管，按钮自身不做 autoExclusive）
         self.btn_quar_all = QPushButton("全部")
@@ -278,7 +286,7 @@ class PosLossContent(QWidget):
         try:
             self.edit_keywords.setText(_DEFAULT_KEYWORDS)
             for attr in ("grp_unit", "combo_mtd", "combo_workshop",
-                         "combo_factory", "grp_semi_class"):
+                         "combo_factory", "grp_semi_class", "combo_dev_qty"):
                 getattr(self, attr).setCurrentIndex(0)
             for cb in self.color_checks.values():
                 cb.setChecked(False)
@@ -293,6 +301,7 @@ class PosLossContent(QWidget):
         self._workshop_filter = "all"
         self._factory_filter = "all"
         self._semi_class_filter = set()
+        self._dev_qty_filter = "all"
         self.color_filters = set()
         self._apply_default_filter()
 
@@ -319,6 +328,8 @@ class PosLossContent(QWidget):
             keys.append("quar")
         if self._has_note_filter != "all":
             keys.append("note")
+        if self._dev_qty_filter != "all":
+            keys.append("dev_qty")
         return keys
 
     def _hide_filter(self, key, hidden=True):
@@ -611,6 +622,7 @@ class PosLossContent(QWidget):
             "semi_class": self._semi_class_mask(df),
             "mtd": self._mtd_mask(df),
             "unit": self._unit_mask(df),
+            "dev_qty": self._dev_qty_mask(df),
             "workshop": self._workshop_mask(df, self._workshop_filter),
             "factory": self._factory_mask(df, self._factory_filter),
             "quar": self._quar_mask(df, self._quar_filter),
@@ -646,7 +658,8 @@ class PosLossContent(QWidget):
                 & self._quar_mask(df, self._quar_filter)
                 & self._note_mask(df, self._has_note_filter)
                 & self._color_mask(df)
-                & self._read_mask(df, self._read_filter))
+                & self._read_mask(df, self._read_filter)
+                & self._dev_qty_mask(df))
         mask &= self._factory_mask(df, self._factory_filter)
         if exclude != 'mtd':
             mask &= self._mtd_mask(df)
@@ -725,6 +738,23 @@ class PosLossContent(QWidget):
             return pd.Series(True, index=df.index)
         vals = df[self._unit_col].astype(str).str.strip()
         return vals.isin(self._unit_filter)
+
+    def _dev_qty_mask(self, df):
+        """偏差数量筛选：大于0 / 等于0 / 小于0。缺列时不约束。"""
+        if self._dev_qty_filter == "all":
+            return pd.Series(True, index=df.index)
+        col = next((c for c in ("偏差数量", "偏差数量(含税)", "数量偏差")
+                    if c in df.columns), None)
+        if col is None:
+            return pd.Series(True, index=df.index)
+        vals = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+        if self._dev_qty_filter == "gt0":
+            return vals > 0.001
+        if self._dev_qty_filter == "eq0":
+            return vals.abs() <= 0.001
+        if self._dev_qty_filter == "lt0":
+            return vals < -0.001
+        return pd.Series(True, index=df.index)
 
     def _build_semi_checkboxes(self, unique_vals):
         self.grp_semi_class.blockSignals(True)
@@ -867,6 +897,11 @@ class PosLossContent(QWidget):
 
     def _on_read_changed(self, text):
         self._read_filter = text
+        self._apply_filter()
+
+    def _on_dev_qty_changed(self, text):
+        mapping = {"全部": "all", "大于0": "gt0", "等于0": "eq0", "小于0": "lt0"}
+        self._dev_qty_filter = mapping.get(text, "all")
         self._apply_filter()
 
     def eventFilter(self, obj, event):

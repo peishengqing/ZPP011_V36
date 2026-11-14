@@ -262,7 +262,7 @@ class FilterPanel(QWidget):
         self.dev_rate_combo = QComboBox()
         self.dev_rate_combo.addItems(["全部", "绝对值>=10%", ">10%", ">20%", ">30%", "<-10%", "<-20%", "<-30%"])
         self.audit_status_combo = QComboBox()
-        self.audit_status_combo.addItems(["全部", "合格", "需关注", "需改进", "需补备注"])
+        self.audit_status_combo.addItems(["全部", "合格", "需关注", "需改进", "需补备注", "不确定(数据未完结)"])
         self.remark_empty_combo = QComboBox()
         self.remark_empty_combo.addItems(["全部", "是", "否"])
         self.read_status_combo = QComboBox()

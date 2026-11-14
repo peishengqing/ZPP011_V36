@@ -59,6 +59,7 @@ class BottomBarComponent(QStatusBar):
         self.lbl_state = self._mk_label(lay, _IDLE[1])
         self.lbl_selected = self._mk_metric(lay, "已选", "0", "行")
         self.lbl_records = self._mk_metric(lay, "共", "--", "行")
+        self.lbl_filtered = self._mk_metric(lay, "筛选", "--", "行")
         self.lbl_deviation = self._mk_metric(lay, "偏差合计", "--")
         self.lbl_unread = self._mk_metric(lay, "未读", "--")
         lay.addStretch(1)                   # 右端留给 addPermanentWidget 的低频标签
@@ -101,6 +102,13 @@ class BottomBarComponent(QStatusBar):
 
     def set_selected(self, n):
         self.lbl_selected.setText(self._fmt_int(n))
+
+    def set_filtered(self, n):
+        """满足当前筛选条件（列头取值/侧栏）的可见行数。
+
+        无筛选时等于总行数（=「共」），有筛选时为筛选后剩余的行数，
+        直接回答「满足筛选条件的有 N 行」。"""
+        self.lbl_filtered.setText(self._fmt_int(n))
 
     def set_deviation(self, text: str):
         self.lbl_deviation.setText(text)
@@ -156,11 +164,14 @@ class BottomBarComponent(QStatusBar):
         """根据当前主表 DataFrame 刷新记录总数 / 偏差合计 / 未读。"""
         if df is None or getattr(df, "empty", True):
             self.set_records("--")
+            self.set_filtered("--")
             self.set_deviation("--")
             self.set_unread("--")
             return
 
         self.set_records(len(df))
+        # 无筛选态：可见行数 = 总行数（后续筛选变化由 proxy layoutChanged 驱动刷新）
+        self.set_filtered(len(df))
 
         # 偏差合计：净偏差金额列求和（万元 / 元自适应）
         amt_col = next(

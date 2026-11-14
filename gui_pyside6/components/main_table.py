@@ -118,8 +118,13 @@ class MainTableComponent(QObject):
         self.table_view.setSortingEnabled(False)
         self.table_view.horizontalHeader().setStretchLastSection(False)
         self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.table_view.horizontalHeader().setSectionsMovable(True)
         self.table_view.horizontalHeader().setSortIndicatorShown(True)
         self.table_view.horizontalHeader().sectionClicked.connect(self.mw._on_header_clicked)
+        # 拖拽排序后自动保存列序（直接落盘，不走列宽防抖守卫：排序是离散用户动作，
+        # 且守卫 user_touched 只在拖过列宽时才放行，纯排序会被挡住不落盘）
+        self.table_view.horizontalHeader().sectionMoved.connect(
+            lambda _from, _to: self.mw._save_column_widths())
         self.table_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.table_view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.table_view.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -278,6 +283,11 @@ class MainTableComponent(QObject):
     def set_empty_hint_visible(self, visible):
         """显示/隐藏空态提示（无数据时居中提示）"""
         self.empty_hint.setVisible(visible)
+
+    def set_empty_hint_text(self, text):
+        """改空态提示文字（筛选后 0 条时解释原因；无数据时提示导入文件）"""
+        if self.empty_hint.text() != text:
+            self.empty_hint.setText(text)
 
     def set_progress_visible(self, visible: bool):
         """外部（如开始分析时）强制展开/折叠进度面板，并同步按钮状态"""

@@ -322,8 +322,11 @@ class AIAuditWorker(QThread):
             total = len(self.audit_data)
             self.log.emit(f"待审核记录: {total} 条")
 
-            # 确保必要的列存在（AI建议已停用：不再创建/写入该列）
-            for col in ['audit_result', '备注来源']:
+            # 归一结果列名：主表按「审核结果」显示。旧数据/本路径可能只带英文 audit_result，
+            # 不先归一，verdict 会写进 audit_result、主表看不到「审核结果」列（归因等却显示）。
+            if 'audit_result' in self.audit_data.columns and '审核结果' not in self.audit_data.columns:
+                self.audit_data = self.audit_data.rename(columns={'audit_result': '审核结果'})
+            for col in ['审核结果', '备注来源']:
                 if col not in self.audit_data.columns:
                     self.audit_data[col] = ''
 
@@ -348,6 +351,11 @@ class AIAuditWorker(QThread):
             # 第一轮本地分类只写「审核结果 / 备注来源」；AI建议已停用，不再进入 ai_queue。
             # 同时采集 F1 证据链（verdict/confidence/needs_human/evidence）。
 
+            # 本地分类很快，按 ~100 段发进度，让进度条看得出在动。
+            # 需人工判定的行会顺手查库采集证据，单步耗时不匀——段数太少（如 20 段）
+            # 每跳一格要等好几秒，观感就是「走一半卡住」。段数拉细后每格很快、看着连续。
+            report_every = max(1, total // 100)
+            done = 0
             for idx, row in self.audit_data.iterrows():
                 if self._cancel.is_set():
                     break
@@ -358,13 +366,16 @@ class AIAuditWorker(QThread):
                     remark = ''
                 did = row.get('data_id', '')
                 self._record_decision(idx, row, dev_rate, remark, did, did in unfinished_ids, rv, mv)
+                done += 1
+                if done % report_every == 0:
+                    self.progress.emit(done, total)
 
             # AI建议已停用：第一轮本地分类完成后直接结束，不再调用 AI、不生成任何建议文案。
             self.progress.emit(total, total)
             self.log.emit(f"本地分类完成: {total} 条（AI建议功能已停用）")
 
             if not self._cancel.is_set():
-                if 'audit_result' in self.audit_data.columns or '审核结果' in self.audit_data.columns:
+                if '审核结果' in self.audit_data.columns:
                     self._save_audit_results()
                 self.log.emit("审核完成")
                 self.finished.emit(self.audit_data)

@@ -103,7 +103,8 @@ class DashboardController:
         try:
             dialog.hide()
             self.mw._link_return_board = dialog
-        except RuntimeError:          # C++ 侧已销毁，没什么可弹回的
+        except RuntimeError:
+            # C++ 侧已销毁，没什么可弹回的
             self.mw._link_return_board = None
 
     def _recall_stashed_board(self):
@@ -199,7 +200,22 @@ class DashboardController:
                 "是否替代料", "_post_audit_changed", "_quarantined",
                 "半成品重分类", "_read"
             ] if c in alerts_df.columns]
+            # 裁剪前先把替代料组抓出来（主表已有此列，就是用来区分是否替代料的）；
+            # 裁剪只留关键列会把组信息丢光，所以必须先存住、裁剪后挂回成「替代料组」列，
+            # 这样看板既能归组、也能一眼看出「谁和谁互为替代料」。
+            _grp_series = None
+            for _src in ("_替代料组", "替代料组"):
+                if _src in alerts_df.columns:
+                    _grp_series = alerts_df[_src].copy()
+                    break
             alerts_df = alerts_df[required_cols]
+            if _grp_series is not None:
+                alerts_df["替代料组"] = _grp_series
+                _cols = list(alerts_df.columns)
+                _cols.remove("替代料组")
+                _anchor = "物料名称" if "物料名称" in _cols else _cols[0]
+                _cols.insert(_cols.index(_anchor) + 1, "替代料组")
+                alerts_df = alerts_df[_cols]
             if "_read" in alerts_df.columns:
                 alerts_df["状态"] = alerts_df["_read"].map({0: "未读", 1: "已读"})
                 alerts_df = alerts_df[["状态"] + [c for c in alerts_df.columns if c != "状态"]]

@@ -2,7 +2,7 @@
 """左侧面板组件 —— 236px 纯导航侧栏（v43.349 第五期C，照抄设计稿 Tier-3 .sidebar）
 
 设计稿逐条落地（index.html 446-494 结构 + 184-206 CSS）：
-  side-sec「工作区」   偏差明细(.on) · 审核队列(未读徽标) · 隔离区(徽标) · 替代料配对(徽标)
+  side-sec「工作区」   偏差明细(.on) · 审核队列(未读徽标) · 隔离区(徽标) · 替代料配对(徽标) · AI审核结果
   side-sec「快捷入口」 数据源 · 材料半成品(徽标) · 数据预览
   side-foot           列管理 · 筛选预设
 
@@ -62,6 +62,8 @@ class LeftPanelComponent:
                   clicked=self._open_quarantine)
         self._nav(sec, "替代料配对", "exchange", badge="alt",
                   body=self._build_alternative_materials)
+        self._nav(sec, "AI审核结果", "sparkles",
+                  clicked=self._open_ai_audit_result)
 
         sec = self._add_section(lay, "快捷入口")
         self._nav(sec, "数据源", "folder-open", body=self._build_file_selection)
@@ -245,6 +247,10 @@ class LeftPanelComponent:
     def _open_quarantine(self):
         self.collapse_all()
         self.mw._open_quarantine_dialog()
+
+    def _open_ai_audit_result(self):
+        self.collapse_all()
+        self.mw._open_ai_audit_result_dialog()
 
     def _open_column_manager(self):
         self.collapse_all()

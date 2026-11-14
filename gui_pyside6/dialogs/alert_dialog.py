@@ -6,7 +6,7 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QCheckBox,
-    QGroupBox, QWidget,
+    QGroupBox, QWidget, QTableWidget, QTableWidgetItem,
 )
 from PySide6.QtCore import Qt, QPoint
 import pandas as pd
@@ -60,6 +60,9 @@ class AlertDialog(QDialog):
         install_dialog_shell(
             self, self._shell_host, "实时替代料看板 · 替代料偏差预警",
             "已加载 %d 条预警记录" % len(self.original_df))
+        # 「颜色 + 半成品分类」两行交外壳「筛选/收起筛选」按钮折叠（桥接看板内置
+        # 抽屉是空的，不接 target 按钮点了没反应）
+        self.dashboard_shell.set_filter_drawer_target(self._filter_extra)
 
     def setup_ui(self):
         # v43.341：内容先装在 host 上，__init__ 末尾再包 DashboardShell；
@@ -109,6 +112,16 @@ class AlertDialog(QDialog):
         self.btn_batch_unread.clicked.connect(self.batch_mark_unread)
         filter_layout.addWidget(self.btn_batch_unread)
 
+        # 查看替代料组：列出当前选中行所在替代料组的全部成员（含已读，绕开当前筛选），
+        # 解决"误把同组某行标已读后，看不出这一组里到底是谁和谁互为替代料"。
+        self.btn_view_group = QPushButton("⇄ 查看替代料组")
+        self.btn_view_group.setMinimumWidth(120)
+        self.btn_view_group.setToolTip(
+            "列出当前选中行所在替代料组的全部成员（含已读，不受当前未读/颜色筛选影响）。"
+            "先看清这一组里谁和谁互为替代料，再决定要不要改已读。")
+        self.btn_view_group.clicked.connect(lambda: self._view_alt_group())
+        filter_layout.addWidget(self.btn_view_group)
+
         # 放大按钮
         self.btn_fullscreen = make_button("⛶ 放大")
         self.btn_fullscreen.setMinimumWidth(80)
@@ -119,6 +132,13 @@ class AlertDialog(QDialog):
         # 表格默认占满剩余宽度；放大/还原后由 _fit_table_columns 重新按可见宽度分配列宽
 
         # ---- 颜色标记筛选栏（与主表颜色标记逻辑一致）----
+        # 颜色 + 半成品分类两行收进 _filter_extra，交外壳「筛选/收起筛选」按钮折叠：
+        # 桥接类看板没走 add_filter，内置抽屉是空的，不接 target 按钮点了没反应。
+        self._filter_extra = QWidget()
+        _fe = QVBoxLayout(self._filter_extra)
+        _fe.setContentsMargins(0, 0, 0, 0)
+        _fe.setSpacing(6)
+
         color_row = QHBoxLayout()
         color_row.addWidget(QLabel("颜色:"))
         self.color_checks = {}
@@ -141,7 +161,7 @@ class AlertDialog(QDialog):
         self.color_clear_btn.clicked.connect(self._clear_color_checks)
         color_row.addWidget(self.color_clear_btn)
         color_row.addStretch()
-        layout.addLayout(color_row)
+        _fe.addLayout(color_row)
 
         # ---- 半成品重分类筛选（v43.147：QGridLayout 两行，食品一行 / 饮料一行）----
         # 原为 QVBoxLayout + setFixedWidth(180) 竖排，7 项会撑到 ~130px 高；
@@ -158,7 +178,9 @@ class AlertDialog(QDialog):
         self._semi_class_checkboxes = {}  # 名称 -> QCheckBox（含特殊键 "__all__"）
         semi_class_row.addWidget(self.grp_semi_class)
         semi_class_row.addStretch()
-        layout.addLayout(semi_class_row)
+        _fe.addLayout(semi_class_row)
+
+        layout.addWidget(self._filter_extra)
 
         # ---- 表格 ----
         self.table_view = QTableView()
@@ -671,6 +693,9 @@ class AlertDialog(QDialog):
         mark_unread_action.triggered.connect(
             lambda: self._mark_selected_rows_unread(selected_rows)
         )
+        view_group_action = add_icon_action(menu, "⇄ 查看替代料组（本行）")
+        view_group_action.triggered.connect(
+            lambda: self._view_alt_group(selected_rows[0] if selected_rows else row))
         menu.addSeparator()
         _df_drill = self.source_model.getDataFrame()
         if _df_drill is not None and selected_rows:
@@ -682,6 +707,104 @@ class AlertDialog(QDialog):
             except Exception:
                 pass
         menu.exec_(self.table_view.viewport().mapToGlobal(pos))
+
+    # ------------------------------------------------------------------ 替代料组
+    @staticmethod
+    def _find_alt_group_col(df):
+        """定位替代料组列：先 `_替代料组`，再 `替代料组`（与 threshold_config 口径一致）。"""
+        if df is None:
+            return None
+        for c in ('_替代料组', '替代料组'):
+            if c in df.columns:
+                return c
+        return None
+
+    def _view_alt_group(self, view_row=None):
+        """查看某行所属替代料组的全部成员（含已读，绕开当前未读/颜色筛选）。
+
+        目的：误把同组某行标已读后，看板默认只看未读会把它藏起来，看不出这一组
+        里到底是谁和谁互为替代料。这里从全量数据集按组拉出所有成员，连已读状态一起给。
+        """
+        df_view = self.source_model.getDataFrame()
+        if df_view is None or len(df_view) == 0:
+            toast("当前看板无数据", 'info', parent=self)
+            return
+        if view_row is None:
+            sel = self.table_view.selectionModel()
+            rows = sorted(set(ix.row() for ix in sel.selectedIndexes())) if sel else []
+            view_row = rows[0] if rows else self.table_view.currentIndex().row()
+        if not isinstance(view_row, int) or view_row < 0 or view_row >= len(df_view):
+            toast("请先选中一行", 'info', parent=self)
+            return
+        rec = df_view.iloc[view_row]
+        grpcol_view = self._find_alt_group_col(df_view)
+        if grpcol_view is None:
+            toast("数据里没有替代料组列，无法归组", 'info', parent=self)
+            return
+        group = str(rec.get(grpcol_view, '') or '').strip()
+        if not group:
+            toast("该行不属于任何替代料组", 'info', parent=self)
+            return
+        # 全量数据集（不受当前筛选影响），据此找齐同组所有成员
+        full_df = getattr(getattr(self.main_window, 'view_model', None), 'df', None)
+        if full_df is None:
+            full_df = self.original_df
+        gcol = grpcol_view if grpcol_view in full_df.columns else self._find_alt_group_col(full_df)
+        if gcol is None:
+            toast("全量数据里没有替代料组列", 'info', parent=self)
+            return
+        members = full_df[full_df[gcol].astype(str).str.strip() == group]
+        if members.empty and len(df_view) > 0:
+            members = df_view[df_view[grpcol_view].astype(str).str.strip() == group]
+        if members.empty:
+            toast("没找到同组的其他记录", 'info', parent=self)
+            return
+        self._show_alt_group_popup(group, members)
+
+    def _show_alt_group_popup(self, group, members):
+        """把某替代料组的全部成员铺成一张小表弹窗（含已读状态），只读、即看即走。"""
+        want_cols = ['物料编码', '物料名称', '订单日期', '订单单号', '流程订单', '备注',
+                     '审核结果', '车间', '定额', '实际', '偏差数量', '偏差率(%)',
+                     '净偏差数量', '半成品重分类']
+        base_cols = [c for c in want_cols if c in members.columns]
+        out = members[base_cols].copy()
+        if '_read' in members.columns:
+            out['已读'] = members['_read'].map(
+                lambda x: '已读' if (pd.notna(x) and str(x) not in ('0', '0.0', '')) else '未读')
+            # 已读/未读 放第一列，一眼看清同组里哪些还没处理
+            out = out[['已读'] + [c for c in out.columns if c != '已读']]
+        unread_n = int((out['已读'] == '未读').sum()) if '已读' in out else None
+
+        header = list(out.columns)
+        n_rows, n_cols = out.shape
+        tbl = QTableWidget(n_rows, n_cols)
+        tbl.setHorizontalHeaderLabels(header)
+        tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
+        for i in range(n_rows):
+            for j in range(n_cols):
+                v = out.iat[i, j]
+                txt = '' if (v is None or (isinstance(v, float) and pd.isna(v))) else str(v)
+                tbl.setItem(i, j, QTableWidgetItem(txt))
+        tbl.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        tbl.verticalHeader().setDefaultSectionSize(28)
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("替代料组 · 互为替代料")
+        v = QVBoxLayout(dlg)
+        v.setContentsMargins(8, 8, 8, 8)
+        sub = "共 %d 条" % n_rows
+        if unread_n is not None:
+            sub += " · 未读 %d 条" % unread_n
+        lbl = QLabel("替代料组 <b>%s</b>：%s" % (group, sub))
+        lbl.setTextFormat(Qt.RichText)
+        v.addWidget(lbl)
+        v.addWidget(tbl)
+        close_btn = QPushButton("关闭")
+        close_btn.clicked.connect(dlg.accept)
+        v.addWidget(close_btn, alignment=Qt.AlignRight)
+        dlg.resize(960, 420)
+        dlg.show()
 
     def _mark_selected_rows_read(self, rows):
         """标记所有选中行为已读（右键菜单）"""

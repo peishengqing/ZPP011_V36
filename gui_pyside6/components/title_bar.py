@@ -23,7 +23,7 @@ from gui_pyside6.utils.icons import get_icon
 from utils.theme_manager import Thm
 
 #: 品牌副行（设计稿 brand-text span：公司 · 产地）
-BRAND_SUB = "云南达利食品 · 玉溪"
+BRAND_SUB = "云南达利食品 · 裴盛清"
 #: 主标题（设计稿：去掉「云南达利」前缀，公司名降为副行）
 BRAND_MAIN = "ZPP011 生产偏差分析器"
 

@@ -292,6 +292,8 @@ class QuarantineDialog(QDialog):
         v.setSpacing(6)
         hint = QLabel("这里列出所有被「标记为已豁免」的记录（含已经不在隔离区里的）。\n"
                       "豁免 = 人工已经判过：自动隔离规则不再把它抓回隔离区，失效复核与「未完结」统计也不再算它。\n"
+                      "「✅ 移出隔离区（保留豁免）」把还在区里的行移出、但豁免继续生效；"
+                      "「↩ 取消豁免并放回隔离区」则反悔作废、交回人工处理。\n"
                       "两条会让它作废的情况：①这条记录在审核后又被改动（实际数量/备注原因/产量）——豁免自动作废并提示；"
                       "②你在下面选中行点「取消豁免并放回隔离区」——反悔，交回人工处理。")
         hint.setWordWrap(True)
@@ -307,6 +309,12 @@ class QuarantineDialog(QDialog):
         v.addWidget(self.exempt_view)
 
         bl = QHBoxLayout()
+        self.btn_move_out_keep_exempt = make_button("✅ 移出隔离区（保留豁免，选中行）")
+        self.btn_move_out_keep_exempt.setToolTip(
+            "把这些行移出隔离区，但豁免标记不动：自动隔离规则仍不抓回，"
+            "失效复核与「未完结」统计仍不算它。与「取消豁免」相反。")
+        self.btn_move_out_keep_exempt.clicked.connect(self._move_out_keep_exempt_selected)
+        bl.addWidget(self.btn_move_out_keep_exempt)
         self.btn_cancel_exempt = make_button("↩ 取消豁免并放回隔离区（选中行）")
         self.btn_cancel_exempt.setToolTip(
             "豁免标记作废，这条重新按现行规则处理（命中就回到隔离区）")
@@ -358,6 +366,53 @@ class QuarantineDialog(QDialog):
         self.exempt_count_label.setText("已豁免：%d 条" % len(edf))
         idx = self.tabs.indexOf(self.tab_exempt)
         self.tabs.setTabText(idx, "豁免台账 (%d)" % len(edf) if edf.shape[0] else "豁免台账")
+
+    def _move_out_keep_exempt_selected(self):
+        """把选中行移出隔离区，但豁免标记保持不动。
+
+        与「取消豁免并放回隔离区」相反：restored_at 落定（软删除出区）、exempted 仍是 1，
+        自动隔离规则不抓回、失效复核与未完结统计继续跳过它。
+        只对此刻「在隔离区」(restored_at 为空) 的行生效，已移出的行不重复写时间戳。
+        """
+        sel = self.exempt_view.selectionModel()
+        if not sel or not sel.hasSelection():
+            toast("请先选中要移出隔离区的行", 'info', parent=self)
+            return
+        df = self.exempt_model.getDataFrame()
+        rows = sorted(set(idx.row() for idx in sel.selectedIndexes()))
+        ids = []
+        for r in rows:
+            if r < len(df):
+                uid = df.iloc[r].get('data_id')
+                if uid and str(uid) not in ids:
+                    ids.append(str(uid))
+        if not ids:
+            return
+        still_in = set()
+        for x in self._exempt_records:
+            u = str(x.get('uid'))
+            if u in ids and not x.get('restored_at'):
+                still_in.add(u)
+        if not still_in:
+            toast("选中的行已不在隔离区（豁免生效中），无需移出", 'info', parent=self)
+            return
+        remove_quarantine_batch(sorted(still_in))
+        # 回写主表内存：这些行不再在隔离区（_quarantined=0），豁免标记不动
+        main_df = getattr(getattr(self.main_window, 'view_model', None), 'df', None)
+        if main_df is not None and 'data_id' in main_df.columns:
+            mask = main_df['data_id'].astype(str).isin(still_in)
+            if '_quarantined' in main_df.columns:
+                main_df.loc[mask, '_quarantined'] = 0
+            self.main_window.view_model.df = main_df
+            sm = getattr(self.main_window, 'source_model', None)
+            if sm is not None:
+                sm.setDataFrame(main_df)
+                if hasattr(self.main_window, '_apply_column_visibility_by_name'):
+                    self.main_window._apply_column_visibility_by_name()
+        if getattr(self.main_window, 'stats_cards', None) is not None:
+            self.main_window.stats_cards.refresh(main_df)
+        self._refresh_self()
+        toast(f"✅ 已移出隔离区 {len(still_in)} 条（豁免继续生效）", parent=self)
 
     def _cancel_exempt_selected(self):
         """取消选中行的豁免，并把它放回隔离区交回人工处理。"""

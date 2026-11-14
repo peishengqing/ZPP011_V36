@@ -346,3 +346,48 @@ def summary_stats(reports: Optional[List[Dict]] = None) -> Dict:
         "model_version_dist": model_version_dist,
         "top_reason_types": top_reason_types,
     }
+
+
+# ---------------------------------------------------------------------------
+# 批量取最新建议（用于主表 3 列物化：归因 / 建议动作 / 候选建议）
+# ---------------------------------------------------------------------------
+_SUGGESTION_CHUNK = 500  # SQLite IN 子句一次最多 500 个参数（保守，防 999 上限）
+
+
+def load_suggestions_batch(data_ids: List[str]) -> Dict[str, Dict[str, str]]:
+    """一次性取所有 data_id 的最新归因建议，返回 {data_id: {'归因','建议动作','候选建议'}}。
+
+    性能：分 chunk 查询（每 500 个一批），避免 SQLite 参数数上限。
+    """
+    if not data_ids:
+        return {}
+    out: Dict[str, Dict[str, str]] = {}
+    conn = _connect()
+    try:
+        for start in range(0, len(data_ids), _SUGGESTION_CHUNK):
+            chunk = data_ids[start:start + _SUGGESTION_CHUNK]
+            placeholders = ",".join("?" * len(chunk))
+            sql = (
+                "SELECT s.data_id, s.root_cause, s.action, s.candidates_json "
+                "FROM audit_suggestion s "
+                "INNER JOIN ("
+                "  SELECT data_id, MAX(id) AS max_id "
+                "  FROM audit_suggestion WHERE data_id IN (" + placeholders + ") "
+                "  GROUP BY data_id"
+                ") t ON s.data_id = t.data_id AND s.id = t.max_id"
+            )
+            rows = conn.execute(sql, chunk).fetchall()
+            for data_id, root_cause, action, candidates_json in rows:
+                try:
+                    candidates = json.loads(candidates_json) if candidates_json else []
+                except Exception:
+                    candidates = []
+                cand_texts = [c.get("text", "") for c in (candidates or []) if c.get("text")]
+                out[str(data_id)] = {
+                    "归因": root_cause or "",
+                    "建议动作": action or "",
+                    "候选建议": " / ".join(cand_texts),
+                }
+    finally:
+        conn.close()
+    return out

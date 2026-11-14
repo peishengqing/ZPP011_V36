@@ -117,6 +117,20 @@ class DataPreprocessor(QObject):
                         cols.remove(extra)
                         cols.insert(yi + 1, extra)
                         yi += 1
+            # 把审核结果 + AI 归因 3 列移到「备注来源」后面（方便查看）
+            audit_cols = [c for c in ['审核结果', '归因', '建议动作', '候选建议'] if c in cols]
+            if '备注来源' in cols and audit_cols:
+                anchor_idx = cols.index('备注来源')
+                for c in audit_cols:
+                    cols.remove(c)
+                for i, c in enumerate(audit_cols):
+                    cols.insert(anchor_idx + 1 + i, c)
+            elif audit_cols:
+                # 备注来源不在时放最前面（紧跟隐藏列之后）
+                for c in audit_cols:
+                    cols.remove(c)
+                for i, c in enumerate(audit_cols):
+                    cols.insert(0, c)
             df = df[cols]
             self.log("已调整列顺序：偏差率移到偏差金额后面，产量移到产品物料描述后面", "info")
         except Exception as e:
