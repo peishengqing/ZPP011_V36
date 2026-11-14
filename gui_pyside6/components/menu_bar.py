@@ -47,6 +47,11 @@ class MenuBarComponent:
         refresh_action.triggered.connect(self.mw._recalculate_net_offset)
         analysis_menu.addAction(refresh_action)
 
+        # v43.370：跨月偏差趋势看板 —— 某物料逐月峰值/期末偏差走势（读归档表）
+        trend_action = QAction(get_icon("chart", 14), "跨月偏差趋势看板", self.mw)
+        trend_action.triggered.connect(self.mw._show_trend_dashboard)
+        analysis_menu.addAction(trend_action)
+
         # 审核菜单
         audit_menu = menubar.addMenu("审核")
         ai_action = QAction("AI 审核", self.mw)

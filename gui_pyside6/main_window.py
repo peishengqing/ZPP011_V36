@@ -3414,6 +3414,17 @@ class MainWindow(QMainWindow):
     def _show_dashboard(self):
         return self.dashboard_controller._show_dashboard()
 
+    def _show_trend_dashboard(self):
+        """跨月偏差趋势看板（v43.370）：读归档表画某物料逐月峰值/期末偏差走势。"""
+        from gui_pyside6.dialogs.trend_dialog import TrendDialog
+        dark = None
+        try:
+            from utils.theme_manager import Thm
+            dark = bool(Thm.is_dark)
+        except Exception:  # noqa: BLE001
+            dark = None
+        TrendDialog(owner=self, dark=dark).exec()
+
     # ------------------------------------------------------------------ #
     # ARC-003 第五刀薄壳（v43.197）：半成品分类管理 11 个方法已切出到
     # controllers/semi_category_controller.py。保持签名不变，故既有绑定照旧：
