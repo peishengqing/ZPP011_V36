@@ -3425,6 +3425,11 @@ class MainWindow(QMainWindow):
             dark = None
         TrendDialog(owner=self, dark=dark).exec()
 
+    def _show_export_template(self):
+        """导出列模板编辑器（v43.372）：勾选导出列/排序/合计行，只影响「导出当前表格」。"""
+        from gui_pyside6.dialogs.export_template_dialog import open_export_template_dialog
+        open_export_template_dialog(owner=self, df=self.view_model.df)
+
     # ------------------------------------------------------------------ #
     # ARC-003 第五刀薄壳（v43.197）：半成品分类管理 11 个方法已切出到
     # controllers/semi_category_controller.py。保持签名不变，故既有绑定照旧：

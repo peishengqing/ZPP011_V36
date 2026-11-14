@@ -41,11 +41,16 @@ class ExportController(QObject):
         self.parent = parent
 
     def export_current_table(self, audit_data, parent_widget):
-        """导出当前表格（仅当前筛选后的数据）"""
+        """导出当前表格（仅当前筛选后的数据，按列模板重排 + 可选合计行）"""
         if audit_data is None or audit_data.empty:
             message_box.warn(parent_widget, "表格里没有数据",
                              "先跑一次分析，或把筛选条件放宽一点再导出。")
             return False
+        # 模板自定义第一档（v43.372）：读列模板 → 重排列 + 可选合计行。
+        # 模板为空（从未设置过）时 apply_template 回退 df 原顺序，行为不变。
+        from core.export_template import load_template, apply_template
+        tpl = load_template()
+        export_df = apply_template(audit_data, tpl["order"], tpl["include_total"])
         file_path, _ = QFileDialog.getSaveFileName(
             parent_widget, "导出当前表格", "偏差明细.xlsx", "Excel files (*.xlsx)"
         )
@@ -53,7 +58,7 @@ class ExportController(QObject):
             try:
                 saved = safe_save(
                     parent_widget, file_path,
-                    lambda p: audit_data.to_excel(p, index=False),
+                    lambda p: export_df.to_excel(p, index=False),
                     what="表格",
                 )
                 if not saved:

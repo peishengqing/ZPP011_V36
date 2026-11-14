@@ -32,6 +32,11 @@ class MenuBarComponent:
         )
         file_menu.addAction(export_action)
 
+        # v43.372：导出列模板设置 —— 勾选导出列/排序/合计行（只影响「导出当前表格」）
+        tpl_action = QAction("导出列模板设置…", self.mw)
+        tpl_action.triggered.connect(self.mw._show_export_template)
+        file_menu.addAction(tpl_action)
+
         file_menu.addSeparator()
         exit_action = QAction("退出", self.mw)
         exit_action.triggered.connect(self.mw.close)

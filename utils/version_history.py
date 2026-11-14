@@ -14,6 +14,60 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.372",
+            "date": "2026-11-14",
+            "features": (
+                "导出列模板（模板自定义第一档）——「导出当前表格」支持勾选导出哪些列、"
+                "什么顺序、末尾要不要合计行（裴哥「做4砍3」保留项②）。\n"
+                "范围：只做 GUI 层「导出当前表格」（裴哥确认），完整多 Sheet 报告由 "
+                "analysis.do_analysis_v2 硬编码 10 Sheet，第一档不动（动它回归风险大一个量级）。\n"
+                "①core/export_template.py：纯逻辑核心——列模板持久化（config/export_template.json，"
+                "临时文件+原子替换）、内部字段过滤（data_id/fingerprint/_开头/原表行号等不进导出）、"
+                "apply_template() 按模板重排 + 可选合计行。合计行只对数值列求和（dtype 判定 + "
+                "业务数值列名兜底），比率列（偏差率%等）求和无业务意义故排除；首列标「合计」。\n"
+                "②gui_pyside6/dialogs/export_template_dialog.py：列勾选编辑器——左候选/右已选双栏 + "
+                "添加/移除/上移/下移（双击也可加/减）+ 合计行开关 + 恢复默认顺序，保存即落盘模板。\n"
+                "③接线：export_controller.export_current_table 改为读模板→apply_template→导出"
+                "（模板为空时回退 df 原顺序，行为不变）；文件菜单新增「导出列模板设置…」入口；"
+                "main_window 加 _show_export_template()。\n"
+                "验证：核心逻辑实测（内部字段全过滤、比率列排除、重排生效、合计行数值列求和正确）；"
+                "py_compile + pyflakes 全绿（main_window/menu_bar/export_controller 的 unused 是"
+                "既有告警，本轮未动，零新增 F821）。",
+            ),
+            "author": "裴盛清",
+            "type": "feat",
+        },
+        {
+            "version": "v43.371",
+            "date": "2026-11-14",
+            "features": (
+                "翻箱守恒看板分食品/饮料两厂·四页（裴哥「我们之前讨论过应该区分食品和饮料」）。"
+                "看板过去对每个 ZPFX 单都套食品那套净含量 KG 守恒，饮料订单一律 "
+                "parse_net_kg('乐虎380mlx3瓶x5组')=None → 静默落「待人工确认」，跟导出"
+                "四张 sheet（食品KG / 饮料容器数）对不上。\n"
+                "①analysis_extra_flip.py：工厂识别集合补简称「食品厂/饮料厂」（原只认码 "
+                "1101/1102 与成品工作簿全称「云南达利-食品厂/饮料厂」）。主表 dev_df（看板走 "
+                "_get_master_df）与单测用的简称现在也能进 split_by_factory，看板与导出共用这一个"
+                "路由、谁都不再自判厂。纯加成员、不动既有码/全称，饮料黄金集（test_flip_drink）"
+                "断言不受影响。\n"
+                "②flip_check_dashboard_dialog.py 重做为四页：食品·守恒结论 + 食品·组件明细 + "
+                "饮料·守恒结论 + 饮料·组件明细，与导出四张 sheet 一一对齐。食品走 _check_order"
+                "（净含量 KG）、饮料走 check_drink_order（总容器数、明确不按 KG）；路由统一 "
+                "split_by_factory，被排出的组件/实际=0/Z005 半成品在明细「排除原因」留痕不静默丢；"
+                "未识别工厂单不进任何守恒表、单独留痕提示。「工厂」从筛选器改成页签，筛选只剩"
+                "「结论/车间」两把、同一套同时作用于同厂两页；空表中央提示文案同步改成「结论 / 车间」。\n"
+                "③配套改单测：test_flip_check_detail_page 重做为五单三厂（食品2/饮料2/未知1），"
+                "钉住分厂路由、食品KG结论、饮料容器数结论、明细一行一组件、明细求和回对结论页"
+                "（食品KG、饮料容器数各一套反证）、包材/实际0/Z005 排除留痕、两把筛选、计数跟页、"
+                "四页导出键与表头对齐；test_board_empty_hint 翻箱块改新 API（food_table、工厂"
+                "筛选已移除、文案改「结论 / 车间」）。\n"
+                "验证：34 条翻箱/看板单测全绿（test_flip_drink + test_flip_check_detail_page + "
+                "test_board_empty_hint）；离屏冒烟 25/25 PASS。",
+            ),
+            "author": "裴盛清",
+            "type": "feat",
+        },
+        {
             "version": "v43.370",
             "date": "2026-11-14",
             "features": (
