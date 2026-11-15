@@ -13,6 +13,7 @@ import pandas as pd
 from PySide6.QtWidgets import (
     QLineEdit, QGroupBox, QLabel, QVBoxLayout, QHBoxLayout, QComboBox
 )
+from PySide6.QtCore import Qt
 
 from gui_pyside6.components.dashboard_shell import DashboardShell
 from gui_pyside6.models.data_frame_model import DataFrameModel
@@ -48,6 +49,8 @@ class UnreadDashboard(DashboardShell):
         self._has_note_filter = "all"
         self._unit_filter = set()
         self._unit_col = None
+        # 归属看板：独立筛选维度（全部 / 负损 / 正损 / 替代料 / 偏差率预警 / 隔离区 / 半成品）
+        self._board_filter = "全部"
         self.original_df = None
         self.source_model = None
         self._kw_timer = None
@@ -182,6 +185,15 @@ class UnreadDashboard(DashboardShell):
         self.combo_mtd.currentTextChanged.connect(self._on_mtd_changed)
         org_class_layout.addWidget(self.combo_mtd)
 
+        # 归属看板：独立筛选维度（与「未读分类」正交并存）
+        org_class_layout.addWidget(QLabel("归属看板:"))
+        self.combo_board = QComboBox()
+        self.combo_board.setFixedWidth(120)
+        self.combo_board.addItems(["全部", "负损", "正损", "变动提醒", "替代料", "偏差率预警", "隔离区", "半成品"])
+        self.combo_board.setCurrentText("全部")
+        self.combo_board.currentTextChanged.connect(self._on_board_changed)
+        org_class_layout.addWidget(self.combo_board)
+
         org_class_layout.addStretch()
         current_layout.addWidget(self.gp_org_class)
 
@@ -251,6 +263,10 @@ class UnreadDashboard(DashboardShell):
 
     def _on_unit_changed(self, text):
         self._unit_filter = set() if text == "全部" else {text}
+        self._apply_filter()
+
+    def _on_board_changed(self, text):
+        self._board_filter = text
         self._apply_filter()
 
     def _on_quar_changed(self, text):
@@ -385,6 +401,11 @@ class UnreadDashboard(DashboardShell):
         self.source_model = DataFrameModel()
         self.source_model.setDataFrame(df)
         self.set_model(self.source_model)
+        # 归属看板列：可点击下钻对应看板 + 悬停提示
+        if self.table_view is not None:
+            self.table_view.setMouseTracking(True)
+            self.table_view.cellClicked.connect(self._on_table_cell_clicked)
+            self.table_view.entered.connect(self._on_cell_hovered)
         self.set_row_count(len(df))
 
         # 设置 KPI
@@ -566,6 +587,7 @@ class UnreadDashboard(DashboardShell):
             & self._mtd_mask(df)
             & self._workshop_mask(df, self._workshop_filter)
             & self._unit_mask(df)
+            & self._board_mask(df)
         )
 
         df = df[mask]
@@ -728,6 +750,7 @@ class UnreadDashboard(DashboardShell):
         cols = {
             "负损": neg,
             "正损": pos,
+            "变动提醒": pure.get("变动提醒", pd.Series(False, index=idx)),
             "替代料": pure.get("替代料", pd.Series(False, index=idx)),
             "偏差率预警": pure.get("偏差率预警", pd.Series(False, index=idx)),
             "隔离区": pure.get("隔离区", pd.Series(False, index=idx)),
@@ -790,6 +813,17 @@ class UnreadDashboard(DashboardShell):
             return pd.Series(True, index=df.index)
         vals = df[self._unit_col].astype(str).str.strip()
         return vals.isin(self._unit_filter)
+
+    def _board_mask(self, df):
+        """归属看板独立筛选维度：全部=全True / 具体标签=逐行「归属看板」含该标签。
+
+        与「未读分类」正交并存——两者可同时生效。匹配基于 _compute_board_tags 输出
+        的多标签「、」串，用子串精确命中（如选「负损」会筛出含「负损」标签的行）。
+        """
+        if self._board_filter == "全部" or "归属看板" not in df.columns:
+            return pd.Series(True, index=df.index)
+        vals = df["归属看板"].astype(str)
+        return vals.str.contains(self._board_filter, regex=False)
 
     def _read_mask(self, df, mode):
         """已读/未读掩码：all=全True / 已读=_read==1 / 未读=_read!=1(含0或NaN)。"""
@@ -857,6 +891,51 @@ class UnreadDashboard(DashboardShell):
         """关闭事件。"""
         self.action_triggered.emit("close")
         event.accept()
+
+    # ── 归属看板列：点击下钻 + 悬停提示 ──
+    _BOARD_DRILL = {
+        "负损": "_show_neg_loss_dashboard",
+        "正损": "_show_pos_loss_dashboard",
+        "变动提醒": "_show_audit_changes_dialog",
+        "替代料": "_show_alert_dashboard",
+        "偏差率预警": "_show_deviation_warning_dialog",
+        "隔离区": "_open_quarantine_dialog",
+        "半成品": "_show_semi_dashboard",
+    }
+
+    def _on_table_cell_clicked(self, row, col):
+        """点击「归属看板」列单元格 → 解析标签并下钻对应看板（非模态多开，不关闭本看板）。"""
+        sm = self.source_model
+        if sm is None or col < 0 or col >= len(sm._display_columns):
+            return
+        if sm._display_columns[col] != "归属看板":
+            return
+        idx = sm.index(row, col)
+        text = sm.data(idx, Qt.DisplayRole)
+        if not text or text == "其他":
+            return
+        mw = self.main_window
+        if mw is None:
+            return
+        for tag in str(text).split("、"):
+            fn = getattr(mw, self._BOARD_DRILL.get(tag.strip(), ""), None)
+            if fn is not None:
+                try:
+                    fn()
+                except Exception:
+                    import traceback
+                    traceback.print_exc()
+
+    def _on_cell_hovered(self, index):
+        """悬停「归属看板」列时提示可下钻。"""
+        sm = self.source_model
+        if sm is None or index.column() < 0 or index.column() >= len(sm._display_columns):
+            self.set_status("")
+            return
+        if sm._display_columns[index.column()] == "归属看板":
+            self.set_status("点击「归属看板」标签可下钻对应看板（负损/正损/变动提醒/替代料/偏差率预警/隔离区/半成品）")
+        else:
+            self.set_status("")
 
 
 if __name__ == "__main__":
