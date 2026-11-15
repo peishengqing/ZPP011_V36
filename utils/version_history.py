@@ -14,6 +14,17 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.376",
+            "date": "2026-11-15",
+            "fixes": (
+                "恢复两处被误删的入口（用户报修：变动提醒看板入口 + 未读概览按钮都不见了）：\n"
+                "①看板下拉菜单补回「变动提醒」项（layout_composer.boards_menu），点击直达 "
+                "mw._show_audit_changes_dialog()（与未读概览弹窗里「变动提醒」条目同一入口）。\n"
+                "②工具栏收纳段补回「未读概览」按钮（mw.action_btn_unread，📋 图标），点击调用 "
+                "mw.show_unread_summary(force=True)，与「审核」按钮同队列但独立成键，方便随时复查未读/待核对清单。"
+            ),
+        },
+        {
             "version": "v43.375",
             "date": "2026-11-15",
             "fixes": (
@@ -2174,6 +2185,11 @@ VERSION_HISTORY = [
         "features": "动态级联筛选：基于当前筛选条件动态计算并刷新相关下拉框选项，避免「死选项」。",
     },
     {
+        "version": "v43.267",
+        "date": "2026-10-26",
+        "notes": "【补记】版本号为跳号：git 提交信息与改动记录均未找到对应内容，当时未实际发布，故补一条占位把序号补齐（沿用 v42.50 的「跳过」记法）；日期按相邻 v43.268（10-27）/v43.266（10-26）推定。",
+    },
+    {
         "version": "v43.266",
         "date": "2026-10-26",
         "fixes": "**修掉「全仓 emoji → SVG」漏网的最后一批（裴哥 10-26 截图指正：主表底部工具条的三个按钮显示成怪字形——锁显示成黑白黄油漆桶、全屏显示成四点方阵、隐藏列显示成「i」）**。根因有两层：① v43.264 的「全仓图标化」只盘点了主窗口/看板/侧栏/统计卡这几处显眼界面，**漏了主表底部合计条与各看板对话框的操作按钮**；② 更要命的是这些按钮的文本是**纯符号**（`QPushButton(\"🔒\")`），emoji 撑满 32px 按钮时 Microsoft YaHei 字体回退把它渲染成了毫不相干的字形——这不是「不够好看」，是「看不懂是什么按钮」。**改法**：① `utils/icons.py` 补 23 个新图标（maximize/minimize/eye/unlock/clock/timer/book/scroll/gear/exchange/sparkles/chevron-down/up/left/right/check-circle/close-circle/paperclip/folder-open/undo/menu/tag/flag，图标集 37 → 60 个）并新增 **`EMOJI_TO_ICON` 映射 + `split_emoji()` / `make_button()` / `make_tool_button()` / `add_icon_action()` 四个工厂**——工厂自动剥掉文本里的 emoji 前缀并挂对应 SVG 图标，调用方一行不改语义；② 用迁移脚本把 **67 处按钮/菜单项**（15 个文件）切到工厂：主窗口右键菜单 6 项、隔离区/负损/正损/半成品/偏差率预警看板的「标记为已读/未读/移入隔离区/导出 Excel/放大/修复一致性/扫描失效」等按钮、规则编辑器与自动已读规则对话框的增删按钮、归藏「AI 重新设计」、微信草稿配置 6 个按钮、菜单栏「⚙ 规则中心 / 🔔 替代料看板」；③ **状态栏/进度条/通知文字的 emoji 前缀去掉**（状态栏三件套「分析/已读/列头筛选」、计时器「⏱ 00:00」、进度「✅ 完成 / ❌ 错误 / 📦 缓存」、8 处 toast 通知、系统对话框标题）——这些是纯文本载体，装不了图标，去前缀后语义不变且不再有字体回退风险；④ **状态切换逻辑改图标而非改文字**：列宽锁按钮 `_toggle_column_lock` 原来 `setText(\"🔓\"/\"🔒\")` 会把 v43.264 刚加的图标洗回 emoji，改 `setIcon(get_icon(\"unlock\"/\"lock\"))`；工具栏「左侧栏/筛选/列头筛选」的显隐切换同理只改文字、保留图标；列头筛选提示改用 `col_filter_ui.set_col_filter_button_on` 统一口径。**保留不动**：折叠箭头的 ▼▶◀▲▾（几何符号，Windows 字体渲染正常）、步骤图标的 √（测试锁定）、版本日志正文的 ✦新功能/🔧修复/⚡优化 图例（内容语义标记）。**验证**：新增 emoji 扫描脚本（正则扫 QPushButton/QToolButton/QAction/QLabel/addAction 构造与 setText），全仓可见文本剩余 11 处均为上述保留项；离屏冒烟新增底部三按钮「图标有实际像素 + 文字无 emoji + 锁定态切图标 + 面板显隐切换后图标不被洗掉」共 10 项断言 ALL-PASS；pytest 307 passed / 1 skipped / 2 xfailed 零回归；pyflakes 与 HEAD 基线一致（仅 1 条因迁移而闲置的 QPushButton 导入，已清）。",
@@ -2344,10 +2360,39 @@ VERSION_HISTORY = [
         "features": "标记为已豁免时自动移出隔离区：右键菜单选择'标记为已豁免'后，记录会立即被移出隔离区并从隔离区列表中消失。",
     },
     {
+        "version": "v43.237",
+        "date": "2026-10-22",
+        "fixes": "修复隔离区豁免状态更新：改为直接在内存中更新记录并重渲染表格，不再走重新查库刷新。",
+        "notes": "【补记】原版本日志漏登记，正文据 git 提交 97e7809（2026-10-22）还原。",
+    },
+    {
         "version": "v43.236",
         "date": "2026-10-22",
         "fixes": "修复隔离区豁免功能三个 bug：1) 右键菜单文本方向错误（未豁免显示取消豁免->标记为已豁免）；2) 失效复核仍显示豁免记录（is_exempted 查询逻辑已验证正确，但注入数据库；3) 隔离区列表增加豁免状态列显示'是'或空。",
         "features": "在隔离区列表中添加'豁免'状态列，显示'是'表示已标记为豁免。",
+    },
+    {
+        "version": "v43.235",
+        "date": "2026-10-22",
+        "features": "新增隔离区豁免功能：右键菜单可把单条记录标记为豁免，自动规则与失效复核对该记录自动跳过。",
+        "notes": "【补记】原版本日志漏登记，正文据 git 提交 9fb3cdb（2026-10-22）还原。",
+    },
+    {
+        "version": "v43.234",
+        "date": "2026-10-22",
+        "notes": "【补记】版本号为跳号：git 提交信息与改动记录均未找到对应内容，当时未实际发布；日期按相邻 v43.235/v43.233 推定。",
+    },
+    {
+        "version": "v43.233",
+        "date": "2026-10-21",
+        "optimizations": "添加双击调试日志，用于定位界面未响应问题。",
+        "notes": "【补记】原版本日志漏登记，正文据 git 提交 43937f7（2026-10-21）还原。",
+    },
+    {
+        "version": "v43.232",
+        "date": "2026-10-21",
+        "fixes": "修复微信草稿日期提取：改为显示订单日期。",
+        "notes": "【补记】原版本日志漏登记，正文据 git 提交 1cf7aed（2026-10-21）还原。",
     },
     {
         "version": "v43.231",
@@ -2422,6 +2467,12 @@ VERSION_HISTORY = [
         "fixes": "**根因**：data_service.py 基线缺失时仍标记变更，导致 get_audit_changes() 返回旧值为None的记录。**病根**：_restore_read_status 第4步只检查 has_baseline，未验证完整基线，导致基线部分缺失的行也被标记为 changed。**修法**：引入 has_complete_baseline = has_baseline & hist_snap.notna() & hist_note.notna() & hist_yield.notna()，仅对三基线齐全的记录进行变更比对。**验收**：py_compile 无语法错误；测试覆盖；导出Excel中 old_value 不为 NaN，基线缺失记录不再触发变动提醒。**反证**：回退 has_complete_baseline → 大量 old_value=NaN 的记录仍存在；回退后数据正常。",
     },
     {
+        "version": "v43.219",
+        "date": "2026-10-20",
+        "features": "隔离区对话框列头筛选接入；变动提醒在基线缺失时的显示优化。",
+        "notes": "【补记】原版本日志漏登记，正文据 git 提交 ef73fea（2026-10-20）还原。",
+    },
+    {
         "version": "v43.218",
         "date": "2026-10-19",
         "features": "为 MainWindow 操作栏所有按钮创建实例（修复 LayoutComposer 依赖），包括分析按钮、视图开关、收纳菜单、面板开关和自动隔离按钮。",
@@ -2438,6 +2489,11 @@ VERSION_HISTORY = [
         "date": "2026-10-19",
         "features": "为替代料看板添加级联筛选机制，重构 _build_semi_checkboxes 和 _semi_class_visible_options，确保半成品分类选项随其他筛选条件动态调整，移除结构性死选项。",
         "fixes": "**根因**：替代料看板（alert_dialog.py）完全缺少级联刷新逻辑，半成品分类复选框只在 set_data() 时构建一次，后续不复显式需要动态调整。用户先选择车间/工厂后，半成品分类下拉/复选框会出现死选项（0 行的结构性选项）。**病根**：与半成品看板/偏差率预警看板相比，缺少 exclude-self 双向级联机制，无法实现选项的动态收窄。**修法**：重构 _build_semi_checkboxes 实现级联刷新，借鉴半成品看板 v43.174 模式，在 _apply_filter() 开头和 set_data() 末尾调用 _refresh_cascade_combos()，使用 cascade_options 和 replace_combo_items 确保双向级联和空结果回退。**验收**：py_compile+pyflakes 零新增；级联刷新测试覆盖；重构前后功能一致。**反证**：回退级联逻辑 → 死选项仍然存在，用户操作体验下降。",
+    },
+    {
+        "version": "v43.215",
+        "date": "2026-10-19",
+        "notes": "【补记】版本号为跳号：git 提交信息与改动记录均未找到对应内容，当时未实际发布；日期按相邻 v43.216/v43.214（均 10-19）推定。",
     },
     {
         "version": "v43.214",

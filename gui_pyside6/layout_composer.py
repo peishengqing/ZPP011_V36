@@ -163,6 +163,7 @@ class LayoutComposer:
         mw.action_btn_boards.setPopupMode(QToolButton.MenuButtonPopup)
         boards_menu = QMenu(mw)
         _icon_action(boards_menu, "eye", "未读看板", lambda: mw._show_unread_dashboard())
+        _icon_action(boards_menu, "edit", "变动提醒", lambda: mw._show_audit_changes_dialog())
         _icon_action(boards_menu, "bell", "替代料看板", lambda: mw._show_alert_dashboard())
         _icon_action(boards_menu, "alert", "偏差率预警", lambda: mw._show_deviation_warning_dialog())
         _icon_action(boards_menu, "trending-down", "负损看板", lambda: mw._show_neg_loss_dashboard())
@@ -191,6 +192,19 @@ class LayoutComposer:
         mw.action_btn_export.setMenu(export_menu)
         mw.action_btn_export.setPopupMode(QToolButton.MenuButtonPopup)
         action_layout.addWidget(mw.action_btn_export)
+
+        # 「未读概览」按钮（v43.376 恢复）：用户主动复查未读 / 待核对清单。
+        # v43.349 第五期B 曾把「未读」按钮退役、并入「审核」队列，但用户习惯用独立按钮，
+        # 这里在「导出」之后补回一颗带文字按钮，与「审核」同队列但独立成键。
+        mw.action_btn_unread = QToolButton()
+        mw.action_btn_unread.setObjectName("actionMenuBtn")
+        mw.action_btn_unread.setIcon(get_icon("clipboard", 14))
+        mw.action_btn_unread.setText("未读概览")
+        mw.action_btn_unread.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        mw.action_btn_unread.setFixedHeight(30)
+        mw.action_btn_unread.setToolTip("打开未读概览（未读 / 待核对清单）")
+        mw.action_btn_unread.clicked.connect(lambda: mw.show_unread_summary(force=True))
+        action_layout.addWidget(mw.action_btn_unread)
 
         # 原「维护」菜单按钮（自动隔离规则 / 物料画像）退役，两项并入「更多」——
         # 设计稿这一段只留 看板 / 导出 / ⋮ 三颗，第四颗会把主操作挤远。
