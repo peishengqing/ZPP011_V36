@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 
 from core import export_template as et
 from gui_pyside6.components import dialog_chrome
+from utils.theme_manager import Thm
 
 
 class ExportTemplateDialog(QDialog):
@@ -39,7 +40,7 @@ class ExportTemplateDialog(QDialog):
         tip = QLabel("勾选要导出的列并调好顺序（只对「导出当前表格」生效，"
                      "完整多 Sheet 报告不受影响）。内部字段（data_id 等）不参与导出。")
         tip.setWordWrap(True)
-        tip.setStyleSheet("color:#666;")
+        tip.setStyleSheet("color:%s;" % Thm.color("textMuted"))
         root.addWidget(tip)
 
         # 左右两栏
@@ -94,7 +95,7 @@ class ExportTemplateDialog(QDialog):
 
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet("color:#ddd;")
+        line.setStyleSheet("color:%s;" % Thm.color("border"))
         root.addWidget(line)
 
         # 底部按钮

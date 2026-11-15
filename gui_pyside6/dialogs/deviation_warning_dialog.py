@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QFrame,
     QComboBox, QLineEdit, QDialogButtonBox, QGroupBox, QCheckBox, QGridLayout,
-    QWidget,
+    QWidget, QDoubleSpinBox,
 )
 from PySide6.QtCore import Qt, QPoint, QTimer
 from gui_pyside6.models.data_frame_model import DataFrameModel
@@ -477,6 +477,34 @@ class DeviationWarningDialog(QDialog):
         self.btn_remark_none.clicked.connect(self._bind(self.btn_remark_none.clicked, lambda: self._set_remark_filter("none")))
         self._row3.addWidget(self.btn_remark_none)
 
+        # 净偏差数量 数值范围（min~max，不限=±1e9 哨兵），与替代料/备注同处第3行（全屏/展开可见）
+        self.net_dev_qty_sep = QFrame()
+        self.net_dev_qty_sep.setFrameShape(QFrame.VLine)
+        self.net_dev_qty_sep.setFrameShadow(QFrame.Sunken)
+        self._row3.addWidget(self.net_dev_qty_sep)
+        self._row3.addSpacing(8)
+
+        self.lbl_net_dev_qty = QLabel("净偏差数量:")
+        self._row3.addWidget(self.lbl_net_dev_qty)
+
+        self.net_dev_qty_min_spin = QDoubleSpinBox()
+        self.net_dev_qty_min_spin.setRange(-1e9, 1e9)
+        self.net_dev_qty_min_spin.setDecimals(2)
+        self.net_dev_qty_min_spin.setSpecialValueText("不限")
+        self.net_dev_qty_min_spin.setValue(-1e9)
+        self.net_dev_qty_min_spin.valueChanged.connect(self._apply_filter)
+        self._row3.addWidget(self.net_dev_qty_min_spin)
+
+        self._row3.addWidget(QLabel("~"))
+
+        self.net_dev_qty_max_spin = QDoubleSpinBox()
+        self.net_dev_qty_max_spin.setRange(-1e9, 1e9)
+        self.net_dev_qty_max_spin.setDecimals(2)
+        self.net_dev_qty_max_spin.setSpecialValueText("不限")
+        self.net_dev_qty_max_spin.setValue(1e9)
+        self.net_dev_qty_max_spin.valueChanged.connect(self._apply_filter)
+        self._row3.addWidget(self.net_dev_qty_max_spin)
+
         self._row3.addStretch()
         self._main_filter_vlayout.addWidget(self._row3_widget)
         self._row3_widget.setVisible(False)  # 默认隐藏，全屏时显示
@@ -902,6 +930,36 @@ class DeviationWarningDialog(QDialog):
         vals = df[self._factory_col].astype(str).str.strip()
         return vals == mode
 
+    def _net_dev_qty_mask(self, df):
+        """净偏差数量数值范围筛选（>=下界 且 <=上界），镜像 unread_dashboard 口径。
+
+        - 缺「净偏差数量」列 → 全 True（无约束，兼容原始未分析数据）；
+          _devdir_mask 已把该列作为偏差方向数值的回退列，此处复用同一列名。
+        - 双端均「不限」 → 全 True（过滤器未生效）。
+        - 解析异常 → print_exc 后退回全 True，绝不拖累整体 apply。
+        """
+        col = "净偏差数量"
+        if col not in df.columns:
+            return pd.Series(True, index=df.index)
+        try:
+            mn = self.net_dev_qty_min_spin.value()
+            mx = self.net_dev_qty_max_spin.value()
+            lo = None if mn <= -1e9 + 0.001 else mn
+            hi = None if mx >= 1e9 - 0.001 else mx
+            if lo is None and hi is None:
+                return pd.Series(True, index=df.index)
+            series = pd.to_numeric(df[col], errors="coerce")
+            m = pd.Series(True, index=df.index)
+            if lo is not None:
+                m &= (series >= lo)
+            if hi is not None:
+                m &= (series <= hi)
+            return m
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            return pd.Series(True, index=df.index)
+
     def _apply_filter(self):
         """从 original_df 重新过滤并刷新模型（已读状态 × 料别 × 车间 三组条件叠加）"""
         if not hasattr(self, "original_df") or self.original_df is None:
@@ -933,7 +991,8 @@ class DeviationWarningDialog(QDialog):
                       & self._remark_mask(df, self._remark_filter)
                       & self._semi_class_mask(df)
                       & self._mtd_mask(df)
-                      & self._keyword_mask(df)].copy()
+                      & self._keyword_mask(df)
+                      & self._net_dev_qty_mask(df)].copy()
 
         filtered = filtered.reset_index(drop=True)
         # 叠加 Excel 式列头取值过滤（就地过滤，视图行号不变，选中/双击/导出零回归）

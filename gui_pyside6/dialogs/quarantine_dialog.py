@@ -13,7 +13,7 @@ import pandas as pd
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QTabWidget,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QWidget,
-    QLineEdit, QComboBox, QInputDialog, QHeaderView,
+    QLineEdit, QComboBox, QInputDialog, QHeaderView, QDoubleSpinBox,
 )
 from PySide6.QtCore import Qt, QPoint, QTimer
 from gui_pyside6.utils.table_autofit import install_adaptive, get_adaptive
@@ -133,6 +133,32 @@ class QuarantineDialog(QDialog):
         self.combo_remark.currentTextChanged.connect(self._on_remark_filter_changed)
         sl.addWidget(self.combo_remark)
         v.addLayout(sl)
+
+        # 净偏差数量区间筛选（min~max）。该列在隔离区列表里通常不存在（源自主表），
+        # 此处仅加控件；真正生效需数据帧含「净偏差数量」列，否则惰性（见 _apply_list_filters）。
+        # 哨兵值：下限 -1e9 / 上限 +1e9 经 setSpecialValueText("不限") 显示为「不限」。
+        nl = QHBoxLayout()
+        nl.addWidget(QLabel("净偏差数量区间："))
+        self.spin_net_dev_min = QDoubleSpinBox()
+        self.spin_net_dev_min.setRange(-1e9, 1e9)
+        self.spin_net_dev_min.setDecimals(2)
+        self.spin_net_dev_min.setSpecialValueText("不限")
+        self.spin_net_dev_min.setValue(-1e9)
+        self.spin_net_dev_min.setToolTip("净偏差数量下限（显示「不限」=不限制）")
+        nl.addWidget(self.spin_net_dev_min)
+        nl.addWidget(QLabel("~"))
+        self.spin_net_dev_max = QDoubleSpinBox()
+        self.spin_net_dev_max.setRange(-1e9, 1e9)
+        self.spin_net_dev_max.setDecimals(2)
+        self.spin_net_dev_max.setSpecialValueText("不限")
+        self.spin_net_dev_max.setValue(1e9)
+        self.spin_net_dev_max.setToolTip("净偏差数量上限（显示「不限」=不限制）")
+        nl.addWidget(self.spin_net_dev_max)
+        # 接入 Tab1 既有关键字防抖定时器（300ms），避免每次步进都重建模型
+        self.spin_net_dev_min.valueChanged.connect(lambda _v: self._list_search_timer.start())
+        self.spin_net_dev_max.valueChanged.connect(lambda _v: self._list_search_timer.start())
+        nl.addStretch()
+        v.addLayout(nl)
 
         self.table_view = QTableView()
         self.table_view.setAlternatingRowColors(True)
@@ -990,6 +1016,24 @@ class QuarantineDialog(QDialog):
             if rcol:
                 vals = df[rcol].apply(lambda x: "" if pd.isna(x) else str(x).strip())
                 df = df[vals != "" if remark == '有' else vals == ""]
+        # 净偏差数量区间筛选（惰性：该列通常不在隔离区列表，仅当数据帧含此列时生效）
+        try:
+            col = '净偏差数量'
+            if col in df.columns:
+                mn = self.spin_net_dev_min.value()
+                mx = self.spin_net_dev_max.value()
+                series = pd.to_numeric(df[col], errors='coerce')
+                lo = None if mn <= -1e9 + 0.001 else mn
+                hi = None if mx >= 1e9 - 0.001 else mx
+                mask = pd.Series(True, index=df.index)
+                if lo is not None:
+                    mask &= (series >= lo)
+                if hi is not None:
+                    mask &= (series <= hi)
+                df = df[mask]
+        except Exception:
+            import traceback
+            traceback.print_exc()
         self._render_table(df.copy())
 
     def _update_col_filter_hint(self, ctrl, label, source_model):

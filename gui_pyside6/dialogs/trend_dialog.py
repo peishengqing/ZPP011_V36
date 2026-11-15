@@ -124,6 +124,7 @@ class TrendDialog(QDialog):
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
+        from utils.theme_manager import Thm
         dialog_chrome.apply(self, dialog_chrome.TIER_BOARD,
                             "跨月偏差趋势", "峰值 / 期末双口径")
         root = QVBoxLayout(self)
@@ -181,7 +182,7 @@ class TrendDialog(QDialog):
                 pass
         else:
             self.web.setHtml(
-                f"<p style='color:#b00'>WebEngine 不可用，已降级文本视图：<br>"
+                f"<p style='color:{Thm.color('warn')}'>WebEngine 不可用，已降级文本视图：<br>"
                 f"<small>{self._web_err}</small></p>")
         splitter.addWidget(self.web)
         splitter.setStretchFactor(0, 0)
@@ -189,8 +190,9 @@ class TrendDialog(QDialog):
         root.addWidget(splitter, 1)
 
         self.web.setHtml(
-            "<div style='padding:40px;text-align:center;color:#656d76;"
-            "font-size:15px'>选择左侧物料查看跨月趋势…</div>")
+            "<div style='padding:40px;text-align:center;color:%s;"
+            "font-size:15px'>选择左侧物料查看跨月趋势…</div>"
+            % Thm.color("textMuted"))
 
     # ------------------------------------------------------------------ 数据
     def _reload_factories(self):

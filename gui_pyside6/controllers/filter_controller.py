@@ -7,6 +7,7 @@
 from typing import Callable, List, Optional, Dict, Any
 from PySide6.QtCore import QObject, QTimer
 import logging
+logger = logging.getLogger(__name__)
 import sys
 import os
 import datetime
@@ -226,6 +227,13 @@ class FilterController(QObject):
                     filters.append(FilterRule('偏差率', '<', -20.0))
                 elif range_text == "<-30%":
                     filters.append(FilterRule('偏差率', '<', -30.0))
+            elif key == "_net_dev_qty_range":
+                # 净偏差数量范围（min~max；None 端不约束）
+                lo, hi = value
+                if lo is not None:
+                    filters.append(FilterRule('净偏差数量', '>=', lo))
+                if hi is not None:
+                    filters.append(FilterRule('净偏差数量', '<=', hi))
             elif key == "_changed_only":
                 # 审核后变更标记
                 filters.append(FilterRule('_post_audit_changed', '=', 1))

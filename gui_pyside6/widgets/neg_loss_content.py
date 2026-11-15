@@ -7,7 +7,7 @@ DashboardShell 的常驻筛选条（5 个）与筛选抽屉（物料 / 数值 / 
 
 import re
 import pandas as pd
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QLineEdit, QCheckBox, QComboBox, QPushButton, QHeaderView, QAbstractItemView, QMenu, QFileDialog, QTableView, QInputDialog, QDialog, QDialogButtonBox
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QLineEdit, QCheckBox, QComboBox, QPushButton, QHeaderView, QAbstractItemView, QMenu, QFileDialog, QTableView, QInputDialog, QDialog, QDialogButtonBox, QDoubleSpinBox, QHBoxLayout
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_color_keys
@@ -67,6 +67,8 @@ class NegLossContent(QWidget):
         self._read_col = None
         self._unit_col = None
         self._hidden_filters = set()   # 数据缺列时要收起的条件 key
+        self._net_dev_qty_min = None   # 净偏差数量 下限（不限 = -1e9）
+        self._net_dev_qty_max = None   # 净偏差数量 上限（不限 = 1e9）
         self._build_ui()
 
     def _build_ui(self):
@@ -233,6 +235,32 @@ class NegLossContent(QWidget):
             self.color_checks[key] = cb
         self.color_bar = pack_row(list(self.color_checks.values()))
 
+        # 净偏差数量 数值范围筛选（min ~ max）；下限/上限「不限」由 specialValueText 表达
+        self._net_dev_qty_min = QDoubleSpinBox()
+        self._net_dev_qty_min.setRange(-1e9, 1e9)
+        self._net_dev_qty_min.setDecimals(2)
+        self._net_dev_qty_min.setSpecialValueText("不限")
+        self._net_dev_qty_min.setValue(-1e9)
+        self._net_dev_qty_min.setToolTip("净偏差数量 下限（不限 = 无下限）")
+        self._net_dev_qty_min.valueChanged.connect(self._apply_filter)
+
+        self._net_dev_qty_max = QDoubleSpinBox()
+        self._net_dev_qty_max.setRange(-1e9, 1e9)
+        self._net_dev_qty_max.setDecimals(2)
+        self._net_dev_qty_max.setSpecialValueText("不限")
+        self._net_dev_qty_max.setValue(1e9)
+        self._net_dev_qty_max.setToolTip("净偏差数量 上限（不限 = 无上限）")
+        self._net_dev_qty_max.valueChanged.connect(self._apply_filter)
+
+        _ndq_layout = QHBoxLayout()
+        _ndq_layout.setContentsMargins(0, 0, 0, 0)
+        _ndq_layout.setSpacing(4)
+        _ndq_layout.addWidget(self._net_dev_qty_min)
+        _ndq_layout.addWidget(QLabel("~"))
+        _ndq_layout.addWidget(self._net_dev_qty_max)
+        self._net_dev_qty_container = QWidget()
+        self._net_dev_qty_container.setLayout(_ndq_layout)
+
     def _build_action_widgets(self):
         """动作按钮同样只创建；外壳操作条摆放见 attach_shell。"""
         self.btn_add_quar = QPushButton("加入隔离区(选中行)")
@@ -259,6 +287,8 @@ class NegLossContent(QWidget):
             shell.add_filter(key, label, getattr(self, attr))
         for group, key, label, attr in self.DRAWER_FILTERS:
             shell.add_filter(key, label, getattr(self, attr), zone="drawer", group=group)
+        # 净偏差数量 数值范围筛选 → 数值维度抽屉
+        shell.add_filter('净偏差数量', '净偏差数量', self._net_dev_qty_container, zone="drawer", group="numeric")
         for key in sorted(self._hidden_filters):
             shell.set_filter_visible(key, False)
         for w in (self.btn_add_quar, self.btn_export, self.btn_refresh,
@@ -287,6 +317,8 @@ class NegLossContent(QWidget):
                 cb.setChecked(False)
             self._set_quar_filter("no")
             self._set_note_filter("all")
+            self._net_dev_qty_min.setValue(-1e9)
+            self._net_dev_qty_max.setValue(1e9)
         finally:
             self._initializing = False
         # 掩码读的是这些状态位而不是控件本身，控件回位后必须同步归零
@@ -325,6 +357,10 @@ class NegLossContent(QWidget):
             keys.append("quar")
         if self._has_note_filter != "all":
             keys.append("note")
+        if (self._net_dev_qty_min is not None and self._net_dev_qty_max is not None
+                and (self._net_dev_qty_min.value() > -1e9 + 0.001
+                     or self._net_dev_qty_max.value() < 1e9 - 0.001)):
+            keys.append("净偏差数量")
         return keys
 
     def _hide_filter(self, key, hidden=True):
@@ -513,6 +549,9 @@ class NegLossContent(QWidget):
         self._factory_filter = "all"
         self.combo_factory.setCurrentText("全部")
 
+        # 净偏差数量 缺列则收起该筛选（与其他条件一致）
+        self._hide_filter("净偏差数量", '净偏差数量' not in df.columns)
+
         self._unit_col = "单位" if "单位" in df.columns else None
         if self._unit_col:
             unique_vals = df["单位"].dropna().astype(str).str.strip().unique()
@@ -632,6 +671,21 @@ class NegLossContent(QWidget):
         mask = pd.Series(True, index=df.index)
         for _term in terms.values():
             mask &= _term
+        # 净偏差数量 数值范围筛选（min ~ max）；不限 = 不约束该边界
+        try:
+            col = '净偏差数量'
+            if col in df.columns:
+                mn = self._net_dev_qty_min.value(); mx = self._net_dev_qty_max.value()
+                lo = None if mn <= -1e9 + 0.001 else mn
+                hi = None if mx >= 1e9 - 0.001 else mx
+                series = pd.to_numeric(df[col], errors='coerce')
+                if lo is not None:
+                    mask &= (series >= lo)
+                if hi is not None:
+                    mask &= (series <= hi)
+        except Exception:
+            import traceback
+            traceback.print_exc()
         filtered = df[mask].copy().reset_index(drop=True)
         if hasattr(self, "col_filter_ctrl"):
             filtered = self.col_filter_ctrl.mask_dataframe(filtered)

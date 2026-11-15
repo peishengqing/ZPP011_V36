@@ -11,12 +11,14 @@
 import re
 import pandas as pd
 from PySide6.QtWidgets import (
-    QLineEdit, QGroupBox, QLabel, QVBoxLayout, QHBoxLayout, QComboBox
+    QLineEdit, QGroupBox, QLabel, QVBoxLayout, QHBoxLayout, QComboBox,
+    QDoubleSpinBox
 )
 from PySide6.QtCore import Qt
 
 from gui_pyside6.components.dashboard_shell import DashboardShell
 from gui_pyside6.models.data_frame_model import DataFrameModel
+from gui_pyside6.utils.table_sort import enable_click_sort
 from core.quarantine_manager import get_quarantined_ids
 from core.read_status import load_read_status
 from gui_pyside6.utils.semi_class import merge_semi_class_values, ensure_semi_class_column
@@ -232,6 +234,38 @@ class UnreadDashboard(DashboardShell):
         status_layout.addStretch()
         current_layout.addWidget(self.gp_status)
 
+        # ── 第四组：数值范围（净偏差数量 min~max）──
+        self.gp_net_dev_qty = QGroupBox("净偏差数量范围")
+        self.gp_net_dev_qty.setStyleSheet(
+            "QGroupBox { font-size: 12px; font-weight: 650; color: var(--text); "
+            "margin-top: 12px; padding: 10px; border: 1px solid var(--border); "
+            "border-radius: var(--r-md); background: var(--surface); } "
+            "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }"
+        )
+        ndq_layout = QHBoxLayout(self.gp_net_dev_qty)
+        ndq_layout.setSpacing(8)
+
+        ndq_layout.addWidget(QLabel("净偏差数量:"))
+        self._net_dev_qty_min = QDoubleSpinBox()
+        self._net_dev_qty_min.setRange(-1e9, 1e9)
+        self._net_dev_qty_min.setDecimals(2)
+        self._net_dev_qty_min.setSpecialValueText("不限")
+        self._net_dev_qty_min.setValue(-1e9)
+        self._net_dev_qty_min.valueChanged.connect(self._apply_filter)
+        ndq_layout.addWidget(self._net_dev_qty_min)
+
+        ndq_layout.addWidget(QLabel("~"))
+        self._net_dev_qty_max = QDoubleSpinBox()
+        self._net_dev_qty_max.setRange(-1e9, 1e9)
+        self._net_dev_qty_max.setDecimals(2)
+        self._net_dev_qty_max.setSpecialValueText("不限")
+        self._net_dev_qty_max.setValue(1e9)
+        self._net_dev_qty_max.valueChanged.connect(self._apply_filter)
+        ndq_layout.addWidget(self._net_dev_qty_max)
+
+        ndq_layout.addStretch()
+        current_layout.addWidget(self.gp_net_dev_qty)
+
     # ── 筛选控件回调 ──
     def _on_cat_changed(self, text):
         self._cat_filter = text
@@ -408,6 +442,11 @@ class UnreadDashboard(DashboardShell):
             # 不是 QTableWidget 的 cellClicked(row, col)，后者在 QTableView 上不存在。
             self.table_view.clicked.connect(self._on_table_cell_clicked)
             self.table_view.entered.connect(self._on_cell_hovered)
+            # 未读看板首次渲染：启用列头点击排序（Qt6 下 setSortingEnabled 内部连接不生效，
+            # 故用显式 sectionClicked → model.sort，与 utils/table_sort 口径一致；
+            # 模型被筛选替换后由 _apply_filter 调 reapply 恢复排序态）。
+            self._sort_ctrl = enable_click_sort(
+                self.table_view, lambda: getattr(self, "source_model", None), skip_cols=())
         self.set_row_count(len(df))
 
         # 设置 KPI
@@ -590,13 +629,62 @@ class UnreadDashboard(DashboardShell):
             & self._workshop_mask(df, self._workshop_filter)
             & self._unit_mask(df)
             & self._board_mask(df)
+            & self._net_dev_qty_mask(df)
         )
 
         df = df[mask]
 
         self.source_model.setDataFrame(df)
         self.set_row_count(len(df))
+        # 模型被筛选替换：恢复列头排序态（排序键存于模型，视图态由 reapply 重新施加），
+        # 避免用户点过的列排序在筛选后丢失。
+        if getattr(self, "_sort_ctrl", None) is not None:
+            try:
+                self._sort_ctrl.reapply()
+            except Exception:
+                import traceback
+                traceback.print_exc()
         self._refresh_cascade_combos()
+
+    # ── 净偏差数量范围筛选（min~max 双端不限）──
+    def _read_net_dev_qty_range(self):
+        """读两个 QDoubleSpinBox 的（下界, 上界），任一边为「不限」返回 None。
+
+        sentinel：min=-1e9 表示无下界；max=1e9 表示无上界（见 _build_unread_filters）。
+        """
+        if not hasattr(self, "_net_dev_qty_min"):
+            return (None, None)
+        mn = self._net_dev_qty_min.value()
+        mx = self._net_dev_qty_max.value()
+        lower = None if mn <= -1e9 + 0.001 else mn
+        upper = None if mx >= 1e9 - 0.001 else mx
+        return (lower, upper)
+
+    def _net_dev_qty_mask(self, df):
+        """净偏差数量数值范围筛选（>=下界 且 <=上界）。
+
+        - 缺「净偏差数量」列 → 全 True（无约束，兼容原始未分析数据）。
+        - 双端均「不限」 → 全 True（过滤器未生效）。
+        - 解析异常 → print_exc 后退回全 True，绝不拖累整体 apply。
+        """
+        col = "净偏差数量"
+        if col not in df.columns:
+            return pd.Series(True, index=df.index)
+        try:
+            lo, hi = self._read_net_dev_qty_range()
+            if lo is None and hi is None:
+                return pd.Series(True, index=df.index)
+            series = pd.to_numeric(df[col], errors="coerce")
+            m = pd.Series(True, index=df.index)
+            if lo is not None:
+                m &= (series >= lo)
+            if hi is not None:
+                m &= (series <= hi)
+            return m
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            return pd.Series(True, index=df.index)
 
     def _other_conditions_mask(self, df, exclude):
         """构造「除 exclude 维度外、所有其他筛选条件」的与掩码。"""

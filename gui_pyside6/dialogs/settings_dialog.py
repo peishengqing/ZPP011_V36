@@ -27,6 +27,8 @@ from PySide6.QtWidgets import (
 )
 
 from config.paths import get_data_dir, set_data_dir
+from gui_pyside6.components import dialog_chrome
+from utils.theme_manager import Thm
 
 
 class SettingsDialog(QDialog):
@@ -35,9 +37,8 @@ class SettingsDialog(QDialog):
     def __init__(self, owner=None):
         super().__init__(owner)
         self.owner = owner
-        self.setWindowTitle("系统设置")
+        dialog_chrome.apply(self, dialog_chrome.TIER_MEDIUM, "系统设置", "数据与路径")
         self.setModal(True)
-        self.setMinimumWidth(560)
         self._saved = False
         self._build_ui()
 
@@ -55,7 +56,7 @@ class SettingsDialog(QDialog):
             "SAP 导出原数据目录：文件夹监控、自动加载、以及“打开 Excel”都指向这里。"
             "换机器/换盘只改这一处，保存后即时生效，无需重启或重新打包。")
         tip.setWordWrap(True)
-        tip.setStyleSheet("color:#666;")
+        tip.setStyleSheet("color:%s;" % Thm.color("textMuted"))
         v.addWidget(tip)
 
         row = QHBoxLayout()
@@ -71,7 +72,7 @@ class SettingsDialog(QDialog):
 
         # 状态行：实时校验目录是否存在
         self.status_label = QLabel()
-        self.status_label.setStyleSheet("color:#666;")
+        self.status_label.setStyleSheet("color:%s;" % Thm.color("textMuted"))
         v.addWidget(self.status_label)
 
         self.dir_edit.textChanged.connect(self._refresh_status)
@@ -81,7 +82,7 @@ class SettingsDialog(QDialog):
 
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet("color:#ddd;")
+        line.setStyleSheet("color:%s;" % Thm.color("border"))
         v.addWidget(line)
 
         btn_row = QHBoxLayout()
@@ -107,13 +108,13 @@ class SettingsDialog(QDialog):
         d = self.dir_edit.text().strip()
         if not d:
             self.status_label.setText("⚠️ 目录不能为空")
-            self.status_label.setStyleSheet("color:#C00000;")
+            self.status_label.setStyleSheet("color:%s;" % Thm.color("danger"))
         elif not os.path.isdir(d):
             self.status_label.setText(f"⚠️ 目录尚不存在（保存后监控会提示找不到）：{d}")
-            self.status_label.setStyleSheet("color:#C00000;")
+            self.status_label.setStyleSheet("color:%s;" % Thm.color("danger"))
         else:
             self.status_label.setText(f"✅ 目录有效：{d}")
-            self.status_label.setStyleSheet("color:#008000;")
+            self.status_label.setStyleSheet("color:%s;" % Thm.color("ok"))
 
     def _on_save(self):
         d = self.dir_edit.text().strip()

@@ -763,6 +763,16 @@ class AuditProxyModel(QSortFilterProxyModel):
                     if sign == 'lt0' and dv >= -0.001:
                         return False
 
+                # 8b. 净偏差数量范围（min~max；缺约束 → 放行）
+                chk = plan.get('net_dev_qty_range')
+                if chk is not None:
+                    lo, hi, ndq_list = chk
+                    v = ndq_list[r]
+                    if lo is not None and v < lo - 0.0001:
+                        return False
+                    if hi is not None and v > hi + 0.0001:
+                        return False
+
                 # 9. 半成品重分类集合
                 chk = plan.get('semi_class')
                 if chk is not None:
@@ -1124,6 +1134,12 @@ class AuditProxyModel(QSortFilterProxyModel):
         # 10. 偏差数量符号（缺「偏差数量」列 → 原实现无约束）
         if '_dev_qty_sign' in cf and '偏差数量' in cols:
             plan['dev_qty_sign'] = (cf['_dev_qty_sign'], _safe_floats('偏差数量'))
+
+        # 11b. 净偏差数量范围（缺「净偏差数量」列 → 无约束）
+        if '_net_dev_qty_range' in cf:
+            lo, hi = cf['_net_dev_qty_range']
+            if '净偏差数量' in cols:
+                plan['net_dev_qty_range'] = (lo, hi, _safe_floats('净偏差数量'))
 
         # 11. 半成品重分类集合（缺列 → 原实现无约束；工厂缺列 → 原实现默认 ''）
         sset = cf.get('_semi_class_set')

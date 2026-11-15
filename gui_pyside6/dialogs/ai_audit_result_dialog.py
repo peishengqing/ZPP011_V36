@@ -6,12 +6,13 @@ AI审核跑完后的落地视图：把「审核结果」按行列出，可按类
 """
 import numpy as np
 import pandas as pd
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QComboBox, QLabel, QTableView,
     QPushButton, QHeaderView, QAbstractItemView,
 )
 
+from gui_pyside6.components import dialog_chrome
 from gui_pyside6.models.data_frame_model import DataFrameModel
 from gui_pyside6.utils.locate import locate_row
 from gui_pyside6.utils.row_number_gutter import enable_row_numbers
@@ -33,12 +34,9 @@ class AiAuditResultDialog(QDialog):
         self._cat = "全部"
         self._state = "全部"
         self._ensure_read_label()
-        self.setWindowTitle("AI审核结果")
-        self.resize(1120, 660)
-        # 看板形态：允许标题栏最大化/最小化（构造期、show 前改 flags，避免重建窗口）
-        self.setWindowFlags(self.windowFlags()
-                            | Qt.WindowMaximizeButtonHint
-                            | Qt.WindowMinimizeButtonHint)
+        # 看板形态：large 档自带最大化按钮（apply 在 show 前改 flags，避免重建窗口）
+        dialog_chrome.apply(self, dialog_chrome.TIER_LARGE,
+                           "AI审核结果", "明细 · 定位到主表")
         self._build_ui()
 
     def _ensure_read_label(self):

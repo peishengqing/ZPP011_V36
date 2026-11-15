@@ -1,8 +1,8 @@
 {
   "enabled": true,
-  "exclude_unfed": true,
-  "exclude_units": true,
-  "excluded_units": "G,个,张,罐",
+  "exclude_unfed": false,
+  "exclude_units": false,
+  "excluded_units": "",
   "rules": [
     {
       "name": "偏差数量=0",
@@ -89,6 +89,27 @@
           "type": "mat_code_prefix",
           "params": {
             "value": "410"
+          }
+        }
+      ]
+    },
+    {
+      "name": "原料小偏差",
+      "enabled": true,
+      "ignore_exclude_unfed": false,
+      "ignore_exclude_units": false,
+      "conditions": [
+        {
+          "type": "dev_qty_range",
+          "params": {
+            "min": -5.0,
+            "max": 5.0
+          }
+        },
+        {
+          "type": "mat_code_prefix",
+          "params": {
+            "value": "100"
           }
         }
       ]

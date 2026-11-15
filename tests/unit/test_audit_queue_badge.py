@@ -27,8 +27,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
 def _mw(df):
-    """挂上三个真方法的假 MainWindow（不需要 QApplication）。"""
+    """挂上真方法 + 真控制器的假 MainWindow（不需要 QApplication）。
+
+    _unread_audit_* 已随 God 对象拆分迁到 DashboardController，MainWindow 只剩薄壳
+    转发；假对象也得把 dashboard_controller 装上，跟真 __init__（line 328）对齐，
+    否则薄壳转发时 _Sigs 没有 dashboard_controller 直接 AttributeError。
+    """
     from gui_pyside6.main_window import MainWindow
+    from gui_pyside6.controllers.dashboard_controller import DashboardController
 
     class _Sigs:
         _unread_audit_masks = MainWindow._unread_audit_masks
@@ -41,6 +47,7 @@ def _mw(df):
     for name in ("_open_quarantine_dialog", "_show_audit_changes_dialog",
                  "_show_alert_dashboard", "_show_deviation_warning_dialog"):
         setattr(fake, name, lambda: None)
+    fake.dashboard_controller = DashboardController(fake)
     return fake
 
 

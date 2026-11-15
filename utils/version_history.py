@@ -14,6 +14,19 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.377",
+            "date": "2026-11-15",
+            "fixes": (
+                "看板筛选与自动已读规则完善：\n"
+                "①自动已读规则「原料小偏差」不再生效修复：规则 dev_qty_range 原 min==max=-5.0，开区间 "
+                "(-5,-5) 为空集、条件恒不匹配，规则永不命中 → 改为 min=-5.0 / max=5.0（开区间 (-5,5)），恢复生效。\n"
+                "②主表「净偏差数量」min~max 区间筛选改可折叠抽屉：QFormLayout 宽行 → QGroupBox 抽屉，收起时仅隐藏区间控件行、"
+                "保留切换钮与标题、不占面板宽度；补缺失的抽屉展开/收起切换方法，避免运行时 AttributeError。\n"
+                "③未读看板新增列头点击排序：Qt6 下 setSortingEnabled 内部 sectionClicked 连接失效，改用 utils/table_sort 的 "
+                "HeaderSortController 显式连接；模型被筛选替换后由 _apply_filter 调 reapply() 恢复用户排序态（筛选后不丢排序）。"
+            ),
+        },
+        {
             "version": "v43.376",
             "date": "2026-11-15",
             "fixes": (

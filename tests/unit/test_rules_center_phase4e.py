@@ -276,13 +276,19 @@ class _FakeMonitor:
 
 
 class _FakeMW:
-    """只借 ``MainWindow._apply_thresholds`` 这一个方法，不起真窗口。"""
+    """只借 ``MainWindow._apply_thresholds`` 这一个方法，不起真窗口。
+
+    _apply_thresholds 已随 God 对象拆分迁到 ThresholdController（MainWindow 只剩薄壳
+    转发，line 3011），假对象装上同款控制器，转发才不至于 AttributeError。
+    """
 
     def __init__(self):
+        from gui_pyside6.controllers.threshold_controller import ThresholdController
         self.alert_monitor = _FakeMonitor()
         self.proxy_model = _FakeProxy()
         self.source_model = _FakeSource()
         self.view_refreshed = 0
+        self.threshold_controller = ThresholdController(self)
 
     def _on_view_model_data_changed(self):
         self.view_refreshed += 1

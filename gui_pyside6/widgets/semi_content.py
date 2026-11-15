@@ -23,9 +23,9 @@ import pandas as pd
 
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QGridLayout, QTableView, QHeaderView,
+    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QLineEdit,
-    QCheckBox, QDialogButtonBox, QComboBox, QGroupBox, QWidget,
+    QCheckBox, QDialogButtonBox, QComboBox, QGroupBox, QWidget, QDoubleSpinBox,
 )
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QShortcut, QKeySequence
@@ -179,7 +179,8 @@ class SemiContent(QWidget):
                       ("material", "semi_class", "半成品分类", "grp_semi_class"),
                       ("material", "color", "颜色标记", "color_bar"),
                       ("org", "quar", "隔离区", "quar_bar"),
-                      ("org", "note", "备注", "note_bar"))
+                      ("org", "note", "备注", "note_bar"),
+                      ("numeric", "净偏差数量", "净偏差数量", "net_dev_qty_widget"))
 
     def _build_filter_widgets(self):
         """创建筛选控件与联动，但不进任何布局 —— 布局由 attach_shell 交给外壳。"""
@@ -278,6 +279,30 @@ class SemiContent(QWidget):
             self.color_checks[key] = cb
         self.color_bar = pack_row(list(self.color_checks.values()))
 
+        # ---- 净偏差数量 数值范围筛选（min~max，不限=±1e9 哨兵）----
+        # 镜像 unread_dashboard / quarantine_dialog 的「净偏差数量」范围控件口径。
+        self.net_dev_qty_min_spin = QDoubleSpinBox()
+        self.net_dev_qty_min_spin.setRange(-1e9, 1e9)
+        self.net_dev_qty_min_spin.setDecimals(2)
+        self.net_dev_qty_min_spin.setSpecialValueText("不限")
+        self.net_dev_qty_min_spin.setValue(-1e9)
+        self.net_dev_qty_min_spin.valueChanged.connect(self._apply_filter)
+        self.net_dev_qty_max_spin = QDoubleSpinBox()
+        self.net_dev_qty_max_spin.setRange(-1e9, 1e9)
+        self.net_dev_qty_max_spin.setDecimals(2)
+        self.net_dev_qty_max_spin.setSpecialValueText("不限")
+        self.net_dev_qty_max_spin.setValue(1e9)
+        self.net_dev_qty_max_spin.valueChanged.connect(self._apply_filter)
+        _net_qty_layout = QHBoxLayout()
+        _net_qty_layout.setContentsMargins(0, 0, 0, 0)
+        _net_qty_layout.setSpacing(4)
+        _net_qty_layout.addWidget(QLabel("净偏差数量:"))
+        _net_qty_layout.addWidget(self.net_dev_qty_min_spin)
+        _net_qty_layout.addWidget(QLabel("~"))
+        _net_qty_layout.addWidget(self.net_dev_qty_max_spin)
+        self.net_dev_qty_widget = QWidget()
+        self.net_dev_qty_widget.setLayout(_net_qty_layout)
+
         # ---- B.2 环比角标（v43.301）：随 set_data 刷新，挂外壳操作条 ----
         self._mom_label = QLabel()
 
@@ -335,6 +360,9 @@ class SemiContent(QWidget):
             self._set_quar_filter("no")
             self._set_note_filter("all")
             self.combo_read.setCurrentText("未读")
+            # 净偏差数量范围退回「不限」哨兵
+            self.net_dev_qty_min_spin.setValue(-1e9)
+            self.net_dev_qty_max_spin.setValue(1e9)
         finally:
             self._initializing = False
         # 掩码读的是这些状态位而不是控件本身，控件回位后必须同步归零
@@ -374,7 +402,41 @@ class SemiContent(QWidget):
             keys.append("quar")
         if self._has_note_filter != "all":
             keys.append("note")
+        # 净偏差数量范围：任一边非「不限」即视为已收紧
+        _nq_mn = self.net_dev_qty_min_spin.value()
+        _nq_mx = self.net_dev_qty_max_spin.value()
+        if not (_nq_mn <= -1e9 + 0.001 and _nq_mx >= 1e9 - 0.001):
+            keys.append("净偏差数量")
         return keys
+
+    def _net_dev_qty_mask(self, df):
+        """净偏差数量数值范围筛选（>=下界 且 <=上界），镜像 unread_dashboard 口径。
+
+        - 缺「净偏差数量」列 → 全 True（无约束，兼容原始未分析数据）。
+        - 双端均「不限」 → 全 True（过滤器未生效）。
+        - 解析异常 → print_exc 后退回全 True，绝不拖累整体 apply。
+        """
+        col = "净偏差数量"
+        if col not in df.columns:
+            return pd.Series(True, index=df.index)
+        try:
+            mn = self.net_dev_qty_min_spin.value()
+            mx = self.net_dev_qty_max_spin.value()
+            lo = None if mn <= -1e9 + 0.001 else mn
+            hi = None if mx >= 1e9 - 0.001 else mx
+            if lo is None and hi is None:
+                return pd.Series(True, index=df.index)
+            series = pd.to_numeric(df[col], errors="coerce")
+            m = pd.Series(True, index=df.index)
+            if lo is not None:
+                m &= (series >= lo)
+            if hi is not None:
+                m &= (series <= hi)
+            return m
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            return pd.Series(True, index=df.index)
 
     def _hide_filter(self, key, hidden=True):
         """登记某条件要收起。
@@ -1093,6 +1155,7 @@ class SemiContent(QWidget):
             "note": self._note_mask(df, self._has_note_filter),
             "color": self._color_mask(df),
             "read": self._read_mask(df, self._read_filter),
+            "净偏差数量": self._net_dev_qty_mask(df),
         }
         mask = pd.Series(True, index=df.index)
         for _term in terms.values():

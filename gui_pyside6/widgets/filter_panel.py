@@ -72,6 +72,9 @@ class FilterPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._expanded = True
+        # 净偏差数量区间筛选的可折叠抽屉（收起时仅隐藏区间控件行，保留切换钮与标题）
+        self._ndq_expanded = True
+        self._ndq_range_widget = None
         self._data_min_date = None
         self._data_max_date = None
         self.setMaximumWidth(440)
@@ -284,6 +287,50 @@ class FilterPanel(QWidget):
         self.dev_qty_combo = QComboBox()
         self.dev_qty_combo.addItems(["全部", "大于0", "等于0", "小于0"])
         dev_layout.addRow("偏差数量:", self.dev_qty_combo)
+        # 净偏差数量范围（min~max 数值区间；两端默认「不限」=无约束）
+        # v43.380：形态改为可折叠抽屉——收起时仅隐藏区间控件行、保留切换钮与标题，
+        # 不再横向占满面板宽度（应对用户「筛选太宽」诉求）。取值口径与 get_filters() 完全一致。
+        self.net_dev_qty_min_spin = QDoubleSpinBox()
+        self.net_dev_qty_min_spin.setRange(-1e9, 1e9)
+        self.net_dev_qty_min_spin.setDecimals(2)
+        self.net_dev_qty_min_spin.setSpecialValueText("不限")
+        self.net_dev_qty_min_spin.setValue(-1e9)
+        self.net_dev_qty_max_spin = QDoubleSpinBox()
+        self.net_dev_qty_max_spin.setRange(-1e9, 1e9)
+        self.net_dev_qty_max_spin.setDecimals(2)
+        self.net_dev_qty_max_spin.setSpecialValueText("不限")
+        self.net_dev_qty_max_spin.setValue(1e9)
+        _ndq_label = QLabel("净偏差数量范围（min ~ max，留空一端 = 不限）")
+        _ndq_label.setWordWrap(True)
+        _ndq_range_widget = QWidget()
+        _ndq_range_layout = QHBoxLayout(_ndq_range_widget)
+        _ndq_range_layout.setContentsMargins(0, 0, 0, 0)
+        _ndq_range_layout.setSpacing(4)
+        _ndq_range_layout.addWidget(self.net_dev_qty_min_spin)
+        _ndq_range_layout.addWidget(QLabel("~"))
+        _ndq_range_layout.addWidget(self.net_dev_qty_max_spin)
+        _ndq_toggle_btn = QPushButton("▸")
+        _ndq_toggle_btn.setFixedSize(24, 24)
+        _ndq_toggle_btn.setToolTip("展开 / 收起「净偏差数量」筛选范围")
+        _ndq_toggle_btn.clicked.connect(self._toggle_net_dev_qty_drawer)
+        _ndq_drawer = QGroupBox("净偏差数量")
+        _ndq_drawer.setStyleSheet(
+            "QGroupBox { font-size: 12px; font-weight: 650; color: var(--color-text, #1f2329); "
+            "padding: 10px; border: 1px solid var(--color-border, #dcdfe6); "
+            "border-radius: var(--r-md, 8px); background: var(--color-surface, #ffffff); } "
+            "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }")
+        _ndq_layout = QVBoxLayout(_ndq_drawer)
+        _ndq_layout.setContentsMargins(6, 6, 6, 6)
+        _ndq_layout.setSpacing(6)
+        _ndq_hdr = QHBoxLayout()
+        _ndq_hdr.setContentsMargins(0, 0, 0, 0)
+        _ndq_hdr.setSpacing(6)
+        _ndq_hdr.addWidget(_ndq_toggle_btn)
+        _ndq_hdr.addWidget(_ndq_label)
+        _ndq_hdr.addStretch()
+        _ndq_layout.addLayout(_ndq_hdr)
+        _ndq_layout.addWidget(_ndq_range_widget)  # 可折叠：收起时隐藏本行，切换钮与标题始终可见
+        content_layout.addWidget(_ndq_drawer)
         # 替代料/非耗用筛查：纯数值检测（实际=0 且 定额>0），与已有"是否替代料"列无关
         self.substitute_combo = QComboBox()
         self.substitute_combo.addItems(["全部", "疑似替代料（实际0·定额>0）"])
@@ -842,6 +889,14 @@ class FilterPanel(QWidget):
             self.setMaximumWidth(32)
             self.content_widget.setVisible(False)
             self.collapse_btn.setText("▶")
+
+    def _toggle_net_dev_qty_drawer(self):
+        """展开 / 收起「净偏差数量」区间筛选抽屉。
+
+        收起时仅隐藏区间控件行（保留切换钮与标题），避免占用面板宽度。
+        """
+        self._ndq_expanded = not self._ndq_expanded
+        self._ndq_range_widget.setVisible(self._ndq_expanded)
     # ------------------------------------------------------------------ #
     # 公共属性（兼容旧代码）
     # ------------------------------------------------------------------ #
@@ -1256,6 +1311,14 @@ class FilterPanel(QWidget):
             filters['_dev_qty_sign'] = 'eq0'
         elif dev_qty_sel == "小于0":
             filters['_dev_qty_sign'] = 'lt0'
+        # 净偏差数量范围（min~max；两端「不限」=无约束）
+        _ndq_min = self.net_dev_qty_min_spin.value()
+        _ndq_max = self.net_dev_qty_max_spin.value()
+        if _ndq_min > -1e9 + 0.001 or _ndq_max < 1e9 - 0.001:
+            filters['_net_dev_qty_range'] = (
+                None if _ndq_min <= -1e9 + 0.001 else _ndq_min,
+                None if _ndq_max >= 1e9 - 0.001 else _ndq_max,
+            )
         # 替代料筛查（纯数值：实际=0 且 定额>0）
         if self.substitute_combo.currentText() != "全部":
             filters['_substitute_only'] = True

@@ -5,7 +5,7 @@
 import re
 import pandas as pd
 from PySide6.QtWidgets import (
-    QLineEdit, QGroupBox, QLabel, QVBoxLayout, QHBoxLayout, QComboBox, QCheckBox
+    QLineEdit, QGroupBox, QLabel, QVBoxLayout, QHBoxLayout, QComboBox, QCheckBox, QDoubleSpinBox
 )
 
 from gui_pyside6.components.dashboard_shell import DashboardShell
@@ -211,6 +211,37 @@ class NegLossDashboard(DashboardShell):
 
         unit_status_layout.addStretch()
         current_layout.addWidget(self.gp_unit_status)
+
+        # 第四组：数值维度（净偏差数量 数值范围筛选 min ~ max）
+        self.gp_numeric = QGroupBox("数值维度")
+        self.gp_numeric.setStyleSheet(
+            "QGroupBox { font-size: 12px; font-weight: 650; color: var(--text); "
+            "margin-top: 12px; padding: 10px; border: 1px solid var(--border); "
+            "border-radius: var(--r-md); background: var(--surface); } "
+            "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }"
+        )
+        numeric_layout = QHBoxLayout(self.gp_numeric)
+        numeric_layout.setSpacing(8)
+        numeric_layout.addWidget(QLabel("净偏差数量:"))
+        self._net_dev_qty_min = QDoubleSpinBox()
+        self._net_dev_qty_min.setRange(-1e9, 1e9)
+        self._net_dev_qty_min.setDecimals(2)
+        self._net_dev_qty_min.setSpecialValueText("不限")
+        self._net_dev_qty_min.setValue(-1e9)
+        self._net_dev_qty_min.setToolTip("净偏差数量 下限（不限 = 无下限）")
+        self._net_dev_qty_min.valueChanged.connect(self._apply_filter)
+        numeric_layout.addWidget(self._net_dev_qty_min)
+        numeric_layout.addWidget(QLabel("~"))
+        self._net_dev_qty_max = QDoubleSpinBox()
+        self._net_dev_qty_max.setRange(-1e9, 1e9)
+        self._net_dev_qty_max.setDecimals(2)
+        self._net_dev_qty_max.setSpecialValueText("不限")
+        self._net_dev_qty_max.setValue(1e9)
+        self._net_dev_qty_max.setToolTip("净偏差数量 上限（不限 = 无上限）")
+        self._net_dev_qty_max.valueChanged.connect(self._apply_filter)
+        numeric_layout.addWidget(self._net_dev_qty_max)
+        numeric_layout.addStretch()
+        current_layout.addWidget(self.gp_numeric)
 
     def _on_keywords_changed(self, text):
         self._keywords = text
@@ -522,6 +553,22 @@ class NegLossDashboard(DashboardShell):
             & self._unit_mask(df)
         )
 
+        # 净偏差数量 数值范围筛选（min ~ max）；不限 = 不约束该边界
+        try:
+            col = '净偏差数量'
+            if col in df.columns:
+                mn = self._net_dev_qty_min.value(); mx = self._net_dev_qty_max.value()
+                lo = None if mn <= -1e9 + 0.001 else mn
+                hi = None if mx >= 1e9 - 0.001 else mx
+                series = pd.to_numeric(df[col], errors='coerce')
+                if lo is not None:
+                    mask &= (series >= lo)
+                if hi is not None:
+                    mask &= (series <= hi)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
         df = df[mask]
 
         self.source_model.setDataFrame(df)
@@ -543,6 +590,17 @@ class NegLossDashboard(DashboardShell):
             mask &= self._workshop_mask(df, self._workshop_filter)
         if exclude != 'unit':
             mask &= self._unit_mask(df)
+        # 净偏差数量 范围同样纳入级联（与 _apply_filter 一致；缺列则全 True）
+        col = '净偏差数量'
+        if col in df.columns:
+            mn = self._net_dev_qty_min.value(); mx = self._net_dev_qty_max.value()
+            lo = None if mn <= -1e9 + 0.001 else mn
+            hi = None if mx >= 1e9 - 0.001 else mx
+            series = pd.to_numeric(df[col], errors='coerce')
+            if lo is not None:
+                mask &= (series >= lo)
+            if hi is not None:
+                mask &= (series <= hi)
         return mask
 
     def _refresh_cascade_combos(self, changed='all'):

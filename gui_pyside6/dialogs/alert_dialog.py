@@ -6,7 +6,7 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QCheckBox,
-    QGroupBox, QWidget, QTableWidget, QTableWidgetItem,
+    QGroupBox, QWidget, QTableWidget, QTableWidgetItem, QDoubleSpinBox,
 )
 from PySide6.QtCore import Qt, QPoint
 import pandas as pd
@@ -180,6 +180,29 @@ class AlertDialog(QDialog):
         semi_class_row.addStretch()
         _fe.addLayout(semi_class_row)
 
+        # ---- 净偏差数量范围筛选（min~max，双端「不限」）----
+        ndq_row = QHBoxLayout()
+        ndq_row.addWidget(QLabel("净偏差数量:"))
+        self._net_dev_qty_min = QDoubleSpinBox()
+        self._net_dev_qty_min.setRange(-1e9, 1e9)
+        self._net_dev_qty_min.setDecimals(2)
+        self._net_dev_qty_min.setSpecialValueText("不限")
+        self._net_dev_qty_min.setValue(-1e9)
+        self._net_dev_qty_min.valueChanged.connect(self._apply_filter)
+        ndq_row.addWidget(self._net_dev_qty_min)
+
+        ndq_row.addWidget(QLabel("~"))
+        self._net_dev_qty_max = QDoubleSpinBox()
+        self._net_dev_qty_max.setRange(-1e9, 1e9)
+        self._net_dev_qty_max.setDecimals(2)
+        self._net_dev_qty_max.setSpecialValueText("不限")
+        self._net_dev_qty_max.setValue(1e9)
+        self._net_dev_qty_max.valueChanged.connect(self._apply_filter)
+        ndq_row.addWidget(self._net_dev_qty_max)
+
+        ndq_row.addStretch()
+        _fe.addLayout(ndq_row)
+
         layout.addWidget(self._filter_extra)
 
         # ---- 表格 ----
@@ -326,6 +349,9 @@ class AlertDialog(QDialog):
 
         # 半成品重分类筛选（与已读状态 AND）
         filtered = filtered[self._semi_class_mask(filtered)]
+
+        # 净偏差数量范围筛选（缺列则无约束，与已读状态 AND）
+        filtered = filtered[self._net_dev_qty_mask(filtered)]
 
         filtered = filtered.reset_index(drop=True)
         # 叠加 Excel 式列头取值过滤（就地过滤，视图行号不变，选中/双击/导出零回归）
@@ -479,6 +505,46 @@ class AlertDialog(QDialog):
             else:
                 mask = mask | (vals == m)
         return mask
+
+    # ── 净偏差数量范围筛选（min~max 双端不限）──
+    def _read_net_dev_qty_range(self):
+        """读两个 QDoubleSpinBox 的（下界, 上界），任一边为「不限」返回 None。
+
+        sentinel：min=-1e9 表示无下界；max=1e9 表示无上界（见 _filter_extra 构建）。
+        """
+        if not hasattr(self, "_net_dev_qty_min"):
+            return (None, None)
+        mn = self._net_dev_qty_min.value()
+        mx = self._net_dev_qty_max.value()
+        lower = None if mn <= -1e9 + 0.001 else mn
+        upper = None if mx >= 1e9 - 0.001 else mx
+        return (lower, upper)
+
+    def _net_dev_qty_mask(self, df):
+        """净偏差数量数值范围筛选（>=下界 且 <=上界）。
+
+        - 缺「净偏差数量」列 → 全 True（无约束，兼容原始未分析数据）。
+        - 双端均「不限」 → 全 True（过滤器未生效）。
+        - 解析异常 → print_exc 后退回全 True，绝不拖累整体 apply。
+        """
+        col = "净偏差数量"
+        if col not in df.columns:
+            return pd.Series(True, index=df.index)
+        try:
+            lo, hi = self._read_net_dev_qty_range()
+            if lo is None and hi is None:
+                return pd.Series(True, index=df.index)
+            series = pd.to_numeric(df[col], errors="coerce")
+            m = pd.Series(True, index=df.index)
+            if lo is not None:
+                m &= (series >= lo)
+            if hi is not None:
+                m &= (series <= hi)
+            return m
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            return pd.Series(True, index=df.index)
 
     def _build_semi_checkboxes(self, unique_vals):
         """构建半成品分类复选框组：全部 + **当前数据真有行的**分类。

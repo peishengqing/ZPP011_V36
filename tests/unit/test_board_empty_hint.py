@@ -162,19 +162,20 @@ class TestFlipBoardHint:
         d.deleteLater()
 
     def test_filtered_to_zero_explains_the_controls(self, board):
-        board.cmb_factory.setCurrentText("饮料厂")
-        board.cmb_verdict.setCurrentText("疑似漏记")   # 饮料厂那一单是守恒 → 筛空
-        assert board.table.rowCount() == 0
-        text = _hint(board.table)
-        assert "原始 2 条" in text                      # 结论页：一共 2 单
-        assert "结论 / 工厂 / 车间" in text
+        # 工厂不再是筛选器（是页签），只剩「结论 / 车间」两把筛。食品两单都不是
+        # 待人工确认 → 筛空，中央提示得说清是哪两把筛把行藏了，不能留白。
+        board.cmb_verdict.setCurrentText("待人工确认")
+        assert board.food_table.rowCount() == 0
+        text = _hint(board.food_table)
+        assert "原始 2 条" in text                      # 结论页：食品一共 2 单
+        assert "结论 / 车间" in text
         # 明细页同样为空，也不能留白；总数按自己那页的口径报（4 行组件）
-        detail = _hint(board.table_detail)
+        detail = _hint(board.food_table_detail)
         assert "原始 4 条" in detail and detail.endswith(text.split("\n")[1])
 
     def test_hint_clears_when_rows_return(self, board):
         """筛回有行 → 提示必须撤掉，不能留在表体上挡数据。"""
         board.cmb_verdict.setCurrentText("疑似漏记")
-        assert board.table.rowCount() == 1 and _hint(board.table) == ""
+        assert board.food_table.rowCount() == 1 and _hint(board.food_table) == ""
         board.cmb_verdict.setCurrentText("全部")
-        assert _hint(board.table) == ""
+        assert _hint(board.food_table) == ""
