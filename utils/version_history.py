@@ -14,6 +14,17 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.375",
+            "date": "2026-11-15",
+            "fixes": (
+                "未读看板致命 bug 修复：打开即崩溃「'QTableView' object has no attribute 'cellClicked'」。\n"
+                "根因：外壳代建的是 QTableView，点击信号是 clicked(QModelIndex)（继承自 QAbstractItemView），"
+                "而 cellClicked(row,col) 是 QTableWidget 专属信号，QTableView 上不存在。\n"
+                "修复：连接改用 table_view.clicked，处理函数 _on_table_cell_clicked 改为接收 QModelIndex 后取 "
+                "row()/column()；entered(QModelIndex) 本就正确无需改。"
+            ),
+        },
+        {
             "version": "v43.374",
             "date": "2026-11-15",
             "features": (

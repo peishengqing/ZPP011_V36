@@ -404,7 +404,9 @@ class UnreadDashboard(DashboardShell):
         # 归属看板列：可点击下钻对应看板 + 悬停提示
         if self.table_view is not None:
             self.table_view.setMouseTracking(True)
-            self.table_view.cellClicked.connect(self._on_table_cell_clicked)
+            # 注意：外壳代建的是 QTableView，点击信号是 clicked(QModelIndex)，
+            # 不是 QTableWidget 的 cellClicked(row, col)，后者在 QTableView 上不存在。
+            self.table_view.clicked.connect(self._on_table_cell_clicked)
             self.table_view.entered.connect(self._on_cell_hovered)
         self.set_row_count(len(df))
 
@@ -903,10 +905,18 @@ class UnreadDashboard(DashboardShell):
         "半成品": "_show_semi_dashboard",
     }
 
-    def _on_table_cell_clicked(self, row, col):
-        """点击「归属看板」列单元格 → 解析标签并下钻对应看板（非模态多开，不关闭本看板）。"""
+    def _on_table_cell_clicked(self, index):
+        """点击「归属看板」列单元格 → 解析标签并下钻对应看板（非模态多开，不关闭本看板）。
+
+        QTableView 的 clicked 信号发出 QModelIndex（非 QTableWidget 的 (row,col)），
+        故从 index 取行号列号。
+        """
         sm = self.source_model
-        if sm is None or col < 0 or col >= len(sm._display_columns):
+        if sm is None:
+            return
+        row = index.row()
+        col = index.column()
+        if col < 0 or col >= len(sm._display_columns):
             return
         if sm._display_columns[col] != "归属看板":
             return
