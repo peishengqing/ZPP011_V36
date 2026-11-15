@@ -162,6 +162,7 @@ class LayoutComposer:
         # 为看板按钮添加下拉菜单
         mw.action_btn_boards.setPopupMode(QToolButton.MenuButtonPopup)
         boards_menu = QMenu(mw)
+        _icon_action(boards_menu, "eye", "未读看板", lambda: mw._show_unread_dashboard())
         _icon_action(boards_menu, "bell", "替代料看板", lambda: mw._show_alert_dashboard())
         _icon_action(boards_menu, "alert", "偏差率预警", lambda: mw._show_deviation_warning_dialog())
         _icon_action(boards_menu, "trending-down", "负损看板", lambda: mw._show_neg_loss_dashboard())

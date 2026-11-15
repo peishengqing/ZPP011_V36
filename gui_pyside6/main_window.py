@@ -3355,6 +3355,9 @@ class MainWindow(QMainWindow):
     def _show_neg_loss_dashboard(self):
         return self.dashboard_controller._show_neg_loss_dashboard()
 
+    def _show_unread_dashboard(self):
+        return self.dashboard_controller._show_unread_dashboard()
+
     def _show_pos_loss_dashboard(self):
         return self.dashboard_controller._show_pos_loss_dashboard()
 

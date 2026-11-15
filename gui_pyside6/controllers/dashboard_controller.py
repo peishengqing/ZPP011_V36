@@ -313,6 +313,43 @@ class DashboardController:
             QMessageBox.critical(self.mw, "错误", f"打开负损看板失败: {e}")
 
 
+    def _show_unread_dashboard(self):
+        """未读看板（v43.373）：聚合 4 类未读（隔离区/变动提醒/替代料/偏差率预警）+ 丰富筛选。
+
+        与未读概览弹窗、审核队列徽标同一取数口径（_unread_audit_masks），
+        数据源走 mw._get_master_df()，避免看板数 ≠ 弹窗数。
+        """
+        try:
+            df = self.mw._get_master_df()
+            if df is None or df.empty:
+                QMessageBox.information(self.mw, "提示", "暂无数据，请先分析")
+                return
+
+            # 列白名单与负损看板一致（未读看板只是换了一套筛选维度，底层数据同源）
+            candidates = [
+                "订单日期", "订单类型", "流程订单", "物料编码", "物料名称", "物料描述",
+                "工厂", "工厂名称",
+                "车间", "组件物料类型", "组件物料类型描述", "单位",
+                "数量-定额", "定额", "数量-实际", "实际", "偏差数量", "偏差率(%)",
+                "偏差金额", "净偏差数量", "净偏差金额", "是否替代料",
+                "备注", "备注原因", "备注来源", "半成品重分类", "data_id", "_read",
+                "_post_audit_changed", "_quarantined",
+            ]
+            keep = [c for c in candidates if c in df.columns]
+            sub = df[keep].copy() if keep else df.copy()
+            if "半成品重分类" not in sub.columns:
+                sub["半成品重分类"] = ""
+
+            # 非模态多开（与负损/正损/半成品一致，可同时对照）
+            from gui_pyside6.shells.unread_dashboard import UnreadDashboard
+            shell = UnreadDashboard(sub, self.mw)
+            self._present_board(
+                "unread",
+                "未读看板 - ZPP011 %s" % VERSION_HISTORY[0]['version'],
+                shell, size=(1400, 820))
+        except Exception as e:
+            QMessageBox.critical(self.mw, "错误", f"打开未读看板失败: {e}")
+
     def _show_pos_loss_dashboard(self):
         """手动打开正损(超投)看板：名称含关键词 且 实际>定额 且 定额>0（v43.178）。
 
