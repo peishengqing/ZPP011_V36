@@ -24,12 +24,17 @@ from PySide6.QtWidgets import (
     QTabWidget, QVBoxLayout,
 )
 
-# 复用导出表的守恒逻辑（单一口径来源）
+# 复用导出表的守恒逻辑（单一口径来源）：食品走 KG 守恒（_check_order/_food_kg_of/
+# parse_net_kg），饮料走总容器数守恒（check_drink_order/_drink_container_of/
+# parse_pack），路由统一走 split_by_factory 分厂 —— 与导出的四张 sheet 完全同源，
+# 看板绝不自己再写一套判别，否则跟导出对不上（历史事故 v43.183 / v43.323 / v43.324）。
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from analysis.excel_builder.analysis_extra_flip import (
-    _check_order, _food_kg_of, parse_net_kg)
+    _check_order, _drink_container_of, _food_kg_of, check_drink_order,
+    parse_net_kg, parse_pack, split_by_factory)
 from gui_pyside6.utils.board_empty_hint import NO_DATA_TEXT, set_empty_hint
 from gui_pyside6.utils.row_number_gutter import enable_row_numbers
+from utils.theme_manager import Thm
 
 # 看板统一美化（v43.299 方案C）
 try:
@@ -42,22 +47,42 @@ _RED = QColor(255, 205, 210)
 # 守恒/正常行底色（浅绿）
 _GREEN = QColor(220, 245, 225)
 
-# 表头（与导出「翻箱守恒预警」sheet 对齐）
-# ⚠️ v43.323 新列一律追加在**表尾**：_refresh_table 里数值列 5~12、结论列 13
-# 都是行号索引，插在中间会让这些索引整体失效（历史坑：换列必查索引）。
+# 表头（与导出四张 sheet 一一对齐）
+# ⚠️ 新列一律追加在**表尾**：_fill_* 里数值列/结论列是行号索引，插在中间会让
+# 这些索引整体失效（历史坑：换列必查索引）。
+#
+# 食品结论页（导出「翻箱守恒预警」）：按净含量 KG 守恒。
 _HEADERS = ['订单日期', '流程订单', '工厂', '车间', '产品物料描述',
             '产量(件)', '单件净含量(KG)', '产出总净含量(KG)',
             '投入成品件折KG', '投入散货食物KG', '投入食物合计KG',
             '差额KG(产出-投入)', '偏差率', '结论', '备注',
             '产品物料编码', '组件物料编码', '组件物料名称']
+# 饮料结论页（导出「饮料翻箱守恒」）：按总容器数守恒，指标列与食品不同（容器数而非KG）。
+_DRINK_HEADERS = ['订单日期', '流程订单', '工厂', '车间', '产品物料编码',
+                  '产品物料描述', '产量(件)', '容器形式', '净含量单位',
+                  '单件容器数', '单容器净含量', '产出总容器数', '投入总容器数',
+                  '差额容器数', '偏差率', '结论', '备注']
 
 # 组件明细页表头：与导出「翻箱组件明细」sheet 同源（analysis_extra_flip._build_flip_detail），
 # 末尾多挂一列「结论」，让明细行带着所属单的守恒结论——筛出疑似漏记单时，
 # 底下这些行才是真正要核对的那批组件。
+# v43.368：明细页原来只有「实际/计入KG/结论」，看不到订单级的产量/单件净含量(定额)/
+# 产出总净含量/投入合计/差额，用户反映「看不出到底守不守恒」。把结论页那几个守恒
+# 数值列追加到明细页尾，每行组件自带所属单的守恒数字，不用切回结论页对照。
+# ⚠️ 新列只许追加在**表尾**：_fill_detail 里 11/13/12 是行号索引，插中间会整体失效。
 _DETAIL_HEADERS = ['订单日期', '流程订单', '工厂', '车间',
                    '产品物料编码', '产品物料描述',
                    '组件物料编码', '组件物料名称', '组件物料类型', '组件物料类型描述',
-                   '单位', '实际', '是否计入食物投入', '计入KG(参考)', '备注', '结论']
+                   '单位', '实际', '是否计入食物投入', '计入KG(参考)', '备注', '结论',
+                   '产量(件)', '单件净含量(KG)', '产出总净含量(KG)',
+                   '投入食物合计KG', '差额KG(产出-投入)', '偏差率']
+# 饮料明细页（导出「饮料翻箱组件明细」）：一行一组件，被排除的都留「排除原因」，
+# 绝不静默丢行。判别与主表共用 _drink_container_of，可逐单对账到「投入总容器数」。
+_DRINK_DETAIL_HEADERS = ['订单日期', '流程订单', '工厂', '车间',
+                         '产品物料编码', '产品物料描述',
+                         '组件物料编码', '组件物料名称', '组件物料类型',
+                         '组件物料类型描述', '单位', '实际',
+                         '是否计入容器数', '计入容器数(参考)', '排除原因', '备注']
 
 
 from gui_pyside6.components import dialog_chrome
@@ -69,13 +94,21 @@ class FlipCheckDashboardDialog(QDialog):
         super().__init__(parent)
         dialog_chrome.apply(self, dialog_chrome.TIER_BOARD, "翻箱守恒预警看板", "ZPFX 净含量守恒")
         self.main_window = main_window
-        self._verdict_filter = "全部"   # 全部 / 疑似漏记 / 守恒/正常（与 _apply_filter 比较值一致）
-        self._factory_filter = "全部"  # 🔴 必须用中文「全部」，与 _apply_filter 的 != "全部" 对齐；
-        self._workshop_filter = "全部"  #    若初始化成英文 'all'，首屏 _apply_filter 会把全部行滤空（真事故）
-        self._rows = []                # 算好的守恒结果（订单维度）
-        self._filtered = []
-        self._detail = []              # 一行一组件的明细（所属单的结论跟着走）
-        self._filtered_detail = []
+        self._verdict_filter = "全部"   # 全部 / 疑似漏记 / 守恒/正常 / 待人工确认
+        self._workshop_filter = "全部"   # 🔴 必须用中文「全部」，与 _match 的 != "全部" 对齐；
+                                         #    若初始化成英文 'all'，首屏 _apply_filter 会把行滤空（真事故）
+        # 分厂四个数据源（工厂现在是「页签」，不再是筛选器）：食品走 KG 守恒、饮料走容器数守恒。
+        self._food_orders = []          # 食品订单级（一单一行）
+        self._food_detail = []          # 食品组件级（一行一组件）
+        self._drink_orders = []         # 饮料订单级
+        self._drink_detail = []         # 饮料组件级
+        # 各自筛完的视图（_apply_filter 刷新）
+        self._food_orders_f = []
+        self._food_detail_f = []
+        self._drink_orders_f = []
+        self._drink_detail_f = []
+        # 未识别工厂（既非食品也非饮料）的订单，不静默丢：单独留痕提示
+        self._unknown_orders = []
         self._build_ui()
         self._load(df)
 
@@ -86,11 +119,14 @@ class FlipCheckDashboardDialog(QDialog):
         layout.setSpacing(6)
 
         # ---- 顶部说明 + 筛选栏 ----
-        tip = QLabel("翻箱(ZPFX)净含量守恒：产出KG 应≈投入食物KG。"
-                     "<b>产出&gt;投入=凭空多出食物=拆包投入漏记</b>（标红）。"
-                     "件数因拆大装小不可比，只有重量可比。")
+        tip = QLabel(
+            "翻箱(ZPFX)守恒校验。"
+            "<b>食品厂</b>按净含量 KG 守恒（产出KG≈投入食物KG），"
+            "<b>饮料厂</b>按总容器数守恒（产出容器≈投入容器）；"
+            "<b>产出&gt;投入=凭空多出=拆包投入漏记</b>（标红）。"
+            "拆大装小件数不可比，只比同口径的 KG / 容器数。")
         tip.setWordWrap(True)
-        tip.setStyleSheet("color:#555; font-size:12px;")
+        tip.setStyleSheet("color:%s; font-size:12px;" % Thm.color("textMuted"))
         layout.addWidget(tip)
 
         top = QHBoxLayout()
@@ -99,14 +135,9 @@ class FlipCheckDashboardDialog(QDialog):
 
         top.addWidget(QLabel("结论:"))
         self.cmb_verdict = QComboBox()
-        self.cmb_verdict.addItems(["全部", "疑似漏记", "守恒/正常"])
+        self.cmb_verdict.addItems(["全部", "疑似漏记", "守恒/正常", "待人工确认"])
         self.cmb_verdict.currentTextChanged.connect(self._on_filter_changed)
         top.addWidget(self.cmb_verdict)
-
-        top.addWidget(QLabel("工厂:"))
-        self.cmb_factory = QComboBox()
-        self.cmb_factory.currentTextChanged.connect(self._on_filter_changed)
-        top.addWidget(self.cmb_factory)
 
         top.addWidget(QLabel("车间:"))
         self.cmb_workshop = QComboBox()
@@ -114,7 +145,7 @@ class FlipCheckDashboardDialog(QDialog):
         top.addWidget(self.cmb_workshop)
 
         self.lbl_count = QLabel("")
-        self.lbl_count.setStyleSheet("color:#333; font-weight:bold;")
+        self.lbl_count.setStyleSheet("color:%s; font-weight:bold;" % Thm.color("text"))
         top.addSpacing(12)
         top.addWidget(self.lbl_count)
         top.addStretch(1)
@@ -125,17 +156,34 @@ class FlipCheckDashboardDialog(QDialog):
 
         layout.addLayout(top)
 
-        # ---- 主表格：结论页一单一行，明细页一行一组件（同一套筛选同时作用于两页）----
+        # 未识别工厂提示（食品/饮料以外的厂不猜、不静默丢，单独留痕）
+        self.lbl_factory_hint = QLabel("")
+        self.lbl_factory_hint.setWordWrap(True)
+        self.lbl_factory_hint.setStyleSheet("color:%s; font-size:12px;" % Thm.color("warn"))
+        self.lbl_factory_hint.setVisible(False)
+        layout.addWidget(self.lbl_factory_hint)
+
+        # ---- 主表格：食品/饮料各分「结论页（一单一行）+ 明细页（一行一组件）」共 4 页，
+        #      同一套「结论/车间」筛选同时作用于同厂的两页。工厂=页签，不再是筛选器。----
         self.tabs = QTabWidget()
-        self.table = self._make_table(_HEADERS, [90, 100, 90, 70, 240, 70, 110, 120,
-                                                 110, 110, 110, 130, 80, 90, 140,
-                                                 120, 240, 280])
-        self.table_detail = self._make_table(
+        self.food_table = self._make_table(_HEADERS, [90, 100, 90, 70, 240, 70, 110, 120,
+                                                       110, 110, 110, 130, 80, 90, 140,
+                                                       120, 240, 280])
+        self.food_table_detail = self._make_table(
             _DETAIL_HEADERS, [90, 100, 90, 70, 120, 240, 120, 280, 90, 110,
-                              60, 90, 130, 110, 140, 90])
-        self.tabs.addTab(self.table, "守恒结论（一单一行）")
-        self.tabs.addTab(self.table_detail, "组件明细（一行一组件）")
-        self.tabs.currentChanged.connect(lambda *_: self._refresh_count_label())
+                              60, 90, 130, 110, 140, 90,
+                              70, 110, 120, 110, 130, 70])
+        self.drink_table = self._make_table(_DRINK_HEADERS, [80, 100, 90, 70, 120, 240,
+                                                             70, 90, 90, 90, 110,
+                                                             110, 110, 110, 80, 90, 240])
+        self.drink_table_detail = self._make_table(
+            _DRINK_DETAIL_HEADERS, [80, 100, 90, 70, 120, 240, 120, 280, 90, 110,
+                                    60, 90, 120, 130, 220, 140])
+        self.tabs.addTab(self.food_table, "食品·守恒结论")
+        self.tabs.addTab(self.food_table_detail, "食品·组件明细")
+        self.tabs.addTab(self.drink_table, "饮料·守恒结论")
+        self.tabs.addTab(self.drink_table_detail, "饮料·组件明细")
+        self.tabs.currentChanged.connect(lambda *_: self._refresh_view())
         layout.addWidget(self.tabs, 1)
 
     def _make_table(self, headers, widths):
@@ -159,26 +207,29 @@ class FlipCheckDashboardDialog(QDialog):
         """从主表 dev_df 筛 ZPFX 单、按订单分组算守恒。"""
         if df is None or df.empty:
             QMessageBox.information(self, "提示", "暂无数据，请先分析")
-            self._rows = []
-            self._detail = []
-            self._refresh_table()
+            self._clear_data()
+            self._refresh_factory_hint()
+            self._refresh_tables()
+            self._refresh_count_label()
             return
         need = ['订单类型', '流程订单', '产品物料号码', '产品物料描述', '产量',
                 '组件物料类型', '物料编码', '物料名称', '单位', '实际']
         miss = [c for c in need if c not in df.columns]
         if miss:
             QMessageBox.warning(self, "列缺失", "主表缺少翻箱守恒必要列: %s" % ", ".join(miss))
-            self._rows = []
-            self._detail = []
-            self._refresh_table()
+            self._clear_data()
+            self._refresh_factory_hint()
+            self._refresh_tables()
+            self._refresh_count_label()
             return
 
         fx = df[df['订单类型'].astype(str).str.upper().str.contains('ZPFX', na=False)].copy()
         if fx.empty:
             QMessageBox.information(self, "提示", "本期无翻箱(ZPFX)订单")
-            self._rows = []
-            self._detail = []
-            self._refresh_table()
+            self._clear_data()
+            self._refresh_factory_hint()
+            self._refresh_tables()
+            self._refresh_count_label()
             return
 
         def g(row, key, default=''):
@@ -225,33 +276,75 @@ class FlipCheckDashboardDialog(QDialog):
                 'note': g(row, '备注'),
             })
 
-        rows = []
-        detail = []
-        for k in order_keys:
-            res = _check_order(groups[k])
-            first = groups[k][0]
+        # 分厂路由（单一来源 split_by_factory，与导出四张 sheet 同源）：
+        # 摊平成分组前组件行再分流。同单所有组件行 fac 相同，分流后按 ord 重新分组。
+        flat = [dict(x) for k in order_keys for x in groups[k]]
+        food_rows, drink_rows, unknown_rows = split_by_factory(flat)
+
+        def regroup(rows):
+            g2, ks = {}, []
+            for r in rows:
+                k = r['ord']
+                if k not in g2:
+                    g2[k] = []
+                    ks.append(k)
+                g2[k].append(r)
+            return g2, ks
+
+        food_groups, food_keys = regroup(food_rows)
+        drink_groups, drink_keys = regroup(drink_rows)
+        _, unknown_keys = regroup(unknown_rows)
+
+        # 未识别工厂留痕（不猜、不静默丢，单独提示）
+        self._unknown_orders = [(k, groups[k][0]['fac']) for k in unknown_keys]
+
+        self._food_orders = self._build_food_orders(food_groups, food_keys)
+        self._food_detail = self._build_food_detail(food_groups, food_keys)
+        self._drink_orders = self._build_drink_orders(drink_groups, drink_keys)
+        self._drink_detail = self._build_drink_detail(drink_groups, drink_keys)
+
+        # 先建数据再初始化筛选下拉：combo.addItem 会触发 currentTextChanged→_apply_filter，
+        # 若在数据就绪前触发会按空列表渲染出「首屏 0 行」。
+        self._init_workshop_combo()
+        self._refresh_factory_hint()
+        # 末尾显式刷一次，确保首屏（未触碰筛选时）按完整数据渲染
+        self._apply_filter()
+
+    # -- 食品侧（净含量 KG 守恒）：与导出「翻箱守恒预警/翻箱组件明细」同源 ----
+    def _build_food_orders(self, groups, keys):
+        """食品订单级：一单一行，_check_order 算 KG 守恒。"""
+        out = []
+        for k in keys:
+            g = groups[k]
+            res = _check_order(g)
+            first = g[0]
             net_each = parse_net_kg(first['pdesc'])
-            rows.append({
+            out.append({
                 'date': first['date'], 'ord': k, 'fac': first['fac'],
                 'ws': first['ws'], 'pdesc': first['pdesc'],
-                'yield': first['yield'],
-                'net_each': net_each,
+                'yield': first['yield'], 'net_each': net_each,
                 'out_kg': res['out_kg'], 'in_fin': res['in_fin'],
                 'in_loose': res['in_loose'], 'in_food': res['in_food'],
                 'diff': res['diff'], 'rate': res['rate'],
                 'verdict': res['verdict'], 'note': first['note'],
-                # v43.323：产品编码一单一值；组件编码/名称按单拼全部组件（含包材），
-                # 鼠标悬停 tooltip 里按换行展开，便于核对而不撑爆行高。
                 'pno': first['pno'],
-                'mcodes': '；'.join(x['mcode'] for x in groups[k] if x['mcode']),
-                'mnames': '；'.join(x['mname'] for x in groups[k] if x['mname']),
+                # 组件编码/名称按单拼全组件（含包材），悬停换行展开，不撑爆行高
+                'mcodes': '；'.join(x['mcode'] for x in g if x['mcode']),
+                'mnames': '；'.join(x['mname'] for x in g if x['mname']),
             })
-            # v43.364 组件明细页：一行一组件。判别照用导出侧同一个 _food_kg_of，
-            # 所以「计入KG(参考)」这一列按单求和能回对结论页的「投入食物合计KG」，
-            # 不会出现两页各算一套、明细加起来对不上结论的事故。
-            for x in groups[k]:
+        return out
+
+    def _build_food_detail(self, groups, keys):
+        """食品组件级：一行一组件，判别用同一个 _food_kg_of，明细加起来能回对结论页。"""
+        out = []
+        for k in keys:
+            g = groups[k]
+            res = _check_order(g)
+            first = g[0]
+            net_each = parse_net_kg(first['pdesc'])
+            for x in g:
                 flag, kg = _food_kg_of(x)
-                detail.append({
+                out.append({
                     'date': x['date'], 'ord': x['ord'], 'fac': x['fac'],
                     'ws': x['ws'], 'pno': x['pno'], 'pdesc': x['pdesc'],
                     'mcode': x['mcode'], 'mname': x['mname'],
@@ -259,27 +352,71 @@ class FlipCheckDashboardDialog(QDialog):
                     'unit': x['unit'], 'actual': x['actual'],
                     'flag': flag, 'kg': kg, 'note': x['note'],
                     'verdict': res['verdict'],
+                    # 订单级守恒数字（同一单所有组件行共用），明细页直接看出守不守恒
+                    'yield': first['yield'], 'net_each': net_each,
+                    'out_kg': res['out_kg'], 'in_food': res['in_food'],
+                    'diff': res['diff'], 'rate': res['rate'],
                 })
-        self._rows = rows
-        self._detail = detail
-        # 先建 rows 再初始化筛选下拉：combo.addItem 会触发 currentTextChanged→_apply_filter，
-        # 若在 rows 就绪前触发会按空 rows 渲染出「首屏 0 行」。
-        self._init_factory_combo()
-        self._init_workshop_combo()
-        # 末尾显式刷一次，确保首屏（未触碰筛选时）按完整 rows 渲染
-        self._apply_filter()
+        return out
 
-    def _init_factory_combo(self):
-        facs = sorted({r['fac'] for r in self._rows if r['fac']})
-        self.cmb_factory.blockSignals(True)
-        self.cmb_factory.clear()
-        self.cmb_factory.addItem("全部")
-        for f in facs:
-            self.cmb_factory.addItem(f)
-        self.cmb_factory.blockSignals(False)
+    # -- 饮料侧（总容器数守恒）：与导出「饮料翻箱守恒/饮料翻箱组件明细」同源 --
+    def _build_drink_orders(self, groups, keys):
+        """饮料订单级：一单一行，check_drink_order 算容器数守恒。"""
+        out = []
+        for k in keys:
+            g = groups[k]
+            res = check_drink_order(g)
+            first = g[0]
+            notes = [x for x in (res['reason'], first['note']) if x]
+            out.append({
+                'date': first['date'], 'ord': k, 'fac': first['fac'],
+                'ws': first['ws'], 'pno': first['pno'], 'pdesc': first['pdesc'],
+                'yield': first['yield'],
+                'container': res['container'], 'unit': res['unit'],
+                'n': res['n'], 'per': res['per'],
+                'out_containers': res['out_containers'],
+                'in_containers': res['in_containers'],
+                'diff': res['diff_containers'], 'rate': res['rate'],
+                'verdict': res['verdict'], 'note': '；'.join(notes),
+                'mcodes': '；'.join(x['mcode'] for x in g if x['mcode']),
+                'mnames': '；'.join(x['mname'] for x in g if x['mname']),
+            })
+        return out
+
+    def _build_drink_detail(self, groups, keys):
+        """饮料组件级：一行一组件，全组件都列（含 Z005/Z002/Z001/实际=0），
+        被排除的在「排除原因」留痕，绝不静默丢行。判别与主表共用 _drink_container_of。"""
+        # 每单先算产出 pack，供 _drink_container_of 比对容器形式/单位；顺带记下所属单结论
+        out_pack_by_order, verdict_by_order = {}, {}
+        for k in keys:
+            out_pack_by_order[k] = parse_pack(groups[k][0]['pdesc'])
+            verdict_by_order[k] = check_drink_order(groups[k])['verdict']
+        out = []
+        for k in keys:
+            opack = out_pack_by_order[k]
+            for r in groups[k]:
+                flag, containers, reason = _drink_container_of(r, opack)
+                out.append({
+                    'date': r['date'], 'ord': r['ord'], 'fac': r['fac'],
+                    'ws': r['ws'], 'pno': r['pno'], 'pdesc': r['pdesc'],
+                    'mcode': r['mcode'], 'mname': r['mname'],
+                    'mtype': r['mtype'], 'mtdesc': r['mtdesc'],
+                    'unit': r['unit'], 'actual': r['actual'],
+                    'flag': flag, 'containers': containers, 'reason': reason,
+                    'note': r['note'], 'verdict': verdict_by_order[k],
+                })
+        return out
+
+    def _clear_data(self):
+        for attr in ("_food_orders", "_food_detail", "_drink_orders",
+                     "_drink_detail", "_food_orders_f", "_food_detail_f",
+                     "_drink_orders_f", "_drink_detail_f", "_unknown_orders"):
+            setattr(self, attr, [])
 
     def _init_workshop_combo(self):
-        wss = sorted({r['ws'] for r in self._rows if r['ws']})
+        # 车间取食品+饮料两厂并集（工厂现在是页签，车间仍作筛选器）
+        wss = sorted({r['ws'] for r in self._food_orders + self._drink_orders
+                      if r['ws']})
         self.cmb_workshop.blockSignals(True)
         self.cmb_workshop.clear()
         self.cmb_workshop.addItem("全部")
@@ -287,133 +424,222 @@ class FlipCheckDashboardDialog(QDialog):
             self.cmb_workshop.addItem(w)
         self.cmb_workshop.blockSignals(False)
 
+    def _refresh_factory_hint(self):
+        """未识别工厂留痕：食品/饮料以外的厂不猜、不静默丢，单独提示。"""
+        if self._unknown_orders:
+            facs = "、".join(sorted({fac for _k, fac in self._unknown_orders}))
+            self.lbl_factory_hint.setText(
+                "另有 %d 单未识别工厂（%s）不属食品/饮料厂，未纳入守恒计算。"
+                % (len(self._unknown_orders), facs))
+            self.lbl_factory_hint.setVisible(True)
+        else:
+            self.lbl_factory_hint.setVisible(False)
+
     # ------------------------------------------------------------------ 筛选
     def _on_filter_changed(self, *_):
         self._verdict_filter = self.cmb_verdict.currentText()
-        self._factory_filter = self.cmb_factory.currentText()
         self._workshop_filter = self.cmb_workshop.currentText()
         self._apply_filter()
 
     def _apply_filter(self):
-        # 两页吃同一套筛选：切页只换「看单」还是「看组件」，不该换数据范围。
-        self._filtered = self._match(self._rows)
-        self._filtered_detail = self._match(self._detail)
-        self._refresh_table()
+        # 同一套「结论/车间」筛选同时作用于同厂两页；切页只换「看单/看组件」，不换数据范围。
+        self._food_orders_f = self._match(self._food_orders)
+        self._food_detail_f = self._match(self._food_detail)
+        self._drink_orders_f = self._match(self._drink_orders)
+        self._drink_detail_f = self._match(self._drink_detail)
+        self._refresh_tables()
+        self._refresh_count_label()
 
     def _match(self, rows):
-        if self._verdict_filter == "疑似漏记":
-            rows = [r for r in rows if r['verdict'] == '疑似漏记']
-        elif self._verdict_filter == "守恒/正常":
-            rows = [r for r in rows if r['verdict'] == '守恒/正常']
-        if self._factory_filter != "全部":
-            rows = [r for r in rows if r['fac'] == self._factory_filter]
+        if self._verdict_filter != "全部":
+            rows = [r for r in rows if r['verdict'] == self._verdict_filter]
         if self._workshop_filter != "全部":
             rows = [r for r in rows if r['ws'] == self._workshop_filter]
         return rows
 
-    def _refresh_table(self):
-        self._fill_orders()
-        self._fill_detail()
-        self._refresh_count_label()
-        # 空表要写清为什么空：这里没有已读/未读，只看得到「筛没了」和「本来就没数据」
-        for table, shown, total in ((self.table, self._filtered, self._rows),
-                                    (self.table_detail, self._filtered_detail, self._detail)):
+    def _refresh_tables(self):
+        self._fill_food_orders(self._food_orders_f)
+        self._fill_food_detail(self._food_detail_f)
+        self._fill_drink_orders(self._drink_orders_f)
+        self._fill_drink_detail(self._drink_detail_f)
+        # 空表写清为什么空（四张都管，隐藏页切回来提示别过期）：
+        # 没有已读/未读，只有「筛没了」和「本来就没数据」两种。
+        for idx in range(self.tabs.count()):
+            table, shown, total = self._active_tables(idx)
             set_empty_hint(table, "" if shown else (
                 NO_DATA_TEXT if not total
                 else "没有符合条件的记录（原始 %d 条）\n"
-                     "请把上方的「结论 / 工厂 / 车间」切回「全部」。" % len(total)))
+                     "请把上方的「结论 / 车间」切回「全部」。" % len(total)))
+
+    def _active_tables(self, idx):
+        """页签 → (表, 筛完的行, 全量行)：0 食品结论 / 1 食品明细 / 2 饮料结论 / 3 饮料明细。"""
+        return (
+            (self.food_table, self._food_orders_f, self._food_orders) if idx == 0
+            else (self.food_table_detail, self._food_detail_f, self._food_detail)
+            if idx == 1
+            else (self.drink_table, self._drink_orders_f, self._drink_orders)
+            if idx == 2
+            else (self.drink_table_detail, self._drink_detail_f, self._drink_detail))
+
+    def _refresh_view(self):
+        """切页只换「看单/看组件」，数据不动；只重算当前页计数（表格已填好）。"""
+        self._refresh_count_label()
 
     def _refresh_count_label(self):
-        """计数跟着当前页说人话：结论页报「几单」，明细页报「几行组件、几单」。"""
-        n_alert = sum(1 for r in self._filtered if r['verdict'] == '疑似漏记')
-        if self.tabs.currentIndex() == 1:
-            rows = self._filtered_detail
-            n_ord = len({r['ord'] for r in rows})
-            n_in_alert = sum(1 for r in rows if r['verdict'] == '疑似漏记')
-            self.lbl_count.setText("共 %d 行组件 · 涉及 %d 单，疑似漏记单内 %d 行"
-                                   % (len(rows), n_ord, n_in_alert))
+        """计数跟着当前页说人话：结论页报「几单、疑似漏记几单」，明细页报「几行组件、涉及几单」。"""
+        idx = self.tabs.currentIndex()
+        if idx == 0:
+            rows = self._food_orders_f
+            n_alert = sum(1 for r in rows if r['verdict'] == '疑似漏记')
+            self.lbl_count.setText("食品 %d 单，疑似漏记 %d" % (len(rows), n_alert))
+        elif idx == 1:
+            rows = self._food_detail_f
+            self.lbl_count.setText("食品 %d 行组件 · 涉及 %d 单"
+                                   % (len(rows), len({r['ord'] for r in rows})))
+        elif idx == 2:
+            rows = self._drink_orders_f
+            n_alert = sum(1 for r in rows if r['verdict'] == '疑似漏记')
+            self.lbl_count.setText("饮料 %d 单，疑似漏记 %d" % (len(rows), n_alert))
         else:
-            self.lbl_count.setText("共 %d 单，疑似漏记 %d 单" % (len(self._filtered), n_alert))
+            rows = self._drink_detail_f
+            self.lbl_count.setText("饮料 %d 行组件 · 涉及 %d 单"
+                                   % (len(rows), len({r['ord'] for r in rows})))
 
-    def _fill_orders(self):
-        rows = self._filtered
-        self.table.setRowCount(0)
-        self.table.setSortingEnabled(False)
-        self.table.setRowCount(len(rows))
-        for i, r in enumerate(rows):
-            net_each_txt = ('%.4g' % r['net_each']) if r['net_each'] is not None else '解析失败'
-            out_txt = ('%.3f' % r['out_kg']) if r['out_kg'] is not None else '待解析'
-            diff_txt = ('%.3f' % r['diff']) if r['diff'] is not None else '—'
-            rate_txt = ('%.1f%%' % (r['rate'] * 100)) if r['rate'] is not None else '—'
-            vals = [r['date'], r['ord'], r['fac'], r['ws'], r['pdesc'],
-                    '%g' % r['yield'], net_each_txt, out_txt,
-                    '%.3f' % r['in_fin'], '%.3f' % r['in_loose'], '%.3f' % r['in_food'],
-                    diff_txt, rate_txt, r['verdict'], r['note'],
-                    r['pno'], r['mcodes'], r['mnames']]
-            is_alert = (r['verdict'] == '疑似漏记')
-            bg = _RED if is_alert else _GREEN
-            for j, v in enumerate(vals):
-                it = QTableWidgetItem(str(v))
-                it.setBackground(bg)
-                if j >= 15:   # 编码/名称拼接列：悬停展开全组件
-                    it.setToolTip(str(v).replace('；', '\n'))
-                # 数值列右对齐
-                if j in (5, 6, 7, 8, 9, 10, 11, 12):
-                    it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                # 结论列加粗
-                if j == 13:
-                    f = it.font()
-                    f.setBold(is_alert)
-                    it.setFont(f)
-                self.table.setItem(i, j, it)
-        self.table.setSortingEnabled(True)
+    # ---- 食品侧两张表 ----
+    def _fill_food_orders(self, rows):
+        self._fill_table(self.food_table, rows,
+                         self._food_order_vals, self._food_order_cell)
 
-    def _fill_detail(self):
-        """组件明细页：一行一组件，所属单的结论决定底色（红=疑似漏记单里的组件）。"""
-        rows = self._filtered_detail
-        self.table_detail.setRowCount(0)
-        self.table_detail.setSortingEnabled(False)
-        self.table_detail.setRowCount(len(rows))
+    def _food_order_vals(self, r):
+        net_each_txt = ('%.4g' % r['net_each']) if r['net_each'] is not None else '解析失败'
+        out_txt = ('%.3f' % r['out_kg']) if r['out_kg'] is not None else '待解析'
+        diff_txt = ('%.3f' % r['diff']) if r['diff'] is not None else '—'
+        rate_txt = ('%.1f%%' % (r['rate'] * 100)) if r['rate'] is not None else '—'
+        return [r['date'], r['ord'], r['fac'], r['ws'], r['pdesc'],
+                '%g' % r['yield'], net_each_txt, out_txt,
+                '%.3f' % r['in_fin'], '%.3f' % r['in_loose'], '%.3f' % r['in_food'],
+                diff_txt, rate_txt, r['verdict'], r['note'],
+                r['pno'], r['mcodes'], r['mnames']]
+
+    def _food_order_cell(self, i, j, v, r):
+        if j >= 15:   # 编码/名称拼接列：悬停展开全组件
+            v.setToolTip(str(v).replace('；', '\n'))
+        if j in (5, 6, 7, 8, 9, 10, 11, 12):   # 数值列右对齐
+            v.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        if j == 13:   # 结论列：疑似漏记加粗
+            f = v.font()
+            f.setBold(r['verdict'] == '疑似漏记')
+            v.setFont(f)
+
+    def _fill_food_detail(self, rows):
+        self._fill_table(self.food_table_detail, rows,
+                         self._food_detail_vals, self._food_detail_cell)
+
+    def _food_detail_vals(self, r):
+        net_each_txt = ('%.4g' % r['net_each']) if r.get('net_each') is not None else '解析失败'
+        out_txt = ('%.3f' % r['out_kg']) if r.get('out_kg') is not None else '待解析'
+        diff_txt = ('%.3f' % r['diff']) if r.get('diff') is not None else '—'
+        rate_txt = ('%.1f%%' % (r['rate'] * 100)) if r.get('rate') is not None else '—'
+        return [r['date'], r['ord'], r['fac'], r['ws'], r['pno'], r['pdesc'],
+                r['mcode'], r['mname'], r['mtype'], r['mtdesc'], r['unit'],
+                '%g' % r['actual'], r['flag'], '%.6g' % r['kg'],
+                r['note'], r['verdict'],
+                '%g' % r.get('yield', 0), net_each_txt, out_txt,
+                '%.3f' % r.get('in_food', 0), diff_txt, rate_txt]
+
+    def _food_detail_cell(self, i, j, v, r):
+        if j in (11, 13, 16, 17, 18, 19, 20, 21):  # 实际/计入KG + 订单级守恒数值列
+            v.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        if j == 12:   # 是否计入食物投入：计入的加粗
+            f = v.font()
+            f.setBold(r['flag'] == '是')
+            v.setFont(f)
+
+    # ---- 饮料侧两张表 ----
+    def _fill_drink_orders(self, rows):
+        self._fill_table(self.drink_table, rows,
+                         self._drink_order_vals, self._drink_order_cell)
+
+    def _drink_order_vals(self, r):
+        out_txt = ('%.3f' % r['out_containers']) if r['out_containers'] is not None else '待解析'
+        diff_txt = ('%.3f' % r['diff']) if r['diff'] is not None else '—'
+        rate_txt = ('%.1f%%' % (r['rate'] * 100)) if r['rate'] is not None else '—'
+        return [r['date'], r['ord'], r['fac'], r['ws'], r['pno'], r['pdesc'],
+                '%g' % r['yield'],
+                r['container'] if r['container'] is not None else '解析失败',
+                r['unit'] if r['unit'] is not None else '—',
+                r['n'] if r['n'] is not None else '—',
+                ('%g' % r['per']) if r['per'] is not None else '—',
+                out_txt, '%.3f' % r['in_containers'], diff_txt, rate_txt,
+                r['verdict'], r['note']]
+
+    def _drink_order_cell(self, i, j, v, r):
+        if j in (6, 10, 11, 12, 13, 14):   # 数值列右对齐
+            v.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        if j == 15:   # 结论列：疑似漏记加粗
+            f = v.font()
+            f.setBold(r['verdict'] == '疑似漏记')
+            v.setFont(f)
+
+    def _fill_drink_detail(self, rows):
+        self._fill_table(self.drink_table_detail, rows,
+                         self._drink_detail_vals, self._drink_detail_cell)
+
+    def _drink_detail_vals(self, r):
+        return [r['date'], r['ord'], r['fac'], r['ws'], r['pno'], r['pdesc'],
+                r['mcode'], r['mname'], r['mtype'], r['mtdesc'], r['unit'],
+                '%g' % r['actual'], r['flag'], '%.6g' % r['containers'],
+                r['reason'], r['note']]
+
+    def _drink_detail_cell(self, i, j, v, r):
+        if j in (11, 13):   # 实际 / 计入容器数
+            v.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        if j == 12:   # 是否计入容器数：计入的加粗
+            f = v.font()
+            f.setBold(r['flag'] == '是')
+            v.setFont(f)
+
+    # -- 通用填表器：把 vals 填进表、给每格上色/套 cell 钩子 ------------------
+    @staticmethod
+    def _fill_table(table, rows, vals_fn, cell_fn):
+        """一单一行/一行一组件通用填表：底色按所属单结论（红=疑似漏记、绿=守恒/正常、
+        待人工确认不上色），逐格套 cell_fn 做对齐/加粗/悬停。"""
+        table.setRowCount(0)
+        table.setSortingEnabled(False)
+        table.setRowCount(len(rows))
         for i, r in enumerate(rows):
-            vals = [r['date'], r['ord'], r['fac'], r['ws'], r['pno'], r['pdesc'],
-                    r['mcode'], r['mname'], r['mtype'], r['mtdesc'], r['unit'],
-                    '%g' % r['actual'], r['flag'], '%.6g' % r['kg'],
-                    r['note'], r['verdict']]
-            is_alert = (r['verdict'] == '疑似漏记')
-            bg = _RED if is_alert else _GREEN
-            for j, v in enumerate(vals):
+            verdict = r['verdict']
+            bg = _RED if verdict == '疑似漏记' else (_GREEN if verdict == '守恒/正常' else None)
+            for j, v in enumerate(vals_fn(r)):
                 it = QTableWidgetItem(str(v))
-                it.setBackground(bg)
-                if j in (11, 13):        # 实际 / 计入KG
-                    it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                if j == 12:             # 是否计入食物投入
-                    f = it.font()
-                    f.setBold(r['flag'] == '是')
-                    it.setFont(f)
-                self.table_detail.setItem(i, j, it)
-        self.table_detail.setSortingEnabled(True)
+                if bg is not None:
+                    it.setBackground(bg)
+                cell_fn(i, j, it, r)
+                table.setItem(i, j, it)
+        table.setSortingEnabled(True)
 
     # ------------------------------------------------------------------ 导出
     def _on_export(self):
-        """导出当前页视图为 xlsx（结论页导结论行，明细页导组件行）。"""
-        on_detail = self.tabs.currentIndex() == 1
-        rows = self._filtered_detail if on_detail else self._filtered
+        """导出当前页视图为 xlsx：食品/饮料各自页导各自的行，列头与该页一致。"""
+        idx = self.tabs.currentIndex()
+        table, rows, _total = self._active_tables(idx)
         if not rows:
             QMessageBox.information(self, "提示", "当前视图无数据")
             return
+        rec, cols = self._record_for_tab(idx)
         try:
             import pandas as pd
             from PySide6.QtWidgets import QFileDialog
+            tab = self.tabs.tabText(idx)
             default = os.path.join(
-                os.path.expanduser("~"), "Desktop", "翻箱守恒预警_看板导出.xlsx")
+                os.path.expanduser("~"), "Desktop",
+                "翻箱守恒预警_看板导出_%s.xlsx" % tab.replace("·", ""))
             path, _ = QFileDialog.getSaveFileName(
                 self, "导出当前视图", default, "Excel (*.xlsx)")
             if not path:
                 return
-            out = [self._detail_record(r) if on_detail else self._order_record(r)
-                   for r in rows]
-            pd.DataFrame(out, columns=_DETAIL_HEADERS if on_detail else _HEADERS
-                         ).to_excel(path, index=False)
+            out = [rec(r) for r in rows]
+            pd.DataFrame(out, columns=cols).to_excel(path, index=False)
             QMessageBox.information(self, "已导出", "已导出 %d 行到:\n%s" % (len(out), path))
         except Exception as e:
             import traceback
@@ -421,7 +647,18 @@ class FlipCheckDashboardDialog(QDialog):
             QMessageBox.critical(self, "导出失败", str(e))
 
     @staticmethod
-    def _order_record(r):
+    def _record_for_tab(idx):
+        """页签 → (record 构造器, 列头)：导出键必须与该页表头一一对应，否则整列空白。"""
+        return (
+            (FlipCheckDashboardDialog._food_order_record, _HEADERS) if idx == 0
+            else (FlipCheckDashboardDialog._food_detail_record, _DETAIL_HEADERS)
+            if idx == 1
+            else (FlipCheckDashboardDialog._drink_order_record, _DRINK_HEADERS)
+            if idx == 2
+            else (FlipCheckDashboardDialog._drink_detail_record, _DRINK_DETAIL_HEADERS))
+
+    @staticmethod
+    def _food_order_record(r):
         return {
             '订单日期': r['date'], '流程订单': r['ord'], '工厂': r['fac'],
             '车间': r['ws'], '产品物料描述': r['pdesc'], '产量(件)': r['yield'],
@@ -434,7 +671,7 @@ class FlipCheckDashboardDialog(QDialog):
         }
 
     @staticmethod
-    def _detail_record(r):
+    def _food_detail_record(r):
         return {
             '订单日期': r['date'], '流程订单': r['ord'], '工厂': r['fac'],
             '车间': r['ws'], '产品物料编码': r['pno'], '产品物料描述': r['pdesc'],
@@ -443,4 +680,32 @@ class FlipCheckDashboardDialog(QDialog):
             '单位': r['unit'], '实际': r['actual'],
             '是否计入食物投入': r['flag'], '计入KG(参考)': round(r['kg'], 6),
             '备注': r['note'], '结论': r['verdict'],
+            '产量(件)': r.get('yield', 0), '单件净含量(KG)': r.get('net_each'),
+            '产出总净含量(KG)': r.get('out_kg'), '投入食物合计KG': r.get('in_food'),
+            '差额KG(产出-投入)': r.get('diff'), '偏差率': r.get('rate'),
+        }
+
+    @staticmethod
+    def _drink_order_record(r):
+        return {
+            '订单日期': r['date'], '流程订单': r['ord'], '工厂': r['fac'],
+            '车间': r['ws'], '产品物料编码': r['pno'], '产品物料描述': r['pdesc'],
+            '产量(件)': r['yield'],
+            '容器形式': r.get('container'), '净含量单位': r.get('unit'),
+            '单件容器数': r.get('n'), '单容器净含量': r.get('per'),
+            '产出总容器数': r.get('out_containers'), '投入总容器数': r.get('in_containers'),
+            '差额容器数': r.get('diff'), '偏差率': r.get('rate'),
+            '结论': r['verdict'], '备注': r['note'],
+        }
+
+    @staticmethod
+    def _drink_detail_record(r):
+        return {
+            '订单日期': r['date'], '流程订单': r['ord'], '工厂': r['fac'],
+            '车间': r['ws'], '产品物料编码': r['pno'], '产品物料描述': r['pdesc'],
+            '组件物料编码': r['mcode'], '组件物料名称': r['mname'],
+            '组件物料类型': r['mtype'], '组件物料类型描述': r['mtdesc'],
+            '单位': r['unit'], '实际': r['actual'],
+            '是否计入容器数': r['flag'], '计入容器数(参考)': round(r['containers'], 6),
+            '排除原因': r.get('reason', ''), '备注': r['note'],
         }

@@ -1208,6 +1208,8 @@ class MainWindow(QMainWindow):
         # 在这里停掉就是曾经的「后面的时间卡住」；改由 _finish_cache_phase 收口
         # 状态栏「分析时间」：标触发方式 + 完成时刻（Finish 时刻）
         self._update_analysis_time_label(_analysis_mode)
+        # 落盘最近一次导入/分析（触发方式 + 时刻 + 数据源 + 行数），供网页版只读展示
+        self._persist_last_import(_analysis_mode, df)
         self.progress_bar.setValue(100)
         self.main_table.complete_step_icons()
         # 分析完成 6 秒后自动收起进度面板（表格空间还给数据）；工具栏「进度」按钮可随时展开
@@ -1422,6 +1424,28 @@ class MainWindow(QMainWindow):
 
     def _update_analysis_time_label(self, mode):
         self.ui_settings_controller.update_analysis_time_label(mode)
+
+    def _persist_last_import(self, mode, df):
+        """把最近一次导入/分析落盘（触发方式 + 时刻 + 数据源 + 行数），
+        供网页版只读展示。纯新增，不影响审计表/分析器；失败静默吞掉。"""
+        try:
+            import json as _json, os as _os, time as _time
+            _now = _time.time()
+            _src = getattr(self, "current_input_file", "") or ""
+            _rec = {
+                "mode": mode,                                   # 自动 / 手动
+                "at": _time.strftime("%Y-%m-%d %H:%M:%S", _time.localtime(_now)),
+                "ts": int(_now),
+                "source": _src,
+                "source_name": _os.path.basename(_src) if _src else "",
+                "rows": int(len(df)) if df is not None else 0,
+            }
+            _d = _os.path.join(_os.path.expanduser("~"), ".zpp011_audit")
+            _os.makedirs(_d, exist_ok=True)
+            with open(_os.path.join(_d, "last_import.json"), "w", encoding="utf-8") as _f:
+                _json.dump(_rec, _f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
 
     def _on_manual_marked(self, n):
         """手动标记已读后累计计数并刷新标签（来自 audit_controller / 两个弹窗的回调）。"""
