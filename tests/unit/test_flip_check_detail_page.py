@@ -18,8 +18,8 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, ROOT)
 
 from gui_pyside6.dialogs.flip_check_dashboard_dialog import (  # noqa: E402
-    _DETAIL_HEADERS, _DRINK_DETAIL_HEADERS, _DRINK_HEADERS, _HEADERS,
-    FlipCheckDashboardDialog)
+    _ALL_HEADERS, _DETAIL_HEADERS, _DRINK_DETAIL_HEADERS, _DRINK_HEADERS,
+    _HEADERS, FlipCheckDashboardDialog)
 
 
 def _df():
@@ -193,6 +193,40 @@ def test_drink_containers_sum_back_to_order_total(board):
     assert sums["180002"] == pytest.approx(by_ord["180002"])   # 75
 
 
+def test_drink_detail_carries_yield(board):
+    """饮料·组件明细也带「产量(件)」列（与食品明细对齐），值随所属订单。
+
+    180001/180002 产量都 10，饮料明细 2 行「产量(件)」列都得是 10。
+    """
+    j_y = _DRINK_DETAIL_HEADERS.index('产量(件)')
+    vals = [board.drink_table_detail.item(i, j_y).text()
+            for i in range(board.drink_table_detail.rowCount())]
+    assert vals == ["10", "10"]
+
+
+def test_all_table_combines_food_and_drink(board):
+    """总表页把食+饮订单合并一屏：食品 2 单 + 饮料 2 单，口径列各归各套。"""
+    assert board.tabs.count() == 5
+    assert board.all_table.rowCount() == 4
+    j_cal = _ALL_HEADERS.index('口径')
+    j_ord = _ALL_HEADERS.index('流程订单')
+    by_ord = {board.all_table.item(i, j_ord).text():
+              board.all_table.item(i, j_cal).text()
+              for i in range(board.all_table.rowCount())}
+    assert by_ord == {"170001": "KG守恒", "170002": "KG守恒",
+                     "180001": "容器数守恒", "180002": "容器数守恒"}
+
+
+def test_all_table_filter_applies(board):
+    """总表同样受「结论/车间」筛选：疑似漏记 → 食品 1 单 + 饮料 1 单。"""
+    board.tabs.setCurrentIndex(0)
+    board.cmb_verdict.setCurrentText("疑似漏记")
+    j_ord = _ALL_HEADERS.index('流程订单')
+    got = {board.all_table.item(i, j_ord).text()
+           for i in range(board.all_table.rowCount())}
+    assert got == {"170001", "180002"}
+
+
 def test_packaging_row_is_marked_not_counted(board):
     """食品包材行不丢，标「否」；散货食物标「是」——留在明细里正是人工核对要看的那几行。"""
     j_flag = _DETAIL_HEADERS.index('是否计入食物投入')
@@ -257,21 +291,23 @@ def test_workshop_filter_applies_to_both_pages(board):
 
 
 def test_count_label_follows_active_page(board):
-    """计数跟着当前页说人话：结论页报「几单、漏记几单」，明细页报「几行组件、几单」。"""
+    """计数跟着当前页说人话：总表报「食+饮共 N 单」，结论页报「几单」，明细页报「几行组件」。"""
     board.tabs.setCurrentIndex(0)
-    assert "食品" in board.lbl_count.text() and "单" in board.lbl_count.text()
+    assert "食+饮" in board.lbl_count.text()
     board.tabs.setCurrentIndex(1)
-    assert "组件" in board.lbl_count.text()
+    assert "食品" in board.lbl_count.text() and "单" in board.lbl_count.text()
     board.tabs.setCurrentIndex(2)
-    assert "饮料" in board.lbl_count.text() and "单" in board.lbl_count.text()
+    assert "组件" in board.lbl_count.text()
     board.tabs.setCurrentIndex(3)
+    assert "饮料" in board.lbl_count.text() and "单" in board.lbl_count.text()
+    board.tabs.setCurrentIndex(4)
     assert "组件" in board.lbl_count.text()
 
 
 # ---------------------------------------------------------------- 导出
 def test_export_records_cover_their_headers(board):
-    """四页导出行的键必须与各自表头一一对应，否则 DataFrame 出来整列空白。"""
-    for idx in range(4):
+    """五页导出行的键必须与各自表头一一对应，否则 DataFrame 出来整列空白。"""
+    for idx in range(5):
         rec, cols = board._record_for_tab(idx)
         _table, shown, _total = board._active_tables(idx)
         assert shown, "每一页都得有数据才能验键"

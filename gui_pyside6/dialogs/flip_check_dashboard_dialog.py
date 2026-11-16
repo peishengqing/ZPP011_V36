@@ -71,18 +71,23 @@ _DRINK_HEADERS = ['订单日期', '流程订单', '工厂', '车间', '产品物
 # 数值列追加到明细页尾，每行组件自带所属单的守恒数字，不用切回结论页对照。
 # ⚠️ 新列只许追加在**表尾**：_fill_detail 里 11/13/12 是行号索引，插中间会整体失效。
 _DETAIL_HEADERS = ['订单日期', '流程订单', '工厂', '车间',
-                   '产品物料编码', '产品物料描述',
+                   '产品物料编码', '产品物料描述', '产量(件)',
                    '组件物料编码', '组件物料名称', '组件物料类型', '组件物料类型描述',
                    '单位', '实际', '是否计入食物投入', '计入KG(参考)', '备注', '结论',
-                   '产量(件)', '单件净含量(KG)', '产出总净含量(KG)',
+                   '单件净含量(KG)', '产出总净含量(KG)',
                    '投入食物合计KG', '差额KG(产出-投入)', '偏差率']
 # 饮料明细页（导出「饮料翻箱组件明细」）：一行一组件，被排除的都留「排除原因」，
 # 绝不静默丢行。判别与主表共用 _drink_container_of，可逐单对账到「投入总容器数」。
 _DRINK_DETAIL_HEADERS = ['订单日期', '流程订单', '工厂', '车间',
-                         '产品物料编码', '产品物料描述',
+                         '产品物料编码', '产品物料描述', '产量(件)',
                          '组件物料编码', '组件物料名称', '组件物料类型',
                          '组件物料类型描述', '单位', '实际',
                          '是否计入容器数', '计入容器数(参考)', '排除原因', '备注']
+
+# 总表页（食+饮合并·结论）：食品/饮料订单混排一屏，按「口径」列区分用哪套守恒
+# （KG vs 容器数），结论/偏差率两厂同口径可比；「工厂」列看得出属哪家。
+_ALL_HEADERS = ['订单日期', '流程订单', '工厂', '车间', '产品物料编码',
+                '产品物料描述', '产量(件)', '口径', '结论', '偏差率']
 
 
 from gui_pyside6.components import dialog_chrome
@@ -107,6 +112,9 @@ class FlipCheckDashboardDialog(QDialog):
         self._food_detail_f = []
         self._drink_orders_f = []
         self._drink_detail_f = []
+        # 总表：食+饮订单合并一屏（各自「口径」不同，靠「口径」列区分），各自筛完视图
+        self._all_orders = []
+        self._all_orders_f = []
         # 未识别工厂（既非食品也非饮料）的订单，不静默丢：单独留痕提示
         self._unknown_orders = []
         self._build_ui()
@@ -170,15 +178,19 @@ class FlipCheckDashboardDialog(QDialog):
                                                        110, 110, 110, 130, 80, 90, 140,
                                                        120, 240, 280])
         self.food_table_detail = self._make_table(
-            _DETAIL_HEADERS, [90, 100, 90, 70, 120, 240, 120, 280, 90, 110,
+            _DETAIL_HEADERS, [90, 100, 90, 70, 120, 240, 70, 120, 280, 90, 110,
                               60, 90, 130, 110, 140, 90,
-                              70, 110, 120, 110, 130, 70])
+                              110, 120, 110, 130, 70])
         self.drink_table = self._make_table(_DRINK_HEADERS, [80, 100, 90, 70, 120, 240,
                                                              70, 90, 90, 90, 110,
                                                              110, 110, 110, 80, 90, 240])
         self.drink_table_detail = self._make_table(
-            _DRINK_DETAIL_HEADERS, [80, 100, 90, 70, 120, 240, 120, 280, 90, 110,
-                                    60, 90, 120, 130, 220, 140])
+            _DRINK_DETAIL_HEADERS, [80, 100, 90, 70, 120, 240, 70, 120, 280, 90,
+                                    110, 60, 90, 120, 130, 220, 140])
+        # 总表：食+饮订单合并一屏（「口径」列区分 KG / 容器数守恒）
+        self.all_table = self._make_table(
+            _ALL_HEADERS, [90, 100, 90, 70, 120, 240, 70, 90, 90, 70])
+        self.tabs.addTab(self.all_table, "总表·食+饮")
         self.tabs.addTab(self.food_table, "食品·守恒结论")
         self.tabs.addTab(self.food_table_detail, "食品·组件明细")
         self.tabs.addTab(self.drink_table, "饮料·守恒结论")
@@ -302,6 +314,8 @@ class FlipCheckDashboardDialog(QDialog):
         self._food_detail = self._build_food_detail(food_groups, food_keys)
         self._drink_orders = self._build_drink_orders(drink_groups, drink_keys)
         self._drink_detail = self._build_drink_detail(drink_groups, drink_keys)
+        # 总表：食+饮订单合并（各带「口径」），一屏看清所有翻箱单结论
+        self._all_orders = self._food_orders + self._drink_orders
 
         # 先建数据再初始化筛选下拉：combo.addItem 会触发 currentTextChanged→_apply_filter，
         # 若在数据就绪前触发会按空列表渲染出「首屏 0 行」。
@@ -327,7 +341,7 @@ class FlipCheckDashboardDialog(QDialog):
                 'in_loose': res['in_loose'], 'in_food': res['in_food'],
                 'diff': res['diff'], 'rate': res['rate'],
                 'verdict': res['verdict'], 'note': first['note'],
-                'pno': first['pno'],
+                'pno': first['pno'], '口径': 'KG守恒',
                 # 组件编码/名称按单拼全组件（含包材），悬停换行展开，不撑爆行高
                 'mcodes': '；'.join(x['mcode'] for x in g if x['mcode']),
                 'mnames': '；'.join(x['mname'] for x in g if x['mname']),
@@ -378,6 +392,7 @@ class FlipCheckDashboardDialog(QDialog):
                 'in_containers': res['in_containers'],
                 'diff': res['diff_containers'], 'rate': res['rate'],
                 'verdict': res['verdict'], 'note': '；'.join(notes),
+                '口径': '容器数守恒',
                 'mcodes': '；'.join(x['mcode'] for x in g if x['mcode']),
                 'mnames': '；'.join(x['mname'] for x in g if x['mname']),
             })
@@ -404,13 +419,15 @@ class FlipCheckDashboardDialog(QDialog):
                     'unit': r['unit'], 'actual': r['actual'],
                     'flag': flag, 'containers': containers, 'reason': reason,
                     'note': r['note'], 'verdict': verdict_by_order[k],
+                    'yield': r.get('yield', 0),
                 })
         return out
 
     def _clear_data(self):
         for attr in ("_food_orders", "_food_detail", "_drink_orders",
                      "_drink_detail", "_food_orders_f", "_food_detail_f",
-                     "_drink_orders_f", "_drink_detail_f", "_unknown_orders"):
+                     "_drink_orders_f", "_drink_detail_f", "_all_orders",
+                     "_all_orders_f", "_unknown_orders"):
             setattr(self, attr, [])
 
     def _init_workshop_combo(self):
@@ -447,6 +464,7 @@ class FlipCheckDashboardDialog(QDialog):
         self._food_detail_f = self._match(self._food_detail)
         self._drink_orders_f = self._match(self._drink_orders)
         self._drink_detail_f = self._match(self._drink_detail)
+        self._all_orders_f = self._match(self._all_orders)
         self._refresh_tables()
         self._refresh_count_label()
 
@@ -462,6 +480,7 @@ class FlipCheckDashboardDialog(QDialog):
         self._fill_food_detail(self._food_detail_f)
         self._fill_drink_orders(self._drink_orders_f)
         self._fill_drink_detail(self._drink_detail_f)
+        self._fill_all_orders(self._all_orders_f)
         # 空表写清为什么空（四张都管，隐藏页切回来提示别过期）：
         # 没有已读/未读，只有「筛没了」和「本来就没数据」两种。
         for idx in range(self.tabs.count()):
@@ -472,14 +491,16 @@ class FlipCheckDashboardDialog(QDialog):
                      "请把上方的「结论 / 车间」切回「全部」。" % len(total)))
 
     def _active_tables(self, idx):
-        """页签 → (表, 筛完的行, 全量行)：0 食品结论 / 1 食品明细 / 2 饮料结论 / 3 饮料明细。"""
-        return (
-            (self.food_table, self._food_orders_f, self._food_orders) if idx == 0
-            else (self.food_table_detail, self._food_detail_f, self._food_detail)
-            if idx == 1
-            else (self.drink_table, self._drink_orders_f, self._drink_orders)
-            if idx == 2
-            else (self.drink_table_detail, self._drink_detail_f, self._drink_detail))
+        """页签 → (表, 筛完的行, 全量行)：0 总表 / 1 食品结论 / 2 食品明细 / 3 饮料结论 / 4 饮料明细。"""
+        if idx == 0:
+            return self.all_table, self._all_orders_f, self._all_orders
+        if idx == 1:
+            return self.food_table, self._food_orders_f, self._food_orders
+        if idx == 2:
+            return self.food_table_detail, self._food_detail_f, self._food_detail
+        if idx == 3:
+            return self.drink_table, self._drink_orders_f, self._drink_orders
+        return self.drink_table_detail, self._drink_detail_f, self._drink_detail
 
     def _refresh_view(self):
         """切页只换「看单/看组件」，数据不动；只重算当前页计数（表格已填好）。"""
@@ -488,19 +509,26 @@ class FlipCheckDashboardDialog(QDialog):
     def _refresh_count_label(self):
         """计数跟着当前页说人话：结论页报「几单、疑似漏记几单」，明细页报「几行组件、涉及几单」。"""
         idx = self.tabs.currentIndex()
-        if idx == 0:
+        if idx == 0:   # 总表
+            rows = self._all_orders_f
+            n_alert = sum(1 for r in rows if r['verdict'] == '疑似漏记')
+            n_food = sum(1 for r in rows if r['口径'] == 'KG守恒')
+            self.lbl_count.setText(
+                "食+饮共 %d 单（食品 %d / 饮料 %d），疑似漏记 %d"
+                % (len(rows), n_food, len(rows) - n_food, n_alert))
+        elif idx == 1:
             rows = self._food_orders_f
             n_alert = sum(1 for r in rows if r['verdict'] == '疑似漏记')
             self.lbl_count.setText("食品 %d 单，疑似漏记 %d" % (len(rows), n_alert))
-        elif idx == 1:
+        elif idx == 2:
             rows = self._food_detail_f
             self.lbl_count.setText("食品 %d 行组件 · 涉及 %d 单"
                                    % (len(rows), len({r['ord'] for r in rows})))
-        elif idx == 2:
+        elif idx == 3:
             rows = self._drink_orders_f
             n_alert = sum(1 for r in rows if r['verdict'] == '疑似漏记')
             self.lbl_count.setText("饮料 %d 单，疑似漏记 %d" % (len(rows), n_alert))
-        else:
+        else:   # idx == 4 饮料明细
             rows = self._drink_detail_f
             self.lbl_count.setText("饮料 %d 行组件 · 涉及 %d 单"
                                    % (len(rows), len({r['ord'] for r in rows})))
@@ -541,16 +569,17 @@ class FlipCheckDashboardDialog(QDialog):
         diff_txt = ('%.3f' % r['diff']) if r.get('diff') is not None else '—'
         rate_txt = ('%.1f%%' % (r['rate'] * 100)) if r.get('rate') is not None else '—'
         return [r['date'], r['ord'], r['fac'], r['ws'], r['pno'], r['pdesc'],
+                '%g' % r.get('yield', 0),
                 r['mcode'], r['mname'], r['mtype'], r['mtdesc'], r['unit'],
                 '%g' % r['actual'], r['flag'], '%.6g' % r['kg'],
                 r['note'], r['verdict'],
-                '%g' % r.get('yield', 0), net_each_txt, out_txt,
+                net_each_txt, out_txt,
                 '%.3f' % r.get('in_food', 0), diff_txt, rate_txt]
 
     def _food_detail_cell(self, i, j, v, r):
-        if j in (11, 13, 16, 17, 18, 19, 20, 21):  # 实际/计入KG + 订单级守恒数值列
+        if j in (6, 12, 14, 17, 18, 19, 20, 21):  # 产量/实际/计入KG + 订单级守恒数值列
             v.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        if j == 12:   # 是否计入食物投入：计入的加粗
+        if j == 13:   # 是否计入食物投入：计入的加粗
             f = v.font()
             f.setBold(r['flag'] == '是')
             v.setFont(f)
@@ -587,16 +616,34 @@ class FlipCheckDashboardDialog(QDialog):
 
     def _drink_detail_vals(self, r):
         return [r['date'], r['ord'], r['fac'], r['ws'], r['pno'], r['pdesc'],
+                '%g' % r.get('yield', 0),
                 r['mcode'], r['mname'], r['mtype'], r['mtdesc'], r['unit'],
                 '%g' % r['actual'], r['flag'], '%.6g' % r['containers'],
                 r['reason'], r['note']]
 
     def _drink_detail_cell(self, i, j, v, r):
-        if j in (11, 13):   # 实际 / 计入容器数
+        if j in (6, 12, 14):   # 产量 / 实际 / 计入容器数
             v.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        if j == 12:   # 是否计入容器数：计入的加粗
+        if j == 13:   # 是否计入容器数：计入的加粗
             f = v.font()
             f.setBold(r['flag'] == '是')
+            v.setFont(f)
+
+    # ---- 总表（食+饮合并·结论）----
+    def _fill_all_orders(self, rows):
+        self._fill_table(self.all_table, rows, self._all_vals, self._all_cell)
+
+    def _all_vals(self, r):
+        rate_txt = ('%.1f%%' % (r['rate'] * 100)) if r.get('rate') is not None else '—'
+        return [r['date'], r['ord'], r['fac'], r['ws'], r.get('pno', ''), r['pdesc'],
+                '%g' % r.get('yield', 0), r.get('口径', ''), r['verdict'], rate_txt]
+
+    def _all_cell(self, i, j, v, r):
+        if j in (6, 9):   # 产量 / 偏差率 数值列右对齐
+            v.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        if j == 8:   # 结论列：疑似漏记加粗
+            f = v.font()
+            f.setBold(r['verdict'] == '疑似漏记')
             v.setFont(f)
 
     # -- 通用填表器：把 vals 填进表、给每格上色/套 cell 钩子 ------------------
@@ -649,13 +696,15 @@ class FlipCheckDashboardDialog(QDialog):
     @staticmethod
     def _record_for_tab(idx):
         """页签 → (record 构造器, 列头)：导出键必须与该页表头一一对应，否则整列空白。"""
-        return (
-            (FlipCheckDashboardDialog._food_order_record, _HEADERS) if idx == 0
-            else (FlipCheckDashboardDialog._food_detail_record, _DETAIL_HEADERS)
-            if idx == 1
-            else (FlipCheckDashboardDialog._drink_order_record, _DRINK_HEADERS)
-            if idx == 2
-            else (FlipCheckDashboardDialog._drink_detail_record, _DRINK_DETAIL_HEADERS))
+        if idx == 0:
+            return FlipCheckDashboardDialog._all_record, _ALL_HEADERS
+        if idx == 1:
+            return FlipCheckDashboardDialog._food_order_record, _HEADERS
+        if idx == 2:
+            return FlipCheckDashboardDialog._food_detail_record, _DETAIL_HEADERS
+        if idx == 3:
+            return FlipCheckDashboardDialog._drink_order_record, _DRINK_HEADERS
+        return FlipCheckDashboardDialog._drink_detail_record, _DRINK_DETAIL_HEADERS
 
     @staticmethod
     def _food_order_record(r):
@@ -708,4 +757,16 @@ class FlipCheckDashboardDialog(QDialog):
             '单位': r['unit'], '实际': r['actual'],
             '是否计入容器数': r['flag'], '计入容器数(参考)': round(r['containers'], 6),
             '排除原因': r.get('reason', ''), '备注': r['note'],
+            '产量(件)': r.get('yield', 0),
+        }
+
+    @staticmethod
+    def _all_record(r):
+        return {
+            '订单日期': r['date'], '流程订单': r['ord'], '工厂': r['fac'],
+            '车间': r['ws'], '产品物料编码': r.get('pno', ''),
+            '产品物料描述': r['pdesc'], '产量(件)': r.get('yield', 0),
+            '口径': r.get('口径', ''), '结论': r['verdict'],
+            '偏差率': ('%.1f%%' % (r['rate'] * 100))
+                     if r.get('rate') is not None else '—',
         }
