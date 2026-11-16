@@ -292,10 +292,6 @@ QLineEdit:focus, QSpinBox:focus, QDateEdit:focus {{ background-color: {surface2}
 /* KPI 带的横向滚动容器：只负责去掉边框与滚动条，不负责配色 */
 QScrollArea#kpiScroll {{ border: none; background: transparent; }}
 
-/* 标题条右侧窗口按钮（导出/全屏/关闭）：幽灵样式，不参与筛选条精算 */
-QPushButton#titleToolBtn {{ background: transparent; color: {textMuted}; }}
-QPushButton#titleToolBtn:hover {{ background-color: {surface3}; color: {text}; }}
-
 /* 品牌块：26×26 装饰方块，不进配色纪律范围，允许渐变与圆角 */
 QFrame#tb_mark {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,

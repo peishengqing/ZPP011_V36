@@ -14,6 +14,18 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.383",
+            "date": "2026-11-16",
+            "features": (
+                "看板外壳标题条移除「导出/全屏/关闭」三个死按钮（裴哥实报：这3个键不能用，\n"
+                "好几个看板都是）：DashboardShell 标题条右侧三按钮只发 action_triggered 信号、\n"
+                "全项目无任何连接，点击毫无效果。删除按钮与对应 titleToolBtn QSS；\n"
+                "关闭仍走窗口 X/ESC（closeEvent），导出保留各看板操作条原有可用按钮\n"
+                "（如「导出 Excel (Alt+V)」）。负损/正损/半成品/替代料/偏差率预警/替代料长链/\n"
+                "未读等所有用外壳的看板一并生效。"
+            ),
+        },
+        {
             "version": "v43.382",
             "date": "2026-11-16",
             "features": (

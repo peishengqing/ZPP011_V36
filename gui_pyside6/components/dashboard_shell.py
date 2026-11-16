@@ -106,7 +106,7 @@ class DashboardShell(QWidget):
     _GROUP_TITLES = {"material": "物料维度", "numeric": "数值维度", "org": "组织与状态维度"}
 
     # 信号
-    action_triggered = Signal(str)  # 标题条窗口按钮（export / fullscreen / close）
+    action_triggered = Signal(str)  # 窗口关闭通知（close）；v43.383 起标题条不再放窗口按钮
     kpi_clicked = Signal(str)       # KPI 卡片点击（下钻入口）
 
     def __init__(self, parent: QWidget = None):
@@ -176,23 +176,10 @@ class DashboardShell(QWidget):
         layout.addWidget(self.lbl_title)
 
         layout.addStretch()
-
-        # 窗口控制按钮（改造前这里还挂着一个空的「工厂」下拉，既无选项也无接线，
-        # 每个看板标题条右侧都多出一个灰空的控件；工厂筛选本就在各看板自己的筛选条里）
-        self._build_window_controls()
-
-    def _build_window_controls(self):
-        for attr, text, action in (
-            ("btn_export", "导出", "export"),
-            ("btn_fullscreen", "全屏", "fullscreen"),
-            ("btn_close", "关闭", "close"),
-        ):
-            btn = QPushButton(text)
-            btn.setFixedSize(60, 30)
-            btn.setObjectName("titleToolBtn")
-            btn.clicked.connect(lambda _checked=False, a=action: self.action_triggered.emit(a))
-            setattr(self, attr, btn)
-            self.title_bar.findChild(QHBoxLayout).addWidget(btn)
+        # v43.383：标题条不再放「导出/全屏/关闭」窗口按钮 —— 三个按钮只会发
+        # action_triggered 信号而全项目无人连接，点了毫无效果（裴哥实报「这3个键
+        # 不能用，好几个看板都是」）。关闭走窗口 X/ESC（closeEvent），导出走各
+        # 看板操作条自己的按钮（如「导出 Excel (Alt+V)」）。
 
     def _build_filter_bar(self):
         """常驻筛选条（40px）：抽屉开关 + 看板塞入的常用控件 + 重置 + 总命中数。
