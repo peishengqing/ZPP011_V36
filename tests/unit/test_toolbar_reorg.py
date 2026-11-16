@@ -154,16 +154,17 @@ def test_toolbar_grouped_layout(main_window):
     bar = _action_bar(w)
     assert bar is not None and bar.objectName() == "actionBar"
 
-    # 收纳菜单只剩 看板 / 导出（维护并入「更多」，「更多」改 icon-only 不再算菜单位）
+    # 收纳菜单：看板 / 导出 / 未读概览（v43.376 恢复未读概览按钮，并入收纳菜单位）
     menu_texts = [b.text() for b in bar.findChildren(QToolButton)
                   if b.objectName() == "actionMenuBtn"]
-    assert menu_texts == ["看板", "导出"], "收纳菜单异常: %s" % menu_texts
+    assert menu_texts == ["看板", "导出", "未读概览"], "收纳菜单异常: %s" % menu_texts
 
-    # 平铺控件 = 工具栏直接子级里的按钮（9 颗，设计稿 Tier 2 一条不多一条不少）
+    # 平铺控件 = 工具栏直接子级里的按钮（10 颗，设计稿 Tier 2 一条不多一条不少；
+    # v43.376 恢复未读概览按钮后多 1 颗 actionMenuBtn）
     flat = [b.text() for b in (bar.findChildren(QPushButton) + bar.findChildren(QToolButton))
             if b.parentWidget() is bar]
     assert flat == ["分析", "审核", "数据表", "筛选抽屉", "列头过滤", "概览面板",
-                    "看板", "导出", "更多"], "平铺控件异常: %s" % flat
+                    "看板", "导出", "未读概览", "更多"], "平铺控件异常: %s" % flat
 
     # 视图开关一律 icon-only + 30×30（文字只给读屏与状态同步用）
     for attr in ("action_btn_left_panel", "action_btn_filter",
@@ -209,7 +210,7 @@ def test_menu_contents(main_window):
             menus[b.text()] = ([a.text() for a in m.actions() if not a.isSeparator()]
                                if m else [])
 
-    assert len(menus.get("看板", [])) == 9, menus.get("看板")
+    assert len(menus.get("看板", [])) == 11, menus.get("看板")
     assert len(menus.get("导出", [])) == 2, menus.get("导出")
     assert "维护" not in menus, "「维护」菜单已退役（两项并入「更多」）"
     for must in ["替代料看板", "偏差率预警", "负损看板", "正损看板",

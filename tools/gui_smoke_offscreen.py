@@ -393,7 +393,8 @@ def main():
         visible_btns = [w for w in direct
                         if isinstance(w, (QToolButton, QPushButton))]
         seps = [w for w in direct if w.objectName() == "toolbarSep"]
-        bar_ok = len(visible_btns) == 9 and len(seps) == 2
+        # v43.376 起操作栏「未读概览」按钮补回（收纳段 3 → 4 颗），可见按钮共 10
+        bar_ok = len(visible_btns) == 10 and len(seps) == 2
         # 低频 3 开关：对象没重建（外部 setChecked 同步不断链），parent 已进弹出面板
         names = ('action_btn_toggle_progress', 'action_btn_auto_q')
         low = [getattr(win, n, None) for n in names]
@@ -421,7 +422,7 @@ def main():
         hint_ok = hint is not None and hint.objectName() == "actionHintCount"
         ok = (bar_ok and kept and moved and promoted and togglable
               and act_ok and menu_ok and hint_ok)
-        return ok, ("可见按钮=%d(期望9) 分隔=%d(期望2) 3对象保留=%s 已搬入菜单=%s "
+        return ok, ("可见按钮=%d(期望10) 分隔=%d(期望2) 3对象保留=%s 已搬入菜单=%s "
                     "概览/审核归位=%s 可切换=%s 收起展开项=%s 菜单项=%s 条数提示=%s"
                     % (len(visible_btns), len(seps), kept, moved, promoted,
                        togglable, act_ok, menu_ok, hint_ok))

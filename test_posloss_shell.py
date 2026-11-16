@@ -67,8 +67,8 @@ print('③ 状态条/总命中实时联动 OK（%s / %s）' % (status, shell.lbl
 bar_n = len([s for s in shell._filters.values() if s.zone == 'bar'])
 assert bar_n == len(PosLossContent.BAR_FILTERS) == 5, bar_n
 assert not content.findChildren(QScrollArea), '筛选栏仍被装进横向滚动区'
-assert set(g for g, *_ in PosLossContent.DRAWER_FILTERS) == {'material', 'org'}
-print('③b 常驻控件 %d 个、无横向滚动、抽屉分组 material+org OK' % bar_n)
+assert set(g for g, *_ in PosLossContent.DRAWER_FILTERS) == {'material', 'numeric', 'org'}
+print('③b 常驻控件 %d 个、无横向滚动、抽屉分组 material+numeric+org OK' % bar_n)
 
 # ③c 逐条件命中徽章：抽屉里每个条件都能看到自己放行多少行
 content._read_filter = "未读"

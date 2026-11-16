@@ -85,7 +85,7 @@ print('⑤ 状态条/总命中实时联动 OK（%s / %s）'
 bar_n = len([s for s in shell._filters.values() if s.zone == 'bar'])
 assert bar_n == len(SemiContent.BAR_FILTERS) == 5, bar_n
 assert not content.findChildren(QScrollArea), '筛选栏仍被装进横向滚动区'
-assert set(g for g, *_ in SemiContent.DRAWER_FILTERS) == {'material', 'org'}
+assert set(g for g, *_ in SemiContent.DRAWER_FILTERS) == {'material', 'org', 'numeric'}
 # 投料状态是本看板主轴，常驻可见；半成品分类这种多选进抽屉
 assert shell._filters['feed_status'].zone == 'bar'
 assert shell._filters['semi_class'].zone == 'drawer'

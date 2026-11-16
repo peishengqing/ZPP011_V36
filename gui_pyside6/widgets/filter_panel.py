@@ -315,8 +315,8 @@ class FilterPanel(QWidget):
         _ndq_toggle_btn.clicked.connect(self._toggle_net_dev_qty_drawer)
         _ndq_drawer = QGroupBox("净偏差数量")
         _ndq_drawer.setStyleSheet(
-            "QGroupBox { font-size: 12px; font-weight: 650; color: var(--color-text, #1f2329); "
-            "padding: 10px; border: 1px solid var(--color-border, #dcdfe6); "
+            "QGroupBox { font-size: 12px; font-weight: 650; color: var(--color-text); "
+            "padding: 10px; border: 1px solid var(--color-border); "
             "border-radius: var(--r-md, 8px); background: var(--color-surface, #ffffff); } "
             "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }")
         _ndq_layout = QVBoxLayout(_ndq_drawer)

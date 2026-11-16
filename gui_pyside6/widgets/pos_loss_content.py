@@ -151,7 +151,8 @@ class PosLossContent(QWidget):
                       ("material", "dev_qty", "偏差数量", "combo_dev_qty"),
                       ("material", "color", "颜色标记", "color_bar"),
                       ("org", "quar", "隔离区", "quar_bar"),
-                      ("org", "note", "备注", "note_bar"))
+                      ("org", "note", "备注", "note_bar"),
+                      ("numeric", "净偏差数量", "净偏差数量", "_net_dev_qty_container"))
 
     def _build_filter_widgets(self):
         """创建筛选控件与联动，但不进任何布局 —— 布局由 attach_shell 交给外壳。"""
@@ -297,8 +298,6 @@ class PosLossContent(QWidget):
             shell.add_filter(key, label, getattr(self, attr))
         for group, key, label, attr in self.DRAWER_FILTERS:
             shell.add_filter(key, label, getattr(self, attr), zone="drawer", group=group)
-        # 净偏差数量 数值范围筛选 → 数值维度抽屉（正损此前无 numeric 组，注册时自动建组）
-        shell.add_filter('净偏差数量', '净偏差数量', self._net_dev_qty_container, zone="drawer", group="numeric")
         for key in sorted(self._hidden_filters):
             shell.set_filter_visible(key, False)
         for w in (self.btn_add_quar, self.btn_export, self.btn_refresh,

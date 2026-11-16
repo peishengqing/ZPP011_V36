@@ -139,6 +139,7 @@ class NegLossContent(QWidget):
                       ("material", "semi_class", "半成品分类", "grp_semi_class"),
                       ("material", "color", "颜色标记", "color_bar"),
                       ("numeric", "include_zero", "含未投料", "chk_include_zero"),
+                      ("numeric", "净偏差数量", "净偏差数量", "_net_dev_qty_container"),
                       ("org", "quar", "隔离区", "quar_bar"),
                       ("org", "note", "备注", "note_bar"))
 
@@ -287,8 +288,7 @@ class NegLossContent(QWidget):
             shell.add_filter(key, label, getattr(self, attr))
         for group, key, label, attr in self.DRAWER_FILTERS:
             shell.add_filter(key, label, getattr(self, attr), zone="drawer", group=group)
-        # 净偏差数量 数值范围筛选 → 数值维度抽屉
-        shell.add_filter('净偏差数量', '净偏差数量', self._net_dev_qty_container, zone="drawer", group="numeric")
+        # 净偏差数量 数值范围筛选已在 DRAWER_FILTERS 的 numeric 条目内挂载
         for key in sorted(self._hidden_filters):
             shell.set_filter_visible(key, False)
         for w in (self.btn_add_quar, self.btn_export, self.btn_refresh,
