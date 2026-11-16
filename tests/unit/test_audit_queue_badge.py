@@ -45,7 +45,8 @@ def _mw(df):
     fake._get_master_df = lambda: df
     fake.alert_monitor = types.SimpleNamespace(threshold=10)
     for name in ("_open_quarantine_dialog", "_show_audit_changes_dialog",
-                 "_show_alert_dashboard", "_show_deviation_warning_dialog"):
+                 "_show_alert_dashboard", "_show_deviation_warning_dialog",
+                 "_show_flip_check_dashboard"):
         setattr(fake, name, lambda: None)
     fake.dashboard_controller = DashboardController(fake)
     return fake
@@ -90,8 +91,11 @@ def test_no_column_overcount_when_row_hits_two_boards():
 # ---------- 2. 徽标与弹窗四行同源 ----------
 
 def test_items_counts_match_masks():
+    """v43.381 起弹窗 5 行：前 4 类来自行掩码，翻箱守恒异常另算（本 df 无
+    翻箱列 → 0）。徽标仍是 4 类去重，不含翻箱行。"""
     items = {it["label"]: it["count"] for it in _mw(_df())._count_unread_items()}
-    assert items == {"隔离区": 2, "变动提醒": 2, "替代料": 0, "偏差率预警": 2}
+    assert items == {"隔离区": 2, "变动提醒": 2, "替代料": 0,
+                     "偏差率预警": 2, "翻箱守恒异常": 0}
 
 
 def test_read_rows_leave_both_badge_and_popup():
@@ -100,7 +104,8 @@ def test_read_rows_leave_both_badge_and_popup():
     mw = _mw(df)
     items = {it["label"]: it["count"] for it in mw._count_unread_items()}
     # 隔离区{0,1}→{0}=1、变动提醒{1,2}→{2}=1、偏差{2,3}→{2}=1，去重{0,2}=2
-    assert items == {"隔离区": 1, "变动提醒": 1, "替代料": 0, "偏差率预警": 1}
+    assert items == {"隔离区": 1, "变动提醒": 1, "替代料": 0,
+                     "偏差率预警": 1, "翻箱守恒异常": 0}
     assert mw._unread_audit_count() == 2
 
 

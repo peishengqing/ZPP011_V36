@@ -38,6 +38,110 @@ from gui_pyside6.dialogs.quarantine_review_dialog import QuarantineReviewDialog
 from core.alert_monitor import filter_alt_alerts
 from core.read_status import get_material_names
 from gui_pyside6.dialogs.material_profile_dialog import normalize_text
+from analysis.excel_builder.analysis_extra_flip import (
+    _check_order,
+    check_drink_order,
+    split_by_factory,
+)
+
+
+# v43.381：未读概览弹窗第 5 行取数——翻箱守恒异常（疑似漏记）单统计。
+# 口径与翻箱守恒看板 / 导出「翻箱守恒预警」sheet 完全同源（analysis_extra_flip
+# 单一来源）：主表筛 ZPFX → 按流程订单分组 → split_by_factory 分厂路由 →
+# 食品厂 _check_order（净含量KG守恒）/ 饮料厂 check_drink_order（总容器数守恒），
+# 结论=='疑似漏记' 计为异常单。绝不在此重写第二套守恒判别。
+def flip_anomaly_stats(df):
+    """统计翻箱守恒异常单，返回 (未读异常单数, 异常单总数)。
+
+    「未读」与弹窗其它 4 类同约定：该异常单在主表里仍有 _read==0 的组件行。
+    全部组件行标已读后未读数归 0，弹窗才能按「全清零自动关闭」收起
+    （异常单本身没有独立的已读机制，若不挂 _read，弹窗将永远关不掉）。
+    缺列 / 无 ZPFX / 计算异常一律返回 (0, 0)，绝不打断弹窗刷新链路。
+    """
+    if df is None or df.empty:
+        return 0, 0
+    for _c in ('订单类型', '流程订单', '产品物料描述', '产量',
+               '组件物料类型', '物料名称', '单位', '实际'):
+        if _c not in df.columns:
+            return 0, 0
+    try:
+        fx = df[df['订单类型'].astype(str).str.upper().str.contains('ZPFX', na=False)]
+        if fx.empty:
+            return 0, 0
+
+        if '_read' in df.columns:
+            unread_row = (pd.to_numeric(df['_read'], errors='coerce')
+                          .fillna(0).astype(int) == 0)
+        else:
+            unread_row = pd.Series(True, index=df.index)
+        # 逐行取未读标记；极端情况（重复索引等）取不到时按未读算，保守不漏报
+        unread_flags = []
+        for _idx in fx.index:
+            try:
+                unread_flags.append(bool(unread_row.at[_idx]))
+            except (KeyError, ValueError):
+                unread_flags.append(True)
+
+        # 行字典结构 = 翻箱看板 _load 的同款最小集（守恒校验只吃这些键）
+        def g(row, key, default=''):
+            v = row.get(key, default)
+            if v is None:
+                return default
+            s = str(v).strip()
+            return default if s.lower() in ('', 'nan', 'none') else s
+
+        def gnum(row, key):
+            try:
+                f = float(row.get(key))
+                return 0.0 if f != f else f    # NaN → 0
+            except (TypeError, ValueError):
+                return 0.0
+
+        groups = {}
+        for (_idx, row), is_unread in zip(fx.iterrows(), unread_flags):
+            oid = g(row, '流程订单')
+            if not oid:
+                continue
+            groups.setdefault(oid, []).append({
+                'ord': oid,
+                'fac': g(row, '工厂名称') or g(row, '工厂'),
+                'pdesc': g(row, '产品物料描述'),
+                'yield': gnum(row, '产量'),
+                'mtype': g(row, '组件物料类型').upper(),
+                'mtdesc': g(row, '组件物料类型描述'),
+                'mname': g(row, '物料名称'),
+                'unit': g(row, '单位').upper(),
+                'actual': gnum(row, '实际'),
+                'note': g(row, '备注'),
+                '_unread': is_unread,
+            })
+        if not groups:
+            return 0, 0
+
+        flat = [r for rs in groups.values() for r in rs]
+        food_rows, drink_rows, _unknown = split_by_factory(flat)
+
+        def _stats(rows, check):
+            by_order = {}
+            for r in rows:
+                by_order.setdefault(r['ord'], []).append(r)
+            total = unread = 0
+            for rs in by_order.values():
+                if check(rs).get('verdict') != '疑似漏记':
+                    continue
+                total += 1
+                if any(r['_unread'] for r in rs):
+                    unread += 1
+            return total, unread
+
+        food_total, food_unread = _stats(food_rows, _check_order)
+        drink_total, drink_unread = _stats(drink_rows, check_drink_order)
+        return food_unread + drink_unread, food_total + drink_total
+    except Exception:
+        # 统计挂了不能连累弹窗刷新；但禁止静默吞，必须留痕（v43.152 同一纪律）
+        import traceback
+        traceback.print_exc()
+        return 0, 0
 
 
 class DashboardController:
@@ -171,6 +275,15 @@ class DashboardController:
         for m in self._unread_audit_masks(df).values():
             acc = m if acc is None else (acc | m)
         return int(acc.sum()) if acc is not None else 0
+
+    def flip_anomaly_stats(self, df):
+        """未读概览弹窗第 5 行取数：翻箱守恒异常（疑似漏记）单统计。
+
+        返回 (未读异常单数, 异常单总数)，口径见模块级 flip_anomaly_stats。
+        只挂未读概览弹窗，不进审核队列徽标/未读看板（徽标仍是主表 4 类
+        去重口径，避免裴哥没点名的范围跟着变）。
+        """
+        return flip_anomaly_stats(df)
 
     def _show_alert_dashboard(self):
         """手动打开替代料看板"""

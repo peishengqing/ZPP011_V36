@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 未读汇总弹窗
-非模态、右下角置顶、不阻塞主线程；分析/加载完成后显示 4 类未读条数，
+非模态、右下角置顶、不阻塞主线程；分析/加载完成后显示各类未读条数
+（v43.381 起 5 行：隔离区 / 变动提醒 / 替代料 / 偏差率预警 / 翻箱守恒异常），
 每行可点击「查看」跳转对应看板。复用 AlertPopup 的安全写法（避免模态弹窗引发卡顿）。
 裴哥 | 2026-08-01
 """
@@ -33,8 +34,10 @@ class UnreadSummaryPopup(QWidget):
 
     items: list of dict，每个含
         icon     : str   图标
-        label    : str   类别名（隔离区 / 变动提醒 / 替代料 / 偏差率预警）
+        label    : str   类别名（隔离区 / 变动提醒 / 替代料 / 偏差率预警 / 翻箱守恒异常）
         count    : int   未读数
+        suffix   : str   计数单位文案，缺省「条未读」；
+                         v43.381 翻箱守恒异常传「单疑似漏记」（订单粒度）
         callback : callable  点击「查看」时打开对应看板的方法
 
     行为：
@@ -134,7 +137,9 @@ class UnreadSummaryPopup(QWidget):
                 icon_label.setText(raw_icon)
             name_label = QLabel(it["label"])
             name_label.setFont(QFont("Microsoft YaHei", 10))
-            count_label = QLabel(f"{it['count']} 条未读")
+            # v43.381：计数单位可定制（翻箱守恒异常 = 「N 单疑似漏记」）
+            suffix = str(it.get("suffix") or "条未读")
+            count_label = QLabel(f"{it['count']} {suffix}")
             count_label.setObjectName("unreadCount")
             count_label.setFont(QFont("Microsoft YaHei", 10, QFont.Bold))
             # 计数列定宽右对齐：4 行数字上下对齐，不再随名称长度飘
@@ -151,7 +156,7 @@ class UnreadSummaryPopup(QWidget):
                 view_btn.setEnabled(False)
                 view_btn.setToolTip("暂无未读记录，无需查看")
             else:
-                view_btn.setToolTip("打开%s（%d 条未读）" % (it["label"], _n))
+                view_btn.setToolTip("打开%s（%d %s）" % (it["label"], _n, suffix))
             # 用默认参数绑定，避免闭包复用同一 callback
             view_btn.clicked.connect(
                 lambda _checked=False, cb=it["callback"], lb=it["label"]:
@@ -180,10 +185,11 @@ class UnreadSummaryPopup(QWidget):
         for it in items:
             lbl = self._count_labels.get(it["label"])
             if lbl is not None:
-                lbl.setText(f"{it['count']} 条未读")
+                suffix = str(it.get("suffix") or "条未读")
+                lbl.setText(f"{it['count']} {suffix}")
 
     def mark_all_clear(self):
-        """4 类未读全部清零时显示「全清零啦」副标题。"""
+        """全部类别未读清零时显示「全清零啦」副标题。"""
         try:
             self._all_clear_label.show()
             self._all_clear_icon.show()

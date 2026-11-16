@@ -2174,17 +2174,18 @@ class MainWindow(QMainWindow):
         return self.dashboard_controller._unread_audit_count()
 
     def _count_unread_items(self):
-        """统计 4 类未读条数，返回 items 列表（供弹窗构建 + 实时刷新共用）。
+        """统计未读条数，返回 items 列表（供弹窗构建 + 实时刷新共用）。
 
-        判据全在 _unread_audit_masks，这里只负责把掩码换成带回调的展示条目。
-        无数据时返回 None。
+        前 4 类判据全在 _unread_audit_masks，这里只负责把掩码换成带回调的
+        展示条目；第 5 类「翻箱守恒异常」由 dashboard_controller.flip_anomaly_stats
+        按翻箱守恒看板同源口径另算（订单粒度，非主表行掩码）。无数据时返回 None。
         """
         df = self._get_master_df()
         if df is None or df.empty:
             return None
         counts = {label: int(m.sum()) for label, m in self._unread_audit_masks(df).items()}
 
-        return [
+        items = [
             # v43.264：icon 传线性图标名（utils/icons.py），弹窗渲染成 SVG 图标
             {"icon": "box", "label": "隔离区", "count": counts["隔离区"],
              "callback": self._open_quarantine_dialog},
@@ -2195,6 +2196,16 @@ class MainWindow(QMainWindow):
             {"icon": "alert", "label": "偏差率预警", "count": counts["偏差率预警"],
              "callback": self._show_deviation_warning_dialog},
         ]
+        # v43.381：第 5 行——翻箱守恒异常（疑似漏记）单，口径与翻箱守恒看板同源。
+        # 计数 = 仍未读的异常单数（该单在主表还有 _read==0 的组件行）；
+        # 点「查看」打开翻箱守恒预警看板（板内可用「结论」下拉筛疑似漏记）。
+        flip_unread, _flip_total = self.dashboard_controller.flip_anomaly_stats(df)
+        items.append({
+            "icon": "layers", "label": "翻箱守恒异常", "count": flip_unread,
+            "suffix": "单疑似漏记",
+            "callback": self._show_flip_check_dashboard,
+        })
+        return items
 
     def _show_unread_summary(self, force=False):
         """分析/加载完成后，弹常驻非模态未读汇总弹窗。
