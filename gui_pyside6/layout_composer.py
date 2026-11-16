@@ -173,6 +173,7 @@ class LayoutComposer:
         _icon_action(boards_menu, "link", "替代料长链", lambda: mw._show_alt_chain_dashboard())
         _icon_action(boards_menu, "box", "半成品看板", lambda: mw._show_semi_dashboard())
         _icon_action(boards_menu, "refresh", "翻箱守恒", lambda: mw._show_flip_check_dashboard())
+        _icon_action(boards_menu, "flag", "未投料", lambda: mw._show_unfed_dashboard())
         mw.action_btn_boards.setMenu(boards_menu)
         action_layout.addWidget(mw.action_btn_boards)
 

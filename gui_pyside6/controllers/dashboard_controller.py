@@ -35,6 +35,7 @@ from gui_pyside6.dialogs.deviation_warning_dialog import DeviationWarningDialog
 from gui_pyside6.dialogs.flip_check_dashboard_dialog import FlipCheckDashboardDialog
 from gui_pyside6.dialogs.material_profile_dialog import MaterialProfileDialog
 from gui_pyside6.dialogs.quarantine_review_dialog import QuarantineReviewDialog
+from gui_pyside6.dialogs.unfed_dashboard_dialog import UnfedDashboardDialog
 from core.alert_monitor import filter_alt_alerts
 from core.read_status import get_material_names
 from gui_pyside6.dialogs.material_profile_dialog import normalize_text
@@ -675,6 +676,32 @@ class DashboardController:
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self.mw, "错误", f"打开翻箱守恒看板失败: {e}")
+
+    def _show_unfed_dashboard(self):
+        """手动打开未投料看板：整单零投料（该单所有组件行实际用量均为 0）的订单。
+
+        口径与导出「完整偏差明细.未投料订单」列完全同源（post_process._add_unfed_flag，
+        v43.254）：按流程订单分组、全部 |实际|≤0.001 才算未投料。这里只裁列 +
+        传入主表同源 df，判定与筛选都在看板内部做。
+        """
+        try:
+            df = self.mw._get_master_df()
+            if df is None or df.empty:
+                QMessageBox.information(self.mw, "提示", "暂无数据，请先分析")
+                return
+            # 未投料看板所需列（展示列 + 双击定位用的内部列），缺列由看板优雅降级
+            candidates = [
+                "订单日期", "流程订单", "工厂", "车间",
+                "产品物料描述", "物料编码", "物料名称", "单位",
+                "定额", "实际", "净偏差数量", "偏差金额", "备注",
+                "原表行号", "data_id",
+            ]
+            keep = [c for c in candidates if c in df.columns]
+            sub = df[keep].copy() if keep else df.copy()
+            dialog = UnfedDashboardDialog(sub, self.mw)
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.critical(self.mw, "错误", f"打开未投料看板失败: {e}")
 
 
     def _show_semi_detail_window(self, category: str):
