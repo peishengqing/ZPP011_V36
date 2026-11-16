@@ -145,6 +145,54 @@ def flip_anomaly_stats(df):
         return 0, 0
 
 
+# v43.386：未读概览弹窗第 6 行取数——未投料订单统计（区分食品/饮料厂）。
+# 口径与未投料看板 / 导出「完整偏差明细.未投料订单」完全同源（unfed_order_mask
+# 单一来源，绝不重写第二套零投料判定）：整单所有组件行 |实际|≤0.001 才算未投料。
+def unfed_stats(df):
+    """统计未投料订单，返回 (未读未投料订单数, 未投料订单总数, 分厂明细文案)。
+
+    「未读」与弹窗其它行同约定：该单在主表里仍有 _read==0 的组件行；
+    缺 _read 列时全按未读（保守不漏报）。全部标读后未读数归 0，
+    弹窗才能按「全清零自动关闭」收起。
+    分厂明细文案形如「食品厂 26单 · 饮料厂 9单」（未读口径，与主计数一致）。
+    缺列 / 空表 / 计算异常一律返回 (0, 0, '')，绝不打断弹窗刷新链路。
+    """
+    if df is None or df.empty or '流程订单' not in df.columns:
+        return 0, 0, ''
+    try:
+        from gui_pyside6.dialogs.unfed_dashboard_dialog import unfed_order_mask
+        sub = df.loc[unfed_order_mask(df)]
+        if sub.empty:
+            return 0, 0, ''
+        if '_read' in sub.columns:
+            unread_rows = sub[pd.to_numeric(sub['_read'], errors='coerce').fillna(0) == 0]
+        else:
+            unread_rows = sub
+        total = int(sub['流程订单'].nunique())
+        unread = int(unread_rows['流程订单'].nunique()) if not unread_rows.empty else 0
+        parts = []
+        if '工厂' in sub.columns and not unread_rows.empty:
+            grp = unread_rows.groupby(unread_rows['工厂'].astype(str))['流程订单'].nunique()
+
+            def _short(name):
+                s = str(name)
+                if '食品' in s:
+                    return '食品厂'
+                if '饮料' in s:
+                    return '饮料厂'
+                return s
+
+            named = [(_short(k), int(v)) for k, v in grp.items()]
+            named.sort(key=lambda t: (t[0] != '食品厂', t[0] != '饮料厂', t[0]))
+            parts = ["%s %d单" % (n, c) for n, c in named]
+        return unread, total, " · ".join(parts)
+    except Exception:
+        # 统计挂了不能连累弹窗刷新；但禁止静默吞，必须留痕（v43.152 同一纪律）
+        import traceback
+        traceback.print_exc()
+        return 0, 0, ''
+
+
 class DashboardController:
     """看板/弹窗展示控制器（纯 UI 取数与弹窗编排，不触碰 analyzer 口径层）。"""
 
@@ -285,6 +333,14 @@ class DashboardController:
         去重口径，避免裴哥没点名的范围跟着变）。
         """
         return flip_anomaly_stats(df)
+
+    def unfed_stats(self, df):
+        """未读概览弹窗第 6 行取数：未投料订单统计（区分食品/饮料厂）。
+
+        返回 (未读未投料订单数, 未投料订单总数, 分厂明细文案)，
+        口径见模块级 unfed_stats。只挂未读概览弹窗，不进审核队列徽标。
+        """
+        return unfed_stats(df)
 
     def _show_alert_dashboard(self):
         """手动打开替代料看板"""

@@ -2,8 +2,8 @@
 """
 未读汇总弹窗
 非模态、右下角置顶、不阻塞主线程；分析/加载完成后显示各类未读条数
-（v43.381 起 5 行：隔离区 / 变动提醒 / 替代料 / 偏差率预警 / 翻箱守恒异常），
-每行可点击「查看」跳转对应看板。复用 AlertPopup 的安全写法（避免模态弹窗引发卡顿）。
+（v43.386 起 6 行：隔离区 / 变动提醒 / 替代料 / 偏差率预警 / 翻箱守恒异常 /
+未投料），每行可点击「查看」跳转对应看板。复用 AlertPopup 的安全写法（避免模态弹窗引发卡顿）。
 裴哥 | 2026-08-01
 """
 from PySide6.QtWidgets import (
@@ -34,10 +34,14 @@ class UnreadSummaryPopup(QWidget):
 
     items: list of dict，每个含
         icon     : str   图标
-        label    : str   类别名（隔离区 / 变动提醒 / 替代料 / 偏差率预警 / 翻箱守恒异常）
+        label    : str   类别名（隔离区 / 变动提醒 / 替代料 / 偏差率预警 /
+                         翻箱守恒异常 / 未投料）
         count    : int   未读数
         suffix   : str   计数单位文案，缺省「条未读」；
-                         v43.381 翻箱守恒异常传「单疑似漏记」（订单粒度）
+                         v43.381 翻箱守恒异常传「单疑似漏记」（订单粒度）；
+                         v43.386 未投料传「单未投料」（订单粒度）
+        detail   : str   可选，名称下方的小字补充（v43.386 未投料传
+                         「食品厂 26单 · 饮料厂 9单」分厂明细）
         callback : callable  点击「查看」时打开对应看板的方法
 
     行为：
@@ -55,6 +59,7 @@ class UnreadSummaryPopup(QWidget):
         super().__init__(parent)
         self._items = items or []
         self._count_labels = {}  # label -> count QLabel，供 update_counts 就地刷新
+        self._detail_labels = {}  # label -> detail QLabel（可 None），供 update_counts 刷新
 
         # 非模态 + 无边框 + 置顶 + 工具窗口（不在任务栏显示），彻底不阻塞主线程
         self.setWindowFlags(
@@ -135,8 +140,21 @@ class UnreadSummaryPopup(QWidget):
                 icon_label.setPixmap(get_icon(icon_name, 16).pixmap(16, 16))
             else:
                 icon_label.setText(raw_icon)
+            # v43.386：名称区支持小字 detail（未投料行的分厂订单明细）
+            name_area = QVBoxLayout()
+            name_area.setContentsMargins(0, 0, 0, 0)
+            name_area.setSpacing(1)
             name_label = QLabel(it["label"])
             name_label.setFont(QFont("Microsoft YaHei", 10))
+            name_area.addWidget(name_label)
+            detail_label = None
+            detail = str(it.get("detail") or "")
+            if detail:
+                detail_label = QLabel(detail)
+                detail_label.setFont(QFont("Microsoft YaHei", 8))
+                detail_label.setStyleSheet("color:%s;" % Thm.color("textMuted"))
+                name_area.addWidget(detail_label)
+            rlayout.addLayout(name_area)
             # v43.381：计数单位可定制（翻箱守恒异常 = 「N 单疑似漏记」）
             suffix = str(it.get("suffix") or "条未读")
             count_label = QLabel(f"{it['count']} {suffix}")
@@ -164,14 +182,14 @@ class UnreadSummaryPopup(QWidget):
             )
 
             rlayout.addWidget(icon_label)
-            rlayout.addWidget(name_label)
             rlayout.addStretch()
             rlayout.addWidget(count_label)
             rlayout.addWidget(view_btn)
             layout.addWidget(row)
 
-            # 记录引用，供 update_counts 就地刷新条数
+            # 记录引用，供 update_counts 就地刷新条数/明细
             self._count_labels[it["label"]] = count_label
+            self._detail_labels[it["label"]] = detail_label
 
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
@@ -181,12 +199,15 @@ class UnreadSummaryPopup(QWidget):
         layout.addLayout(btn_layout)
 
     def update_counts(self, items):
-        """就地刷新各类未读条数（不重建窗口，避免闪烁/抢焦点）。"""
+        """就地刷新各类未读条数与明细（不重建窗口，避免闪烁/抢焦点）。"""
         for it in items:
             lbl = self._count_labels.get(it["label"])
             if lbl is not None:
                 suffix = str(it.get("suffix") or "条未读")
                 lbl.setText(f"{it['count']} {suffix}")
+            d = self._detail_labels.get(it["label"])
+            if d is not None:
+                d.setText(str(it.get("detail") or ""))
 
     def mark_all_clear(self):
         """全部类别未读清零时显示「全清零啦」副标题。"""

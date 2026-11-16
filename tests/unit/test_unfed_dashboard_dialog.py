@@ -162,3 +162,32 @@ def test_dialog_empty_data(qapp):
     assert "没有" in dlg.lbl_count.text() or dlg.lbl_count.text().startswith("共 0 条")
     dlg2 = UnfedDashboardDialog(None, object())
     assert len(dlg2.source_model.getDataFrame()) == 0
+
+
+# ---------------------------------------------------------------- 未读概览第 6 行
+def test_unfed_stats_split_and_read():
+    """未读概览第 6 行取数：订单粒度、区分食品/饮料厂、随已读清零。"""
+    from gui_pyside6.controllers.dashboard_controller import unfed_stats
+    # 无 _read 列 → 全按未读：2 单（食品 2001 + 饮料 2003），分厂各 1
+    unread, total, detail = unfed_stats(_df())
+    assert (unread, total) == (2, 2)
+    assert "食品厂 1单" in detail and "饮料厂 1单" in detail
+    # 2001 两行全标读、2003 保持未读 → 未读只剩饮料厂 1 单；总数不变
+    df2 = _df()
+    df2["_read"] = [1, 1, 0, 0, 0, 0, 0]
+    unread2, total2, detail2 = unfed_stats(df2)
+    assert (unread2, total2) == (1, 2)
+    assert "食品厂" not in detail2 and "饮料厂 1单" in detail2
+    # 全部标读 → 未读归 0（弹窗可按「全清零自动关闭」收起），明细清空
+    df3 = _df()
+    df3["_read"] = 1
+    assert unfed_stats(df3) == (0, 2, "")
+
+
+def test_unfed_stats_degenerate_inputs():
+    from gui_pyside6.controllers.dashboard_controller import unfed_stats
+    assert unfed_stats(None) == (0, 0, "")
+    assert unfed_stats(pd.DataFrame()) == (0, 0, "")
+    assert unfed_stats(pd.DataFrame([dict(流程订单="X", 实际=5.0)])) == (0, 0, "")
+    # 缺流程订单列
+    assert unfed_stats(pd.DataFrame([dict(实际=0.0)])) == (0, 0, "")

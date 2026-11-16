@@ -2178,7 +2178,9 @@ class MainWindow(QMainWindow):
 
         前 4 类判据全在 _unread_audit_masks，这里只负责把掩码换成带回调的
         展示条目；第 5 类「翻箱守恒异常」由 dashboard_controller.flip_anomaly_stats
-        按翻箱守恒看板同源口径另算（订单粒度，非主表行掩码）。无数据时返回 None。
+        按翻箱守恒看板同源口径另算（订单粒度，非主表行掩码）；第 6 类「未投料」
+        由 dashboard_controller.unfed_stats 按未投料看板同源口径另算
+        （订单粒度、区分食品/饮料厂）。无数据时返回 None。
         """
         df = self._get_master_df()
         if df is None or df.empty:
@@ -2204,6 +2206,15 @@ class MainWindow(QMainWindow):
             "icon": "layers", "label": "翻箱守恒异常", "count": flip_unread,
             "suffix": "单疑似漏记",
             "callback": self._show_flip_check_dashboard,
+        })
+        # v43.386：第 6 行——未投料订单（整单零投料），订单粒度、区分食品/饮料厂。
+        # 口径与未投料看板同源（unfed_order_mask）；「未读」约定与翻箱行相同
+        # （该单仍有 _read==0 的组件行才算未读，全读后归 0、弹窗可自动关闭）。
+        unfed_unread, _unfed_total, unfed_detail = self.dashboard_controller.unfed_stats(df)
+        items.append({
+            "icon": "flag", "label": "未投料", "count": unfed_unread,
+            "suffix": "单未投料", "detail": unfed_detail,
+            "callback": self._show_unfed_dashboard,
         })
         return items
 
