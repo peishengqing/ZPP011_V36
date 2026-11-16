@@ -8,6 +8,20 @@ import pandas as pd
 from PySide6.QtCore import QObject, Signal
 
 from .data_preprocessor import DataPreprocessor, snapshot_qty_for, snapshot_note_for, snapshot_net_for, build_data_id
+
+# 快照工具函数为对外再导出（各看板/控制器统一从 data_service 导入）；
+# 写入 __all__ 既表明再导出语义，也让 pyflakes 不再按「未使用 import」计新issue。
+__all__ = [
+    'DataService',
+    'DataPreprocessor',
+    'ReadStatusService',
+    'AuditResultService',
+    'QuarantineService',
+    'snapshot_qty_for',
+    'snapshot_note_for',
+    'snapshot_net_for',
+    'build_data_id',
+]
 from .read_status_service import ReadStatusService
 from .audit_result_service import AuditResultService
 from .quarantine_service import QuarantineService
