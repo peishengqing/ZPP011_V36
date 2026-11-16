@@ -106,6 +106,10 @@ class QuarantineManagerController:
             qty_lookup = {str(k): v for k, v in zip(df['data_id'], df[qty_col])} if qty_col else {}
             note_lookup = {str(k): str(v) for k, v in zip(df['data_id'], df[note_col].astype(str))} if note_col else {}
             yield_lookup = {str(k): v for k, v in zip(df['data_id'], df[yield_col])} if yield_col else {}
+            # v43.380：净偏差数量基线一并快照
+            net_lookup = ({str(k): (None if pd.isna(v) else float(v))
+                           for k, v in zip(df['data_id'], pd.to_numeric(df['净偏差数量'], errors='coerce'))}
+                          if '净偏差数量' in df.columns else {})
 
             dids = [str(x) for x in df.loc[target, 'data_id'].tolist()]
             snapshot_map = {}
@@ -117,6 +121,7 @@ class QuarantineManagerController:
                     self.mw.data_service.read_status_service._safe_qty(q) if qty_col else None,
                     self.mw.data_service.read_status_service._norm_note(n) if note_col else '',
                     self.mw.data_service.read_status_service._safe_qty(y) if yield_col else None,
+                    net_lookup.get(did),
                 )
             if dids:
                 mark_read_batch(dids, snapshot_map, read_source='auto')
@@ -194,6 +199,10 @@ class QuarantineManagerController:
             qty_lookup = {str(k): v for k, v in zip(df['data_id'], df[actual_col])} if actual_col else {}
             note_lookup = {str(k): str(v) for k, v in zip(df['data_id'], df[note_col].astype(str))} if note_col else {}
             yield_lookup = {str(k): v for k, v in zip(df['data_id'], df[yield_col])} if yield_col else {}
+            # v43.380：净偏差数量基线一并快照
+            net_lookup = ({str(k): (None if pd.isna(v) else float(v))
+                           for k, v in zip(df['data_id'], pd.to_numeric(df['净偏差数量'], errors='coerce'))}
+                          if '净偏差数量' in df.columns else {})
 
             # O(1) 索引：data_id(str) -> row（与 scan_expired_quarantine 一致，防重复 data_id）
             try:
@@ -248,6 +257,7 @@ class QuarantineManagerController:
                                 self.mw.data_service.read_status_service._safe_qty(q) if actual_col else None,
                                 self.mw.data_service.read_status_service._norm_note(n) if note_col else '',
                                 self.mw.data_service.read_status_service._safe_qty(y) if yield_col else None,
+                                net_lookup.get(uid_s),
                             )
                     elif actual is not None and quota is not None and (0 < actual < quota):
                         # 仍负损：仅把「自动已读」翻回未读，手动已读保留
@@ -265,9 +275,9 @@ class QuarantineManagerController:
                 recs = []
                 for d in rolled_back:
                     old_fp = cur_map.get(d, ('', '', '', '', '', ''))[1] or ''
-                    # 7 元组：第5位=yield(产量)补 None，第6位=read_source=''；
+                    # 8 元组：第5位=yield(产量)补 None、第6位=read_source=''、第8位=净偏差数量基线补 None；
                     # 旧 6 元组会把 '' 落到 yield 位致 save_read_status_batch 的 float('') 静默失败，翻回未读永不落库
-                    recs.append((d, 0, old_fp, None, None, None, ''))
+                    recs.append((d, 0, old_fp, None, None, None, '', None))
                 save_read_status_batch(recs)
 
             # 同步内存 _read / _read_source，供 setDataFrame 后 UI 刷新

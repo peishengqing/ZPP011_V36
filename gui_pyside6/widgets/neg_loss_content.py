@@ -14,7 +14,7 @@ from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_col
 from gui_pyside6.dialogs.col_filter_ui import make_col_filter_button, make_col_filter_hint_label, set_col_filter_button_on
 from core.quarantine_manager import add_quarantine_batch, remove_quarantine, get_quarantined_ids
 from core.read_status import save_read_status_batch
-from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for, build_data_id
+from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for, snapshot_net_for, build_data_id
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.locate import locate_row, drill_to_workshop
 from gui_pyside6.utils.table_sort import enable_click_sort
@@ -1103,7 +1103,8 @@ class NegLossContent(QWidget):
                 if did in fingerprints:
                     qty = snapshot_qty_for(source_df, did)
                     note = snapshot_note_for(source_df, did)
-                    records.append((did, read_value, fingerprints[did], qty, note, None, 'manual'))
+                    net = snapshot_net_for(source_df, did)
+                    records.append((did, read_value, fingerprints[did], qty, note, None, 'manual', net))
 
         self.main_window.view_model.df = main_df
         return count, records

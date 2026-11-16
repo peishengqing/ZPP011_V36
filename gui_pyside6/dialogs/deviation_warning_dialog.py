@@ -28,7 +28,7 @@ from gui_pyside6.dialogs.col_filter_ui import (
 )
 from core.read_status import save_read_status, save_read_status_batch
 from core.quarantine_manager import add_quarantine_batch, remove_quarantine
-from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for, build_data_id
+from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for, snapshot_net_for, build_data_id
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.locate import locate_row, drill_to_workshop, compute_mom_badge
 from gui_pyside6.utils.table_sort import enable_click_sort
@@ -323,16 +323,16 @@ class DeviationWarningDialog(QDialog):
         self.btn_more_filters.setChecked(False)
         self.btn_more_filters.setMinimumWidth(90)
         self.btn_more_filters.setToolTip(
-            "展开/收起更多筛选（料别、半成品分类、组件物料类型、替代料、是否备注）")
+            "展开/收起更多筛选（料别、半成品分类、替代料、是否备注）")
         self.btn_more_filters.toggled.connect(self._on_more_filters_toggled)
         self._row_filter_btn_layout.addWidget(self.btn_more_filters)
         self._row_filter_btn_layout.addStretch()
         self._main_filter_vlayout.addWidget(self._row_filter_btn)
 
-        # ==== 第1.6行：组件物料类型（始终可见的动态级联筛选，v43.189）====
-        # 用户要求在偏差率预警看板始终可见地加一个「组件物料类型描述」动态筛选。
-        # 该下拉在 v43.172 已是级联（_refresh_cascade_combos 的 'mtd' 键），但原藏在第3行、
-        # 仅全屏可见；现独立成始终可见行，与「筛选 ▾」展开的行互不干扰；列缺失时由 set_data 整体隐藏。
+        # ==== 第1.6行：组件物料类型 + 净偏差数量（始终可见，v43.380 合并为一行）====
+        # 组件物料类型：用户要求始终可见的动态级联筛选（v43.189），列缺失时由 set_data 只藏下拉本身。
+        # 净偏差数量：裴哥反馈单独占一行「筛选格式不合适」，移到组件物料类型同一行（移到上面去）。
+        # 默认留空的短输入框，留空一端=不限、双端留空=不筛选（不再用 ±1e9 哨兵）。
         self._row_mtd_widget = QWidget()
         self._row_mtd = QHBoxLayout(self._row_mtd_widget)
         self._row_mtd.setContentsMargins(0, 0, 0, 0)
@@ -355,39 +355,34 @@ class DeviationWarningDialog(QDialog):
         self.combo_mtd.currentTextChanged.connect(self._on_mtd_changed)
         self._row_mtd.addWidget(self.combo_mtd)
 
-        self._row_mtd.addStretch()
-        self._main_filter_vlayout.addWidget(self._row_mtd_widget)
-
-        # ==== 第1.7行：净偏差数量（v43.379 从隐藏第3行提到本「始终可见」独立行）====
-        # 独立成行的原因：第1.6行组件物料类型在缺列时会被 set_data 整体隐藏
-        # （_row_mtd_widget.setVisible(has_mtd)），若把净偏差数量塞进那行会一起被藏掉。
-        # 默认留空的短输入框，留空一端=不限、双端留空=不筛选（不再用 ±1e9 哨兵）。
-        self._row_ndq_widget = QWidget()
-        self._row_ndq = QHBoxLayout(self._row_ndq_widget)
-        self._row_ndq.setContentsMargins(0, 0, 0, 0)
-        self._row_ndq.setSpacing(6)
-        _ndq_sep = QFrame()
-        _ndq_sep.setFrameShape(QFrame.VLine)
-        _ndq_sep.setFrameShadow(QFrame.Sunken)
-        self._row_ndq.addWidget(_ndq_sep)
-        self._row_ndq.addSpacing(8)
+        # 净偏差数量区间（与组件物料类型同排）
+        self.ndq_sep = QFrame()
+        self.ndq_sep.setFrameShape(QFrame.VLine)
+        self.ndq_sep.setFrameShadow(QFrame.Sunken)
+        self._row_mtd.addWidget(self.ndq_sep)
+        self._row_mtd.addSpacing(8)
         self.lbl_net_dev_qty = QLabel("净偏差数量:")
-        self._row_ndq.addWidget(self.lbl_net_dev_qty)
+        self._row_mtd.addWidget(self.lbl_net_dev_qty)
         self.net_dev_qty_min_edit = QLineEdit()
         self.net_dev_qty_min_edit.setPlaceholderText("不限")
         self.net_dev_qty_min_edit.setFixedWidth(80)
         self.net_dev_qty_min_edit.setValidator(QDoubleValidator(self.net_dev_qty_min_edit))
         self.net_dev_qty_min_edit.textChanged.connect(self._on_net_dev_qty_changed)
-        self._row_ndq.addWidget(self.net_dev_qty_min_edit)
-        self._row_ndq.addWidget(QLabel("~"))
+        self._row_mtd.addWidget(self.net_dev_qty_min_edit)
+        self._ndq_tilde = QLabel("~")
+        self._row_mtd.addWidget(self._ndq_tilde)
         self.net_dev_qty_max_edit = QLineEdit()
         self.net_dev_qty_max_edit.setPlaceholderText("不限")
         self.net_dev_qty_max_edit.setFixedWidth(80)
         self.net_dev_qty_max_edit.setValidator(QDoubleValidator(self.net_dev_qty_max_edit))
         self.net_dev_qty_max_edit.textChanged.connect(self._on_net_dev_qty_changed)
-        self._row_ndq.addWidget(self.net_dev_qty_max_edit)
-        self._row_ndq.addStretch()
-        self._main_filter_vlayout.addWidget(self._row_ndq_widget)
+        self._row_mtd.addWidget(self.net_dev_qty_max_edit)
+
+        self._row_mtd.addStretch()
+        self._main_filter_vlayout.addWidget(self._row_mtd_widget)
+        # 净偏差数量区间控件清单（供 set_data 按「净偏差数量」列是否存在统一显隐）
+        self._ndq_widgets = [self.ndq_sep, self.lbl_net_dev_qty, self.net_dev_qty_min_edit,
+                             self._ndq_tilde, self.net_dev_qty_max_edit]
 
         # ==== 第2行：料别 + 半成品分类（全屏时显示；车间已提至第1行始终可见）====
         self._row2_widget = QWidget()
@@ -1423,10 +1418,15 @@ class DeviationWarningDialog(QDialog):
         # 探测组件物料类型描述列，填充下拉框
         self._mtd_col = "组件物料类型描述" if "组件物料类型描述" in df.columns else None
         has_mtd = self._mtd_col is not None
+        # v43.380：净偏差数量与组件物料类型合并同一行后，按列各自控制显隐；
+        # 整行仅在两列都缺时才隐藏（净偏差数量缺列时 _net_dev_qty_mask 返回全 True 不筛选）。
+        has_ndq = "净偏差数量" in df.columns
         self.mtd_sep.setVisible(has_mtd)
         self.lbl_mtd.setVisible(has_mtd)
         self.combo_mtd.setVisible(has_mtd)
-        self._row_mtd_widget.setVisible(has_mtd)
+        for _w in getattr(self, "_ndq_widgets", []):
+            _w.setVisible(has_ndq)
+        self._row_mtd_widget.setVisible(has_mtd or has_ndq)
         self._mtd_filter = "all"
         self.combo_mtd.setCurrentText("全部")
         if has_mtd:
@@ -1561,7 +1561,8 @@ class DeviationWarningDialog(QDialog):
             if ok and not already:
                 qty = snapshot_qty_for(df, data_id)
                 note = snapshot_note_for(df, data_id)
-                records.append((data_id, 1, fingerprint, qty, note))
+                net = snapshot_net_for(df, data_id)
+                records.append((data_id, 1, fingerprint, qty, note, None, 'manual', net))
                 changed_ids.add(data_id)
                 count += 1
         if records:
@@ -1597,7 +1598,8 @@ class DeviationWarningDialog(QDialog):
             if ok and not already:
                 qty = snapshot_qty_for(df, data_id)
                 note = snapshot_note_for(df, data_id)
-                records.append((data_id, 0, fingerprint, qty, note))
+                net = snapshot_net_for(df, data_id)
+                records.append((data_id, 0, fingerprint, qty, note, None, 'manual', net))
                 changed_ids.add(data_id)
                 count += 1
         if records:
@@ -1745,7 +1747,7 @@ class DeviationWarningDialog(QDialog):
         if already:
             toast("该记录已是已读状态", parent=self)
         elif ok:
-            save_read_status(data_id, 1, fingerprint, snapshot_qty=snapshot_qty_for(df, data_id), snapshot_note=snapshot_note_for(df, data_id))
+            save_read_status(data_id, 1, fingerprint, snapshot_qty=snapshot_qty_for(df, data_id), snapshot_note=snapshot_note_for(df, data_id), snapshot_net_qty=snapshot_net_for(df, data_id))
             self._refresh_main_table_once()
             pass  # 不弹 toast，避免刷屏
 
@@ -1779,7 +1781,7 @@ class DeviationWarningDialog(QDialog):
         if already:
             toast("该记录已是未读状态", parent=self)
         elif ok:
-            save_read_status(data_id, 0, fingerprint, snapshot_qty=snapshot_qty_for(df, data_id), snapshot_note=snapshot_note_for(df, data_id))
+            save_read_status(data_id, 0, fingerprint, snapshot_qty=snapshot_qty_for(df, data_id), snapshot_note=snapshot_note_for(df, data_id), snapshot_net_qty=snapshot_net_for(df, data_id))
             self._refresh_main_table_once()
 
         if hasattr(self, 'original_df') and 'data_id' in self.original_df.columns:
@@ -1832,7 +1834,8 @@ class DeviationWarningDialog(QDialog):
             if ok and not already:
                 qty = snapshot_qty_for(df, data_id)
                 note = snapshot_note_for(df, data_id)
-                records.append((data_id, 1, fingerprint, qty, note))
+                net = snapshot_net_for(df, data_id)
+                records.append((data_id, 1, fingerprint, qty, note, None, 'manual', net))
                 changed_ids.add(data_id)
                 count += 1
 
@@ -1891,7 +1894,8 @@ class DeviationWarningDialog(QDialog):
             if ok and not already:
                 qty = snapshot_qty_for(df, data_id)
                 note = snapshot_note_for(df, data_id)
-                records.append((data_id, 0, fingerprint, qty, note))
+                net = snapshot_net_for(df, data_id)
+                records.append((data_id, 0, fingerprint, qty, note, None, 'manual', net))
                 changed_ids.add(data_id)
                 count += 1
 

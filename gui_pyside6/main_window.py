@@ -747,7 +747,7 @@ class MainWindow(QMainWindow):
             tool_bar = QHBoxLayout()
             tool_bar.addWidget(QLabel("字段:"))
             field_combo = QComboBox()
-            field_combo.addItems(["全部字段", "实际数量", "备注原因"])
+            field_combo.addItems(["全部字段", "实际数量", "备注原因", "产量", "净偏差数量"])
             tool_bar.addWidget(field_combo)
             tool_bar.addSpacing(12)
             tool_bar.addWidget(QLabel("搜索:"))
@@ -757,12 +757,13 @@ class MainWindow(QMainWindow):
             layout.addLayout(tool_bar)
 
             extra = f"（仅显示前 {display_len} 条，共 {count} 条；导出按钮可导出全部）" if count > display_len else ""
-            tip = QLabel(f"发现 {count} 条已审核记录的实际数量/备注原因发生变动，已强制设为'未读'。\n（表格可排序/筛选/搜索，右键复制单元格或整行，双击定位到主表对应行）{extra}")
+            tip = QLabel(f"发现 {count} 条已审核记录的实际数量/备注原因/产量/净偏差数量发生变动，已强制设为'未读'。\n（表格可排序/筛选/搜索，右键复制单元格或整行，双击定位到主表对应行）{extra}")
             tip.setWordWrap(True)
             layout.addWidget(tip)
 
             table = QTableWidget(dlg)
-            cols = ["日期", "车间", "流程订单", "物料编码", "物料名称", "变更字段", "旧值", "新值"]
+            cols = ["日期", "车间", "流程订单", "物料编码", "物料名称", "变更字段", "旧值", "新值",
+                    "净偏差数量(前)", "净偏差数量(后)"]
             table.setColumnCount(len(cols))
             table.setHorizontalHeaderLabels(cols)
             table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -815,6 +816,11 @@ class MainWindow(QMainWindow):
                     table.setItem(i, 5, QTableWidgetItem(str(c.get('field', ''))))
                     table.setItem(i, 6, QTableWidgetItem('' if old_v is None else str(old_v)))
                     table.setItem(i, 7, QTableWidgetItem('' if new_v is None else str(new_v)))
+                    # v43.380：净偏差数量 修改前(基线)/修改后(当前)，无论哪个字段变动都附上
+                    net_old = c.get('net_old', None)
+                    net_new = c.get('net_new', None)
+                    table.setItem(i, 8, QTableWidgetItem('' if net_old is None else str(net_old)))
+                    table.setItem(i, 9, QTableWidgetItem('' if net_new is None else str(net_new)))
                     if prog and (i + 1) % 200 == 0:
                         prog.setValue(i + 1)
                         QApplication.processEvents()
@@ -822,7 +828,7 @@ class MainWindow(QMainWindow):
                     prog.setValue(len(show_list))
                 # 列宽：手动设定固定/拉伸，避免 ResizeToContents 在大量行时逐行测量导致卡顿
                 header = table.horizontalHeader()
-                fixed_widths = {0: 100, 1: 90, 2: 100, 3: 110, 4: 200, 5: 90}
+                fixed_widths = {0: 100, 1: 90, 2: 100, 3: 110, 4: 200, 5: 90, 8: 130, 9: 130}
                 for col, w in fixed_widths.items():
                     header.setSectionResizeMode(col, QHeaderView.Fixed)
                     table.setColumnWidth(col, w)
@@ -957,6 +963,8 @@ class MainWindow(QMainWindow):
                             '变更字段': c.get('field', ''),
                             '旧值': '' if c.get('old_value') is None else c.get('old_value'),
                             '新值': '' if c.get('new_value') is None else c.get('new_value'),
+                            '净偏差数量(前)': '' if c.get('net_old') is None else c.get('net_old'),
+                            '净偏差数量(后)': '' if c.get('net_new') is None else c.get('net_new'),
                         })
                     pd.DataFrame(rows).to_excel(path, index=False)
                     # v43.257：内联平台分发收敛到 _open_file（第五份重复实现）

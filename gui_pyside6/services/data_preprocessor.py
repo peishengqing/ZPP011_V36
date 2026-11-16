@@ -196,6 +196,22 @@ def snapshot_note_for(df: pd.DataFrame, data_id) -> str:
         return ''
 
 
+def snapshot_net_for(df: pd.DataFrame, data_id):
+    """取某 data_id 当前净偏差数量（用于审核时建立变更检测基线，v43.380）；找不到返回 None"""
+    if '净偏差数量' not in df.columns or 'data_id' not in df.columns:
+        return None
+    try:
+        sel = df.loc[df['data_id'] == data_id, '净偏差数量']
+        if len(sel) == 0:
+            return None
+        v = sel.iloc[0]
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return None
+        return float(v)
+    except Exception:
+        return None
+
+
 def build_data_id(row: dict, df: pd.DataFrame) -> str:
     """data_id 唯一构造（4段/3段自适应）"""
     import datetime

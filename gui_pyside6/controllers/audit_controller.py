@@ -15,7 +15,7 @@ from gui_pyside6.dialogs.batch_operations_dialog import (
     BatchChangeStatusDialog, BatchExportDialog
 )
 from core.read_status import save_read_status
-from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for, build_data_id
+from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for, snapshot_net_for, build_data_id
 
 
 class AuditController(QObject):
@@ -136,9 +136,11 @@ class AuditController(QObject):
                     fingerprint = df.iloc[row].get('fingerprint', '')
                     if data_id:
                         # 方案A：审核时建立实际数量 + 备注原因基线，供后续变更检测
+                        # v43.380：净偏差数量基线一并快照（变动提醒展示修改前/后净偏差数量）
                         qty = snapshot_qty_for(df, data_id)
                         note = snapshot_note_for(df, data_id)
-                        save_read_status(data_id, is_read, fingerprint, snapshot_qty=qty, snapshot_note=note)
+                        save_read_status(data_id, is_read, fingerprint, snapshot_qty=qty, snapshot_note=note,
+                                         snapshot_net_qty=snapshot_net_for(df, data_id))
 
             source_model.setDataFrame(df)
             self.audit_data = df

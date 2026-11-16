@@ -20,8 +20,42 @@ class TestReadStatusBasic:
             rs.save_read_status('test_id_1', 1, 'fp_v1')
             result = rs.load_read_status(['test_id_1'])
             assert 'test_id_1' in result
-            # (is_read, fingerprint, snapshot_qty, snapshot_note, snapshot_yield, read_source)；手动默认 'manual'
-            assert result['test_id_1'] == (1, 'fp_v1', None, '', None, 'manual')
+            # (is_read, fingerprint, snapshot_qty, snapshot_note, snapshot_yield, read_source, snapshot_net_qty)；手动默认 'manual'
+            assert result['test_id_1'] == (1, 'fp_v1', None, '', None, 'manual', None)
+        finally:
+            rs.close_db()  # 释放句柄，否则 Windows 上临时库删不掉
+            rs.DB_PATH = orig_path
+            if os.path.exists(tmp_db):
+                os.remove(tmp_db)
+
+    def test_snapshot_net_qty_roundtrip(self):
+        """v43.380：净偏差数量基线随已读状态写入/读出/补写"""
+        import core.read_status as rs
+
+        orig_path = rs.DB_PATH
+        tmp_db = os.path.join(tempfile.mkdtemp(), 'test_audit.db')
+        rs.DB_PATH = tmp_db
+        try:
+            # save_read_status 关键字参数直写
+            rs.save_read_status('net_id_1', 1, 'fp', snapshot_qty=10.0,
+                                snapshot_note='ok', snapshot_net_qty=-4.5)
+            got = rs.load_read_status(['net_id_1'])['net_id_1']
+            assert got[6] == -4.5  # 第7位 = snapshot_net_qty
+
+            # mark_read_batch：snapshot_map 4 元组 (qty, note, yield, net)
+            rs.mark_read_batch(['net_id_2'], {'net_id_2': (1.0, 'n', 2.0, -3.25)}, read_source='auto')
+            got2 = rs.load_read_status(['net_id_2'])['net_id_2']
+            assert got2[6] == -3.25
+
+            # save_read_status_batch：第8位 = net
+            rs.save_read_status_batch([('net_id_3', 1, 'fp3', 5.0, 'x', None, 'manual', -7.75)])
+            got3 = rs.load_read_status(['net_id_3'])['net_id_3']
+            assert got3[6] == -7.75
+
+            # backfill_net_baseline：只补 net，不动其他基线列
+            rs.backfill_net_baseline([('net_id_1', -9.5)])
+            got4 = rs.load_read_status(['net_id_1'])['net_id_1']
+            assert got4[2] == 10.0 and got4[6] == -9.5
         finally:
             rs.close_db()  # 释放句柄，否则 Windows 上临时库删不掉
             rs.DB_PATH = orig_path
@@ -73,7 +107,7 @@ class TestReadStatusBasic:
             rs.save_read_status('test_id', 1, 'fp_v1')
             rs.save_read_status('test_id', 0, 'fp_v2')
             result = rs.load_read_status(['test_id'])
-            assert result['test_id'] == (0, 'fp_v2', None, '', None, 'manual')
+            assert result['test_id'] == (0, 'fp_v2', None, '', None, 'manual', None)
         finally:
             rs.close_db()  # 释放句柄，否则 Windows 上临时库删不掉
             rs.DB_PATH = orig_path
@@ -95,7 +129,7 @@ class TestReadStatusBasic:
             result = rs.load_read_status(ids)
             assert len(result) == 5
             for i, id_ in enumerate(ids):
-                assert result[id_] == (i % 2, f'fp_{i}', None, '', None, 'manual')
+                assert result[id_] == (i % 2, f'fp_{i}', None, '', None, 'manual', None)
         finally:
             rs.close_db()  # 释放句柄，否则 Windows 上临时库删不掉
             rs.DB_PATH = orig_path

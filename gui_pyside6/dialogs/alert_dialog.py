@@ -18,7 +18,7 @@ from gui_pyside6.utils.semi_class import (
     SEMI_CLASS_FOOD, SEMI_CLASS_DRINK, merge_semi_class_values, ensure_semi_class_column,
 )
 from core.read_status import save_read_status, save_read_status_batch
-from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for, build_data_id
+from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for, snapshot_net_for, build_data_id
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.locate import locate_row, drill_to_workshop, compute_mom_badge
 from gui_pyside6.widgets.filter_panel import _color_icon
@@ -893,7 +893,8 @@ class AlertDialog(QDialog):
             if ok and not already:
                 qty = snapshot_qty_for(df, data_id)
                 note = snapshot_note_for(df, data_id)
-                records.append((data_id, 1, fingerprint, qty, note))
+                net = snapshot_net_for(df, data_id)
+                records.append((data_id, 1, fingerprint, qty, note, None, 'manual', net))
                 changed_ids.add(data_id)
                 count += 1
         if records:
@@ -929,7 +930,8 @@ class AlertDialog(QDialog):
             if ok and not already:
                 qty = snapshot_qty_for(df, data_id)
                 note = snapshot_note_for(df, data_id)
-                records.append((data_id, 0, fingerprint, qty, note))
+                net = snapshot_net_for(df, data_id)
+                records.append((data_id, 0, fingerprint, qty, note, None, 'manual', net))
                 changed_ids.add(data_id)
                 count += 1
         if records:
@@ -1025,7 +1027,7 @@ class AlertDialog(QDialog):
             toast("该记录已是已读状态", parent=self)
         elif ok:
             # 单行标记：落盘一次 + 重建主表一次
-            save_read_status(data_id, 1, fingerprint, snapshot_qty=snapshot_qty_for(df, data_id), snapshot_note=snapshot_note_for(df, data_id))
+            save_read_status(data_id, 1, fingerprint, snapshot_qty=snapshot_qty_for(df, data_id), snapshot_note=snapshot_note_for(df, data_id), snapshot_net_qty=snapshot_net_for(df, data_id))
             self._refresh_main_table_once()
             pass  # 不弹 toast，避免刷屏
 
@@ -1060,7 +1062,7 @@ class AlertDialog(QDialog):
         if already:
             toast("该记录已是未读状态", parent=self)
         elif ok:
-            save_read_status(data_id, 0, fingerprint, snapshot_qty=snapshot_qty_for(df, data_id), snapshot_note=snapshot_note_for(df, data_id))
+            save_read_status(data_id, 0, fingerprint, snapshot_qty=snapshot_qty_for(df, data_id), snapshot_note=snapshot_note_for(df, data_id), snapshot_net_qty=snapshot_net_for(df, data_id))
             self._refresh_main_table_once()
 
         if hasattr(self, 'original_df') and 'data_id' in self.original_df.columns:
@@ -1115,7 +1117,8 @@ class AlertDialog(QDialog):
             if ok and not already:
                 qty = snapshot_qty_for(df, data_id)
                 note = snapshot_note_for(df, data_id)
-                records.append((data_id, 1, fingerprint, qty, note))
+                net = snapshot_net_for(df, data_id)
+                records.append((data_id, 1, fingerprint, qty, note, None, 'manual', net))
                 changed_ids.add(data_id)
                 count += 1
 
@@ -1177,7 +1180,8 @@ class AlertDialog(QDialog):
             if ok and not already:
                 qty = snapshot_qty_for(df, data_id)
                 note = snapshot_note_for(df, data_id)
-                records.append((data_id, 0, fingerprint, qty, note))
+                net = snapshot_net_for(df, data_id)
+                records.append((data_id, 0, fingerprint, qty, note, None, 'manual', net))
                 changed_ids.add(data_id)
                 count += 1
 

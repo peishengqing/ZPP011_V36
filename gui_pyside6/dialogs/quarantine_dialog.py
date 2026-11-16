@@ -29,7 +29,7 @@ from core.quarantine_manager import (
 )
 from core.auto_quarantine import load_auto_quarantine_config
 from core.read_status import save_read_status_batch
-from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for
+from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for, snapshot_net_for
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.locate import locate_row
 from gui_pyside6.utils.table_sort import enable_click_sort
@@ -916,7 +916,8 @@ class QuarantineDialog(QDialog):
             fp = ''
             qty = snapshot_qty_for(main_df, uid) if main_df is not None else None
             note = snapshot_note_for(main_df, uid) if main_df is not None else ''
-            records.append((uid, 1, fp, qty, note))
+            net = snapshot_net_for(main_df, uid) if main_df is not None else None
+            records.append((uid, 1, fp, qty, note, None, 'manual', net))
         save_read_status_batch(records)
         remove_quarantine_batch(list(ids))
         if main_df is not None and 'data_id' in main_df.columns:
@@ -1243,7 +1244,8 @@ class QuarantineDialog(QDialog):
                     fp = sel.iloc[0]
             qty = snapshot_qty_for(main_df, uid) if main_df is not None else None
             note = snapshot_note_for(main_df, uid) if main_df is not None else ''
-            records.append((uid, int(is_read), str(fp), qty, note, None, 'manual'))
+            net = snapshot_net_for(main_df, uid) if main_df is not None else None
+            records.append((uid, int(is_read), str(fp), qty, note, None, 'manual', net))
 
         save_read_status_batch(records)
 
@@ -1318,6 +1320,7 @@ class QuarantineDialog(QDialog):
         fp_map = {}
         qty_map = {}
         note_map = {}
+        net_map = {}
         for r in rows:
             if r >= len(df):
                 continue
@@ -1329,6 +1332,7 @@ class QuarantineDialog(QDialog):
             fp_map[uid] = df.iloc[r].get('fingerprint', '') if 'fingerprint' in df.columns else ''
             qty_map[uid] = snapshot_qty_for(df, uid)
             note_map[uid] = snapshot_note_for(df, uid)
+            net_map[uid] = snapshot_net_for(df, uid)
         if not ids:
             return
         # P2-5 修复：批量标记已读 + 移出隔离区
@@ -1337,7 +1341,8 @@ class QuarantineDialog(QDialog):
             fp = fp_map.get(uid, '')
             qty = qty_map.get(uid)
             note = note_map.get(uid, '')
-            records.append((uid, 1, str(fp), qty, note, None, 'manual'))
+            net = net_map.get(uid)
+            records.append((uid, 1, str(fp), qty, note, None, 'manual', net))
         save_read_status_batch(records)
         remove_quarantine_batch(list(ids))
         count = len(ids)
