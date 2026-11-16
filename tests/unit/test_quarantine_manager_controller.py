@@ -12,7 +12,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import ast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -39,7 +39,8 @@ SHELL_ARGS = {
     "_auto_read_by_rules": (None,),
     "_reconcile_quarantine_read_status": (None,),
     "_set_quarantine": ([], True),
-    "_repair_quarantine_consistency": (False,),
+    # v43.379：新增 report_only 位置参数（关闭时只检测不写库）
+    "_repair_quarantine_consistency": (False, False),
     "_auto_move_to_quarantine": (False,),
     "_update_quarantine_badge": (None,),
     "_scan_expired_quarantine_after_analysis": (),
@@ -117,3 +118,54 @@ def test_controller_methods_are_real_impl():
             )
             assert not is_pure_forward, \
                 f"controller {name} 退化成 return self.mw.{name}() 纯转发（方法体未真搬迁）"
+
+
+def test_repair_report_only_never_writes_db():
+    """v43.379：report_only=True（关闭程序时）只检测提示、绝不静默写库。
+
+    2026-11-16 事故：关闭时 silent=True 静默把 236 条界面孤儿写回库，
+    basis 还写错，导致失效复核只查出 2 条。数据改动必须可追溯。
+    """
+    import pandas as pd
+
+    df = pd.DataFrame({
+        'data_id': ['F|1|1|40000002'],
+        '_quarantined': [1],            # 界面标隔离
+    })
+    bare = MW.__new__(MW)
+    bare.view_model = MagicMock()
+    bare.view_model.df = df
+    bare.statusBar = MagicMock(return_value=MagicMock())
+    ctrl = QuarantineManagerController(bare)
+
+    with patch('gui_pyside6.controllers.quarantine_manager_controller.get_quarantined_ids',
+               return_value=set()), \
+         patch('gui_pyside6.controllers.quarantine_manager_controller.add_quarantine_batch') as add:
+        n = ctrl._repair_quarantine_consistency(silent=True, report_only=True)
+        assert n == 1, "应检测到 1 条孤儿"
+        add.assert_not_called(), "report_only 绝不能写库"
+        # 状态栏应有「检测到...库内缺失」提示，不含写库成功字样
+        msg = bare.statusBar.return_value.showMessage.call_args[0][0]
+        assert '检测到' in msg and '库内缺失' in msg and '已修复' not in msg
+
+
+def test_repair_manual_still_writes_db():
+    """反证：手动触发（report_only=False）仍写库，basis 是可被失效复核识别的类型。"""
+    import pandas as pd
+
+    df = pd.DataFrame({'data_id': ['F|1|1|40000002'], '_quarantined': [1]})
+    bare = MW.__new__(MW)
+    bare.view_model = MagicMock()
+    bare.view_model.df = df
+    bare.statusBar = MagicMock(return_value=MagicMock())
+    ctrl = QuarantineManagerController(bare)
+
+    with patch('gui_pyside6.controllers.quarantine_manager_controller.get_quarantined_ids',
+               return_value=set()), \
+         patch('gui_pyside6.controllers.quarantine_manager_controller.add_quarantine_batch') as add:
+        n = ctrl._repair_quarantine_consistency(silent=True)   # 默认 report_only=False
+        assert n == 1
+        add.assert_called_once()
+        items = add.call_args[0][0]
+        assert items[0][1] == '自动修复:界面标记隔离但库内缺失'
+        assert items[0][2] == '自动规则[界面孤儿待复核]'

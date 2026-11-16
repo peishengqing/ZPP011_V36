@@ -341,12 +341,17 @@ class QuarantineManagerController:
 
     # ═══════════════ 修复一致性 ═══════════════
 
-    def _repair_quarantine_consistency(self, silent=False):
-        """修复隔离区一致性：把界面中标记隔离(_quarantined==1)但 SQLite 库内缺失的行补写进库。
+    def _repair_quarantine_consistency(self, silent=False, report_only=False):
+        """检测/修复隔离区一致性：界面标隔离(_quarantined==1)但库内缺失的「孤儿行」。
 
-        救回因旧版本写库未落盘、或数据重导后复合主键漂移造成的「内存孤儿」记录——
-        否则重载数据后这些行因水合读不到库而消失，且永远进不了基于库的统计/失效复核。
-        返回修复条数。
+        v43.379：新增 report_only —— 关闭程序时只检测提示、绝不静默写库。
+        静默自动补写是 2026-11-16 事故根源（清库后内存未同步，关闭时把 236 条
+        KG 错隔离行以错误 basis 偷偷写回库，失效复核认不出）。数据改动必须可追溯：
+        关闭时只提示「检测到 N 条不一致」，用户主动点菜单/修库按钮才写库。
+
+        :param silent: 不弹 toast（仅状态栏提示）
+        :param report_only: True=只检测提示不写库；False=检测并补写（手动入口）
+        返回补写/检测到的条数。
         """
         df = self.mw.view_model.df
         if df is None or '_quarantined' not in df.columns or 'data_id' not in df.columns:
@@ -367,6 +372,12 @@ class QuarantineManagerController:
             if not silent:
                 toast("隔离区一致性正常，无需修复", parent=self.mw)
             return 0
+        # v43.379 report_only：关闭程序时只提示不写库（杜绝静默改数据）。
+        if report_only:
+            msg = (f"⚠ 检测到 {len(orphan_ids)} 条界面标记隔离但库内缺失，"
+                   f"如需补写请在隔离区点「修复一致性」手动处理")
+            self.mw.statusBar().showMessage(msg)
+            return len(orphan_ids)
         # v43.379：basis 绝不能写「手动:自动修复」——失效复核靠 basis 判断是不是自动规则类，
         # 写成「手动」后这批行会被当成「手动隔离且仍负损=合理」直接跳过，永远进不了失效复核
         # （实测 236 条 KG 半成品只查出 2 条）。改成带「自动规则」字样的 basis，

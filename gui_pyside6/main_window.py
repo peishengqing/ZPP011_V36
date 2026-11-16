@@ -2990,9 +2990,9 @@ class MainWindow(QMainWindow):
         """薄壳：手动移入/移出隔离区（ARC-003 第七刀切出到 QuarantineManagerController）。"""
         return self.quarantine_manager_controller._set_quarantine(rows, flag)
 
-    def _repair_quarantine_consistency(self, silent=False):
-        """薄壳：修复隔离区一致性（ARC-003 第七刀切出到 QuarantineManagerController）。"""
-        return self.quarantine_manager_controller._repair_quarantine_consistency(silent)
+    def _repair_quarantine_consistency(self, silent=False, report_only=False):
+        """薄壳：修复/检测隔离区一致性（ARC-003 第七刀切出到 QuarantineManagerController）。"""
+        return self.quarantine_manager_controller._repair_quarantine_consistency(silent, report_only)
 
     def _auto_move_to_quarantine(self, manual=False):
         """薄壳：按规则自动移入隔离区（ARC-003 第七刀切出到 QuarantineManagerController）。"""
@@ -3308,12 +3308,15 @@ class MainWindow(QMainWindow):
                 # 底层 C++ 对象已被 deleteLater 回收，忽略即可
                 pass
             setattr(self, _attr, None)
-        # v42.91: 关闭前 flush 隔离区一致性——把界面标记隔离但库内缺失的行补写库，
-        # 杜绝「内存孤儿」在重载数据后消失。
+        # v43.379: 关闭前只【检测并提示】隔离区不一致，绝不静默写库。
+        # 旧版 silent=True 静默补写是 2026-11-16 事故根源（把清库后内存未同步的
+        # 236 条 KG 错隔离行又偷偷写回库）。数据改动必须可追溯，需用户主动点
+        # 「修复一致性」菜单/按钮才写库。异常须 traceback 记录，不许 pass 吞掉。
         try:
-            self._repair_quarantine_consistency(silent=True)
+            self._repair_quarantine_consistency(silent=True, report_only=True)
         except Exception:
-            pass
+            import traceback
+            traceback.print_exc()
         event.accept()
 
     # ------------------------------------------------------------------ #
