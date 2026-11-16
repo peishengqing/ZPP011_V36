@@ -106,3 +106,31 @@ def test_component_unit_takes_priority_over_basic():
     hit = compute_auto_quarantine_ids(df, cfg)
     # 组件单位=片 命中；若误比基本单位=箱 则 0 命中
     assert "X|1|1|1" in hit, "组件单位优先级被破坏（误比基本单位）"
+
+
+def test_rule3_never_isolates_kg_semi_finished():
+    """回归：食品半成品负损(第3条)限定单位罐/袋/包，KG 行绝不能被隔离。
+
+    2026-11-16 事故：单位匹配的 else 被误写成 for...else，导致命中掩码被覆盖成
+    全 True，规则3 把 238 条 KG 巧克力果粒/粉末油脂错隔离进隔离区。此测试钉死
+    「单位条件必须精确匹配、不允许 contains 或 for-else 架空」，防止再犯。
+    """
+    cfg = load_auto_quarantine_config()
+    r3 = cfg["rules"][2]
+    assert r3["name"] == "食品半成品负损"
+    assert r3["unit_required"] is True
+    allow = {u.strip() for u in r3["unit_value"].replace("，", ",").split(",")}
+    assert "KG" not in allow and "kg" not in allow
+    # 构造：400 前缀半成品、负损、偏差率落在 (-100,-1)，但单位是 KG
+    df = pd.DataFrame([
+        {"data_id": "F|1|1|40000002", "是否替代料": "否", "物料编码": "40000002",
+         "物料名称": "粉末油脂", "组件物料类型描述": "", "数量-实际": 69.0,
+         "数量-定额": 74.0, "偏差率": -6.8, "单位": "KG"},
+        # 对照：单位=袋，应命中
+        {"data_id": "F|1|2|40000003", "是否替代料": "否", "物料编码": "40000003",
+         "物料名称": "半成品", "组件物料类型描述": "", "数量-实际": 5.0,
+         "数量-定额": 9.0, "偏差率": -44.4, "单位": "袋"},
+    ])
+    hit = compute_auto_quarantine_ids(df, cfg)
+    assert "F|1|1|40000002" not in hit, "KG 半成品被错误隔离——单位条件又被架空了"
+    assert "F|1|2|40000003" in hit, "袋装半成品应正常命中规则3"
