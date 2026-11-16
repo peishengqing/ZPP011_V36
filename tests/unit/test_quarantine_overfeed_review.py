@@ -195,6 +195,22 @@ def test_scan_expired_neg_loss_but_rule_no_match_is_expired():
     assert out[0]['status'] == 'rule_no_match'
 
 
+def test_scan_expired_repair_orphan_basis_is_recognized():
+    """v43.379：「手动:自动修复」basis 的孤儿行必须能被失效复核识别。
+
+    2026-11-16 事故：_repair_quarantine_consistency 把「界面标隔离但库内缺失」的
+    孤儿行 basis 写成「手动:自动修复」，失效复核既不认自动规则类也不认负损类，
+    落到「手动+仍负损=合理」兜底全部跳过 —— 236 条 KG 半成品只查出 2 条。
+    这些行本质是自动隔离孤儿，规则已不命中就应判失效；真正人工手动隔离的负损
+    行（basis 不含自动修复字样）仍不受影响（见上一个测试）。
+    """
+    df = _df([('U_ORPHAN', 1320, 1356, 0)])   # 仍负损，小幅 -2.7% 不触发超投短路
+    recs = _records('U_ORPHAN', '自动修复:界面标记隔离但库内缺失', '手动:自动修复')
+    out = _scan(df, recs)                      # _scan mock 命中集={}，规则不再命中
+    assert len(out) == 1 and out[0]['uid'] == 'U_ORPHAN'
+    assert out[0]['status'] == 'rule_no_match'
+
+
 def test_scan_expired_manual_neg_loss_not_touched_by_rule_check():
     """反证：手动隔离的负损记录不受「规则不命中」判定影响，仍不进失效列表。"""
     df = _df([('U_MAN', 69, 74, 0)])

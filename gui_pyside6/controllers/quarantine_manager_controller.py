@@ -367,7 +367,12 @@ class QuarantineManagerController:
             if not silent:
                 toast("隔离区一致性正常，无需修复", parent=self.mw)
             return 0
-        items = [(uid, "自动修复:界面标记隔离但库内缺失", "手动:自动修复") for uid in orphan_ids]
+        # v43.379：basis 绝不能写「手动:自动修复」——失效复核靠 basis 判断是不是自动规则类，
+        # 写成「手动」后这批行会被当成「手动隔离且仍负损=合理」直接跳过，永远进不了失效复核
+        # （实测 236 条 KG 半成品只查出 2 条）。改成带「自动规则」字样的 basis，
+        # 让失效复核按当前规则重判：仍命中就留、不命中就列失效供一键移出。
+        # reason 保留「自动修复」便于追溯来源。
+        items = [(uid, "自动修复:界面标记隔离但库内缺失", "自动规则[界面孤儿待复核]") for uid in orphan_ids]
         try:
             add_quarantine_batch(items)
         except Exception as e:

@@ -283,6 +283,12 @@ def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
             is_neg_loss_now = (actual > 0) and (actual < quota)
 
         is_auto = ("自动规则" in basis_key) or basis_key.startswith("自动规则")
+        # v43.379：向后兼容存量——旧版 _repair_quarantine_consistency 把「界面标隔离但库内缺失」
+        # 的孤儿行 basis 写成「手动:自动修复」，导致这批行既不算自动规则类也不算负损类，
+        # 落到「手动+仍负损=合理」兜底被全部跳过（实测 236 条 KG 半成品只查出 2 条）。
+        # 这些行本质是自动隔离体系的孤儿，按自动规则类重判即可：仍命中就留、不命中就列失效。
+        if basis_key.startswith("手动:自动修复") or "界面标记隔离但库内缺失" in basis_key:
+            is_auto = True
         # 是否「当初因负损入区」：basis 文本含负损，或 是自动规则且对应规则要求负损
         is_neg_loss_basis = ("负损" in basis_key) or ("实际>0 且 实际<定额" in basis_key) \
             or basis_key.startswith("负损")
