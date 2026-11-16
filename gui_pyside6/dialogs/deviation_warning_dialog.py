@@ -17,7 +17,7 @@ import pandas as pd
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QFrame,
-    QComboBox, QLineEdit, QDialogButtonBox, QGroupBox, QCheckBox, QGridLayout,
+    QComboBox, QLineEdit, QDialogButtonBox,
     QWidget,
 )
 from PySide6.QtCore import Qt, QPoint, QTimer
@@ -109,10 +109,7 @@ class DeviationWarningDialog(QDialog):
         try:
             self.showMaximized()
             self.btn_fullscreen.setText("还原")
-            self._row2_widget.setVisible(True)
-            self._row3_widget.setVisible(True)
-            self._row4_widget.setVisible(True)
-            self._sync_more_filters_btn(True)
+            # v43.382：筛选行全部常显，无需再随最大化切换可见性/同步「筛选 ▾」按钮
             # v43.300：列宽自适应由 AdaptiveTable 控制器接管（不再同步 resizeColumnsToContents，
             # 历史「同步逐行测宽卡死主线程」）。此处 showMaximized 发生在控制器安装之前
             # （apply_board_visual 稍后执行），首帧重算由 schedule_initial() 统一兜底；
@@ -307,45 +304,80 @@ class DeviationWarningDialog(QDialog):
         row1.addStretch()
         self._main_filter_vlayout.addLayout(row1)
 
-        # ==== 第1.5行：「筛选 ▾」展开开关（始终可见）====
-        # 为什么不能放第1行：实测第1行 minimumSize 已需 1445px（默认窗口仅 1280），
-        # 塞进第1行须把搜索框 200→140、按钮宽 70→54、分隔间距 16→6 全改一遍，
-        # 实测最激进组合仍需 1310px 仍超，且必然逼出可见的视觉变形 —— 故不动第1行。
-        # 为什么必须独立成行而不是塞进第2行：第2行本身默认隐藏，
-        # 「用来展开第2行的按钮」若藏在第2行里就是死循环（看不到按钮就点不到，
-        # 要看到按钮得先展开第2行，而展开第2行又得先点按钮）。
-        self._row_filter_btn = QWidget()
-        self._row_filter_btn_layout = QHBoxLayout(self._row_filter_btn)
-        self._row_filter_btn_layout.setContentsMargins(0, 0, 0, 0)
-        self._row_filter_btn_layout.setSpacing(6)
-        self.btn_more_filters = QPushButton("筛选 ▾")
-        self.btn_more_filters.setCheckable(True)
-        self.btn_more_filters.setChecked(False)
-        self.btn_more_filters.setMinimumWidth(90)
-        self.btn_more_filters.setToolTip(
-            "展开/收起更多筛选（料别、半成品分类、替代料、是否备注）")
-        self.btn_more_filters.toggled.connect(self._on_more_filters_toggled)
-        self._row_filter_btn_layout.addWidget(self.btn_more_filters)
-        self._row_filter_btn_layout.addStretch()
-        self._main_filter_vlayout.addWidget(self._row_filter_btn)
+        # ==== 第2行：净偏差数量区间（独立一行，与隔离区对话框完全同款，v43.382）====
+        # 裴哥：整个筛选区做成和隔离区一样——净偏差数量单独一行「净偏差数量区间：不限~不限」
+        # （撤销 v43.380 与组件物料类型的合并）。QLineEdit 短框、默认留空、placeholder「不限」：
+        # 留空一端=不限、双端留空=不筛选。同时取消「筛选 ▾」展开/收起机制，所有筛选行常显。
+        self._row_ndq_widget = QWidget()
+        self._row_ndq = QHBoxLayout(self._row_ndq_widget)
+        self._row_ndq.setContentsMargins(0, 0, 0, 0)
+        self._row_ndq.setSpacing(6)
+        self.lbl_net_dev_qty = QLabel("净偏差数量区间:")
+        self._row_ndq.addWidget(self.lbl_net_dev_qty)
+        self.net_dev_qty_min_edit = QLineEdit()
+        self.net_dev_qty_min_edit.setPlaceholderText("不限")
+        self.net_dev_qty_min_edit.setFixedWidth(90)
+        self.net_dev_qty_min_edit.setValidator(QDoubleValidator(self.net_dev_qty_min_edit))
+        self.net_dev_qty_min_edit.setToolTip("净偏差数量下限（留空=不限）")
+        self.net_dev_qty_min_edit.textChanged.connect(self._on_net_dev_qty_changed)
+        self._row_ndq.addWidget(self.net_dev_qty_min_edit)
+        self._ndq_tilde = QLabel("~")
+        self._row_ndq.addWidget(self._ndq_tilde)
+        self.net_dev_qty_max_edit = QLineEdit()
+        self.net_dev_qty_max_edit.setPlaceholderText("不限")
+        self.net_dev_qty_max_edit.setFixedWidth(90)
+        self.net_dev_qty_max_edit.setValidator(QDoubleValidator(self.net_dev_qty_max_edit))
+        self.net_dev_qty_max_edit.setToolTip("净偏差数量上限（留空=不限）")
+        self.net_dev_qty_max_edit.textChanged.connect(self._on_net_dev_qty_changed)
+        self._row_ndq.addWidget(self.net_dev_qty_max_edit)
+        self._row_ndq.addStretch()
+        self._main_filter_vlayout.addWidget(self._row_ndq_widget)
+        # 净偏差数量控件清单（供 set_data 按「净偏差数量」列是否存在统一显隐）
+        self._ndq_widgets = [self.lbl_net_dev_qty, self.net_dev_qty_min_edit,
+                             self._ndq_tilde, self.net_dev_qty_max_edit]
 
-        # ==== 第1.6行：组件物料类型 + 净偏差数量（始终可见，v43.380 合并为一行）====
-        # 组件物料类型：用户要求始终可见的动态级联筛选（v43.189），列缺失时由 set_data 只藏下拉本身。
-        # 净偏差数量：裴哥反馈单独占一行「筛选格式不合适」，移到组件物料类型同一行（移到上面去）。
-        # 默认留空的短输入框，留空一端=不限、双端留空=不筛选（不再用 ±1e9 哨兵）。
-        self._row_mtd_widget = QWidget()
-        self._row_mtd = QHBoxLayout(self._row_mtd_widget)
-        self._row_mtd.setContentsMargins(0, 0, 0, 0)
-        self._row_mtd.setSpacing(6)
+        # ==== 第3行：料别 + 组件物料类型（常显；组件物料类型列缺失时由 set_data 只藏自身）====
+        # 组件物料类型：动态级联筛选（v43.189）。
+        self._row_mat_widget = QWidget()
+        self._row_mat = QHBoxLayout(self._row_mat_widget)
+        self._row_mat.setContentsMargins(0, 0, 0, 0)
+        self._row_mat.setSpacing(6)
+
+        self.lbl_mat = QLabel("料别:")
+        self._row_mat.addWidget(self.lbl_mat)
+
+        self.btn_mat_all = QPushButton("全部")
+        self.btn_mat_all.setCheckable(True)
+        self.btn_mat_all.setMinimumWidth(70)
+        self.btn_mat_all.clicked.connect(self._bind(self.btn_mat_all.clicked, lambda: self._set_mat_filter("all")))
+        self._row_mat.addWidget(self.btn_mat_all)
+
+        self.btn_mat_raw = QPushButton("原料")
+        self.btn_mat_raw.setCheckable(True)
+        self.btn_mat_raw.setMinimumWidth(70)
+        self.btn_mat_raw.clicked.connect(self._bind(self.btn_mat_raw.clicked, lambda: self._set_mat_filter("raw")))
+        self._row_mat.addWidget(self.btn_mat_raw)
+
+        self.btn_mat_pkg = QPushButton("包材")
+        self.btn_mat_pkg.setCheckable(True)
+        self.btn_mat_pkg.setMinimumWidth(70)
+        self.btn_mat_pkg.clicked.connect(self._bind(self.btn_mat_pkg.clicked, lambda: self._set_mat_filter("pkg")))
+        self._row_mat.addWidget(self.btn_mat_pkg)
+
+        self.btn_mat_semi = QPushButton("半成品")
+        self.btn_mat_semi.setCheckable(True)
+        self.btn_mat_semi.setMinimumWidth(70)
+        self.btn_mat_semi.clicked.connect(self._bind(self.btn_mat_semi.clicked, lambda: self._set_mat_filter("semi")))
+        self._row_mat.addWidget(self.btn_mat_semi)
 
         self.mtd_sep = QFrame()
         self.mtd_sep.setFrameShape(QFrame.VLine)
         self.mtd_sep.setFrameShadow(QFrame.Sunken)
-        self._row_mtd.addWidget(self.mtd_sep)
-        self._row_mtd.addSpacing(8)
+        self._row_mat.addWidget(self.mtd_sep)
+        self._row_mat.addSpacing(8)
 
         self.lbl_mtd = QLabel("组件物料类型:")
-        self._row_mtd.addWidget(self.lbl_mtd)
+        self._row_mat.addWidget(self.lbl_mtd)
 
         self.combo_mtd = QComboBox()
         self.combo_mtd.setMinimumWidth(100)
@@ -353,99 +385,40 @@ class DeviationWarningDialog(QDialog):
         self.combo_mtd.setEditable(False)
         self.combo_mtd.addItem("全部")
         self.combo_mtd.currentTextChanged.connect(self._on_mtd_changed)
-        self._row_mtd.addWidget(self.combo_mtd)
+        self._row_mat.addWidget(self.combo_mtd)
 
-        # 净偏差数量区间（与组件物料类型同排）
-        self.ndq_sep = QFrame()
-        self.ndq_sep.setFrameShape(QFrame.VLine)
-        self.ndq_sep.setFrameShadow(QFrame.Sunken)
-        self._row_mtd.addWidget(self.ndq_sep)
-        self._row_mtd.addSpacing(8)
-        self.lbl_net_dev_qty = QLabel("净偏差数量:")
-        self._row_mtd.addWidget(self.lbl_net_dev_qty)
-        self.net_dev_qty_min_edit = QLineEdit()
-        self.net_dev_qty_min_edit.setPlaceholderText("不限")
-        self.net_dev_qty_min_edit.setFixedWidth(80)
-        self.net_dev_qty_min_edit.setValidator(QDoubleValidator(self.net_dev_qty_min_edit))
-        self.net_dev_qty_min_edit.textChanged.connect(self._on_net_dev_qty_changed)
-        self._row_mtd.addWidget(self.net_dev_qty_min_edit)
-        self._ndq_tilde = QLabel("~")
-        self._row_mtd.addWidget(self._ndq_tilde)
-        self.net_dev_qty_max_edit = QLineEdit()
-        self.net_dev_qty_max_edit.setPlaceholderText("不限")
-        self.net_dev_qty_max_edit.setFixedWidth(80)
-        self.net_dev_qty_max_edit.setValidator(QDoubleValidator(self.net_dev_qty_max_edit))
-        self.net_dev_qty_max_edit.textChanged.connect(self._on_net_dev_qty_changed)
-        self._row_mtd.addWidget(self.net_dev_qty_max_edit)
+        self._row_mat.addStretch()
+        self._main_filter_vlayout.addWidget(self._row_mat_widget)
 
-        self._row_mtd.addStretch()
-        self._main_filter_vlayout.addWidget(self._row_mtd_widget)
-        # 净偏差数量区间控件清单（供 set_data 按「净偏差数量」列是否存在统一显隐）
-        self._ndq_widgets = [self.ndq_sep, self.lbl_net_dev_qty, self.net_dev_qty_min_edit,
-                             self._ndq_tilde, self.net_dev_qty_max_edit]
+        # ==== 第4行：半成品分类（checkable 按钮组一行铺开，v43.382）====
+        # 由原复选框网格（QGroupBox+QGridLayout，食品/饮料各占一行）改为与隔离区同风格的
+        # 普通按钮组；筛选语义不变：_semi_class_filter 集合（空=全部），多选=OR，
+        # 「全部」与其他互斥。死选项收窄/重建逻辑见 _build_semi_buttons。
+        self._row_semi_widget = QWidget()
+        self._row_semi = QHBoxLayout(self._row_semi_widget)
+        self._row_semi.setContentsMargins(0, 0, 0, 0)
+        self._row_semi.setSpacing(6)
 
-        # ==== 第2行：料别 + 半成品分类（全屏时显示；车间已提至第1行始终可见）====
-        self._row2_widget = QWidget()
-        self._row2 = QHBoxLayout(self._row2_widget)
-
-        # 料别筛选
-        self.mat_sep = QFrame()
-        self.mat_sep.setFrameShape(QFrame.VLine)
-        self.mat_sep.setFrameShadow(QFrame.Sunken)
-        self._row2.addWidget(self.mat_sep)
-        self._row2.addSpacing(8)
-
-        self.lbl_mat = QLabel("料别:")
-        self._row2.addWidget(self.lbl_mat)
-
-        self.btn_mat_all = QPushButton("全部")
-        self.btn_mat_all.setCheckable(True)
-        self.btn_mat_all.setMinimumWidth(70)
-        self.btn_mat_all.clicked.connect(self._bind(self.btn_mat_all.clicked, lambda: self._set_mat_filter("all")))
-        self._row2.addWidget(self.btn_mat_all)
-
-        self.btn_mat_raw = QPushButton("原料")
-        self.btn_mat_raw.setCheckable(True)
-        self.btn_mat_raw.setMinimumWidth(70)
-        self.btn_mat_raw.clicked.connect(self._bind(self.btn_mat_raw.clicked, lambda: self._set_mat_filter("raw")))
-        self._row2.addWidget(self.btn_mat_raw)
-
-        self.btn_mat_pkg = QPushButton("包材")
-        self.btn_mat_pkg.setCheckable(True)
-        self.btn_mat_pkg.setMinimumWidth(70)
-        self.btn_mat_pkg.clicked.connect(self._bind(self.btn_mat_pkg.clicked, lambda: self._set_mat_filter("pkg")))
-        self._row2.addWidget(self.btn_mat_pkg)
-
-        self.btn_mat_semi = QPushButton("半成品")
-        self.btn_mat_semi.setCheckable(True)
-        self.btn_mat_semi.setMinimumWidth(70)
-        self.btn_mat_semi.clicked.connect(self._bind(self.btn_mat_semi.clicked, lambda: self._set_mat_filter("semi")))
-        self._row2.addWidget(self.btn_mat_semi)
-
-        # 半成品分类
         self.semi_class_sep = QFrame()
         self.semi_class_sep.setFrameShape(QFrame.VLine)
         self.semi_class_sep.setFrameShadow(QFrame.Sunken)
-        self._row2.addWidget(self.semi_class_sep)
-        self._row2.addSpacing(8)
+        self._row_semi.addWidget(self.semi_class_sep)
+        self._row_semi.addSpacing(8)
 
         self.lbl_semi_class = QLabel("半成品分类:")
-        self._row2.addWidget(self.lbl_semi_class)
+        self._row_semi.addWidget(self.lbl_semi_class)
 
-        self.grp_semi_class = QGroupBox()
-        self.grp_semi_class.setFlat(True)
-        self.grp_semi_class.setMinimumWidth(220)
-        self._semi_class_grid = QGridLayout(self.grp_semi_class)
-        self._semi_class_grid.setContentsMargins(6, 4, 6, 4)
-        self._semi_class_grid.setSpacing(3)
-        self._semi_class_checkboxes = {}
-        self._row2.addWidget(self.grp_semi_class)
+        self._semi_class_buttons_widget = QWidget()
+        self._semi_class_btn_layout = QHBoxLayout(self._semi_class_buttons_widget)
+        self._semi_class_btn_layout.setContentsMargins(0, 0, 0, 0)
+        self._semi_class_btn_layout.setSpacing(6)
+        self._semi_class_buttons = {}
+        self._row_semi.addWidget(self._semi_class_buttons_widget)
 
-        self._row2.addStretch()
-        self._main_filter_vlayout.addWidget(self._row2_widget)
-        self._row2_widget.setVisible(False)  # 默认隐藏，全屏时显示
+        self._row_semi.addStretch()
+        self._main_filter_vlayout.addWidget(self._row_semi_widget)
 
-        # ==== 第3行：替代料 + 是否备注（全屏时显示；隔离区已提至第1行、组件物料类型已提至第1.6行始终可见）====
+        # ==== 第5行：替代料 + 是否备注（常显，v43.382 起不再随展开/收起隐藏）====
         self._row3_widget = QWidget()
         self._row3 = QHBoxLayout(self._row3_widget)
         # 替代料
@@ -506,9 +479,8 @@ class DeviationWarningDialog(QDialog):
 
         self._row3.addStretch()
         self._main_filter_vlayout.addWidget(self._row3_widget)
-        self._row3_widget.setVisible(False)  # 默认隐藏，全屏时显示
 
-        # ==== 第4行：批量操作 + 放大按钮（全屏时显示）====
+        # ==== 第6行：批量操作 + 放大按钮（常显）====
         self._row4_widget = QWidget()
         self._row4 = QHBoxLayout(self._row4_widget)
         self.btn_batch_read = QPushButton("批量标记已读")
@@ -527,7 +499,6 @@ class DeviationWarningDialog(QDialog):
         self._row4.addWidget(self.btn_fullscreen)
 
         self._main_filter_vlayout.addWidget(self._row4_widget)
-        self._row4_widget.setVisible(False)  # 默认隐藏，全屏时显示
 
         layout.addLayout(self._main_filter_vlayout)
 
@@ -667,64 +638,39 @@ class DeviationWarningDialog(QDialog):
         self.btn_remark_none.setChecked(mode == "none")
         self._apply_filter()
 
-    def _on_semi_class_changed(self):
-        """半成品重分类复选框变化回调：收集勾选项（空=全部），全部与其他互斥。"""
-        all_cb = self._semi_class_checkboxes.get("__all__")
-        others = [cb for name, cb in self._semi_class_checkboxes.items() if name != "__all__"]
+    def _on_semi_class_button_clicked(self):
+        """半成品分类按钮点击回调（v43.382 由复选框改按钮组）：多选（OR），「全部」与其他互斥。
+
+        _semi_class_filter 为空集合 = 不按半成品分类筛选（「全部」按钮呈选中态）。
+        程序化 setChecked 只发 toggled 不发 clicked，故此处手动同步其余按钮不会递归。
+        """
         sender = self.sender()
-        if sender is all_cb:
-            if all_cb.isChecked():
-                for cb in others:
-                    cb.setChecked(False)
+        all_btn = self._semi_class_buttons.get("__all__")
+        if sender is all_btn:
+            if all_btn.isChecked():
+                for name, b in self._semi_class_buttons.items():
+                    if name != "__all__":
+                        b.setChecked(False)
                 self._semi_class_filter = set()
         else:
-            if any(cb.isChecked() for cb in others):
-                if all_cb:
-                    all_cb.setChecked(False)
-                self._semi_class_filter = {
-                    name for name, cb in self._semi_class_checkboxes.items()
-                    if name != "__all__" and cb.isChecked()
-                }
+            name = sender.text()
+            cur = set(self._semi_class_filter)
+            if sender.isChecked():
+                cur.add(name)
             else:
-                if all_cb:
-                    all_cb.setChecked(True)
-                self._semi_class_filter = set()
+                cur.discard(name)
+            self._semi_class_filter = cur
+            if cur:
+                if all_btn:
+                    all_btn.setChecked(False)
+            elif all_btn:
+                all_btn.setChecked(True)
         self._apply_filter()
 
     def _on_mtd_changed(self, text):
         """组件物料类型描述下拉框变化时触发筛选"""
         self._mtd_filter = "all" if text == "全部" else text
         self._apply_filter()
-
-    def _on_more_filters_toggled(self, expanded):
-        """「筛选 ▾」展开/收起第2/3/4 行（v43.162）。
-
-        原本这6 个筛选/操作组只能靠「⛶ 放大」露出，而放大按钮自己也在
-        隐藏的第4行里，形成死循环。本按钮给出独立入口。
-        按 blockSignals 避免与 toggle_fullscreen 互相触发导致状态错乱。
-        """
-        for row in (self._row2_widget, self._row3_widget, self._row4_widget):
-            row.setVisible(bool(expanded))
-        self.btn_more_filters.setText("筛选 ▲" if expanded else "筛选 ▾")
-        if expanded:
-            # 展开后才有足够高度给表格；最大化时不要覆盖用户手动调过的列宽
-            # （v43.300：该语义由 AdaptiveTable.user_touched 精确承担，request_refit
-            #  在用户拖过任一列后会自动停止覆盖；不再同步 resizeColumnsToContents）
-            if not self.isMaximized():
-                try:
-                    from gui_pyside6.utils.table_autofit import get_adaptive
-                    _ctrl = get_adaptive(self.table_view)
-                    if _ctrl is not None:
-                        _ctrl.request_refit(0)
-                except Exception:
-                    traceback.print_exc()
-
-    def _sync_more_filters_btn(self, expanded):
-        """供 toggle_fullscreen 同步按钮文案/勾选态（不重复切行可见性）。"""
-        self.btn_more_filters.blockSignals(True)
-        self.btn_more_filters.setChecked(bool(expanded))
-        self.btn_more_filters.setText("筛选 ▲" if expanded else "筛选 ▾")
-        self.btn_more_filters.blockSignals(False)
 
     def _mtd_mask(self, df):
         """组件物料类型描述掩码：all=全True / 具体值=列值==该值。"""
@@ -753,67 +699,61 @@ class DeviationWarningDialog(QDialog):
                 mask = mask | (vals == m)
         return mask
 
-    def _build_semi_checkboxes(self, unique_vals, checked=None, alive=None):
-        """构建半成品分类复选框组：全部 + 固定分类清单 + 数据里的额外分类（QGridLayout）。
+    def _build_semi_buttons(self, unique_vals, checked=None, alive=None):
+        """构建半成品分类按钮组（v43.382 由复选框网格改按钮组）：全部 + 固定分类清单
+        + 数据里的额外分类，一行 checkable 按钮铺开（与隔离区筛选同风格）。
 
-        v43.147：① 残影修复——原 takeAt(0)+deleteLater() 只摘出布局，旧控件在事件循环
-        执行前仍是父容器子控件且 visible，会与新控件叠成重复项；现先 setParent(None)。
-        ② 分类清单改用共用固定清单 merge_semi_class_values()，不再硬编码虚拟两项。
-        v43.172：③ `alive` 为存活分类集合（None=不收窄），死选项不再铺出来 ——
-        实测固定 6 分类里有 3 个在 warnings_df 518 行中0 行（50% 死选项）。
-        ④ `checked` 为需回填勾选的分类（内部一律 blockSignals，避免 stateChanged
-        → `_on_semi_class_changed` → `_apply_filter` → 又重建 的递归）。
+        v43.147 纪律沿用：① 残影修复——先 setParent(None) 再 deleteLater，避免旧控件
+        在事件循环执行前仍可见叠成重复项；② 分类清单用共用 merge_semi_class_values()；
+        v43.172：③ `alive` 为存活分类集合（None=不收窄），死选项不再铺出来；
+        ④ `checked` 为需回填选中的分类（程序化 setChecked 只发 toggled 不发 clicked，
+        不会经 `_on_semi_class_button_clicked` → `_apply_filter` 递归）。
         """
         # 清空旧控件
-        while self._semi_class_grid.count():
-            it = self._semi_class_grid.takeAt(0)
+        while self._semi_class_btn_layout.count():
+            it = self._semi_class_btn_layout.takeAt(0)
             w = it.widget()
             if w:
                 # v43.147：先脱离父容器，避免 deleteLater 延迟期间旧控件仍可见
                 w.setParent(None)
                 w.deleteLater()
-        self._semi_class_checkboxes = {}
+        self._semi_class_buttons = {}
 
         def _keep(v):
             # alive 是「有行」的集合：只保留有行的，判死的不再铺出来
             return (v in alive) if alive is not None else True
 
         want = set(checked or ())
-        all_cb = QCheckBox("全部")
-        all_cb.setChecked(not want)
-        all_cb.setToolTip("不按半成品分类筛选（显示全部）")
-        all_cb.stateChanged.connect(self._on_semi_class_changed)
-        self._semi_class_grid.addWidget(all_cb, 0, 0)
-        self._semi_class_checkboxes["__all__"] = all_cb
+        all_btn = QPushButton("全部")
+        all_btn.setCheckable(True)
+        all_btn.setChecked(not want)
+        all_btn.setMinimumWidth(70)
+        all_btn.setToolTip("不按半成品分类筛选（显示全部）")
+        all_btn.clicked.connect(self._on_semi_class_button_clicked)
+        self._semi_class_btn_layout.addWidget(all_btn)
+        self._semi_class_buttons["__all__"] = all_btn
 
-        # v43.147：食品一行 / 饮料一行，额外分类从 row2 起每行 3 列
-        row, col = 0, 1
         for names in (SEMI_CLASS_FOOD, SEMI_CLASS_DRINK):
             for v in names:
                 if not _keep(v):
                     continue
-                cb = QCheckBox(v)
-                cb.setChecked(v in want)
-                cb.setToolTip("按「%s」筛选" % v)
-                cb.stateChanged.connect(self._on_semi_class_changed)
-                self._semi_class_grid.addWidget(cb, row, col)
-                self._semi_class_checkboxes[v] = cb
-                col += 1
-            row += 1
-            col = 0
+                b = QPushButton(v)
+                b.setCheckable(True)
+                b.setChecked(v in want)
+                b.setToolTip("按「%s」筛选" % v)
+                b.clicked.connect(self._on_semi_class_button_clicked)
+                self._semi_class_btn_layout.addWidget(b)
+                self._semi_class_buttons[v] = b
         for v in merge_semi_class_values(unique_vals):
-            if v in self._semi_class_checkboxes or not _keep(v):
+            if v in self._semi_class_buttons or not _keep(v):
                 continue
-            cb = QCheckBox(v)
-            cb.setChecked(v in want)
-            cb.setToolTip("按「%s」筛选" % v)
-            cb.stateChanged.connect(self._on_semi_class_changed)
-            self._semi_class_grid.addWidget(cb, row, col)
-            self._semi_class_checkboxes[v] = cb
-            col += 1
-            if col >= 3:  # 每行3列
-                col = 0
-                row += 1
+            b = QPushButton(v)
+            b.setCheckable(True)
+            b.setChecked(v in want)
+            b.setToolTip("按「%s」筛选" % v)
+            b.clicked.connect(self._on_semi_class_button_clicked)
+            self._semi_class_btn_layout.addWidget(b)
+            self._semi_class_buttons[v] = b
 
     def _quar_mask(self, df, mode):
         """隔离区掩码：all=全True / yes=隔离区列=='是' / no=隔离区列!='是'"""
@@ -984,7 +924,6 @@ class DeviationWarningDialog(QDialog):
                 self.source_model.setDataFrame(df)
                 self._sort_ctrl.reapply()  # 恢复排序态
             set_empty_hint(self.table_view, empty_hint_text(0, df, self.filter_mode))
-            self._update_button_counts()
             return
 
         if "_read" not in df.columns:
@@ -1017,7 +956,6 @@ class DeviationWarningDialog(QDialog):
             self._sort_ctrl.reapply()  # 恢复排序态
         set_empty_hint(self.table_view,
                        empty_hint_text(len(filtered), df, self.filter_mode))
-        self._update_button_counts()
 
     def _update_col_filter_hint(self):
         """刷新「列头筛选提示」：显示已设取值过滤的列（N 列 / 列名）。"""
@@ -1108,10 +1046,10 @@ class DeviationWarningDialog(QDialog):
                 combo, vals, getattr(self, attr, 'all'), attr, self)
             # 必须由调用方把 keep 赋回真实状态属性（信号已被 block，槽不会触发）
             setattr(self, attr, keep)
-        self._refresh_semi_class_checkboxes(df)
+        self._refresh_semi_class_buttons(df)
 
-    def _refresh_semi_class_checkboxes(self, df):
-        """按当前其它筛选条件收窄半成品分类复选框：只列出**实际有行**的分类。
+    def _refresh_semi_class_buttons(self, df):
+        """按当前其它筛选条件收窄半成品分类按钮组：只列出**实际有行**的分类。
 
         改前 `_build_semi_checkboxes` 无条件铺满固定 6 分类 → 3/6 是死选项（50%）。
         判据必须与 `_semi_class_mask` 语义严格一致，所以**逐个候选单独跑一次该看板自己的
@@ -1119,12 +1057,13 @@ class DeviationWarningDialog(QDialog):
         `饮料成品半成品` 两项有「空值行 + 工厂名contains」的兜底（所以它们即使
         `半成品重分类` 列全空也能筛出行），用反推法会误删这两个活选项。
 
-        勾选状态保持不变（blockSignals 重建，避免 stateChanged → _apply_filter 递归）；
-        已勾选项若被收窄掉则从 filter 集合移除（宁可少显示，不可留死选项）。
+        选中状态保持不变（程序化 setChecked 只发 toggled 不发 clicked，不会经
+        `_on_semi_class_button_clicked` → `_apply_filter` 递归）；
+        已选项若被收窄掉则从 filter 集合移除（宁可少显示，不可留死选项）。
         """
-        if not getattr(self, '_semi_class_col', None) or not hasattr(self, '_semi_class_grid'):
+        if not getattr(self, '_semi_class_col', None) or not hasattr(self, '_semi_class_btn_layout'):
             return
-        others = {k: v for k, v in self._semi_class_checkboxes.items() if k != "__all__"}
+        others = {k: v for k, v in self._semi_class_buttons.items() if k != "__all__"}
         if not others:
             return
         other_mask = self._other_conditions_mask(df, exclude='semi')
@@ -1145,81 +1084,9 @@ class DeviationWarningDialog(QDialog):
         keep = self._semi_class_filter & alive
         self._semi_class_filter = keep
         # 重建控件：alive 之外的固定分类不再铺出来
-        self._build_semi_checkboxes(
+        self._build_semi_buttons(
             df[self._semi_class_col].dropna().astype(str).str.strip().unique(),
             checked=keep, alive=alive)
-
-    def _update_button_counts(self):
-        """按钮上显示条数：每个按钮显示「点它之后会得到多少条」（另一组条件保持当前选择）"""
-        try:
-            df = self.original_df
-            if df is None or df.empty:
-                for b, t in [(self.btn_all, "全部"), (self.btn_unread, "未读"),
-                             (self.btn_read, "已读"), (self.btn_mat_all, "全部"),
-                             (self.btn_mat_raw, "原料"), (self.btn_mat_pkg, "包材"),
-                             (self.btn_mat_semi, "半成品"),
-                             (self.btn_devdir_all, "全部"), (self.btn_devdir_pos, "正偏差"),
-                             (self.btn_devdir_neg, "负偏差"),
-                             (self.btn_remark_all, "全部"), (self.btn_remark_has, "有"),
-                             (self.btn_remark_none, "无")]:
-                    b.setText(f"{t} (0)")
-                return
-            cur_read = self._read_mask(df, self.filter_mode)
-            cur_mat = self._mat_mask(df, self.mat_filter)
-            # 已读状态组：固定当前料别，看三种状态各多少条
-            self.btn_all.setText(f"全部 ({int(cur_mat.sum())})")
-            self.btn_unread.setText(
-                f"未读 ({int((self._read_mask(df, 'unread') & cur_mat).sum())})")
-            self.btn_read.setText(
-                f"已读 ({int((self._read_mask(df, 'read') & cur_mat).sum())})")
-            # 料别组：固定当前已读状态，看三种料别各多少条
-            self.btn_mat_all.setText(f"全部 ({int(cur_read.sum())})")
-            self.btn_mat_raw.setText(
-                f"原料 ({int((cur_read & self._mat_mask(df, 'raw')).sum())})")
-            self.btn_mat_pkg.setText(
-                f"包材 ({int((cur_read & self._mat_mask(df, 'pkg')).sum())})")
-            self.btn_mat_semi.setText(
-                f"半成品 ({int((cur_read & self._mat_mask(df, 'semi')).sum())})")
-            # 隔离区组：固定当前已读状态，看 是/否 各多少条
-            cur_quar_yes = (df["隔离区"].astype(str).str.strip() == "是") if "隔离区" in df.columns else pd.Series(False, index=df.index)
-            cur_quar_no = ~cur_quar_yes
-            self.btn_quar_all.setText(f"全部 ({int(cur_read.sum())})")
-            self.btn_quar_yes.setText(
-                f"是 ({int((cur_read & cur_quar_yes).sum())})")
-            self.btn_quar_no.setText(
-                f"否 ({int((cur_read & cur_quar_no).sum())})")
-            # 替代料组：固定当前已读状态，看 是/否 各多少条
-            cur_alt_yes = (df["替代料"].astype(str).str.strip() == "是") if "替代料" in df.columns else pd.Series(False, index=df.index)
-            cur_alt_no = (df["替代料"].astype(str).str.strip() == "否") if "替代料" in df.columns else pd.Series(False, index=df.index)
-            self.btn_alt_all.setText(f"全部 ({int(cur_read.sum())})")
-            self.btn_alt_yes.setText(
-                f"是 ({int((cur_read & cur_alt_yes).sum())})")
-            self.btn_alt_no.setText(
-                f"否 ({int((cur_read & cur_alt_no).sum())})")
-            # 偏差方向组：固定当前已读状态，看 全部/正/负 各多少条（v43.93）
-            self.btn_devdir_all.setText(f"全部 ({int(cur_read.sum())})")
-            self.btn_devdir_pos.setText(
-                f"正偏差 ({int((cur_read & self._devdir_mask(df, 'pos')).sum())})")
-            self.btn_devdir_neg.setText(
-                f"负偏差 ({int((cur_read & self._devdir_mask(df, 'neg')).sum())})")
-            # 是否备注组：固定当前已读状态，看 有/无 各多少条
-            rc = self._remark_col_name
-            if rc and rc in df.columns:
-                cur_remark_has = df[rc].apply(lambda x: "" if pd.isna(x) else str(x).strip()) != ""
-            else:
-                cur_remark_has = pd.Series(False, index=df.index)
-            cur_remark_none = ~cur_remark_has
-            self.btn_remark_all.setText(f"全部 ({int(cur_read.sum())})")
-            self.btn_remark_has.setText(
-                f"有 ({int((cur_read & cur_remark_has).sum())})")
-            self.btn_remark_none.setText(
-                f"无 ({int((cur_read & cur_remark_none).sum())})")
-            # 车间下拉框：不更新，但显示当前选中车间的记录数（用于验证）
-            if self._workshop_filter != "all" and self._workshop_col and self._workshop_col in df.columns:
-                workshop_count = (df[self._workshop_col].astype(str).str.strip() == self._workshop_filter).sum()
-                self.combo_workshop.setToolTip(f"当前车间: {self._workshop_filter}，共 {int(workshop_count)} 条")
-        except Exception:
-            pass
 
     def set_data(self, df):
         """设置表格数据 - 确保 _read / data_id / 状态 列存在，初始按内容自适应列宽"""
@@ -1351,7 +1218,7 @@ class DeviationWarningDialog(QDialog):
         self._mat_col = next(
             (c for c in ['物料类型', '物料大类'] if c in df.columns), None)
         has_mat = self._mat_col is not None
-        for w in (self.mat_sep, self.lbl_mat, self.btn_mat_all,
+        for w in (self.lbl_mat, self.btn_mat_all,
                   self.btn_mat_raw, self.btn_mat_pkg, self.btn_mat_semi):
             w.setVisible(has_mat)
         # 料别默认「全部」（直接置状态，避免与下面的 _set_filter 重复过滤一次）
@@ -1403,30 +1270,33 @@ class DeviationWarningDialog(QDialog):
         self.btn_remark_has.setChecked(False)
         self.btn_remark_none.setChecked(False)
 
-        # 探测半成品重分类列，构建复选框组（全部 + 各值 + 虚拟两项）
+        # 探测半成品重分类列，构建按钮组（全部 + 各值 + 虚拟两项）
         self._semi_class_col = "半成品重分类" if "半成品重分类" in df.columns else None
         has_semi_class = self._semi_class_col is not None
+        self._row_semi_widget.setVisible(has_semi_class)
         self.semi_class_sep.setVisible(has_semi_class)
         self.lbl_semi_class.setVisible(has_semi_class)
-        self.grp_semi_class.setVisible(has_semi_class)
+        self._semi_class_buttons_widget.setVisible(has_semi_class)
         self._semi_class_filter = set()
         if has_semi_class:
             unique_vals = df[self._semi_class_col].dropna().astype(str).str.strip().unique()
             unique_vals = sorted(v for v in unique_vals if v)
-            self._build_semi_checkboxes(unique_vals)
+            self._build_semi_buttons(unique_vals)
 
         # 探测组件物料类型描述列，填充下拉框
         self._mtd_col = "组件物料类型描述" if "组件物料类型描述" in df.columns else None
         has_mtd = self._mtd_col is not None
-        # v43.380：净偏差数量与组件物料类型合并同一行后，按列各自控制显隐；
-        # 整行仅在两列都缺时才隐藏（净偏差数量缺列时 _net_dev_qty_mask 返回全 True 不筛选）。
+        # v43.382：净偏差数量独立成行后，两筛选按各自列存在性控制显隐
+        #（净偏差数量缺列时 _net_dev_qty_mask 返回全 True 不筛选）。
         has_ndq = "净偏差数量" in df.columns
+        # 料别与组件物料类型同处一行（v43.382 扁平化后），任一列存在即显示该行
+        self._row_mat_widget.setVisible(has_mat or has_mtd)
         self.mtd_sep.setVisible(has_mtd)
         self.lbl_mtd.setVisible(has_mtd)
         self.combo_mtd.setVisible(has_mtd)
         for _w in getattr(self, "_ndq_widgets", []):
             _w.setVisible(has_ndq)
-        self._row_mtd_widget.setVisible(has_mtd or has_ndq)
+        self._row_ndq_widget.setVisible(has_ndq)
         self._mtd_filter = "all"
         self.combo_mtd.setCurrentText("全部")
         if has_mtd:
@@ -1665,7 +1535,6 @@ class DeviationWarningDialog(QDialog):
             self.original_df.loc[self.original_df["data_id"].isin(ids), "隔离区"] = "是" if flag else ""
 
         self._apply_filter()
-        self._update_button_counts()
         toast(f"{'⚠️ 已移入隔离区' if flag else '↩ 已取消隔离'} {len(ids)} 条", parent=self)
 
     def _sync_main_df(self, data_id, read_value):
@@ -1921,19 +1790,9 @@ class DeviationWarningDialog(QDialog):
         if self.isMaximized():
             self.showNormal()
             self.btn_fullscreen.setText("放大")
-            self._row2_widget.setVisible(False)
-            self._row3_widget.setVisible(False)
-            self._row4_widget.setVisible(False)
-            # 缩小后隐藏区收起，同步把「筛选 ▾」按钮复位（v43.162）
-            self._sync_more_filters_btn(False)
         else:
             self.showMaximized()
             self.btn_fullscreen.setText("还原")
-            self._row2_widget.setVisible(True)
-            self._row3_widget.setVisible(True)
-            self._row4_widget.setVisible(True)
-            # 放大必然显示全部隐藏区，按钮同步为「已展开」态（v43.162）
-            self._sync_more_filters_btn(True)
             # 最大化后重新调整列宽（v43.300：交给 AdaptiveTable 控制器，监听 window
             # Resize/Show 自动防抖重算；不再同步 resizeColumnsToContents「卡死主线程」，
             # 且保留「不覆盖用户手动调过的列宽」语义）
