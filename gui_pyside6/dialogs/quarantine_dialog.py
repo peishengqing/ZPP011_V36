@@ -13,9 +13,10 @@ import pandas as pd
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QTabWidget,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QWidget,
-    QLineEdit, QComboBox, QInputDialog, QHeaderView, QDoubleSpinBox,
+    QLineEdit, QComboBox, QInputDialog, QHeaderView,
 )
 from PySide6.QtCore import Qt, QPoint, QTimer
+from PySide6.QtGui import QDoubleValidator
 from gui_pyside6.utils.table_autofit import install_adaptive, get_adaptive
 from gui_pyside6.models.data_frame_model import DataFrameModel
 from gui_pyside6.dialogs.col_filter_ui import (
@@ -136,27 +137,26 @@ class QuarantineDialog(QDialog):
 
         # 净偏差数量区间筛选（min~max）。该列在隔离区列表里通常不存在（源自主表），
         # 此处仅加控件；真正生效需数据帧含「净偏差数量」列，否则惰性（见 _apply_list_filters）。
-        # 哨兵值：下限 -1e9 / 上限 +1e9 经 setSpecialValueText("不限") 显示为「不限」。
+        # v43.379：旧的 ±1e9 哨兵 + setSpecialValueText("不限") 显示成超长「1000000000.00」，
+        # 改 QLineEdit 短框、默认留空、placeholder「不限」：留空一端=不限、双端留空=不筛选。
         nl = QHBoxLayout()
         nl.addWidget(QLabel("净偏差数量区间："))
-        self.spin_net_dev_min = QDoubleSpinBox()
-        self.spin_net_dev_min.setRange(-1e9, 1e9)
-        self.spin_net_dev_min.setDecimals(2)
-        self.spin_net_dev_min.setSpecialValueText("不限")
-        self.spin_net_dev_min.setValue(-1e9)
-        self.spin_net_dev_min.setToolTip("净偏差数量下限（显示「不限」=不限制）")
-        nl.addWidget(self.spin_net_dev_min)
+        self.edit_net_dev_min = QLineEdit()
+        self.edit_net_dev_min.setPlaceholderText("不限")
+        self.edit_net_dev_min.setFixedWidth(90)
+        self.edit_net_dev_min.setValidator(QDoubleValidator(self.edit_net_dev_min))
+        self.edit_net_dev_min.setToolTip("净偏差数量下限（留空=不限）")
+        nl.addWidget(self.edit_net_dev_min)
         nl.addWidget(QLabel("~"))
-        self.spin_net_dev_max = QDoubleSpinBox()
-        self.spin_net_dev_max.setRange(-1e9, 1e9)
-        self.spin_net_dev_max.setDecimals(2)
-        self.spin_net_dev_max.setSpecialValueText("不限")
-        self.spin_net_dev_max.setValue(1e9)
-        self.spin_net_dev_max.setToolTip("净偏差数量上限（显示「不限」=不限制）")
-        nl.addWidget(self.spin_net_dev_max)
-        # 接入 Tab1 既有关键字防抖定时器（300ms），避免每次步进都重建模型
-        self.spin_net_dev_min.valueChanged.connect(lambda _v: self._list_search_timer.start())
-        self.spin_net_dev_max.valueChanged.connect(lambda _v: self._list_search_timer.start())
+        self.edit_net_dev_max = QLineEdit()
+        self.edit_net_dev_max.setPlaceholderText("不限")
+        self.edit_net_dev_max.setFixedWidth(90)
+        self.edit_net_dev_max.setValidator(QDoubleValidator(self.edit_net_dev_max))
+        self.edit_net_dev_max.setToolTip("净偏差数量上限（留空=不限）")
+        nl.addWidget(self.edit_net_dev_max)
+        # 接入 Tab1 既有关键字防抖定时器（300ms），避免每次输入都重建模型
+        self.edit_net_dev_min.textChanged.connect(lambda _v: self._list_search_timer.start())
+        self.edit_net_dev_max.textChanged.connect(lambda _v: self._list_search_timer.start())
         nl.addStretch()
         v.addLayout(nl)
 
@@ -992,6 +992,17 @@ class QuarantineDialog(QDialog):
                 return c
         return None
 
+    @staticmethod
+    def _parse_net_dev_qty(text):
+        """解析净偏差数量输入框文本 → float 或 None（留空/非法=不限）。"""
+        s = str(text or "").strip().replace(",", "")
+        if not s:
+            return None
+        try:
+            return float(s)
+        except (TypeError, ValueError):
+            return None
+
     def _apply_list_filters(self):
         """按「隔离原因 + 关键字」叠加过滤隔离区列表（全部/空 = 不过滤），
         并记住各自选择以便刷新后恢复；渲染前重建序号列与排序态。"""
@@ -1020,11 +1031,9 @@ class QuarantineDialog(QDialog):
         try:
             col = '净偏差数量'
             if col in df.columns:
-                mn = self.spin_net_dev_min.value()
-                mx = self.spin_net_dev_max.value()
+                lo = self._parse_net_dev_qty(self.edit_net_dev_min.text())
+                hi = self._parse_net_dev_qty(self.edit_net_dev_max.text())
                 series = pd.to_numeric(df[col], errors='coerce')
-                lo = None if mn <= -1e9 + 0.001 else mn
-                hi = None if mx >= 1e9 - 0.001 else mx
                 mask = pd.Series(True, index=df.index)
                 if lo is not None:
                     mask &= (series >= lo)
