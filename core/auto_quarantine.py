@@ -534,7 +534,8 @@ def _match_single_rule(df, rule, cols=None):
                 # 空串统一走回退分支（注意：pandas 2.x 的 astype(str) 对 NaN 仍保留 NaN，
                 # 故不能用 .replace({'nan':''})，必须在 astype 之前 fillna）。
                 semi_str = df[semi_class_col].fillna("").astype(str).str.strip()
-                # 逐行判断：有值则精确匹配，为空则回退到物料分类
+                # 逐行判断：有半成品分类值则精确匹配，且未命中时的回退由后续 m_cat 分支处理；
+                # 半成品分类全空（NaN）时回退到物料分类包含匹配，避免原料类规则整条漏隔离。
                 if cat_col and cat_col in df.columns:
                     cat_str = df[cat_col].fillna("").astype(str)
                     m_semi = semi_str.isin(vals)  # 有值的行：精确匹配
@@ -586,7 +587,8 @@ def _match_single_rule(df, rule, cols=None):
     # 4.5 投料为负约束已回退（v43.209）：恒放行，不影响其它条件组合
     m_neg = pd.Series(True, index=df.index)
 
-    # 5. 偏差率范围（开区间，不含端点；无列 → 不匹配）
+    # 5. 偏差率范围（开区间，端点不含；开关开才校验；无列 → 不匹配）
+    # 端点不含：与 dev_qty 一致，避免恰好等于端点的边界行被误纳入。
     if rule.get("dev_rate_required", False):
         if dev_rate_col:
             rate = pd.to_numeric(df[dev_rate_col], errors="coerce")
@@ -636,6 +638,11 @@ def _match_single_rule(df, rule, cols=None):
                 vals = [v.strip() for v in val_str.replace("，", ",").split(",") if v.strip()]
                 if vals:
                     unit_str = df[unit_col].fillna("").astype(str).str.strip()
+                    # 单位必须【精确等于】配置值之一（逗号分隔多值 OR）。
+                    # 严禁用 contains：会把「包材」这类含「包」字的非单位串误纳进来，
+                    # 导致截图里「限定罐/袋/包」却混进巧克力果粒等不相干单位。
+                    # 注意 else 必须属于 if vals（不是 for...else），
+                    # 否则 for 正常结束会执行 else 把 m_unit 覆盖成全 True、条件被架空。
                     m_unit = pd.Series(False, index=df.index)
                     for v in vals:
                         m_unit = m_unit | (unit_str == v)

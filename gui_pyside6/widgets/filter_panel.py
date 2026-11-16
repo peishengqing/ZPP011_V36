@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QSizePolicy, QMenu, QCheckBox, QListWidget, QListWidgetItem, QInputDialog,
 )
 from PySide6.QtCore import Signal, Qt, QDate, QEvent
-from PySide6.QtGui import QColor, QPixmap, QIcon
+from PySide6.QtGui import QColor, QPixmap, QIcon, QDoubleValidator
 
 from gui_pyside6.themes.tokens import FONT_UI
 
@@ -287,28 +287,31 @@ class FilterPanel(QWidget):
         self.dev_qty_combo = QComboBox()
         self.dev_qty_combo.addItems(["全部", "大于0", "等于0", "小于0"])
         dev_layout.addRow("偏差数量:", self.dev_qty_combo)
-        # 净偏差数量范围（min~max 数值区间；两端默认「不限」=无约束）
-        # v43.380：形态改为可折叠抽屉——收起时仅隐藏区间控件行、保留切换钮与标题，
-        # 不再横向占满面板宽度（应对用户「筛选太宽」诉求）。取值口径与 get_filters() 完全一致。
-        self.net_dev_qty_min_spin = QDoubleSpinBox()
-        self.net_dev_qty_min_spin.setRange(-1e9, 1e9)
-        self.net_dev_qty_min_spin.setDecimals(2)
-        self.net_dev_qty_min_spin.setSpecialValueText("不限")
-        self.net_dev_qty_min_spin.setValue(-1e9)
-        self.net_dev_qty_max_spin = QDoubleSpinBox()
-        self.net_dev_qty_max_spin.setRange(-1e9, 1e9)
-        self.net_dev_qty_max_spin.setDecimals(2)
-        self.net_dev_qty_max_spin.setSpecialValueText("不限")
-        self.net_dev_qty_max_spin.setValue(1e9)
-        _ndq_label = QLabel("净偏差数量范围（min ~ max，留空一端 = 不限）")
+        # 净偏差数量范围（min~max 数值区间；v43.379 改为「默认留空=全部」短输入框）
+        # 旧形态用 QDoubleSpinBox ±1e9 哨兵 + setSpecialValueText("不限")，展开后是
+        # 两个超长的「1000000000.00」输入框（裴哥实报「不合适」）。改为 QLineEdit：
+        # 默认全空、placeholder 显示「不限」，留空一端=该端不限、双端留空=不筛选；
+        # 固定宽度不再横向撑满。取值口径与 get_filters() 完全一致，仍用 .value() 兼容旧调用。
+        self.net_dev_qty_min_edit = QLineEdit()
+        self.net_dev_qty_min_edit.setPlaceholderText("不限")
+        self.net_dev_qty_min_edit.setFixedWidth(90)
+        self.net_dev_qty_min_edit.setValidator(QDoubleValidator(self.net_dev_qty_min_edit))
+        self.net_dev_qty_max_edit = QLineEdit()
+        self.net_dev_qty_max_edit.setPlaceholderText("不限")
+        self.net_dev_qty_max_edit.setFixedWidth(90)
+        self.net_dev_qty_max_edit.setValidator(QDoubleValidator(self.net_dev_qty_max_edit))
+        # 输入变化即触发筛选（编辑完成或回车；textChanged 实时刷新）
+        self.net_dev_qty_min_edit.textChanged.connect(self._on_net_dev_qty_changed)
+        self.net_dev_qty_max_edit.textChanged.connect(self._on_net_dev_qty_changed)
+        _ndq_label = QLabel("净偏差数量范围（留空 = 不限）")
         _ndq_label.setWordWrap(True)
         _ndq_range_widget = QWidget()
         _ndq_range_layout = QHBoxLayout(_ndq_range_widget)
         _ndq_range_layout.setContentsMargins(0, 0, 0, 0)
         _ndq_range_layout.setSpacing(4)
-        _ndq_range_layout.addWidget(self.net_dev_qty_min_spin)
+        _ndq_range_layout.addWidget(self.net_dev_qty_min_edit)
         _ndq_range_layout.addWidget(QLabel("~"))
-        _ndq_range_layout.addWidget(self.net_dev_qty_max_spin)
+        _ndq_range_layout.addWidget(self.net_dev_qty_max_edit)
         _ndq_toggle_btn = QPushButton("▸")
         _ndq_toggle_btn.setFixedSize(24, 24)
         _ndq_toggle_btn.setToolTip("展开 / 收起「净偏差数量」筛选范围")
@@ -897,6 +900,22 @@ class FilterPanel(QWidget):
         """
         self._ndq_expanded = not self._ndq_expanded
         self._ndq_range_widget.setVisible(self._ndq_expanded)
+
+    @staticmethod
+    def _parse_net_dev_qty(text):
+        """解析净偏差数量输入框文本 → float 或 None（留空/非法 = 不限）。"""
+        s = str(text or "").strip().replace(",", "")
+        if not s:
+            return None
+        try:
+            return float(s)
+        except (TypeError, ValueError):
+            return None
+
+    def _on_net_dev_qty_changed(self, *_args):
+        """净偏差数量输入框变化 → 触发筛选刷新（留空=不限）。"""
+        self._emit_filter()
+
     # ------------------------------------------------------------------ #
     # 公共属性（兼容旧代码）
     # ------------------------------------------------------------------ #
@@ -1311,14 +1330,11 @@ class FilterPanel(QWidget):
             filters['_dev_qty_sign'] = 'eq0'
         elif dev_qty_sel == "小于0":
             filters['_dev_qty_sign'] = 'lt0'
-        # 净偏差数量范围（min~max；两端「不限」=无约束）
-        _ndq_min = self.net_dev_qty_min_spin.value()
-        _ndq_max = self.net_dev_qty_max_spin.value()
-        if _ndq_min > -1e9 + 0.001 or _ndq_max < 1e9 - 0.001:
-            filters['_net_dev_qty_range'] = (
-                None if _ndq_min <= -1e9 + 0.001 else _ndq_min,
-                None if _ndq_max >= 1e9 - 0.001 else _ndq_max,
-            )
+        # 净偏差数量范围（min~max；留空一端 = 不限，双端留空 = 不筛选）
+        _ndq_min = self._parse_net_dev_qty(self.net_dev_qty_min_edit.text())
+        _ndq_max = self._parse_net_dev_qty(self.net_dev_qty_max_edit.text())
+        if _ndq_min is not None or _ndq_max is not None:
+            filters['_net_dev_qty_range'] = (_ndq_min, _ndq_max)
         # 替代料筛查（纯数值：实际=0 且 定额>0）
         if self.substitute_combo.currentText() != "全部":
             filters['_substitute_only'] = True
@@ -1576,6 +1592,13 @@ class FilterPanel(QWidget):
         self._clear_unit_list()
         self.remark_search_edit.clear()
         self.remark_not_edit.clear()
+        # 净偏差数量区间归位：留空=不限（v43.379，旧版漏重置）
+        self.net_dev_qty_min_edit.blockSignals(True)
+        self.net_dev_qty_max_edit.blockSignals(True)
+        self.net_dev_qty_min_edit.clear()
+        self.net_dev_qty_max_edit.clear()
+        self.net_dev_qty_min_edit.blockSignals(False)
+        self.net_dev_qty_max_edit.blockSignals(False)
         # 重置日期为数据最小/最大日期
         self._user_start_date = None
         self._user_end_date = None

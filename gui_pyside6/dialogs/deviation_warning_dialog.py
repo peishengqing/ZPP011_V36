@@ -18,9 +18,10 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QFrame,
     QComboBox, QLineEdit, QDialogButtonBox, QGroupBox, QCheckBox, QGridLayout,
-    QWidget, QDoubleSpinBox,
+    QWidget,
 )
 from PySide6.QtCore import Qt, QPoint, QTimer
+from PySide6.QtGui import QDoubleValidator
 from gui_pyside6.models.data_frame_model import DataFrameModel
 from gui_pyside6.dialogs.col_filter_ui import (
     make_col_filter_button, make_col_filter_hint_label, set_col_filter_button_on,
@@ -357,6 +358,37 @@ class DeviationWarningDialog(QDialog):
         self._row_mtd.addStretch()
         self._main_filter_vlayout.addWidget(self._row_mtd_widget)
 
+        # ==== 第1.7行：净偏差数量（v43.379 从隐藏第3行提到本「始终可见」独立行）====
+        # 独立成行的原因：第1.6行组件物料类型在缺列时会被 set_data 整体隐藏
+        # （_row_mtd_widget.setVisible(has_mtd)），若把净偏差数量塞进那行会一起被藏掉。
+        # 默认留空的短输入框，留空一端=不限、双端留空=不筛选（不再用 ±1e9 哨兵）。
+        self._row_ndq_widget = QWidget()
+        self._row_ndq = QHBoxLayout(self._row_ndq_widget)
+        self._row_ndq.setContentsMargins(0, 0, 0, 0)
+        self._row_ndq.setSpacing(6)
+        _ndq_sep = QFrame()
+        _ndq_sep.setFrameShape(QFrame.VLine)
+        _ndq_sep.setFrameShadow(QFrame.Sunken)
+        self._row_ndq.addWidget(_ndq_sep)
+        self._row_ndq.addSpacing(8)
+        self.lbl_net_dev_qty = QLabel("净偏差数量:")
+        self._row_ndq.addWidget(self.lbl_net_dev_qty)
+        self.net_dev_qty_min_edit = QLineEdit()
+        self.net_dev_qty_min_edit.setPlaceholderText("不限")
+        self.net_dev_qty_min_edit.setFixedWidth(80)
+        self.net_dev_qty_min_edit.setValidator(QDoubleValidator(self.net_dev_qty_min_edit))
+        self.net_dev_qty_min_edit.textChanged.connect(self._on_net_dev_qty_changed)
+        self._row_ndq.addWidget(self.net_dev_qty_min_edit)
+        self._row_ndq.addWidget(QLabel("~"))
+        self.net_dev_qty_max_edit = QLineEdit()
+        self.net_dev_qty_max_edit.setPlaceholderText("不限")
+        self.net_dev_qty_max_edit.setFixedWidth(80)
+        self.net_dev_qty_max_edit.setValidator(QDoubleValidator(self.net_dev_qty_max_edit))
+        self.net_dev_qty_max_edit.textChanged.connect(self._on_net_dev_qty_changed)
+        self._row_ndq.addWidget(self.net_dev_qty_max_edit)
+        self._row_ndq.addStretch()
+        self._main_filter_vlayout.addWidget(self._row_ndq_widget)
+
         # ==== 第2行：料别 + 半成品分类（全屏时显示；车间已提至第1行始终可见）====
         self._row2_widget = QWidget()
         self._row2 = QHBoxLayout(self._row2_widget)
@@ -476,34 +508,6 @@ class DeviationWarningDialog(QDialog):
         self.btn_remark_none.setMinimumWidth(70)
         self.btn_remark_none.clicked.connect(self._bind(self.btn_remark_none.clicked, lambda: self._set_remark_filter("none")))
         self._row3.addWidget(self.btn_remark_none)
-
-        # 净偏差数量 数值范围（min~max，不限=±1e9 哨兵），与替代料/备注同处第3行（全屏/展开可见）
-        self.net_dev_qty_sep = QFrame()
-        self.net_dev_qty_sep.setFrameShape(QFrame.VLine)
-        self.net_dev_qty_sep.setFrameShadow(QFrame.Sunken)
-        self._row3.addWidget(self.net_dev_qty_sep)
-        self._row3.addSpacing(8)
-
-        self.lbl_net_dev_qty = QLabel("净偏差数量:")
-        self._row3.addWidget(self.lbl_net_dev_qty)
-
-        self.net_dev_qty_min_spin = QDoubleSpinBox()
-        self.net_dev_qty_min_spin.setRange(-1e9, 1e9)
-        self.net_dev_qty_min_spin.setDecimals(2)
-        self.net_dev_qty_min_spin.setSpecialValueText("不限")
-        self.net_dev_qty_min_spin.setValue(-1e9)
-        self.net_dev_qty_min_spin.valueChanged.connect(self._apply_filter)
-        self._row3.addWidget(self.net_dev_qty_min_spin)
-
-        self._row3.addWidget(QLabel("~"))
-
-        self.net_dev_qty_max_spin = QDoubleSpinBox()
-        self.net_dev_qty_max_spin.setRange(-1e9, 1e9)
-        self.net_dev_qty_max_spin.setDecimals(2)
-        self.net_dev_qty_max_spin.setSpecialValueText("不限")
-        self.net_dev_qty_max_spin.setValue(1e9)
-        self.net_dev_qty_max_spin.valueChanged.connect(self._apply_filter)
-        self._row3.addWidget(self.net_dev_qty_max_spin)
 
         self._row3.addStretch()
         self._main_filter_vlayout.addWidget(self._row3_widget)
@@ -930,22 +934,38 @@ class DeviationWarningDialog(QDialog):
         vals = df[self._factory_col].astype(str).str.strip()
         return vals == mode
 
+    @staticmethod
+    def _parse_net_dev_qty(text):
+        """解析净偏差数量输入框文本 → float 或 None（留空/非法=不限）。"""
+        s = str(text or "").strip().replace(",", "")
+        if not s:
+            return None
+        try:
+            return float(s)
+        except (TypeError, ValueError):
+            return None
+
+    def _on_net_dev_qty_changed(self, *_args):
+        """净偏差数量输入框变化 → 触发筛选（留空=不限）。"""
+        try:
+            self._apply_filter()
+        except Exception:
+            traceback.print_exc()
+
     def _net_dev_qty_mask(self, df):
         """净偏差数量数值范围筛选（>=下界 且 <=上界），镜像 unread_dashboard 口径。
 
         - 缺「净偏差数量」列 → 全 True（无约束，兼容原始未分析数据）；
           _devdir_mask 已把该列作为偏差方向数值的回退列，此处复用同一列名。
-        - 双端均「不限」 → 全 True（过滤器未生效）。
+        - 双端均留空（不限） → 全 True（过滤器未生效）。
         - 解析异常 → print_exc 后退回全 True，绝不拖累整体 apply。
         """
         col = "净偏差数量"
         if col not in df.columns:
             return pd.Series(True, index=df.index)
         try:
-            mn = self.net_dev_qty_min_spin.value()
-            mx = self.net_dev_qty_max_spin.value()
-            lo = None if mn <= -1e9 + 0.001 else mn
-            hi = None if mx >= 1e9 - 0.001 else mx
+            lo = self._parse_net_dev_qty(self.net_dev_qty_min_edit.text())
+            hi = self._parse_net_dev_qty(self.net_dev_qty_max_edit.text())
             if lo is None and hi is None:
                 return pd.Series(True, index=df.index)
             series = pd.to_numeric(df[col], errors="coerce")
@@ -956,7 +976,6 @@ class DeviationWarningDialog(QDialog):
                 m &= (series <= hi)
             return m
         except Exception:
-            import traceback
             traceback.print_exc()
             return pd.Series(True, index=df.index)
 
