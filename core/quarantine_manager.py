@@ -319,6 +319,16 @@ def scan_expired_quarantine(df, cfg=None) -> List[Dict]:
                     "uid": uid, "reason": reason, "basis": basis_key,
                     "detail": detail, "actual": actual, "quota": quota, "status": status,
                 })
+            elif is_auto and uid not in still_matched:
+                # v43.379：仍负损，但自动规则已不命中该行（单位/偏差率/编码前缀等
+                # 其他条件变了）——例如规则改好后 KG 半成品不再命中「限定罐/袋/包」。
+                # 旧逻辑只看负损=True 就跳过，导致这类记录永远进不了失效复核。
+                # 隔离依据已不成立，判失效供人工一键移出；手动隔离不受影响。
+                result.append({
+                    "uid": uid, "reason": reason, "basis": basis_key,
+                    "detail": "仍负损，但已不再命中任何自动隔离规则（隔离依据已失效）",
+                    "actual": actual, "quota": quota, "status": "rule_no_match",
+                })
             continue
 
         # ── 自动规则类：重跑规则看是否还在命中集 ──

@@ -180,6 +180,29 @@ def test_scan_expired_small_overfeed_still_expired():
     assert out[0]['status'] == 'neg_loss_over'
 
 
+def test_scan_expired_neg_loss_but_rule_no_match_is_expired():
+    """v43.379：仍负损、但自动规则已不命中（单位等条件变了）→ 必须判失效。
+
+    2026-11-16 事故：规则3「食品半成品负损」限定单位罐/袋/包，旧 bug 把 KG 行
+    错隔离；规则修好后 KG 仍负损，失效复核旧逻辑只看负损=True 就跳过，永远扫不出
+    这批。此测试钉死：自动规则类记录只要当前规则集不命中，无论是否仍负损都进失效列表。
+    """
+    df = _df([('U_KG', 69, 74, 0)])       # 仍负损 0<69<74，小幅 -6.8% 不触发超投短路
+    recs = _records('U_KG', '自动规则[第3条:食品半成品负损]',
+                    '自动规则[第3条:食品半成品负损]')
+    out = _scan(df, recs)                  # _scan mock 命中集={}，即规则不再命中
+    assert len(out) == 1 and out[0]['uid'] == 'U_KG'
+    assert out[0]['status'] == 'rule_no_match'
+
+
+def test_scan_expired_manual_neg_loss_not_touched_by_rule_check():
+    """反证：手动隔离的负损记录不受「规则不命中」判定影响，仍不进失效列表。"""
+    df = _df([('U_MAN', 69, 74, 0)])
+    recs = _records('U_MAN', '手动:人工判断', '手动:人工判断')
+    # 手动 + 负损成立 → 旧逻辑放行，不因规则命中集为空而误判失效
+    assert _scan(df, recs) == []
+
+
 def test_scan_expired_equal_quota_still_expired():
     """反证：补投刚好相符（偏差率 0）仍算失效并自动收口。"""
     df = _df([('U_NEG', 1000, 1000, 0)])
