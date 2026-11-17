@@ -223,5 +223,33 @@ def test_wechat_draft_keeps_full_material_name(qapp):
     assert long_name in text, "物料名称被截断，微信草稿里名字不完整"
 
 
+def test_wechat_draft_workshop_line_after_header(qapp):
+    """v43.390：【偏差沟通】标题下一行必须是车间行。
+
+    - 多行多车间：去重、按行序、「、」连接；
+    - 缺车间列/车间为空：写「无」。
+    """
+    import pandas as pd
+    from PySide6.QtWidgets import QApplication
+
+    df = pd.DataFrame([
+        {"订单日期": "2026-11-12", "流程订单": "A1", "物料编码": "1", "物料名称": "面粉",
+         "定额": "1", "实际": "2", "偏差数量": "1", "车间": "一车间"},
+        {"订单日期": "2026-11-13", "流程订单": "A2", "物料编码": "2", "物料名称": "白糖",
+         "定额": "1", "实际": "3", "偏差数量": "2", "车间": "一车间"},
+        {"订单日期": "2026-11-14", "流程订单": "A3", "物料编码": "3", "物料名称": "瓶坯",
+         "定额": "1", "实际": "0", "偏差数量": "-1", "车间": "灌装车间"},
+    ])
+    QApplication.clipboard().setText("")
+    _draft_ctrl(df)._copy_wechat_draft([0, 1, 2])
+    lines = QApplication.clipboard().text().splitlines()
+    assert lines[0] == "【偏差沟通】"
+    assert lines[1] == "车间：一车间、灌装车间"
+    # 缺车间列 → 车间：无
+    QApplication.clipboard().setText("")
+    _draft_ctrl(df.drop(columns=["车间"]))._copy_wechat_draft([0])
+    assert QApplication.clipboard().text().splitlines()[1] == "车间：无"
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

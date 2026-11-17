@@ -17,7 +17,6 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QFileDialog, QGroupBox, QMessageBox
 
 from gui_pyside6.widgets.toast import toast
@@ -210,6 +209,16 @@ class InteractionController:
         if df is None or df.empty:
             return
         lines = ["【偏差沟通】"]
+        # v43.390：标题下一行加车间（取全部选中行的车间去重、按行序；多车间用「、」连接）
+        workshops = []
+        for row in rows:
+            if row >= len(df):
+                continue
+            v = df.iloc[row].get('车间', '')
+            ws = '' if v is None or v != v else str(v).strip()   # v!=v 拦 NaN
+            if ws and ws not in workshops:
+                workshops.append(ws)
+        lines.append("车间：" + ("、".join(workshops) if workshops else "无"))
         for row in rows[:10]:
             if row >= len(df):
                 continue
@@ -343,7 +352,6 @@ class InteractionController:
             toast("没有可撤销的删除操作", level="warning", parent=self.mw)
 
     def _on_cell_double_clicked(self, index: Any):
-        import logging
         self.mw.log("InteractionController: _on_cell_double_clicked 被调用", "info")
         try:
             if self.mw.proxy_model and self.mw.source_model:
@@ -353,7 +361,7 @@ class InteractionController:
                 self.mw.log(f"双击: row={row}, len(df)={len(df)}", "info")
                 if row < len(df):
                     row_data = df.iloc[row]
-                    self.mw.log(f"双击: 找到行数据，调用_show_row_detail", "info")
+                    self.mw.log("双击: 找到行数据，调用_show_row_detail", "info")
                     self.mw._show_row_detail(row_data)
                 else:
                     self.mw.log(f"双击弹窗失败: row={row} 超出范围 len={len(df)}", "warn")
