@@ -163,17 +163,19 @@ class LayoutComposer:
         mw.action_btn_boards.setPopupMode(QToolButton.MenuButtonPopup)
         boards_menu = QMenu(mw)
         _icon_action(boards_menu, "eye", "未读看板", lambda: mw._show_unread_dashboard())
+        # v43.392：按裴哥要求，「隔离区」「未投料」提到「未读看板」之后（高频入口前置），
+        # 其余项相对顺序不变。
+        _icon_action(boards_menu, "lock", "隔离区", lambda: mw._open_quarantine_dialog())
+        _icon_action(boards_menu, "flag", "未投料", lambda: mw._show_unfed_dashboard())
         _icon_action(boards_menu, "edit", "变动提醒", lambda: mw._show_audit_changes_dialog())
         _icon_action(boards_menu, "bell", "替代料看板", lambda: mw._show_alert_dashboard())
         _icon_action(boards_menu, "alert", "偏差率预警", lambda: mw._show_deviation_warning_dialog())
         _icon_action(boards_menu, "trending-down", "负损看板", lambda: mw._show_neg_loss_dashboard())
         _icon_action(boards_menu, "trending-up", "正损看板", lambda: mw._show_pos_loss_dashboard())
-        _icon_action(boards_menu, "lock", "隔离区", lambda: mw._open_quarantine_dialog())
         _icon_action(boards_menu, "clipboard", "数据稳定性", lambda: mw._show_data_stability_dashboard())
         _icon_action(boards_menu, "link", "替代料长链", lambda: mw._show_alt_chain_dashboard())
         _icon_action(boards_menu, "box", "半成品看板", lambda: mw._show_semi_dashboard())
         _icon_action(boards_menu, "refresh", "翻箱守恒", lambda: mw._show_flip_check_dashboard())
-        _icon_action(boards_menu, "flag", "未投料", lambda: mw._show_unfed_dashboard())
         mw.action_btn_boards.setMenu(boards_menu)
         action_layout.addWidget(mw.action_btn_boards)
 
