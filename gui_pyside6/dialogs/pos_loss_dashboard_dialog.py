@@ -36,6 +36,7 @@ from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_fo
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.locate import locate_row, drill_to_workshop, compute_mom_badge
 from gui_pyside6.utils.table_sort import enable_click_sort
+from gui_pyside6.utils.excel_autofit import to_excel_autofit
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
 from gui_pyside6.utils.semi_class import merge_semi_class_values, ensure_semi_class_column  # v43.148 固定分类清单 / v43.210 补列
@@ -1505,7 +1506,7 @@ class PosLossDashboardDialog(QDialog):
             self, f"导出正损看板（共 {len(cur_df)} 条）", default_name, "Excel files (*.xlsx)")
         if path:
             export_df = cur_df.drop(columns=['data_id', '原表行号'], errors='ignore')
-            saved = safe_save(self, path, lambda p: export_df.to_excel(p, index=False), what="正损看板")
+            saved = safe_save(self, path, lambda p: to_excel_autofit(export_df, p), what="正损看板")
             if saved:
                 toast(f"已导出 {len(export_df)} 条记录到 {saved}", parent=self)
 

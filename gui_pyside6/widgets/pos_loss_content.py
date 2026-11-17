@@ -31,6 +31,7 @@ from gui_pyside6.utils.semi_class import merge_semi_class_values, ensure_semi_cl
 from gui_pyside6.widgets.filter_panel import _color_icon
 from gui_pyside6.utils.icons import add_icon_action
 from gui_pyside6.utils.table_autofit import get_adaptive, install_adaptive
+from gui_pyside6.utils.excel_autofit import to_excel_autofit
 from gui_pyside6.utils.row_number_gutter import enable_row_numbers
 from gui_pyside6.utils.board_empty_hint import empty_hint_text, set_empty_hint
 from gui_pyside6.components.dashboard_shell import pack_row
@@ -1234,7 +1235,7 @@ class PosLossContent(QWidget):
             self, f"导出正损看板（共 {len(cur_df)} 条）", default_name, "Excel files (*.xlsx)")
         if path:
             export_df = cur_df.drop(columns=['data_id', '原表行号'], errors='ignore')
-            saved = safe_save(self, path, lambda p: export_df.to_excel(p, index=False), what="正损看板")
+            saved = safe_save(self, path, lambda p: to_excel_autofit(export_df, p), what="正损看板")
             if saved:
                 toast(f"已导出 {len(export_df)} 条记录到 {saved}", parent=self)
 

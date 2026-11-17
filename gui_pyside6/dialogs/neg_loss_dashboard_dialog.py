@@ -36,6 +36,7 @@ from gui_pyside6.widgets.filter_panel import _color_icon
 from gui_pyside6.utils.icons import add_icon_action, make_button
 from gui_pyside6.widgets.board_visual import apply_board_visual  # v43.299 方案C
 from gui_pyside6.utils.snapshot_action import attach_snapshot_bar
+from gui_pyside6.utils.excel_autofit import to_excel_autofit
 
 
 class NegLossDashboardDialog(QDialog):
@@ -1477,7 +1478,7 @@ class NegLossDashboardDialog(QDialog):
             self, f"导出负损看板（共 {len(cur_df)} 条）", default_name, "Excel files (*.xlsx)")
         if path:
             export_df = cur_df.drop(columns=['data_id', '原表行号'], errors='ignore')
-            saved = safe_save(self, path, lambda p: export_df.to_excel(p, index=False), what="负损看板")
+            saved = safe_save(self, path, lambda p: to_excel_autofit(export_df, p), what="负损看板")
             if saved:
                 toast(f"已导出 {len(export_df)} 条记录到 {saved}", parent=self)
 

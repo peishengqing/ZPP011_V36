@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QGroupBox, QMessageBox
 
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.icons import make_button
+from gui_pyside6.utils.excel_autofit import to_excel_autofit
 
 
 class InteractionController:
@@ -295,7 +296,7 @@ class InteractionController:
         file_path, _ = QFileDialog.getSaveFileName(self.mw, "另存为 Excel", f"selected_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "Excel files (*.xlsx)")
         if file_path:
             try:
-                df.to_excel(file_path, index=True)
+                to_excel_autofit(df, file_path, index=True)
                 toast(f"已保存到 {file_path}", level="success", parent=self.mw)
             except Exception as e:
                 QMessageBox.critical(self.mw, "错误", f"保存失败：{e}")

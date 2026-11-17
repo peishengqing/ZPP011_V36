@@ -82,6 +82,7 @@ from gui_pyside6.dialogs.filter_preset_manager_dialog import FilterPresetManager
 from gui_pyside6.dialogs.filter_explainer_dialog import FilterExplainerDialog
 from gui_pyside6.utils.icons import add_icon_action, get_icon
 from gui_pyside6.utils.table_autofit import install_adaptive, get_adaptive
+from gui_pyside6.utils.excel_autofit import to_excel_autofit
 from gui_pyside6.controllers.column_controller import ColumnController
 from gui_pyside6.controllers.filter_preset_controller import FilterPresetController
 from gui_pyside6.controllers.dashboard_controller import DashboardController
@@ -966,7 +967,7 @@ class MainWindow(QMainWindow):
                             '净偏差数量(前)': '' if c.get('net_old') is None else c.get('net_old'),
                             '净偏差数量(后)': '' if c.get('net_new') is None else c.get('net_new'),
                         })
-                    pd.DataFrame(rows).to_excel(path, index=False)
+                    to_excel_autofit(pd.DataFrame(rows), path)
                     # v43.257：内联平台分发收敛到 _open_file（第五份重复实现）
                     _open_file(path)
                     toast(f"已导出并打开：{path}", parent=dlg)

@@ -41,6 +41,7 @@ from gui_pyside6.utils.icons import make_button
 from gui_pyside6.utils.locate import locate_row
 from gui_pyside6.utils.row_number_gutter import enable_row_numbers
 from gui_pyside6.utils.table_autofit import install_adaptive, get_adaptive
+from gui_pyside6.utils.excel_autofit import to_excel_autofit
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.widgets.toast import toast
@@ -685,7 +686,7 @@ class UnfedDashboardDialog(QDialog):
             export_df = model.getDataFrame().drop(
                 columns=_INTERNAL_COLS + _MODEL_INJECTED, errors='ignore')
             saved = safe_save(self, path,
-                              lambda p: export_df.to_excel(p, index=False),
+                              lambda p: to_excel_autofit(export_df, p),
                               what=what)
             if saved:
                 toast(f"已导出 {len(export_df)} 条记录到 {saved}", parent=self)

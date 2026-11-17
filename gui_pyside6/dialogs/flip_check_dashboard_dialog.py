@@ -34,6 +34,7 @@ from analysis.excel_builder.analysis_extra_flip import (
     parse_net_kg, parse_pack, split_by_factory)
 from gui_pyside6.utils.board_empty_hint import NO_DATA_TEXT, set_empty_hint
 from gui_pyside6.utils.row_number_gutter import enable_row_numbers
+from gui_pyside6.utils.excel_autofit import to_excel_autofit
 from utils.theme_manager import Thm
 
 # 看板统一美化（v43.299 方案C）
@@ -686,7 +687,7 @@ class FlipCheckDashboardDialog(QDialog):
             if not path:
                 return
             out = [rec(r) for r in rows]
-            pd.DataFrame(out, columns=cols).to_excel(path, index=False)
+            to_excel_autofit(pd.DataFrame(out, columns=cols), path)
             QMessageBox.information(self, "已导出", "已导出 %d 行到:\n%s" % (len(out), path))
         except Exception as e:
             import traceback

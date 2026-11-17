@@ -14,6 +14,7 @@ from gui_pyside6.components import message_box
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.save_guard import safe_save, precheck_save_path, friendly_error
 from gui_pyside6.utils.file_launcher import open_path
+from gui_pyside6.utils.excel_autofit import to_excel_autofit
 
 
 def open_file(filepath):
@@ -58,7 +59,7 @@ class ExportController(QObject):
             try:
                 saved = safe_save(
                     parent_widget, file_path,
-                    lambda p: export_df.to_excel(p, index=False),
+                    lambda p: to_excel_autofit(export_df, p),
                     what="表格",
                 )
                 if not saved:
@@ -107,7 +108,7 @@ class ExportController(QObject):
             try:
                 saved = safe_save(
                     parent_widget, save_path,
-                    lambda p: audit_data.to_excel(p, sheet_name='完整偏差明细', index=False),
+                    lambda p: to_excel_autofit(audit_data, p, sheet_name='完整偏差明细'),
                     what="表格",
                 )
                 if not saved:
@@ -520,7 +521,7 @@ class ExportController(QObject):
         try:
             saved = safe_save(
                 parent, save_path,
-                lambda p: audit_data.to_excel(p, sheet_name='完整偏差明细', index=False),
+                lambda p: to_excel_autofit(audit_data, p, sheet_name='完整偏差明细'),
                 what="表格",
             )
             if not saved:

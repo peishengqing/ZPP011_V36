@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QPoint, QTimer
 from PySide6.QtGui import QDoubleValidator
 from gui_pyside6.models.data_frame_model import DataFrameModel
+from gui_pyside6.utils.excel_autofit import to_excel_autofit
 from gui_pyside6.dialogs.col_filter_ui import (
     make_col_filter_button, make_col_filter_hint_label, set_col_filter_button_on,
 )
@@ -1349,7 +1350,7 @@ class DeviationWarningDialog(QDialog):
             from gui_pyside6.save_guard import safe_save
             export_df = cur_df.drop(columns=['_read', 'data_id'], errors='ignore')
             saved = safe_save(self, path,
-                              lambda p: export_df.to_excel(p, index=False),
+                              lambda p: to_excel_autofit(export_df, p),
                               what="预警列表")
             if saved:
                 toast(f"已导出 {len(export_df)} 条记录（{desc}）到 {saved}", parent=self)

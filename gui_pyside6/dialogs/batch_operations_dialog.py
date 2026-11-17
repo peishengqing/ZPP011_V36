@@ -10,6 +10,7 @@ from PySide6.QtCore import QThread, Signal
 
 from gui_pyside6.components import dialog_chrome, message_box
 from gui_pyside6.components.dialog_chrome import ImpactBanner
+from gui_pyside6.utils.excel_autofit import to_excel_autofit
 
 class BatchChangeStatusDialog(QDialog):
     def __init__(self, parent, row_indices, audit_data, on_finished):
@@ -94,7 +95,7 @@ class BatchExportWorker(QThread):
 
     def run(self):
         try:
-            self.df.to_excel(self.file_path, index=False)
+            to_excel_autofit(self.df, self.file_path)
             self.finished.emit(self.file_path)
         except Exception as e:
             self.error.emit(str(e))

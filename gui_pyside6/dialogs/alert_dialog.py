@@ -23,6 +23,7 @@ from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.locate import locate_row, drill_to_workshop, compute_mom_badge
 from gui_pyside6.widgets.filter_panel import _color_icon
 from gui_pyside6.utils.table_sort import enable_click_sort
+from gui_pyside6.utils.excel_autofit import to_excel_autofit
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
 from gui_pyside6.utils.board_empty_hint import empty_hint_text, set_empty_hint
@@ -729,7 +730,7 @@ class AlertDialog(QDialog):
             from gui_pyside6.save_guard import safe_save
             export_df = self.original_df.drop(columns=['_read', 'data_id', '_post_audit_changed', '_quarantined', '是否替代料'], errors='ignore')
             saved = safe_save(self, path,
-                              lambda p: export_df.to_excel(p, index=False),
+                              lambda p: to_excel_autofit(export_df, p),
                               what="预警列表")
             if saved:
                 toast(f"已导出 {len(export_df)} 条记录到 {saved}", parent=self)
