@@ -191,3 +191,90 @@ def test_unfed_stats_degenerate_inputs():
     assert unfed_stats(pd.DataFrame([dict(流程订单="X", 实际=5.0)])) == (0, 0, "")
     # 缺流程订单列
     assert unfed_stats(pd.DataFrame([dict(实际=0.0)])) == (0, 0, "")
+
+
+# ---------------------------------------------------------------- v43.387 产量两列 + 订单汇总页
+def _df_with_yield():
+    """在基础数据上补「产量/产量单位」两列（同单取值一致，模拟主表）。"""
+    df = _df()
+    df["产量"] = [1000.0, 1000.0, 2000.0, 2000.0, 500.0, 800.0, 300.0]
+    df["产量单位"] = ["KG", "KG", "KG", "KG", "个", "KG", "个"]
+    return df
+
+
+def test_build_unfed_order_df_pure():
+    """订单聚合纯函数：一单一行、数值列求和、维度列取首值、备注取首个非空。"""
+    from gui_pyside6.dialogs.unfed_dashboard_dialog import build_unfed_order_df
+    unfed_rows = [True, True, False, False, True, False, False]  # 2001×2 + 2003×1
+    out = build_unfed_order_df(_df_with_yield().loc[unfed_rows])
+    assert len(out) == 2
+    r1 = out[out['流程订单'] == '2001'].iloc[0]
+    assert int(r1['组件数']) == 2
+    assert float(r1['定额合计']) == 150.0
+    assert float(r1['实际合计']) == 0.0
+    assert float(r1['净偏差数量合计']) == -150.0
+    assert float(r1['偏差金额合计']) == -750.0
+    assert str(r1['产量']) == '1000.0' and str(r1['产量单位']) == 'KG'
+    assert str(r1['备注']) == ''
+    r3 = out[out['流程订单'] == '2003'].iloc[0]
+    assert int(r3['组件数']) == 1 and float(r3['定额合计']) == 1000.0
+    assert str(r3['备注']) == '待核' and str(r3['产量单位']) == '个'
+    # 空输入 → 带完整列结构的空表
+    empty = build_unfed_order_df(pd.DataFrame())
+    assert len(empty) == 0
+    assert '定额合计' in empty.columns and '组件数' in empty.columns and '产量' in empty.columns
+
+
+def test_dialog_production_columns(qapp):
+    """组件明细页：产量/产量单位两列可见，插在「单位」与「定额」之间。"""
+    dlg = UnfedDashboardDialog(_df_with_yield(), object())
+    shown = dlg.source_model.getDataFrame()
+    assert "产量" in shown.columns and "产量单位" in shown.columns
+    for c in ("产量", "产量单位"):
+        assert not dlg.table_view.isColumnHidden(int(shown.columns.get_loc(c)))
+    assert (shown.columns.get_loc("单位") < shown.columns.get_loc("产量")
+            < shown.columns.get_loc("产量单位") < shown.columns.get_loc("定额"))
+
+
+def test_order_tab_aggregation_and_labels(qapp):
+    """订单汇总页：一单一行、合计正确、底部计数换「单」口径、内部列隐藏。"""
+    dlg = UnfedDashboardDialog(_df_with_yield(), object())
+    dlg.tabs.setCurrentIndex(1)
+    shown = dlg.order_source_model.getDataFrame()
+    assert len(shown) == 2                       # 2001 + 2003
+    assert dlg.lbl_count.text() == "共 2 单 / 筛选命中 2 单"
+    r1 = shown[shown['流程订单'] == '2001'].iloc[0]
+    assert int(r1['组件数']) == 2 and float(r1['偏差金额合计']) == -750.0
+    for c in ("data_id", "原表行号", "_read", "_read_source"):
+        assert dlg.order_table_view.isColumnHidden(int(shown.columns.get_loc(c)))
+
+
+def test_order_tab_follows_component_filters(qapp):
+    """订单汇总页随组件页筛选联动（关键字 / 净偏差区间）。"""
+    dlg = UnfedDashboardDialog(_df_with_yield(), object())
+    dlg.edit_search.setText("乐虎")              # 只剩 2003 一单
+    dlg._apply_filters()
+    dlg.tabs.setCurrentIndex(1)
+    shown = dlg.order_source_model.getDataFrame()
+    assert len(shown) == 1 and str(shown.iloc[0]['流程订单']) == '2003'
+    assert dlg.lbl_count.text() == "共 2 单 / 筛选命中 1 单"
+    # 清空关键字后改用净偏差区间 [-600,0]：2003（-1000 出界）被筛掉 → 订单页只剩 2001
+    dlg.edit_search.clear()
+    dlg._apply_filters()
+    dlg.edit_net_dev_min.setText("-600")
+    dlg.edit_net_dev_max.setText("0")
+    dlg._apply_filters()
+    shown2 = dlg.order_source_model.getDataFrame()
+    assert len(shown2) == 1 and str(shown2.iloc[0]['流程订单']) == '2001'
+    assert dlg.lbl_count.text() == "共 2 单 / 筛选命中 1 单"
+
+
+def test_order_tab_without_yield_cols(qapp):
+    """旧数据没有产量列 → 订单页照常聚合，产量列显示为空。"""
+    dlg = _make(qapp)
+    dlg.tabs.setCurrentIndex(1)
+    shown = dlg.order_source_model.getDataFrame()
+    assert len(shown) == 2
+    assert "产量" in shown.columns
+    assert all(str(v) in ('', 'nan') for v in shown['产量'])
+    assert dlg.lbl_orders.text() == "订单：共 2 单 / 命中 2 单"

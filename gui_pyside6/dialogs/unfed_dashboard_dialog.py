@@ -15,15 +15,19 @@ v43.254 落地）**完全同源**：
   为空的行不参与判定；部分投料的订单不算未投料。
 实测本期 35 单 / 82 行，缺料金额 -332.40 万元、占全期总偏差 56.1%。
 
+双页签（v43.387）：
+  - 「组件明细」：组件行级展示（一行一组件），新增「产量」「产量单位」列；
+  - 「订单汇总」：按流程订单一单一行聚合（组件数 + 数值列合计），不到组件级，
+    随组件页的关键字/备注/净偏差区间筛选联动。
 筛选区照搬隔离区（QuarantineDialog Tab1）同款：关键字搜索 + 列头取值筛选
-（Excel 式勾选浮层）+ 是否备注 + 净偏差数量区间，组件行级展示、双击定位主表。
+（Excel 式勾选浮层）+ 是否备注 + 净偏差数量区间；双击行定位主表。
 """
 import pandas as pd
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QDoubleValidator
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QDialog, QFileDialog, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QTableView, QVBoxLayout,
+    QLabel, QLineEdit, QPushButton, QTableView, QTabWidget, QVBoxLayout,
 )
 
 from gui_pyside6.components import dialog_chrome
@@ -48,8 +52,15 @@ _ZERO_TOL = 0.001
 
 # 展示列（组件行级，一行一组件；订单信息在行里，可按流程订单/工厂/车间筛）
 _DISPLAY_COLS = ['订单日期', '流程订单', '工厂', '车间', '产品物料描述',
-                 '物料编码', '物料名称', '单位', '定额', '实际',
+                 '物料编码', '物料名称', '单位', '产量', '产量单位', '定额', '实际',
                  '净偏差数量', '偏差金额', '备注']
+# 订单汇总页展示列（一单一行，不到组件级；数值列为该单全部组件行的合计）
+_ORDER_COLS = ['订单日期', '流程订单', '工厂', '车间', '产品物料描述',
+               '产量', '产量单位', '组件数', '定额合计', '实际合计',
+               '净偏差数量合计', '偏差金额合计', '备注']
+# 聚合规则：维度列取组内首个非空值；数值列求和
+_FIRST_COLS = ['订单日期', '工厂', '车间', '产品物料描述', '产量', '产量单位']
+_SUM_COLS = ['定额', '实际', '净偏差数量', '偏差金额']
 # 内部定位列：供双击定位主表（locate_row 优先 原表行号、其次 data_id），
 # 界面隐藏、导出剔除。
 _INTERNAL_COLS = ['原表行号', 'data_id']
@@ -86,8 +97,62 @@ def unfed_order_mask(df):
     return mask
 
 
+def _first_nonempty(series):
+    """组内首个非空值（NaN/None/空白字符串跳过；全空返回 ''）。"""
+    for v in series:
+        if v is None:
+            continue
+        try:
+            if pd.isna(v):
+                continue
+        except (TypeError, ValueError):
+            pass
+        if str(v).strip() != '':
+            return v
+    return ''
+
+
+def build_unfed_order_df(comp_df):
+    """组件行 → 订单汇总行（一单一行，v43.387）。
+
+    - 维度列（订单日期/工厂/车间/产品物料描述/产量/产量单位）取该单组件行里
+      首个非空值（同单这些列取值一致）；
+    - 数值列（定额/实际/净偏差数量/偏差金额）按组件行求和，列名加「合计」后缀；
+    - 组件数 = 该单组件行数；
+    - 备注取首个非空备注；
+    - 保留该单首行的 原表行号/data_id，供双击定位主表。
+    返回列序 = _ORDER_COLS + _INTERNAL_COLS；入参为空时返回带完整列结构的空表。
+    """
+    cols = list(_ORDER_COLS) + list(_INTERNAL_COLS)
+    if comp_df is None or comp_df.empty or '流程订单' not in comp_df.columns:
+        return pd.DataFrame(columns=cols)
+    df = comp_df
+    key = df['流程订单'].astype(str).str.strip()
+    valid = key.ne('')
+    if not valid.any():
+        return pd.DataFrame(columns=cols)
+    df = df.loc[valid]
+    key = key.loc[valid]
+    rows = []
+    for oid, g in df.groupby(key, sort=True):
+        row = {'流程订单': oid, '组件数': int(len(g))}
+        for c in _FIRST_COLS:
+            row[c] = _first_nonempty(g[c]) if c in g.columns else ''
+        for c in _SUM_COLS:
+            row[c + '合计'] = (pd.to_numeric(g[c], errors='coerce').sum()
+                               if c in g.columns else 0.0)
+        row['备注'] = _first_nonempty(g['备注']) if '备注' in g.columns else ''
+        for c in _INTERNAL_COLS:
+            row[c] = g.iloc[0][c] if c in g.columns else None
+        rows.append(row)
+    out = pd.DataFrame(rows)
+    ordered = ([c for c in _ORDER_COLS if c in out.columns]
+               + [c for c in _INTERNAL_COLS if c in out.columns])
+    return out[ordered]
+
+
 class UnfedDashboardDialog(QDialog):
-    """未投料看板：整单零投料的订单组件明细，只读视图 + 隔离区同款筛选。"""
+    """未投料看板：整单零投料的订单（组件明细 / 订单汇总双页签），只读 + 隔离区同款筛选。"""
 
     def __init__(self, df, main_window, parent=None):
         super().__init__(parent)
@@ -104,6 +169,41 @@ class UnfedDashboardDialog(QDialog):
         self.set_data(df)
 
     # ------------------------------------------------------------------ UI
+    def _make_board_table(self):
+        """构造一个看板表格（组件页/订单页同构）：DataFrameModel + 列头筛选 + 自适应列宽。"""
+        tv = QTableView()
+        tv.setAlternatingRowColors(True)
+        tv.setSelectionBehavior(QAbstractItemView.SelectItems)
+        tv.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        tv.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        tv.doubleClicked.connect(self.on_double_click)
+        # 自定义表头：SortBadgeHeader 画 Excel 式取值过滤漏斗标（橙色三角）
+        header = SortBadgeHeader(Qt.Horizontal, tv)
+        tv.setHorizontalHeader(header)
+        # v43.300：取消末列独吞余量，由自适应控制器接管列宽
+        tv.horizontalHeader().setStretchLastSection(False)
+        enable_row_numbers(tv)
+        tv.verticalHeader().setDefaultSectionSize(28)
+        return tv, header
+
+    def _wire_col_filter(self, tv, header, model_getter):
+        """给一张表挂排序控制器 + 列头取值筛选控制器（组件页/订单页同构）。"""
+        # 点击列头排序（显式连接，规避 Qt6 下 setSortingEnabled 内部连接失效）。
+        # 跳过模型注入的 _read/_read_source 两列（第 0/1 列）。
+        sort_ctrl = enable_click_sort(tv, model_getter, skip_cols=(0, 1))
+        # Excel 式列头取值筛选控制器：筛选模式→弹层；否则委托排序
+        ctrl = ColumnFilterController(
+            tv, header, sort_ctrl, model_getter, self._apply_filters, skip_cols=(0, 1))
+        header.set_sort_columns_getter(lambda: [])
+        header.set_filtered_columns_getter(lambda ctrl=ctrl: ctrl.filtered_col_set)
+        try:
+            header.sectionClicked.disconnect(sort_ctrl._on_click)
+        except Exception:
+            pass
+        header.sectionClicked.connect(ctrl.on_header_clicked)
+        ctrl.filtered_cols_changed.connect(self._update_col_filter_hint)
+        return sort_ctrl, ctrl
+
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
@@ -130,8 +230,13 @@ class UnfedDashboardDialog(QDialog):
         sl.addWidget(clear_btn)
         self.btn_col_filter = make_col_filter_button(self, self._on_toggle_col_filter)
         sl.addWidget(self.btn_col_filter)
+        # 列头筛选提示标签每页各一个（叠放同槽位，随页签切换显隐），
+        # 避免 ColumnFilterController 的清除菜单跨表共享造成双重弹层。
         self._col_filter_hint_label = make_col_filter_hint_label()
         sl.addWidget(self._col_filter_hint_label)
+        self._order_col_filter_hint_label = make_col_filter_hint_label()
+        self._order_col_filter_hint_label.setVisible(False)
+        sl.addWidget(self._order_col_filter_hint_label)
         sl.addSpacing(12)
         sl.addWidget(QLabel("是否备注:"))
         self.combo_remark = QComboBox()
@@ -164,39 +269,25 @@ class UnfedDashboardDialog(QDialog):
         nl.addStretch()
         layout.addLayout(nl)
 
-        # ── 主表格（与隔离区列表同构：DataFrameModel + 列头取值筛选 + 自适应列宽）──
-        self.table_view = QTableView()
-        self.table_view.setAlternatingRowColors(True)
-        self.table_view.setSelectionBehavior(QAbstractItemView.SelectItems)
-        self.table_view.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.table_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table_view.doubleClicked.connect(self.on_double_click)
-        # 自定义表头：SortBadgeHeader 画 Excel 式取值过滤漏斗标（橙色三角）
-        self.header = SortBadgeHeader(Qt.Horizontal, self.table_view)
-        self.table_view.setHorizontalHeader(self.header)
-        # 点击列头排序（显式连接，规避 Qt6 下 setSortingEnabled 内部连接失效）。
-        # 跳过模型注入的 _read/_read_source 两列（第 0/1 列）。
-        self._sort_ctrl = enable_click_sort(
-            self.table_view, lambda: getattr(self, "source_model", None), skip_cols=(0, 1))
-        # Excel 式列头取值筛选控制器：筛选模式→弹层；否则委托排序
-        self.col_filter_ctrl = ColumnFilterController(
-            self.table_view, self.header, self._sort_ctrl,
-            lambda: getattr(self, "source_model", None),
-            self._apply_filters, skip_cols=(0, 1))
-        self.header.set_sort_columns_getter(lambda: [])
-        self.header.set_filtered_columns_getter(lambda: self.col_filter_ctrl.filtered_col_set)
-        try:
-            self.header.sectionClicked.disconnect(self._sort_ctrl._on_click)
-        except Exception:
-            pass
-        self.header.sectionClicked.connect(self.col_filter_ctrl.on_header_clicked)
-        # v43.300：取消末列独吞余量，由自适应控制器接管列宽
-        self.table_view.horizontalHeader().setStretchLastSection(False)
-        enable_row_numbers(self.table_view)
-        self.table_view.verticalHeader().setDefaultSectionSize(28)
-        self.col_filter_ctrl.filtered_cols_changed.connect(self._update_col_filter_hint)
+        # ── 双页签：组件明细（一行一组件）+ 订单汇总（一单一行）──
+        self.table_view, self.header = self._make_board_table()
+        self._sort_ctrl, self.col_filter_ctrl = self._wire_col_filter(
+            self.table_view, self.header, lambda: getattr(self, "source_model", None))
         self.col_filter_ctrl.attach_clear_menu(self._col_filter_hint_label)
-        layout.addWidget(self.table_view)
+
+        self.order_table_view, self.order_header = self._make_board_table()
+        self.order_table_view.doubleClicked.disconnect(self.on_double_click)
+        self.order_table_view.doubleClicked.connect(self.on_order_double_click)
+        self._order_sort_ctrl, self.order_col_filter_ctrl = self._wire_col_filter(
+            self.order_table_view, self.order_header,
+            lambda: getattr(self, "order_source_model", None))
+        self.order_col_filter_ctrl.attach_clear_menu(self._order_col_filter_hint_label)
+
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self.table_view, "组件明细")
+        self.tabs.addTab(self.order_table_view, "订单汇总")
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+        layout.addWidget(self.tabs, 1)
 
         # ── 统计行：订单数（按流程订单去重）+ 车间分布（随筛选联动）──
         stats = QHBoxLayout()
@@ -235,10 +326,15 @@ class UnfedDashboardDialog(QDialog):
         cols = ([c for c in _DISPLAY_COLS if c in unfed.columns]
                 + [c for c in _INTERNAL_COLS if c in unfed.columns])
         self.full_df = unfed[cols].copy() if cols else unfed.copy()
+        # 订单汇总全量（一单一行），随筛选联动刷新
+        self.full_order_df = build_unfed_order_df(self.full_df)
         self._apply_filters()
 
     def _apply_filters(self):
-        """按「关键字 + 是否备注 + 净偏差数量区间」叠加过滤（全部/空 = 不过滤）。"""
+        """按「关键字 + 是否备注 + 净偏差数量区间」叠加过滤（全部/空 = 不过滤）。
+
+        筛选在组件行级做，订单汇总页由过滤后的组件行聚合而来（联动）。
+        """
         if not hasattr(self, 'full_df') or self.full_df is None:
             return
         df = self.full_df
@@ -273,9 +369,12 @@ class UnfedDashboardDialog(QDialog):
             import traceback
             traceback.print_exc()
         self._render_table(df.copy())
+        self._render_order_table(build_unfed_order_df(df))
+        self._refresh_footer()
 
+    # ------------------------------------------------------------------ 渲染
     def _render_table(self, df):
-        """重建表格模型，叠加 Excel 式列头取值过滤，刷新计数与空态提示。"""
+        """组件明细页：重建模型，叠加 Excel 式列头取值过滤，刷新空态提示。"""
         if df is not None and not df.empty:
             df = df.copy()
         # 叠加 Excel 式列头取值过滤（就地过滤，视图行号不变，选中/双击/导出零回归）
@@ -286,38 +385,76 @@ class UnfedDashboardDialog(QDialog):
         self.table_view.setModel(self.source_model)
         n_shown = 0 if df is None else len(df)
         n_total = 0 if getattr(self, "full_df", None) is None else len(self.full_df)
-        self.lbl_count.setText("共 %d 条 / 筛选命中 %d 条" % (n_total, n_shown))
-        # 订单数与车间分布（按流程订单去重；车间分布跟随当前筛选结果）
-        n_ord_total, _ = self._order_stats(getattr(self, "full_df", None))
-        n_ord, ws_txt = self._order_stats(df)
-        self.lbl_orders.setText("订单：共 %d 单 / 命中 %d 单" % (n_ord_total, n_ord))
-        self.lbl_ws.setText(("车间分布（命中）：" + ws_txt) if ws_txt else "车间分布（命中）：-")
         set_empty_hint(self.table_view, "" if n_shown else (
             "当前数据没有「整单零投料」的订单。"
             if not n_total else
             "没有符合条件的记录（未投料共 %d 条）\n"
             "请清空搜索框，或把「是否备注」切回「全部」。" % n_total))
+        self._after_render(self.table_view, self.source_model, self._sort_ctrl)
+
+    def _render_order_table(self, df):
+        """订单汇总页：一单一行，同构渲染。"""
+        if df is not None and not df.empty:
+            df = df.copy()
+        if hasattr(self, "order_col_filter_ctrl") and self.order_col_filter_ctrl.has_any():
+            df = self.order_col_filter_ctrl.mask_dataframe(df)
+        self.order_source_model = DataFrameModel()
+        self.order_source_model.setDataFrame(df)
+        self.order_table_view.setModel(self.order_source_model)
+        n_shown = 0 if df is None else len(df)
+        n_total = 0 if getattr(self, "full_order_df", None) is None else len(self.full_order_df)
+        set_empty_hint(self.order_table_view, "" if n_shown else (
+            "当前数据没有「整单零投料」的订单。"
+            if not n_total else
+            "没有符合条件的订单（未投料共 %d 单）\n"
+            "请清空搜索框，或把「是否备注」切回「全部」。" % n_total))
+        self._after_render(self.order_table_view, self.order_source_model,
+                           self._order_sort_ctrl)
+
+    def _after_render(self, tv, model, sort_ctrl):
+        """渲染后共用收尾：自适应列宽、隐藏内部列、恢复/落默认排序。"""
         # v43.300：列宽自适应收编到统一控制器
-        _ctrl = get_adaptive(self.table_view)
+        _ctrl = get_adaptive(tv)
         if _ctrl is None:
-            install_adaptive(self.table_view, mode='content', key='unfed')
-            get_adaptive(self.table_view).schedule_initial()
+            install_adaptive(tv, mode='content', key='unfed')
+            get_adaptive(tv).schedule_initial()
         else:
             _ctrl.request_refit(0)
-        self.table_view.verticalHeader().setDefaultSectionSize(28)
+        tv.verticalHeader().setDefaultSectionSize(28)
         # 内部定位列 + 模型注入列只藏不删：导出仍要剔除（见 export_excel），界面不占宽
-        model_df = self.source_model.getDataFrame()
+        model_df = model.getDataFrame()
         for col in _INTERNAL_COLS + _MODEL_INJECTED:
             if col in model_df.columns:
-                self.table_view.setColumnHidden(int(model_df.columns.get_loc(col)), True)
+                tv.setColumnHidden(int(model_df.columns.get_loc(col)), True)
         # 重渲染后恢复排序态：用户点过列头则保持；否则默认按流程订单升序
-        if hasattr(self, "_sort_ctrl"):
-            if self._sort_ctrl.active:
-                self._sort_ctrl.reapply()
+        if sort_ctrl is not None:
+            if sort_ctrl.active:
+                sort_ctrl.reapply()
             else:
-                df0 = self.source_model.getDataFrame()
+                df0 = model.getDataFrame()
                 col = df0.columns.get_loc('流程订单') if '流程订单' in df0.columns else 0
-                self._sort_ctrl.apply_default(col, Qt.AscendingOrder)
+                sort_ctrl.apply_default(col, Qt.AscendingOrder)
+
+    def _refresh_footer(self):
+        """底部计数 + 订单统计行：按当前活动页签取数（组件页=条、订单页=单）。"""
+        if getattr(self, 'tabs', None) is None:
+            return
+        comp_shown = (self.source_model.getDataFrame()
+                      if hasattr(self, 'source_model') else pd.DataFrame())
+        order_shown = (self.order_source_model.getDataFrame()
+                       if hasattr(self, 'order_source_model') else pd.DataFrame())
+        n_comp_total = 0 if getattr(self, 'full_df', None) is None else len(self.full_df)
+        n_ord_total = 0 if getattr(self, 'full_order_df', None) is None else len(self.full_order_df)
+        if self.tabs.currentIndex() == 1:
+            self.lbl_count.setText("共 %d 单 / 筛选命中 %d 单" % (n_ord_total, len(order_shown)))
+            self.lbl_orders.setText("订单：共 %d 单 / 命中 %d 单" % (n_ord_total, len(order_shown)))
+            _, ws_txt = self._order_stats(order_shown)
+        else:
+            self.lbl_count.setText("共 %d 条 / 筛选命中 %d 条" % (n_comp_total, len(comp_shown)))
+            n_ord, ws_txt = self._order_stats(comp_shown)
+            self.lbl_orders.setText("订单：共 %d 单 / 命中 %d 单" % (
+                self._order_stats(getattr(self, 'full_df', None))[0], n_ord))
+        self.lbl_ws.setText(("车间分布（命中）：" + ws_txt) if ws_txt else "车间分布（命中）：-")
 
     # ------------------------------------------------------------------ 筛选辅助
     def _on_search_text_changed(self, text):
@@ -376,12 +513,18 @@ class UnfedDashboardDialog(QDialog):
                 parts = ["%s %d单" % (w, c) for w, c in grp.sort_values(ascending=False).items()]
         return n, "、".join(parts)
 
+    # ------------------------------------------------------------------ 页签/列头筛选
+    def _active_filter_ui(self):
+        """当前页签的 (列头筛选控制器, 提示标签)。"""
+        if getattr(self, 'tabs', None) is not None and self.tabs.currentIndex() == 1:
+            return self.order_col_filter_ctrl, self._order_col_filter_hint_label
+        return self.col_filter_ctrl, self._col_filter_hint_label
+
     def _update_col_filter_hint(self):
-        """刷新「列头筛选提示」：显示已设取值过滤的列（N 列 / 列名）。"""
-        ctrl = self.col_filter_ctrl
-        label = self._col_filter_hint_label
+        """刷新「列头筛选提示」：显示当前页已设取值过滤的列（N 列 / 列名）。"""
+        ctrl, label = self._active_filter_ui()
         col_set = ctrl.filtered_col_set
-        source_model = getattr(self, "source_model", None)
+        source_model = ctrl.source_model_getter()
         display_cols = getattr(source_model, "_display_columns", []) if source_model is not None else []
         if not col_set:
             label.setText("列头筛选：0 列")
@@ -401,32 +544,62 @@ class UnfedDashboardDialog(QDialog):
         label.setText(text)
 
     def _on_toggle_col_filter(self):
-        """切换列头筛选模式；关闭模式仅停止弹层，取值过滤仍保留。"""
-        on = self.col_filter_ctrl.toggle_mode()
+        """切换列头筛选模式（作用于当前页签）；关闭模式仅停止弹层，取值过滤仍保留。"""
+        ctrl, _label = self._active_filter_ui()
+        on = ctrl.toggle_mode()
         self.btn_col_filter.setChecked(on)
         set_col_filter_button_on(self.btn_col_filter, on)
         self._update_col_filter_hint()
 
+    def _on_tab_changed(self, _idx):
+        """切换页签：列头筛选按钮/提示随当前页控制器同步，底部计数换口径。"""
+        ctrl, _label = self._active_filter_ui()
+        on = bool(getattr(ctrl, "_col_filter_mode", False))
+        self.btn_col_filter.setChecked(on)
+        set_col_filter_button_on(self.btn_col_filter, on)
+        self._col_filter_hint_label.setVisible(ctrl is self.col_filter_ctrl)
+        self._order_col_filter_hint_label.setVisible(ctrl is self.order_col_filter_ctrl)
+        self._update_col_filter_hint()
+        self._refresh_footer()
+
     # ------------------------------------------------------------------ 交互
     def on_double_click(self, index):
-        """双击行 → 定位主表对应记录（按 原表行号/data_id），并关闭看板。"""
+        """双击组件行 → 定位主表对应记录（按 原表行号/data_id），并关闭看板。"""
+        self._locate_and_close(index)
+
+    def on_order_double_click(self, index):
+        """双击订单行 → 定位该单首条组件记录（行里带了首行 原表行号/data_id）。"""
+        self._locate_and_close(index)
+
+    def _locate_and_close(self, index):
         if not index.isValid():
             return
-        df = self.source_model.getDataFrame()
+        model = (self.order_source_model
+                 if (getattr(self, 'tabs', None) is not None
+                     and self.tabs.currentIndex() == 1
+                     and hasattr(self, 'order_source_model'))
+                 else getattr(self, 'source_model', None))
+        if model is None:
+            return
+        df = model.getDataFrame()
         if index.row() >= len(df):
             return
         locate_row(self.main_window, df.iloc[index.row()], parent=self, link_source="未投料看板")
         self.accept()
 
     def export_excel(self):
-        """导出当前筛选后的视图（剔除内部定位列）。"""
-        path, _ = QFileDialog.getSaveFileName(self, "导出未投料列表", "未投料订单.xlsx", "Excel files (*.xlsx)")
+        """导出当前页签筛选后的视图（剔除内部定位列）。"""
+        is_order = (getattr(self, 'tabs', None) is not None and self.tabs.currentIndex() == 1)
+        default_name = "未投料订单汇总.xlsx" if is_order else "未投料订单.xlsx"
+        what = "未投料订单汇总" if is_order else "未投料列表"
+        path, _ = QFileDialog.getSaveFileName(self, "导出未投料列表", default_name, "Excel files (*.xlsx)")
         if path:
             from gui_pyside6.save_guard import safe_save
-            export_df = self.source_model.getDataFrame().drop(
+            model = (self.order_source_model if is_order else self.source_model)
+            export_df = model.getDataFrame().drop(
                 columns=_INTERNAL_COLS + _MODEL_INJECTED, errors='ignore')
             saved = safe_save(self, path,
                               lambda p: export_df.to_excel(p, index=False),
-                              what="未投料列表")
+                              what=what)
             if saved:
                 toast(f"已导出 {len(export_df)} 条记录到 {saved}", parent=self)
