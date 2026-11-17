@@ -92,6 +92,25 @@ class FileMonitorController:
         self._monitor_last_size[fp] = st.st_size
         self._monitor_loaded.add((fp, int(st.st_mtime), st.st_size))
 
+    # ═══════════════ 已加载登记（v43.388） ═══════════════
+
+    def mark_file_loaded(self, fp):
+        """把文件按「已加载」登记（v43.388）。
+
+        无论手动选择还是监控自动加载，只要应用开始使用某个文件，就记录其
+        指纹（路径+修改时间+大小）。之后监控扫描发现同一指纹时直接跳过，
+        不再反复排队/提示/尝试加载。修复的问题：用户手动加载文件后，监控
+        仍把同一文件当新文件，遇文件被 Excel/WPS 占用就每 ~24 秒循环刷
+        「监控到新文件 / 被占用」日志。文件被重新导出（指纹变化）时仍会
+        照常触发自动加载，自动重载能力不受影响。
+        """
+        try:
+            fp = os.path.normpath(fp)
+            st = os.stat(fp)
+            self._monitor_loaded.add((fp, int(st.st_mtime), st.st_size))
+        except Exception:
+            pass
+
     # ═══════════════ 目录扫描 ═══════════════
 
     def _scan_monitor_dir(self):

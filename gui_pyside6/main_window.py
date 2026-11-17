@@ -1106,6 +1106,9 @@ class MainWindow(QMainWindow):
         # 发起分析前记录当前筛选为「上次使用」预设（面板在分析完成后会重置）
         self._capture_last_used_filter()
         self.current_input_file = os.path.normpath(self.current_input_file)
+        # v43.388：开始分析即登记文件指纹（含监控自动加载路径，重复登记无害），
+        # 监控扫描对同一版本直接跳过，修复「已加载仍循环检测占用」的刷屏问题
+        self.file_monitor_controller.mark_file_loaded(self.current_input_file)
 
         dev_threshold = getattr(self.filter_panel, 'dev_threshold_spin', None)
         dev_threshold_val = dev_threshold.value() if dev_threshold is not None else 0.0
@@ -1676,6 +1679,8 @@ class MainWindow(QMainWindow):
         self.current_input_file = os.path.normpath(file_path)
         self.input_file_edit.setText(self.current_input_file)
         self.input_file_edit.setToolTip(file_path)
+        # v43.388：手动选择的文件立即登记为「已加载」，监控不再对同一版本反复触发
+        self.file_monitor_controller.mark_file_loaded(self.current_input_file)
         # 后台读取，避免大文件阻塞主线程导致"未响应"
         if hasattr(self, 'preview_label') and self.preview_label:
             self.preview_label.setText("正在读取文件…")
