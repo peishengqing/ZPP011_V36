@@ -151,6 +151,57 @@ def build_unfed_order_df(comp_df):
     return out[ordered]
 
 
+def build_unfed_pivot_df(comp_df):
+    """组件行 → 「工厂·车间·日期」透视表（v43.389）。
+
+    - 格内数值 = 未投料订单数（按 工厂×车间×日期×流程订单 去重后计数，不是组件行数）；
+    - 行 = 工厂 + 车间（厂内车间升序，厂按名称升序——「食品厂」排在「饮料厂」前）；
+    - 列 = 订单日期升序（年份唯一时列名用 MM-DD，跨年用 YYYY-MM-DD；
+      订单日期为空的单归入「未知」列、排最后）+ 末列「合计」；
+    - 末行 = 「合计」（按日期列合计 + 总计），车间列留空。
+    入参为空/缺关键列时返回带 ['工厂','车间','合计'] 三列的空表。
+    """
+    empty = pd.DataFrame(columns=['工厂', '车间', '合计'])
+    if comp_df is None or comp_df.empty:
+        return empty
+    need = {'工厂', '车间', '订单日期', '流程订单'}
+    if not need.issubset(set(comp_df.columns)):
+        return empty
+    df = comp_df.copy()
+    df['_dt'] = pd.to_datetime(df['订单日期'], errors='coerce')
+    sub = df[df['流程订单'].notna() & df['流程订单'].astype(str).str.strip().ne('')]
+    if sub.empty:
+        return empty
+    years = pd.Series(sub['_dt'].dropna()).dt.year.unique() if sub['_dt'].notna().any() else []
+    fmt = '%m-%d' if len(years) <= 1 else '%Y-%m-%d'
+
+    def _label(dt):
+        return dt.strftime(fmt) if pd.notna(dt) else '未知'
+
+    sub = sub.assign(_dlabel=sub['_dt'].map(_label))
+    # 订单去重：同一订单在同一天的同厂同车间只计 1 单
+    dup = sub.drop_duplicates(subset=['工厂', '车间', '_dlabel', '流程订单'])
+    grp = dup.groupby([dup['工厂'].astype(str), dup['车间'].astype(str),
+                       dup['_dlabel']]).size()
+    piv = grp.unstack(fill_value=0)
+    # 日期列按真实日期升序，「未知」永远最后
+    dated = sorted({(d, _label(d)) for d in sub['_dt'].dropna()})
+    col_order = [lab for _d, lab in dated]
+    if '未知' in set(sub['_dlabel']):
+        col_order.append('未知')
+    for c in col_order:
+        if c not in piv.columns:
+            piv[c] = 0
+    piv = piv[col_order]
+    piv['合计'] = piv.sum(axis=1)
+    totals = pd.DataFrame([piv.sum(axis=0)], columns=piv.columns)
+    totals.index = pd.MultiIndex.from_tuples([('合计', '')])
+    piv = pd.concat([piv, totals]).sort_index()
+    out = piv.reset_index()
+    out.columns = ['工厂', '车间'] + [str(c) for c in out.columns[2:]]
+    return out
+
+
 class UnfedDashboardDialog(QDialog):
     """未投料看板：整单零投料的订单（组件明细 / 订单汇总双页签），只读 + 隔离区同款筛选。"""
 
@@ -169,14 +220,18 @@ class UnfedDashboardDialog(QDialog):
         self.set_data(df)
 
     # ------------------------------------------------------------------ UI
-    def _make_board_table(self):
-        """构造一个看板表格（组件页/订单页同构）：DataFrameModel + 列头筛选 + 自适应列宽。"""
+    def _make_board_table(self, locate_on_double_click=True):
+        """构造一个看板表格（组件/订单/透视页同构）：DataFrameModel + 自适应列宽。
+
+        locate_on_double_click=False 的页（透视汇总页）不接双击定位。
+        """
         tv = QTableView()
         tv.setAlternatingRowColors(True)
         tv.setSelectionBehavior(QAbstractItemView.SelectItems)
         tv.setSelectionMode(QAbstractItemView.ExtendedSelection)
         tv.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        tv.doubleClicked.connect(self.on_double_click)
+        if locate_on_double_click:
+            tv.doubleClicked.connect(self.on_double_click)
         # 自定义表头：SortBadgeHeader 画 Excel 式取值过滤漏斗标（橙色三角）
         header = SortBadgeHeader(Qt.Horizontal, tv)
         tv.setHorizontalHeader(header)
@@ -269,7 +324,7 @@ class UnfedDashboardDialog(QDialog):
         nl.addStretch()
         layout.addLayout(nl)
 
-        # ── 双页签：组件明细（一行一组件）+ 订单汇总（一单一行）──
+        # ── 三页签：组件明细（一行一组件）+ 订单汇总（一单一行）+ 透视汇总 ──
         self.table_view, self.header = self._make_board_table()
         self._sort_ctrl, self.col_filter_ctrl = self._wire_col_filter(
             self.table_view, self.header, lambda: getattr(self, "source_model", None))
@@ -283,9 +338,15 @@ class UnfedDashboardDialog(QDialog):
             lambda: getattr(self, "order_source_model", None))
         self.order_col_filter_ctrl.attach_clear_menu(self._order_col_filter_hint_label)
 
+        # 透视汇总页：工厂×车间×日期 的未投料订单数，只读展示，
+        # 不接列头筛选/双击定位（数据是聚合结果，无需回溯主表行）。
+        self.pivot_table_view, self.pivot_header = self._make_board_table(
+            locate_on_double_click=False)
+
         self.tabs = QTabWidget()
         self.tabs.addTab(self.table_view, "组件明细")
         self.tabs.addTab(self.order_table_view, "订单汇总")
+        self.tabs.addTab(self.pivot_table_view, "工厂·车间·日期汇总")
         self.tabs.currentChanged.connect(self._on_tab_changed)
         layout.addWidget(self.tabs, 1)
 
@@ -370,6 +431,7 @@ class UnfedDashboardDialog(QDialog):
             traceback.print_exc()
         self._render_table(df.copy())
         self._render_order_table(build_unfed_order_df(df))
+        self._render_pivot_table(df)
         self._refresh_footer()
 
     # ------------------------------------------------------------------ 渲染
@@ -411,6 +473,16 @@ class UnfedDashboardDialog(QDialog):
         self._after_render(self.order_table_view, self.order_source_model,
                            self._order_sort_ctrl)
 
+    def _render_pivot_table(self, comp_df):
+        """工厂·车间·日期汇总页：透视表（格=未投料订单数，按流程订单去重）。"""
+        df = build_unfed_pivot_df(comp_df)
+        self.pivot_source_model = DataFrameModel()
+        self.pivot_source_model.setDataFrame(df)
+        self.pivot_table_view.setModel(self.pivot_source_model)
+        set_empty_hint(self.pivot_table_view, "" if len(df) else
+                       "当前数据没有「整单零投料」的订单。")
+        self._after_render(self.pivot_table_view, self.pivot_source_model, None)
+
     def _after_render(self, tv, model, sort_ctrl):
         """渲染后共用收尾：自适应列宽、隐藏内部列、恢复/落默认排序。"""
         # v43.300：列宽自适应收编到统一控制器
@@ -445,7 +517,7 @@ class UnfedDashboardDialog(QDialog):
                        if hasattr(self, 'order_source_model') else pd.DataFrame())
         n_comp_total = 0 if getattr(self, 'full_df', None) is None else len(self.full_df)
         n_ord_total = 0 if getattr(self, 'full_order_df', None) is None else len(self.full_order_df)
-        if self.tabs.currentIndex() == 1:
+        if self.tabs.currentIndex() in (1, 2):
             self.lbl_count.setText("共 %d 单 / 筛选命中 %d 单" % (n_ord_total, len(order_shown)))
             self.lbl_orders.setText("订单：共 %d 单 / 命中 %d 单" % (n_ord_total, len(order_shown)))
             _, ws_txt = self._order_stats(order_shown)
@@ -552,13 +624,21 @@ class UnfedDashboardDialog(QDialog):
         self._update_col_filter_hint()
 
     def _on_tab_changed(self, _idx):
-        """切换页签：列头筛选按钮/提示随当前页控制器同步，底部计数换口径。"""
+        """切换页签：列头筛选按钮/提示随当前页控制器同步，底部计数换口径。
+
+        透视汇总页（页签 2）是聚合结果，不支持列头取值筛选——按钮置禁用。
+        """
+        idx = self.tabs.currentIndex()
         ctrl, _label = self._active_filter_ui()
-        on = bool(getattr(ctrl, "_col_filter_mode", False))
+        on = bool(getattr(ctrl, "_col_filter_mode", False)) and idx != 2
+        self.btn_col_filter.setEnabled(idx != 2)
+        self.btn_col_filter.setToolTip(
+            "透视汇总页无需列头筛选" if idx == 2 else
+            "开启后点列头弹取值勾选浮层（Excel式筛选）；Ctrl+点列头仍可排序")
         self.btn_col_filter.setChecked(on)
         set_col_filter_button_on(self.btn_col_filter, on)
-        self._col_filter_hint_label.setVisible(ctrl is self.col_filter_ctrl)
-        self._order_col_filter_hint_label.setVisible(ctrl is self.order_col_filter_ctrl)
+        self._col_filter_hint_label.setVisible(idx == 0)
+        self._order_col_filter_hint_label.setVisible(idx == 1)
         self._update_col_filter_hint()
         self._refresh_footer()
 
@@ -589,13 +669,19 @@ class UnfedDashboardDialog(QDialog):
 
     def export_excel(self):
         """导出当前页签筛选后的视图（剔除内部定位列）。"""
-        is_order = (getattr(self, 'tabs', None) is not None and self.tabs.currentIndex() == 1)
-        default_name = "未投料订单汇总.xlsx" if is_order else "未投料订单.xlsx"
-        what = "未投料订单汇总" if is_order else "未投料列表"
+        idx = self.tabs.currentIndex() if getattr(self, 'tabs', None) is not None else 0
+        if idx == 2:
+            model = self.pivot_source_model
+            default_name, what = "未投料工厂车间日期汇总.xlsx", "未投料工厂车间日期汇总"
+        elif idx == 1:
+            model = self.order_source_model
+            default_name, what = "未投料订单汇总.xlsx", "未投料订单汇总"
+        else:
+            model = self.source_model
+            default_name, what = "未投料订单.xlsx", "未投料列表"
         path, _ = QFileDialog.getSaveFileName(self, "导出未投料列表", default_name, "Excel files (*.xlsx)")
         if path:
             from gui_pyside6.save_guard import safe_save
-            model = (self.order_source_model if is_order else self.source_model)
             export_df = model.getDataFrame().drop(
                 columns=_INTERNAL_COLS + _MODEL_INJECTED, errors='ignore')
             saved = safe_save(self, path,

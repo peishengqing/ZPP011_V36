@@ -278,3 +278,38 @@ def test_order_tab_without_yield_cols(qapp):
     assert "产量" in shown.columns
     assert all(str(v) in ('', 'nan') for v in shown['产量'])
     assert dlg.lbl_orders.text() == "订单：共 2 单 / 命中 2 单"
+
+
+# ---------------------------------------------------------------- v43.389 工厂·车间·日期透视页
+def test_build_unfed_pivot_df_pure():
+    """透视纯函数：订单去重计数、日期列升序、行/列合计、总计行。"""
+    from gui_pyside6.dialogs.unfed_dashboard_dialog import build_unfed_pivot_df
+    unfed = [True, True, False, False, True, False, False]  # 2001(食品·一车间,10-13) + 2003(饮料·灌装,10-15)
+    out = build_unfed_pivot_df(_df().loc[unfed])
+    assert list(out['工厂']) == ['云南达利-食品厂', '云南达利-饮料厂', '合计']
+    assert list(out['车间']) == ['一车间', '灌装车间', '']
+    assert list(out['10-13']) == [1, 0, 1]
+    assert list(out['10-15']) == [0, 1, 1]
+    assert list(out['合计']) == [1, 1, 2]
+    # 空输入 → 带基本列结构的空表
+    empty = build_unfed_pivot_df(pd.DataFrame())
+    assert len(empty) == 0 and list(empty.columns) == ['工厂', '车间', '合计']
+
+
+def test_pivot_tab_renders_and_follows_filters(qapp):
+    """透视页：渲染行数正确、列头筛选按钮禁用、随关键字筛选联动、切回恢复。"""
+    dlg = _make(qapp)
+    dlg.tabs.setCurrentIndex(2)
+    assert not dlg.btn_col_filter.isEnabled()          # 透视页禁用列头筛选
+    shown = dlg.pivot_source_model.getDataFrame()
+    assert len(shown) == 3                             # 2 个车间行 + 合计行
+    assert dlg.lbl_count.text() == "共 2 单 / 筛选命中 2 单"
+    # 关键字「乐虎」→ 只剩 2003（饮料厂·灌装车间）
+    dlg.edit_search.setText("乐虎")
+    dlg._apply_filters()
+    shown2 = dlg.pivot_source_model.getDataFrame()
+    assert list(shown2['车间']) == ['灌装车间', '']
+    assert dlg.lbl_count.text() == "共 2 单 / 筛选命中 1 单"
+    # 切回组件明细页：列头筛选按钮恢复可用
+    dlg.tabs.setCurrentIndex(0)
+    assert dlg.btn_col_filter.isEnabled()
