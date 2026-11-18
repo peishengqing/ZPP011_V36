@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QCheckBox,
     QGroupBox, QWidget, QTableWidget, QTableWidgetItem, QLineEdit,
 )
-from PySide6.QtCore import Qt, QPoint
+from PySide6.QtCore import Qt, QPoint, QTimer
 from PySide6.QtGui import QDoubleValidator
 import pandas as pd
 from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_color_keys
@@ -182,19 +182,18 @@ class AlertDialog(QDialog):
         semi_class_row.addStretch()
         self._main_filter_vlayout.addLayout(semi_class_row)
 
-        # ---- 净偏差数量区间（v43.394：QLineEdit 短框 + placeholder「不限」，对齐偏差率预警看板）----
-        # 留空一端=不限、双端留空=不筛选；替代原 QDoubleSpinBox（specialValueText「不限」）。
+        # ---- 净偏差数量区间（v43.395：对齐隔离区看板——全角冒号标签 + QLineEdit 短框 +
+        # placeholder「不限」+ 300ms 防抖；留空一端=不限、双端留空=不筛选）----
         ndq_row = QHBoxLayout()
         ndq_row.setContentsMargins(0, 0, 0, 0)
         ndq_row.setSpacing(6)
-        self.lbl_net_dev_qty = QLabel("净偏差数量区间:")
+        self.lbl_net_dev_qty = QLabel("净偏差数量区间：")
         ndq_row.addWidget(self.lbl_net_dev_qty)
         self.net_dev_qty_min_edit = QLineEdit()
         self.net_dev_qty_min_edit.setPlaceholderText("不限")
         self.net_dev_qty_min_edit.setFixedWidth(90)
         self.net_dev_qty_min_edit.setValidator(QDoubleValidator(self.net_dev_qty_min_edit))
         self.net_dev_qty_min_edit.setToolTip("净偏差数量下限（留空=不限）")
-        self.net_dev_qty_min_edit.textChanged.connect(self._on_net_dev_qty_changed)
         ndq_row.addWidget(self.net_dev_qty_min_edit)
 
         ndq_row.addWidget(QLabel("~"))
@@ -203,8 +202,15 @@ class AlertDialog(QDialog):
         self.net_dev_qty_max_edit.setFixedWidth(90)
         self.net_dev_qty_max_edit.setValidator(QDoubleValidator(self.net_dev_qty_max_edit))
         self.net_dev_qty_max_edit.setToolTip("净偏差数量上限（留空=不限）")
-        self.net_dev_qty_max_edit.textChanged.connect(self._on_net_dev_qty_changed)
         ndq_row.addWidget(self.net_dev_qty_max_edit)
+
+        # 输入走 300ms 防抖（隔离区同款），不再每敲一个字符就全量重筛
+        self._ndq_timer = QTimer(self)
+        self._ndq_timer.setSingleShot(True)
+        self._ndq_timer.setInterval(300)
+        self._ndq_timer.timeout.connect(self._on_net_dev_qty_changed)
+        self.net_dev_qty_min_edit.textChanged.connect(lambda _t: self._ndq_timer.start())
+        self.net_dev_qty_max_edit.textChanged.connect(lambda _t: self._ndq_timer.start())
 
         ndq_row.addStretch()
         self._main_filter_vlayout.addLayout(ndq_row)
