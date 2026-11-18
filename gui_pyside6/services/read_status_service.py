@@ -470,12 +470,24 @@ class ReadStatusService(QObject):
                 self.log(f"记录变动失败: {e}", "error")
             self.log(f"发现 {len(changes)} 条已审核记录的实际数量/备注原因/净偏差数量发生变动，已强制设为'未读'", "warning")
             for did, old_v, new_v, field in changes:
+                _n_old = old_net.get(did)
+                _n_new = new_net.get(did)
+                # v43.400：净偏差由偏差数量派生（非替代行净偏差=偏差数量），而 SAP
+                # 重导时「实际」变了但「偏差数量」源表列没变 → 变动提醒前后两列相等。
+                # 对「实际数量」变动行，把变动量补给 net_new（等价按新实际修正偏差数量）：
+                # 净偏差后 = 导入净值 + (新实际−旧实际)。非替代行精确、替代行抵扣不变时同样精确。
+                if field == '实际数量' and old_v is not None and new_v is not None \
+                        and _n_new is not None:
+                    try:
+                        _n_new = float(_n_new) + (float(new_v) - float(old_v))
+                    except (TypeError, ValueError):
+                        pass
                 self.last_audit_changes.append({
                     'data_id': did, 'field': field,
                     'workshop': new_wk.get(did),
                     'material_name': new_name.get(did) or '',
                     'old_value': old_v, 'new_value': new_v,
-                    'net_old': old_net.get(did), 'net_new': new_net.get(did)})
+                    'net_old': _n_old, 'net_new': _n_new})
             self.log_signal.emit(f"变动提醒|{len(changes)}", "alert")
 
     def _is_record_audited(self, row):
