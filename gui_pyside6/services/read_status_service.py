@@ -197,17 +197,37 @@ class ReadStatusService(QObject):
 
         # 批量记录变动历史
         if changed.any():
-            def _net_pair(_idx):
-                """该行净偏差数量 (修改前基线, 修改后当前值)，缺基线时修改前为 None（v43.380）。"""
+            def _net_pair(_idx, qty_delta=0.0):
+                """该行净偏差数量 (修改前基线, 修改后当前值)，缺基线时修改前为 None（v43.380）。
+
+                v43.398：净偏差数量由偏差数量派生（非替代行净偏差=偏差数量，
+                替代行按组内偏差和）。SAP 重导时实际数量变了，而源表「偏差数量」
+                列未跟着变，导致变动提醒「净偏差数量(前/后)」永远相等。对实际
+                数量变动的行，把变动量补给净偏差后值：净偏差后 = 导入净值 +
+                (新实际−旧实际)，等价于按新实际修正偏差数量。非替代料行精确；
+                替代料行在抵扣额不变时同样精确。qty_delta=0 时退化为原行为。
+                """
                 _old = hist_net.at[_idx] if '_hist_net' in df.columns else np.nan
                 _old = float(_old) if pd.notna(_old) else None
                 _new = cur_net.at[_idx]
+                if pd.notna(_new) and abs(qty_delta) >= 1e-9:
+                    _new = float(_new) + float(qty_delta)
                 _new = float(_new) if pd.notna(_new) else None
                 return _old, _new
 
             changes_records = []
             for idx in df.index[qty_changed]:
-                net_old, net_new = _net_pair(idx)
+                # v43.398：实际数量变动量 = 新实际 − 基线快照（基线即「修改前」值）
+                _delta = 0.0
+                try:
+                    _old_qty = hist_snap.at[idx] if '_hist_snap' in df.columns else np.nan
+                    _new_qty = cur_qty.at[idx]
+                    if pd.notna(_old_qty) and pd.notna(_new_qty):
+                        _delta = float(_new_qty) - float(_old_qty)
+                except Exception:
+                    import traceback
+                    traceback.print_exc()
+                net_old, net_new = _net_pair(idx, qty_delta=_delta)
                 changes_records.append((
                     df.at[idx, 'data_id'], '实际数量',
                     df.at[idx, '_hist_snap'], cur_qty.at[idx]
