@@ -14,6 +14,17 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.401",
+            "date": "2026-11-18",
+            "features": (
+                "真正修好变动提醒「净偏差数量前后相等」：前三版改的都是\n"
+                "last_audit_changes，但弹窗根本不读它（main_window:726 调\n"
+                "data_service.get_audit_changes 从主表实时重算）。现在在这条\n"
+                "唯一数据源里，对实际数量变动行补给偏差增量；无基线老数据\n"
+                "用「后值−变动量」反推前值。替代料/备注/产量变动口径不变。"
+            ),
+        },
+        {
             "version": "v43.400",
             "date": "2026-11-18",
             "features": (

@@ -376,8 +376,22 @@ class ReadStatusService(QObject):
             net_diff = (not pd.isna(hs_net)) and (not pd.isna(cur_nq)) and (abs(float(hs_net) - float(cur_nq)) >= 1e-6)
 
             # 净偏差数量修改前/后（v43.380：无论哪个字段变动，都附上净偏差数量前后值）
+            # v43.401：本函数是变动提醒弹窗的唯一数据源（main_window:726 调用）。
+            # 净偏差由偏差数量派生（非替代行净偏差=偏差数量），SAP 重导时实际变了但
+            # 偏差数量源表列没变 → 若直接拿当前净偏差当「后值」，前后必然相等。
+            # 对实际数量变动行，把变动量补给后值：后 = 导入净值 + (新实际−旧实际)；
+            # 若基线净偏差缺失（老数据无 snapshot_net_qty），前值用「后值−变动量」反推，
+            # 保证前后都能显示且反映真实变化。
             net_old = float(hs_net) if not pd.isna(hs_net) else None
             net_new = float(cur_nq) if not pd.isna(cur_nq) else None
+            if qty_diff and net_new is not None:
+                try:
+                    _delta = float(cur_q) - float(hs_qty)
+                    net_new = net_new + _delta
+                    if net_old is None:
+                        net_old = net_new - _delta
+                except (TypeError, ValueError):
+                    pass
 
             if qty_diff:
                 field = '实际数量'
