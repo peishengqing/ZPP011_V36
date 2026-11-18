@@ -6,9 +6,10 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QCheckBox,
-    QGroupBox, QWidget, QTableWidget, QTableWidgetItem, QDoubleSpinBox,
+    QGroupBox, QWidget, QTableWidget, QTableWidgetItem, QLineEdit,
 )
 from PySide6.QtCore import Qt, QPoint
+from PySide6.QtGui import QDoubleValidator
 import pandas as pd
 from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_color_keys
 from gui_pyside6.dialogs.col_filter_ui import (
@@ -61,9 +62,8 @@ class AlertDialog(QDialog):
         install_dialog_shell(
             self, self._shell_host, "实时替代料看板 · 替代料偏差预警",
             "已加载 %d 条预警记录" % len(self.original_df))
-        # 「颜色 + 半成品分类」两行交外壳「筛选/收起筛选」按钮折叠（桥接看板内置
-        # 抽屉是空的，不接 target 按钮点了没反应）
-        self.dashboard_shell.set_filter_drawer_target(self._filter_extra)
+        # v43.394：筛选行全部常显（对齐偏差率预警看板 v43.382 改造），
+        # 不再交外壳「筛选/收起筛选」按钮折叠，set_filter_drawer_target 移除。
 
     def setup_ui(self):
         # v43.341：内容先装在 host 上，__init__ 末尾再包 DashboardShell；
@@ -74,44 +74,49 @@ class AlertDialog(QDialog):
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
 
-        # ---- 顶部筛选栏 ----
-        filter_layout = QHBoxLayout()
-        filter_layout.addWidget(QLabel("筛选:"))
+        # ---- 顶部筛选栏（v43.394：改垂直布局，筛选行全部常显，对齐偏差率预警 v43.382）----
+        self._main_filter_vlayout = QVBoxLayout()
+        self._main_filter_vlayout.setSpacing(4)
+        self._main_filter_vlayout.setContentsMargins(0, 0, 0, 0)
+
+        # 第1行：已读状态 + 环比角标 + 批量操作 + 放大（常显）
+        row1 = QHBoxLayout()
+        row1.addWidget(QLabel("筛选:"))
 
         self.btn_all = QPushButton("全部")
         self.btn_all.setCheckable(True)
         self.btn_all.setMinimumWidth(70)
         self.btn_all.clicked.connect(lambda: self._set_filter("all"))
-        filter_layout.addWidget(self.btn_all)
+        row1.addWidget(self.btn_all)
 
         self.btn_unread = QPushButton("未读")
         self.btn_unread.setCheckable(True)
         self.btn_unread.setMinimumWidth(70)
         self.btn_unread.clicked.connect(lambda: self._set_filter("unread"))
-        filter_layout.addWidget(self.btn_unread)
+        row1.addWidget(self.btn_unread)
 
         self.btn_read = QPushButton("已读")
         self.btn_read.setCheckable(True)
         self.btn_read.setMinimumWidth(70)
         self.btn_read.clicked.connect(lambda: self._set_filter("read"))
-        filter_layout.addWidget(self.btn_read)
+        row1.addWidget(self.btn_read)
 
-        filter_layout.addStretch()
+        row1.addStretch()
 
         # ---- B.2 环比角标（v43.301）----
         self._mom_label = QLabel()
-        filter_layout.addWidget(self._mom_label)
+        row1.addWidget(self._mom_label)
 
         # 批量操作
         self.btn_batch_read = QPushButton("批量标记已读")
         self.btn_batch_read.setMinimumWidth(100)
         self.btn_batch_read.clicked.connect(self.batch_mark_read)
-        filter_layout.addWidget(self.btn_batch_read)
+        row1.addWidget(self.btn_batch_read)
 
         self.btn_batch_unread = QPushButton("批量标记未读")
         self.btn_batch_unread.setMinimumWidth(100)
         self.btn_batch_unread.clicked.connect(self.batch_mark_unread)
-        filter_layout.addWidget(self.btn_batch_unread)
+        row1.addWidget(self.btn_batch_unread)
 
         # 查看替代料组：列出当前选中行所在替代料组的全部成员（含已读，绕开当前筛选），
         # 解决"误把同组某行标已读后，看不出这一组里到底是谁和谁互为替代料"。
@@ -121,25 +126,21 @@ class AlertDialog(QDialog):
             "列出当前选中行所在替代料组的全部成员（含已读，不受当前未读/颜色筛选影响）。"
             "先看清这一组里谁和谁互为替代料，再决定要不要改已读。")
         self.btn_view_group.clicked.connect(lambda: self._view_alt_group())
-        filter_layout.addWidget(self.btn_view_group)
+        row1.addWidget(self.btn_view_group)
 
         # 放大按钮
         self.btn_fullscreen = make_button("⛶ 放大")
         self.btn_fullscreen.setMinimumWidth(80)
         self.btn_fullscreen.clicked.connect(self.toggle_fullscreen)
-        filter_layout.addWidget(self.btn_fullscreen)
+        row1.addWidget(self.btn_fullscreen)
 
-        layout.addLayout(filter_layout)
+        self._main_filter_vlayout.addLayout(row1)
+        layout.addLayout(self._main_filter_vlayout)
         # 表格默认占满剩余宽度；放大/还原后由 _fit_table_columns 重新按可见宽度分配列宽
 
         # ---- 颜色标记筛选栏（与主表颜色标记逻辑一致）----
-        # 颜色 + 半成品分类两行收进 _filter_extra，交外壳「筛选/收起筛选」按钮折叠：
-        # 桥接类看板没走 add_filter，内置抽屉是空的，不接 target 按钮点了没反应。
-        self._filter_extra = QWidget()
-        _fe = QVBoxLayout(self._filter_extra)
-        _fe.setContentsMargins(0, 0, 0, 0)
-        _fe.setSpacing(6)
-
+        # v43.394：原收进 _filter_extra 交外壳「筛选/收起筛选」按钮折叠，现改为
+        # 常显直接加入 _main_filter_vlayout（对齐偏差率预警看板 v43.382 改造）。
         color_row = QHBoxLayout()
         color_row.addWidget(QLabel("颜色:"))
         self.color_checks = {}
@@ -162,7 +163,7 @@ class AlertDialog(QDialog):
         self.color_clear_btn.clicked.connect(self._clear_color_checks)
         color_row.addWidget(self.color_clear_btn)
         color_row.addStretch()
-        _fe.addLayout(color_row)
+        self._main_filter_vlayout.addLayout(color_row)
 
         # ---- 半成品重分类筛选（v43.147：QGridLayout 两行，食品一行 / 饮料一行）----
         # 原为 QVBoxLayout + setFixedWidth(180) 竖排，7 项会撑到 ~130px 高；
@@ -179,32 +180,34 @@ class AlertDialog(QDialog):
         self._semi_class_checkboxes = {}  # 名称 -> QCheckBox（含特殊键 "__all__"）
         semi_class_row.addWidget(self.grp_semi_class)
         semi_class_row.addStretch()
-        _fe.addLayout(semi_class_row)
+        self._main_filter_vlayout.addLayout(semi_class_row)
 
-        # ---- 净偏差数量范围筛选（min~max，双端「不限」）----
+        # ---- 净偏差数量区间（v43.394：QLineEdit 短框 + placeholder「不限」，对齐偏差率预警看板）----
+        # 留空一端=不限、双端留空=不筛选；替代原 QDoubleSpinBox（specialValueText「不限」）。
         ndq_row = QHBoxLayout()
-        ndq_row.addWidget(QLabel("净偏差数量:"))
-        self._net_dev_qty_min = QDoubleSpinBox()
-        self._net_dev_qty_min.setRange(-1e9, 1e9)
-        self._net_dev_qty_min.setDecimals(2)
-        self._net_dev_qty_min.setSpecialValueText("不限")
-        self._net_dev_qty_min.setValue(-1e9)
-        self._net_dev_qty_min.valueChanged.connect(self._apply_filter)
-        ndq_row.addWidget(self._net_dev_qty_min)
+        ndq_row.setContentsMargins(0, 0, 0, 0)
+        ndq_row.setSpacing(6)
+        self.lbl_net_dev_qty = QLabel("净偏差数量区间:")
+        ndq_row.addWidget(self.lbl_net_dev_qty)
+        self.net_dev_qty_min_edit = QLineEdit()
+        self.net_dev_qty_min_edit.setPlaceholderText("不限")
+        self.net_dev_qty_min_edit.setFixedWidth(90)
+        self.net_dev_qty_min_edit.setValidator(QDoubleValidator(self.net_dev_qty_min_edit))
+        self.net_dev_qty_min_edit.setToolTip("净偏差数量下限（留空=不限）")
+        self.net_dev_qty_min_edit.textChanged.connect(self._on_net_dev_qty_changed)
+        ndq_row.addWidget(self.net_dev_qty_min_edit)
 
         ndq_row.addWidget(QLabel("~"))
-        self._net_dev_qty_max = QDoubleSpinBox()
-        self._net_dev_qty_max.setRange(-1e9, 1e9)
-        self._net_dev_qty_max.setDecimals(2)
-        self._net_dev_qty_max.setSpecialValueText("不限")
-        self._net_dev_qty_max.setValue(1e9)
-        self._net_dev_qty_max.valueChanged.connect(self._apply_filter)
-        ndq_row.addWidget(self._net_dev_qty_max)
+        self.net_dev_qty_max_edit = QLineEdit()
+        self.net_dev_qty_max_edit.setPlaceholderText("不限")
+        self.net_dev_qty_max_edit.setFixedWidth(90)
+        self.net_dev_qty_max_edit.setValidator(QDoubleValidator(self.net_dev_qty_max_edit))
+        self.net_dev_qty_max_edit.setToolTip("净偏差数量上限（留空=不限）")
+        self.net_dev_qty_max_edit.textChanged.connect(self._on_net_dev_qty_changed)
+        ndq_row.addWidget(self.net_dev_qty_max_edit)
 
         ndq_row.addStretch()
-        _fe.addLayout(ndq_row)
-
-        layout.addWidget(self._filter_extra)
+        self._main_filter_vlayout.addLayout(ndq_row)
 
         # ---- 表格 ----
         self.table_view = QTableView()
@@ -507,19 +510,32 @@ class AlertDialog(QDialog):
                 mask = mask | (vals == m)
         return mask
 
-    # ── 净偏差数量范围筛选（min~max 双端不限）──
-    def _read_net_dev_qty_range(self):
-        """读两个 QDoubleSpinBox 的（下界, 上界），任一边为「不限」返回 None。
+    # ── 净偏差数量范围筛选（min~max 双端不限，v43.394 改 QLineEdit 版）──
+    @staticmethod
+    def _parse_net_dev_qty(text):
+        """解析净偏差数量输入框文本 → float 或 None（留空/非法=不限）。"""
+        s = str(text or "").strip().replace(",", "")
+        if not s:
+            return None
+        try:
+            return float(s)
+        except (TypeError, ValueError):
+            return None
 
-        sentinel：min=-1e9 表示无下界；max=1e9 表示无上界（见 _filter_extra 构建）。
-        """
-        if not hasattr(self, "_net_dev_qty_min"):
+    def _read_net_dev_qty_range(self):
+        """读两个输入框的（下界, 上界），任一边留空/非法返回 None（=不限）。"""
+        if not hasattr(self, "net_dev_qty_min_edit"):
             return (None, None)
-        mn = self._net_dev_qty_min.value()
-        mx = self._net_dev_qty_max.value()
-        lower = None if mn <= -1e9 + 0.001 else mn
-        upper = None if mx >= 1e9 - 0.001 else mx
-        return (lower, upper)
+        return (self._parse_net_dev_qty(self.net_dev_qty_min_edit.text()),
+                self._parse_net_dev_qty(self.net_dev_qty_max_edit.text()))
+
+    def _on_net_dev_qty_changed(self, *_args):
+        """净偏差数量输入框变化 → 触发筛选（留空=不限）。"""
+        try:
+            self._apply_filter()
+        except Exception:
+            import traceback
+            traceback.print_exc()
 
     def _net_dev_qty_mask(self, df):
         """净偏差数量数值范围筛选（>=下界 且 <=上界）。
