@@ -211,7 +211,8 @@ class ReadStatusService(QObject):
                 _old = float(_old) if pd.notna(_old) else None
                 _new = cur_net.at[_idx]
                 if pd.notna(_new) and abs(qty_delta) >= 1e-9:
-                    _new = float(_new) + float(qty_delta)
+                    # v43.402：round(2) 与净偏差列口径一致，去掉浮点长尾
+                    _new = round(float(_new) + float(qty_delta), 2)
                 _new = float(_new) if pd.notna(_new) else None
                 return _old, _new
 
@@ -387,9 +388,11 @@ class ReadStatusService(QObject):
             if qty_diff and net_new is not None:
                 try:
                     _delta = float(cur_q) - float(hs_qty)
-                    net_new = net_new + _delta
+                    # v43.402：与净偏差列本身口径一致（analyzer 写列时 .round(2)），
+                    # 浮点相加会留 -40.867000000000006 这种长尾，统一收两位。
+                    net_new = round(net_new + _delta, 2)
                     if net_old is None:
-                        net_old = net_new - _delta
+                        net_old = round(net_new - _delta, 2)
                 except (TypeError, ValueError):
                     pass
 
@@ -493,7 +496,7 @@ class ReadStatusService(QObject):
                 if field == '实际数量' and old_v is not None and new_v is not None \
                         and _n_new is not None:
                     try:
-                        _n_new = float(_n_new) + (float(new_v) - float(old_v))
+                        _n_new = round(float(_n_new) + (float(new_v) - float(old_v)), 2)  # v43.402：去浮点长尾
                     except (TypeError, ValueError):
                         pass
                 self.last_audit_changes.append({
