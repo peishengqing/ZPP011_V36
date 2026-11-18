@@ -107,6 +107,10 @@ def _discover_targets(repo, baseline):
             continue
         if any(p.startswith(x) for x in _EXCLUDE_PREFIXES):
             continue
+        # diff 里出现但工作区已不存在的路径 = 本轮被删除的文件，
+        # 不参与 py_compile / pyflakes（否则删死代码反而推不出去，v43.409）
+        if not os.path.isfile(os.path.join(repo, p)):
+            continue
         out.append(p)
     return out
 

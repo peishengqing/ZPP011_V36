@@ -14,6 +14,19 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.409",
+            "date": "2026-11-18",
+            "features": (
+                "推送门禁自愈（v43.406 删除死代码后暴露的门禁盲区）。\n"
+                "① pre_push_gate 的目标清单取自 git diff，会包含「diff 中出现但工作区\n"
+                "   已删除」的文件，py_compile/pyflakes 对不存在路径直接 FAIL——删死\n"
+                "   代码反而推不出去；现按工作区存在性过滤。\n"
+                "② main_window 清理 _FullCacheWorker 收口后残留的 QThread/Signal 未使\n"
+                "   用导入（门禁「新增即红」真实命中，非误报）。\n"
+                "验证：py_compile + pyflakes 全绿；push_log 门禁 25/25 PASS 后推送。"
+            ),
+        },
+        {
             "version": "v43.408",
             "date": "2026-11-18",
             "features": (

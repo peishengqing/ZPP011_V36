@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QToolButton,
     QTreeWidget, QTreeWidgetItem,      # v43.165 半成品分类树
 )
-from PySide6.QtCore import Qt, QThread, Signal, QPoint, QTimer, QItemSelection, QItemSelectionModel, QModelIndex
+from PySide6.QtCore import Qt, QPoint, QTimer, QItemSelection, QItemSelectionModel, QModelIndex
 from PySide6.QtGui import QFont, QFontMetrics, QShortcut, QKeySequence, QAction
 
 # 导入组件

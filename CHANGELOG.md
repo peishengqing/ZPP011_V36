@@ -4,6 +4,19 @@
 
 ---
 
+## v43.409 — 推送门禁自愈
+
+**发布日期：2026-11-18**
+
+### 🔧 缺陷修复
+- **pre_push_gate 把「已删除文件」当检查目标**：目标清单取自 <code>git diff --name-only &lt;baseline&gt;</code>，v43.406 删除的 <code>analysis_orchestrator.py</code>、<code>audit_integration.py</code> 也在清单里，py_compile/pyflakes 对不存在路径必然 FAIL——删死代码反而推不出去。现按工作区存在性过滤：diff 中出现但已被删除的路径不参与编译与静态检查。
+- **main_window.py 残留未使用导入**：<code>_FullCacheWorker</code> 收口到 workers 后，主窗口顶部的 <code>QThread</code>、<code>Signal</code> 不再被引用，门禁「新增即红」真实命中。已从导入中移除。
+
+### ✅ 验证
+- py_compile + pyflakes 全绿；push_log 门禁 25/25 PASS 后推送（连同 v43.406 / v43.407+v43.408 两批整改 commit）。
+
+---
+
 ## v43.408 — 门禁与基线自纠
 
 **发布日期：2026-11-18**
