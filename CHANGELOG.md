@@ -4,6 +4,85 @@
 
 ---
 
+## v43.408 — 门禁与基线自纠
+
+**发布日期：2026-11-18**
+
+### 🔧 缺陷修复
+- **CI 门禁上线即红**：v43.406 新增的 <code>undefined name|redefinition of unused</code> 规则会命中仓库存量的 2 条 redefinition。选择**源码消除**而非 grep 豁免（豁免会掩盖后续新增）：
+  - <code>analysis/analyzer.py</code>：删除函数内重复的 <code>from openpyxl import load_workbook</code>（模块顶部已导入，行为等价）。
+  - <code>core/scheduled_report.py</code>：<code>from datetime import datetime, time, timedelta</code> 把模块级 <code>time</code> 覆盖成 <code>datetime.time</code>，导致 <code>__init__</code> 里 <code>sched.scheduler(time.time, time.sleep)</code> 一旦执行就 <code>AttributeError</code>——该模块当前全仓零引用，属潜伏缺陷。
+- **黄金基线把配置变化误报为口径变化**：基线记录 <code>alt_pairs_sha256</code> 却比对时不校验。在 73 组生产配置下报出 8 处差异（是否替代料 49 行、净偏差金额 −99,575.23→−156,677.67 等），而四处容错修复本身逐行可证未改口径。
+
+### 🛡️ 基线加固
+- 工具新增 <code>--alt-pairs auto|none|&lt;JSON路径&gt;</code>；基线记录来源 / 组数 / sha256；**比对前先校验，不一致直接 exit 2** 并给出重建命令。
+- 基线改用 73 组生产配置重建（来源 <code>auto</code>，指纹已记录）；换机器/换配置时比对会明确拒绝，不再伪装成回归。
+- <code>tests/test_analyzer_golden.py</code>：exit 2（环境不匹配）改为 skip，只有 exit 1（真实差异）才报红。
+
+### ✅ 验证
+- pyflakes：redefinition <b>2 → 0</b>，undefined name 0；CI 门禁命令在本机模拟通过（exit 0）。
+- 黄金基线：在 73 组配置下重建后 <code>--compare</code> 51/51 一致；清空 <code>APPDATA</code> 时正确拒绝（exit 2）。
+- 用例口径统一：<code>tests/unit</code> 723 passed；含黄金基线用例共 724。
+
+---
+
+## v43.407 — analyzer 输入容错（红区外科手术）
+
+**发布日期：2026-11-18**
+
+### 🔧 缺陷修复（`analysis/analyzer.py`，+30 / −9）
+- **脏数值不再炸在日志行**：`TRACE-1` 的 `.sum()` 在“强制转换数值列”之前执行，数量列混入 `abc`／空值时报 `TypeError: can only concatenate str (not "int") to str`，整份分析中断且不点名。改为先 `pd.to_numeric(..., errors='coerce')` 再求和。
+- **`input_df` 缺列报错恢复点名**：缺列信息引用只在读文件分支赋值的 `_sheet`，走复用分支时变成 `cannot access local variable '_sheet'`。改为进入分支前预置 `(复用已读数据)`。
+- **日期过滤不再静默失效**：条件解析失败原为 `except BaseException: pass`，用户选了区间却拿到全期报告（数字对、区间错）。改为 `_dprint` + `progress_callback` 明确告警。
+- **顺带修掉同源第二处**：`date_min` 计算里又写了一遍 `pd.to_datetime(start_date)`，非法日期照样抛 `DateParseError`——只修过滤块等于白修。改为复用已解析的 `_sd_ok` / `_ed_ok`，失败回退到数据实际日期范围。
+
+### 🛡️ 防回归设施（新增）
+- `tools/analyzer_golden_baseline.py` + `tests/fixtures/golden/analysis_baseline.json`：分析口径黄金基线，快照行数、列清单、偏差率正负零、各金额／数量列合计、分组分布等 **51 个口径点**；`--write` 建立、`--compare` 比对，退出码 `0/1/2` 可接 CI。
+- `tests/test_analyzer_golden.py`：基线比对封装为 pytest 用例，基线缺失自动 skip。
+- `tests/unit/test_analyzer_input_contract.py`：**12 个输入契约用例**——文件不存在、`~$` 锁文件、缺列、`input_df` 缺列、空表、坏日期、千分位文本、零定额、脏数值、重复行、非法过滤条件、合法过滤条件。
+
+### ✅ 验证
+- **黄金基线对账**：改动前后 51 个口径点逐项一致，证明计算口径零变化。
+- 全量单元回归：723 passed / 2 skipped / 4 xpassed（43.95s）。
+- `compileall` 通过；pyflakes 未定义名 0 条（30 条既有未使用导入／变量不在本次范围）。
+
+---
+
+## v43.406 — 审核整改（止血批次）
+
+**发布日期：2026-11-18**
+
+### 🔧 缺陷修复
+- **P0-1** `gui_pyside6/workers/report_workers.py`：补 `import os`。`_FullCacheWorker.__init__` 首行即 `os.path.normpath()`，缺失导入导致实例化必抛 `NameError`；此前因 `analysis_orchestrator` 从未被调用而未暴露。
+- **P0-2** `gui_pyside6/dashboard_manager.py`：21 处 `QMessageBox.*(self, ...)` 的父窗口由 `self`（纯 Python 管理器对象）改为 `self.mw`（主窗口）。原写法在提示/异常分支可能二次抛 `TypeError`，把真实错误盖掉。
+- **P0-3** `gui_pyside6/services/data_service.py` + `main_window.py`：预处理失败不再“返回半成品且无人知晓”。失败时置 `last_preprocess_error`、写 `df.attrs['preprocess_failed']`、发 `error` 级日志，主窗口弹 toast 提示“预处理降级”。
+- **P1** `gui_pyside6/models/event_bus.py`：补 `List` 导入；`reset()` 由实例方法（误用 `cls`）改为 `classmethod`，类调用/实例调用/`reset_event_bus()` 三条路径均可用。
+- **P1** `gui_pyside6/widgets/components/filter_title_bar.py`：补 `QPushButton` 导入（组件构造即崩，仅因零引用未暴露）。
+- **P1** `_PptViewShim.log()`：原实现在非窗口对象上调 `statusBar()` 必然 `AttributeError` 并被吞掉，改为走跨线程日志信号。
+
+### 🧹 死代码清理
+- 删除 `gui_pyside6/analysis_orchestrator.py`（283 行）：模块级类被 `MainWindow.__init__` 实例化后从未调用，且其引用的 `_FullCacheWorker` 副本缺 `import os`。
+- 删除 `gui_pyside6/integration/audit_integration.py`（84 行）：3 个菜单入口指向不存在的函数，全仓零引用。
+- `_FullCacheWorker` 收口：`main_window.py` 内的同名副本删除，改为从 `workers/report_workers.py` 导入，消除“双胞胎类只有一份能用”的陷阱。
+
+### ⚙️ 工程与 CI
+- `ci.yml`：pyflakes 门禁原用 `grep "F821"` 判定——pyflakes 文本输出不含该编号（那是 flake8 的），门禁永远通过。改为匹配 `undefined name` / `redefinition of unused`。
+- 删除 `test.yml`：与 `ci.yml` 功能重叠，且只装 `tests/requirements-test.txt`（不含 PySide6）却运行大量导入 PySide6 的单测。
+- `pyproject.toml`：依赖补 `numpy>=1.21`（代码大量 `import numpy as np`，原声明缺失）。
+- `README.md`：修正“SQLite 通过 peewee ORM”（实际原生 sqlite3）、不存在的 `api.views.data_view` 示例、入口点（`run_pyside6.py`）与版本表。
+
+### ✅ 验证
+- `python -m compileall` 全通过（exit 0）。
+- `pyflakes`：未定义名 **8 → 0**，总告警 140 → 131。
+- 新增 `tests/unit/test_dashboard_manager_parent.py`、`test_data_service_degrade.py`、`test_event_bus_reset.py`；与既有 `_FullCacheWorker` 取消点测试合计 13 个用例全绿。
+- `main_window.py` 3,660 → 3,599 行（仍低于 4450 行护栏阈值）。
+
+### 📌 备注
+- 只动绿区（UI/工具/死代码/CI/文档）；**未触碰红区** `analysis/analyzer.py`、`excel_builder/sheet2_alt.py`、`net_offset.py` 的计算口径。
+- 未做：看板合流（正/负损两套实现）、main_window 继续拆分、覆盖率门槛上调——均需独立回归与实测基线。
+
+---
+
 ## v42.53 — 代码质量修复（语法隐患）
 
 **发布日期：2026-08-05**

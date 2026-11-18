@@ -188,6 +188,9 @@ def do_analysis_v2(
     except Exception as e:
         _dprint(f"⚠ 文件访问检查失败（可能不影响读取）: {e}")
     
+    # 日志/错误信息里引用的工作表名；input_df 复用分支不读文件，预先赋值
+    # 避免缺列报错时因 `_sheet` 未定义而丢掉真正的缺列信息（v43.407）
+    _sheet = '(复用已读数据)'
     try:
         _dprint(f"[DEBUG] 开始读取Excel: {src_file}")
         if input_df is not None:
@@ -241,7 +244,12 @@ def do_analysis_v2(
         '数量-定额': df['数量-定额'].describe().to_dict() if '数量-定额' in df.columns else 'NOT_FOUND',
         '行数': len(df)
     }
-    _dprint(f"[TRACE-1] 读取后: 数量-实际 sum={df['数量-实际'].sum() if '数量-实际' in df.columns else 'N/A'}")
+    # 注意：这里的 .sum() 必须先 to_numeric：本行在下方“强制转换数值列”之前执行，
+    # 若数量列混入文本，直接 .sum() 会抛 numpy 的 TypeError 而中断分析（v43.407）。
+    _trace_qty = df['数量-实际'] if '数量-实际' in df.columns else None
+    _trace_qty_sum = (pd.to_numeric(_trace_qty, errors='coerce').sum()
+                      if _trace_qty is not None else 'N/A')
+    _dprint(f"[TRACE-1] 读取后: 数量-实际 sum={_trace_qty_sum}")
 
     # ========== 诊断：找出哪个数值列被字符串污染（默认关闭，DEBUG 时启用）==========
     # 默认关闭：该诊断块含逐列 apply(isinstance) 检查，数据量大时显著拖慢分析（详见性能报告）。
@@ -305,7 +313,8 @@ def do_analysis_v2(
         from core.source_guard import validate_source
         validate_source(src_file)
         try:
-            from openpyxl import load_workbook
+            # load_workbook 已在模块顶部导入（v43.408：去掉此处的重复导入，
+            # 同时消除 pyflakes 的 redefinition 告警；行为完全等价）
             _wb = load_workbook(src_file, read_only=True, data_only=True)
             # 容错：优先取 'Data' 工作表，不存在则取第一个
             _sheet_names = _wb.sheetnames
@@ -350,23 +359,35 @@ def do_analysis_v2(
     df['订单开始日期'] = pd.to_datetime(df['订单开始日期'], errors='coerce')
 
     # 新增：日期范围过滤
+    # 过滤条件解析失败时仍跳过过滤（保持原有容错），但必须明确告知：
+    # 否则用户选了日期区间却拿到全期报告，数字看着对、区间是错的（v43.407）。
+    # _sd_ok / _ed_ok 保存解析成功的日期，供下方「期间标签」复用，避免二次解析报错。
+    _sd_ok = _ed_ok = None
     if start_date:
         try:
             sd = pd.to_datetime(start_date)
+            _sd_ok = sd
             df = df[df['订单开始日期'] >= sd]
             if progress_callback:
                 progress_callback(-1, f"已按开始日期 {start_date} 过滤", 0)
-        except BaseException:
-            pass
+        except BaseException as _e:
+            _msg = f"⚠ 开始日期 {start_date!r} 无法解析，已跳过该过滤条件（报告将包含更早数据）: {_e}"
+            _dprint(_msg)
+            if progress_callback:
+                progress_callback(-1, _msg, 0)
 
     if end_date:
         try:
             ed = pd.to_datetime(end_date)
+            _ed_ok = ed
             df = df[df['订单开始日期'] <= ed]
             if progress_callback:
                 progress_callback(-1, f"已按结束日期 {end_date} 过滤", 0)
-        except BaseException:
-            pass
+        except BaseException as _e:
+            _msg = f"⚠ 结束日期 {end_date!r} 无法解析，已跳过该过滤条件（报告将包含更晚数据）: {_e}"
+            _dprint(_msg)
+            if progress_callback:
+                progress_callback(-1, _msg, 0)
 
     # 新增：物料搜索过滤（编码或名称）
     if material_search:
@@ -396,16 +417,17 @@ def do_analysis_v2(
                     -1, f"已按物料搜索 '{material_search}' 过滤，剩余 {len(df)} 行（{', '.join(used_cols)}）", 0)
 
     # 优先使用用户输入的日期范围，否则使用数据中的日期范围
+    # 用户日期解析失败时（上方已告警）回退到数据实际范围，不再二次解析报错（v43.407）
     if start_date and end_date:
         # 用户指定了日期范围
-        date_min = pd.to_datetime(start_date)
-        date_max = pd.to_datetime(end_date)
+        date_min = _sd_ok if _sd_ok is not None else df['订单开始日期'].min()
+        date_max = _ed_ok if _ed_ok is not None else df['订单开始日期'].max()
     elif start_date:
-        date_min = pd.to_datetime(start_date)
+        date_min = _sd_ok if _sd_ok is not None else df['订单开始日期'].min()
         date_max = df['订单开始日期'].max()
     elif end_date:
         date_min = df['订单开始日期'].min()
-        date_max = pd.to_datetime(end_date)
+        date_max = _ed_ok if _ed_ok is not None else df['订单开始日期'].max()
     else:
         # 没有用户输入，使用数据中的日期范围
         date_min = df['订单开始日期'].min()

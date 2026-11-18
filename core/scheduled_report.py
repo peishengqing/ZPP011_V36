@@ -9,7 +9,10 @@
 import sched
 import time
 import threading
-from datetime import datetime, time, timedelta
+# v43.408：原先 ``from datetime import datetime, time, timedelta`` 会把模块级 time 覆盖成
+# datetime.time 类，导致本文件 __init__ 里的 ``sched.scheduler(time.time, time.sleep)``
+# 一旦执行就 AttributeError（该模块当前全仓零引用，故长期未暴露）。
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Callable
 

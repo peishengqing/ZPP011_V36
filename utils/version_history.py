@@ -14,6 +14,64 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v43.408",
+            "date": "2026-11-18",
+            "features": (
+                "门禁与基线自纠（复核发现的2个真问题）。\n"
+                "① 新 CI 门禁上线即红：存量2条 redefinition 命中自己的规则。改为源码消除：\n"
+                "   analyzer.py 删函数内重复 load_workbook 导入；scheduled_report.py 修正\n"
+                "   datetime 的 time 覆盖（原写法会让 sched.scheduler(time.time, time.sleep)\n"
+                "   执行即 AttributeError；该模块当前全仓零引用，属潜伏缺陷）。\n"
+                "② 黄金基线绑定用户本地替代料配置：基线记了 sha256 却比对时不校验，\n"
+                "   73 组生产配置下被误报成 8 处“口径变化”。现比对前校验来源/组数/sha，\n"
+                "   不一致直接 exit 2 并提示重建，不再伪装成口径回归。\n"
+                "③ 基线改用 73 组生产配置重建；跨机器无同配置时测试自动 skip 而非报红。\n"
+                "④ 统一用例口径：tests/unit 723 passed；含黄金基线用例共 724。"
+            ),
+        },
+        {
+            "version": "v43.407",
+            "date": "2026-11-18",
+            "features": (
+                "analyzer 输入容错（红区外科手术，黄金基线 51 点零差异）。\n"
+                "① TRACE-1 日志在数值强制转换之前做 .sum()，数量列混入文本即抛\n"
+                "   numpy TypeError 中断分析；改为先 to_numeric 再求和。\n"
+                "② input_df 复用分支缺列时误引用未定义 _sheet，报错丢列名；改为\n"
+                "   进入分支前预置默认值。\n"
+                "③ 日期过滤 except BaseException: pass 静默跳过，选了区间却拿到\n"
+                "   全期报告；改为 _dprint + progress_callback 明确告警。\n"
+                "④ 同源第二处：date_min 又重复 pd.to_datetime(start_date)，非法\n"
+                "   日期仍抛 DateParseError（只修 ③ 等于白修）；改为复用已解析值，\n"
+                "   失败回退数据实际日期范围。\n"
+                "新增防回归设施：tools/analyzer_golden_baseline.py（--write/--compare，\n"
+                "51 个口径点）、tests/test_analyzer_golden.py、12 个输入契约用例。\n"
+                "验证：基线零差异；全量单元 723 passed / 2 skipped / 4 xpassed。"
+            ),
+        },
+        {
+            "version": "v43.406",
+            "date": "2026-11-18",
+            "features": (
+                "审核整改（全仓审核报告落地，只动绿区，未触碰红区计算口径）。\n"
+                "① P0-1 workers/report_workers.py 补 import os（_FullCacheWorker 实例化即\n"
+                "   NameError；此前仅因 analysis_orchestrator 从未接线才未爆）。\n"
+                "② P0-2 dashboard_manager.py 21 处 QMessageBox 父窗口由 self 改为 self.mw\n"
+                "   （self 不是 QWidget，异常分支里的提示框可能二次抛错）。\n"
+                "③ P0-3 data_service 预处理失败不再静默：写 last_preprocess_error 与\n"
+                "   df.attrs['preprocess_failed']，发 error 日志，主窗口弹 toast 告知降级。\n"
+                "④ P1 修 event_bus（补 List、reset 改 classmethod）、filter_title_bar\n"
+                "   （补 QPushButton）、_PptViewShim.log（改用跨线程信号）。\n"
+                "⑤ 删除死代码：analysis_orchestrator.py（283 行，实例化但零调用）、\n"
+                "   integration/audit_integration.py（84 行，3 个入口指向不存在函数）；\n"
+                "   _FullCacheWorker 收口为唯一实现，main_window 改为导入。\n"
+                "⑥ CI：pyflakes 门禁原 grep \"F821\" 永远匹配不到（pyflakes 输出无此编号），\n"
+                "   改为匹配 undefined name/redefinition；删除冗余且缺 PySide6 的 test.yml。\n"
+                "⑦ 文档/依赖：README 修正 peewee、api.views、入口点与版本表；pyproject 补 numpy。\n"
+                "验证：compileall 通过；pyflakes 未定义名 8 → 0；新增 3 个回归测试文件，\n"
+                "定向 13 个用例全绿；main_window 3,660 → 3,599 行。"
+            ),
+        },
+        {
             "version": "v43.405",
             "date": "2026-11-18",
             "features": (
