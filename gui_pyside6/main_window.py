@@ -615,8 +615,10 @@ class MainWindow(QMainWindow):
                     QApplication.instance().setStyleSheet(f.read())
             else:
                 QApplication.instance().setStyleSheet("")
-            self.title_bar.set_theme_light()
+            # 先切令牌再刷控件：set_theme_* 里要按主题取色（分段开关/图标），
+            # 顺序反了就会把浅色描边写进暗色界面（v44.02 截图实测）。
             Thm.set_dark(False)
+            self.title_bar.set_theme_light()
             toast("已切换至亮色主题", "info", parent=self)
         else:
             # 切换到暗色主题
@@ -626,8 +628,8 @@ class MainWindow(QMainWindow):
                     QApplication.instance().setStyleSheet(f.read())
             else:
                 QApplication.instance().setStyleSheet("")
-            self.title_bar.set_theme_dark()
             Thm.set_dark(True)
+            self.title_bar.set_theme_dark()
             toast("已切换至暗色主题", "info", parent=self)
 
     # -----------------------------------------------------------
