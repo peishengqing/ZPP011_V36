@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QPoint, QTimer
 from PySide6.QtGui import QDoubleValidator
+import re
 import pandas as pd
 from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_color_keys
 from gui_pyside6.dialogs.col_filter_ui import (
@@ -49,6 +50,7 @@ class AlertDialog(QDialog):
         self.color_filters = set()
         self._semi_class_filter = set()  # 半成品重分类筛选：空集合=全部 / 集合内为选中分类（虚拟项模糊匹配）
         self._semi_class_col = None
+        self._keyword = ""           # v43.396：关键字搜索（跨列，与已读/颜色等条件叠加）
         self._initializing = False  # 初始化守卫
         self.setup_ui()
         # set_data 末尾的 _apply_default_filter 负责把默认口径定成「未读」，
@@ -64,6 +66,10 @@ class AlertDialog(QDialog):
             "已加载 %d 条预警记录" % len(self.original_df))
         # v43.394：筛选行全部常显（对齐偏差率预警看板 v43.382 改造），
         # 不再交外壳「筛选/收起筛选」按钮折叠，set_filter_drawer_target 移除。
+        # v43.396：对齐隔离区——去掉外壳常驻筛选条（「筛选 (0)」按钮 / 重置 /
+        # 共 X 条命中）。隔离区看板没有这层；筛选控件全部常显在看板自身筛选区，
+        # 抽屉（btn_filter_drawer 展开的 drawer_container）随按钮一起不可达。
+        self.dashboard_shell.filter_bar.setVisible(False)
 
     def setup_ui(self):
         # v43.341：内容先装在 host 上，__init__ 末尾再包 DashboardShell；
@@ -74,12 +80,39 @@ class AlertDialog(QDialog):
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
 
-        # ---- 顶部筛选栏（v43.394：改垂直布局，筛选行全部常显，对齐偏差率预警 v43.382）----
+        # ---- 顶部筛选栏（v43.394：垂直布局，筛选行全部常显）----
+        # v43.396：对齐隔离区——搜索行打头，筛选行拆薄（已读状态 / 批量与放大各占一行）
         self._main_filter_vlayout = QVBoxLayout()
         self._main_filter_vlayout.setSpacing(4)
         self._main_filter_vlayout.setContentsMargins(0, 0, 0, 0)
 
-        # 第1行：已读状态 + 环比角标 + 批量操作 + 放大（常显）
+        # 关键字搜索防抖（300ms，隔离区同款）
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(300)
+        self._search_timer.timeout.connect(self._on_search_changed)
+
+        # 第1行：关键字搜索（隔离区同款：搜索 + ✕清空 + 列头筛选按钮/提示）
+        search_row = QHBoxLayout()
+        search_row.addWidget(QLabel("搜索:"))
+        self.edit_search = QLineEdit()
+        self.edit_search.setPlaceholderText(
+            "输入关键字过滤（物料编码/名称/车间/流程订单/备注…），留空显示全部")
+        self.edit_search.textChanged.connect(lambda _t: self._search_timer.start())
+        search_row.addWidget(self.edit_search)
+        self.btn_search_clear = make_button("✕ 清空")
+        self.btn_search_clear.setFixedWidth(60)
+        self.btn_search_clear.clicked.connect(self.edit_search.clear)
+        search_row.addWidget(self.btn_search_clear)
+        # 列头筛选按钮/提示从表格下方挪到搜索行（与隔离区同位）
+        self.btn_col_filter = make_col_filter_button(self, self._on_toggle_col_filter)
+        search_row.addWidget(self.btn_col_filter)
+        self._col_filter_hint_label = make_col_filter_hint_label()
+        search_row.addWidget(self._col_filter_hint_label)
+        search_row.addStretch()
+        self._main_filter_vlayout.addLayout(search_row)
+
+        # 第2行：已读状态 + 环比角标
         row1 = QHBoxLayout()
         row1.addWidget(QLabel("筛选:"))
 
@@ -106,17 +139,20 @@ class AlertDialog(QDialog):
         # ---- B.2 环比角标（v43.301）----
         self._mom_label = QLabel()
         row1.addWidget(self._mom_label)
+        self._main_filter_vlayout.addLayout(row1)
 
-        # 批量操作
+        # 第3行：批量操作 + 查看替代料组 + 放大
+        op_row = QHBoxLayout()
+
         self.btn_batch_read = QPushButton("批量标记已读")
         self.btn_batch_read.setMinimumWidth(100)
         self.btn_batch_read.clicked.connect(self.batch_mark_read)
-        row1.addWidget(self.btn_batch_read)
+        op_row.addWidget(self.btn_batch_read)
 
         self.btn_batch_unread = QPushButton("批量标记未读")
         self.btn_batch_unread.setMinimumWidth(100)
         self.btn_batch_unread.clicked.connect(self.batch_mark_unread)
-        row1.addWidget(self.btn_batch_unread)
+        op_row.addWidget(self.btn_batch_unread)
 
         # 查看替代料组：列出当前选中行所在替代料组的全部成员（含已读，绕开当前筛选），
         # 解决"误把同组某行标已读后，看不出这一组里到底是谁和谁互为替代料"。
@@ -126,15 +162,17 @@ class AlertDialog(QDialog):
             "列出当前选中行所在替代料组的全部成员（含已读，不受当前未读/颜色筛选影响）。"
             "先看清这一组里谁和谁互为替代料，再决定要不要改已读。")
         self.btn_view_group.clicked.connect(lambda: self._view_alt_group())
-        row1.addWidget(self.btn_view_group)
+        op_row.addWidget(self.btn_view_group)
 
         # 放大按钮
         self.btn_fullscreen = make_button("⛶ 放大")
         self.btn_fullscreen.setMinimumWidth(80)
         self.btn_fullscreen.clicked.connect(self.toggle_fullscreen)
-        row1.addWidget(self.btn_fullscreen)
+        op_row.addWidget(self.btn_fullscreen)
 
-        self._main_filter_vlayout.addLayout(row1)
+        op_row.addStretch()
+        self._main_filter_vlayout.addLayout(op_row)
+
         layout.addLayout(self._main_filter_vlayout)
         # 表格默认占满剩余宽度；放大/还原后由 _fit_table_columns 重新按可见宽度分配列宽
 
@@ -250,16 +288,7 @@ class AlertDialog(QDialog):
         self.table_view.installEventFilter(self)
         layout.addWidget(self.table_view)
 
-        # ---- 列头筛选工具条 ----
-        col_filter_bar = QHBoxLayout()
-        # v43.264：列头筛选按钮/提示收敛到共用组件 col_filter_ui
-        self.btn_col_filter = make_col_filter_button(self, self._on_toggle_col_filter)
-        col_filter_bar.addWidget(self.btn_col_filter)
-        # 状态栏常驻「列头筛选提示」：显示当前已设取值过滤的列（N 列 / 列名）
-        self._col_filter_hint_label = make_col_filter_hint_label()
-        col_filter_bar.addWidget(self._col_filter_hint_label)
-        col_filter_bar.addStretch(1)
-        layout.addLayout(col_filter_bar)
+        # ---- 列头筛选接线（v43.396：按钮/提示已挪到顶部搜索行，这里只留接线）----
         self.col_filter_ctrl.filtered_cols_changed.connect(self._update_col_filter_hint)
         # v43.143：提示标签右键 → 清除菜单（逐列 / 全部）。
         # 此前是纯 QLabel，用户只能开浮层重勾一遍才能取消，观感=「无法取消」。
@@ -283,6 +312,27 @@ class AlertDialog(QDialog):
         self.btn_unread.setChecked(mode == "unread")
         self.btn_read.setChecked(mode == "read")
         self._apply_filter()
+
+    def _on_search_changed(self):
+        """关键字搜索防抖回调：更新关键字并重新筛选（v43.396，隔离区同款）。"""
+        self._keyword = self.edit_search.text().strip()
+        self._apply_filter()
+
+    def _keyword_mask(self, df):
+        """跨列关键字掩码：逗号/、分隔多值 OR；任一（非内部）列包含即命中；空=全 True。"""
+        if not self._keyword:
+            return pd.Series(True, index=df.index)
+        kws = [k.strip().lower() for k in re.split("[,，、]", self._keyword) if k.strip()]
+        if not kws:
+            return pd.Series(True, index=df.index)
+        mask = pd.Series(False, index=df.index)
+        for col in df.columns:
+            if col in ('_read', '_post_audit_changed', '状态', 'data_id'):
+                continue
+            s = df[col].astype(str).str.lower()
+            for kw in kws:
+                mask = mask | s.str.contains(kw, na=False, regex=False)
+        return mask
 
     def _on_color_toggled(self):
         """颜色复选框变化：更新已勾选集合并刷新（与已读状态 AND）"""
@@ -362,6 +412,9 @@ class AlertDialog(QDialog):
 
         # 净偏差数量范围筛选（缺列则无约束，与已读状态 AND）
         filtered = filtered[self._net_dev_qty_mask(filtered)]
+
+        # 关键字搜索（v43.396，与已读/颜色/半成品分类/净偏差数量叠加）
+        filtered = filtered[self._keyword_mask(filtered)]
 
         filtered = filtered.reset_index(drop=True)
         # 叠加 Excel 式列头取值过滤（就地过滤，视图行号不变，选中/双击/导出零回归）

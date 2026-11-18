@@ -103,6 +103,9 @@ class DeviationWarningDialog(QDialog):
         install_dialog_shell(
             self, self._shell_host, "偏差率预警看板 · " + _alert_label(),
             "已加载 %d 条预警记录" % len(self.original_df))
+        # v43.396：对齐隔离区——去掉外壳常驻筛选条（「筛选 (0)」按钮 / 重置 /
+        # 共 X 条命中）。隔离区没有这层；筛选控件全部常显在看板自身筛选区。
+        self.dashboard_shell.filter_bar.setVisible(False)
 
     def open_maximized(self):
         """默认最大化打开：showMaximized + 同步「还原」态 UI + Win32 硬兜底（同主窗口，防 Qt 修正回浮动）。
@@ -178,16 +181,16 @@ class DeviationWarningDialog(QDialog):
         self._main_filter_vlayout.setSpacing(4)
         self._main_filter_vlayout.setContentsMargins(0, 0, 0, 0)
 
-        # ==== 第1行：已读状态 + 关键字搜索 ====
-        row1 = QHBoxLayout()
-        row1.addWidget(QLabel("筛选:"))
+        # ==== 第1行：关键字搜索（v43.396 对齐隔离区：搜索 + ✕清空 + 列头筛选按钮/提示）====
+        row_search = QHBoxLayout()
+        row_search.addWidget(QLabel("搜索:"))
 
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("关键字搜索(全列,逗号分隔多值OR)")
         self.search_edit.setToolTip("全列关键字搜索：匹配任意文本列(名称/编码/车间/备注/原因等)，逗号或顿号分隔多值OR")
         self.search_edit.setMinimumWidth(200)
         self.search_edit.setMaximumWidth(260)
-        row1.addWidget(self.search_edit)
+        row_search.addWidget(self.search_edit)
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(300)
@@ -195,6 +198,21 @@ class DeviationWarningDialog(QDialog):
         self.search_edit.textChanged.connect(
             self._bind(self.search_edit.textChanged, lambda _t: self._search_timer.start())
         )
+        self.btn_search_clear = make_button("✕ 清空")
+        self.btn_search_clear.setFixedWidth(60)
+        self.btn_search_clear.clicked.connect(self.search_edit.clear)
+        row_search.addWidget(self.btn_search_clear)
+        # 列头筛选按钮/提示从表格下方挪到搜索行（与隔离区同位）
+        self.btn_col_filter = make_col_filter_button(self, self._on_toggle_col_filter)
+        row_search.addWidget(self.btn_col_filter)
+        self._col_filter_hint_label = make_col_filter_hint_label()
+        row_search.addWidget(self._col_filter_hint_label)
+        row_search.addStretch()
+        self._main_filter_vlayout.addLayout(row_search)
+
+        # ==== 第2行：已读状态 + 环比角标 ====
+        row1 = QHBoxLayout()
+        row1.addWidget(QLabel("筛选:"))
 
         self.btn_all = QPushButton("全部")
         self.btn_all.setCheckable(True)
@@ -220,90 +238,95 @@ class DeviationWarningDialog(QDialog):
         )
         row1.addWidget(self.btn_read)
 
-        # 工厂筛选（始终可见，放在第1行末尾）
-        row1.addSpacing(16)
-        row1.addWidget(QLabel("工厂:"))
+        row1.addStretch()
+
+        # ---- B.2 环比角标（v43.301）----
+        self._mom_label = QLabel()
+        row1.addWidget(self._mom_label)
+        self._main_filter_vlayout.addLayout(row1)
+
+        # ==== 第3行：工厂 / 隔离区 / 偏差方向 / 车间（v43.396 从第1行拆出）====
+        row_dim = QHBoxLayout()
+
+        # 工厂筛选（行首）
+        row_dim.addWidget(QLabel("工厂:"))
         self.combo_factory = QComboBox()
         self.combo_factory.setMinimumWidth(100)
         self.combo_factory.setMaximumWidth(160)
         self.combo_factory.setEditable(False)
         self.combo_factory.addItem("全部")
         self.combo_factory.currentTextChanged.connect(self._on_factory_changed)
-        row1.addWidget(self.combo_factory)
+        row_dim.addWidget(self.combo_factory)
 
-        # 隔离区筛选（始终可见，放第1行工厂筛选之后，与已读/工厂并列）
-        row1.addSpacing(16)
+        # 隔离区筛选（与工厂并列）
+        row_dim.addSpacing(16)
         self.quar_sep = QFrame()
         self.quar_sep.setFrameShape(QFrame.VLine)
         self.quar_sep.setFrameShadow(QFrame.Sunken)
-        row1.addWidget(self.quar_sep)
-        row1.addSpacing(8)
+        row_dim.addWidget(self.quar_sep)
+        row_dim.addSpacing(8)
         self.lbl_quar = QLabel("隔离区:")
-        row1.addWidget(self.lbl_quar)
+        row_dim.addWidget(self.lbl_quar)
         self.btn_quar_all = QPushButton("全部")
         self.btn_quar_all.setCheckable(True)
         self.btn_quar_all.setMinimumWidth(70)
         self.btn_quar_all.clicked.connect(self._bind(self.btn_quar_all.clicked, lambda: self._set_quar_filter("all")))
-        row1.addWidget(self.btn_quar_all)
+        row_dim.addWidget(self.btn_quar_all)
         self.btn_quar_yes = QPushButton("是")
         self.btn_quar_yes.setCheckable(True)
         self.btn_quar_yes.setMinimumWidth(70)
         self.btn_quar_yes.clicked.connect(self._bind(self.btn_quar_yes.clicked, lambda: self._set_quar_filter("yes")))
-        row1.addWidget(self.btn_quar_yes)
+        row_dim.addWidget(self.btn_quar_yes)
         self.btn_quar_no = QPushButton("否")
         self.btn_quar_no.setCheckable(True)
         self.btn_quar_no.setMinimumWidth(70)
         self.btn_quar_no.clicked.connect(self._bind(self.btn_quar_no.clicked, lambda: self._set_quar_filter("no")))
-        row1.addWidget(self.btn_quar_no)
+        row_dim.addWidget(self.btn_quar_no)
 
         # 偏差方向筛选（正偏差=偏差数量>0 / 负偏差=偏差数量<0，v43.93 新增）
-        row1.addSpacing(16)
+        row_dim.addSpacing(16)
         self.devdir_sep = QFrame()
         self.devdir_sep.setFrameShape(QFrame.VLine)
         self.devdir_sep.setFrameShadow(QFrame.Sunken)
-        row1.addWidget(self.devdir_sep)
-        row1.addSpacing(8)
+        row_dim.addWidget(self.devdir_sep)
+        row_dim.addSpacing(8)
         self.lbl_devdir = QLabel("偏差:")
-        row1.addWidget(self.lbl_devdir)
+        row_dim.addWidget(self.lbl_devdir)
         self.btn_devdir_all = QPushButton("全部")
         self.btn_devdir_all.setCheckable(True)
         self.btn_devdir_all.setMinimumWidth(70)
         self.btn_devdir_all.clicked.connect(self._bind(self.btn_devdir_all.clicked, lambda: self._set_devdir_filter("all")))
-        row1.addWidget(self.btn_devdir_all)
+        row_dim.addWidget(self.btn_devdir_all)
         self.btn_devdir_pos = QPushButton("正偏差")
         self.btn_devdir_pos.setCheckable(True)
         self.btn_devdir_pos.setMinimumWidth(70)
         self.btn_devdir_pos.clicked.connect(self._bind(self.btn_devdir_pos.clicked, lambda: self._set_devdir_filter("pos")))
-        row1.addWidget(self.btn_devdir_pos)
+        row_dim.addWidget(self.btn_devdir_pos)
         self.btn_devdir_neg = QPushButton("负偏差")
         self.btn_devdir_neg.setCheckable(True)
         self.btn_devdir_neg.setMinimumWidth(70)
         self.btn_devdir_neg.clicked.connect(self._bind(self.btn_devdir_neg.clicked, lambda: self._set_devdir_filter("neg")))
-        row1.addWidget(self.btn_devdir_neg)
+        row_dim.addWidget(self.btn_devdir_neg)
 
-        # 车间筛选（始终可见，放第1行隔离区之后，与工厂/隔离区并列）
-        row1.addSpacing(16)
+        # 车间筛选（与工厂/隔离区并列）
+        row_dim.addSpacing(16)
         self.workshop_sep = QFrame()
         self.workshop_sep.setFrameShape(QFrame.VLine)
         self.workshop_sep.setFrameShadow(QFrame.Sunken)
-        row1.addWidget(self.workshop_sep)
-        row1.addSpacing(8)
+        row_dim.addWidget(self.workshop_sep)
+        row_dim.addSpacing(8)
         self.lbl_workshop = QLabel("车间:")
-        row1.addWidget(self.lbl_workshop)
+        row_dim.addWidget(self.lbl_workshop)
         self.combo_workshop = QComboBox()
         self.combo_workshop.setMinimumWidth(100)
         self.combo_workshop.setMaximumWidth(160)
         self.combo_workshop.setEditable(False)
         self.combo_workshop.addItem("全部")
         self.combo_workshop.currentTextChanged.connect(self._on_workshop_changed)
-        row1.addWidget(self.combo_workshop)
+        row_dim.addWidget(self.combo_workshop)
 
-        # ---- B.2 环比角标（v43.301）----
-        self._mom_label = QLabel()
-        row1.addWidget(self._mom_label)
-
-        row1.addStretch()
-        self._main_filter_vlayout.addLayout(row1)
+        row_dim.addStretch()
+        self._main_filter_vlayout.addLayout(row_dim)
 
         # ==== 第2行：净偏差数量区间（独立一行，与隔离区对话框完全同款，v43.382）====
         # 裴哥：整个筛选区做成和隔离区一样——净偏差数量单独一行「净偏差数量区间：不限~不限」
@@ -549,15 +572,7 @@ class DeviationWarningDialog(QDialog):
         self.table_view.installEventFilter(self)
         layout.addWidget(self.table_view)
 
-        # ---- 列头筛选工具条 ----
-        col_filter_bar = QHBoxLayout()
-        # v43.264：列头筛选按钮/提示收敛到共用组件 col_filter_ui
-        self.btn_col_filter = make_col_filter_button(self, self._on_toggle_col_filter)
-        col_filter_bar.addWidget(self.btn_col_filter)
-        self._col_filter_hint_label = make_col_filter_hint_label()
-        col_filter_bar.addWidget(self._col_filter_hint_label)
-        col_filter_bar.addStretch(1)
-        layout.addLayout(col_filter_bar)
+        # ---- 列头筛选接线（v43.396：按钮/提示已挪到顶部搜索行，这里只留接线）----
         self.col_filter_ctrl.filtered_cols_changed.connect(self._update_col_filter_hint)
         # v43.143：提示标签右键 → 清除菜单（逐列 / 全部）。
         # 此前是纯 QLabel，用户只能开浮层重勾一遍才能取消，观感=「无法取消」。
