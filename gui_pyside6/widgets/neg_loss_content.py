@@ -129,18 +129,19 @@ class NegLossContent(QWidget):
         self._sc_refresh.activated.connect(self._apply_filter)
         self.btn_refresh.setText("重新筛选 (F5)")
 
-    # 常驻筛选条（含外壳的抽屉按钮/重置/总命中，合计不超过设计稿规定的 6 个）
+    # 常驻筛选条（含外壳的抽屉按钮/重置/总命中，合计 7 个：
+    # 用户明确要求看板控件上限 5→6 且一个常驻都不撤，原设计稿红线 6 个已上调）
     BAR_FILTERS = (("keywords", "关键字", "edit_keywords"),
                    ("unit", "单位", "grp_unit"),
                    ("workshop", "车间", "combo_workshop"),
                    ("factory", "工厂", "combo_factory"),
-                   ("read", "已读", "combo_read"))
+                   ("read", "已读", "combo_read"),
+                   ("net_dev_qty", "净偏差数量", "_net_dev_qty_container"))
     # 抽屉：(分组, key, 标签, 属性名)，分组取 material / numeric / org
     DRAWER_FILTERS = (("material", "mtd", "物料类型", "combo_mtd"),
                       ("material", "semi_class", "半成品分类", "grp_semi_class"),
                       ("material", "color", "颜色标记", "color_bar"),
                       ("numeric", "include_zero", "含未投料", "chk_include_zero"),
-                      ("numeric", "净偏差数量", "净偏差数量", "_net_dev_qty_container"),
                       ("org", "quar", "隔离区", "quar_bar"),
                       ("org", "note", "备注", "note_bar"))
 
@@ -289,7 +290,7 @@ class NegLossContent(QWidget):
             shell.add_filter(key, label, getattr(self, attr))
         for group, key, label, attr in self.DRAWER_FILTERS:
             shell.add_filter(key, label, getattr(self, attr), zone="drawer", group=group)
-        # 净偏差数量 数值范围筛选已在 DRAWER_FILTERS 的 numeric 条目内挂载
+        # 净偏差数量 数值范围筛选已在 BAR_FILTERS 的 net_dev_qty 条目内挂载（常驻）
         for key in sorted(self._hidden_filters):
             shell.set_filter_visible(key, False)
         for w in (self.btn_add_quar, self.btn_export, self.btn_refresh,
@@ -551,7 +552,7 @@ class NegLossContent(QWidget):
         self.combo_factory.setCurrentText("全部")
 
         # 净偏差数量 缺列则收起该筛选（与其他条件一致）
-        self._hide_filter("净偏差数量", '净偏差数量' not in df.columns)
+        self._hide_filter("net_dev_qty", '净偏差数量' not in df.columns)
 
         self._unit_col = "单位" if "单位" in df.columns else None
         if self._unit_col:

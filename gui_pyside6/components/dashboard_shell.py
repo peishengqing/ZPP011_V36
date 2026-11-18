@@ -100,8 +100,10 @@ class DashboardShell(QWidget):
     - 操作条：40px
     """
 
-    # 常驻筛选条里的看板控件上限（加外壳自己的抽屉按钮/重置/总命中 = 6，设计稿 4.3.1）
-    MAX_PERSISTENT_FILTERS = 5
+    # 常驻筛选条里的看板控件上限。设计稿 4.3.1 红线原为看板控件 5 个 +
+    # 外壳按钮 = 6；现按用户明确要求把看板控件上限 5→6（净偏差数量回归常驻条、
+    # 一个常驻都不撤），含外壳按钮合计 7 个 —— 属用户拍板突破原红线，非误改。
+    MAX_PERSISTENT_FILTERS = 6
     # 抽屉分组固定顺序与标题（设计稿：物料维度 / 数值维度 / 组织与状态维度）
     _GROUP_TITLES = {"material": "物料维度", "numeric": "数值维度", "org": "组织与状态维度"}
 
@@ -257,8 +259,9 @@ class DashboardShell(QWidget):
         if zone == "bar" and len([s for s in self._filters.values() if s.zone == "bar"]) \
                 >= self.MAX_PERSISTENT_FILTERS:
             raise ValueError(
-                f"常驻筛选条最多 {self.MAX_PERSISTENT_FILTERS} 个控件，"
-                "其余条件请放抽屉（设计稿 4.3.1：常驻区永不超过 6 个控件）")
+                f"常驻筛选条最多 {self.MAX_PERSISTENT_FILTERS} 个看板控件，"
+                "其余条件请放抽屉（设计稿 4.3.1 原红线 6 个，现按用户明确要求"
+                "上调为看板控件 6 个 + 外壳按钮合计 7 个）")
         if zone == "drawer" and group not in self._GROUP_TITLES:
             raise ValueError(f"未知抽屉分组: {group}（可用: {list(self._GROUP_TITLES)}）")
 

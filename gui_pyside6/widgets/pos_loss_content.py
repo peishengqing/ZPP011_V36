@@ -139,12 +139,14 @@ class PosLossContent(QWidget):
         self._sc_refresh.activated.connect(self._apply_filter)
         self.btn_refresh.setText("重新筛选 (F5)")
 
-    # 常驻筛选条（含外壳的抽屉按钮/重置/总命中，合计不超过设计稿规定的 6 个）
+    # 常驻筛选条（含外壳的抽屉按钮/重置/总命中，合计 7 个：
+    # 用户明确要求看板控件上限 5→6 且一个常驻都不撤，原设计稿红线 6 个已上调）
     BAR_FILTERS = (("keywords", "关键字", "edit_keywords"),
                    ("unit", "单位", "grp_unit"),
                    ("workshop", "车间", "combo_workshop"),
                    ("factory", "工厂", "combo_factory"),
-                   ("read", "已读", "combo_read"))
+                   ("read", "已读", "combo_read"),
+                   ("net_dev_qty", "净偏差数量", "_net_dev_qty_container"))
     # 抽屉：(分组, key, 标签, 属性名)。正损没有「数值维度」组 —— 负损的「含未投料」
     # 开关在正损口径下无意义（实际=0 不可能大于定额），控件已随本次重构一并移除。
     DRAWER_FILTERS = (("material", "mtd", "物料类型", "combo_mtd"),
@@ -152,8 +154,7 @@ class PosLossContent(QWidget):
                       ("material", "dev_qty", "偏差数量", "combo_dev_qty"),
                       ("material", "color", "颜色标记", "color_bar"),
                       ("org", "quar", "隔离区", "quar_bar"),
-                      ("org", "note", "备注", "note_bar"),
-                      ("numeric", "净偏差数量", "净偏差数量", "_net_dev_qty_container"))
+                      ("org", "note", "备注", "note_bar"))
 
     def _build_filter_widgets(self):
         """创建筛选控件与联动，但不进任何布局 —— 布局由 attach_shell 交给外壳。"""
@@ -550,7 +551,7 @@ class PosLossContent(QWidget):
         self.combo_factory.setCurrentText("全部")
 
         # 净偏差数量 缺列则收起该筛选（与其他条件一致）
-        self._hide_filter("净偏差数量", '净偏差数量' not in df.columns)
+        self._hide_filter("net_dev_qty", '净偏差数量' not in df.columns)
 
         self._unit_col = "单位" if "单位" in df.columns else None
         if self._unit_col:

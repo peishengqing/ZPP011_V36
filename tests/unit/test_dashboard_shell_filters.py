@@ -36,12 +36,14 @@ class TestAddFilter:
         labels = [l.text() for l in shell.filter_bar.findChildren(QLabel)]
         assert "单位" in labels                       # 标签由外壳一并创建
 
-    def test_bar_capacity_is_five(self, shell):
-        assert DashboardShell.MAX_PERSISTENT_FILTERS == 5
-        for i in range(5):
+    def test_bar_capacity_is_six(self, shell):
+        # v43.403：用户明确要求看板控件上限 5→6（净偏差数量回归常驻条），
+        # 含外壳按钮合计 7 个，突破设计稿原红线 6 个。
+        assert DashboardShell.MAX_PERSISTENT_FILTERS == 6
+        for i in range(6):
             shell.add_filter("k%d" % i, "条件%d" % i, _combo())
         with pytest.raises(ValueError, match="常驻筛选条最多"):
-            shell.add_filter("sixth", "第六个", _combo())
+            shell.add_filter("seventh", "第七个", _combo())
 
     def test_duplicate_key_rejected(self, shell):
         shell.add_filter("unit", "单位", _combo())
