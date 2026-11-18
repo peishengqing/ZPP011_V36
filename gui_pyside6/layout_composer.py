@@ -46,6 +46,10 @@ BOARD_MENU_ITEMS = [
     ("alt_chain", "link", "替代料长链", "_show_alt_chain_dashboard"),
     ("semi", "box", "半成品看板", "_show_semi_dashboard"),
     ("flip_check", "refresh", "翻箱守恒", "_show_flip_check_dashboard"),
+    # v43.405：管理看板原是「看板」按钮主体 clicked 的隐式入口——点文字就开
+    # 14 图重型看板（真实环境会崩），点倒三角才展开菜单。改为菜单里的显式项，
+    # 按钮文字/倒三角统一只展开菜单。
+    ("management", "chart", "管理看板", "_show_dashboard"),
 ]
 
 
@@ -259,7 +263,9 @@ class LayoutComposer:
         mw.action_btn_boards.setToolTip("打开看板")
 
         # 为看板按钮添加下拉菜单
-        mw.action_btn_boards.setPopupMode(QToolButton.MenuButtonPopup)
+        # v43.405：InstantPopup——点「看板」文字或倒三角都只展开菜单，
+        # 不再触发按钮主体 clicked（旧绑定会开管理看板并在真实环境崩溃）。
+        mw.action_btn_boards.setPopupMode(QToolButton.InstantPopup)
         # v43.393：菜单项抽成 BOARD_MENU_ITEMS 清单，顺序可由用户调整
         # （「更多 → 看板菜单顺序…」），默认顺序保持 v43.392 的前置结果。
         boards_menu = QMenu(mw)

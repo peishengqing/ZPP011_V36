@@ -597,7 +597,10 @@ class MainWindow(QMainWindow):
         self.action_btn_left_panel.clicked.connect(self._toggle_left_panel)
         self.action_btn_filter.clicked.connect(self._toggle_filter_panel)
         self.action_btn_col_filter.clicked.connect(self._toggle_col_filter_mode)
-        self.action_btn_boards.clicked.connect(self._show_dashboard)
+        # v43.405：看板按钮主体 clicked 曾直连 _show_dashboard（管理看板 14 图），
+        # 点「看板」文字就开重型看板、真实环境崩溃，点倒三角才展开菜单。
+        # 管理看板已改为菜单显式项（layout_composer.BOARD_MENU_ITEMS 末尾），
+        # 按钮设 InstantPopup——文字与倒三角都只展开菜单，此处不再接 clicked。
         self.action_btn_export.clicked.connect(self._on_export_full_excel)
         # 原「维护」按钮退役（v43.349 第五期B：自动隔离规则/物料画像并入「更多」菜单），
         # 该入口现由 layout_composer 的 more_menu 项调用 _open_auto_quarantine_rule_dialog，

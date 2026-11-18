@@ -212,12 +212,13 @@ def test_menu_contents(main_window):
             menus[b.text()] = ([a.text() for a in m.actions() if not a.isSeparator()]
                                if m else [])
 
-    assert len(menus.get("看板", [])) == 12, menus.get("看板")
+    # v43.405：管理看板从「看板」按钮主体的隐式 clicked 入口改为菜单显式项 → 13 项
+    assert len(menus.get("看板", [])) == 13, menus.get("看板")
     assert len(menus.get("导出", [])) == 2, menus.get("导出")
     assert "维护" not in menus, "「维护」菜单已退役（两项并入「更多」）"
     for must in ["替代料看板", "偏差率预警", "负损看板", "正损看板",
                  "隔离区", "数据稳定性", "替代料长链", "半成品看板", "翻箱守恒",
-                 "未投料"]:
+                 "未投料", "管理看板"]:
         assert must in menus["看板"], "%s 不在看板菜单（现有 %s）" % (must, menus["看板"])
     for must in ["导出当前表格", "导出完整偏差"]:
         assert must in menus["导出"], "%s 不在导出菜单（现有 %s）" % (must, menus["导出"])
