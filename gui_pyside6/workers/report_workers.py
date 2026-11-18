@@ -11,7 +11,14 @@ _FileReadWorker     后台读取 SAP Excel（避免大文件阻塞主线程）
 
 路径约定：统一用 config.paths.BASE_DIR 取项目根，**不要**再用 __file__ 上溯——
 本模块位于 gui_pyside6/workers/（比原位置深一层），上溯层数与 main_window 不同。
+
+v43.406（审核整改 P0-1）：补 `import os`。此前本模块 `_FullCacheWorker.__init__`
+调用 `os.path.normpath()` 却从未 import os，一旦被实例化即 NameError；
+历史上只因 analysis_orchestrator 从未接线才没炸。同轮把 _FullCacheWorker 定为
+**唯一实现**（main_window 里的同名副本已删除，改从此处导入）。
 """
+import os
+
 from PySide6.QtCore import QThread, Signal
 
 
@@ -124,7 +131,7 @@ class _FileReadWorker(QThread):
 
 
 class _FullCacheWorker(QThread):
-    """完整报告缓存生成线程。
+    """完整报告缓存生成线程（唯一实现，v43.406 起由 main_window 直接导入使用）。
 
     ARC-003 第二刀（v43.194）：此前内联定义在 _on_analysis_finished_ui 方法体内，
     每次分析重建类对象、线程生命周期不受模块管理；现提升到模块级。

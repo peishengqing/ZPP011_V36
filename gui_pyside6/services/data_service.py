@@ -41,6 +41,12 @@ class DataService(QObject):
         self.audit_result_service = AuditResultService(self)
         self.quarantine_service = QuarantineService(self)
 
+        # v43.406（审核整改 P0-3）：上一次预处理的失败原因。
+        # None = 本次预处理完整走完；否则为异常描述字符串。
+        # 调用方必须读它（或 df.attrs['preprocess_failed']）才能区分
+        # “处理成功”与“降级返回了半成品数据”。
+        self.last_preprocess_error = None
+
         # 共享信号
         self.preprocessor.log_signal.connect(self.log_signal)
         self.read_status_service.log_signal.connect(self.log_signal)
@@ -51,10 +57,18 @@ class DataService(QObject):
         self.log_signal.emit(msg, level)
 
     def preprocess_audit_data(self, df: pd.DataFrame, previous_df: pd.DataFrame = None) -> pd.DataFrame:
-        """完整的数据处理工作流"""
+        """完整的数据处理工作流。
+
+        失败语义（v43.406 整改）：
+        - 成功：`last_preprocess_error is None`，且 `df.attrs['preprocess_failed']` 不存在；
+        - 失败：不抛异常仍返回 df（保留旧行为，避免界面白屏），但会同时
+          置 `last_preprocess_error`、写 `df.attrs['preprocess_failed']`，并以
+          level="error" 发 log_signal。调用方必须检查，不得当成功处理。
+        """
         if df is None or df.empty:
             return df
 
+        self.last_preprocess_error = None
         try:
             # 1. 预处理：清理、规范、增强
             df = self.preprocessor.clean_columns(df)
@@ -90,9 +104,16 @@ class DataService(QObject):
 
             return df
         except Exception as e:
-            self.log(f"数据预处理失败: {e}", "error")
+            # v43.406：原实现只打一行日志就 return 半成品，调用方无从分辨。
+            # 现在显式留痕：属性 + DataFrame.attrs + error 级日志三处可查。
+            self.last_preprocess_error = f"{type(e).__name__}: {e}"
+            self.log(f"数据预处理失败（已降级返回，数据可能不完整）: {e}", "error")
             import traceback
             traceback.print_exc()
+            try:
+                df.attrs['preprocess_failed'] = self.last_preprocess_error
+            except Exception:
+                pass
             return df
 
     def get_audit_changes(self, df):

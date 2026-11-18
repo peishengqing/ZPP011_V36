@@ -37,7 +37,7 @@ from gui_pyside6.models.data_frame_model import DataFrameModel, AuditProxyModel
 from gui_pyside6.themes.tokens import SIZE_PX
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.workers.report_workers import (
-    _FullReportWorker, _PptReportWorker, _FileReadWorker,
+    _FullReportWorker, _PptReportWorker, _FileReadWorker, _FullCacheWorker,
 )
 from gui_pyside6.widgets.filter_panel import FilterPanel
 from gui_pyside6.widgets.stats_cards import StatsCardsWidget
@@ -95,7 +95,6 @@ from gui_pyside6.controllers.uisettings_controller import UISettingsController
 from gui_pyside6.controllers.ppt_controller import PptController
 from gui_pyside6.controllers.file_monitor_controller import FileMonitorController
 from gui_pyside6.controllers.filter_controller import FilterController
-from gui_pyside6.analysis_orchestrator import AnalysisOrchestrator
 from gui_pyside6.file_loader import FileLoader
 from gui_pyside6.view_manager import ViewManager
 from utils.theme_manager import Thm
@@ -121,81 +120,12 @@ class _PptViewShim:
         return None
 
     def log(self, msg, level='info'):
-        """运行日志输出到状态栏，便于调试"""
+        """转交给 worker 的跨线程信号（v43.406：原实现在非窗口对象上调 statusBar()，
+        必然 AttributeError 并被 except 吞掉，日志实际从未输出）。"""
         try:
-            if self.statusBar():
-                self.statusBar().showMessage(f"{msg} [{level}]", 3000)
+            self._log_emit(msg, level)
         except Exception:
             pass
-
-
-class _FullCacheWorker(QThread):
-    """完整报告缓存生成线程。
-
-    ARC-003 第二刀（v43.194）：此前内联定义在 _on_analysis_finished_ui 方法体内，
-    每次分析重建类对象、线程生命周期不受模块管理；现提升到模块级。
-    v43.198：补协作式取消（request_cancel/_cancel_check，范式同 _FullReportWorker）。
-    此前 run() 两分支都不传 cancel_check、_cancel_analysis/closeEvent 也不碰它，
-    点「取消」停不下完整报告缓存生成；现主线程置位后由下一分析检查点自行退出。
-    """
-    progress = Signal(int, str)  # 缓存阶段进度 (percent, step_name)，跨线程排队到主线程
-
-    def __init__(self, input_file, alt_pairs, start_date, end_date, material_search, output_path, dyn_thresh=None):
-        super().__init__()
-        self.input_file = os.path.normpath(input_file)
-        self.alt_pairs = alt_pairs
-        self.start_date = start_date
-        self.end_date = end_date
-        self.material_search = material_search
-        self.output_path = output_path
-        self.dyn_thresh = dyn_thresh
-        self._cancel = False
-
-    def request_cancel(self):
-        """主线程调用：置取消标志，worker 在下一检查点自行退出（协作式，不硬杀）。"""
-        self._cancel = True
-
-    def _cancel_check(self, *args):
-        return self._cancel
-
-    def run(self):
-        import analysis.analyzer as _az
-        from analysis.analyzer import export_full_report_from_intermediates
-        from core.config_manager import ConfigManager
-        _cfg = ConfigManager()
-
-        def _cb(step_idx, step_name, percent):
-            self.progress.emit(int(percent), str(step_name))
-        try:
-            _li = _az.LATEST_INTERMEDIATES
-            if _li is not None:
-                # 复用 worker 已算好的 Sheet1~5 中间结果，只生成 Sheet6~10 + 保存，避免重算
-                export_full_report_from_intermediates(
-                    _li, output_path=self.output_path,
-                    progress_callback=_cb, cancel_check=self._cancel_check)
-            else:
-                # 兜底：中间结果缺失时退回完整分析（理论上不会发生，worker 必先生效）
-                _az.do_analysis_v2(
-                    input_file=self.input_file, output_dir=None,
-                    alt_pairs=self.alt_pairs, start_date=self.start_date,
-                    end_date=self.end_date, material_search=self.material_search,
-                    output_path=self.output_path,
-                    enable_net_offset=_cfg.get_net_offset_enabled(),
-                    return_dataframe=False,
-                    dyn_thresh=getattr(self, 'dyn_thresh', None),
-                    progress_callback=_cb,
-                    cancel_check=self._cancel_check,
-                )
-        except KeyboardInterrupt:
-            # 协作式取消：analyzer 的 check_cancel() 抛 KeyboardInterrupt，
-            # 它是 BaseException 子类、except Exception 兜不住，须单独捕获。
-            # 优雅返回后 finished 信号照常触发 _on_cache_done 收口（_heavy_busy
-            # 清零 + 计时器收口）；缓存文件不会落盘，导出完整报告时自然回退
-            # 到重新生成，不会留下半成品缓存。
-            print("[_FullCacheWorker] 完整报告缓存生成已取消")
-        except Exception:
-            import traceback as _tb
-            _tb.print_exc()
 
 
 def _open_file(filepath):
@@ -263,7 +193,6 @@ class MainWindow(QMainWindow):
         self._semi_categories = self._load_semi_categories()
         self.analysis_controller = AnalysisController(self)
         self.ui_manager = ViewManager(self)
-        self.orchestrator = AnalysisOrchestrator(self)
         self.file_loader = FileLoader(self)
         self.audit_controller = AuditController(self)
         self.audit_controller.manual_marked.connect(self._on_manual_marked)
@@ -1274,6 +1203,16 @@ class MainWindow(QMainWindow):
             else:
                 # 重新分析：用本次新分析的 df 刷新主表，避免显示陈旧数据
                 processed_df = df if '_read' in df.columns else self.data_service.preprocess_audit_data(df)
+            # v43.406（审核整改 P0-3）：预处理降级必须显式告知，不得当成功继续。
+            # data_service 失败时仍返回 df（避免白屏），但会把原因写进 last_preprocess_error。
+            _p_err = getattr(self.data_service, 'last_preprocess_error', None)
+            if _p_err:
+                try:
+                    self.log(f"⚠ 数据预处理降级（数据可能不完整）：{_p_err}", "error")
+                    toast("数据预处理未完整完成，部分已读/审核状态可能丢失（详见日志）",
+                          level="warning", parent=self)
+                except Exception:
+                    pass
             # 新增：分析完成后按「自动已读规则中心」配置自动标已读，并逐规则报告命中数
             self._auto_read_by_rules(processed_df)
             # 新增：隔离区已读对账（仅管理隔离区记录的已读/未读，与规则中心互斥）

@@ -791,13 +791,25 @@ class TestC_BugProbes:
         """
         tree, src = _parse_main_window()
 
+        # v43.406：_FullCacheWorker 已从 main_window 迁到 workers/report_workers.py
+        # （原处为与 orchestrator 版本的“双胞胎”，且本模块那份缺 import os）。
+        # 本探针改为在定义处校验「模块级 + 取消二件套」，main_window 侧仍需导入它。
+        import inspect as _inspect
+        import gui_pyside6.workers.report_workers as _rw_mod
+        w_src = _inspect.getsource(_rw_mod)
+        w_tree = ast.parse(w_src)
+
         # 1) _FullCacheWorker 必须仍是模块级定义，且方法集含取消二件套
-        candidates = [n for n in ast.walk(tree)
+        candidates = [n for n in ast.walk(w_tree)
                       if isinstance(n, ast.ClassDef) and n.name == "_FullCacheWorker"]
-        assert candidates, "未找到 _FullCacheWorker 定义（模块级与类内均未命中）"
+        assert candidates, "未在 workers/report_workers.py 找到 _FullCacheWorker 定义"
         node = candidates[0]
-        assert node in tree.body, (
+        assert node in w_tree.body, (
             "_FullCacheWorker 应为模块级定义；若已再次被内联进方法体，请更新本探针"
+        )
+        from gui_pyside6.main_window import _FullCacheWorker as _MWWorker
+        assert _MWWorker is _rw_mod._FullCacheWorker, (
+            "main_window 必须直接复用 workers 里的 _FullCacheWorker（不得再有本地副本）"
         )
         methods = {m.name for m in node.body if isinstance(m, ast.FunctionDef)}
         assert "request_cancel" in methods, (
@@ -812,7 +824,7 @@ class TestC_BugProbes:
             m for m in node.body
             if isinstance(m, ast.FunctionDef) and m.name == "run"
         )
-        run_src = ast.get_source_segment(src, run_node)
+        run_src = ast.get_source_segment(w_src, run_node)
         assert "cancel_check=self._cancel_check" in run_src, (
             "_FullCacheWorker.run 未传 cancel_check=self._cancel_check——"
             "取消点可能已失效，请核实后修复"

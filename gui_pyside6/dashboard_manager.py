@@ -54,10 +54,10 @@ class DashboardManager:
         try:
             df = self.mw._get_master_df()
             if df is None or df.empty:
-                QMessageBox.information(self, "提示", "暂无数据，请先分析")
+                QMessageBox.information(self.mw, "提示", "暂无数据，请先分析")
                 return
             if "偏差率(%)" not in df.columns:
-                QMessageBox.information(self, "提示", "当前数据无偏差率列")
+                QMessageBox.information(self.mw, "提示", "当前数据无偏差率列")
                 return
             threshold = getattr(self.mw.alert_monitor, 'threshold', 10)
             if "是否替代料" in df.columns:
@@ -65,7 +65,7 @@ class DashboardManager:
             else:
                 alerts_df = df[df["偏差率(%)"].abs() > threshold]
             if alerts_df.empty:
-                QMessageBox.information(self, "提示", "没有替代料预警记录")
+                QMessageBox.information(self.mw, "提示", "没有替代料预警记录")
                 return
             required_cols = [c for c in [
                 "工厂", "订单日期", "订单类型", "流程订单", "物料编码", "物料名称", "物料描述",
@@ -96,17 +96,17 @@ class DashboardManager:
             dialog = AlertDialog(alerts_df, self.mw)
             self._open_dialog(dialog, "alert")
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开替代料看板失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"打开替代料看板失败: {e}")
 
     def show_deviation_warning_dashboard(self):
         """打开偏差率预警看板."""
         try:
             df = self.mw._get_master_df()
             if df is None or df.empty:
-                QMessageBox.information(self, "提示", "暂无数据，请先分析")
+                QMessageBox.information(self.mw, "提示", "暂无数据，请先分析")
                 return
             if "偏差率(%)" not in df.columns:
-                QMessageBox.information(self, "提示", "当前数据无偏差率列")
+                QMessageBox.information(self.mw, "提示", "当前数据无偏差率列")
                 return
             rates = pd.to_numeric(df["偏差率(%)"], errors='coerce').fillna(0)
             act_col = '数量-实际' if '数量-实际' in df.columns else ('实际' if '实际' in df.columns else None)
@@ -124,7 +124,7 @@ class DashboardManager:
             warnings_df = df[mask].copy()
             warnings_df["原表行号"] = warnings_df.index
             if warnings_df.empty:
-                QMessageBox.information(self, "提示", "没有偏差率预警记录（|偏差率| ≥ 10%）")
+                QMessageBox.information(self.mw, "提示", "没有偏差率预警记录（|偏差率| ≥ 10%）")
                 return
             candidates = [
                 "工厂", "订单日期", "订单类型", "流程订单", "原表行号", "产品物料号码", "产品物料描述",
@@ -143,14 +143,14 @@ class DashboardManager:
             dialog = DeviationWarningDialog(warnings_df, self.mw)
             self._open_dialog(dialog, "deviation_warning")
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开偏差率预警看板失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"打开偏差率预警看板失败: {e}")
 
     def show_neg_loss_dashboard(self):
         """打开负损(含未投料)看板."""
         try:
             df = self.mw._get_master_df()
             if df is None or df.empty:
-                QMessageBox.information(self, "提示", "暂无数据，请先分析")
+                QMessageBox.information(self.mw, "提示", "暂无数据，请先分析")
                 return
             candidates = [
                 "订单日期", "订单类型", "流程订单", "物料编码", "物料名称", "物料描述",
@@ -167,14 +167,14 @@ class DashboardManager:
             dialog = NegLossDashboard(sub, self.mw)
             self._open_dialog(dialog, "neg_loss")
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开负损看板失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"打开负损看板失败: {e}")
 
     def show_pos_loss_dashboard(self):
         """打开正损(超投)看板."""
         try:
             df = self.mw._get_master_df()
             if df is None or df.empty:
-                QMessageBox.information(self, "提示", "暂无数据，请先分析")
+                QMessageBox.information(self.mw, "提示", "暂无数据，请先分析")
                 return
             candidates = [
                 "订单日期", "订单类型", "流程订单", "物料编码", "物料名称", "物料描述",
@@ -191,7 +191,7 @@ class DashboardManager:
             dialog = PosLossDashboardDialog(sub, self.mw)
             self._open_dialog(dialog, "pos_loss")
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开正损看板失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"打开正损看板失败: {e}")
 
     def show_data_stability_dashboard(self):
         """打开数据稳定性看板."""
@@ -215,7 +215,7 @@ class DashboardManager:
             dialog = DataStabilityDialog(self.mw, code_name_map=name_map)
             self._open_dialog(dialog, "data_stability")
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开数据稳定性看板失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"打开数据稳定性看板失败: {e}")
 
     def show_quarantine_review_dashboard(self):
         """打开隔离区闭环复盘看板."""
@@ -223,7 +223,7 @@ class DashboardManager:
             dialog = QuarantineReviewDialog(self.mw)
             self._open_dialog(dialog, "quarantine_review")
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开隔离区闭环看板失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"打开隔离区闭环看板失败: {e}")
 
     def show_alt_chain_dashboard(self):
         """打开替代料长链预警看板."""
@@ -231,7 +231,7 @@ class DashboardManager:
             dialog = AltChainDialog(self.mw)
             self._open_dialog(dialog, "alt_chain")
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开替代料长链看板失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"打开替代料长链看板失败: {e}")
 
     def show_material_profile(self, code=None, name=None):
         """打开物料画像窗口."""
@@ -259,14 +259,14 @@ class DashboardManager:
             dialog = MaterialProfileDialog(code, self.mw, name=name or '')
             self._open_dialog(dialog, "material_profile")
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开物料画像失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"打开物料画像失败: {e}")
 
     def show_semi_dashboard(self):
         """打开半成品看板."""
         try:
             df = self.mw._get_master_df()
             if df is None or df.empty:
-                QMessageBox.information(self, "提示", "暂无数据，请先分析")
+                QMessageBox.information(self.mw, "提示", "暂无数据，请先分析")
                 return
             code_col = next((c for c in ("物料编码", "组件物料号") if c in df.columns), None)
             if code_col:
@@ -274,7 +274,7 @@ class DashboardManager:
             else:
                 sub = df
             if sub.empty:
-                QMessageBox.information(self, "提示", "当前数据无 400/410 开头的物料")
+                QMessageBox.information(self.mw, "提示", "当前数据无 400/410 开头的物料")
                 return
             candidates = [
                 "订单日期", "订单类型", "流程订单", "物料编码", "物料名称", "物料描述",
@@ -288,17 +288,17 @@ class DashboardManager:
             dialog = SemiDashboardDialog(sub, self.mw)
             self._open_dialog(dialog, "semi")
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开半成品看板失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"打开半成品看板失败: {e}")
 
     def show_dashboard(self):
         """打开管理看板."""
         try:
             audit_df = self.mw.view_model.df
             if audit_df is None or audit_df.empty:
-                QMessageBox.warning(self, "提示", "无数据，请先进行分析")
+                QMessageBox.warning(self.mw, "提示", "无数据，请先进行分析")
                 return
             dialog = DashboardDialog(audit_df, None, parent=self.mw, main_window=self.mw)
             dialog.focus_requested.connect(self.mw._apply_board_focus)
             self._open_dialog(dialog, "dashboard")
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开管理看板失败: {e}")
+            QMessageBox.critical(self.mw, "错误", f"打开管理看板失败: {e}")

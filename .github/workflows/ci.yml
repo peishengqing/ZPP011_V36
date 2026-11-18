@@ -1,8 +1,16 @@
 name: CI
 
+# v43.406（审核整改 P1-9/P1-10）：
+#   1) 旧版 pyflakes 门禁用 `grep "F821"` 判定，而 pyflakes 的文本输出里根本没有
+#      F821/F822 这种编号（那是 flake8 的编号），门禁永远通过 → 空转。
+#      现改为匹配 pyflakes 原文 "undefined name" / "redefinition of unused"。
+#   2) 旧仓同时存在 ci.yml 与 test.yml 两个工作流：后者只装 tests/requirements-test.txt
+#      （不含 PySide6）却要跑大量 import PySide6 的单测，且与前者功能重叠。
+#      现合并为单一工作流（test.yml 已删除），覆盖率上传如需恢复请在本文件追加。
+
 on:
   push:
-    branches: [ main ]
+    branches: [ main, dev/* ]
   pull_request:
     branches: [ main ]
 
@@ -24,23 +32,17 @@ jobs:
         pip install -r requirements.txt
         pip install -r tests/requirements-test.txt
 
-    - name: Run unit tests
-      run: |
-        python -m pytest tests/unit/ -v --tb=short --no-cov
-
-    - name: Run static checks (pyflakes)
+    - name: Static checks (pyflakes: undefined name 致命)
       shell: bash
       run: |
         pip install pyflakes
-        # 只报致命错误（F821/F822），unused import 等警告降级（不阻塞）
-        pyflakes core/ gui_pyside6/ analysis/ utils/ modules/ > pyflakes.txt 2>&1
+        pyflakes core gui_pyside6 analysis utils modules > pyflakes.txt 2>&1 || true
         cat pyflakes.txt
-        if grep -q "F821" pyflakes.txt; then
-          echo "❌ 发现 F821 错误，CI 失败"
+        if grep -Eq "undefined name|redefinition of unused" pyflakes.txt; then
+          echo "❌ 发现未定义名/重复定义，CI 失败"
           exit 1
         fi
-        if grep -q "F822" pyflakes.txt; then
-          echo "❌ 发现 F822 错误，CI 失败"
-          exit 1
-        fi
-        echo "✅ pyflakes 无致命错误（warnings 已忽略）"
+        echo "✅ pyflakes 无致命错误（unused import 等已登记技术债，不阻塞）"
+
+    - name: Run unit tests
+      run: python -m pytest tests/unit/ -q --tb=short

@@ -21,6 +21,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, ROOT)
 
 MW_PATH = os.path.join(ROOT, "gui_pyside6", "main_window.py")
+WORKERS_PATH = os.path.join(ROOT, "gui_pyside6", "workers", "report_workers.py")
 
 
 def _load_worker_cls():
@@ -31,6 +32,13 @@ def _load_worker_cls():
 
 def _parse_main_window():
     with open(MW_PATH, "r", encoding="utf-8") as f:
+        src = f.read()
+    return ast.parse(src), src
+
+
+def _parse_workers():
+    """解析 _FullCacheWorker 的唯一定义处（v43.406 从 main_window 迁入本模块）。"""
+    with open(WORKERS_PATH, "r", encoding="utf-8") as f:
         src = f.read()
     return ast.parse(src), src
 
@@ -61,7 +69,7 @@ def test_request_cancel_flips_check():
 
 def test_run_passes_cancel_check_in_both_branches():
     """intermediates 分支与兜底分支都必须传 cancel_check=self._cancel_check。"""
-    tree, src = _parse_main_window()
+    tree, src = _parse_workers()
     run_src = _method_src(tree, src, "_FullCacheWorker", "run")
     assert run_src.count("cancel_check=self._cancel_check") == 2, (
         "run() 应有 2 处 cancel_check=self._cancel_check（intermediates 分支 + "

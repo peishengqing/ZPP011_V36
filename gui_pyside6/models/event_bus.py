@@ -6,7 +6,7 @@ using PySide6's QObject and signal/slot mechanism.
 """
 
 import logging
-from typing import Callable, Dict, Optional, Any
+from typing import Any, Callable, Dict, List, Optional
 
 from PySide6.QtCore import QObject, Signal
 
@@ -57,14 +57,18 @@ class EventBus(QObject):
             cls._instance = EventBus()
         return cls._instance
 
-    def reset(self) -> None:
+    @classmethod
+    def reset(cls) -> None:
         """
         Reset the singleton instance.
 
         Should only be called to reset state (e.g., during testing).
+
+        v43.406（审核整改 P1-5）：原为实例方法却引用 `cls`，
+        且调用方 `reset_event_bus()` 按类调用 → 双重错误（NameError / TypeError），
+        复位路径实际不可用。改为 classmethod 后，类调用与实例调用均可用。
         """
-        if cls._instance is not None:
-            cls._instance = None
+        cls._instance = None
 
     # Custom event registration
     def register_event_handler(self, event_name: str, handler: Callable) -> None:

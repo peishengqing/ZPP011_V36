@@ -5,7 +5,7 @@ Provides a title with a collapse/expand button that emits a collapsed signal
 when toggled.
 """
 
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton
 from PySide6.QtCore import Signal, Qt, QSize
 
 
@@ -14,6 +14,9 @@ class FilterTitleBar(QWidget):
     Collapsible title bar widget for filter panels.
 
     This widget displays a title and a collapse/expand button.
+
+    v43.406（审核整改 P1）：补 QPushButton 导入——此前构造即 NameError，
+    只因该组件当前未被任何模块引用才未暴露。
     """
 
     collapsed = Signal(bool)  # Emitted with new collapsed state (True if collapsed)

@@ -20,7 +20,7 @@ ZPP011 是一个基于 PySide6 的数据分析平台，专注于替代料偏差�
 ### 1.2 技术栈
 - **GUI 框架**: PySide6
 - **数据处理**: pandas, numpy
-- **数据库**: SQLite (通过 peewee ORM)
+- **数据库**: SQLite（原生 sqlite3，WAL 模式；主线程单例 + 子线程 threading.local）
 - **设计模式**: 服务层模式、依赖注入、信号槽机制
 
 ### 1.3 主要特性
@@ -406,9 +406,9 @@ print(f"未读记录: {len(df[df['_read'] == 0])}")
 print(f"已审核记录: {len(df[df['审核状态'] == '已审核'])}")
 print(f"隔离记录: {len(df[df['_quarantined'] == 1])}")
 
-# 5. 创建视图模型
-from api.views.data_view import DataView
-view_model = DataView(df)
+# 5. 创建视图模型（v43.406 修正：原文档写的 api.views.data_view 在本仓并不存在）
+from gui_pyside6.models.data_frame_model import DataFrameModel
+source_model = DataFrameModel(df)
 ```
 
 #### 变动检测
@@ -593,7 +593,7 @@ clear_audit_changes(days_old=30)
 
 ### 7.4 代码组织
 
-**入口点**: `main_window.py`
+**入口点**: `run_pyside6.py`（`MainWindow` 在 `gui_pyside6/main_window.py`）
 **服务协调**: `data_service.py`
 **核心逻辑**: `core/` 目录
 
@@ -627,6 +627,7 @@ pytest tests/integration/
 | v1.0 | 2026-06-23 | 初始 PySide6 迁移版 |
 | v42.0 | 2026-09-28 | 首个稳定版本 |
 | v43.0 | 2026-10-29 | 服务层重构完成 |
+| v43.406 | 2026-11-18 | 审核整改：修未定义名/降级可见性/CI 门禁，删除死代码与重复 worker |
 
 ---
 
