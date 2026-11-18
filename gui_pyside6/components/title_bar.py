@@ -121,9 +121,15 @@ class TitleBarWidget(QWidget):
             self._factory_buttons[key] = btn
         self._refresh_factory_style()
         self._factory_buttons["全部"].setChecked(True)
-        layout.addWidget(self.factory_seg, 0, Qt.AlignVCenter)
 
         layout.addStretch()
+
+        # 右端：视图切换（与左边「本次分析」拉开，并用竖线分隔，避免连成一句）
+        seg_sep = QWidget()
+        seg_sep.setFixedSize(1, 22)
+        seg_sep.setObjectName("titleSep")
+        layout.addWidget(seg_sep, 0, Qt.AlignVCenter)
+        layout.addWidget(self.factory_seg, 0, Qt.AlignVCenter)
 
         # ── 右端：数据源（可点=选文件）+ 暗色切换 ──
         self.source_btn = QPushButton("数据源  未选择文件")
@@ -143,19 +149,35 @@ class TitleBarWidget(QWidget):
         layout.addWidget(self.theme_btn, 0, Qt.AlignVCenter)
 
     def _refresh_factory_style(self):
-        """工厂切换按钮样式（随主题取色，不写死 hex）。"""
-        checked_bg = Thm.color("primary")
-        checked_fg = Thm.color("onPrimary")
-        for btn in self._factory_buttons.values():
+        """工厂切换按钮样式：视觉上连成一个分段控件（首尾圆角、中间直角）。
+
+        主题切换必须重调一次——样式里取的是主题色，不重调就会在暗色下
+        留下白底按钮。
+        """
+        keys = ("全部", "1101", "1102")
+        border = Thm.color("border")
+        surface = Thm.color("surface")
+        muted = Thm.color("textMuted")
+        primary = Thm.color("primary")
+        on_primary = Thm.color("onPrimary")
+        for i, key in enumerate(keys):
+            btn = self._factory_buttons.get(key)
+            if btn is None:
+                continue
+            left = "6px" if i == 0 else "0px"
+            right = "6px" if i == len(keys) - 1 else "0px"
+            no_right = "" if i == len(keys) - 1 else "border-right:none;"
             btn.setStyleSheet(
                 "QPushButton#factorySegBtn{"
-                f"border:1px solid {Thm.color('border')};"
-                f"background:{Thm.color('surface')};color:{Thm.color('textMuted')};"
-                "border-radius:6px;padding:0 12px;font-size:12px;}"
+                f"border:1px solid {border};{no_right}"
+                f"background:{surface};color:{muted};"
+                f"border-top-left-radius:{left};border-bottom-left-radius:{left};"
+                f"border-top-right-radius:{right};border-bottom-right-radius:{right};"
+                "padding:0 12px;font-size:12px;}"
                 "QPushButton#factorySegBtn:hover{"
-                f"border-color:{Thm.color('borderStrong')};color:{Thm.color('text')};}}"
+                f"color:{Thm.color('text')};}}"
                 "QPushButton#factorySegBtn:checked{"
-                f"background:{checked_bg};color:{checked_fg};border-color:{checked_bg};}}"
+                f"background:{primary};color:{on_primary};border-color:{primary};}}"
                 "QPushButton#factorySegBtn:disabled{"
                 f"color:{Thm.color('textFaint')};background:{Thm.color('bg')};}}"
             )
@@ -197,12 +219,14 @@ class TitleBarWidget(QWidget):
     def set_theme_light(self):
         """当前是亮色主题：按钮显示'暗色'，品牌块与上下文图标换亮色墨色。"""
         self._repaint_icons()
+        self._refresh_factory_style()      # 分段开关按主题色重刷（否则暗色下留白底）
         self.theme_btn.setIcon(get_icon("moon", 13))
         self.theme_btn.setText("暗色")
 
     def set_theme_dark(self):
         """当前是暗色主题：按钮显示'亮色'，图标同步换墨色。"""
         self._repaint_icons()
+        self._refresh_factory_style()
         self.theme_btn.setIcon(get_icon("sun", 13))
         self.theme_btn.setText("亮色")
 

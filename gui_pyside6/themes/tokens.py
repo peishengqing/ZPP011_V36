@@ -132,7 +132,7 @@ SIZE_PX = {
     "boardKpiBar": 54,      # 看板 KPI 带
     "boardActBar": 40,      # 看板底部操作条
     "navPanel": 236,
-    "tableRow": 36,
+    "tableRow": 32,
     "tableHeader": 32,
     # 行首勾选道（设计稿首列 34px）。这里取 46px：设计稿那列只有勾选框，我们的行首
     # 还要留现行号（裴哥靠「第 N 行」口头定位数据），勾选框 13px + 行号约 20px。

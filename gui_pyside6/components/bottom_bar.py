@@ -17,7 +17,7 @@
 偏差合计的正负色沿用现行口径：超投（正）红、节约（负）绿。
 """
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QStatusBar, QWidget
 
 import pandas as pd
@@ -65,7 +65,37 @@ class BottomBarComponent(QStatusBar):
         lay.addStretch(1)                   # 右端留给 addPermanentWidget 的低频标签
 
         # 指标整体放正常区并占满宽度；瞬时提示出现时由 QStatusBar 临时接管这一段
+        self._row = row
         self.addWidget(row, 1)
+
+        # v44.02：瞬时提示改用自带标签。QStatusBar.showMessage 默认把文字画在常驻
+        # widget **上面**，实测底部会与「共 N 行 / 未读」叠成一团；改成分时复用：
+        # 有提示 → 隐藏指标行只显示提示，超时/清除 → 指标行回来。
+        self.lbl_msg = QLabel("")
+        self.lbl_msg.setObjectName("bottomStatusValue")
+        self.lbl_msg.setVisible(False)
+        self.addWidget(self.lbl_msg, 1)
+        self._msg_timer = QTimer(self)
+        self._msg_timer.setSingleShot(True)
+        self._msg_timer.timeout.connect(self.clearMessage)
+
+    # ── 瞬时提示：接管 showMessage，避免与常驻指标叠字 ─────────────
+    def showMessage(self, text, timeout=0):
+        text = "" if text is None else str(text)
+        if not text:
+            return self.clearMessage()
+        self.lbl_msg.setText(text)
+        self.lbl_msg.setVisible(True)
+        self._row.setVisible(False)
+        self._msg_timer.stop()
+        if timeout and timeout > 0:
+            self._msg_timer.start(int(timeout))
+
+    def clearMessage(self):
+        self._msg_timer.stop()
+        self.lbl_msg.clear()
+        self.lbl_msg.setVisible(False)
+        self._row.setVisible(True)
 
     # ── 构造小件 ──────────────────────────────────────────────────
     def _mk_label(self, layout, text, value=False):

@@ -2310,9 +2310,11 @@ class MainWindow(QMainWindow):
             按天滚动保留 30 天）；
           - 任何一步失败都不抛——日志接口本身绝不能成为新的故障源。
         """
-        # 1) 状态栏回显（最直观的现场反馈）
+        # 1) 状态栏回显（最直观的现场反馈）——debug 只落盘不回显：
+        #    以前 debug 也写状态栏，5 秒一次刷屏，还会盖住用户正在看的行数/未读。
         try:
-            self.statusBar().showMessage(f"[{level}] {msg}", 5000)
+            if level != "debug":
+                self.statusBar().showMessage(f"[{level}] {msg}", 5000)
         except Exception:
             pass
         # 2) 落盘（复用项目统一 logger，自动去重 handler）
