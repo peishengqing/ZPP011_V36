@@ -6,7 +6,7 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QTableView, QHeaderView,
     QPushButton, QAbstractItemView, QMenu, QFileDialog, QLabel, QCheckBox,
-    QGroupBox, QWidget, QTableWidget, QTableWidgetItem, QLineEdit,
+    QGroupBox, QWidget, QTableWidget, QTableWidgetItem, QLineEdit, QComboBox,
 )
 from PySide6.QtCore import Qt, QPoint, QTimer
 from PySide6.QtGui import QDoubleValidator
@@ -92,7 +92,8 @@ class AlertDialog(QDialog):
         self._search_timer.setInterval(300)
         self._search_timer.timeout.connect(self._on_search_changed)
 
-        # 第1行：关键字搜索（隔离区同款：搜索 + ✕清空 + 列头筛选按钮/提示）
+        # 第1行：关键字搜索（隔离区同款：搜索 + ✕清空 + 列头筛选按钮/提示 +
+        # 已读未读下拉——占据隔离区「是否备注」下拉的位置，v43.397）
         search_row = QHBoxLayout()
         search_row.addWidget(QLabel("搜索:"))
         self.edit_search = QLineEdit()
@@ -109,6 +110,17 @@ class AlertDialog(QDialog):
         search_row.addWidget(self.btn_col_filter)
         self._col_filter_hint_label = make_col_filter_hint_label()
         search_row.addWidget(self._col_filter_hint_label)
+        search_row.addSpacing(12)
+        # v43.397：隔离区该位置原是「是否备注」下拉；替代料看板改为「已读未读」，
+        # 接管原「全部/未读/已读」三按钮的筛选语义，默认未读（与看板开箱口径一致）。
+        search_row.addWidget(QLabel("已读未读:"))
+        self.combo_read = QComboBox()
+        self.combo_read.addItems(["未读", "已读", "全部"])
+        self.combo_read.setCurrentText("未读")
+        self.combo_read.setMinimumWidth(70)
+        self.combo_read.setMaximumWidth(100)
+        self.combo_read.currentTextChanged.connect(self._on_read_combo_changed)
+        search_row.addWidget(self.combo_read)
         search_row.addStretch()
         self._main_filter_vlayout.addLayout(search_row)
 
@@ -139,9 +151,10 @@ class AlertDialog(QDialog):
         # ---- B.2 环比角标（v43.301）----
         self._mom_label = QLabel()
         row1.addWidget(self._mom_label)
-        self._main_filter_vlayout.addLayout(row1)
-
-        # 第3行：批量操作 + 查看替代料组 + 放大
+        # v43.397：对齐隔离区——筛选区只留「搜索行 + 净偏差数量区间行」两行。
+        # 本行及以下「批量操作 / 颜色 / 半成品分类」行的控件照常创建（对象与信号
+        # 保留，_set_filter / _apply_filter 等引用不崩），但不加入可见布局。
+        # self._main_filter_vlayout.addLayout(row1)
         op_row = QHBoxLayout()
 
         self.btn_batch_read = QPushButton("批量标记已读")
@@ -171,7 +184,8 @@ class AlertDialog(QDialog):
         op_row.addWidget(self.btn_fullscreen)
 
         op_row.addStretch()
-        self._main_filter_vlayout.addLayout(op_row)
+        # v43.397：不进可见布局（同上）
+        # self._main_filter_vlayout.addLayout(op_row)
 
         layout.addLayout(self._main_filter_vlayout)
         # 表格默认占满剩余宽度；放大/还原后由 _fit_table_columns 重新按可见宽度分配列宽
@@ -201,7 +215,8 @@ class AlertDialog(QDialog):
         self.color_clear_btn.clicked.connect(self._clear_color_checks)
         color_row.addWidget(self.color_clear_btn)
         color_row.addStretch()
-        self._main_filter_vlayout.addLayout(color_row)
+        # v43.397：不进可见布局（同上）
+        # self._main_filter_vlayout.addLayout(color_row)
 
         # ---- 半成品重分类筛选（v43.147：QGridLayout 两行，食品一行 / 饮料一行）----
         # 原为 QVBoxLayout + setFixedWidth(180) 竖排，7 项会撑到 ~130px 高；
@@ -218,7 +233,8 @@ class AlertDialog(QDialog):
         self._semi_class_checkboxes = {}  # 名称 -> QCheckBox（含特殊键 "__all__"）
         semi_class_row.addWidget(self.grp_semi_class)
         semi_class_row.addStretch()
-        self._main_filter_vlayout.addLayout(semi_class_row)
+        # v43.397：不进可见布局（同上）
+        # self._main_filter_vlayout.addLayout(semi_class_row)
 
         # ---- 净偏差数量区间（v43.395：对齐隔离区看板——全角冒号标签 + QLineEdit 短框 +
         # placeholder「不限」+ 300ms 防抖；留空一端=不限、双端留空=不筛选）----
@@ -306,11 +322,23 @@ class AlertDialog(QDialog):
         btn_layout.addWidget(close_btn)
         layout.addLayout(btn_layout)
 
+    def _on_read_combo_changed(self, text):
+        """已读未读下拉（v43.397）：中文项 → 内部 mode，复用 _set_filter 全套逻辑。"""
+        mode = {"未读": "unread", "已读": "read", "全部": "all"}.get(text, "unread")
+        self._set_filter(mode)
+
     def _set_filter(self, mode):
         self.filter_mode = mode
         self.btn_all.setChecked(mode == "all")
         self.btn_unread.setChecked(mode == "unread")
         self.btn_read.setChecked(mode == "read")
+        # v43.397：下拉与三按钮双向同步（三按钮虽不在可见布局，业务逻辑仍会调 _set_filter）
+        if hasattr(self, "combo_read"):
+            want = {"all": "全部", "unread": "未读", "read": "已读"}.get(mode, "未读")
+            if self.combo_read.currentText() != want:
+                self.combo_read.blockSignals(True)
+                self.combo_read.setCurrentText(want)
+                self.combo_read.blockSignals(False)
         self._apply_filter()
 
     def _on_search_changed(self):

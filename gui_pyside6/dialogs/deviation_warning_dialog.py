@@ -207,6 +207,17 @@ class DeviationWarningDialog(QDialog):
         row_search.addWidget(self.btn_col_filter)
         self._col_filter_hint_label = make_col_filter_hint_label()
         row_search.addWidget(self._col_filter_hint_label)
+        row_search.addSpacing(12)
+        # v43.397：隔离区该位置原是「是否备注」下拉；偏差率预警看板改为「已读未读」，
+        # 接管原「全部/未读/已读」三按钮的筛选语义，默认未读（与各看板开箱口径一致）。
+        row_search.addWidget(QLabel("已读未读:"))
+        self.combo_read = QComboBox()
+        self.combo_read.addItems(["未读", "已读", "全部"])
+        self.combo_read.setCurrentText("未读")
+        self.combo_read.setMinimumWidth(70)
+        self.combo_read.setMaximumWidth(100)
+        self.combo_read.currentTextChanged.connect(self._on_read_combo_changed)
+        row_search.addWidget(self.combo_read)
         row_search.addStretch()
         self._main_filter_vlayout.addLayout(row_search)
 
@@ -243,7 +254,9 @@ class DeviationWarningDialog(QDialog):
         # ---- B.2 环比角标（v43.301）----
         self._mom_label = QLabel()
         row1.addWidget(self._mom_label)
-        self._main_filter_vlayout.addLayout(row1)
+        # v43.397：对齐隔离区——筛选区只留「搜索行 + 净偏差数量区间行」两行。
+        # 本行及以下各行的控件照常创建（对象与信号保留，业务逻辑不崩），但不加入可见布局。
+        # self._main_filter_vlayout.addLayout(row1)
 
         # ==== 第3行：工厂 / 隔离区 / 偏差方向 / 车间（v43.396 从第1行拆出）====
         row_dim = QHBoxLayout()
@@ -326,7 +339,8 @@ class DeviationWarningDialog(QDialog):
         row_dim.addWidget(self.combo_workshop)
 
         row_dim.addStretch()
-        self._main_filter_vlayout.addLayout(row_dim)
+        # v43.397：不进可见布局（同上）
+        # self._main_filter_vlayout.addLayout(row_dim)
 
         # ==== 第2行：净偏差数量区间（独立一行，与隔离区对话框完全同款，v43.382）====
         # 裴哥：整个筛选区做成和隔离区一样——净偏差数量单独一行「净偏差数量区间：不限~不限」
@@ -417,7 +431,8 @@ class DeviationWarningDialog(QDialog):
         self._row_mat.addWidget(self.combo_mtd)
 
         self._row_mat.addStretch()
-        self._main_filter_vlayout.addWidget(self._row_mat_widget)
+        # v43.397：不进可见布局（同上）
+        # self._main_filter_vlayout.addWidget(self._row_mat_widget)
 
         # ==== 第4行：半成品分类（checkable 按钮组一行铺开，v43.382）====
         # 由原复选框网格（QGroupBox+QGridLayout，食品/饮料各占一行）改为与隔离区同风格的
@@ -445,7 +460,8 @@ class DeviationWarningDialog(QDialog):
         self._row_semi.addWidget(self._semi_class_buttons_widget)
 
         self._row_semi.addStretch()
-        self._main_filter_vlayout.addWidget(self._row_semi_widget)
+        # v43.397：不进可见布局（同上）
+        # self._main_filter_vlayout.addWidget(self._row_semi_widget)
 
         # ==== 第5行：替代料 + 是否备注（常显，v43.382 起不再随展开/收起隐藏）====
         self._row3_widget = QWidget()
@@ -507,7 +523,8 @@ class DeviationWarningDialog(QDialog):
         self._row3.addWidget(self.btn_remark_none)
 
         self._row3.addStretch()
-        self._main_filter_vlayout.addWidget(self._row3_widget)
+        # v43.397：不进可见布局（同上）
+        # self._main_filter_vlayout.addWidget(self._row3_widget)
 
         # ==== 第6行：批量操作 + 放大按钮（常显）====
         self._row4_widget = QWidget()
@@ -527,7 +544,8 @@ class DeviationWarningDialog(QDialog):
         self.btn_fullscreen.clicked.connect(self.toggle_fullscreen)
         self._row4.addWidget(self.btn_fullscreen)
 
-        self._main_filter_vlayout.addWidget(self._row4_widget)
+        # v43.397：不进可见布局（同上）
+        # self._main_filter_vlayout.addWidget(self._row4_widget)
 
         layout.addLayout(self._main_filter_vlayout)
 
@@ -611,11 +629,23 @@ class DeviationWarningDialog(QDialog):
                 mask = mask | s.str.contains(kw, na=False, regex=False)
         return mask
 
+    def _on_read_combo_changed(self, text):
+        """已读未读下拉（v43.397）：中文项 → 内部 mode，复用 _set_filter 全套逻辑。"""
+        mode = {"未读": "unread", "已读": "read", "全部": "all"}.get(text, "unread")
+        self._set_filter(mode)
+
     def _set_filter(self, mode):
         self.filter_mode = mode
         self.btn_all.setChecked(mode == "all")
         self.btn_unread.setChecked(mode == "unread")
         self.btn_read.setChecked(mode == "read")
+        # v43.397：下拉与三按钮双向同步（三按钮虽不在可见布局，业务逻辑仍会调 _set_filter）
+        if hasattr(self, "combo_read"):
+            want = {"all": "全部", "unread": "未读", "read": "已读"}.get(mode, "未读")
+            if self.combo_read.currentText() != want:
+                self.combo_read.blockSignals(True)
+                self.combo_read.setCurrentText(want)
+                self.combo_read.blockSignals(False)
         self._apply_filter()
 
     def _set_mat_filter(self, mode):
