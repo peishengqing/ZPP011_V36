@@ -248,6 +248,12 @@ class DataController:
             self.mw._update_summary()
             self.mw.filter_panel.update_options(processed_df)
             self.mw.statusBar().showMessage(f"已切换到工厂：{factory_name}", 2000)
+            # 记住选择：下次分析完直接回到这个厂（食品/饮料互不相干，少切一次）
+            try:
+                from core.factory_context import remember_factory
+                remember_factory(factory_name)
+            except Exception:
+                pass
         else:
             self.mw.statusBar().showMessage(f"工厂 {factory_name} 数据为空", 2000)
 

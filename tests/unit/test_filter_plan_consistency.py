@@ -18,6 +18,17 @@ from PySide6.QtWidgets import QApplication
 from gui_pyside6.models.data_frame_model import DataFrameModel, AuditProxyModel
 
 
+@pytest.fixture(autouse=True)
+def _default_thresholds(monkeypatch, tmp_path):
+    """本文件的参照实现把预警阈值写死为 10%；阈值可配置后必须钉住默认值。
+
+    否则会读到现场 config/threshold_config.json（当前 alert=12.5%）导致误报不一致。
+    """
+    from core import threshold_config as tc
+    monkeypatch.setattr(tc, "CONFIG_PATH", str(tmp_path / "threshold_config.json"))
+    monkeypatch.setattr(tc, "_cache", None)
+
+
 def _make_df(n=200):
     rng = random.Random(42)
     cols = {

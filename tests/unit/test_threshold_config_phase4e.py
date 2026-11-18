@@ -78,7 +78,7 @@ def ref_anomaly_mask_pre_refactor(df):
     return (~is_alt) & (rates.abs() > 30)
 
 
-def test_default_config_reproduces_the_five_hardcoded_sites(df):
+def test_default_config_reproduces_the_five_hardcoded_sites(df, tmp_cfg):
     got = tc.dev_alert_mask(df)
     assert list(got) == list(ref_dev_alert_mask_pre_refactor(df))
     assert tc.count_dev_alerts(df) == int(ref_dev_alert_mask_pre_refactor(df).sum()) == 5
@@ -90,7 +90,7 @@ def test_default_config_reproduces_anomaly_count(df):
     assert tc.count_anomalies(df) == 5
 
 
-def test_alert_uses_ge_and_anomaly_uses_gt(df):
+def test_alert_uses_ge_and_anomaly_uses_gt(df, tmp_cfg):
     """边界方向不许翻：预警是 ≥10（第 1 行算），真异常是 >30（30.1 才算）。"""
     assert bool(tc.dev_alert_mask(df).iloc[0])
     only_9_99 = pd.DataFrame([{"偏差率(%)": 9.99, "数量-实际": 5.0, "数量-定额": 10.0}])

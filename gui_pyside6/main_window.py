@@ -1189,7 +1189,7 @@ class MainWindow(QMainWindow):
                     self.filter_panel.blockSignals(False)
         except Exception as _e:
             print(f"[WARN] 分析完成后清筛选失败(不影响主流程): {_e}", flush=True)
-        self._on_factory_changed('全部')
+        self._on_factory_changed(self._startup_factory())
         QApplication.processEvents()
 
         try:
@@ -2653,6 +2653,22 @@ class MainWindow(QMainWindow):
     def _on_factory_changed(self, factory_name):
         """工厂切换（v43.316 真身迁入 DataController._on_factory_changed，此处薄委托）。"""
         return self.data_controller._on_factory_changed(factory_name)
+
+    def _startup_factory(self):
+        """分析完成后默认落到哪个工厂：能认出“上次看的厂”就回到它，否则全部。
+
+        食品厂 / 饮料厂两块业务本来就互不相干，每次分析都要手动再切一次很烦；
+        这里只恢复选择，不改变任何统计口径。
+        """
+        try:
+            from core.factory_context import pick_startup_factory
+            keys = list(getattr(self.analysis_controller, 'factory_data', {}) or {})
+            picked = pick_startup_factory(keys)
+            if picked is not None:
+                return picked
+        except Exception:
+            pass
+        return '全部'
 
     # -----------------------------------------------------------
     # 统计与合计

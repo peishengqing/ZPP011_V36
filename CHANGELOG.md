@@ -4,6 +4,27 @@
 
 ---
 
+## v44.01 — 食品厂 / 饮料厂分开看 + 导入前数据体检
+
+**发布日期：2026-11-18**
+
+### ✨ 新增
+- **工厂选择记忆**：切换工厂后写入 <code>config/factory.json</code>，下次分析完成自动回到上次看的厂；选「全部」或认不出名称时不写。食品厂 / 饮料厂互不相干，不再每次手动重切。
+- **每厂独立配置**：新增 <code>core/factory_context.py</code>。<code>config/factories/&lt;1101|1102&gt;/</code> 下存在同名文件即覆盖共享的自动已读 / 自动隔离 / 阈值配置，不存在则照旧共用；读写各自解析，切换工厂无需重启。`python -m core.factory_context --use 1101 --migrate auto_read_rules.json` 可把当前共享配置复制成该厂起点。
+- **导入前数据体检**：新增 <code>analysis/data_health.py</code>（只读）。检查必需列 / 核心列 / 空行 / 完全重复行 / 关键列空值 / 数值列混入文本 / 日期解析失败 / 定额为 0 / 税率与含税系数两种写法 / 工厂分布，给出体检分与 HTML 单页；<code>python -m analysis.data_health &lt;xlsx&gt; --out 体检单.html</code>。
+
+### 🔧 修复
+- **配置路径可重定向**：<code>ZPP011_CONFIG_DIR</code> 生效（规则 / 隔离 / 阈值三类配置）。此前源码模式固定解析到项目 <code>config/</code>，测试保存配置会写到真实目录——本次由新用例暴露，已加隔离并回滚被误写的 <code>config/auto_read_rules.json</code>。
+- **阈值用例钉住默认配置**：<code>test_filter_plan_consistency.py</code>、<code>test_threshold_config_phase4e.py</code> 的部分用例依赖现场阈值文件（alert=12.5%），改为显式使用默认值，避免环境相关失败。
+
+### 🔍 核查
+- 「规则影响预览」已存在：<code>gui_pyside6/widgets/rule_preview_widget.py</code>（规则中心第 ④ 页，逐条规则影子命中），本次未重复实现；金额 / 物料影响面留待后续。
+- 工厂分组与主表切换原本已有（<code>DataController._on_factory_changed</code>）；本次只补“记住选择”与“规则/阈值随厂隔离”。
+
+### ✅ 验证
+- <code>tests/unit</code> + 黄金基线：773 passed / 2 skipped / 4 xpassed。
+- pyflakes 无未定义名；真实 <code>config/</code> 未被测试改动。
+
 ## v43.409 — 推送门禁自愈
 
 **发布日期：2026-11-18**

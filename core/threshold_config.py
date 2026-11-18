@@ -51,6 +51,26 @@ from core.auto_read_rules import _resolve_config_path
 
 CONFIG_PATH = _resolve_config_path("threshold_config.json")
 
+
+def _active_config_path(for_write=False):
+    """当前生效的阈值文件路径。
+
+    优先级：工厂隔离（有活动工厂）→ ZPP011_CONFIG_DIR → 模块常量 CONFIG_PATH。
+    最后一级保证既有调用/测试对 CONFIG_PATH 的 patch 仍然有效。
+    """
+    try:
+        from core.factory_context import resolve_config, write_target
+        override = write_target("threshold_config.json") if for_write \
+            else resolve_config("threshold_config.json")
+        if override:
+            return override
+    except Exception:
+        pass
+    env_dir = os.environ.get("ZPP011_CONFIG_DIR")
+    if env_dir:
+        return os.path.join(os.path.abspath(env_dir), "threshold_config.json")
+    return CONFIG_PATH
+
 DEFAULTS = {
     "alert_dev_rate_pct": 10.0,
     "anomaly_dev_rate_pct": 30.0,
@@ -87,8 +107,10 @@ def load_threshold_config():
     """
     cfg = dict(DEFAULTS)
     try:
-        if os.path.exists(CONFIG_PATH):
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        # 每次读盘重新解析：工厂切换后无需重启（多工厂隔离，见 core/factory_context.py）
+        path = _active_config_path()
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
                 user = json.load(f)
             if isinstance(user, dict):
                 cfg.update(user)
@@ -112,13 +134,14 @@ def _normalize(cfg):
 def save_threshold_config(cfg):
     """原子写回，返回真正生效的配置（同时刷新进程内缓存）。"""
     merged = _normalize(cfg or {})
-    d = os.path.dirname(CONFIG_PATH)
+    config_path = _active_config_path(for_write=True)
+    d = os.path.dirname(config_path)
     if d:
         os.makedirs(d, exist_ok=True)
-    tmp = CONFIG_PATH + ".tmp"
+    tmp = config_path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(merged, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, CONFIG_PATH)
+    os.replace(tmp, config_path)
     global _cache
     _cache = dict(merged)
     return merged

@@ -57,6 +57,18 @@ def _resolve_config_path(filename):
       覆盖。读不到持久化文件时，load 会回退到打包内置默认（见 _bundle_config_path），
       保证首次启动仍有默认规则。
     """
+    # 多工厂隔离：当前工厂存在同名配置时优先用它（见 core/factory_context.py）
+    try:
+        from core.factory_context import resolve_config as _factory_override
+        _override = _factory_override(filename)
+        if _override:
+            return _override
+    except Exception:
+        pass
+    # 测试/多实例部署可整体重定向配置根（不设则完全不变）
+    env_config_dir = os.environ.get("ZPP011_CONFIG_DIR")
+    if env_config_dir:
+        return os.path.join(os.path.abspath(env_config_dir), filename)
     if getattr(sys, "frozen", False):
         project_root = os.environ.get("ZPP011_PROJECT_ROOT")
         if project_root:
@@ -199,7 +211,8 @@ def load_auto_quarantine_config():
     """
     cfg = {"enabled": DEFAULT_CONFIG["enabled"], "rules": [dict(DEFAULT_RULE)]}
     try:
-        src = CONFIG_PATH
+        # 每次加载都重新解析路径：切换工厂后无需重启进程（动态生效）
+        src = _resolve_config_path("auto_quarantine_config.json")
         if not os.path.exists(src):
             # 持久化文件不存在 → 回退打包内置默认（仅首次启动或文件被删）
             bundle = _bundle_config_path("auto_quarantine_config.json")
@@ -233,17 +246,24 @@ def save_auto_quarantine_config(cfg):
     }
     if not merged["rules"]:
         merged["rules"] = [dict(DEFAULT_RULE)]
-    config_dir = os.path.dirname(CONFIG_PATH)
+    config_path = None
+    try:
+        from core.factory_context import write_target as _factory_write
+        config_path = _factory_write("auto_quarantine_config.json")
+    except Exception:
+        config_path = None
+    config_path = config_path or _resolve_config_path("auto_quarantine_config.json")
+    config_dir = os.path.dirname(config_path)
     try:
         os.makedirs(config_dir, exist_ok=True)
     except OSError:
         logging.error("无法创建配置目录: %s", config_dir)
         raise
-    tmp_path = CONFIG_PATH + ".tmp"
+    tmp_path = config_path + ".tmp"
     try:
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(merged, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, CONFIG_PATH)
+        os.replace(tmp_path, config_path)
     except Exception:
         # 写临时文件失败时清理临时文件，避免残留
         try:
