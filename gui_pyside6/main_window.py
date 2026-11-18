@@ -772,13 +772,13 @@ class MainWindow(QMainWindow):
             table.setSelectionMode(QAbstractItemView.ExtendedSelection)  # 支持 Ctrl/Shift 多选，点击行即高亮选中
             table.verticalHeader().setVisible(False)
             layout.addWidget(table)
-            # v43.300：形式收编（mode='off' 不启用自动重算）。本表列 0-5 为 Fixed
-            # 精算宽度、列 6/7 为 Stretch 自动填满，本身已随窗口变宽消留白；若挂
-            # distribute，_distribute_extra 以「视口全宽」为预算却只累加非 Fixed
-            # 列宽，会算出虚高余量并对 Stretch 列 setColumnWidth（语义冲突，可能
-            # 撑出横向滚动条破坏布局）。按「别破坏 Stretch」红线只做保活、保留手动能力。
+            # v43.399：变动提醒表列宽启用真正的内容自适应（裴哥要求）。
+            # 改造前 mode='off' + 8 列 Fixed + 2 列 Stretch，只是形式收编、从不重算，
+            # 长物料名/长备注会被 Fixed 列截断；现在全列交给 AdaptiveTable：
+            # content 模式按表头 + 限量采样（≤120 行）估宽，再把视口余量分给可见列，
+            # 窗口变宽自动消留白、变窄保留横向滚动（不硬压）。
             # 置于 _populate 外（只执行一次），避免表格刷新时重复安装控制器。
-            install_adaptive(table, mode='off', respect_fixed=True,
+            install_adaptive(table, mode='content', respect_fixed=False,
                              key='audit_change_detail')
 
             # 待处理变动列表（标记已读后从此移除并刷新表格）；行内 UserRole 存 remaining 索引，排序/部分标记后仍可正确映射
@@ -827,16 +827,14 @@ class MainWindow(QMainWindow):
                         QApplication.processEvents()
                 if prog:
                     prog.setValue(len(show_list))
-                # 列宽：手动设定固定/拉伸，避免 ResizeToContents 在大量行时逐行测量导致卡顿
+                # v43.399：列宽改由 AdaptiveTable 统一自适应（不再手动 Fixed/Stretch，
+                # 那会覆盖自适应结果）。表头设为 Interactive 让 setColumnWidth 生效；
+                # 自适应在 populate 收尾用 schedule_initial() 延迟一拍触发，避免阻塞首帧。
                 header = table.horizontalHeader()
-                fixed_widths = {0: 100, 1: 90, 2: 100, 3: 110, 4: 200, 5: 90, 8: 130, 9: 130}
-                for col, w in fixed_widths.items():
-                    header.setSectionResizeMode(col, QHeaderView.Fixed)
-                    table.setColumnWidth(col, w)
+                header.setSectionResizeMode(QHeaderView.Interactive)
+                header.setStretchLastSection(False)
                 name_col = 4
                 name_max_w = 200
-                header.setSectionResizeMode(6, QHeaderView.Stretch)  # 旧值
-                header.setSectionResizeMode(7, QHeaderView.Stretch)  # 新值
                 # 仅在小数据量时做逐行字号缩放（大数据量跳过，避免逐行 QFontMetrics 卡顿）
                 n = len(show_list)
                 if n <= 2000:
@@ -859,6 +857,10 @@ class MainWindow(QMainWindow):
                             if it:
                                 it.setFont(shrink_font)
                 table.setSortingEnabled(True)
+                # v43.399：数据刷新后触发列宽自适应（延迟一拍，避免逐行测宽卡首帧）
+                _adaptive = getattr(table, '_adaptive_table', None)
+                if _adaptive is not None:
+                    _adaptive.schedule_initial()
 
             _populate(remaining[:MAX_DISPLAY], with_progress=True)
 
