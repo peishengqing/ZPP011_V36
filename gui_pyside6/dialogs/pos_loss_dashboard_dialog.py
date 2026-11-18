@@ -37,6 +37,7 @@ from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.locate import locate_row, drill_to_workshop, compute_mom_badge
 from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.utils.excel_autofit import to_excel_autofit
+from gui_pyside6.utils.board_layouts import BoardLayoutManager
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
 from gui_pyside6.utils.semi_class import merge_semi_class_values, ensure_semi_class_column  # v43.148 固定分类清单 / v43.210 补列
@@ -369,6 +370,9 @@ class PosLossDashboardDialog(QDialog):
         # 自定义表头：SortBadgeHeader 画 Excel 式取值过滤漏斗标（橙色三角）
         self.header = SortBadgeHeader(Qt.Horizontal, self.table_view)
         self.table_view.setHorizontalHeader(self.header)
+        # v43.393：启用列头拖拽重排（顺序变化经 sectionMoved 落盘 board_layouts.json；
+        # 能力在 QHeaderView 上，必须设在最终生效的 header 对象上）
+        self.header.setSectionsMovable(True)
         self._sort_ctrl = enable_click_sort(
             self.table_view, lambda: getattr(self, "source_model", None), skip_cols=())
         # Excel 式列头取值筛选控制器：筛选模式→弹层；否则委托排序
@@ -395,6 +399,10 @@ class PosLossDashboardDialog(QDialog):
         self.header.setMaximumSectionSize(420)
         self.header.setStretchLastSection(False)
         self.table_view.installEventFilter(self)
+        # v43.393：拖动列头后即时保存列顺序（key=pos_loss）
+        self.header.sectionMoved.connect(
+            lambda _li, _o, _n: BoardLayoutManager.save_board_order(
+                'pos_loss', BoardLayoutManager.current_column_order(self.table_view)))
         layout.addWidget(self.table_view)
 
         # ---- 底部按钮 ----
@@ -807,6 +815,9 @@ class PosLossDashboardDialog(QDialog):
             import traceback
             traceback.print_exc()
         self.table_view.verticalHeader().setDefaultSectionSize(28)
+        # v43.393：按 board_layouts.json 恢复用户自定义列顺序
+        BoardLayoutManager.restore_column_order(
+            self.table_view, BoardLayoutManager.load_board_order('pos_loss') or [])
         if "data_id" in df.columns:
             self.table_view.setColumnHidden(df.columns.get_loc("data_id"), True)
         # 初始化半成品重分类筛选器（QComboBox 下拉：全部 + 固定 6 分类 + 数据额外值）

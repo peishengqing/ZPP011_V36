@@ -13,6 +13,7 @@ v43.264：操作栏/菜单 emoji → 内联 SVG 线性图标（icons.py），按
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QLabel,
     QPushButton, QToolButton, QMenu, QWidgetAction,
+    QDialog, QListWidget, QListWidgetItem, QDialogButtonBox,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
@@ -27,6 +28,104 @@ def _icon_action(menu: QMenu, icon: str, text: str, handler) -> QAction:
     act.triggered.connect(handler)
     menu.addAction(act)
     return act
+
+
+# v43.393：看板菜单默认清单 (key, icon, 文案, MainWindow 方法名)。
+# 顺序可由用户在「更多 → 看板菜单顺序…」里调整，落盘 board_layouts.json 的
+# __board_menu__ 键；默认顺序保持 v43.392 的前置结果（隔离区/未投料紧跟未读看板）。
+BOARD_MENU_ITEMS = [
+    ("unread", "eye", "未读看板", "_show_unread_dashboard"),
+    ("quarantine", "lock", "隔离区", "_open_quarantine_dialog"),
+    ("unfed", "flag", "未投料", "_show_unfed_dashboard"),
+    ("audit_changes", "edit", "变动提醒", "_show_audit_changes_dialog"),
+    ("alert", "bell", "替代料看板", "_show_alert_dashboard"),
+    ("deviation_warning", "alert", "偏差率预警", "_show_deviation_warning_dialog"),
+    ("neg_loss", "trending-down", "负损看板", "_show_neg_loss_dashboard"),
+    ("pos_loss", "trending-up", "正损看板", "_show_pos_loss_dashboard"),
+    ("data_stability", "clipboard", "数据稳定性", "_show_data_stability_dashboard"),
+    ("alt_chain", "link", "替代料长链", "_show_alt_chain_dashboard"),
+    ("semi", "box", "半成品看板", "_show_semi_dashboard"),
+    ("flip_check", "refresh", "翻箱守恒", "_show_flip_check_dashboard"),
+]
+
+
+def _board_menu_order():
+    """读用户自定义的看板菜单顺序（key 列表）；无配置返回 None。"""
+    from gui_pyside6.utils.board_layouts import BoardLayoutManager
+    order = BoardLayoutManager.load_board_order("__board_menu__")
+    if not order:
+        return None
+    default_keys = [k for k, *_ in BOARD_MENU_ITEMS]
+    valid = [k for k in order if k in set(default_keys)]
+    # 配置后新增的看板殿后，防漏
+    valid += [k for k in default_keys if k not in set(valid)]
+    return valid
+
+
+def _fill_boards_menu(menu, mw):
+    """按（可能自定义的）顺序把看板项填进 menu。"""
+    order = _board_menu_order() or [k for k, *_ in BOARD_MENU_ITEMS]
+    by_key = {k: (icon, text, slot) for k, icon, text, slot in BOARD_MENU_ITEMS}
+    for k in order:
+        icon, text, slot = by_key[k]
+        _icon_action(menu, icon, text, getattr(mw, slot))
+    return menu
+
+
+def _rebuild_boards_menu(mw):
+    """按当前配置重建看板下拉菜单（用户调整顺序后调用）。"""
+    new_menu = QMenu(mw)
+    _fill_boards_menu(new_menu, mw)
+    mw.action_btn_boards.setMenu(new_menu)
+
+
+def _open_board_menu_order_dialog(mw):
+    """「更多 → 看板菜单顺序…」：上移/下移调整看板入口顺序，保存后立即生效。"""
+    order = _board_menu_order() or [k for k, *_ in BOARD_MENU_ITEMS]
+    text_of = {k: text for k, _i, text, _s in BOARD_MENU_ITEMS}
+    dlg = QDialog(mw)
+    dlg.setWindowTitle("调整看板菜单顺序")
+    dlg.setMinimumWidth(320)
+    lay = QVBoxLayout(dlg)
+    tip = QLabel("选中一项后用「上移 / 下移」调整顺序，确定后保存。")
+    lay.addWidget(tip)
+    lst = QListWidget(dlg)
+    for k in order:
+        it = QListWidgetItem(text_of[k])
+        it.setData(Qt.UserRole, k)
+        lst.addItem(it)
+    lay.addWidget(lst, 1)
+    btn_row = QHBoxLayout()
+    btn_up = QPushButton("上移")
+    btn_down = QPushButton("下移")
+    btn_row.addWidget(btn_up)
+    btn_row.addWidget(btn_down)
+    btn_row.addStretch(1)
+    lay.addLayout(btn_row)
+
+    def _move(delta):
+        row = lst.currentRow()
+        if row < 0:
+            return
+        nxt = row + delta
+        if not (0 <= nxt < lst.count()):
+            return
+        it = lst.takeItem(row)
+        lst.insertItem(nxt, it)
+        lst.setCurrentRow(nxt)
+
+    btn_up.clicked.connect(lambda: _move(-1))
+    btn_down.clicked.connect(lambda: _move(1))
+    btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+    btn_box.accepted.connect(dlg.accept)
+    btn_box.rejected.connect(dlg.reject)
+    lay.addWidget(btn_box)
+
+    if dlg.exec() == QDialog.Accepted:
+        keys = [lst.item(i).data(Qt.UserRole) for i in range(lst.count())]
+        from gui_pyside6.utils.board_layouts import BoardLayoutManager
+        BoardLayoutManager.save_board_order("__board_menu__", keys)
+        _rebuild_boards_menu(mw)
 
 
 def _on_audit_action(mw):
@@ -161,21 +260,10 @@ class LayoutComposer:
 
         # 为看板按钮添加下拉菜单
         mw.action_btn_boards.setPopupMode(QToolButton.MenuButtonPopup)
+        # v43.393：菜单项抽成 BOARD_MENU_ITEMS 清单，顺序可由用户调整
+        # （「更多 → 看板菜单顺序…」），默认顺序保持 v43.392 的前置结果。
         boards_menu = QMenu(mw)
-        _icon_action(boards_menu, "eye", "未读看板", lambda: mw._show_unread_dashboard())
-        # v43.392：按裴哥要求，「隔离区」「未投料」提到「未读看板」之后（高频入口前置），
-        # 其余项相对顺序不变。
-        _icon_action(boards_menu, "lock", "隔离区", lambda: mw._open_quarantine_dialog())
-        _icon_action(boards_menu, "flag", "未投料", lambda: mw._show_unfed_dashboard())
-        _icon_action(boards_menu, "edit", "变动提醒", lambda: mw._show_audit_changes_dialog())
-        _icon_action(boards_menu, "bell", "替代料看板", lambda: mw._show_alert_dashboard())
-        _icon_action(boards_menu, "alert", "偏差率预警", lambda: mw._show_deviation_warning_dialog())
-        _icon_action(boards_menu, "trending-down", "负损看板", lambda: mw._show_neg_loss_dashboard())
-        _icon_action(boards_menu, "trending-up", "正损看板", lambda: mw._show_pos_loss_dashboard())
-        _icon_action(boards_menu, "clipboard", "数据稳定性", lambda: mw._show_data_stability_dashboard())
-        _icon_action(boards_menu, "link", "替代料长链", lambda: mw._show_alt_chain_dashboard())
-        _icon_action(boards_menu, "box", "半成品看板", lambda: mw._show_semi_dashboard())
-        _icon_action(boards_menu, "refresh", "翻箱守恒", lambda: mw._show_flip_check_dashboard())
+        _fill_boards_menu(boards_menu, mw)
         mw.action_btn_boards.setMenu(boards_menu)
         action_layout.addWidget(mw.action_btn_boards)
 
@@ -267,6 +355,9 @@ class LayoutComposer:
         _icon_action(more_menu, "shield", "自动隔离规则（规则中心）",
                      lambda: mw._open_auto_quarantine_rule_dialog())
         _icon_action(more_menu, "id-card", "物料画像", lambda: mw._show_material_profile())
+        # v43.393：看板菜单顺序调整入口
+        _icon_action(more_menu, "chart", "看板菜单顺序…",
+                     lambda: _open_board_menu_order_dialog(mw))
         _icon_action(more_menu, "folder-open", "输出目录…", lambda: mw._select_output_dir())
         more_menu.addSeparator()
         _collapse_act = QAction("收起左栏展开项", more_menu)

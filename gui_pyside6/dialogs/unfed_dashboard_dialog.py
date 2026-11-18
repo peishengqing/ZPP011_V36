@@ -36,6 +36,7 @@ from gui_pyside6.dialogs.col_filter_ui import (
 )
 from gui_pyside6.models.data_frame_model import DataFrameModel
 from gui_pyside6.utils.board_empty_hint import set_empty_hint
+from gui_pyside6.utils.board_layouts import BoardLayoutManager
 from gui_pyside6.utils.column_filter import ColumnFilterController
 from gui_pyside6.utils.icons import make_button
 from gui_pyside6.utils.locate import locate_row
@@ -240,6 +241,8 @@ class UnfedDashboardDialog(QDialog):
         tv.horizontalHeader().setStretchLastSection(False)
         enable_row_numbers(tv)
         tv.verticalHeader().setDefaultSectionSize(28)
+        # v43.393：启用列头拖拽重排（能力在 QHeaderView 上，不是 QTableView）
+        header.setSectionsMovable(True)
         return tv, header
 
     def _wire_col_filter(self, tv, header, model_getter):
@@ -343,6 +346,15 @@ class UnfedDashboardDialog(QDialog):
         # 不接列头筛选/双击定位（数据是聚合结果，无需回溯主表行）。
         self.pivot_table_view, self.pivot_header = self._make_board_table(
             locate_on_double_click=False)
+
+        # v43.393：用户拖动列头重排后即时落盘（组件页/订单页各自独立记忆）。
+        # 恢复侧在 _after_render 做（restore_column_order 内部已屏蔽信号，不会误触发）。
+        for _tv, _key in ((self.table_view, 'unfed'),
+                          (self.order_table_view, 'unfed_order')):
+            _tv.horizontalHeader().sectionMoved.connect(
+                lambda _li, _o, _n, _tv=_tv, _k=_key:
+                BoardLayoutManager.save_board_order(
+                    _k, BoardLayoutManager.current_column_order(_tv)))
 
         self.tabs = QTabWidget()
         self.tabs.addTab(self.table_view, "组件明细")
@@ -507,6 +519,12 @@ class UnfedDashboardDialog(QDialog):
                 df0 = model.getDataFrame()
                 col = df0.columns.get_loc('流程订单') if '流程订单' in df0.columns else 0
                 sort_ctrl.apply_default(col, Qt.AscendingOrder)
+        # v43.393：按 board_layouts.json 恢复用户自定义列顺序（拖动列头时才落盘）
+        key = ('unfed_order' if tv is getattr(self, 'order_table_view', None)
+               else 'unfed' if tv is getattr(self, 'table_view', None) else None)
+        if key:
+            BoardLayoutManager.restore_column_order(
+                tv, BoardLayoutManager.load_board_order(key) or [])
 
     def _refresh_footer(self):
         """底部计数 + 订单统计行：按当前活动页签取数（组件页=条、订单页=单）。"""

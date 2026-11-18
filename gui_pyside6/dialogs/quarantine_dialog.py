@@ -37,6 +37,7 @@ from gui_pyside6.utils.table_sort import enable_click_sort
 from gui_pyside6.widgets.sort_badge_header import SortBadgeHeader
 from gui_pyside6.utils.column_filter import ColumnFilterController
 from gui_pyside6.utils.board_empty_hint import set_empty_hint
+from gui_pyside6.utils.board_layouts import BoardLayoutManager
 from gui_pyside6.utils.row_number_gutter import enable_row_numbers
 from gui_pyside6.utils.icons import add_icon_action, make_button
 
@@ -172,6 +173,9 @@ class QuarantineDialog(QDialog):
         # 自定义表头：SortBadgeHeader 画 Excel 式取值过滤漏斗标（橙色三角）
         self.header = SortBadgeHeader(Qt.Horizontal, self.table_view)
         self.table_view.setHorizontalHeader(self.header)
+        # v43.393：启用列头拖拽重排（顺序变化经 sectionMoved 落盘 board_layouts.json；
+        # 能力在 QHeaderView 上，必须设在最终生效的 header 对象上）
+        self.header.setSectionsMovable(True)
         # 点击列头排序（显式连接，规避 Qt6 下 setSortingEnabled 内部连接失效）。
         # 第0列 _read 为内部列，不参与排序。
         self._sort_ctrl = enable_click_sort(
@@ -190,6 +194,10 @@ class QuarantineDialog(QDialog):
         self.header.sectionClicked.connect(self.col_filter_ctrl.on_header_clicked)
         # v43.300：取消末列独吞余量，由自适应控制器接管列宽
         self.table_view.horizontalHeader().setStretchLastSection(False)
+        # v43.393：拖动列头后即时保存列顺序（key=quarantine）
+        self.table_view.horizontalHeader().sectionMoved.connect(
+            lambda _li, _o, _n: BoardLayoutManager.save_board_order(
+                'quarantine', BoardLayoutManager.current_column_order(self.table_view)))
         enable_row_numbers(self.table_view)
         self.table_view.verticalHeader().setDefaultSectionSize(28)
         self.col_filter_ctrl.filtered_cols_changed.connect(
@@ -683,6 +691,9 @@ class QuarantineDialog(QDialog):
         self.source_model = DataFrameModel()
         self.source_model.setDataFrame(df)
         self.table_view.setModel(self.source_model)
+        # v43.393：按 board_layouts.json 恢复用户自定义列顺序
+        BoardLayoutManager.restore_column_order(
+            self.table_view, BoardLayoutManager.load_board_order('quarantine') or [])
         n_shown = 0 if df is None else len(df)
         n_total = 0 if getattr(self, "full_df", None) is None else len(self.full_df)
         set_empty_hint(self.table_view, "" if n_shown else (
