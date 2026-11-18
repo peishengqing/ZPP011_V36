@@ -264,7 +264,11 @@ class UnreadDashboard(DashboardShell):
         ndq_layout.addWidget(self._net_dev_qty_max)
 
         ndq_layout.addStretch()
-        current_layout.addWidget(self.gp_net_dev_qty)
+        # v43.404：不再作为第四组独立卡片，插到第一组「未读维度」的
+        # 「已读状态」行之后（unread_layout 顺序：cat_row=0, read_row=1, kw_row=2…），
+        # 与另外四个看板「已读后面就是净偏差数量」的排布一致。
+        # 对象在 read_row 之后才创建，故用 insertWidget 插到 index=2（kw_row 前）。
+        unread_layout.insertWidget(2, self.gp_net_dev_qty)
 
     # ── 筛选控件回调 ──
     def _on_cat_changed(self, text):
