@@ -14,7 +14,7 @@
 放标题栏），点击发 ``source_requested``，由 MainWindow 走原来的 _select_input_file。
 """
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QLabel, QPushButton, QVBoxLayout,
+    QWidget, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QButtonGroup,
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -94,6 +94,35 @@ class TitleBarWidget(QWidget):
         ctx.addWidget(self.ctx_value)
         layout.addLayout(ctx, 0)
 
+        # ── 工厂切换：全部 / 食品 / 饮料（点一下，主表与统计整体切到该厂）──
+        self.factory_seg = QWidget()
+        seg_lay = QHBoxLayout(self.factory_seg)
+        seg_lay.setContentsMargins(0, 0, 0, 0)
+        seg_lay.setSpacing(4)
+        self._factory_group = QButtonGroup(self)
+        self._factory_group.setExclusive(True)
+        self._factory_buttons = {}
+        for key, text, tip in (
+            ("全部", "全部", "食品厂 + 饮料厂一起看"),
+            ("1101", "食品", "只看食品厂（1101）"),
+            ("1102", "饮料", "只看饮料厂（1102）"),
+        ):
+            btn = QPushButton(text)
+            btn.setCheckable(True)
+            btn.setFixedHeight(26)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setToolTip(tip)
+            btn.setObjectName("factorySegBtn")
+            btn.clicked.connect(lambda _checked=False, k=key: self.factory_selected.emit(k))
+            if key != "全部":
+                btn.setEnabled(False)      # 未分析前无工厂数据可切
+            self._factory_group.addButton(btn)
+            seg_lay.addWidget(btn)
+            self._factory_buttons[key] = btn
+        self._refresh_factory_style()
+        self._factory_buttons["全部"].setChecked(True)
+        layout.addWidget(self.factory_seg, 0, Qt.AlignVCenter)
+
         layout.addStretch()
 
         # ── 右端：数据源（可点=选文件）+ 暗色切换 ──
@@ -112,6 +141,53 @@ class TitleBarWidget(QWidget):
         self.theme_btn.setCursor(Qt.PointingHandCursor)
         self.theme_btn.clicked.connect(self.theme_toggled.emit)
         layout.addWidget(self.theme_btn, 0, Qt.AlignVCenter)
+
+    def _refresh_factory_style(self):
+        """工厂切换按钮样式（随主题取色，不写死 hex）。"""
+        checked_bg = Thm.color("primary")
+        checked_fg = Thm.color("onPrimary")
+        for btn in self._factory_buttons.values():
+            btn.setStyleSheet(
+                "QPushButton#factorySegBtn{"
+                f"border:1px solid {Thm.color('border')};"
+                f"background:{Thm.color('surface')};color:{Thm.color('textMuted')};"
+                "border-radius:6px;padding:0 12px;font-size:12px;}"
+                "QPushButton#factorySegBtn:hover{"
+                f"border-color:{Thm.color('borderStrong')};color:{Thm.color('text')};}}"
+                "QPushButton#factorySegBtn:checked{"
+                f"background:{checked_bg};color:{checked_fg};border-color:{checked_bg};}}"
+                "QPushButton#factorySegBtn:disabled{"
+                f"color:{Thm.color('textFaint')};background:{Thm.color('bg')};}}"
+            )
+
+    def set_available_factories(self, keys):
+        """按数据里实际存在的工厂启用按钮；认不出的键忽略。
+
+        keys 为 factory_data 的键（可能是 1101 / 1101食品 / 云南达利-食品厂）。
+        """
+        from core.factory_context import identify
+        codes = {identify(k) for k in (keys or [])}
+        for code in ("1101", "1102"):
+            btn = self._factory_buttons.get(code)
+            if btn is not None:
+                btn.setEnabled(code in codes)
+
+    def set_current_factory(self, key_or_name):
+        """把选中态同步到当前工厂（不触发 factory_selected）。"""
+        from core.factory_context import identify
+        target = identify(key_or_name) or "全部"
+        btn = self._factory_buttons.get(target)
+        if btn is not None and btn.isEnabled() is False:
+            target = "全部"
+            btn = self._factory_buttons["全部"]
+        if btn is not None:
+            btn.setChecked(True)
+
+    def current_factory_key(self):
+        for key, btn in self._factory_buttons.items():
+            if btn.isChecked():
+                return key
+        return "全部"
 
     def set_data_context(self, source_name: str, when: str = ""):
         """刷新数据上下文（设计稿第 1 项）：数据源名 + 本次分析时刻。"""

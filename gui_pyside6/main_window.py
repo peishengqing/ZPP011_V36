@@ -399,6 +399,8 @@ class MainWindow(QMainWindow):
         # v43.349 第五期A：标题栏「数据源」胶囊 = 选 Excel 的唯一入口（左栏改成纯
         # 导航后，文件选择从 left_panel 上移到标题栏；输出目录进「更多」菜单）。
         self.title_bar.source_requested.connect(self._select_input_file)
+        # 标题栏「全部 / 食品 / 饮料」三段开关：点一下整屏切到该厂
+        self.title_bar.factory_selected.connect(self._on_factory_picked)
 
     def _setup_shortcuts(self):
         QShortcut(QKeySequence("F5"), self).activated.connect(self._start_analysis)
@@ -2652,7 +2654,26 @@ class MainWindow(QMainWindow):
 
     def _on_factory_changed(self, factory_name):
         """工厂切换（v43.316 真身迁入 DataController._on_factory_changed，此处薄委托）。"""
-        return self.data_controller._on_factory_changed(factory_name)
+        result = self.data_controller._on_factory_changed(factory_name)
+        try:
+            self.title_bar.set_current_factory(factory_name)
+        except Exception:
+            pass
+        return result
+
+    def _on_factory_picked(self, code):
+        """标题栏三段开关 → 找到数据里实际的工厂键再切（键可能是 1101 / 1101食品）。"""
+        keys = list(getattr(self.analysis_controller, 'factory_data', {}) or {})
+        if code == '全部':
+            self._on_factory_changed('全部')
+            return
+        from core.factory_context import identify
+        for key in keys:
+            if identify(key) == code:
+                self._on_factory_changed(key)
+                return
+        self.statusBar().showMessage(f"当前数据里没有工厂 {code}", 2500)
+        self.title_bar.set_current_factory(self.title_bar.current_factory_key())
 
     def _startup_factory(self):
         """分析完成后默认落到哪个工厂：能认出“上次看的厂”就回到它，否则全部。
@@ -2663,6 +2684,10 @@ class MainWindow(QMainWindow):
         try:
             from core.factory_context import pick_startup_factory
             keys = list(getattr(self.analysis_controller, 'factory_data', {}) or {})
+            try:
+                self.title_bar.set_available_factories(keys)
+            except Exception:
+                pass
             picked = pick_startup_factory(keys)
             if picked is not None:
                 return picked

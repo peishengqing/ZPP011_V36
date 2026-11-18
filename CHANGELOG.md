@@ -9,6 +9,7 @@
 **发布日期：2026-11-18**
 
 ### ✨ 新增
+- **标题栏三段开关（全部 / 食品 / 饮料）**：标题栏早已定义了 <code>factory_selected</code> 信号却一直无人接线（死按钮）。现在接上：点「食品」主表、统计、筛选、看板全部切到 1101；点「饮料」切到 1102；点「全部」两厂合并显示。未分析出的工厂按钮置灰，选中态随启动恢复同步。
 - **工厂选择记忆**：切换工厂后写入 <code>config/factory.json</code>，下次分析完成自动回到上次看的厂；选「全部」或认不出名称时不写。食品厂 / 饮料厂互不相干，不再每次手动重切。
 - **每厂独立配置**：新增 <code>core/factory_context.py</code>。<code>config/factories/&lt;1101|1102&gt;/</code> 下存在同名文件即覆盖共享的自动已读 / 自动隔离 / 阈值配置，不存在则照旧共用；读写各自解析，切换工厂无需重启。`python -m core.factory_context --use 1101 --migrate auto_read_rules.json` 可把当前共享配置复制成该厂起点。
 - **导入前数据体检**：新增 <code>analysis/data_health.py</code>（只读）。检查必需列 / 核心列 / 空行 / 完全重复行 / 关键列空值 / 数值列混入文本 / 日期解析失败 / 定额为 0 / 税率与含税系数两种写法 / 工厂分布，给出体检分与 HTML 单页；<code>python -m analysis.data_health &lt;xlsx&gt; --out 体检单.html</code>。

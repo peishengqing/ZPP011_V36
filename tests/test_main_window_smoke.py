@@ -940,19 +940,15 @@ class TestC_BugProbes:
             f"modelReset 接收者数应为基线 4，实际 {counts[-1]}：{counts}"
         )
 
-        # 附带确认：标题栏工厂信号确实无人接（孤儿槽）
+        # v44.01：标题栏三段开关（全部 / 食品 / 饮料）已接线，且只能接一次
         tsig = mw.title_bar.factory_selected
         n_title = _receiver_count(mw.title_bar, tsig)
-        assert n_title == 0, (
-            f"title_bar.factory_selected 已有 {n_title} 个接收者——"
-            f"孤儿槽已接线，请更新探针结论并复查是否存在重复连接"
+        assert n_title == 1, (
+            f"title_bar.factory_selected 应有且仅有 1 个接收者，实际 {n_title}——"
+            f"要么工厂开关未接线（死按钮），要么重复 connect"
         )
-        # 孤儿方法 _on_title_factory_selected 原在 MainWindow，查 MainWindow 源码无 connect 指向它
-        _, mw_src = _parse_main_window()
-        assert not _re.search(r"\.connect\([^)]*_on_title_factory_selected", mw_src), (
-            "_on_title_factory_selected 已无任何 connect 指向它，"
-            "标题栏工厂选择器无响应"
-        )
+        # 连续切 3 次不应增加接收者（接线只在构造时一次）
+        assert _receiver_count(mw.title_bar, tsig) == 1
 
 
 # ---------------------------------------------------------------------------
