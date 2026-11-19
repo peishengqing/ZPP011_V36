@@ -14,6 +14,23 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v44.05",
+            "date": "2026-11-19",
+            "features": (
+                "工厂视图与规则命名空间拆开：默认按「全部」规则跑一次，切分工厂不重跑。\n"
+                "① 原来标题栏点分工厂 → remember_factory 会写 config/factory.json，\n"
+                "   连带把自动已读/自动隔离/阈值的配置切到该厂那份；现在只写\n"
+                "   config/ui_state.json（纯视图偏好），规则仍读共享。\n"
+                "② 「上次看的厂」仍会恢复（pick_startup_factory 改读视图偏好）；\n"
+                "   选「全部」会清掉偏好，下次启动回到全部。\n"
+                "③ 启用某厂自己的配置仍需显式操作：env ZPP011_FACTORY 或\n"
+                "   python -m core.factory_context --use 1101。\n"
+                "④ 回归钉死：切厂函数不包含任何规则重算调用，工厂切片天然带 _read。\n"
+                "验证：test_factory_context 34 例 + test_factory_switch_no_rerun 4 例；\n"
+                "   tests/unit 790 passed。"
+            ),
+        },
+        {
             "version": "v44.04",
             "date": "2026-11-19",
             "features": (

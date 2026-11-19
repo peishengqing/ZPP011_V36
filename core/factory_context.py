@@ -22,6 +22,11 @@
 工厂的确定顺序：环境变量 ``ZPP011_FACTORY`` → ``config/factory.json`` →
 ``default``（即不隔离）。
 
+v44.05 起，“上次看的厂”与“读哪套配置”拆开：
+- ``config/ui_state.json`` 只记视图偏好（重启后回到上次看的厂），不影响规则。
+- ``config/factory.json`` 是显式开关（env 或 ``--use``），改了它才会真的换配置文件。
+否则点一下分工厂就会连带换掉自动已读/自动隔离的规则，且看起来像“要重跑一遍”。
+
 命令行
 ------
     python -m core.factory_context --show
@@ -47,6 +52,9 @@ import sys
 ENV_FACTORY = "ZPP011_FACTORY"
 ENV_CONFIG_DIR = "ZPP011_CONFIG_DIR"
 STATE_FILE = "factory.json"
+# 界面状态（上次看的厂）单独存：只影响下次打开时默认落在哪个厂，
+# 不参与 resolve_config —— 否则「点一下 1101」就会把规则文件也换成 1101 那份。
+UI_STATE_FILE = "ui_state.json"
 FACTORIES_DIRNAME = "factories"
 DEFAULT_FACTORY = "default"
 
@@ -192,21 +200,54 @@ def identify(display_name):
 
 
 def remember_factory(display_name):
-    """记住用户选中的工厂（认不出或是「全部」就不写）。返回写入的工厂名或 None。"""
+    """记住用户上次看的厂（只写 UI 状态，不动配置命名空间）。返回工厂名或 None。
+
+    v44.05：原来这里调 set_current_factory()，等于「点一下分工厂就把整套规则
+    切到该厂那份」——用户要的是默认按全部规则跑一遍，切厂只是换视图，不该
+    连带换规则文件、更不该因此重跑自动已读/自动隔离。
+    需要真正启用某厂配置的，走 env ZPP011_FACTORY 或 `--use`，那是显式操作。
+    """
+    text = str(display_name or "").strip()
+    if text in ("全部", "all", "ALL"):
+        _write_ui_state("")
+        return None
     name = identify(display_name)
     if not name:
         return None
     try:
-        set_current_factory(name)
+        _write_ui_state(name)
         return name
     except Exception:
         return None
 
 
+def _write_ui_state(name):
+    root = config_root()
+    os.makedirs(root, exist_ok=True)
+    target = os.path.join(root, UI_STATE_FILE)
+    tmp = target + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"last_viewed_factory": name or ""}, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, target)
+    return target
+
+
+def last_viewed_factory():
+    """上次在标题栏选的厂（仅视图偏好）；没记过返回 None。"""
+    path = os.path.join(config_root(), UI_STATE_FILE)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return _sanitize(str(data.get("last_viewed_factory", ""))) or None
+
+
 def preferred_factory():
-    """启动时想恢复的工厂名；未配置时返回 None。"""
-    name = current_factory()
-    return None if name == DEFAULT_FACTORY else name
+    """启动时想恢复的工厂名（取自视图偏好，与规则命名空间无关）。"""
+    return last_viewed_factory()
 
 
 def pick_startup_factory(keys):
@@ -232,6 +273,7 @@ def describe():
         "factory_dir": factory_dir(name),
         "known": [f["name"] for f in list_factories()],
         "env_factory": os.environ.get(ENV_FACTORY) or "",
+        "view_preference": last_viewed_factory() or "",
     }
 
 
@@ -266,6 +308,7 @@ def main(argv=None):
     if args.show or not (args.list or args.use or args.migrate):
         info = describe()
         print(f"[当前] 工厂={info['current']}  隔离={info['isolated']}")
+        print(f"[视图] 上次看的分厂={info['view_preference'] or '（全部）'}")
         print(f"[路径] 配置根={info['config_root']}")
         print(f"[路径] 工厂目录={info['factory_dir']}")
     return 0

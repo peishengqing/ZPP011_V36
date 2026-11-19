@@ -164,21 +164,28 @@ def test_identify_factory_names(display, expected):
     assert fc.identify(display) == expected
 
 
-def test_remember_factory_persists_and_preferred_reads_it(cfgroot):
+def test_remember_factory_只记住视图_不动规则命名空间(cfgroot):
     assert fc.preferred_factory() is None
     assert fc.remember_factory("云南达利-饮料厂") == "1102"
-    assert fc.current_factory() == "1102"
+    # 视图偏好写进 ui_state.json
+    assert (cfgroot / fc.UI_STATE_FILE).is_file()
     assert fc.preferred_factory() == "1102"
+    # 关键：不再把配置命名空间切到 1102，规则仍读共享
+    assert fc.current_factory() == "default"
+    assert fc.resolve_config("auto_read_rules.json") is None
 
 
 def test_remember_factory_ignores_unknown_and_all(cfgroot):
-    assert fc.remember_factory("全部") is None
     assert fc.remember_factory("某新厂") is None
     assert fc.current_factory() == "default"
+    # 选「全部」= 清掉视图偏好，下次启动回到全部
+    assert fc.remember_factory("1101食品") == "1101"
+    assert fc.remember_factory("全部") is None
+    assert fc.preferred_factory() is None
 
 
 def test_pick_startup_factory_matches_display_variants(cfgroot):
-    fc.set_current_factory("1101")
+    fc.remember_factory("1101食品")
     keys = ["全部", "1102", "1101食品"]
     assert fc.pick_startup_factory(keys) == "1101食品"
     assert fc.pick_startup_factory(["全部", "1102"]) is None

@@ -4,6 +4,20 @@
 
 ---
 
+## v44.05 — 切工厂只换视图，不换规则、不重跑
+
+**发布日期：2026-11-19**
+
+### 🔧 修复
+- **点一下分工厂就把规则换掉**：标题栏切换原先调 <code>remember_factory()</code> → 写 <code>config/factory.json</code>，等于把自动已读 / 自动隔离 / 阈值整套配置切到该厂那份。现在只写 <code>config/ui_state.json</code>（纯视图偏好），规则继续读共享配置——默认就是按「全部」规则跑一遍。
+- **「上次看的厂」照旧恢复**：<code>pick_startup_factory</code> 改读视图偏好；选「全部」会清掉偏好，下次启动回到全部。
+- **显式启用某厂配置仍然可用**：环境变量 <code>ZPP011_FACTORY</code> 或 <code>python -m core.factory_context --use 1101</code>；这才是真正换配置文件的操作。
+
+### ✅ 验证
+- <code>test_factory_context.py</code> 34 例：视图偏好与规则命名空间拆开的断言（切厂后 <code>current_factory()</code> 仍为 default、<code>resolve_config</code> 仍返回 None）。
+- 新增 <code>test_factory_switch_no_rerun.py</code> 4 例：切厂函数中不含任何规则重算调用；工厂切片天然带 <code>_read</code>；自动已读只在分析收尾对整份 df 跑一次。
+- <code>tests/unit</code>：790 passed / 2 skipped / 4 xpassed。
+
 ## v44.04 — 看板默认口径：非隔离区 + 非替代料
 
 **发布日期：2026-11-19**
