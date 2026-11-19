@@ -1,0 +1,118 @@
+{
+  "enabled": true,
+  "exclude_unfed": false,
+  "exclude_units": false,
+  "excluded_units": "",
+  "rules": [
+    {
+      "name": "偏差数量=0",
+      "enabled": true,
+      "ignore_exclude_unfed": false,
+      "ignore_exclude_units": true,
+      "conditions": [
+        {
+          "type": "dev_qty_eq",
+          "params": {
+            "value": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "name": "物料600开头",
+      "enabled": true,
+      "ignore_exclude_unfed": true,
+      "ignore_exclude_units": true,
+      "conditions": [
+        {
+          "type": "mat_code_prefix",
+          "params": {
+            "value": "600"
+          }
+        }
+      ]
+    },
+    {
+      "name": "含胶带,卷膜,白内袋,收缩膜的小偏差",
+      "enabled": true,
+      "ignore_exclude_unfed": false,
+      "ignore_exclude_units": false,
+      "conditions": [
+        {
+          "type": "mat_name_contains",
+          "params": {
+            "value": "胶带,卷膜,白内袋,收缩膜"
+          }
+        },
+        {
+          "type": "dev_qty_range",
+          "params": {
+            "min": -10.0,
+            "max": 10.0
+          }
+        }
+      ]
+    },
+    {
+      "name": "饮料半成品负损",
+      "enabled": true,
+      "ignore_exclude_unfed": false,
+      "ignore_exclude_units": false,
+      "conditions": [
+        {
+          "type": "factory_eq",
+          "params": {
+            "value": "云南达利-饮料厂"
+          }
+        },
+        {
+          "type": "mat_name_not_contains",
+          "params": {
+            "value": "箱,彩罐,不干胶,半成品"
+          }
+        },
+        {
+          "type": "dev_qty_range",
+          "params": {
+            "min": -10.0,
+            "max": 10.0
+          }
+        },
+        {
+          "type": "dev_rate_range",
+          "params": {
+            "min": -10.0,
+            "max": 10.0
+          }
+        },
+        {
+          "type": "mat_code_prefix",
+          "params": {
+            "value": "410"
+          }
+        }
+      ]
+    },
+    {
+      "name": "原料小偏差",
+      "enabled": true,
+      "ignore_exclude_unfed": false,
+      "ignore_exclude_units": false,
+      "conditions": [
+        {
+          "type": "dev_qty_range",
+          "params": {
+            "min": -20.0,
+            "max": 20.0
+          }
+        },
+        {
+          "type": "mat_code_prefix",
+          "params": {
+            "value": "100"
+          }
+        }
+      ]
+    }
+  ]
+}

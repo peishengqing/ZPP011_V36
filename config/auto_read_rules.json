@@ -102,8 +102,8 @@
         {
           "type": "dev_qty_range",
           "params": {
-            "min": -5.0,
-            "max": 5.0
+            "min": -20.0,
+            "max": 20.0
           }
         },
         {
