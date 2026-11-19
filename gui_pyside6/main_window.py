@@ -2051,7 +2051,7 @@ class MainWindow(QMainWindow):
         _hdr.setFixedHeight(SIZE_PX["tableHeader"])
         self.table_view.setWordWrap(False)   # 设计稿 th/td 都是 white-space:nowrap
         self.lock_btn.setChecked(False)
-        self.log("Table model initialized", "info")
+        self.log("主表模型已初始化", "info")
 
     def _on_view_model_data_changed(self):
         df = self.view_model.df

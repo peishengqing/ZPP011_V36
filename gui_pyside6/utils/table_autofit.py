@@ -217,6 +217,33 @@ class AdaptiveTable(QObject):
             return
         widths = [header.sectionSize(c) for c in cols]
         extra = budget - sum(widths)
+        if extra < 0:
+            # 超出视口：只在「稍微超一点」时收回余量（消掉无意义的滚动条）；
+            # 超出太多（窗口很窄 / 列很多）就保留自然宽度，宁可横向滚动也不把
+            # 每列压成 50px 的一堆省略号。
+            need = -extra + 6
+            if need > budget * 0.25:
+                return
+            room = sum(max(0, w - self._min) for w in widths)
+            if room <= 0:
+                return
+            ratio = min(1.0, need / room)
+            for col, current in zip(cols, widths):
+                reducible = max(0, current - self._min)
+                if reducible <= 0:
+                    continue
+                target = max(self._min, int(current - reducible * ratio))
+                if target != current:
+                    view.setColumnWidth(col, target)
+            # 按比例取整会差几个像素，再从最宽列里逐像素收，确保不残留细滚动条
+            for _ in range(32):
+                if sum(header.sectionSize(c) for c in cols) <= budget:
+                    break
+                widest = max(cols, key=lambda c: header.sectionSize(c))
+                if header.sectionSize(widest) <= self._min:
+                    break
+                view.setColumnWidth(widest, header.sectionSize(widest) - 1)
+            return
         if extra < MIN_EXTRA_PX:
             return
         weights = [2.0 if _is_long_text(_col_name(view, c)) else 1.0 for c in cols]

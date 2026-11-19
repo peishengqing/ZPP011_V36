@@ -388,6 +388,8 @@ class LayoutComposer:
         # 等宽字体与正文色，写死 inline style 的话切主题就不跟着 QSS 变了。
         count_box = QWidget()
         count_box.setObjectName("actionHint")
+        # 窄窗口下不与右侧快捷键提示抢空间：给个最小宽度，避免被裁成「共 12 条」
+        count_box.setMinimumWidth(86)
         count_layout = QHBoxLayout(count_box)
         count_layout.setContentsMargins(0, 0, 0, 0)
         count_layout.setSpacing(3)
