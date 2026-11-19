@@ -4,6 +4,21 @@
 
 ---
 
+## v44.04 — 看板默认口径：非隔离区 + 非替代料
+
+**发布日期：2026-11-19**
+
+### ✨ 改进
+- **偏差率预警看板**：<code>隔离区</code> / <code>替代料</code> 两个筛选默认从「全部」改为「否」，打开即默认不含隔离区、不含替代料的行；需要看全量点「全部」。
+  - 替代料判定的 <code>no</code> 分支由 <code>==“否”</code> 改为 <code>!=“是”</code>：列值为空（旧数据、手工拼的 df）也属于非替代料，原写法会把这些行悄悄筛掉。
+- **正损 / 负损看板**（DashboardShell + <code>PosLossContent</code> / <code>NegLossContent</code>）：新增「替代料」三态筛选（全部 / 是 / 否），默认「否」。此前这两块只能筛隔离区，替代料只能靠列头筛选，默认口径也没排除。
+  - 判定统一调用 <code>core.threshold_config.substitute_mask</code>（先看是否替代料 / is_alt 标记列，再看 <code>_替代料组</code>），与主表色标、KPI 同源。
+  - 数据里没有替代料列时，该筛选自动收起，不摆一个不起作用的「否」；抽屉徽章与「重置」也同步为默认口径。
+
+### ✅ 验证
+- 新增 <code>tests/unit/test_board_default_scope.py</code>：7 例覆盖两块看板的默认行数、切换「全部/是」的行为、无替代料列时自动收起、重置回默认口径。
+- <code>tests/unit</code>：786 passed / 2 skipped / 4 xpassed。
+
 ## v44.03 — UI 收尾：列宽回收 / 行数胶囊 / 中文提示
 
 **发布日期：2026-11-19**

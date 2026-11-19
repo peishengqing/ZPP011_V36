@@ -14,6 +14,20 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v44.04",
+            "date": "2026-11-19",
+            "features": (
+                "看板默认口径：非隔离区 + 非替代料。\n"
+                "① 偏差率预警看板：隔离区 / 替代料两个筛选默认改为「否」（此前默认全部）；\n"
+                "   替代料的 no 分支改判「!=\u662f」，列值空白行不再被当成替代料筛掉。\n"
+                "② 正损 / 负损看板（DashboardShell + PosLossContent / NegLossContent）：\n"
+                "   补上「替代料」三态筛选（此前只能靠列头筛选），默认「否」；\n"
+                "   替代料判定统一走 core.threshold_config.substitute_mask，不再另写一份。\n"
+                "③ 数据里没有替代料列时，看板自动收起这条筛选（不摆无效按钮）。\n"
+                "验证：新增 tests/unit/test_board_default_scope.py 7 例；tests/unit 786 passed。"
+            ),
+        },
+        {
             "version": "v44.03",
             "date": "2026-11-19",
             "features": (

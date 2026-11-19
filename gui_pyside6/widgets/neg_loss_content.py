@@ -14,6 +14,7 @@ from gui_pyside6.models.data_frame_model import DataFrameModel, classify_row_col
 from gui_pyside6.dialogs.col_filter_ui import make_col_filter_button, make_col_filter_hint_label, set_col_filter_button_on
 from core.quarantine_manager import add_quarantine_batch, remove_quarantine, get_quarantined_ids
 from core.read_status import save_read_status_batch
+from core.threshold_config import substitute_mask
 from gui_pyside6.services.data_service import snapshot_qty_for, snapshot_note_for, snapshot_net_for, build_data_id
 from gui_pyside6.widgets.toast import toast
 from gui_pyside6.utils.locate import locate_row, drill_to_workshop
@@ -57,6 +58,7 @@ class NegLossContent(QWidget):
         self._factory_filter = "all"
         self._factory_col = None
         self._quar_filter = "no"
+        self._alt_filter = "no"      # 替代料筛选：all / yes(是) / no(否)；默认只看非替代料
         self._has_note_filter = "all"
         self._unit_filter = set()
         self.color_filters = set()
@@ -143,6 +145,7 @@ class NegLossContent(QWidget):
                       ("material", "color", "颜色标记", "color_bar"),
                       ("numeric", "include_zero", "含未投料", "chk_include_zero"),
                       ("org", "quar", "隔离区", "quar_bar"),
+                      ("org", "alt", "替代料", "alt_bar"),
                       ("org", "note", "备注", "note_bar"))
 
     def _build_filter_widgets(self):
@@ -210,6 +213,20 @@ class NegLossContent(QWidget):
         self.btn_quar_no.setChecked(True)
         self.btn_quar_no.clicked.connect(lambda: self._set_quar_filter("no"))
         self.quar_bar = pack_row([self.btn_quar_all, self.btn_quar_yes, self.btn_quar_no])
+
+        # 替代料筛选（v44.04）：与隔离区同为三态，默认「否」= 只看非替代料。
+        # 之前看板只能筛隔离区，替代料只能靠列头筛选，默认口径也没把它排除掉。
+        self.btn_alt_all = QPushButton("全部")
+        self.btn_alt_all.setCheckable(True)
+        self.btn_alt_all.clicked.connect(lambda: self._set_alt_filter("all"))
+        self.btn_alt_yes = QPushButton("是")
+        self.btn_alt_yes.setCheckable(True)
+        self.btn_alt_yes.clicked.connect(lambda: self._set_alt_filter("yes"))
+        self.btn_alt_no = QPushButton("否")
+        self.btn_alt_no.setCheckable(True)
+        self.btn_alt_no.setChecked(True)
+        self.btn_alt_no.clicked.connect(lambda: self._set_alt_filter("no"))
+        self.alt_bar = pack_row([self.btn_alt_all, self.btn_alt_yes, self.btn_alt_no])
 
         self.btn_note_all = QPushButton("全部")
         self.btn_note_all.setCheckable(True)
@@ -318,6 +335,7 @@ class NegLossContent(QWidget):
             for cb in self.color_checks.values():
                 cb.setChecked(False)
             self._set_quar_filter("no")
+            self._set_alt_filter("no")
             self._set_note_filter("all")
             self._net_dev_qty_min.setValue(-1e9)
             self._net_dev_qty_max.setValue(1e9)
@@ -357,6 +375,8 @@ class NegLossContent(QWidget):
             keys.append("include_zero")
         if self._quar_filter != "no":
             keys.append("quar")
+        if self._alt_filter != "no":
+            keys.append("alt")
         if self._has_note_filter != "all":
             keys.append("note")
         if (self._net_dev_qty_min is not None and self._net_dev_qty_max is not None
@@ -565,6 +585,13 @@ class NegLossContent(QWidget):
 
         self._quar_filter = "no"
         self.btn_quar_no.setChecked(True)
+        self._alt_filter = "no"
+        self.btn_alt_no.setChecked(True)
+        # 数据里没有替代料列（旧数据 / 精简 df）时把这条件收起，别摆一个不起作用的「否」
+        try:
+            self._hide_filter("alt", substitute_mask(df) is None)
+        except Exception:
+            self._hide_filter("alt", True)
         self._has_note_filter = "all"
         self.btn_note_all.setChecked(True)
         self._initializing = False
@@ -666,6 +693,7 @@ class NegLossContent(QWidget):
             "workshop": self._workshop_mask(df, self._workshop_filter),
             "factory": self._factory_mask(df, self._factory_filter),
             "quar": self._quar_mask(df, self._quar_filter),
+            "alt": self._alt_mask(df, self._alt_filter),
             "note": self._note_mask(df, self._has_note_filter),
             "color": self._color_mask(df),
             "read": self._read_mask(df, self._read_filter),
@@ -712,6 +740,7 @@ class NegLossContent(QWidget):
         mask = (self._name_mask(df) & self._neg_loss_mask(df)
                 & self._semi_class_mask(df)
                 & self._quar_mask(df, self._quar_filter)
+                & self._alt_mask(df, self._alt_filter)
                 & self._note_mask(df, self._has_note_filter)
                 & self._color_mask(df)
                 & self._read_mask(df, self._read_filter))
@@ -848,6 +877,24 @@ class NegLossContent(QWidget):
             return vals == "是"
         return vals != "是"
 
+    def _alt_mask(self, df, mode):
+        """替代料掩码（v44.04）：all=全True / yes=替代料 / no=非替代料。
+
+        替代料判定统一走 core.threshold_config.substitute_mask（先看是否替代料 /
+        is_alt 标记列，再看 _替代料组），不在这里另写一份，免得与主表色标、KPI
+        口径分叉。数据里没有任何替代料列时不过滤。
+        """
+        if mode == "all":
+            return pd.Series(True, index=df.index)
+        try:
+            alt = substitute_mask(df)
+        except Exception:
+            alt = None
+        if alt is None:
+            return pd.Series(True, index=df.index)
+        alt = alt.reindex(df.index).fillna(False).astype(bool)
+        return alt if mode == "yes" else ~alt
+
     def _note_mask(self, df, mode):
         if mode == "all" or "备注" not in df.columns:
             return pd.Series(True, index=df.index)
@@ -885,6 +932,13 @@ class NegLossContent(QWidget):
         self.btn_quar_all.setChecked(mode == "all")
         self.btn_quar_yes.setChecked(mode == "yes")
         self.btn_quar_no.setChecked(mode == "no")
+        self._apply_filter()
+
+    def _set_alt_filter(self, mode):
+        self._alt_filter = mode
+        self.btn_alt_all.setChecked(mode == "all")
+        self.btn_alt_yes.setChecked(mode == "yes")
+        self.btn_alt_no.setChecked(mode == "no")
         self._apply_filter()
 
     def _set_note_filter(self, mode):

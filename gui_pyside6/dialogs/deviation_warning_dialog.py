@@ -78,8 +78,11 @@ class DeviationWarningDialog(QDialog):
         self._workshop_col = None   # 车间列名，set_data 时探测
         self._factory_filter = "all"  # 工厂筛选：all / 工厂名
         self._factory_col = None    # 工厂列名，set_data 时探测
-        self._quar_filter = "all"   # 隔离区筛选：all / yes(是)
-        self._alt_filter = "all"    # 替代料筛选：all / yes(是) / no(否)
+        # v44.04：默认只看「非隔离区 + 非替代料」——看板是排查真实偏差用的，
+        # 隔离区里的行已单独处理、替代料是已知等价料偏差，混在一起会把真正的
+        # 异常冲淡。需要看全量时点「全部」即可。
+        self._quar_filter = "no"    # 隔离区筛选：all / yes(是) / no(否)
+        self._alt_filter = "no"     # 替代料筛选：all / yes(是) / no(否)
         self._keyword = ""          # 关键字搜索（跨列，与分类筛选叠加）
         self._remark_filter = "all"   # 是否备注筛选：all / has(有) / none(无)
         self._remark_col_name = None  # 备注列名（set_data 时探测）
@@ -295,6 +298,7 @@ class DeviationWarningDialog(QDialog):
         self.btn_quar_no.setMinimumWidth(70)
         self.btn_quar_no.clicked.connect(self._bind(self.btn_quar_no.clicked, lambda: self._set_quar_filter("no")))
         row_dim.addWidget(self.btn_quar_no)
+        self.btn_quar_no.setChecked(True)   # 默认「否」= 非隔离区
 
         # 偏差方向筛选（正偏差=偏差数量>0 / 负偏差=偏差数量<0，v43.93 新增）
         row_dim.addSpacing(16)
@@ -493,6 +497,7 @@ class DeviationWarningDialog(QDialog):
         self.btn_alt_no.setMinimumWidth(70)
         self.btn_alt_no.clicked.connect(self._bind(self.btn_alt_no.clicked, lambda: self._set_alt_filter("no")))
         self._row3.addWidget(self.btn_alt_no)
+        self.btn_alt_no.setChecked(True)    # 默认「否」= 非替代料
 
         # 是否备注
         self.remark_sep = QFrame()
@@ -816,13 +821,17 @@ class DeviationWarningDialog(QDialog):
         return vals != "是"
 
     def _alt_mask(self, df, mode):
-        """替代料掩码：all=全True / yes=替代料列=='是' / no=替代料列=='否'"""
+        """替代料掩码：all=全True / yes=替代料列=='是' / no=替代料列!='是'
+
+        no 分支用「不等于是」而不是「等于否」：列值缺失/为空的行（旧数据、
+        手工拼的 df）也是非替代料，写成 =='否' 会把这些行悄悄筛掉。
+        """
         if mode == "all" or "替代料" not in df.columns:
             return pd.Series(True, index=df.index)
         vals = df["替代料"].astype(str).str.strip()
         if mode == "yes":
             return vals == "是"
-        return vals == "否"
+        return vals != "是"
 
     def _devdir_mask(self, df, mode):
         """偏差方向掩码（v43.93）：all=全True / pos=偏差数量>0 / neg=偏差数量<0
