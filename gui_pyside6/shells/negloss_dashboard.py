@@ -82,10 +82,13 @@ class NegLossDashboard(DashboardShell):
         # 先保存现有抽屉布局
         current_layout = self.drawer_layout
 
-        # 清空内容
+        # 清空内容（v44.08：布局项可能是 spacer/ stretches 等非控件，widget() 会返回 None，
+        # 不判空会在构建筛选器时直接 AttributeError——与未读看板同款保护）
         while current_layout.count():
             child = current_layout.takeAt(0)
-            child.widget().deleteLater()
+            w = child.widget()
+            if w is not None:
+                w.deleteLater()
 
         # 第一组：物料和操作条件（关键字 + 含未投料）
         self.gp_material_info = QGroupBox("物料条件")
@@ -394,10 +397,11 @@ class NegLossDashboard(DashboardShell):
         # 初始化筛选器
         self._initialize_filters()
 
-        # 应用默认筛选
-        self._apply_default_filter()
-
+        # v44.08：先解除初始化守卫，再应用默认筛选（与未读看板同修）。
+        # _apply_filter 首行有 `if self._initializing: return`，若在守卫期内调用，
+        # 首次筛选是空操作 → 表格停留在全量数据，下拉却仍显示「未读」。
         self._initializing = False
+        self._apply_default_filter()
 
     def _initialize_filters(self):
         """初始化所有筛选器"""
@@ -617,16 +621,16 @@ class NegLossDashboard(DashboardShell):
             v for v in sub_mtd[self._mtd_col].dropna().astype(str).str.strip().unique() if v
         ) if (self._mtd_col and self._mtd_col in sub_mtd.columns) else []
         mtd_vals = [v for v in mtd_vals if v not in self._CASCADE_EXCLUDE_MTD]
-        self._replace_combo_items(self.combo_mtd, mtd_vals, self._mtd_filter,
-                                  '_mtd_filter', '_on_mtd_changed')
+        # v44.08：_replace_combo_items 是 4 参签名（与未读看板一致），
+        # 原 6 参调用自 v43.175 起一直在级联路径静默 TypeError（表格能刷、下拉不级联）。
+        self._replace_combo_items(self.combo_mtd, mtd_vals, self._mtd_filter)
 
         # --- 车间：按「除自己外」的条件重算 ---
         sub_ws = df[self._other_conditions_mask(df, exclude='workshop')]
         ws_vals = sorted(
             v for v in sub_ws[self._workshop_col].dropna().astype(str).str.strip().unique() if v
         ) if (self._workshop_col and self._workshop_col in sub_ws.columns) else []
-        self._replace_combo_items(self.combo_workshop, ws_vals, self._workshop_filter,
-                                  '_workshop_filter', '_on_workshop_changed')
+        self._replace_combo_items(self.combo_workshop, ws_vals, self._workshop_filter)
 
         # --- 单位：同样纳入级联（v43.175；原 unit 被无视叠加进主 mask）---
         sub_unit = df[self._other_conditions_mask(df, exclude='unit')]

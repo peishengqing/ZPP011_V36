@@ -14,6 +14,26 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v44.08",
+            "date": "2026-11-20",
+            "fixes": (
+                "修复未读看板首次打开「已读状态=未读」筛选不生效（裴哥 2026-11-20\n"
+                "截图：筛的是未读，表格却混着已读✓行）。根因：set_data 在\n"
+                "_initializing=True 守卫期内调用 _apply_default_filter，而\n"
+                "_apply_filter 首行 `if self._initializing: return` 使首次筛选\n"
+                "成为空操作，表格停留全量数据；下拉仍显示「未读」。修复：两个\n"
+                "看板均改为先解除守卫再应用默认筛选（docstring 本就如此要求）。\n"
+                "顺修负损看板三处既有隐患：① 同款初始化次序问题；② 级联下拉\n"
+                "_replace_combo_items 自 v43.175 起按 6 参调用、定义只有 4 参，\n"
+                "每次筛选后级联刷新静默 TypeError（表格能刷、物料类型/车间/单位\n"
+                "下拉不级联）；③ 构建筛选器清空布局时 child.widget() 不判 None，\n"
+                "布局含 spacer 即 AttributeError。\n"
+                "验证：新增 tests/unit/test_board_default_filter.py 3 例（未读\n"
+                "默认只显未读 / 全已读回退「全部」且只显分类行 / 负损同款）；\n"
+                "tests/unit 全量通过；GUI 冒烟 25 项通过。"
+            ),
+        },
+        {
             "version": "v44.07",
             "date": "2026-11-20",
             "features": (

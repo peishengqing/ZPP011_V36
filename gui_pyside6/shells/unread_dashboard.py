@@ -464,10 +464,13 @@ class UnreadDashboard(DashboardShell):
         # 初始化筛选器
         self._initialize_filters()
 
-        # 应用默认筛选
-        self._apply_default_filter()
-
+        # v44.08：先解除初始化守卫，再应用默认筛选。
+        # _apply_filter 首行有 `if self._initializing: return`，若在守卫期内调用，
+        # 首次筛选是空操作 → 表格停留在全量数据（已读+未读混杂），下拉却仍显示「未读」
+        # （裴哥 2026-11-20 截图问题）。docstring 本就要求：
+        # 「必须在 _initializing=False 之后、首次 _apply_filter 之前调用」。
         self._initializing = False
+        self._apply_default_filter()
 
     def _set_kpi(self):
         """KPI 卡：与未读概览弹窗 / 审核队列徽标同源。"""

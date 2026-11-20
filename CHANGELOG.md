@@ -4,6 +4,20 @@
 
 ---
 
+## v44.08 — 修复未读看板「筛未读混出已读行」
+
+**发布日期：2026-11-20**
+
+### 🔧 修复
+- **未读看板首次打开默认筛选不生效**：筛选器显示「已读状态=未读」，表格却装入全量行（已读 ✓ 与未读 ○ 混杂）。根因是 <code>set_data</code> 在 <code>_initializing</code> 守卫期内调用 <code>_apply_default_filter</code>，而 <code>_apply_filter</code> 首行守卫直接 return，首次筛选成空操作。现改为先解除守卫再应用默认筛选；未读为 0 时按既有设计回退「全部」并在下拉中如实显示。
+- **负损看板同款初始化次序问题**一并修复。
+- **负损看板级联下拉静默失效**：<code>_replace_combo_items</code> 自 v43.175 起被按 6 参调用、定义只有 4 参，每次筛选后级联刷新抛 TypeError 被吞——表格能刷新，但物料类型/车间/单位下拉选项不级联。已对齐为 4 参调用。
+- **负损看板构建筛选器崩溃隐患**：清空抽屉布局时 <code>child.widget()</code> 不判 None（布局含 spacer 即 AttributeError），已补判空（与未读看板同款保护）。
+
+### ✅ 验证
+- 新增 <code>tests/unit/test_board_default_filter.py</code> 3 例：未读默认只显未读行 / 全已读时回退「全部」且只显分类行 / 负损看板同款。
+- <code>tests/unit</code> 全量通过；GUI 冒烟 25 项通过。
+
 ## v44.07 — 未读看板支持「标记已读」
 
 **发布日期：2026-11-20**
