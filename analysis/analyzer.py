@@ -823,6 +823,42 @@ def do_analysis_v2(
 
 
 
+def attach_net_qty_column(sheet_df, net_offset_map):
+    """v44.10（裴哥 2026-11-20）：给逐行明细表补「净偏差数量」列。
+
+    用于「无备注预警」「中间地带明细」——此前只有「完整偏差明细」「异常预警」
+    「替代料明细」带净偏差数量。口径与它们**完全一致**：按 (流程订单, 物料编码)
+    查 net_offset_map（替代料组净偏差，见 net_offset.apply_net_offset），
+    未命中（非替代料行）回退毛口径「偏差数量」。
+
+    builder 输出里的 '_净偏差键'（流程订单|物料编码，见 sheet3/sheet4）仅作
+    查表用；写 Excel 时按各表 headers 白名单排除，不落表。
+
+    返回**新** DataFrame（不原地改入参）：_inter 里的帧会被后台缓存线程复用，
+    原地改会造成跨次导出相互污染。空表原样返回。
+    """
+    if sheet_df is None or sheet_df.empty:
+        return sheet_df
+    sheet_df = sheet_df.copy()
+    if '偏差数量' in sheet_df.columns:
+        fb = pd.to_numeric(sheet_df['偏差数量'], errors='coerce').fillna(0)
+    else:
+        fb = pd.Series(0.0, index=sheet_df.index)
+    net = fb.round(2)
+    if '_净偏差键' in sheet_df.columns and net_offset_map:
+        # map 键是 (流程订单, 物料编码) 元组（analyzer 构建），与 builder 的
+        # '订单|编码' 字符串键对齐；四舍五入口径与 sheet6._net_qty_series 一致。
+        qmap = {}
+        for k, v in net_offset_map.items():
+            if v is None or pd.isna(v[0]):
+                continue
+            qmap[str(k[0]) + '|' + str(k[1])] = round(float(v[0]), 2)
+        net = sheet_df['_净偏差键'].map(qmap)
+        net = net.fillna(fb).round(2)
+    sheet_df['净偏差数量'] = net
+    return sheet_df
+
+
 def export_full_report_from_intermediates(intermediates, output_path=None, output_dir=None,
                                          progress_callback=None, cancel_check=None):
     """复用 do_analysis_v2 的计算中间结果，仅生成 Sheet6~10 + 整本 wb 并保存。
@@ -885,6 +921,11 @@ def export_full_report_from_intermediates(intermediates, output_path=None, outpu
             zip(dev_df['净偏差数量'], dev_df['净偏差金额'])
         ))
 
+    # v44.10：给「无备注预警」「中间地带明细」补「净偏差数量」列（同一查找表、
+    # 同一口径），并在写表时插入「偏差数量」之后。
+    no_note_df = attach_net_qty_column(no_note_df, net_offset_map)
+    middle_df = attach_net_qty_column(middle_df, net_offset_map)
+
     # Sheet6（第五步抽取 → analysis/sheets/sheet6_anomaly.py）
     anomaly_df = build_sheet6(df, alt_order_mat, _ranged_progress(report_progress, 85, 88), net_offset_map=net_offset_map)
     check_cancel()
@@ -936,23 +977,25 @@ def export_full_report_from_intermediates(intermediates, output_path=None, outpu
                 [14, 10, 14, 14, 28, 8, 12, 12, 14, 28, 12, 12, 12, 14, 12, 20])
 
     ws3 = wb.create_sheet('无备注预警')
+    # v44.10：补「净偏差数量」列（偏差数量之后、偏差率之前），列宽同步 +1
     headers3 = ['订单日期', '工厂', '车间', '物料名称', '物料类型', '单位',
-                '定额', '实际', '偏差数量', '偏差率', '偏差金额(含税)', '备注']
+                '定额', '实际', '偏差数量', '净偏差数量', '偏差率', '偏差金额(含税)', '备注']
     rows3 = [[r['订单日期'], r['工厂'], r['车间'], r['物料名称'], r['物料类型'],
-              r['单位'], r['定额'], r['实际'], r['偏差数量'], r['偏差率'],
+              r['单位'], r['定额'], r['实际'], r['偏差数量'], r['净偏差数量'], r['偏差率'],
               r['偏差金额(含税)'] if isinstance(r.get('偏差金额(含税)'), (int, float)) and r['偏差金额(含税)'] != 0 else '-',
               r['备注']] for r in no_note_df.to_dict('records')]
     write_sheet(ws3, headers3, rows3,
-                [14, 10, 10, 28, 10, 8, 12, 12, 12, 10, 16, 20])
+                [14, 10, 10, 28, 10, 8, 12, 12, 12, 12, 10, 16, 20])
 
     ws4 = wb.create_sheet('中间地带明细')
+    # v44.10：补「净偏差数量」列（偏差数量之后、偏差率之前），列宽同步 +1
     headers4 = ['订单日期', '工厂', '车间', '物料名称', '物料类型', '单位',
-                '定额', '实际', '偏差数量', '偏差率', '备注']
+                '定额', '实际', '偏差数量', '净偏差数量', '偏差率', '备注']
     rows4 = [[r['订单日期'], r['工厂'], r['车间'], r['物料名称'], r['物料类型'],
-              r['单位'], r['定额'], r['实际'], r['偏差数量'], r['偏差率'],
+              r['单位'], r['定额'], r['实际'], r['偏差数量'], r['净偏差数量'], r['偏差率'],
               r['备注']] for r in middle_df.to_dict('records')]
     write_sheet(ws4, headers4, rows4,
-                [14, 10, 10, 28, 10, 8, 12, 12, 12, 10, 20])
+                [14, 10, 10, 28, 10, 8, 12, 12, 12, 12, 10, 20])
 
     ws5 = wb.create_sheet('完整偏差明细')
     # v43.320：表尾追加 4 列（产量/产量单位/组件物料类型/组件物料类型描述），

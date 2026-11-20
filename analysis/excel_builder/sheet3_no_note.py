@@ -94,6 +94,13 @@ def build_sheet3(df, report_progress, progress_idx=3, dyn_thresh=None):
         no_note_df['定额'] = no_note['数量-定额']
         no_note_df['实际'] = no_note['数量-实际']
         no_note_df['偏差数量'] = no_note['材料偏差']
+        # v44.10：携带净偏差定位键（流程订单|物料编码），供导出阶段查 net_offset_map
+        # 补「净偏差数量」列（与异常预警/完整偏差明细同一口径）。键列只在分析管道内
+        # 流转，写 Excel 时按 headers3 白名单排除，不落表。键列缺失时导出侧自动
+        # 回退毛口径，不会崩。
+        if '流程订单' in no_note.columns and '组件物料号' in no_note.columns:
+            no_note_df['_净偏差键'] = (no_note['流程订单'].astype(str) + '|'
+                                       + no_note['组件物料号'].astype(str))
         # 性能（2026-10-01）：百分比格式化向量化（apply→round+astype），NaN→''
         no_note_df['偏差率'] = no_note[col_p].round(1).map(
             lambda x: f"{x:.1f}%" if pd.notna(x) else '')

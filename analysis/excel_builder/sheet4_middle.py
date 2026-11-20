@@ -64,6 +64,13 @@ def build_sheet4(df, alt_df, alt_pairs, report_progress, progress_idx=4, dyn_thr
         middle_df['定额'] = middle['数量-定额']
         middle_df['实际'] = middle['数量-实际']
         middle_df['偏差数量'] = middle['材料偏差']
+        # v44.10：携带净偏差定位键（流程订单|物料编码），供导出阶段查 net_offset_map
+        # 补「净偏差数量」列（与异常预警/完整偏差明细同一口径）。键列只在分析管道内
+        # 流转，写 Excel 时按 headers4 白名单排除，不落表。键列缺失时导出侧自动
+        # 回退毛口径，不会崩。
+        if '流程订单' in middle.columns and '组件物料号' in middle.columns:
+            middle_df['_净偏差键'] = (middle['流程订单'].astype(str) + '|'
+                                      + middle['组件物料号'].astype(str))
         # 性能（2026-10-01）：百分比格式化向量化（apply→round+map），NaN→''
         middle_df['偏差率'] = middle[col_p].round(1).map(
             lambda x: f"{x:.1f}%" if pd.notna(x) else '')
