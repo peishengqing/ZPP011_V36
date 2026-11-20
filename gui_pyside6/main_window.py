@@ -893,11 +893,22 @@ class MainWindow(QMainWindow):
                     for c in changes:
                         did = str(c.get('data_id', ''))
                         parts = did.split('|')
+                        # v44.06：与弹窗表格 _populate 同一套拆段逻辑——
+                        # 4 段（工厂|日期|流程订单|物料编码）取后 3 段，
+                        # 3 段（日期|流程订单|物料编码）取前 3 段。
+                        # 旧代码无脑取前 3 段，4 段式下「日期」列是工厂名、
+                        # 「物料编码」列是流程订单号，真正的物料编码丢失。
+                        if len(parts) == 4:
+                            date, order, mat = parts[1], parts[2], parts[3]
+                        elif len(parts) >= 3:
+                            date, order, mat = parts[0], parts[1], parts[2]
+                        else:
+                            date, order, mat = '', '', ''
                         rows.append({
-                            '日期': parts[0] if len(parts) > 0 else '',
+                            '日期': date,
                             '车间': c.get('workshop', '') or '',
-                            '流程订单': parts[1] if len(parts) > 1 else '',
-                            '物料编码': parts[2] if len(parts) > 2 else '',
+                            '流程订单': order,
+                            '物料编码': mat,
                             '物料名称': c.get('material_name', '') or '',
                             '变更字段': c.get('field', ''),
                             '旧值': '' if c.get('old_value') is None else c.get('old_value'),

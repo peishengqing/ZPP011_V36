@@ -281,7 +281,8 @@ class DashboardController:
         """审核队列的唯一判据：4 类「未读且值得核对」的行掩码（各与 df 等长）。
 
         - 隔离区未读     = _quarantined==1 且 _read==0
-        - 变动提醒未读   = _post_audit_changed==1 且 _read==0（已改动且未读的行）
+        - 变动提醒未读   = _post_audit_changed==1 且 _read==0，且排除隔离区/替代料行
+                          （v44.06 起与变动提醒弹窗 get_audit_changes 同口径）
         - 替代料未读     = filter_alt_alerts 命中 且 _read==0（与替代料看板一致）
         - 偏差率预警未读 = 命中 core.threshold_config 的预警判据 且 _read==0
                           （阈值、SAP 除零钳位与未投料两个排除开关都归它管）
@@ -309,7 +310,17 @@ class DashboardController:
         dev = _thr.dev_alert_mask(df)
         dev = (dev & read_mask) if dev is not None else pd.Series(False, index=df.index)
 
-        return {"隔离区": _flag('_quarantined'), "变动提醒": _flag('_post_audit_changed'),
+        # v44.06：变动提醒排除「已在隔离区」与「替代料」行——这两类走各自流程，
+        # 混在变动提醒里容易被误审核（与 get_audit_changes 弹窗同一口径）。
+        changed = _flag('_post_audit_changed')
+        if '_quarantined' in df.columns:
+            _quar = pd.to_numeric(df['_quarantined'], errors='coerce').fillna(0).astype(int) == 1
+            changed = changed & ~_quar
+        _alt_any = _thr.substitute_mask(df)
+        if _alt_any is not None:
+            changed = changed & ~_alt_any.astype(bool)
+
+        return {"隔离区": _flag('_quarantined'), "变动提醒": changed,
                 "替代料": alt, "偏差率预警": dev}
 
     def _unread_audit_count(self):

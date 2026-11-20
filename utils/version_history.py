@@ -14,6 +14,26 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v44.06",
+            "date": "2026-11-20",
+            "features": (
+                "变动提醒默认口径收窄 + 导出表头修复（裴哥 2026-11-20）。\n"
+                "① 变动提醒弹窗/导出默认排除两类行：已在隔离区（_quarantined==1）\n"
+                "   与替代料（substitute_mask 命中）——这类行走隔离区/替代料流程，\n"
+                "   混在变动提醒里容易被误审核。例：纸箱原本无负损，改产量后净偏差\n"
+                "   数量转负，应进隔离区，不再挂在变动提醒。\n"
+                "② 未读概览「变动提醒」计数与弹窗同口径（dashboard_controller\n"
+                "   ._unread_audit_masks 同步排除），弹窗条数=概览数字。\n"
+                "③ 修复变动提醒导出表头错位：4 段 data_id（工厂|日期|流程订单|\n"
+                "   物料编码）下旧代码无脑取前 3 段，导出表「日期」列是工厂名、\n"
+                "   「物料编码」列是流程订单号（真编码丢失）；现与弹窗表格同一\n"
+                "   拆段逻辑（4 段取后 3 段 / 3 段取前 3 段）。\n"
+                "④ KPI「审核后变更」仍按 _post_audit_changed 原口径统计，不变。\n"
+                "验证：新增 tests/unit/test_audit_changes_scope.py 4 例；\n"
+                "   test_audit_queue_badge 7 例按新口径更新；tests/unit 794 passed。"
+            ),
+        },
+        {
             "version": "v44.05",
             "date": "2026-11-19",
             "features": (

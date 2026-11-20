@@ -16,6 +16,7 @@ from core.read_status import (
     save_snapshot_batch,
     backfill_net_baseline,
 )
+from core.threshold_config import substitute_mask  # v44.06：替代料行判定与看板/KPI 同源
 from .utils import find_real_qty_col, find_remark_col, find_yield_col, norm_note, safe_qty
 
 # 净偏差数量基线列名（v43.380 变动提醒展示修改前/后净偏差数量）
@@ -313,12 +314,29 @@ class ReadStatusService(QObject):
         return safe_qty(v)
 
     def get_audit_changes(self, df: pd.DataFrame) -> list:
-        """变动提醒看板单一数据源：与主表 _post_audit_changed 列完全一致。"""
+        """变动提醒看板单一数据源（v44.06 口径）。
+
+        基础判据：_post_audit_changed==1 且未读（_read==0）。
+        v44.06 起默认排除两类行（裴哥 2026-11-20）：
+        - 已在隔离区（_quarantined==1）：走隔离区流程，不进变动提醒；
+        - 替代料行（core.threshold_config.substitute_mask 命中）：走替代料看板流程。
+        例：纸箱原本无负损，改产量后净偏差转负 → 应进隔离区，不应留在变动提醒被误审核。
+        注意：结果与主表 _post_audit_changed 列不再完全一致；
+        KPI「审核后变更」（stats_cards）仍按 _post_audit_changed 原口径统计，不受影响。
+        """
         if df is None or getattr(df, 'empty', True) or '_post_audit_changed' not in df.columns:
             return []
         mask = pd.to_numeric(df['_post_audit_changed'], errors='coerce').fillna(0).astype(int) == 1
         if '_read' in df.columns:
             mask = mask & (pd.to_numeric(df['_read'], errors='coerce').fillna(0).astype(int) == 0)
+        # v44.06：已在隔离区的行走隔离区流程，不进变动提醒
+        if '_quarantined' in df.columns:
+            _quar = pd.to_numeric(df['_quarantined'], errors='coerce').fillna(0).astype(int) == 1
+            mask = mask & ~_quar
+        # v44.06：替代料行走替代料流程，不进变动提醒（与看板/异常判定同一真源）
+        _alt = substitute_mask(df)
+        if _alt is not None:
+            mask = mask & ~_alt.astype(bool)
         if not mask.any():
             return []
         sub = df[mask].copy()

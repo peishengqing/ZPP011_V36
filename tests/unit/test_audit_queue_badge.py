@@ -55,7 +55,9 @@ def _mw(df):
 def _df(read_all_zero=True):
     """10 行未读；隔离区{0,1} + 变动提醒{1,2} + 偏差预警{2,3}，行 1/2 故意重叠。
 
-    四类去重后 = {0,1,2,3} 共 4 行；四个分类条数相加 = 6；全表未读 = 10。
+    v44.06 起变动提醒排除隔离区/替代料行：行 1（_quarantined==1）只算隔离区，
+    变动提醒掩码实际只剩 {2}。四类去重后 = {0,1,2,3} 共 4 行；
+    四个分类条数相加 = 2+1+0+2 = 5；全表未读 = 10。
     三个数各不一样，正好能区分「去重 / 相加 / 全表」三种口径。
     """
     n = 10
@@ -77,15 +79,20 @@ def test_badge_is_deduped_queue_not_whole_table_unread():
     # 改造前的两个错口径都必须是别的数，否则这条测试是假的
     whole_table_unread = int((mw._get_master_df()["_read"] == 0).sum())
     assert whole_table_unread == 10
-    assert sum(int(m.sum()) for m in mw._unread_audit_masks(_df()).values()) == 6
+    assert sum(int(m.sum()) for m in mw._unread_audit_masks(_df()).values()) == 5
 
 
 def test_no_column_overcount_when_row_hits_two_boards():
-    """同一行既在隔离区又在变动提醒（行 1）只数一次。"""
+    """同一行既在变动提醒又在偏差预警（行 2）只数一次。
+
+    v44.06 起隔离区行不再进变动提醒掩码：行 1 虽 _post_audit_changed==1，
+    但 _quarantined==1 → 只算隔离区，变动提醒掩码只剩 {2}。
+    """
     mw = _mw(_df())
     masks = mw._unread_audit_masks(_df())
-    assert bool(masks["隔离区"].iloc[1]) and bool(masks["变动提醒"].iloc[1])
-    assert mw._unread_audit_count() == 4  # 2+2+0+2=6 相加会虚高到 6
+    assert bool(masks["隔离区"].iloc[1]) and not bool(masks["变动提醒"].iloc[1])
+    assert bool(masks["变动提醒"].iloc[2]) and bool(masks["偏差率预警"].iloc[2])
+    assert mw._unread_audit_count() == 4  # 去重 {0,1,2,3}；2+1+0+2=5 相加会虚高到 5
 
 
 # ---------- 2. 徽标与弹窗四行同源 ----------
@@ -94,7 +101,7 @@ def test_items_counts_match_masks():
     """v43.386 起弹窗 6 行：前 4 类来自行掩码，翻箱守恒异常/未投料另算
     （本 df 无翻箱列、无流程订单列 → 均 0）。徽标仍是 4 类去重，不含这两行。"""
     items = {it["label"]: it["count"] for it in _mw(_df())._count_unread_items()}
-    assert items == {"隔离区": 2, "变动提醒": 2, "替代料": 0,
+    assert items == {"隔离区": 2, "变动提醒": 1, "替代料": 0,
                      "偏差率预警": 2, "翻箱守恒异常": 0, "未投料": 0}
 
 
