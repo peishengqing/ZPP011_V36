@@ -2263,6 +2263,43 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def mark_rows_read_by_ids(self, data_ids):
+        """把一组 data_id 手动标记为已读（v44.07 未读看板「标记已读」入口）。
+
+        走与变动提醒弹窗「全部标记为已读」同一条管道：
+        ① data_service.mark_changes_as_read 写库（is_read=1 + 当前值快照基线，
+           防止重导后被 restore_read_status 重新翻成变动提醒）；
+        ② 主表同步 _read=1 / _read_source='manual' 并 setDataFrame 触发全界面刷新；
+        ③ 状态栏手动标记计数 + 未读概览弹窗就地刷新。
+        返回实际在主表命中的标记条数（0 = 没标上任何行）。
+        """
+        dids = [str(d) for d in (data_ids or []) if str(d)]
+        if not dids:
+            return 0
+        df = self.source_model.getDataFrame() if self.source_model else None
+        if df is None or (hasattr(df, 'empty') and df.empty):
+            df = getattr(self.view_model, 'df', None)
+        if df is None or (hasattr(df, 'empty') and df.empty) \
+                or 'data_id' not in df.columns or '_read' not in df.columns:
+            return 0
+        pseudo = [{'data_id': d} for d in dids]
+        n, marked = self.data_service.mark_changes_as_read(pseudo, df)
+        marked_dids = {str(d) for d in (marked or [])}
+        if n <= 0 or not marked_dids:
+            return 0
+        mask = df['data_id'].astype(str).isin(marked_dids)
+        hit = int(mask.sum())
+        if hit:
+            df.loc[mask, '_read'] = 1
+            df.loc[mask, '_read_source'] = 'manual'
+            if self.source_model:
+                self.source_model.setDataFrame(df)
+        cb = getattr(self, '_on_manual_marked', None)
+        if callable(cb):
+            cb(hit)
+        self._refresh_unread_popup()
+        return hit
+
     def _on_stats_card_clicked(self, card_type: str):
         """统计卡片点击：隔离区/偏差率预警开对应窗口，其余切换筛选
 

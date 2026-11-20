@@ -14,6 +14,24 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v44.07",
+            "date": "2026-11-20",
+            "features": (
+                "未读看板支持「标记已读」（裴哥 2026-11-20：不单单只能看）。\n"
+                "① 操作条新增两个按钮：「选中标记已读」（点击行高亮选中，\n"
+                "   Ctrl/Shift 可多选）与「全部标记已读」（当前筛选出的未读行\n"
+                "   一次标完，带确认框防误触）。\n"
+                "② 走既有已读管道：mark_read_batch 写库（is_read=1 + 当前值\n"
+                "   快照基线，防重导后重新翻出）+ 主表 _read=1/_read_source=\n"
+                "   manual 同步 + 未读概览弹窗/审核队列徽标实时刷新。\n"
+                "③ 标完看板就地刷新：KPI 未读计数下降、未读视图下已标行消失、\n"
+                "   已读来源列记「手动」，不重置用户已设的筛选条件。\n"
+                "验证：新增 tests/unit/test_unread_board_mark_read.py 7 例\n"
+                "   （MainWindow 管道 3 例 + 看板交互 4 例，data_service 打桩\n"
+                "   不写真库）；tests/unit 801 passed / 2 skipped / 4 xpassed。"
+            ),
+        },
+        {
             "version": "v44.06",
             "date": "2026-11-20",
             "features": (

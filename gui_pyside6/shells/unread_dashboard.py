@@ -12,7 +12,7 @@ import re
 import pandas as pd
 from PySide6.QtWidgets import (
     QLineEdit, QGroupBox, QLabel, QVBoxLayout, QHBoxLayout, QComboBox,
-    QDoubleSpinBox
+    QDoubleSpinBox, QMessageBox
 )
 from PySide6.QtCore import Qt
 
@@ -85,6 +85,11 @@ class UnreadDashboard(DashboardShell):
         self.set_title("未读看板", "全部未读 · 隔离区 / 变动提醒 / 替代料 / 偏差率预警")
 
         self._build_unread_filters()
+
+        # v44.07：操作条「标记已读」两个按钮（裴哥：不单单只能看）。
+        # 走主窗口既有已读管道（写库快照 + 主表 _read 同步 + 徽标/概览刷新）。
+        self.add_action_button("选中标记已读", self._mark_selected_read)
+        self.add_action_button("全部标记已读", self._mark_all_read)
 
     def _build_unread_filters(self):
         """构建未读看板特有筛选器（抽屉三组：未读维度 / 组织与分类 / 状态）。"""
@@ -1038,6 +1043,115 @@ class UnreadDashboard(DashboardShell):
             self.set_status("点击「归属看板」标签可下钻对应看板（负损/正损/变动提醒/替代料/偏差率预警/隔离区/半成品）")
         else:
             self.set_status("")
+
+    # ------------------------------------------------------------------
+    # v44.07：标记已读（裴哥 2026-11-20「不单单只能看」）。
+    # 统一走主窗口 mark_rows_read_by_ids 既有管道：mark_read_batch 写库
+    # （is_read=1 + 当前值快照基线）→ 主表 _read=1/_read_source=manual 同步
+    # → 未读概览弹窗/审核队列徽标实时刷新。本看板只负责选行与就地刷新。
+    # ------------------------------------------------------------------
+
+    def _selected_data_ids(self):
+        """当前选中行的 data_id 列表（看板无代理模型，视图行 == source_model 行）。"""
+        sm = self.source_model
+        tv = self.table_view
+        if sm is None or tv is None:
+            return []
+        df = sm.getDataFrame()
+        if df is None or getattr(df, 'empty', True) or 'data_id' not in df.columns:
+            return []
+        sel = tv.selectionModel()
+        if sel is None:
+            return []
+        rows = sorted({i.row() for i in sel.selectedIndexes() if i.isValid()})
+        dids = []
+        for r in rows:
+            if 0 <= r < len(df):
+                dids.append(str(df.iloc[r]['data_id']))
+        return list(dict.fromkeys(dids))
+
+    def _mark_selected_read(self):
+        """把当前选中的行（点击高亮即选中，Ctrl/Shift 可多选）标记为已读。"""
+        dids = self._selected_data_ids()
+        if not dids:
+            self.set_status("请先点选要标记的行（点击行即高亮选中，Ctrl/Shift 可多选）")
+            return
+        self._mark_dids_read(dids, scope_desc="选中的 %d 行" % len(dids))
+
+    def _mark_all_read(self):
+        """把当前筛选出来的所有未读行一次性标记为已读（带确认框防误触）。"""
+        sm = self.source_model
+        if sm is None:
+            return
+        df = sm.getDataFrame()
+        if df is None or getattr(df, 'empty', True) or 'data_id' not in df.columns:
+            self.set_status("当前没有可标记的行")
+            return
+        dids = df['data_id'].astype(str).tolist()
+        if '_read' in df.columns:
+            unread = (pd.to_numeric(df['_read'], errors='coerce')
+                      .fillna(0).astype(int) != 1)
+            dids = [d for d, u in zip(dids, unread.tolist()) if u]
+        dids = list(dict.fromkeys(dids))
+        if not dids:
+            self.set_status("当前筛选结果里没有未读行")
+            return
+        ret = QMessageBox.question(
+            self, "全部标记已读",
+            "把当前筛选出的 %d 条未读记录全部标记为已读？\n标记后不再出现在未读看板 / 未读概览 / 审核队列里。" % len(dids),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if ret != QMessageBox.Yes:
+            self.set_status("已取消（未做任何标记）")
+            return
+        self._mark_dids_read(dids, scope_desc="当前筛选的 %d 条未读" % len(dids))
+
+    def _mark_dids_read(self, dids, scope_desc=""):
+        """真正执行标记：主窗口管道落库+主表同步，然后本看板就地刷新。"""
+        mw = self.main_window
+        fn = getattr(mw, 'mark_rows_read_by_ids', None) if mw is not None else None
+        if not callable(fn):
+            self.set_status("主窗口不支持标记已读")
+            return
+        try:
+            n = fn(dids)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            QMessageBox.warning(self, "标记失败", "标记已读失败：%s" % e)
+            return
+        if n <= 0:
+            self.set_status("未能标记任何行（数据可能已变化），请刷新后重试")
+            return
+        self._refresh_after_mark(dids)
+        self.set_status("已把%s标记为已读（实际生效 %d 条）" % (scope_desc, n))
+
+    def _refresh_after_mark(self, dids):
+        """标记后本看板就地刷新：original_df 同步已读列 → 重算掩码/KPI → 重新筛选。"""
+        df = self.original_df
+        if df is None or 'data_id' not in df.columns:
+            return
+        m = df['data_id'].astype(str).isin({str(d) for d in dids})
+        if not m.any():
+            return
+        if '_read' in df.columns:
+            df.loc[m, '_read'] = 1
+        df.loc[m, '_read_source'] = 'manual'
+        if '已读来源' in df.columns:
+            df.loc[m, '已读来源'] = '手动'
+        # 重算未读掩码（分类纯掩码不变，只与 _read 相与）与 KPI，再重新筛选
+        if '_read' in df.columns:
+            _read = (pd.to_numeric(df['_read'], errors='coerce')
+                     .fillna(0).astype(int) == 0)
+        else:
+            _read = pd.Series(True, index=df.index)
+        self._cat_masks = {name: (self._cat_pure[name].reindex(df.index)
+                                  .fillna(False).astype(bool) & _read)
+                           for name in _CAT_NAMES}
+        if self._cat_all_pure is not None:
+            self._cat_all = (self._cat_all_pure.reindex(df.index)
+                             .fillna(False).astype(bool) & _read)
+        self._set_kpi()
+        self._apply_filter()
 
 
 if __name__ == "__main__":
