@@ -348,7 +348,11 @@ def main():
             nonmodal = all(not d.isModal() for d in windows.values())
             distinct = len({id(d) for d in windows.values()}) == 3
             titles = [d.windowTitle() for d in windows.values()]
-            ver_ok = bool(titles) and all("v43." in t for t in titles)
+            # 动态版本：标题应带当前版本号。前缀从版本历史唯一真源现取，
+            # 不写死 "v43."——版本系递进到 v44/v45 后旧断言会假阴性（v44.06 实踩）。
+            from utils.version_history import VERSION_HISTORY
+            _ver_prefix = VERSION_HISTORY[0]["version"].rsplit(".", 1)[0] + "."
+            ver_ok = bool(titles) and all(_ver_prefix in t for t in titles)
             # 重复打开同一看板 → 复用同一实例，不新增
             before = dict(windows)
             ctrl._show_neg_loss_dashboard()
