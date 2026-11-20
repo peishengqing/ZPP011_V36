@@ -62,9 +62,9 @@ _CONDITION_KEY_MAP: Dict[str, List[str]] = {
     "unit_required": ["单位"],
     "unit_value": ["单位取值"],
     "remark_mode": ["备注模式"],
-    "dev_qty_required": ["偏差数量范围"],
-    "dev_qty_min": ["偏差数量下限"],
-    "dev_qty_max": ["偏差数量上限"],
+    "dev_qty_required": ["净偏差数量范围"],
+    "dev_qty_min": ["净偏差数量下限"],
+    "dev_qty_max": ["净偏差数量上限"],
     "name_exclude_keywords": ["名称不含"],
 }
 
@@ -97,11 +97,11 @@ def _expand_conditions(rule: Dict[str, Any]) -> List[Dict[str, str]]:
     if rule.get("remark_mode") in ("has", "none"):
         row.append({"key": "remark_mode", "label": "备注模式", "checked": False})
     if rule.get("dev_qty_required"):
-        row.append({"key": "dev_qty_required", "label": "偏差数量范围", "checked": False})
+        row.append({"key": "dev_qty_required", "label": "净偏差数量范围", "checked": False})
     if rule.get("dev_qty_min") is not None:
-        row.append({"key": "dev_qty_min", "label": "偏差数量下限", "checked": False})
+        row.append({"key": "dev_qty_min", "label": "净偏差数量下限", "checked": False})
     if rule.get("dev_qty_max") is not None:
-        row.append({"key": "dev_qty_max", "label": "偏差数量上限", "checked": False})
+        row.append({"key": "dev_qty_max", "label": "净偏差数量上限", "checked": False})
     if rule.get("name_exclude_keywords"):
         row.append({"key": "name_exclude_keywords", "label": "名称不含", "checked": False})
     return row

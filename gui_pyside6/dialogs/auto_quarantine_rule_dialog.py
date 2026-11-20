@@ -343,7 +343,9 @@ class AutoQuarantineRuleWidget(QWidget):
 
         r = QHBoxLayout()
         r.setSpacing(ROW_GAP)
-        self.chk_dev_qty = fcheck("偏差数量")
+        # v44.09（裴哥）：该条件按【净偏差数量】列判定（替代料抵扣后的净口径），
+        # 偏差数量为负但净偏差数量为正的行不再进隔离区。
+        self.chk_dev_qty = fcheck("净偏差数量")
         r.addWidget(self.chk_dev_qty)
         self.spin_dev_qty_min = fspin(-1000000, 1000000, 0)
         self.spin_dev_qty_max = fspin(-1000000, 1000000, 1)

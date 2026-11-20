@@ -113,9 +113,9 @@ DEFAULT_RULE = {
     "workshop_value": "",            # 车间取值（空=不限制）
     "remark_mode": "off",            # 备注要求：off / has（有备注）/ none（无备注）
     "name_exclude_keywords": "",     # 物料名称不含（逗号分隔；空=不限制）
-    "dev_qty_required": False,       # 是否要求偏差数量落在范围
-    "dev_qty_min": 0,                # 偏差数量下限（开区间）
-    "dev_qty_max": 1,                # 偏差数量上限
+    "dev_qty_required": False,       # 是否要求净偏差数量落在范围（v44.09 起按净口径）
+    "dev_qty_min": 0,                # 净偏差数量下限（开区间）
+    "dev_qty_max": 1,                # 净偏差数量上限
     "unit_required": False,          # 是否限定单位
     "unit_value": "",                # 单位取值（逗号分隔多值 OR；空=不限制）
 }
@@ -158,7 +158,10 @@ _COL_CANDIDATES = {
     "mat_code": ["物料编码", "组件物料号", "物料号"],
     "workshop": ["车间", "工厂车间", "生产车间", "work_shop", "车间号"],
     "remark": ["备注", "备注原因", "remark", "备注说明"],
-    "dev_qty": ["偏差数量", "偏差量", "差异数量"],
+    # v44.09（裴哥 2026-11-20）：「偏差数量」条件改用【净偏差数量】列优先——
+    # 偏差数量是毛口径（实际-定额），替代料抵扣后净偏差数量可能转正；
+    # 净偏差数量为正的行不该进隔离区。缺净偏差数量列时回退旧的偏差数量列（兼容旧数据路径）。
+    "dev_qty": ["净偏差数量", "偏差数量", "偏差量", "差异数量"],
     # v43.202：单位列对齐全项目既定口径（auto_read_rules.py / 各报表 sheet 均用组件单位，
     # 从不用产量单位）。旧候选把「产量单位」排在「组件单位」前——真实 SAP 表无裸「单位」列，
     # 于是命中「产量单位」（产品母件出货量单位，取值无「片」），导致按「组件投料单位=片」的
@@ -313,7 +316,7 @@ def build_rule_summary(rule=None):
     if ex:
         parts.append("名称不含（%s）" % "、".join(ex))
     if rule.get("dev_qty_required", False):
-        parts.append("偏差数量∈(%s,%s)" % (rule.get("dev_qty_min"), rule.get("dev_qty_max")))
+        parts.append("净偏差数量∈(%s,%s)" % (rule.get("dev_qty_min"), rule.get("dev_qty_max")))
     if not parts:
         return "（未配置任何条件）"
     return " · ".join(parts)
@@ -686,7 +689,7 @@ def _match_single_rule(df, rule, cols=None):
     else:
         m_remark = pd.Series(True, index=df.index)
 
-    # 9. 偏差数量范围（开区间；无列 → 不匹配）
+    # 9. 净偏差数量范围（v44.09 起优先取「净偏差数量」列，缺列回退「偏差数量」；开区间；无列 → 不匹配）
     if rule.get("dev_qty_required", False):
         if dev_qty_col:
             q = pd.to_numeric(df[dev_qty_col], errors="coerce")

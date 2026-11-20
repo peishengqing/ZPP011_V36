@@ -312,3 +312,38 @@ def test_preview_apis_are_read_only(df, cfg):
     assert len(stats) == len(cfg["rules"])
     if bytes_before is not None:
         assert open(CONFIG_PATH, "rb").read() == bytes_before
+
+
+# ------------------------------------------------------------------ v44.09 净口径
+def test_dev_qty_condition_uses_net_column_first():
+    """裴哥 2026-11-20：偏差数量是毛口径（实际-定额），替代料抵扣后净偏差数量
+    可能转正；该条件应优先取「净偏差数量」列——净值为正的行不进隔离区。"""
+    df = pd.DataFrame([
+        # 偏差数量=-5（毛口径落在 (0,1) 之外），净偏差数量=0.5（范围内）→ 按净口径命中
+        {"data_id": "N|1", "组件物料描述": "边界净正", "数量-实际": 1.0, "数量-定额": 6.0,
+         "偏差数量": -5.0, "净偏差数量": 0.5},
+        # 净值在范围内但名称不命中 → 对照组
+        {"data_id": "N|2", "组件物料描述": "别的不算", "数量-实际": 1.0, "数量-定额": 6.0,
+         "偏差数量": -5.0, "净偏差数量": 0.5},
+        # 净偏差数量超范围 → 不命中
+        {"data_id": "N|3", "组件物料描述": "边界净负", "数量-实际": 1.0, "数量-定额": 6.0,
+         "偏差数量": -5.0, "净偏差数量": -2.0},
+    ])
+    rule = _rule(name="R净口径", category_required=False, name_keywords=["边界"],
+                 dev_qty_required=True, dev_qty_min=0.0, dev_qty_max=1.0,
+                 exclude_alt=False, negative_loss_required=False)
+    ids = {str(x) for x in df.loc[match_rule_mask(df, rule), "data_id"]}
+    assert ids == {"N|1"}  # 只认净偏差数量，毛口径偏差数量=-5 不影响判定
+
+
+def test_dev_qty_condition_falls_back_to_raw_when_net_missing():
+    """旧数据路径没有「净偏差数量」列 → 回退「偏差数量」列（兼容旧行为）。"""
+    df = pd.DataFrame([
+        {"data_id": "F|1", "组件物料描述": "边界旧列", "偏差数量": 0.5},
+        {"data_id": "F|2", "组件物料描述": "边界旧列", "偏差数量": 5.0},
+    ])
+    rule = _rule(name="R回退", category_required=False, name_keywords=["边界"],
+                 dev_qty_required=True, dev_qty_min=0.0, dev_qty_max=1.0,
+                 exclude_alt=False, negative_loss_required=False)
+    ids = {str(x) for x in df.loc[match_rule_mask(df, rule), "data_id"]}
+    assert ids == {"F|1"}
