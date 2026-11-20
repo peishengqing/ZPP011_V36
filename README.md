@@ -1,635 +1,186 @@
-# ZPP011 数据分析平台使用说明书
+# ZPP011 生产偏差分析器
 
-## 📋 目录
+> 云南达利食品集团 · 生产物料耗用偏差分析与审核平台。
+> 基于 PySide6 的 Windows 桌面应用：一键导入生产订单耗用明细，自动完成替代料净偏差抵消、偏差分档预警、异常识别、原因归类与 24 张分析报表输出；内置 8 类业务看板、规则中心自动隔离、已读/审核/隔离状态持久化。
 
-1. [项目概述](#1-项目概述)
-2. [架构设计](#2-架构设计)
-3. [服务层详解](#3-服务层详解)
-4. [使用指南](#4-使用指南)
-5. [API 参考](#5-api-参考)
-6. [常见问题](#6-常见问题)
-7. [维护指南](#7-维护指南)
+**当前版本** v44.10（2026-11-20） · **技术栈** Python 3.13 · PySide6 · pandas · SQLite(WAL) · openpyxl
 
 ---
 
-## 1. 项目概述
+## 目录
 
-### 1.1 项目简介
-ZPP011 是一个基于 PySide6 的数据分析平台，专注于替代料偏差预警、数据审核、变更检测等工厂数据分析场景。平台采用模块化设计，实现了文件加载、数据预处理、状态恢复、审核处理、报表生成等完整工作流。
-
-### 1.2 技术栈
-- **GUI 框架**: PySide6
-- **数据处理**: pandas, numpy
-- **数据库**: SQLite（原生 sqlite3，WAL 模式；主线程单例 + 子线程 threading.local）
-- **设计模式**: 服务层模式、依赖注入、信号槽机制
-
-### 1.3 主要特性
-- 📊 **多源数据导入**: 支持 Excel 文件导入和解析
-- 🔍 **变更检测**: 自动识别已审核数据的变动（数量、备注等）
-- 🛡️ **隔离区管理**: 隔离可疑数据，防止误操作
-- 📈 **实时看板**: 替代料偏差预警看板，支持筛选和标记
-- 📋 **审核工作流**: 完整的审核、备注、状态管理系统
-- 🔔 **变动通知**: 变动记录弹窗提醒，标记已读时序清晰
+1. [项目简介](#1-项目简介)
+2. [功能特性](#2-功能特性)
+3. [快速开始](#3-快速开始)
+4. [输入数据要求](#4-输入数据要求)
+5. [分析结果：24 张导出表](#5-分析结果24-张导出表)
+6. [核心数据口径（必读）](#6-核心数据口径必读)
+7. [业务看板](#7-业务看板)
+8. [规则中心与自动隔离](#8-规则中心与自动隔离)
+9. [目录结构](#9-目录结构)
+10. [开发与测试](#10-开发与测试)
+11. [版本历史](#11-版本历史)
+12. [支持与反馈](#12-支持与反馈)
 
 ---
 
-## 2. 架构设计
+## 1. 项目简介
 
-### 2.1 整体架构
+ZPP011 面向食品生产的**「定额 vs 实际」物料耗用偏差分析**场景：SAP 导出的生产订单组件耗用明细动辄上万行，人工逐行核对效率低、口径易错。本工具把「导入 → 预处理 → 分析 → 审核 → 导出」整条链路自动化：
 
-```
-┌─────────────────────────────────────────────────┐
-│              GUI 视图层                          │
-│  MainWindow, Components, Views, Dialogs         │
-└─────────────────┬───────────────────────────────┘
-                  │
-┌─────────────────▼───────────────────────────────┐
-│  控制器层 (Controllers)                           │
-│  AnalysisController, AuditController, ...         │
-└─────────────────┬───────────────────────────────┘
-                  │
-┌─────────────────▼───────────────────────────────┐
-│  服务层 (Services)                                │
-│  DataService (协调器)                             │
-│  ├── DataPreprocessor (数据预处理)                │
-│  ├── ReadStatusService (状态与变更检测)          │
-│  ├── AuditResultService (审核结果恢复)           │
-│  └── QuarantineService (隔离区状态)              │
-└─────────────────┬───────────────────────────────┘
-                  │
-┌─────────────────▼───────────────────────────────┐
-│  核心功能层 (Core)                                 │
-│  read_status.py, fingerprint.py, quarantine.py  │
-└─────────────────────────────────────────────────┘
-```
+- **一张输入表驱动全部结果**：只依赖 SAP 侧的耗用明细（耗用视角单表，不含入库时间/质检记录/收发存对照）。
+- **替代料净偏差自动抵消**：同一订单内互为替代的物料（一对多/多对多，并查集分组）自动求和抵扣，避免"甲多耗、乙少耗"被拆成两条假预警。
+- **审核闭环**：已读/未读、审核结果、备注来源、隔离区状态全部落 SQLite，下次打开自动恢复；已审核数据再变动会自动标红并提醒。
 
-### 2.2 服务层职责
+## 2. 功能特性
 
-| 服务 | 职责 | 关键方法 |
-|------|------|----------|
-| **DataService** | 协调各子服务，提供统一数据接口 | `preprocess_audit_data()`, `get_factory_data()` |
-| **DataPreprocessor** | 数据清洗、规范化、增强 | `clean_columns()`, `add_data_id_and_fingerprint()` |
-| **ReadStatusService** | 读取状态恢复、变更检测 | `restore_read_status()`, `detect_and_notify_changes()` |
-| **AuditResultService** | 审核结果数据恢复 | `restore_audit_results()` |
-| **QuarantineService** | 隔离区状态管理 | `restore_quarantine_status()` |
+### 2.1 分析引擎
+- 偏差数量/偏差金额（含税）/偏差率自动计算，动态阈值可调（默认 ±10%）。
+- 替代料净偏差抵消（可开关），输出 净偏差数量 / 净偏差金额 / 净偏差率。
+- 异常预警分档：严重超耗、完全未投料、零定额、翻箱净含量守恒等专项识别。
+- 无备注预警 / 中间地带按阈值精确互补切分，不重不漏。
 
-### 2.3 核心数据流
+### 2.2 业务看板（8 类）
+未读看板 · 负损看板 · 正损看板 · 半成品看板 · 替代料看板 · 偏差率预警看板 · 未投料看板 · 物料画像。均支持工厂/车间/物料类型级联筛选、亮暗主题、导出。
 
-```
-Excel 文件 → 解析 → DataFrame → DataService.preprocess_audit_data()
-                                                   ↓
-                                            数据预处理流水线:
-                                            1. 清理冗余列
-                                            2. 数值转换
-                                            3. 添加 DataID
-                                            4. 恢复读取状态
-                                            5. 恢复审核结果
-                                            6. 变动检测
-                                            7. 列重排
-                                                   ↓
-                                            展示到 GUI
-```
+### 2.3 审核与状态管理
+- 单行勾选批量标记已读；未读看板支持「选中标记已读 / 全部标记已读」。
+- 隔离区：可疑数据隔离/释放，带操作留痕。
+- 变更检测：已审核记录的 实际数量 / 备注原因 / 产量 再变动 → 自动标未读 + 弹窗提醒。
 
----
+### 2.4 规则中心与自动隔离
+可视化配置隔离规则（组间 AND / 组内 OR），支持「净偏差数量」等条件（v44.09 起 dev_qty 条件优先按净偏差数量判定）；保存前可只读预览命中行。
 
-## 3. 服务层详解
+### 2.5 报表与导出
+一次分析输出 24 张 Excel 表（分析说明 + 汇总/明细/原因/趋势/守恒校验），另有 Word 报告、PPT、驾驶舱 HTML 等衍生导出能力。
 
-### 3.1 DataService - 统一数据服务层
+## 3. 快速开始
 
-`DataService` 是应用的核心协调器，负责管理所有子服务并提供统一的数据处理接口。
+### 3.1 环境要求（源码运行）
+- Windows 10/11，Python 3.13
+- 依赖：PySide6、pandas、numpy、openpyxl、matplotlib、pytest（开发）
 
-#### 初始化
-```python
-from gui_pyside6.services.data_service import DataService
-data_service = DataService()
-```
-
-#### 核心方法
-
-##### `preprocess_audit_data(df, previous_df=None) -> pd.DataFrame`
-
-**功能**: 完整的数据处理工作流
-
-**参数**:
-- `df` (pd.DataFrame): 原始数据 DataFrame
-- `previous_df` (pd.DataFrame, optional): 上一次的数据（用于变动检测）
-
-**处理步骤**:
-1. **数据清洗**:
-   - 清理冗余列（替代料组、净偏差、偏差率等）
-   - 去除重复列
-2. **列名规范化**:
-   - 偏差率数值列统一为 `偏差率(%)`
-   - 自动转换字符串格式为数值格式
-3. **数据增强**:
-   - 添加 `data_id` 唯一标识
-   - 添加 `fingerprint` 指纹（金额|率）
-4. **状态恢复**:
-   - 从 SQLite 恢复读取状态（`_read`, `_read_source`）
-   - 恢复审核结果（`审核结果`, `备注来源`）
-   - 恢复隔离区状态（`_quarantined`）
-5. **变动检测** (如果提供 `previous_df`):
-   - 检测已审核记录的变动（实际数量、备注原因、产量）
-   - 标记为未读并弹窗提醒
-6. **列重排**:
-   - 将有关系列放在一起（如偏差率移到偏差金额后）
-   - 调整产量相关列位置
-
-**示例**:
-```python
-df = data_service.preprocess_audit_data(raw_df)
-```
-
-##### `get_factory_data(df) -> dict`
-
-**功能**: 按工厂分组 DataFrame
-
-**返回**: 字典 `{工厂名: 分组后的 DataFrame}`
-
-**示例**:
-```python
-factories = data_service.get_factory_data(df)
-# {'南京': df1, '上海': df2}
-```
-
-##### `get_combined_factory_data(df) -> tuple`
-
-**功能**: 获取按工厂分组的数据和全部数据
-
-**返回**: `(factories_dict, all_data.DataFrame)`
-
-**示例**:
-```python
-factories, all_data = data_service.get_combined_factory_data(df)
-```
-
-##### `get_audit_changes(df) -> list`
-
-**功能**: 获取审核变更详情
-
----
-
-### 3.2 DataPreprocessor - 数据预处理服务
-
-负责数据的清洗、规范化、增强和重排。
-
-#### 配置常量
-
-```python
-# 数值列定义
-NUMERIC_COLUMN_DEFS = [
-    '定额', '实际', '偏差数量', '偏差金额', '偏差金额(含税)',
-    '净偏差数量', '净偏差金额', '净偏差率(%)'
-]
-
-# 冗余列对（移除列表，保留第二个）
-REDUNDANT_COL_PAIRS = [
-    ('替代料组', '_替代料组'),
-    ('净偏差', '净偏差金额'),
-    ('净偏差', '净偏差数量'),
-    ('偏差率', '偏差率(%)')
-]
-```
-
-#### 核心方法
-
-##### `clean_columns(df) -> pd.DataFrame`
-
-**功能**: 清理冗余列和重复列
-
-**移除的规则**:
-1. `替代料组` 列（保留 `_替代料组`）
-2. `净偏差` 列（保留 `净偏差金额`、`净偏差数量`）
-3. `偏差率` 字符串列（保留 `偏差率(%)` 数值列）
-4. 数据库中的重复列（保留第一个）
-
-##### `convert_numeric_cols(df) -> pd.DataFrame`
-
-**功能**: 确保关键数值列为数值类型
-
-**处理**:
-1. `偏差率(%)` 和 `偏差率` 列：移除 % 符号并转换为数值
-2. 其他数值列（定额、实际、偏差数量等）确保为数值类型
-3. 如果 `偏差率` 列为空，从 `偏差率(%)` 自动生成
-
-##### `normalize_alt_flag(df) -> pd.DataFrame`
-
-**功能**: 标准化是否替代料标识
-
-**规则**:
-- 空值或非正项 → "否"
-- "是"、"true"、"1"、"yes"、"y"、包含"替代"或"alt" → "是"
-
-##### `add_data_id_and_fingerprint(df) -> pd.DataFrame`
-
-**功能**: 添加数据唯一标识和指纹
-
-**DataID 规则**:
-- 有工厂列: `工厂|订单日期|流程订单|物料编码`
-- 无工厂列: `订单日期|流程订单|物料编码`
-
-**Fingerprint 规则**: `偏差金额（保留2位小数）|偏差率(%)（保留1位小数）`
-
-##### `reorder_columns(df) -> pd.DataFrame`
-
-**功能**: 调整列顺序
-
-**规则**:
-1. `偏差率(%)` 移到 `偏差金额` 或 `偏差金额(含税)` 后面
-2. `产量` 和 `产量单位` 移到 `产品物料描述` 后面
-
----
-
-### 3.3 ReadStatusService - 读取状态与变更检测服务
-
-负责恢复读取状态和检测已审核记录的变更。
-
-#### 核心方法
-
-##### `restore_read_status(df) -> pd.DataFrame`
-
-**功能**: 恢复已读状态并检测变更
-
-**基线策略**:
-- 从数据库加载历史状态和快照
-- 无基线的新记录 → 静默建立基线（使用当前值）
-- 有基线的旧记录 → 与当前值比对
-
-**变更检测**:
-- 实际数量变化 → 标记未读，行红标
-- 备注原因变化 → 标记未读，行红标
-- 产量变化 → 标记未读，行红标
-
-**返回**: 添加以下列的 DataFrame:
-- `_read` (int): 0=未读, 1=已读
-- `_read_source` (str): 来源（manual, 系统标记等）
-- `_post_audit_changed` (int): 0=无变更, 1=有变更
-
-##### `detect_and_notify_changes(old_df, new_df)`
-
-**功能**: 同会话重新分析时，检测已审核记录的变动
-
-**使用场景**: 用户重新加载数据，需要对比历史状态
-
-**通知方式**:
-- 记录变动历史到数据库
-- 触发 `log_signal` 发送警告
-- 在 `last_audit_changes` 存储变动详情
-
-##### `get_audit_changes(df) -> list`
-
-**功能**: 获取审核变更详情（从理论上来）
-
-**返回**: 变更列表，包含 `(data_id, field, old_value, new_value)`
-
-##### `mark_changes_as_read(changes, df)`
-
-**功能**: 把变动记录一次性标记为已读，并重建快照基线
-
----
-
-### 3.4 AuditResultService - 审核结果恢复服务
-
-从数据库恢复审核结果和备注来源。
-
-#### 核心方法
-
-##### `restore_audit_results(df) -> pd.DataFrame`
-
-**功能**: 恢复 `审核结果` 和 `备注来源` 两列
-
-**实现**:
-- 优先使用 `merge` 向量化操作（性能优化）
-- 回退到 `map(lambda)` 逻辑
-
-**AI 建议**: 已停用，该列会强制清空
-
-**返回**: 添加了 `审核结果` 和 `备注来源` 列的 DataFrame
-
----
-
-### 3.5 QuarantineService - 隔离区状态服务
-
-管理隔离区状态，标记嫌疑数据。
-
-#### 核心方法
-
-##### `restore_quarantine_status(df) -> pd.DataFrame`
-
-**功能**: 添加隔离标记列 `_quarantined`
-
-**规则**:
-- `data_id` 在隔离列表 → `_quarantined = 1`
-- 否则 → `_quarantined = 0`
-
-**返回**: 添加 `_quarantined` 列的 DataFrame
-
----
-
-### 3.6 DataGrouping - 数据分组函数
-
-提供数据分组功能，按指定列拆分 DataFrame。
-
-#### 函数定义
-
-```python
-# data_grouping.py
-# 注意：已从类改为纯函数
-
-def process_analysis_results(df: pd.DataFrame, groupby_col: str = '工厂', ...) -> dict
-def get_combined_factory_data(df: pd.DataFrame, groupby_col: str = '工厂') -> tuple
-```
-
----
-
-### 3.7 Utils - 通用工具函数
-
-提供跨服务使用的通用函数。
-
-#### 核心函数
-
-- `find_real_qty_col(df) -> str`: 查找实际数量列名
-- `find_remark_col(df) -> str`: 查找备注列名
-- `find_yield_col(df) -> str`: 查找产量列名
-- `norm_note(v) -> str`: 规范化备注文本
-- `safe_qty(v) -> float|None`: 安全转换数量为数值
-- `build_data_id(row: dict, df: pd.DataFrame) -> str`: 构建唯一 data_id
-- `classify_row_color_keys(df) -> list`: 自动分类行颜色规则
-
----
-
-## 4. 使用指南
-
-### 4.1 快速开始
-
-#### 导入服务
-```python
-from gui_pyside6.services.data_service import DataService
-init_data_service = DataService()
-```
-
-#### 导入文件
-```python
-import pandas as pd
-df = pd.read_excel("data.xlsx")
-```
-
-#### 预处理
-```python
-df = init_data_service.preprocess_audit_data(df)
-```
-
-#### 查看按工厂分组
-```python
-factories = init_data_service.get_factory_data(df)
-for factory, factory_df in factories.items():
-    print(f"{factory}: {len(factory_df)} 行")
-```
-
----
-
-### 4.2 完整工作流
-
-#### 数据加载与处理
-```python
-# 1. 加载原始数据
-df = pd.read_excel("data.xlsx")
-
-# 2. 历史数据（用于变动检测）
-previous_df = None  # 如果没有历史记录，不传
-
-# 3. 预处理
-df = data_service.preprocess_audit_data(df, previous_df)
-
-# 4. 检查状态
-print(f"未读记录: {len(df[df['_read'] == 0])}")
-print(f"已审核记录: {len(df[df['审核状态'] == '已审核'])}")
-print(f"隔离记录: {len(df[df['_quarantined'] == 1])}")
-
-# 5. 创建视图模型（v43.406 修正：原文档写的 api.views.data_view 在本仓并不存在）
-from gui_pyside6.models.data_frame_model import DataFrameModel
-source_model = DataFrameModel(df)
-```
-
-#### 变动检测
-```python
-# 同会话重新分析
-previous_df = load_previous_data()  # 从记忆或临时状态恢复
-data_service.read_status_service.detect_and_notify_changes(previous_df, df)
-
-# 获取变更详情
-changes = data_service.get_audit_changes(df)
-if changes:
-    print(f"发现 {len(changes)} 条变更记录")
-```
-
----
-
-### 4.3 高级功能
-
-#### 恢复读取状态
-```python
-data_ids = df['data_id'].tolist()
-status_map = data_service.read_status_service.get_read_status(data_ids)
-df = data_service.read_status_service.restore_read_status(df)
-```
-
-#### 标记变动为已读
-```python
-changes = data_service.last_audit_changes
-data_service.mark_changes_as_read(changes, df)
-```
-
-#### 隔离区管理
-```python
-from core.quarantine_manager import get_quarantined_ids, quarantine_ids, release_ids
-
-# 隔离指定 data_id
-quarantine_ids(['id1', 'id2'])
-df = data_service.quarantine_service.restore_quarantine_status(df)
-
-# 释放隔离
-release_ids(['id1'])
-```
-
----
-
-## 5. API 参考
-
-### 5.1 DataService API
-
-| 方法 | 参数 | 返回 | 描述 |
-|------|------|------|------|
-| `preprocess_audit_data` | `df: pd.DataFrame`, `previous_df: pd.DataFrame` | `pd.DataFrame` | 完整数据处理工作流 |
-| `get_factory_data` | `df: pd.DataFrame` | `dict` | 按工厂分组 |
-| `get_combined_factory_data` | `df: pd.DataFrame` | `tuple(dict, DataFrame)` | 工厂分组和全部数据 |
-| `log` | `msg: str`, `level: str` | `None` | 日志输出 |
-
-### 5.2 DataPreprocessor API
-
-| 方法 | 参数 | 返回 | 描述 |
-|------|------|------|------|
-| `clean_columns` | `df: pd.DataFrame` | `pd.DataFrame` | 清理冗余和重复列 |
-| `convert_numeric_cols` | `df: pd.DataFrame` | `pd.DataFrame` | 数值列转换 |
-| `normalize_alt_flag` | `df: pd.DataFrame` | `pd.DataFrame` | 标准化替代料标识 |
-| `add_data_id_and_fingerprint` | `df: pd.DataFrame` | `pd.DataFrame` | 添加标识和指纹 |
-| `reorder_columns` | `df: pd.DataFrame` | `pd.DataFrame` | 调整列顺序 |
-| `snapshot_qty_for` | `df: pd.DataFrame`, `data_id` | `float|None` | 获取指定数据的实际数量 |
-| `snapshot_note_for` | `df: pd.DataFrame`, `data_id` | `str` | 获取指定数据的备注原因 |
-
-### 5.3 ReadStatusService API
-
-| 方法 | 参数 | 返回 | 描述 |
-|------|------|------|------|
-| `restore_read_status` | `df: pd.DataFrame` | `pd.DataFrame` | 恢复读取状态 |
-| `detect_and_notify_changes` | `old_df: pd.DataFrame`, `new_df: pd.DataFrame` | `None` | 检测并通知变动 |
-| `mark_changes_as_read` | `changes: list`, `df: pd.DataFrame` | `int` | 标记变动为已读 |
-
-### 5.4 AuditResultService API
-
-| 方法 | 参数 | 返回 | 描述 |
-|------|------|------|------|
-| `restore_audit_results` | `df: pd.DataFrame` | `pd.DataFrame` | 恢复审核结果 |
-
-### 5.5 QuarantineService API
-
-| 方法 | 参数 | 返回 | 描述 |
-|------|------|------|------|
-| `restore_quarantine_status` | `df: pd.DataFrame` | `pd.DataFrame` | 恢复隔离状态 |
-
-### 5.6 Utils API
-
-| 函数 | 参数 | 返回 | 描述 |
-|------|------|------|------|
-| `find_real_qty_col` | `df: pd.DataFrame` | `str` | 查找实际数量列 |
-| `find_remark_col` | `df: pd.DataFrame` | `str` | 查找备注列 |
-| `find_yield_col` | `df: pd.DataFrame` | `str` | 查找产量列 |
-| `norm_note` | `v` | `str` | 规范化备注 |
-| `safe_qty` | `v` | `float|None` | 安全数量转换 |
-| `build_data_id` | `row: dict`, `df: pd.DataFrame` | `str` | 构建 data_id |
-
----
-
-## 6. 常见问题
-
-### Q1: 为什么数据提示变动？
-**A**: 变更检测功能发现已审核记录的以下内容发生变化：
-- 实际数量变化
-- 备注原因变化
-- 产量变化
-
-该记录会被标记为未读并显示红色背景。
-
-### Q2: 如何清除变动检测？
-**A**: 使用 `mark_changes_as_read(changes, df)` 方法，将变动记录标记为已读并重建基线。
-
-### Q3: 为什么有些审核结果没有恢复？
-**A**: 可能的原因：
-1. 数据库中没有历史记录
-2. `data_id` 格式不正确
-3. 网络连接问题（如使用云端数据库）
-
-### Q4: 如何自定义清理规则？
-**A**: 修改 `data_preprocessor.py` 中的配置常量：
-```python
-# 添加新的冗余列对
-REDUNDANT_COL_PAIRS = [
-    ('替代料组', '_替代料组'),
-    ('净偏差', '净偏差金额'),
-    # 添加新的列对
-    ('旧列', '新列'),
-]
-```
-
-### Q5: 变动检测不工作怎么办？
-**A**: 确保提供了 `previous_df` 参数，并且数据包含 `data_id` 列。
-
-### Q6: 如何重置整个状态？
-**A**: 销毁并重新创建 `DataService` 实例。
-
----
-
-## 7. 维护指南
-
-### 7.1 数据库维护
-
-**备份数据库**:
-```python
-import shutil
-import os
-
-from core.read_status import get_db_path
-db_path = get_db_path()
-backup_path = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
-shutil.copy(db_path, backup_path)
-```
-
-**清理旧数据**:
-```python
-from core.read_status import clear_read_status_history, clear_audit_changes
-clear_read_status_history(days_old=30)
-clear_audit_changes(days_old=30)
-```
-
-### 7.2 日志分析
-
-**日志级别**:
-- `info`: 一般信息
-- `warning`: 警告（如数据变动）
-- `error`: 错误
-- `alert`: 重要通知
-
-### 7.3 性能调优
-
-**配置**:
-- 数据库锁定超时：核心配置
-- 并发数：根据系统资源调整
-- 批处理大小：已读批量提交大小
-
-**监控**:
-- 数据库连接数
-- 内存使用情况
-- 响应时间
-
-### 7.4 代码组织
-
-**入口点**: `run_pyside6.py`（`MainWindow` 在 `gui_pyside6/main_window.py`）
-**服务协调**: `data_service.py`
-**核心逻辑**: `core/` 目录
-
-### 7.5 测试
-
-**单元测试**:
 ```bash
-pytest tests/unit/
+pip install -r requirements.txt   # 如无 requirements，按上述清单安装
+python run_pyside6.py             # 启动主程序
 ```
 
-**集成测试**:
+### 3.2 打包版（推荐给业务同事）
+`build_pyside6_exe.py` 打包为单文件 exe：`ZPP011偏差分析器_v{版本}_{时间戳}.exe`，双击即用，无需装 Python。数据缓存与状态库存于 `%USERPROFILE%\.zpp011_audit\`。
+
+### 3.3 首次分析五步
+1. 启动程序 → 「导入」选择 SAP 导出的耗用明细 Excel；
+2. 确认分析参数（动态阈值、偏差率阈值、净偏差抵消开关、日期范围）；
+3. 点「开始分析」，进度按 12 个步骤推进；
+4. 在主表 / 各看板中逐行审核（备注、审核结果、已读标记）；
+5. 「导出分析结果」得到 24 张表的 Excel 工作簿。
+
+## 4. 输入数据要求
+
+- 输入为 **单 sheet（`Data`）** 的耗用明细，约 26 列。关键列：
+
+| 列名 | 说明 |
+|------|------|
+| 订单开始日期 / 流程订单 | 订单维度键（净偏差按 订单日期+流程订单 分组抵扣） |
+| 工厂名称 / 车间 | 组织维度 |
+| 组件物料号 / 组件物料描述 / 组件单位 / 物料分类 | 物料维度 |
+| 数量-定额 / 数量-实际 | 定额与实际耗用（核心） |
+| 金额-定额(含税) / 金额-实际(含税) | 金额口径 |
+| 备注原因 | 审核备注（空 = 无备注，进「无备注预警」） |
+| 产量 / 产量单位 / 产品物料号码 / 产品物料描述 | 产出与翻箱守恒校验用 |
+
+- 缺列时部分分析会自动跳过或按 0 处理；「偏差数量 / 偏差金额 / 净偏差数量」等均为分析派生列，无需在源表提供。
+
+## 5. 分析结果：24 张导出表
+
+| 分组 | 表 | 内容 |
+|------|----|------|
+| 导航 | 📋 分析说明 | 各表口径说明 + 事实卡（行数/列数/关键度量） |
+| 结论层 | 汇总统计 | 工厂×车间×物料分类 的正/负偏差条数、金额、备注覆盖率、预警 |
+| | 驾驶舱 | 关键指标 + 图表（HTML 内嵌） |
+| | 偏差金额分析 | 按金额排序的偏差构成 |
+| | 偏差原因汇总 / 偏差原因分析 | 按原因归类的数量/金额分解 |
+| | 趋势分析（自然日分组） | 偏差随时间走势 |
+| 明细层 | 完整偏差明细 | 全量逐行明细（28 列，含净偏差数量/金额/率、是否替代料、偏差区间/等级） |
+| | 替代料明细 | 替代料配对行及组净偏差 |
+| | 无备注预警 | \|偏差率\| ≥ 阈值且未备注的行（含预警等级 🟠/🟡、净偏差数量） |
+| | 中间地带明细 | \|偏差率\| < 阈值的真偏差行（含净偏差数量） |
+| | 异常预警 | 完全未投料/零定额等异常类型逐行清单 |
+| 审计层 | 口径自检 / 未判定原因分布 / 翻箱守恒预警 / 翻箱组件明细 / 饮料翻箱守恒 / 饮料翻箱组件明细 等 | 数字溯源与专项校验 |
+
+> v44.10 起，「无备注预警」「中间地带明细」也带「净偏差数量」列，口径与完整偏差明细/异常预警完全一致。
+
+## 6. 核心数据口径（必读）
+
+- **偏差数量 = 数量-实际 − 数量-定额**。**正 = 多耗，负 = 节约**。
+- **净偏差数量**：同一（订单日期, 流程订单）内、互为替代料的物料组（≥2 个物料同时出现）偏差求和抵扣后的值；**非替代料行 = 偏差数量（毛口径）**。所以净偏差数量可能把「毛口径负偏差」变成正/零——判断是否进隔离区应以净口径为准（v44.09）。
+- **无备注预警**：|偏差率| ≥ 动态阈值（默认 10%）且 ≠100% 且偏差≠0；**中间地带**：|偏差率| < 阈值。两边开闭区间互补，一行只会进其中一张表。
+- **汇总统计**里的「正/负偏差金额」两列因四舍五入不闭合，**不要使用**；请以「总偏差金额(含税)」列为准。
+- 金额口径：完整偏差明细的「偏差金额」、净偏差金额与汇总统计的「总偏差金额(含税)」分母/含义不同，跨表对数时先看表名。
+
+## 7. 业务看板
+
+| 看板 | 用途 |
+|------|------|
+| 未读看板 | 待审核行的主战场；默认只显示未读，支持选中/全部标记已读 |
+| 负损看板 | 实际 < 定额（节约）行专项复核，防止"负偏差=好事"漏判（如退料、错批号线索） |
+| 正损看板 | 实际 > 定额（多耗）行专项复核 |
+| 半成品看板 | 半成品类物料偏差专项 |
+| 替代料看板 | 替代料配对命中行 + 组净偏差展示 |
+| 偏差率预警看板 | 偏差率超阈值的行按严重度分层 |
+| 未投料看板 | 定额>0 而实际=0 的订单行兜底（偏差率恒 -100%，被无备注预警排除的那部分） |
+| 物料画像 | 按物料编码聚合的历史偏差/已读/隔离画像 |
+
+## 8. 规则中心与自动隔离
+
+- 规则 = 条件组（组间 AND，组内 OR），条件类型含 偏差率、净偏差数量、金额、物料类型、备注来源 等。
+- 「偏差数量」条件自 v44.09 起**优先按「净偏差数量」列判定**（列探测顺序：净偏差数量 → 偏差数量 → 偏差量 → 差异数量）。
+- 修改规则后需在界面点「保存规则」才落盘（`config/auto_quarantine_config.json`）；保存前可用「命中预览」只读查看将命中的行。
+
+## 9. 目录结构
+
+```
+├── run_pyside6.py            # 程序入口
+├── gui_pyside6/              # GUI 层（main_window、shells 看板、dialogs、components、services）
+├── analysis/                 # 分析引擎（analyzer.py 主流程 + excel_builder 各 sheet 构建器 + net_offset 净偏差）
+├── core/                     # 核心域逻辑（auto_quarantine 规则引擎、read_status、quarantine、bias_calculator）
+├── domain/                   # 领域服务（alt_material 替代料管理）
+├── utils/                    # 工具（version_history 版本集中管理）
+├── config/                   # 运行配置（阈值、自动隔离规则；不入库的本地覆盖放此处）
+├── tests/                    # pytest 单元/集成测试（900+ 例）
+├── tools/                    # 打包与门禁脚本（build_pyside6_exe.py、pre_push_gate.py、gui_smoke_offscreen.py）
+└── CHANGELOG.md              # 版本日志
+```
+
+## 10. 开发与测试
+
 ```bash
-# 需要测试数据
-pytest tests/integration/
+# 全量测试（覆盖率门禁 ≥18%）
+python -m pytest tests/
+
+# 推送前门禁（py_compile + pyflakes + 全量 pytest + GUI offscreen 冒烟 25 项）
+python tools/pre_push_gate.py .
+
+# GUI 冒烟单跑
+python tools/gui_smoke_offscreen.py
 ```
 
----
+开发约定：功能改动先在 `utils/version_history.py` 索引 0 升版本号并同步 `CHANGELOG.md`；`.py` 改动必须过 py_compile + pyflakes；`config/*.json` 本地覆盖不入库。
 
-## 📞 支持与反馈
+## 11. 版本历史
 
-- **项目主页**: 内部 Git 仓库
-- **问题反馈**: 联系开发团队
-- **技术支持**: 部门内部系统
+完整日志见 [CHANGELOG.md](CHANGELOG.md)。近期摘录：
 
----
-
-## 📝 版本信息
-
-| 版本 | 日期 | 备注 |
+| 版本 | 日期 | 要点 |
 |------|------|------|
-| v1.0 | 2026-06-23 | 初始 PySide6 迁移版 |
-| v42.0 | 2026-09-28 | 首个稳定版本 |
-| v43.0 | 2026-10-29 | 服务层重构完成 |
-| v43.406 | 2026-11-18 | 审核整改：修未定义名/降级可见性/CI 门禁，删除死代码与重复 worker |
+| v44.10 | 2026-11-20 | 无备注预警/中间地带明细补「净偏差数量」列 |
+| v44.09 | 2026-11-20 | 自动隔离「偏差数量」条件改按净偏差数量判定 |
+| v44.08 | 2026-11-20 | 修复未读/负损看板默认筛选在初始化守卫期失效 |
+| v44.07 | 2026-11-20 | 未读看板支持标记已读（选中/全部） |
+| v44.06 | 2026-11-19 | 看板列宽自适应等体验优化 |
 
----
+## 12. 支持与反馈
 
-**文档维护**: [裴哥]  
-**最后更新**: 2026-10-29
+- **制作人**：裴盛清
+- **仓库**：`github.com/peishengqing/ZPP011_V36`
+- 问题反馈请附：分析的数据文件（哪一期）、截图/日志、复现步骤。
