@@ -395,22 +395,20 @@ class ReadStatusService(QObject):
             net_diff = (not pd.isna(hs_net)) and (not pd.isna(cur_nq)) and (abs(float(hs_net) - float(cur_nq)) >= 1e-6)
 
             # 净偏差数量修改前/后（v43.380：无论哪个字段变动，都附上净偏差数量前后值）
-            # v43.401：本函数是变动提醒弹窗的唯一数据源（main_window:726 调用）。
-            # 净偏差由偏差数量派生（非替代行净偏差=偏差数量），SAP 重导时实际变了但
-            # 偏差数量源表列没变 → 若直接拿当前净偏差当「后值」，前后必然相等。
-            # 对实际数量变动行，把变动量补给后值：后 = 导入净值 + (新实际−旧实际)；
-            # 若基线净偏差缺失（老数据无 snapshot_net_qty），前值用「后值−变动量」反推，
-            # 保证前后都能显示且反映真实变化。
+            # v44.11：后值一律取主表当前净偏差 cur_nq（唯一真源），与实际数量变动无关。
+            # 旧逻辑（v43.401/402）曾对实际变动行「后 = 导入净值 + (新实际−旧实际)」补
+            # 增量：当年 analyzer 不重算偏差数量源列时才需要；如今 analyzer 已重算，
+            # 主表净偏差本身已反映新实际，再补一次 = 重复计入（裴哥 2026-11-23 报障：
+            # 后值 103.37 = 主表 13.37 + 变更量 90）。
+            # 前值：有基线快照用快照；老数据无基线且实际变动时，用「后值−变动量」反推。
             net_old = float(hs_net) if not pd.isna(hs_net) else None
             net_new = float(cur_nq) if not pd.isna(cur_nq) else None
-            if qty_diff and net_new is not None:
+            if net_old is None and qty_diff and net_new is not None:
                 try:
                     _delta = float(cur_q) - float(hs_qty)
                     # v43.402：与净偏差列本身口径一致（analyzer 写列时 .round(2)），
                     # 浮点相加会留 -40.867000000000006 这种长尾，统一收两位。
-                    net_new = round(net_new + _delta, 2)
-                    if net_old is None:
-                        net_old = round(net_new - _delta, 2)
+                    net_old = round(net_new - _delta, 2)
                 except (TypeError, ValueError):
                     pass
 
@@ -507,16 +505,18 @@ class ReadStatusService(QObject):
             for did, old_v, new_v, field in changes:
                 _n_old = old_net.get(did)
                 _n_new = new_net.get(did)
-                # v43.400：净偏差由偏差数量派生（非替代行净偏差=偏差数量），而 SAP
-                # 重导时「实际」变了但「偏差数量」源表列没变 → 变动提醒前后两列相等。
-                # 对「实际数量」变动行，把变动量补给 net_new（等价按新实际修正偏差数量）：
-                # 净偏差后 = 导入净值 + (新实际−旧实际)。非替代行精确、替代行抵扣不变时同样精确。
+                # v44.11：后值一律取重分析后主表当前净偏差 _n_new（唯一真源），不再补
+                # 「新实际−旧实际」增量。旧逻辑 v43.400/402 是为「重导时偏差数量源列
+                # 未重算」补增量；如今 analyzer 已重算净偏差，补增量 = 重复计入
+                # （与 get_audit_changes 同口径修正，裴哥 2026-11-23 报障）。
+                # 前值：有旧快照用快照；缺旧快照且实际变动时用「后值−变动量」反推。
                 if field == '实际数量' and old_v is not None and new_v is not None \
                         and _n_new is not None:
-                    try:
-                        _n_new = round(float(_n_new) + (float(new_v) - float(old_v)), 2)  # v43.402：去浮点长尾
-                    except (TypeError, ValueError):
-                        pass
+                    if _n_old is None:
+                        try:
+                            _n_old = round(float(_n_new) - (float(new_v) - float(old_v)), 2)
+                        except (TypeError, ValueError):
+                            pass
                 self.last_audit_changes.append({
                     'data_id': did, 'field': field,
                     'workshop': new_wk.get(did),
