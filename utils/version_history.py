@@ -14,6 +14,24 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v44.12",
+            "date": "2026-11-23",
+            "fixes": (
+                "修复所有 Qt.Popup 浮层搜索框打不进中文（裴哥 2026-11-23：\n"
+                "列头筛选/各面板搜索框一直只能打英文和拼音）。根因：Qt.Popup\n"
+                "窗口默认不被激活，Windows 输入法候选框不弹，键盘事件绕过 IME\n"
+                "直接落到 QLineEdit → 只出拼音字母。v43.251 只设了\n"
+                "WA_InputMethodEnabled + setFocus，方向错在没激活窗口。\n"
+                "修法（Windows 下 Qt.Popup+QLineEdit 公认解法）：三处浮层在\n"
+                "popup.show() 后补 popup.activateWindow()，并在搜索框 textEdited\n"
+                "后再激活一次（删空重输否则又失效）。覆盖：主表列头筛选\n"
+                "column_controller.py、各看板共用 column_filter.py、多选下拉\n"
+                "tag_multi_select.py。\n"
+                "验证：py_compile + pyflakes + 全量 pytest + GUI 冒烟 25 项通过；\n"
+                "真机 IME 效果需裴哥在搜索框敲中文确认（offscreen 无法模拟 IME）。"
+            ),
+        },
+        {
             "version": "v44.11",
             "date": "2026-11-23",
             "fixes": (

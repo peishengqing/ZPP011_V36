@@ -312,6 +312,8 @@ class ColumnFilterController(QObject):
         y = self.header.height()
         gpos = self.header.viewport().mapToGlobal(QPoint(int(x), int(y)))
         popup.show()
+        # v44.12：弹出后显式激活窗口，否则 Windows 输入法候选框不弹、只能打拼音/英文
+        popup.activateWindow()
         popup.adjustSize()
         screen = QApplication.primaryScreen()
         if screen is not None:
@@ -431,6 +433,9 @@ class ColumnFilterController(QObject):
                 cb.setVisible((t in key.lower()) if t else True)
 
         search.textChanged.connect(apply_search)
+        # v44.12：Qt.Popup 浮层默认不被激活 → Windows 输入法候选框不弹，
+        # textEdited 后重新激活，避免「删空重输又打不进中文」。
+        search.textEdited.connect(lambda *_: popup.activateWindow())
 
         def select_all():
             for _, cb in items:
@@ -499,6 +504,8 @@ class ColumnFilterController(QObject):
         y = self.header.height()
         gpos = self.header.viewport().mapToGlobal(QPoint(int(x), int(y)))
         popup.show()
+        # v44.12：弹出后显式激活窗口，否则 Windows 输入法候选框不弹、只能打拼音/英文
+        popup.activateWindow()
         popup.adjustSize()
         pw = popup.width()
         ph = popup.height()

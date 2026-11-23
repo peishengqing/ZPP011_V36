@@ -4,6 +4,23 @@
 
 ---
 
+## v44.12 — 修复所有浮层搜索框打不进中文（Qt.Popup 未激活）
+
+**发布日期：2026-11-23**
+
+### 🔧 修复
+- **所有面板/浮层的搜索框一直只能打英文和拼音**（裴哥 2026-11-23 报障，源码版 `python run_pyside6.py`，一直如此）。根因：Windows 下 `Qt.Popup` 类型浮层默认**不被激活**，中文输入法候选框不弹出，键盘事件绕过 IME 直接落到 `QLineEdit`，于是只能敲出拼音字母/英文。
+- v43.251 曾试图修这个问题，但只设了 `WA_InputMethodEnabled` + `setFocus`——属性对、焦点对，**唯独没激活窗口**，所以一直没真正生效。
+- **修法**（Windows 下 Qt.Popup + QLineEdit 公认解法）：三处浮层在 `popup.show()` 后补 `popup.activateWindow()`；有搜索框的再连 `search.textEdited` → 激活一次，避免「删空后重新输入又打不进中文」。
+  - `gui_pyside6/controllers/column_controller.py`：主表列头筛选浮层（含空值兜底浮层）。
+  - `gui_pyside6/utils/column_filter.py`：各看板对话框共用的列头筛选浮层（含空值兜底浮层）。
+  - `gui_pyside6/widgets/tag_multi_select.py`：多选下拉搜索浮层。
+- 左侧筛选面板的内嵌 `QLineEdit`（流程订单号、备注关键词等）不是 Popup，本就不受此坑影响，未改。
+
+### ⚠️ 验证边界
+- py_compile + pyflakes + 全量 pytest + GUI 冒烟 25 项通过（代码层）。
+- **真机 IME 效果无法在 offscreen 环境验证**（offscreen 不加载 Windows 输入法），需裴哥在真机搜索框敲中文、确认候选框能弹出并上屏。
+
 ## v44.11 — 修复变动提醒「净偏差数量(后)」虚高（重复计入变更增量）
 
 **发布日期：2026-11-23**

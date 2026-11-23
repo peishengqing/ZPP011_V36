@@ -561,6 +561,10 @@ class ColumnController:
                 cb.setVisible((t in key.lower()) if t else True)
 
         search.textChanged.connect(apply_search)
+        # v44.12：Qt.Popup 浮层默认不被激活 → Windows 中文输入法候选框不弹，
+        # 键盘绕过 IME 直落编辑框（只出拼音/英文）。textEdited 后重新激活窗口，
+        # 避免「删空后重新输入又打不进中文」（CSDN 实测：仅 show 时激活不够）。
+        search.textEdited.connect(lambda *_: popup.activateWindow())
 
         def select_all():
             for _, cb in items:
@@ -628,6 +632,8 @@ class ColumnController:
         y = self.mw._sort_header.height()
         gpos = self.mw._sort_header.viewport().mapToGlobal(QPoint(int(x), int(y)))
         popup.show()
+        # v44.12：弹出后显式激活窗口，否则 Windows 输入法候选框不弹、只能打拼音/英文
+        popup.activateWindow()
         popup.adjustSize()
         pw = popup.width()
         ph = popup.height()
@@ -699,6 +705,8 @@ class ColumnController:
         y = self.mw._sort_header.height()
         gpos = self.mw._sort_header.viewport().mapToGlobal(QPoint(int(x), int(y)))
         popup.show()
+        # v44.12：空值兜底浮层同样激活（保持所有 Popup 输入法行为一致）
+        popup.activateWindow()
         popup.adjustSize()
         screen = QApplication.primaryScreen()
         if screen is not None:

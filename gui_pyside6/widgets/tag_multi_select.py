@@ -447,9 +447,14 @@ class TagMultiSelect(QWidget):
         # itemChanged 会对每次勾选触发 → _toggle 幂等（无变化不发信号），批量清空不会重发
         lst.itemChanged.connect(lambda it: self._toggle(it.text(), it.checkState() == Qt.Checked))
         search.textChanged.connect(apply_filter)
+        # v44.12：Qt.Popup 浮层默认不被激活 → Windows 输入法候选框不弹，
+        # textEdited 后重新激活，避免「删空重输又打不进中文」。
+        search.textEdited.connect(lambda *_: popup.activateWindow())
         btn_all.clicked.connect(select_all)
         btn_none.clicked.connect(select_none)
 
         self._popup = popup
         popup.show()
+        # v44.12：弹出后显式激活窗口，否则 Windows 输入法候选框不弹、只能打拼音/英文
+        popup.activateWindow()
         search.setFocus()
