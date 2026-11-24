@@ -719,6 +719,8 @@ class MainWindow(QMainWindow):
 
             # 待处理变动列表（标记已读后从此移除并刷新表格）；行内 UserRole 存 remaining 索引，排序/部分标记后仍可正确映射
             remaining = list(changes)
+            # v44.13：列头排序状态（Qt6 下 setSortingEnabled 内部连接不可靠，显式自管）
+            _sort_state = {"col": -1, "order": Qt.AscendingOrder}
 
             def _populate(show_list, with_progress=False):
                 table.setSortingEnabled(False)
@@ -793,10 +795,35 @@ class MainWindow(QMainWindow):
                             if it:
                                 it.setFont(shrink_font)
                 table.setSortingEnabled(True)
+                # v44.13：重填表后恢复已有排序（标记已读刷新 / 筛选后不丢排序）
+                if _sort_state["col"] >= 0:
+                    table.sortItems(_sort_state["col"], _sort_state["order"])
+                    table.horizontalHeader().setSortIndicator(
+                        _sort_state["col"], _sort_state["order"])
                 # v43.399：数据刷新后触发列宽自适应（延迟一拍，避免逐行测宽卡首帧）
                 _adaptive = getattr(table, '_adaptive_table', None)
                 if _adaptive is not None:
                     _adaptive.schedule_initial()
+
+            # v44.13：显式连接列头点击排序——本项目 PySide6/Qt6 下
+            # setSortingEnabled(True) 的内部 sectionClicked→自动排序 连接不可靠，
+            # 项目里其他表格（未读看板/替代料/偏差率预警等）均靠显式连接绕过，
+            # 唯独本弹窗先前只调开关，点列头无反应。sortItems 整行移动，UserRole
+            # 存的 remaining 索引跟随 item，双击定位/标记已读不错位。
+            def _on_sort_click(col):
+                if col < 0 or col >= table.columnCount():
+                    return
+                if col == _sort_state["col"]:
+                    _sort_state["order"] = (Qt.DescendingOrder
+                                            if _sort_state["order"] == Qt.AscendingOrder
+                                            else Qt.AscendingOrder)
+                else:
+                    _sort_state["col"] = col
+                    _sort_state["order"] = Qt.AscendingOrder
+                table.sortItems(col, _sort_state["order"])
+                table.horizontalHeader().setSortIndicator(col, _sort_state["order"])
+
+            table.horizontalHeader().sectionClicked.connect(_on_sort_click)
 
             _populate(remaining[:MAX_DISPLAY], with_progress=True)
 

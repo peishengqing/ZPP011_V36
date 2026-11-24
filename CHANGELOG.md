@@ -4,6 +4,19 @@
 
 ---
 
+## v44.13 — 修复变动提醒弹窗表格不能排序
+
+**发布日期：2026-11-24**
+
+### 🔧 修复
+- **变动提醒弹窗点列头没有反应、表格不能排序**（裴哥 2026-11-24）。根因：本项目 PySide6/Qt6 下 `QTableWidget.setSortingEnabled(True)` 的内部「sectionClicked → 自动排序」连接不可靠——项目里其他表格（未读看板、替代料、偏差率预警、隔离区等）都靠显式连接绕过，唯独变动提醒弹窗只调了开关没接信号。
+- **修法**（`gui_pyside6/main_window.py` 的 `_show_audit_changes_dialog`）：显式连接 `header.sectionClicked` → 自管 handler（同列切换升/降、换列重置升序 → `table.sortItems()` + `setSortIndicator` 画箭头）；排序状态存闭包，`_populate` 重填表后（标记已读刷新/筛选）恢复排序。`QTableWidget.sortItems` 整行移动，`Qt.UserRole` 存的 remaining 索引跟随 item，双击定位/标记已读不错位（offscreen 实测确认）。
+- 数值列（旧值/新值/净偏差前后）按字符串排序，与项目其他表格一致。
+
+### ✅ 验证
+- py_compile + pyflakes + 全量 pytest + GUI 冒烟 25 项通过。
+- offscreen 实测：显式连接后点击列头升降序切换正确、UserRole 跟随 item 移动。
+
 ## v44.12 — 修复所有浮层搜索框打不进中文（Qt.Popup 未激活）
 
 **发布日期：2026-11-23**

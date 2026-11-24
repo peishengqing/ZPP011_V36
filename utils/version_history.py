@@ -14,6 +14,23 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v44.13",
+            "date": "2026-11-24",
+            "fixes": (
+                "修复变动提醒弹窗表格不能排序（裴哥 2026-11-24）。根因：本项目\n"
+                "PySide6/Qt6 下 QTableWidget.setSortingEnabled(True) 的内部\n"
+                "「sectionClicked → 自动排序」连接不可靠（同款坑项目里其他表格\n"
+                "都靠显式连接绕过），变动提醒弹窗只调了开关没接信号，点列头无反应。\n"
+                "修法：_show_audit_changes_dialog 里显式连\n"
+                "header.sectionClicked → 自管 handler（升/降切换 + table.sortItems\n"
+                "+ setSortIndicator）；排序状态存闭包，_populate 重填表后恢复排序，\n"
+                "标记已读刷新不丢排序。QTableWidget.sortItems 整行移动，UserRole\n"
+                "存的 remaining 索引跟随 item，双击定位/标记已读不错位（已实测）。\n"
+                "验证：py_compile+pyflakes+全量 pytest+GUI 冒烟 25 项通过；\n"
+                "offscreen 实测显式连接后升降序切换与 UserRole 跟随均正确。"
+            ),
+        },
+        {
             "version": "v44.12",
             "date": "2026-11-23",
             "fixes": (
