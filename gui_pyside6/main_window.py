@@ -101,6 +101,25 @@ from utils.theme_manager import Thm
 
 
 
+class _NumericSortItem(QTableWidgetItem):
+    """数值列排序专用 item（v44.14）。
+
+    QTableWidget 默认按 DisplayRole 字符串字典序排序，负数/小数会乱序
+    （13.37 排在 -134.84 前、256.0 夹在 -25.47 与 -26.05 之间）。
+    本类重写 __lt__：两边都能转 float 就按数值比，否则回退字符串比
+    （备注变动场景下「旧值/新值」可能是文字，不能一刀切转数值）。
+    显示文本原样保留，不会冒出浮点长尾。
+    """
+
+    def __lt__(self, other):
+        try:
+            a = float(str(self.text()).replace(',', ''))
+            b = float(str(other.text()).replace(',', ''))
+            return a < b
+        except (ValueError, TypeError):
+            return str(self.text()) < str(other.text())
+
+
 class _PptViewShim:
     """适配 MainWindow.view_model.df 给 AuditPresenter.generate_ppt 使用。
 
@@ -753,13 +772,14 @@ class MainWindow(QMainWindow):
                     table.setItem(i, 3, QTableWidgetItem(mat))
                     table.setItem(i, 4, QTableWidgetItem(str(c.get('material_name', '') or '')))
                     table.setItem(i, 5, QTableWidgetItem(str(c.get('field', ''))))
-                    table.setItem(i, 6, QTableWidgetItem('' if old_v is None else str(old_v)))
-                    table.setItem(i, 7, QTableWidgetItem('' if new_v is None else str(new_v)))
+                    # v44.14：4 个数值列用 _NumericSortItem，排序按数值而非字符串字典序
+                    table.setItem(i, 6, _NumericSortItem('' if old_v is None else str(old_v)))
+                    table.setItem(i, 7, _NumericSortItem('' if new_v is None else str(new_v)))
                     # v43.380：净偏差数量 修改前(基线)/修改后(当前)，无论哪个字段变动都附上
                     net_old = c.get('net_old', None)
                     net_new = c.get('net_new', None)
-                    table.setItem(i, 8, QTableWidgetItem('' if net_old is None else str(net_old)))
-                    table.setItem(i, 9, QTableWidgetItem('' if net_new is None else str(net_new)))
+                    table.setItem(i, 8, _NumericSortItem('' if net_old is None else str(net_old)))
+                    table.setItem(i, 9, _NumericSortItem('' if net_new is None else str(net_new)))
                     if prog and (i + 1) % 200 == 0:
                         prog.setValue(i + 1)
                         QApplication.processEvents()

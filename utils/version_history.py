@@ -14,6 +14,22 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v44.14",
+            "date": "2026-11-24",
+            "fixes": (
+                "修复变动提醒「净偏差数量(后)」等数值列排序错乱（裴哥 2026-11-24\n"
+                "截图：13.37 排在 -134.84 前、256.0 夹在 -25.47 与 -26.05 之间）。\n"
+                "根因：v44.13 加的列头排序走 QTableWidget 默认字典序，而 _populate\n"
+                "把数值列写成字符串（str(float)），负数/小数按字符比必然乱。\n"
+                "修法：模块级新增 _NumericSortItem(QTableWidgetItem)，重写 __lt__\n"
+                "（能转 float 按数值比，转不了回退字符串，显示文本原样不动）；\n"
+                "_populate 的 4 个数值列（旧值/新值/净偏差前/净偏差后）改用该类，\n"
+                "其余文本列（日期/车间/订单/物料/变更字段）保持原样。\n"
+                "验证：新增 tests/unit/test_audit_changes_num_sort.py 回归；\n"
+                "全量 pytest + GUI 冒烟 25 项通过。"
+            ),
+        },
+        {
             "version": "v44.13",
             "date": "2026-11-24",
             "fixes": (
