@@ -14,6 +14,26 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v44.15",
+            "date": "2026-11-28",
+            "features": (
+                "看板架构去重 + 死代码清理（技术债专项）。\n"
+                "【死代码清理 -5127 行】删除看板旧架构死代码簇：dashboard_manager.py\n"
+                "（ARC-003 拆分前旧副本）+ NegLoss/PosLoss/Semi 三个 DashboardDialog\n"
+                "（自 v43.334/335 迁 DashboardShell+Content 后即零引用）+ 2 个死测试。\n"
+                "另清理根目录残留（归档 14 个一次性产物/调试脚本、删 backups 快照\n"
+                "8.5MB、nul 残骸、pytest 生成物与旧日志）。\n"
+                "【看板 Content 去重】新增 widgets/base_board_content.py，把 neg/pos\n"
+                "两看板 45+ 共通方法（筛选 mask/表格交互/已读与隔离同步/导出/列头筛选）\n"
+                "上提，看板差异收口在唯一抽象点 _core_mask(df)；NegLossContent\n"
+                "1320→62 行、PosLossContent 1343→95 行；新增 _extra_filter_terms\n"
+                "（额外筛选维度）/ _status_message（状态条文案）钩子 + 净偏差数量 300ms 防抖。\n"
+                "semi 看板经评估保持独立（与 neg/pos 差异本质性，强行统一是伪抽象）。\n"
+                "验证：每阶段 py -3.11 全量 pytest 912-913 passed / 0 failed +\n"
+                "GUI 冒烟 25 项通过。"
+            ),
+        },
+        {
             "version": "v44.14",
             "date": "2026-11-24",
             "fixes": (

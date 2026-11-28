@@ -4,6 +4,24 @@
 
 ---
 
+## v44.15 — 看板架构去重 + 死代码清理（技术债专项）
+
+**发布日期：2026-11-28**
+
+### 🗑️ 死代码清理（-5127 行）
+- **删除看板旧架构死代码簇**：`dashboard_manager.py`（ARC-003 拆分前旧副本，应用侧零引用）+ `NegLoss/PosLoss/Semi` 三个 `DashboardDialog`（自 v43.334/335 迁 `DashboardShell + Content` 后即零引用）+ 2 个死测试，共 4708 行。核验确认这些是应用侧零引用的死代码，整簇删除。
+- **连带更新** 3 个按文件路径引用死代码的测试（`test_locate_row`/`test_drill_workshop`/`test_design_tokens`）+ `board_visual.py` 过时 docstring。
+- **根目录残留清理**：归档 14 个一次性产物/调试脚本到 `_archive/`、删 `backups/` 快照 8.5MB、`nul` 残骸、pytest 生成物（htmlcov/.pytest_cache 等）与 7 天前旧日志。
+
+### 🏗️ 看板 Content 去重（neg/pos 接入 BaseBoardContent）
+- **新增 `widgets/base_board_content.py`**：把 neg/pos 两看板 45+ 共通方法（筛选 mask / 表格交互 / 已读与隔离同步 / 导出 / 列头筛选）上提基类，看板差异收口在唯一抽象点 `_core_mask(df)`。
+- **`NegLossContent` 1320 → 62 行**、**`PosLossContent` 1343 → 95 行**，只保留各自核心口径（负损 实际<定额 / 正损 实际>定额且定额>0）+ 专属控件的钩子实现。
+- **新增钩子**：`_extra_filter_terms`（额外筛选维度，承载 pos 偏差数量分档）、`_status_message`（状态条文案）、净偏差数量 300ms 防抖（`_schedule_apply`）。
+- **semi 看板经评估保持独立**：与 neg/pos 差异本质性（投料状态主轴、不同级联公共件、不同状态条范式），强行统一是伪抽象。
+
+### ✅ 验证
+- 每阶段 `py -3.11` 全量 pytest 912-913 passed / 0 failed + GUI 冒烟 25 项通过。
+
 ## v44.14 — 修复变动提醒数值列排序错乱（负数/小数按字符串排）
 
 **发布日期：2026-11-24**
