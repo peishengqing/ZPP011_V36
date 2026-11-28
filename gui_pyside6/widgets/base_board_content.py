@@ -729,13 +729,9 @@ class BaseBoardContent(QWidget):
         self._sort_ctrl.reapply()
         set_empty_hint(self.table_view,
                        empty_hint_text(len(filtered), df, self._read_filter))
-        tag = self._core_status_tag()
-        note_tag = {"all": "全部", "yes": "有备注", "no": "无备注"}[self._has_note_filter]
         if self.shell is not None:
-            # 状态条给完整口径文案，筛选条右侧只给数字（设计稿 4.3.1）
-            kw_tag = ("名称含「%s」· " % self._keywords) if self._keywords.strip() else ""
-            self.shell.set_status("共 %d 条（%s%s · %s）" % (
-                len(filtered), kw_tag, tag, note_tag))
+            # 状态条给完整口径文案（格式由 _status_message 钩子决定，semi 覆盖为其格式）
+            self.shell.set_status(self._status_message(len(filtered), df))
             self.shell.set_total_hits(len(filtered))
             self.shell.set_filter_active(self._active_filter_keys())
             for key, term in terms.items():
@@ -797,6 +793,13 @@ class BaseBoardContent(QWidget):
         _other_conditions_mask（级联算可选值时同样排除它）。
         """
         return {}
+
+    def _status_message(self, count, df):
+        """状态条完整口径文案（默认 neg/pos 格式；semi 覆盖为「投料状态」格式）。"""
+        tag = self._core_status_tag()
+        note_tag = {"all": "全部", "yes": "有备注", "no": "无备注"}[self._has_note_filter]
+        kw_tag = ("名称含「%s」· " % self._keywords) if self._keywords.strip() else ""
+        return "共 %d 条（%s%s · %s）" % (count, kw_tag, tag, note_tag)
 
     def _semi_class_mask(self, df):
         if not self._semi_class_filter:
