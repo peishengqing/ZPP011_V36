@@ -50,40 +50,11 @@ class TestAddFilter:
         with pytest.raises(ValueError, match="key 重复"):
             shell.add_filter("unit", "单位2", _combo())
 
-    def test_unknown_zone_and_group_rejected(self, shell):
-        with pytest.raises(ValueError, match="未知筛选区域"):
-            shell.add_filter("a", "甲", _combo(), zone="popup")
-        with pytest.raises(ValueError, match="未知抽屉分组"):
-            shell.add_filter("b", "乙", _combo(), zone="drawer", group="whatever")
-
-    def test_drawer_filter_gets_hit_badge(self, shell):
-        w = _combo()
-        shell.add_filter("color", "颜色标记", w, zone="drawer", group="material")
-        slot = shell._filters["color"]
-        assert slot.zone == "drawer" and slot.badge is not None
-        assert slot.badge.text() == "—"
-
     def test_persistent_bar_has_no_horizontal_scroll(self, shell):
         # 设计稿红线：常驻筛选条永不允许横向滚动（改造前那条拖不完的滚动条就是它）
         shell.add_filter("unit", "单位", _combo())
-        shell.add_filter("mtd", "物料类型", _combo(), zone="drawer", group="material")
+        shell.add_filter("mtd", "物料类型", _combo())
         assert not shell.filter_bar.findChildren(QScrollArea)
-
-
-class TestDrawerGroups:
-    def test_group_order_follows_semantics_not_insertion(self, shell):
-        shell.add_filter("quar", "隔离区", _combo(), zone="drawer", group="org")
-        shell.add_filter("zero", "含未投料", _combo(), zone="drawer", group="numeric")
-        shell.add_filter("mtd", "物料类型", _combo(), zone="drawer", group="material")
-        # 看布局顺序而不是 findChildren 顺序：findChildren 按创建先后返回，测不出插位
-        boxes = [shell.drawer_layout.itemAt(i).widget()
-                 for i in range(shell.drawer_layout.count())]
-        titles = [b.title() for b in boxes if isinstance(b, QGroupBox)]
-        assert titles == ["物料维度", "数值维度", "组织与状态维度"], titles
-
-    def test_empty_drawer_creates_nothing(self, shell):
-        assert shell._drawer_groups == {}
-        assert shell.drawer_container.isHidden() or not shell.drawer_visible
 
 
 class TestHitReporting:
@@ -93,37 +64,20 @@ class TestHitReporting:
 
     def test_filter_hits_only_touches_badged_slots(self, shell):
         shell.add_filter("unit", "单位", _combo())                       # 常驻：无徽章
-        shell.add_filter("mtd", "物料类型", _combo(), zone="drawer", group="material")
         shell.set_filter_hits("unit", 99)          # 不该抛，也不该显示
-        shell.set_filter_hits("mtd", 1234)
         shell.set_filter_hits("not_registered", 7)  # 看板口径项（如「负损」）无徽章
         assert shell._filters["unit"].badge is None
-        assert shell._filters["mtd"].badge.text() == "1,234 条"
-
-    def test_active_count_shows_on_drawer_button(self, shell):
-        shell.set_filter_active(["keywords", "unit", "read"])
-        assert shell.btn_filter_drawer.text() == "筛选 (3)"
-        shell.set_filter_active([])
-        assert shell.btn_filter_drawer.text() == "筛选 (0)"
-
-    def test_drawer_button_text_switches_when_open(self, shell):
-        shell.set_filter_active(["unit"])
-        shell._on_filter_drawer_toggled()
-        assert shell.drawer_visible and shell.btn_filter_drawer.text() == "收起筛选"
-        shell._on_filter_drawer_toggled()
-        assert not shell.drawer_visible and shell.btn_filter_drawer.text() == "筛选 (1)"
-
 
 class TestHideAndReset:
     def test_hide_filter_takes_whole_row(self, shell):
         w = _combo()
-        shell.add_filter("read", "已读", w, zone="drawer", group="org")
+        shell.add_filter("read", "已读", w)
         slot = shell._filters["read"]
-        assert not (slot.label.isHidden() or slot.widget.isHidden() or slot.badge.isHidden())
+        assert not (slot.label.isHidden() or slot.widget.isHidden())
         shell.set_filter_visible("read", False)
-        assert slot.label.isHidden() and slot.widget.isHidden() and slot.badge.isHidden()
+        assert slot.label.isHidden() and slot.widget.isHidden()
         shell.set_filter_visible("read", True)
-        assert not (slot.label.isHidden() or slot.widget.isHidden() or slot.badge.isHidden())
+        assert not (slot.label.isHidden() or slot.widget.isHidden())
 
     def test_set_filter_visible_unknown_key_is_noop(self, shell):
         shell.set_filter_visible("ghost", False)   # 数据缺列时看板会登记未注册的条件

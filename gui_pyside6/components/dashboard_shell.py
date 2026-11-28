@@ -198,13 +198,6 @@ class DashboardShell(QWidget):
         layout.setContentsMargins(10, 0, 10, 0)
         layout.setSpacing(8)
 
-        self.btn_filter_drawer = QToolButton()
-        self.btn_filter_drawer.setText("筛选 (0)")
-        self.btn_filter_drawer.setCheckable(True)
-        self.btn_filter_drawer.setFixedSize(100, 26)
-        self.btn_filter_drawer.clicked.connect(self._on_filter_drawer_toggled)
-        layout.addWidget(self.btn_filter_drawer)
-
         # 常驻控件永远插在 stretch 之前（末尾三项固定为 stretch / 重置 / 总命中），
         # 这样右侧两个元素保持贴右，中间不会被拉开空隙。
         layout.addStretch()
@@ -224,72 +217,36 @@ class DashboardShell(QWidget):
         self._reset_cb = None
 
     def _build_filter_drawer(self):
-        """筛选抽屉：分组卡按需创建，没有条件就没有分组（不再预置示例控件）。
+        """扩展筛选区（v44.16 去掉抽屉按钮：一直显示，不用开关切换）。
 
-        抽屉里的控件不受常驻条 sizeHint 精算约束，可以带标签列/徽章列的表格化布局。
+        未读看板的筛选控件加到这里（drawer_layout）；neg/pos/semi 精简后
+        DRAWER_FILTERS 为空，本区留空（仅占少量 margins）。
         """
         self.drawer_container = QFrame()
         self.drawer_container.setObjectName("drawer_container")
-        self.drawer_container.setVisible(False)
 
         self.drawer_layout = VBoxLayout(self.drawer_container)
         self.drawer_layout.setContentsMargins(10, 10, 10, 10)
         self.drawer_layout.setSpacing(14)
-
-        self._drawer_groups = {}   # group_key → (QGroupBox, QGridLayout)
-        self._drawer_rows = {}     # group_key → 下一行号
-        # 尾部弹性项：分组卡按内容收紧贴顶，不被拉成一大块空白
         self.drawer_layout.addStretch()
 
-    # ── 筛选接线 API（第二期真接入：看板只描述控件归位，布局与配色归外壳）────
+    def add_filter(self, key: str, label: str, widget: QWidget):
+        """把一个筛选控件放进常驻筛选条（v44.16 去抽屉：所有筛选直接横向排布）。
 
-    def add_filter(self, key: str, label: str, widget: QWidget,
-                   zone: str = "bar", group: str = "", badge: bool = None):
-        """把一个筛选控件放进入驻条或抽屉分组。
-
-        zone="bar"    常驻条，最多 MAX_PERSISTENT_FILTERS 个（设计稿红线：含抽屉
-                      按钮在内一行不超过 6 个控件，且整条不允许横向滚动）
-        zone="drawer" 抽屉，group 取 _GROUP_TITLES 的 key（material/numeric/org）
-        badge=None    常驻条默认无徽章（宽度金贵），抽屉默认带命中计数徽章
+        常驻条最多 MAX_PERSISTENT_FILTERS 个控件；控件保持原生 sizeHint
+        （宽度由看板自己的 setMinimumWidth/setMaximumWidth 决定）。
         """
         if key in self._filters:
             raise ValueError(f"筛选控件 key 重复: {key}")
-        if zone not in ("bar", "drawer"):
-            raise ValueError(f"未知筛选区域: {zone}")
-        if zone == "bar" and len([s for s in self._filters.values() if s.zone == "bar"]) \
-                >= self.MAX_PERSISTENT_FILTERS:
-            raise ValueError(
-                f"常驻筛选条最多 {self.MAX_PERSISTENT_FILTERS} 个看板控件，"
-                "其余条件请放抽屉（设计稿 4.3.1 原红线 6 个，现按用户明确要求"
-                "上调为看板控件 6 个 + 外壳按钮合计 7 个）")
-        if zone == "drawer" and group not in self._GROUP_TITLES:
-            raise ValueError(f"未知抽屉分组: {group}（可用: {list(self._GROUP_TITLES)}）")
+        if len(self._filters) >= self.MAX_PERSISTENT_FILTERS:
+            raise ValueError(f"常驻筛选条最多 {self.MAX_PERSISTENT_FILTERS} 个控件")
 
-        if badge is None:
-            badge = zone == "drawer"
-
-        # 常驻条里的控件保持原生 sizeHint（红线 #3：不给它们写样式表/内距），
-        # 宽度仍由看板自己的 setMinimumWidth/setMaximumWidth 决定。
         lbl = QLabel(label)
-        hit = None
-        if zone == "bar":
-            bar = self.filter_bar.layout()
-            at = bar.count() - 3          # 末尾三项固定为 stretch / 重置 / 总命中
-            bar.insertWidget(at, lbl)
-            bar.insertWidget(at + 1, widget)
-        else:
-            box, grid = self._drawer_group(group)
-            row = self._drawer_rows[group]
-            self._drawer_rows[group] = row + 1
-            grid.addWidget(lbl, row, 0)
-            grid.addWidget(widget, row, 1)
-            if badge:
-                hit = QLabel("—")
-                hit.setObjectName("hitBadge")
-                hit.setAlignment(Qt.AlignCenter)
-                grid.addWidget(hit, row, 2)
-
-        self._filters[key] = _FilterSlot(widget, lbl, hit, zone)
+        bar = self.filter_bar.layout()
+        at = bar.count() - 3          # 末尾三项固定为 stretch / 重置 / 总命中
+        bar.insertWidget(at, lbl)
+        bar.insertWidget(at + 1, widget)
+        self._filters[key] = _FilterSlot(widget, lbl, None, "bar")
         return widget
 
     def _drawer_group(self, group):
@@ -318,13 +275,8 @@ class DashboardShell(QWidget):
         slot.badge.setText(f"{count:,} 条")
 
     def set_filter_active(self, keys):
-        """当前生效的条件数 → 抽屉按钮文案「筛选 (3)」。"""
+        """当前生效的条件（去抽屉后保留接口，供筛选状态摘要条用）。"""
         self._active_keys = set(keys)
-        n = len(self._active_keys)
-        if self.drawer_visible:
-            self.btn_filter_drawer.setText("收起筛选")
-        else:
-            self.btn_filter_drawer.setText(f"筛选 ({n})")
 
     def set_total_hits(self, count: int):
         self.lbl_total_hit.setText(f"共 {count:,} 条命中")

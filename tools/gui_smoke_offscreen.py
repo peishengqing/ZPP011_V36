@@ -603,20 +603,14 @@ def main():
             loose_scroll = [sa for sa in s.findChildren(QScrollArea)
                             if sa.horizontalScrollBarPolicy() != Qt.ScrollBarAlwaysOff]
             no_scroll = content_scroll == 0 and not loose_scroll
-            # ② 常驻条控件数不超上限，其余条件进抽屉
-            drawer_keys = [k for k, slot in s._filters.items() if slot.zone == "drawer"]
-            bar_n = len(s._filters) - len(drawer_keys)
+            # ② 常驻条控件数不超上限（v44.16 去抽屉：所有筛选直接常驻）
+            bar_n = len(s._filters)
             bar_ok = 0 < bar_n <= DashboardShell.MAX_PERSISTENT_FILTERS
-            # ③ 抽屉条件全部可达：展开时每个控件可见，收起时整组让位。
-            #    冒烟样本里没有对应列的条件（如组件物料类型描述）按设计收起，不计入。
-            tucked_keys = set(drawer_keys) & getattr(c, "_hidden_filters", set())
-            s._on_filter_drawer_toggled()
-            app.processEvents()
-            reach = sum(1 for k in drawer_keys if s._filters[k].widget.isVisibleTo(s))
-            expect = len(drawer_keys) - len(tucked_keys)
-            s._on_filter_drawer_toggled()
-            app.processEvents()
-            tucked = all(not s._filters[k].widget.isVisibleTo(s) for k in drawer_keys)
+            # ③ 去抽屉后所有筛选控件直接常驻可见（缺列被 _hide_filter 收起的按设计不计入）
+            all_keys = list(s._filters.keys())
+            hidden_keys = set(all_keys) & getattr(c, "_hidden_filters", set())
+            reach = sum(1 for k in all_keys if s._filters[k].widget.isVisibleTo(s))
+            expect = len(all_keys) - len(hidden_keys)
             # ④ 看板标题只出现一次（外壳标题栏那份，Content 不再自绘）
             dup = len([l for l in c.findChildren(_QLabel)
                        if l.text().strip() == board_title])
@@ -626,13 +620,13 @@ def main():
             probe.set_action_widget(_QLabel("操作"))
             act_shown = not probe._action_bar.isHidden()
             act_ok = (not s._action_bar.isHidden()) and act_hidden and act_shown
-            good = (no_scroll and bar_ok and reach == expect and tucked
+            good = (no_scroll and bar_ok and reach == expect
                     and dup == 0 and act_ok)
             ok = ok and good
-            detail.append("%s(内容滚动区=%d,可横滚=%d,常驻=%d,抽屉可达=%d/%d,收起=%s,"
+            detail.append("%s(内容滚动区=%d,可横滚=%d,常驻=%d,筛选可达=%d/%d,"
                           "重复标题=%d,操作条=%s)"
                           % (label, content_scroll, len(loose_scroll), bar_n,
-                             reach, expect, tucked, dup,
+                             reach, expect, dup,
                              "开" if act_ok else "关"))
             s.deleteLater()
             c.deleteLater()

@@ -18,13 +18,13 @@ class PosLossContent(BaseBoardContent):
     # 正损多一个「偏差数量」分档抽屉项（material 组，位于半成品分类后、颜色标记前），
     # 覆盖 DRAWER_FILTERS 保持原组内顺序；其掩码经 _extra_filter_terms 并入 terms/级联。
     # 注：负损的「含未投料」开关在正损口径下无意义（实际=0 不可能大于定额），已移除。
-    DRAWER_FILTERS = (("material", "mtd", "物料类型", "combo_mtd"),
-                      ("material", "semi_class", "半成品分类", "grp_semi_class"),
-                      ("material", "dev_qty", "偏差数量", "combo_dev_qty"),
-                      ("material", "color", "颜色标记", "color_bar"),
-                      ("org", "quar", "隔离区", "quar_bar"),
-                      ("org", "alt", "替代料", "alt_bar"),
-                      ("org", "note", "备注", "note_bar"))
+    # 筛选精简（v44.16）：13→6，去抽屉，只留高频核心。
+    BAR_FILTERS = (("keywords", "关键字", "edit_keywords"),
+                   ("dev_qty", "偏差数量", "combo_dev_qty"),
+                   ("read", "已读", "combo_read"),
+                   ("net_dev_qty", "净偏差数量", "_net_dev_qty_container"),
+                   ("quar", "隔离区", "quar_bar"))
+    DRAWER_FILTERS = ()
 
     def _core_mask(self, df):
         """正损掩码：实际 > 定额 且 定额 > 0（超投）。列缺失则全 False。

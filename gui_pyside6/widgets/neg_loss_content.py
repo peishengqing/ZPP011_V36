@@ -16,7 +16,16 @@ class NegLossContent(BaseBoardContent):
     BOARD_TITLE = "负损看板"
     EXPORT_NAME = "负损含未投料看板"
     # 专属抽屉条目：含未投料开关（numeric 组）
-    _CORE_DRAWER_FILTERS = (("numeric", "include_zero", "含未投料", "chk_include_zero"),)
+    # 筛选精简（v44.16）：13→6，去抽屉，只留高频核心。被去的长尾筛选
+    # （物料类型/半成品分类/单位/车间/工厂/替代料/备注）控件与 mask 暂留
+    # （不挂外壳即不显示），确认稳定后再清理死代码。
+    BAR_FILTERS = (("keywords", "关键字", "edit_keywords"),
+                   ("include_zero", "含未投料", "chk_include_zero"),
+                   ("read", "已读", "combo_read"),
+                   ("net_dev_qty", "净偏差数量", "_net_dev_qty_container"),
+                   ("quar", "隔离区", "quar_bar"))
+    DRAWER_FILTERS = ()
+    _CORE_DRAWER_FILTERS = ()
 
     def _core_mask(self, df):
         """负损掩码：含未投料=0<=实际<定额；不含=0<实际<定额。列缺失则全 False。"""

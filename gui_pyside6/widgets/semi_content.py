@@ -173,16 +173,11 @@ class SemiContent(QWidget):
     # 用户明确要求看板控件上限 5→6 且一个常驻都不撤，原设计稿红线 6 个已上调）
     BAR_FILTERS = (("keywords", "关键字", "edit_keywords"),
                    ("feed_status", "投料状态", "cmb_feed_status"),
-                   ("unit", "单位", "grp_unit"),
-                   ("workshop", "车间", "combo_workshop"),
                    ("read", "已读", "combo_read"),
-                   ("net_dev_qty", "净偏差数量", "net_dev_qty_widget"))
+                   ("net_dev_qty", "净偏差数量", "net_dev_qty_widget"),
+                   ("quar", "隔离区", "quar_bar"))
     # 抽屉：(分组, key, 标签, 属性名)。投料状态是本看板主轴，留在常驻条不进抽屉。
-    DRAWER_FILTERS = (("material", "mtd", "物料类型", "combo_mtd"),
-                      ("material", "semi_class", "半成品分类", "grp_semi_class"),
-                      ("material", "color", "颜色标记", "color_bar"),
-                      ("org", "quar", "隔离区", "quar_bar"),
-                      ("org", "note", "备注", "note_bar"))
+    DRAWER_FILTERS = ()
 
     def _build_filter_widgets(self):
         """创建筛选控件与联动，但不进任何布局 —— 布局由 attach_shell 交给外壳。"""
