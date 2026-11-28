@@ -52,12 +52,13 @@ def _pos_df():
 
 @pytest.fixture()
 def neg_board(qapp, monkeypatch):
-    from gui_pyside6.widgets import neg_loss_content as mod
+    from gui_pyside6.widgets import neg_loss_content
+    from gui_pyside6.widgets import base_board_content as mod
 
     # 隔离区只留「隔离料」这一行，其余不依赖真实 config
     monkeypatch.setattr(mod, "get_quarantined_ids", lambda: {
         "食品厂|2026-11-01|1700001|2000004"})
-    board = mod.NegLossContent(object())
+    board = neg_loss_content.NegLossContent(object())
     yield board
     board.deleteLater()
 

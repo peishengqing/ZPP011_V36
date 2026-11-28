@@ -171,22 +171,25 @@ class TestBoardContract:
         return cls(object())
 
     def test_declarations_within_shell_limits(self, board):
+        core_drawer = list(getattr(board, "_CORE_DRAWER_FILTERS", ()))
         bar_keys = [k for k, _l, _a in board.BAR_FILTERS]
-        drawer = [(g, k) for g, k, _l, _a in board.DRAWER_FILTERS]
+        drawer = [(g, k) for g, k, _l, _a in list(board.DRAWER_FILTERS) + core_drawer]
         assert 0 < len(bar_keys) <= DashboardShell.MAX_PERSISTENT_FILTERS
         assert len(set(bar_keys) | {k for _g, k in drawer}) == len(bar_keys) + len(drawer)
         assert {g for g, _k in drawer} <= set(DashboardShell._GROUP_TITLES)
         # 声明的属性名必须真的在 _build_filter_widgets 里创建出来
-        for *_, attr in list(board.BAR_FILTERS) + list(board.DRAWER_FILTERS):
+        for *_, attr in list(board.BAR_FILTERS) + list(board.DRAWER_FILTERS) + core_drawer:
             assert getattr(board, attr, None) is not None, attr
 
     def test_attach_shell_wires_everything(self, board):
+        core_drawer = list(getattr(board, "_CORE_DRAWER_FILTERS", ()))
         shell = DashboardShell()
         board.attach_shell(shell)
         assert board.shell is shell
-        assert len(shell._filters) == len(board.BAR_FILTERS) + len(board.DRAWER_FILTERS)
+        assert len(shell._filters) == (len(board.BAR_FILTERS) + len(board.DRAWER_FILTERS)
+                                       + len(core_drawer))
         assert shell._reset_cb == board._reset_filters
-        for *_, attr in list(board.BAR_FILTERS) + list(board.DRAWER_FILTERS):
+        for *_, attr in list(board.BAR_FILTERS) + list(board.DRAWER_FILTERS) + core_drawer:
             w = getattr(board, attr)
             assert w.parentWidget() is not None, attr
         shell.deleteLater()
