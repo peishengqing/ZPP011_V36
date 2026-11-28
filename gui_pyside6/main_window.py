@@ -570,10 +570,11 @@ class MainWindow(QMainWindow):
             return
         # 记录生效的筛选条件，方便排查"有数据但表格空白"等问题
         active = {k: v for k, v in filters.items() if v not in (None, '', [], {})}
-        if active:
-            self.log(f"[筛选] 当前条件: {active}", "debug")
-        else:
-            self.log("[筛选] 条件已清空", "debug")
+        # v44.18：只在条件真正变化时打印，避免同一条件（如恒为 _read_status=未读）被
+        # 反复触发时刷屏几十条 debug（用户实测一次筛选能刷出几十行）。
+        if active != getattr(self, "_last_filter_log", None):
+            self._last_filter_log = active
+            self.log(f"[筛选] 当前条件: {active}" if active else "[筛选] 条件已清空", "debug")
         # 直接应用到 proxy model（setCustomFilters 内部会 invalidateFilter + layoutChanged）
         self.proxy_model.setCustomFilters(filters)
         self._update_summary()
@@ -3633,6 +3634,9 @@ class MainWindow(QMainWindow):
 
     def _show_column_hide_dialog(self, *args, **kwargs):
         return self.column_controller._show_column_hide_dialog(*args, **kwargs)
+
+    def _open_column_order_dialog(self, *args, **kwargs):
+        return self.column_controller._open_column_order_dialog(*args, **kwargs)
 
     def _is_column_effectively_hidden(self, *args, **kwargs):
         return self.column_controller._is_column_effectively_hidden(*args, **kwargs)

@@ -157,6 +157,38 @@ class ColumnController:
             self.mw._save_column_widths()  # 持久化显隐状态：手动显示/隐藏都记住
             self.mw.statusBar().showMessage("列显示已更新", 2000)
 
+    def _open_column_order_dialog(self):
+        """「列顺序设置」对话框（方案B：不靠拖动表头也能改列顺序）。
+
+        读当前视觉顺序 → 弹 ColumnOrderDialog → 用户确定后走 _restore_column_order
+        （内部已 _save_column_widths 落盘 ``__order__``，与拖动表头保存的是同一字段，
+        两种改顺序方式共用一份持久化，互不冲突）。"""
+        model = self.mw.table_view.model()
+        if model is None or model.columnCount() == 0:
+            return
+        from gui_pyside6.dialogs.column_order_dialog import ColumnOrderDialog
+        header = self.mw.table_view.horizontalHeader()
+        n = model.columnCount()
+
+        def _name(c):
+            h = model.headerData(c, Qt.Horizontal)
+            return str(h).replace('\n', '') if h else ''
+        # 当前视觉顺序（按 visualIndex 左→右）
+        current = [nm for nm in (_name(c) for c in sorted(range(n), key=lambda c: header.visualIndex(c))) if nm]
+        # 默认顺序 = 逻辑列顺序（原始列序），供「恢复默认」用
+        default = [nm for nm in (_name(c) for c in range(n)) if nm]
+        if not current:
+            return
+
+        dlg = ColumnOrderDialog(self.mw, title="主表", current_order=current,
+                               default_order=default)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        new_order = dlg.result_order()
+        if new_order and new_order != current:
+            self._restore_column_order(new_order)  # 内部持久化 __order__
+            self.mw.statusBar().showMessage("列顺序已更新并保存", 2000)
+
     def _is_column_effectively_hidden(self, col):
         """列是否实际不可见：被 setColumnHidden 或宽度被拖成 0 都算"""
         if self.mw.table_view.isColumnHidden(col):

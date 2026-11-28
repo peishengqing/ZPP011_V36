@@ -200,6 +200,13 @@ class MainTableComponent(QObject):
         self.col_hide_btn.clicked.connect(self.mw._show_column_hide_dialog)
         summary_layout.addWidget(self.col_hide_btn)
 
+        self.col_order_btn = make_button("⇅")
+        self.col_order_btn.setObjectName("colOrderBtn")
+        self.col_order_btn.setToolTip("列顺序设置")
+        self.col_order_btn.setMaximumWidth(32)
+        self.col_order_btn.clicked.connect(self.mw._open_column_order_dialog)
+        summary_layout.addWidget(self.col_order_btn)
+
         self.summary_container = QWidget()
         self.summary_container.setObjectName("summaryContainer")
         self.summary_container.setLayout(summary_layout)

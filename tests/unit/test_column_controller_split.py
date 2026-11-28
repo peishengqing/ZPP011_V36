@@ -13,7 +13,7 @@ from unittest import mock
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, ROOT)
 
-# 24 个搬迁方法的转发目标（ARC-003 拆分清单）
+# 列控制器搬迁方法的转发目标（ARC-003 拆分清单；v44.17 起含「列顺序」对话框入口）
 SHELLS = [
     "_toggle_column_lock", "_toggle_table_fullscreen", "_show_column_hide_dialog",
     "_is_column_effectively_hidden", "_ensure_column_visible_width",
@@ -24,6 +24,7 @@ SHELLS = [
     "_open_empty_column_filter_popup", "_apply_multi_sort", "_update_sort_indicators",
     "_show_col_filter_clear_menu", "_clear_col_filter_by_name", "_clear_all_col_filters",
     "_drop_sort_columns",
+    "_open_column_order_dialog",
 ]
 
 

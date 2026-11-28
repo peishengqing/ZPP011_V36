@@ -33,6 +33,7 @@ from gui_pyside6.utils.table_autofit import get_adaptive, install_adaptive
 from gui_pyside6.utils.excel_autofit import to_excel_autofit
 from gui_pyside6.utils.row_number_gutter import enable_row_numbers
 from gui_pyside6.utils.board_empty_hint import empty_hint_text, set_empty_hint
+from gui_pyside6.utils.board_layouts import BoardLayoutManager
 from gui_pyside6.components.dashboard_shell import pack_row
 from gui_pyside6.themes.tokens import SIZE_PX
 
@@ -105,6 +106,11 @@ class BaseBoardContent(QWidget):
         self.table_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.header = SortBadgeHeader(Qt.Horizontal, self.table_view)
         self.table_view.setHorizontalHeader(self.header)
+        # v44.17：拖动表头即时保存列顺序（与 quarantine/unfed 同款落盘）；
+        # 「列顺序」按钮（对话框）改的顺序也写同一份 board_layouts.json。
+        self.header.sectionMoved.connect(
+            lambda _li, _o, _n: BoardLayoutManager.save_board_order(
+                self.BOARD_KEY, BoardLayoutManager.current_column_order(self.table_view)))
         self._sort_ctrl = enable_click_sort(
             self.table_view, lambda: getattr(self, "source_model", None), skip_cols=())
         self.col_filter_ctrl = ColumnFilterController(
@@ -298,6 +304,9 @@ class BaseBoardContent(QWidget):
         self.btn_refresh.clicked.connect(self._apply_filter)
         self.btn_col_filter = make_col_filter_button(self, self._on_toggle_col_filter)
         self._col_filter_hint_label = make_col_filter_hint_label()
+        self.btn_col_order = QPushButton("列顺序")
+        self.btn_col_order.setToolTip("调整列显示顺序并保存（也可以直接拖动表头改变）")
+        self.btn_col_order.clicked.connect(self._open_column_order)
         self.btn_close = QPushButton("关闭")
         self.btn_close.clicked.connect(self.close_requested.emit)
 
@@ -318,7 +327,8 @@ class BaseBoardContent(QWidget):
         for key in sorted(self._hidden_filters):
             shell.set_filter_visible(key, False)
         for w in (self.btn_add_quar, self.btn_export, self.btn_refresh,
-                  self.btn_col_filter, self._col_filter_hint_label, self.btn_close):
+                  self.btn_col_filter, self.btn_col_order,
+                  self._col_filter_hint_label, self.btn_close):
             shell.set_action_widget(w)
         shell.set_reset_callback(self._reset_filters)
         selection = self.table_view.selectionModel()
@@ -611,6 +621,16 @@ class BaseBoardContent(QWidget):
             if get_adaptive(self.table_view) is None:
                 _auto = install_adaptive(self.table_view, mode='content', key=self.BOARD_KEY)
                 _auto.schedule_initial()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+        # v44.17：恢复用户自定义列顺序（「列顺序设置」对话框 / 拖动表头保存的顺序）。
+        # 放在 setModel 之后、列宽自适应落定后；restore_column_order 内部已屏蔽
+        # sectionMoved 信号，不会把恢复的中间态反向写盘。
+        try:
+            _saved_order = BoardLayoutManager.load_board_order(self.BOARD_KEY)
+            if _saved_order:
+                BoardLayoutManager.restore_column_order(self.table_view, _saved_order)
         except Exception:
             import traceback
             traceback.print_exc()
@@ -1329,6 +1349,26 @@ class BaseBoardContent(QWidget):
         on = self.col_filter_ctrl.toggle_mode()
         self.btn_col_filter.setChecked(on)
         set_col_filter_button_on(self.btn_col_filter, on)
+
+    def _logical_column_order(self):
+        """表格当前逻辑列顺序（原始列序），供「恢复默认」按钮用。"""
+        model = self.table_view.model()
+        if model is None:
+            return []
+        return [str(model.headerData(c, Qt.Horizontal)).replace('\n', '')
+                for c in range(model.columnCount())
+                if model.headerData(c, Qt.Horizontal)]
+
+    def _open_column_order(self):
+        """「列顺序」按钮：弹列顺序设置对话框，确定后应用并保存（方案B，不靠拖动）。"""
+        from gui_pyside6.utils.board_layouts import open_board_column_order
+        model = self.table_view.model()
+        if model is None or model.columnCount() == 0:
+            toast("当前没有数据，无法调整列顺序", parent=self)
+            return
+        if open_board_column_order(self, self.table_view, self.BOARD_KEY,
+                                   self.BOARD_TITLE, self._logical_column_order()):
+            toast("列顺序已更新并保存", parent=self)
 
     # 级联排除
     _CASCADE_EXCLUDE_MTD = {'食品成品', '饮料成品'}

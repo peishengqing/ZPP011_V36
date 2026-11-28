@@ -227,7 +227,11 @@ class DashboardController:
         dialog.setModal(False)
         dialog.setAttribute(Qt.WA_DeleteOnClose, True)
         dialog.setWindowTitle(title)
-        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowMinMaxButtonsHint)
+        # 只补最大化按钮（大看板铺满对照用），**故意不加最小化**：
+        # Windows 上顶层窗口一旦带最小化按钮，会被任务栏各出一个独立按钮；
+        # 看板非模态多开 + 让位隐藏不销毁，最小化按钮会让任务栏被 ZPP011 刷屏
+        # （v43.336 曾统一追加 WindowMinMaxButtonsHint 引入，现按反馈收回最小化）。
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowMaximizeButtonHint)
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(shell)

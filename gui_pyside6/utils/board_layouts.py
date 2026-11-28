@@ -136,3 +136,39 @@ class BoardLayoutManager:
                     header.moveSection(vi, i)
         finally:
             header.blockSignals(False)
+
+    @classmethod
+    def apply_column_order(cls, table_view, board_key, col_names):
+        """把给定列名顺序应用到表格视觉层并落盘（读-改-写，不影响其它看板）。
+
+        col_names 为空 / 与当前顺序一致时直接跳过（避免无意义写盘与重排）。
+        返回 True=已应用并保存，False=无数据 / 未变化。"""
+        current = cls.current_column_order(table_view)
+        if not col_names or col_names == current:
+            return False
+        cls.restore_column_order(table_view, col_names)
+        cls.save_board_order(board_key, col_names)
+        return True
+
+
+def open_board_column_order(parent, table_view, board_key, title, default_order=None):
+    """弹出「列顺序设置」对话框；用户确定则应用到表格并持久化。
+
+    方案B（不靠拖动列头也能改顺序）的看板侧入口：读当前视觉顺序 → 弹
+    ColumnOrderDialog → 用户调整后应用 + 保存。返回 True=已应用，False=取消/未变/无数据。
+    纯 UI 编排，持久化统一走 BoardLayoutManager（各看板共用 board_layouts.json）。
+    """
+    model = table_view.model()
+    if model is None or model.columnCount() == 0:
+        return False
+    current = BoardLayoutManager.current_column_order(table_view)
+    if not current:
+        return False
+    from gui_pyside6.dialogs.column_order_dialog import ColumnOrderDialog
+    from PySide6.QtWidgets import QDialog
+    dlg = ColumnOrderDialog(parent, title=title, current_order=current,
+                           default_order=default_order)
+    if dlg.exec() != QDialog.Accepted:
+        return False
+    return BoardLayoutManager.apply_column_order(table_view, board_key,
+                                                 dlg.result_order())

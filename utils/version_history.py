@@ -14,6 +14,33 @@ AUTHOR = "裴盛清"
 # 版本列表：最新版本在索引 0
 VERSION_HISTORY = [
         {
+            "version": "v44.16",
+            "date": "2026-11-28",
+            "features": (
+                "看板「列顺序设置」对话框（方案B）+ 两处 UI 体验修复。\n"
+                "【列顺序设置 - 方案B 对话框】针对「列多时拖表头不准」，新增\n"
+                "dialogs/column_order_dialog.py：列出全部列 + 上移/下移/置顶/置底 +\n"
+                "恢复默认，确定后持久化。看板侧新增模块级 open_board_column_order() 与\n"
+                "BoardLayoutManager.apply_column_order()（读-改-写，互不影响其它看板），\n"
+                "neg/pos 走 BaseBoardContent、semi 走 SemiContent，各自挂「列顺序」按钮 +\n"
+                "set_data 末尾恢复已存顺序 + 拖表头即时保存（与 quarantine/unfed 同款\n"
+                "board_layouts.json）。主表走 column_controller._open_column_order_dialog\n"
+                "（复用既有 __order__ 落盘，与「隐藏/显示列」对话框同一持久化字段，互不\n"
+                "冲突）+ main_table 工具栏「列顺序」按钮。新增 tests/unit/\n"
+                "test_column_order_persistence.py 4 例（对话框调序/恢复默认/应用落盘/编排）\n"
+                "+ 把新转发纳入 test_column_controller_split.py 薄壳白名单；列控制器 6 例、\n"
+                "看板回归 75 例、弹窗门禁 69 例全绿。\n"
+                "【任务栏堆积修复】回收看板 QDialog 的最小化按钮：v43.336 曾给 26 个顶层\n"
+                "弹窗统一追加 WindowMinMaxButtonsHint，Windows 上带最小化按钮的顶层窗口会\n"
+                "被任务栏各出一个独立按钮；看板非模态多开 + 让位隐藏不销毁，导致任务栏被\n"
+                "「ZPP011」刷屏。现 _present_board 改为只保留最大化（WindowMaximizeButtonHint）、\n"
+                "去掉最小化按钮。\n"
+                "【筛选日志降噪】_on_filter_panel_changed 改为只在筛选条件真正变化时才打\n"
+                "debug（加 _last_filter_log 去重），消除同一条件（恒 _read_status=未读）被\n"
+                "反复触发时刷屏几十条。验证：py_compile 通过 + offscreen GUI 冒烟 25 项通过。"
+            ),
+        },
+        {
             "version": "v44.15",
             "date": "2026-11-28",
             "features": (
