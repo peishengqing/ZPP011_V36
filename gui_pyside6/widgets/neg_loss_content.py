@@ -13,7 +13,7 @@ class NegLossContent(BaseBoardContent):
     """负损(含未投料)看板：核心口径 = 0<=实际<定额（含未投料可开关）"""
 
     BOARD_KEY = "neg_loss"
-    BOARD_TITLE = "负损(含未投料)看板"
+    BOARD_TITLE = "负损看板"
     EXPORT_NAME = "负损含未投料看板"
     # 专属抽屉条目：含未投料开关（numeric 组）
     _CORE_DRAWER_FILTERS = (("numeric", "include_zero", "含未投料", "chk_include_zero"),)

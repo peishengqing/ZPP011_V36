@@ -99,7 +99,6 @@ _WIRED = {
     "gui_pyside6/dialogs/data_stability_dialog.py": "_tbl_freq",
     "gui_pyside6/dialogs/alt_chain_dialog.py": "_tbl",
     "gui_pyside6/widgets/base_board_content.py": "table_view",
-    "gui_pyside6/widgets/pos_loss_content.py": "table_view",
     "gui_pyside6/widgets/semi_content.py": "table_view",
     "gui_pyside6/components/dashboard_shell.py": "table_view",
 }

@@ -65,11 +65,12 @@ def neg_board(qapp, monkeypatch):
 
 @pytest.fixture()
 def pos_board(qapp, monkeypatch):
-    from gui_pyside6.widgets import pos_loss_content as mod
+    from gui_pyside6.widgets import pos_loss_content
+    from gui_pyside6.widgets import base_board_content as mod
 
     monkeypatch.setattr(mod, "get_quarantined_ids", lambda: {
         "食品厂|2026-11-01|1700001|2000004"})
-    board = mod.PosLossContent(object())
+    board = pos_loss_content.PosLossContent(object())
     yield board
     board.deleteLater()
 

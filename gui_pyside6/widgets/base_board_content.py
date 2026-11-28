@@ -703,6 +703,7 @@ class BaseBoardContent(QWidget):
             "color": self._color_mask(df),
             "read": self._read_mask(df, self._read_filter),
         }
+        terms.update(self._extra_filter_terms(df))   # 子类追加额外维度（如正损 dev_qty）
         mask = pd.Series(True, index=df.index)
         for _term in terms.values():
             mask &= _term
@@ -756,6 +757,8 @@ class BaseBoardContent(QWidget):
             mask &= self._workshop_mask(df, self._workshop_filter)
         if exclude != 'unit':
             mask &= self._unit_mask(df)
+        for _t in self._extra_filter_terms(df).values():
+            mask &= _t
         return mask
 
     def _name_cols(self, df):
@@ -786,6 +789,14 @@ class BaseBoardContent(QWidget):
     def _core_status_tag(self):
         """状态条里的核心口径文案（默认空）。"""
         return ""
+
+    def _extra_filter_terms(self, df):
+        """子类追加额外筛选维度（返回 {key: mask}，如正损的偏差数量分档）。默认无。
+
+        追加项会并入 _apply_filter 的 terms（拿独立抽屉徽章）与
+        _other_conditions_mask（级联算可选值时同样排除它）。
+        """
+        return {}
 
     def _semi_class_mask(self, df):
         if not self._semi_class_filter:
