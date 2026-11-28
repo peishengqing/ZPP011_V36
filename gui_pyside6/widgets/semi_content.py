@@ -677,6 +677,12 @@ class SemiContent(QWidget):
                 # v43.147：必须先 setParent(None) 脱离父容器，否则 deleteLater
                 # 延迟执行期间旧控件仍 visible 且占几何位置 → 出现重复项残影
                 w.setParent(None)
+                # v44.17：但 setParent(None) 会让 w 立刻变成独立顶层窗口（带「ZPP011」
+                # 标题栏、出任务栏）。半成品分类在筛选/数据刷新时高频重建，deleteLater
+                # 是延迟到事件循环下一拍才销毁，这一拍内这批顶层窗口就堆满任务栏/桌面
+                # （用户实测半成品分类按钮刷一整排）。立即 hide() 掐掉可见性再排队销毁：
+                # 既保住 v43.147 防占几何残影的本意，又不会残留成可见顶层窗口堆积。
+                w.hide()
                 w.deleteLater()
         self._semi_class_checkboxes = {}
         all_cb = QCheckBox("全部")

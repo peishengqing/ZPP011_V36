@@ -1445,6 +1445,11 @@ class FilterPanel(QWidget):
             if w:
                 # v43.147：先脱离父容器，避免 deleteLater 延迟期间旧控件仍可见
                 w.setParent(None)
+                # v44.17：setParent(None) 会让 w 立刻变成独立顶层窗口（带「ZPP011」标题栏、
+                # 出任务栏）。半成品分类在筛选/数据刷新时高频重建，deleteLater 是延迟到
+                # 事件循环下一拍才销毁，这一拍内这批顶层窗口就堆满任务栏/桌面。立即 hide()
+                # 掐掉可见性再排队销毁——既防占几何残影，又不残留成可见顶层窗口堆积。
+                w.hide()
                 w.deleteLater()
         self._semi_class_checkboxes = {}
 
