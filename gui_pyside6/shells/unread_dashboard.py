@@ -113,7 +113,8 @@ class UnreadDashboard(DashboardShell):
         unread_layout = QVBoxLayout(self.gp_unread)
         unread_layout.setSpacing(8)
 
-        # 未读分类
+        # 未读分类 + 已读状态（v44.17：两者合并成一行。原来各占一整行、行尾 addStretch
+        # 全空着，筛选区显松散，与另外四个看板「横向紧凑」排布不一致——用户反馈筛选 UI 不好）
         cat_row = QHBoxLayout()
         cat_row.setSpacing(8)
         cat_row.addWidget(QLabel("未读分类:"))
@@ -123,21 +124,16 @@ class UnreadDashboard(DashboardShell):
         self.combo_cat.setCurrentText("全部未读")
         self.combo_cat.currentTextChanged.connect(self._on_cat_changed)
         cat_row.addWidget(self.combo_cat)
-        cat_row.addStretch()
-        unread_layout.addLayout(cat_row)
-
-        # 已读
-        read_row = QHBoxLayout()
-        read_row.setSpacing(8)
-        read_row.addWidget(QLabel("已读状态:"))
+        cat_row.addSpacing(24)
+        cat_row.addWidget(QLabel("已读状态:"))
         self.combo_read = QComboBox()
-        self.combo_read.setFixedWidth(160)
+        self.combo_read.setFixedWidth(120)
         self.combo_read.addItems(["全部", "已读", "未读"])
         self.combo_read.setCurrentText("未读")
         self.combo_read.currentTextChanged.connect(self._on_read_changed)
-        read_row.addWidget(self.combo_read)
-        read_row.addStretch()
-        unread_layout.addLayout(read_row)
+        cat_row.addWidget(self.combo_read)
+        cat_row.addStretch()
+        unread_layout.addLayout(cat_row)
 
         # 关键字搜索
         kw_row = QHBoxLayout()
@@ -252,6 +248,7 @@ class UnreadDashboard(DashboardShell):
 
         ndq_layout.addWidget(QLabel("净偏差数量:"))
         self._net_dev_qty_min = QDoubleSpinBox()
+        self._net_dev_qty_min.setFixedWidth(140)
         self._net_dev_qty_min.setRange(-1e9, 1e9)
         self._net_dev_qty_min.setDecimals(2)
         self._net_dev_qty_min.setSpecialValueText("不限")
@@ -261,6 +258,7 @@ class UnreadDashboard(DashboardShell):
 
         ndq_layout.addWidget(QLabel("~"))
         self._net_dev_qty_max = QDoubleSpinBox()
+        self._net_dev_qty_max.setFixedWidth(140)
         self._net_dev_qty_max.setRange(-1e9, 1e9)
         self._net_dev_qty_max.setDecimals(2)
         self._net_dev_qty_max.setSpecialValueText("不限")
@@ -269,11 +267,11 @@ class UnreadDashboard(DashboardShell):
         ndq_layout.addWidget(self._net_dev_qty_max)
 
         ndq_layout.addStretch()
-        # v43.404：不再作为第四组独立卡片，插到第一组「未读维度」的
-        # 「已读状态」行之后（unread_layout 顺序：cat_row=0, read_row=1, kw_row=2…），
+        # v43.404→v44.17：不再作为第四组独立卡片，插到第一组「未读维度」里
+        # 「未读分类+已读状态」合并行之后（unread_layout 顺序：cat_row=0, kw_row=1…），
         # 与另外四个看板「已读后面就是净偏差数量」的排布一致。
-        # 对象在 read_row 之后才创建，故用 insertWidget 插到 index=2（kw_row 前）。
-        unread_layout.insertWidget(2, self.gp_net_dev_qty)
+        # 对象在 cat_row 之后才创建，故用 insertWidget 插到 index=1（kw_row 前）。
+        unread_layout.insertWidget(1, self.gp_net_dev_qty)
 
     # ── 筛选控件回调 ──
     def _on_cat_changed(self, text):
