@@ -64,10 +64,6 @@ DEFERRED = {
     "gui_pyside6/dialogs/ai_reason_panel.py": 1,     # 同上，面板未接入主界面
     "gui_pyside6/dialogs/dashboard_dialog.py": 2,    # QWebEngine 报告页配色，离屏测不了
     "gui_pyside6/dialogs/guizang_dialog.py": 3,      # WebEngine 兜底 HTML 里的占位色
-    # 第二期：看板套壳后这三个旧副本整文件删除，挂账随之消失
-    "gui_pyside6/dialogs/neg_loss_dashboard_dialog.py": 1,
-    "gui_pyside6/dialogs/pos_loss_dashboard_dialog.py": 1,
-    "gui_pyside6/dialogs/semi_dashboard_dialog.py": 1,
     # 第五期：AuditStatusDelegate 正式接入主表时重写（当前是零引用死桩）
     "gui_pyside6/components/audit_status_delegate.py": 4,
     "gui_pyside6/widgets/audit_status_badge.py": 9,

@@ -124,13 +124,16 @@ def test_drill_to_workshop_returns_false_when_mw_none():
 
 
 # ------------------------------------------------------- 结构护栏
-def test_all_five_dashboards_close_on_success():
-    """5 个看板回调都必须含 self.accept()，否则模态窗口会挡住主表。"""
+def test_all_drill_dashboards_close_on_success():
+    """下钻看板回调都必须含 self.accept()，否则模态窗口会挡住主表。
+
+    v44.15：原 neg/pos/semi 三个 DashboardDialog 已作为死代码删除（其现役形态
+    为 DashboardShell + Content，关闭由 shell 负责，不走 QDialog.accept()），
+    故本护栏只覆盖仍在用的 QDialog 下钻看板。
+    """
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     files = [
         'alert_dialog.py', 'deviation_warning_dialog.py',
-        'neg_loss_dashboard_dialog.py', 'pos_loss_dashboard_dialog.py',
-        'semi_dashboard_dialog.py',
     ]
     for name in files:
         p = os.path.join(root, 'gui_pyside6', 'dialogs', name)

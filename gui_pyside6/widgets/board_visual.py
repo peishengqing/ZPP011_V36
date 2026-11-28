@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """表格看板统一视觉美化 + 悬浮「可视化看板」入口（v43.299，方案 C）。
 
-适用范围（5 个表格看板，均为 QDialog 子类）：
+适用范围（QDialog 表格看板）：
   - 偏差率预警看板  DeviationWarningDialog
   - 替代料看板      AlertDialog
-  - 正损看板        PosLossDashboardDialog
-  - 负损看板        NegLossDashboardDialog
-  - 半成品看板      SemiDashboardDialog
+
+  注：原正损/负损/半成品看板自 v43.334/v43.335 起迁至 DashboardShell + Content
+  （QWidget），不再经过本函数；那三个旧 DashboardDialog 已确认为死代码删除。
 
 设计约束（都是历史事故换来的，勿违反）：
   1. **只改观感，不改布局尺寸**：QSS 里一律不写 padding / margin / font-size /

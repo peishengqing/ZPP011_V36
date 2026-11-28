@@ -94,7 +94,6 @@ DIALOGS = [
     "gui_pyside6/dialogs/alert_dialog.py",
     "gui_pyside6/dialogs/quarantine_dialog.py",
     "gui_pyside6/dialogs/deviation_warning_dialog.py",
-    "gui_pyside6/dialogs/neg_loss_dashboard_dialog.py",
 ]
 
 
